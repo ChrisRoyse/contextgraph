@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::NodeId;
+use crate::marblestone::EdgeType;
 
 /// Unique identifier for graph edges
 pub type EdgeId = Uuid;
@@ -50,26 +51,6 @@ impl GraphEdge {
             metadata: EdgeMetadata::default(),
         }
     }
-}
-
-/// Types of relationships between nodes.
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Hash)]
-#[serde(rename_all = "snake_case")]
-pub enum EdgeType {
-    /// Semantic similarity
-    Semantic,
-    /// Temporal sequence
-    Temporal,
-    /// Causal relationship
-    Causal,
-    /// Hierarchical (parent-child)
-    Hierarchical,
-    /// Associative link
-    Associative,
-    /// Contradiction
-    Contradicts,
-    /// Supporting evidence
-    Supports,
 }
 
 /// Edge metadata

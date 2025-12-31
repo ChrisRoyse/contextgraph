@@ -14,7 +14,7 @@ This matrix ensures every requirement, component, and behavior from the Module 0
 | Modality | Content type classification enum | TASK-M02-002 | `crates/context-graph-core/src/types/johari.rs` | ✅ |
 | ValidationError | Node validation error types | TASK-M02-004 | `crates/context-graph-core/src/types/memory_node.rs` | ✅ |
 | Domain | Marblestone context domain enum | TASK-M02-007 | `crates/context-graph-core/src/marblestone.rs` | ✅ |
-| EdgeType | Graph edge relationship types (4 variants per constitution.yaml, migrating from graph_edge.rs) | TASK-M02-009 | `crates/context-graph-core/src/marblestone.rs` | ☐ |
+| EdgeType | Graph edge relationship types (4 variants per constitution.yaml, migrated from graph_edge.rs) | TASK-M02-009 | `crates/context-graph-core/src/marblestone.rs` | ✅ |
 | EmotionalState | UTL emotional state enum | TASK-M02-019 | `crates/context-graph-core/src/pulse.rs` | ☐ |
 | SuggestedAction | Cognitive pulse action enum | TASK-M02-020 | `crates/context-graph-core/src/pulse.rs` | ☐ |
 | StorageError | Storage operation error types | TASK-M02-025 | `crates/context-graph-storage/src/lib.rs` | ☐ |

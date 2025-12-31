@@ -309,6 +309,103 @@ impl Default for NeurotransmitterWeights {
     }
 }
 
+/// Type of relationship between two nodes in the graph.
+///
+/// Each edge type represents a distinct semantic relationship with
+/// different traversal and weighting characteristics:
+/// - Semantic: Similarity-based connections
+/// - Temporal: Time-ordered sequences
+/// - Causal: Cause-effect relationships
+/// - Hierarchical: Parent-child taxonomies
+///
+/// # Constitution Reference
+/// - edge_model.attrs: type:Semantic|Temporal|Causal|Hierarchical
+///
+/// # Example
+/// ```rust
+/// use context_graph_core::marblestone::EdgeType;
+///
+/// let edge = EdgeType::Causal;
+/// assert_eq!(edge.to_string(), "causal");
+/// assert_eq!(edge.default_weight(), 0.8);
+/// ```
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EdgeType {
+    /// Semantic similarity relationship.
+    /// Nodes share similar meaning, topic, or conceptual space.
+    Semantic,
+
+    /// Temporal sequence relationship.
+    /// Source node occurred before target node in time.
+    Temporal,
+
+    /// Causal relationship.
+    /// Source node causes, influences, or triggers target node.
+    Causal,
+
+    /// Hierarchical relationship.
+    /// Source node is a parent, category, or ancestor of target node.
+    Hierarchical,
+}
+
+impl EdgeType {
+    /// Returns a human-readable description of this edge type.
+    #[inline]
+    pub fn description(&self) -> &'static str {
+        match self {
+            Self::Semantic => "Semantic similarity - nodes share similar meaning or topic",
+            Self::Temporal => "Temporal sequence - source precedes target in time",
+            Self::Causal => "Causal relationship - source causes or influences target",
+            Self::Hierarchical => "Hierarchical - source is parent or ancestor of target",
+        }
+    }
+
+    /// Returns all edge type variants as an array.
+    #[inline]
+    pub fn all() -> [EdgeType; 4] {
+        [Self::Semantic, Self::Temporal, Self::Causal, Self::Hierarchical]
+    }
+
+    /// Returns the default base weight for this edge type.
+    ///
+    /// These weights reflect the inherent reliability of each relationship type:
+    /// - Semantic (0.5): Variable based on embedding similarity
+    /// - Temporal (0.7): Time relationships are usually reliable
+    /// - Causal (0.8): Strong evidence when established
+    /// - Hierarchical (0.9): Taxonomy relationships are very strong
+    #[inline]
+    pub fn default_weight(&self) -> f32 {
+        match self {
+            Self::Semantic => 0.5,
+            Self::Temporal => 0.7,
+            Self::Causal => 0.8,
+            Self::Hierarchical => 0.9,
+        }
+    }
+}
+
+impl Default for EdgeType {
+    /// Returns `EdgeType::Semantic` as the default.
+    /// Semantic is the most common edge type in knowledge graphs.
+    #[inline]
+    fn default() -> Self {
+        Self::Semantic
+    }
+}
+
+impl fmt::Display for EdgeType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let s = match self {
+            Self::Semantic => "semantic",
+            Self::Temporal => "temporal",
+            Self::Causal => "causal",
+            Self::Hierarchical => "hierarchical",
+        };
+        write!(f, "{}", s)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -845,5 +942,217 @@ mod tests {
             let restored: NeurotransmitterWeights = serde_json::from_str(&json).expect("deserialize failed");
             assert_eq!(weights, restored, "Roundtrip failed for {:?}", domain);
         }
+    }
+
+    // =========================================================================
+    // EdgeType Tests
+    // =========================================================================
+
+    // --- Default Tests ---
+    #[test]
+    fn test_edge_type_default_is_semantic() {
+        assert_eq!(EdgeType::default(), EdgeType::Semantic);
+    }
+
+    // --- Description Tests ---
+    #[test]
+    fn test_edge_type_description_non_empty() {
+        for edge_type in EdgeType::all() {
+            let desc = edge_type.description();
+            assert!(!desc.is_empty(), "Description for {:?} is empty", edge_type);
+            assert!(desc.len() > 10, "Description for {:?} too short", edge_type);
+        }
+    }
+
+    #[test]
+    fn test_edge_type_semantic_description() {
+        assert!(EdgeType::Semantic.description().to_lowercase().contains("similar"));
+    }
+
+    #[test]
+    fn test_edge_type_temporal_description() {
+        assert!(EdgeType::Temporal.description().to_lowercase().contains("time"));
+    }
+
+    #[test]
+    fn test_edge_type_causal_description() {
+        assert!(EdgeType::Causal.description().to_lowercase().contains("cause"));
+    }
+
+    #[test]
+    fn test_edge_type_hierarchical_description() {
+        assert!(EdgeType::Hierarchical.description().to_lowercase().contains("parent"));
+    }
+
+    // --- all() Tests ---
+    #[test]
+    fn test_edge_type_all_returns_4_variants() {
+        assert_eq!(EdgeType::all().len(), 4);
+    }
+
+    #[test]
+    fn test_edge_type_all_contains_all_variants() {
+        let all = EdgeType::all();
+        assert!(all.contains(&EdgeType::Semantic));
+        assert!(all.contains(&EdgeType::Temporal));
+        assert!(all.contains(&EdgeType::Causal));
+        assert!(all.contains(&EdgeType::Hierarchical));
+    }
+
+    #[test]
+    fn test_edge_type_all_order() {
+        let all = EdgeType::all();
+        assert_eq!(all[0], EdgeType::Semantic);
+        assert_eq!(all[1], EdgeType::Temporal);
+        assert_eq!(all[2], EdgeType::Causal);
+        assert_eq!(all[3], EdgeType::Hierarchical);
+    }
+
+    // --- default_weight() Tests ---
+    #[test]
+    fn test_edge_type_default_weight_semantic() {
+        assert!((EdgeType::Semantic.default_weight() - 0.5).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_edge_type_default_weight_temporal() {
+        assert!((EdgeType::Temporal.default_weight() - 0.7).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_edge_type_default_weight_causal() {
+        assert!((EdgeType::Causal.default_weight() - 0.8).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_edge_type_default_weight_hierarchical() {
+        assert!((EdgeType::Hierarchical.default_weight() - 0.9).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_edge_type_weights_in_valid_range() {
+        for edge_type in EdgeType::all() {
+            let weight = edge_type.default_weight();
+            assert!(weight >= 0.0 && weight <= 1.0,
+                "Weight {} for {:?} out of range", weight, edge_type);
+        }
+    }
+
+    #[test]
+    fn test_edge_type_weights_increasing_strength() {
+        // Hierarchical > Causal > Temporal > Semantic
+        assert!(EdgeType::Hierarchical.default_weight() > EdgeType::Causal.default_weight());
+        assert!(EdgeType::Causal.default_weight() > EdgeType::Temporal.default_weight());
+        assert!(EdgeType::Temporal.default_weight() > EdgeType::Semantic.default_weight());
+    }
+
+    // --- Display Tests ---
+    #[test]
+    fn test_edge_type_display_semantic() {
+        assert_eq!(EdgeType::Semantic.to_string(), "semantic");
+    }
+
+    #[test]
+    fn test_edge_type_display_temporal() {
+        assert_eq!(EdgeType::Temporal.to_string(), "temporal");
+    }
+
+    #[test]
+    fn test_edge_type_display_causal() {
+        assert_eq!(EdgeType::Causal.to_string(), "causal");
+    }
+
+    #[test]
+    fn test_edge_type_display_hierarchical() {
+        assert_eq!(EdgeType::Hierarchical.to_string(), "hierarchical");
+    }
+
+    #[test]
+    fn test_edge_type_display_all_lowercase() {
+        for edge_type in EdgeType::all() {
+            let s = edge_type.to_string();
+            assert_eq!(s, s.to_lowercase(), "Display for {:?} not lowercase", edge_type);
+        }
+    }
+
+    // --- Serde Tests ---
+    #[test]
+    fn test_edge_type_serde_snake_case() {
+        let edge = EdgeType::Semantic;
+        let json = serde_json::to_string(&edge).unwrap();
+        assert_eq!(json, r#""semantic""#);
+    }
+
+    #[test]
+    fn test_edge_type_serde_roundtrip() {
+        for edge_type in EdgeType::all() {
+            let json = serde_json::to_string(&edge_type).unwrap();
+            let restored: EdgeType = serde_json::from_str(&json).unwrap();
+            assert_eq!(edge_type, restored, "Roundtrip failed for {:?}", edge_type);
+        }
+    }
+
+    #[test]
+    fn test_edge_type_serde_deserialize() {
+        let edge: EdgeType = serde_json::from_str(r#""causal""#).unwrap();
+        assert_eq!(edge, EdgeType::Causal);
+    }
+
+    #[test]
+    fn test_edge_type_serde_invalid_variant_fails() {
+        let result: Result<EdgeType, _> = serde_json::from_str(r#""invalid""#);
+        assert!(result.is_err(), "Invalid variant should fail deserialization");
+    }
+
+    // --- Derive Trait Tests ---
+    #[test]
+    fn test_edge_type_clone() {
+        let edge = EdgeType::Temporal;
+        let cloned = edge.clone();
+        assert_eq!(edge, cloned);
+    }
+
+    #[test]
+    fn test_edge_type_copy() {
+        let edge = EdgeType::Causal;
+        let copied = edge;
+        assert_eq!(edge, copied);
+        let _still_valid = edge; // Proves Copy
+    }
+
+    #[test]
+    fn test_edge_type_debug() {
+        let debug = format!("{:?}", EdgeType::Hierarchical);
+        assert!(debug.contains("Hierarchical"));
+    }
+
+    #[test]
+    fn test_edge_type_partial_eq() {
+        assert_eq!(EdgeType::Semantic, EdgeType::Semantic);
+        assert_ne!(EdgeType::Semantic, EdgeType::Temporal);
+    }
+
+    #[test]
+    fn test_edge_type_hash() {
+        use std::collections::HashSet;
+        let mut set = HashSet::new();
+        set.insert(EdgeType::Semantic);
+        set.insert(EdgeType::Temporal);
+        set.insert(EdgeType::Semantic); // Duplicate
+        assert_eq!(set.len(), 2);
+    }
+
+    // --- Edge Cases ---
+    #[test]
+    fn test_edge_type_all_unique() {
+        use std::collections::HashSet;
+        let all = EdgeType::all();
+        let unique: HashSet<_> = all.iter().collect();
+        assert_eq!(unique.len(), 4);
+    }
+
+    #[test]
+    fn test_edge_type_default_in_all() {
+        assert!(EdgeType::all().contains(&EdgeType::default()));
     }
 }

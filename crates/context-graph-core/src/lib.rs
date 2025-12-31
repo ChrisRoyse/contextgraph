@@ -28,4 +28,4 @@ pub mod types;
 // Re-exports for convenience
 pub use config::Config;
 pub use error::{CoreError, CoreResult};
-pub use marblestone::{Domain, NeurotransmitterWeights};
+pub use marblestone::{Domain, EdgeType, NeurotransmitterWeights};
