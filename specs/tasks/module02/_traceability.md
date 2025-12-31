@@ -12,7 +12,7 @@ This matrix ensures every requirement, component, and behavior from the Module 0
 |------|-------------|---------|-----------|----------|
 | JohariQuadrant | Four quadrant enum (Open, Hidden, Blind, Unknown) | TASK-M02-001 | `crates/context-graph-core/src/types/johari.rs` | ✅ |
 | Modality | Content type classification enum | TASK-M02-002 | `crates/context-graph-core/src/types/johari.rs` | ✅ |
-| ValidationError | Node validation error types | TASK-M02-004 | `crates/context-graph-core/src/types/memory_node.rs` | ☐ |
+| ValidationError | Node validation error types | TASK-M02-004 | `crates/context-graph-core/src/types/memory_node.rs` | ✅ |
 | Domain | Marblestone context domain enum | TASK-M02-007 | `crates/context-graph-core/src/marblestone.rs` | ☐ |
 | EdgeType | Graph edge relationship types | TASK-M02-009 | `crates/context-graph-core/src/marblestone.rs` | ☐ |
 | EmotionalState | UTL emotional state enum | TASK-M02-019 | `crates/context-graph-core/src/pulse.rs` | ☐ |
@@ -150,10 +150,10 @@ This matrix ensures every requirement, component, and behavior from the Module 0
 
 | Error | Condition | Task ID | Verified |
 |-------|-----------|---------|----------|
-| InvalidEmbeddingDimension | Embedding ≠ 1536 dimensions | TASK-M02-004 | ☐ |
-| OutOfBounds | Importance/valence outside valid range | TASK-M02-004 | ☐ |
-| ContentTooLarge | Content exceeds 1MB limit | TASK-M02-004 | ☐ |
-| EmbeddingNotNormalized | Embedding vector not normalized | TASK-M02-004 | ☐ |
+| InvalidEmbeddingDimension | Embedding ≠ 1536 dimensions | TASK-M02-004 | ✅ |
+| OutOfBounds | Importance/valence outside valid range | TASK-M02-004 | ✅ |
+| ContentTooLarge | Content exceeds 1MB limit | TASK-M02-004 | ✅ |
+| EmbeddingNotNormalized | Embedding vector not normalized | TASK-M02-004 | ✅ |
 | OpenFailed | Database open failure | TASK-M02-025 | ☐ |
 | ColumnFamilyNotFound | Missing column family | TASK-M02-025 | ☐ |
 | SerializationFailed | Serialization error | TASK-M02-025 | ☐ |
@@ -170,7 +170,7 @@ This matrix ensures every requirement, component, and behavior from the Module 0
 | JohariQuadrant unit tests | All enum methods | TASK-M02-001 | ☐ |
 | Modality unit tests | Detection and extensions | TASK-M02-002 | ☐ |
 | NodeMetadata unit tests | Tag and lifecycle operations | TASK-M02-003 | ✅ |
-| ValidationError unit tests | Error display and context | TASK-M02-004 | ☐ |
+| ValidationError unit tests | Error display and context | TASK-M02-004 | ✅ |
 | MemoryNode unit tests | All struct methods | TASK-M02-006 | ☐ |
 | NeurotransmitterWeights unit tests | Domain profiles and calculations | TASK-M02-008 | ☐ |
 | GraphEdge unit tests | Edge operations and Marblestone | TASK-M02-011 | ☐ |
