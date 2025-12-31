@@ -27,7 +27,7 @@ This matrix ensures every requirement, component, and behavior from the Module 0
 | NodeMetadata | Memory node metadata container | TASK-M02-003 | `crates/context-graph-core/src/types/memory_node.rs` | ✅ |
 | MemoryNode | Core knowledge node struct | TASK-M02-005 | `crates/context-graph-core/src/types/memory_node.rs` | ✅ |
 | NeurotransmitterWeights | Marblestone NT weight struct | TASK-M02-008 | `crates/context-graph-core/src/marblestone.rs` | ✅ |
-| GraphEdge | Graph edge with Marblestone fields | TASK-M02-010 | `crates/context-graph-core/src/marblestone.rs` | ☐ |
+| GraphEdge | Graph edge with 13 Marblestone fields (replaces 7-field legacy struct) | TASK-M02-010 | `crates/context-graph-core/src/types/graph_edge.rs` | ✅ |
 | CognitivePulse | System cognitive state struct | TASK-M02-021 | `crates/context-graph-core/src/pulse.rs` | ☐ |
 | JohariTransition | Quadrant transition record | TASK-M02-012 | `crates/context-graph-core/src/johari.rs` | ☐ |
 
@@ -141,8 +141,8 @@ This matrix ensures every requirement, component, and behavior from the Module 0
 |---------|-------------|---------|----------|
 | Domain-aware NT weights | Context-specific neurotransmitter profiles | TASK-M02-008 | ✅ |
 | Excitatory/Inhibitory/Modulatory | Three-weight NT system | TASK-M02-008 | ✅ |
-| Amortized shortcuts | Learned shortcut edges | TASK-M02-010, TASK-M02-011 | ☐ |
-| Steering reward | [-1,1] reward signal | TASK-M02-010, TASK-M02-011 | ☐ |
+| Amortized shortcuts | Learned shortcut edges | TASK-M02-010, TASK-M02-011 | ✅ (struct) |
+| Steering reward | [-1,1] reward signal | TASK-M02-010, TASK-M02-011 | ✅ (struct) |
 | Modulated weight calculation | NT-adjusted edge weights | TASK-M02-011 | ☐ |
 | Domain enum | Code/Legal/Medical/Creative/Research/General | TASK-M02-007 | ✅ |
 

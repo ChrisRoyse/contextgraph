@@ -7,7 +7,7 @@
 - **Foundation:** 12 tasks
 - **Logic:** 6 tasks
 - **Surface:** 10 tasks
-- **Current Progress:** 9/28 (32%) - Tasks 001-009 VERIFIED
+- **Current Progress:** 10/28 (36%) - Tasks 001-010 VERIFIED
 - **Version:** 1.0.0
 - **Created:** 2025-12-31
 - **Dependencies:** module-01-ghost-system
@@ -108,8 +108,8 @@ graph TD
 | 7 | TASK-M02-007 | Define Domain Enum (Marblestone) | foundation | — | 1.0 | ✅ Complete |
 | 8 | TASK-M02-008 | Define NeurotransmitterWeights Struct | foundation | 007 | 2.0 | ✅ Complete |
 | 9 | TASK-M02-009 | Define EdgeType Enum (Marblestone) + Migrate from graph_edge.rs | foundation | — | 1.5 | ✅ Complete |
-| 10 | TASK-M02-010 | Define GraphEdge Struct | foundation | 007, 008, 009 | 2.0 | ⏳ Ready |
-| 11 | TASK-M02-011 | Implement GraphEdge Methods | foundation | 010 | 2.5 | ⛔ Blocked |
+| 10 | TASK-M02-010 | Define GraphEdge Struct (13-field Marblestone) | foundation | 007, 008, 009 | 2.0 | ✅ Complete |
+| 11 | TASK-M02-011 | Implement GraphEdge Methods | foundation | 010 | 2.5 | ⏳ Ready (v2.0 Audited) |
 | 12 | TASK-M02-012 | Implement Johari Transition Logic | foundation | 001 | 2.0 | ⛔ Blocked |
 | 13 | TASK-M02-013 | Create Storage Crate Structure | logic | 006 | 1.5 | ⏳ Ready |
 | 14 | TASK-M02-014 | Implement Bincode Serialization | logic | 013 | 2.5 | ⛔ Blocked |
@@ -148,7 +148,7 @@ graph TD
 | TASK-M02-007 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 29/29 tests pass, 0 clippy warnings |
 | TASK-M02-008 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 66/66 marblestone tests pass (29 Domain + 37 NT), 0 clippy warnings |
 | TASK-M02-009 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 31 EdgeType tests pass, 330 total tests, 0 clippy warnings |
-| TASK-M02-010 | — | — | — | Depends on 007, 008, 009 |
+| TASK-M02-010 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 32 graph_edge tests pass, 0 clippy warnings, 13 fields confirmed |
 | TASK-M02-011 | — | — | — | Depends on 010 |
 | TASK-M02-012 | — | — | — | Depends on 001 |
 | TASK-M02-013 | — | — | — | Depends on 006 |
