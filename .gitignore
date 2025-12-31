@@ -1,0 +1,44 @@
+# Ignore ALL existing directories and files
+# Only .gitignore, docs/, and docs2/ will be tracked
+
+# Hidden directories
+.claude/
+.claude-flow/
+.hive-mind/
+.serena/
+.swarm/
+
+# Project directories (NOT docs/ or docs2/)
+coordination/
+memory/
+
+# Root files
+CLAUDE.md
+claude-flow
+.mcp.json
+
+# Database files
+*.db
+*.db-journal
+*.db-wal
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+
+# Generated files
+claude-flow.config.json
+hive-mind-prompt-*.txt
+
+# Node modules (if added later)
+node_modules/
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

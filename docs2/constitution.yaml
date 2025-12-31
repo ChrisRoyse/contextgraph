@@ -1,0 +1,1148 @@
+# Ultimate Context Graph - Project Constitution
+# Version: 1.0.0
+# Classification: Immutable Project Rules
+# Based on: vision_and_layers.md, technical_engine.md, execution_and_mcp.md
+# ============================================================================
+
+constitution:
+  version: "1.0.0"
+  project_name: "Ultimate Context Graph"
+  description: "Bio-Nervous Context Graph with 5-layer neural architecture implementing UTL (Unified Theory of Learning) for optimal knowledge retrieval and consolidation"
+  last_updated: "2025-12-31"
+  spec_version: "2.0.0"
+
+# ============================================================================
+# METADATA & PROJECT IDENTITY
+# ============================================================================
+metadata:
+  project_codename: "context-graph"
+  classification: "Core Infrastructure - MCP Server"
+  domain: "AI Memory Systems / Knowledge Graphs"
+  primary_interfaces:
+    - "MCP (Model Context Protocol) JSON-RPC 2.0"
+    - "CUDA GPU Kernels"
+    - "FAISS GPU Index"
+  target_environment: "Linux x86_64 with NVIDIA GPU"
+  license: "Proprietary"
+  maintainers:
+    - role: "Lead Architect"
+      responsibility: "System design, UTL implementation"
+    - role: "CUDA Engineer"
+      responsibility: "GPU optimization, kernel development"
+    - role: "MCP Integration"
+      responsibility: "Tool definitions, protocol compliance"
+
+# ============================================================================
+# TECHNOLOGY STACK
+# ============================================================================
+tech_stack:
+  primary_language:
+    name: "Rust"
+    version: "1.75+"
+    edition: "2021"
+    toolchain: "stable"
+
+  gpu_framework:
+    cuda_version: "13.1"
+    compute_capability: "12.0"
+    target_gpu: "RTX 5090 (Blackwell)"
+    vram_requirement: "32GB GDDR7"
+
+  secondary_languages:
+    - name: "CUDA C++"
+      purpose: "Custom GPU kernels"
+      version: "13.1"
+    - name: "Python"
+      purpose: "Testing, benchmarking, seed scripts"
+      version: "3.11+"
+
+  core_dependencies:
+    # Async Runtime
+    - name: "tokio"
+      version: "1.35+"
+      features: ["full"]
+      purpose: "Async runtime"
+
+    # Serialization
+    - name: "serde"
+      version: "1.0+"
+      features: ["derive"]
+      purpose: "Serialization/deserialization"
+
+    # UUID Generation
+    - name: "uuid"
+      version: "1.6+"
+      features: ["v4", "serde"]
+      purpose: "Node identification"
+
+    # Time Handling
+    - name: "chrono"
+      version: "0.4+"
+      features: ["serde"]
+      purpose: "Timestamps"
+
+    # MCP Protocol
+    - name: "rmcp"
+      version: "0.1+"
+      purpose: "Rust MCP SDK"
+
+    # CUDA Bindings
+    - name: "cudarc"
+      version: "0.10+"
+      purpose: "CUDA kernel bindings"
+
+    # Vector Search
+    - name: "faiss"
+      version: "0.12+"
+      features: ["gpu"]
+      purpose: "GPU-accelerated vector search"
+
+  database:
+    development:
+      engine: "SQLite"
+      purpose: "Phase 0 Ghost System"
+    production:
+      primary: "PostgreSQL 16+"
+      vector_store: "FAISS GPU Index"
+      cache: "Redis 7+"
+
+  external_apis:
+    embedding_fallback:
+      - provider: "OpenAI"
+        model: "text-embedding-3-large"
+        purpose: "Phase 0 external embedding"
+      - provider: "Cohere"
+        model: "embed-english-v3.0"
+        purpose: "Backup embedding"
+
+# ============================================================================
+# DIRECTORY STRUCTURE
+# ============================================================================
+directory_structure:
+  root: "context-graph"
+  layout:
+    # Workspace Root
+    - path: "Cargo.toml"
+      description: "Workspace manifest"
+
+    # Source Crates
+    - path: "crates/"
+      description: "Rust workspace crates"
+      children:
+        - path: "context-graph-mcp/"
+          description: "MCP Server - JSON-RPC 2.0 interface"
+          structure:
+            - "src/lib.rs"
+            - "src/server.rs"
+            - "src/tools/"
+            - "src/resources/"
+            - "src/handlers/"
+
+        - path: "context-graph-core/"
+          description: "Core domain logic"
+          structure:
+            - "src/lib.rs"
+            - "src/graph/"
+            - "src/search/"
+            - "src/utl/"
+            - "src/session/"
+            - "src/curation/"
+
+        - path: "context-graph-cuda/"
+          description: "CUDA kernels and GPU operations"
+          structure:
+            - "src/lib.rs"
+            - "src/kernels/"
+            - "src/faiss/"
+            - "src/hopfield/"
+            - "src/neuromod/"
+
+        - path: "context-graph-embeddings/"
+          description: "12-model embedding pipeline"
+          structure:
+            - "src/lib.rs"
+            - "src/models/"
+            - "src/fusion/"
+            - "src/fuse_moe.rs"
+            - "src/came_ab.rs"
+
+    # Specifications
+    - path: "specs/"
+      description: "Project specifications"
+      children:
+        - "functional/"
+        - "technical/"
+        - "tasks/"
+
+    # Documentation
+    - path: "docs/"
+      description: "Project documentation (user-requested only)"
+
+    # Tests
+    - path: "tests/"
+      description: "Integration and E2E tests"
+      children:
+        - "integration/"
+        - "benchmarks/"
+        - "fixtures/"
+
+    # Scripts
+    - path: "scripts/"
+      description: "Utility scripts"
+      children:
+        - "seed/"
+        - "benchmark/"
+        - "deploy/"
+
+    # Configuration
+    - path: "config/"
+      description: "Configuration files"
+      children:
+        - "default.toml"
+        - "production.toml"
+        - "test.toml"
+
+    # AI Memory (Development)
+    - path: ".ai/"
+      description: "AI agent memory bank"
+      children:
+        - "activeContext.md"
+        - "decisionLog.md"
+        - "progress.md"
+
+# ============================================================================
+# CODING STANDARDS
+# ============================================================================
+coding_standards:
+  naming_conventions:
+    files:
+      rust: "snake_case.rs"
+      cuda: "snake_case.cu"
+      tests: "{module}_test.rs or {module}.test.rs"
+      benchmarks: "{module}_bench.rs"
+
+    modules:
+      pattern: "snake_case"
+      example: "knowledge_graph, utl_processor, fuse_moe"
+
+    types:
+      structs: "PascalCase"
+      enums: "PascalCase"
+      enum_variants: "PascalCase"
+      traits: "PascalCase with adjective or verb"
+      type_aliases: "PascalCase"
+      examples:
+        - "KnowledgeNode"
+        - "JohariQuadrant"
+        - "UTLProcessor"
+        - "Vector1536"
+
+    functions:
+      pattern: "snake_case, verb_first"
+      examples:
+        - "compute_learning_score()"
+        - "inject_context()"
+        - "find_causal_path()"
+        - "trigger_dream()"
+
+    variables:
+      local: "snake_case"
+      constants: "SCREAMING_SNAKE_CASE"
+      statics: "SCREAMING_SNAKE_CASE"
+      examples:
+        - "let node_id = ..."
+        - "const MAX_TOKENS: usize = 8192;"
+        - "static DEFAULT_BETA: f32 = 1.0;"
+
+    fields:
+      struct_fields: "snake_case"
+      json_serialization: "snake_case (via serde)"
+
+  file_organization:
+    rules:
+      - "One primary type per module file"
+      - "Related types may be grouped (e.g., all UTL types in utl/types.rs)"
+      - "Co-locate unit tests in same file via #[cfg(test)]"
+      - "Integration tests in tests/ directory"
+      - "Benchmarks in benches/ directory"
+      - "Maximum 500 lines per file (excluding tests)"
+      - "Use mod.rs or {module}/mod.rs for module re-exports"
+
+    import_ordering:
+      - "std library imports"
+      - "external crate imports"
+      - "workspace crate imports (crate::)"
+      - "super/self imports"
+
+  documentation:
+    requirements:
+      - "All public APIs must have rustdoc comments"
+      - "Include # Examples section for complex functions"
+      - "Document panics, errors, and safety invariants"
+      - "Use `Constraint:` prefix for performance requirements"
+
+    format: |
+      /// Brief one-line description.
+      ///
+      /// Longer description if needed.
+      ///
+      /// # Arguments
+      /// * `arg_name` - Description
+      ///
+      /// # Returns
+      /// Description of return value
+      ///
+      /// # Errors
+      /// Description of error conditions
+      ///
+      /// # Examples
+      /// ```rust
+      /// // Example code
+      /// ```
+      ///
+      /// # Panics
+      /// Conditions that cause panic (if any)
+      ///
+      /// `Constraint: Operation_Latency < 10ms`
+
+  error_handling:
+    rules:
+      - "Use Result<T, E> for fallible operations"
+      - "Define domain-specific error enums per crate"
+      - "Use thiserror for error derivation"
+      - "Never use unwrap() in production code (use expect() with context)"
+      - "Log errors with context before propagating"
+      - "Include error codes for MCP responses"
+
+    error_enum_template: |
+      #[derive(Debug, thiserror::Error)]
+      pub enum GraphError {
+          #[error("Node not found: {0}")]
+          NodeNotFound(Uuid),
+
+          #[error("Storage error: {0}")]
+          Storage(#[from] StorageError),
+
+          #[error("Invalid operation: {reason}")]
+          InvalidOperation { reason: String },
+      }
+
+  async_patterns:
+    rules:
+      - "Use tokio as async runtime"
+      - "Prefer async/await over manual Future implementation"
+      - "Use Arc<RwLock<T>> for shared mutable state"
+      - "Lock acquisition order: inner → faiss_index (prevents deadlocks)"
+      - "Use select! for concurrent operations with cancellation"
+      - "Timeouts on all external calls"
+
+  unsafe_code:
+    rules:
+      - "Maximum 5 unsafe blocks per module"
+      - "Document safety invariants in /// # Safety comment"
+      - "Wrap unsafe in safe abstraction where possible"
+      - "CUDA FFI calls must be in context-graph-cuda crate only"
+      - "All unsafe code requires review by CUDA Engineer"
+
+# ============================================================================
+# ANTI-PATTERNS (FORBIDDEN)
+# ============================================================================
+anti_patterns:
+  forbidden:
+    - id: "AP-001"
+      pattern: "unwrap() in production code"
+      reason: "Can panic on None/Err. Use expect() with context or propagate error."
+
+    - id: "AP-002"
+      pattern: "Hardcoded secrets or API keys"
+      reason: "Security vulnerability. Use environment variables via config crate."
+
+    - id: "AP-003"
+      pattern: "Magic numbers without constants"
+      reason: "Maintainability. Define named constants with documentation."
+
+    - id: "AP-004"
+      pattern: "Blocking I/O in async context"
+      reason: "Blocks tokio runtime. Use tokio::fs, spawn_blocking, or async variants."
+
+    - id: "AP-005"
+      pattern: "Direct FAISS index mutation without lock"
+      reason: "Race condition. Always acquire faiss_index write lock."
+
+    - id: "AP-006"
+      pattern: "Creating new utility functions without checking utils/"
+      reason: "Code duplication. Search existing utilities first."
+
+    - id: "AP-007"
+      pattern: "Stub/mock data in production code"
+      reason: "Testing contamination. Use tests/fixtures/ for test data."
+
+    - id: "AP-008"
+      pattern: "Direct API calls from MCP handlers"
+      reason: "Architecture violation. Use service layer for business logic."
+
+    - id: "AP-009"
+      pattern: "f32::NAN or f32::INFINITY in UTL calculations"
+      reason: "Corrupts learning metrics. Clamp values to valid ranges."
+
+    - id: "AP-010"
+      pattern: "Storing embeddings without rationale field"
+      reason: "Graph bloat. Every store_memory requires rationale for quality."
+
+    - id: "AP-011"
+      pattern: "Merging concepts without priors_vibe_check"
+      reason: "Memetic drift. Check priors compatibility before merge."
+
+    - id: "AP-012"
+      pattern: "Trusting distilled summaries blindly"
+      reason: "Authority bias hallucination. Use hydrate_citation for verification."
+
+    - id: "AP-013"
+      pattern: "Ignoring Cognitive Pulse headers"
+      reason: "Meta-cognitive blindness. Check Pulse before next action."
+
+    - id: "AP-014"
+      pattern: "Permanent deletion without user_requested reason"
+      reason: "Data safety. Only user_requested + soft_delete=false allows permanent delete."
+
+    - id: "AP-015"
+      pattern: "GPU memory allocation without pool management"
+      reason: "Memory fragmentation. Use CUDA memory pool from cudarc."
+
+# ============================================================================
+# SECURITY REQUIREMENTS
+# ============================================================================
+security_requirements:
+  - id: "SEC-01"
+    rule: "Validate and sanitize all user input before storage"
+    implementation: "PIIScrubber in Layer 1 (Sensing)"
+
+  - id: "SEC-02"
+    rule: "Scrub PII before embedding pipeline"
+    patterns:
+      - "API keys: (?i)(api[_-]?key|apikey)[=:]\\s*['\"]?[\\w-]{20,}"
+      - "Passwords: (?i)(password|passwd|pwd)[=:]\\s*['\"]?[^\\s'\"]{8,}"
+      - "Bearer tokens: Bearer\\s+[\\w-]+\\.[\\w-]+\\.[\\w-]+"
+      - "SSN: \\b\\d{3}-\\d{2}-\\d{4}\\b"
+      - "Credit cards: \\b\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}[\\s-]?\\d{4}\\b"
+
+  - id: "SEC-03"
+    rule: "Detect adversarial embedding attacks"
+    threshold:
+      embedding_anomaly: "3.0 std devs"
+      content_alignment: "0.4 minimum"
+
+  - id: "SEC-04"
+    rule: "Detect prompt injection patterns"
+    patterns:
+      - "ignore (previous|all|prior) instructions"
+      - "disregard (the )?system prompt"
+      - "you are now"
+      - "new instructions:"
+      - "override:"
+
+  - id: "SEC-05"
+    rule: "Quarantine semantic cancer nodes"
+    trigger: "importance > 0.9 AND neighbor_entropy > 0.8"
+    action: "Reduce importance by 50%, flag for review"
+
+  - id: "SEC-06"
+    rule: "Soft delete by default with 30-day recovery"
+    exception: "reason='user_requested' AND soft_delete=false"
+
+  - id: "SEC-07"
+    rule: "Secrets from environment variables only"
+    config_path: "config/*.toml references env vars"
+
+  - id: "SEC-08"
+    rule: "No cross-agent memetic interference"
+    implementation: "perspective_lock on search_graph"
+
+# ============================================================================
+# PERFORMANCE BUDGETS
+# ============================================================================
+performance_budgets:
+  latency:
+    - metric: "Context Injection P95"
+      target: "< 25ms"
+      measurement: "End-to-end inject_context"
+
+    - metric: "Context Injection P99"
+      target: "< 50ms"
+      measurement: "Stress test any tool"
+
+    - metric: "Hopfield Retrieval"
+      target: "< 1ms"
+      measurement: "Pattern recall"
+
+    - metric: "Reflex Cache Hit"
+      target: "< 100μs"
+      measurement: "Layer 2 pattern match"
+
+    - metric: "Single Embedding"
+      target: "< 10ms"
+      measurement: "GPU single input"
+
+    - metric: "Batch Embedding (64)"
+      target: "< 50ms"
+      measurement: "Tensor Core FP8"
+
+    - metric: "Vector Search (FAISS)"
+      target: "< 2ms"
+      measurement: "1M vectors, k=100"
+
+    - metric: "Distillation"
+      target: "< 50ms"
+      measurement: "Context compression"
+
+    - metric: "Neuromodulation Update"
+      target: "< 200μs"
+      measurement: "Per-query parameter adjustment"
+
+    - metric: "Dream Wake"
+      target: "< 100ms"
+      measurement: "Interrupt on user query"
+
+    - metric: "Entailment Check"
+      target: "< 1ms"
+      measurement: "O(1) cone containment"
+
+  throughput:
+    - metric: "Embedding Batch"
+      target: "> 1000/sec"
+      measurement: "64-batch throughput"
+
+    - metric: "Search Batch (100)"
+      target: "< 5ms"
+      measurement: "GPU parallelism"
+
+  memory:
+    - metric: "GPU Memory Usage"
+      target: "< 24GB"
+      headroom: "8GB reserve"
+
+    - metric: "Graph Capacity"
+      target: "> 10M nodes"
+      measurement: "Graph size"
+
+  quality:
+    - metric: "UTL Score Average"
+      target: "> 0.6"
+      measurement: "Learning effectiveness"
+
+    - metric: "Coherence Recovery"
+      target: "< 10s"
+      measurement: "After partition"
+
+    - metric: "Attack Detection Rate"
+      target: "> 95%"
+      measurement: "Known patterns"
+
+    - metric: "False Positive Rate"
+      target: "< 2%"
+      measurement: "Benign content"
+
+    - metric: "Information Loss (Distillation)"
+      target: "< 15%"
+      measurement: "Key fact retention"
+
+    - metric: "Compression Ratio"
+      target: "> 60%"
+      measurement: "Token reduction"
+
+# ============================================================================
+# TESTING REQUIREMENTS
+# ============================================================================
+testing_requirements:
+  coverage:
+    unit_tests: "90% line coverage"
+    integration_tests: "80% line coverage"
+    documentation: "80% public API coverage"
+
+  required_test_types:
+    - type: "Unit Tests"
+      location: "Same file via #[cfg(test)]"
+      requirements:
+        - "All business logic functions"
+        - "All UTL calculations"
+        - "All embedding fusion"
+
+    - type: "Integration Tests"
+      location: "tests/integration/"
+      requirements:
+        - "MCP tool handlers"
+        - "Graph operations"
+        - "Session management"
+
+    - type: "Benchmark Tests"
+      location: "benches/"
+      requirements:
+        - "Embedding latency"
+        - "Search latency"
+        - "Batch throughput"
+
+    - type: "Chaos Tests"
+      location: "tests/chaos/"
+      requirements:
+        - "GPU memory exhaustion"
+        - "Network partition"
+        - "Concurrent mutation"
+
+    - type: "Validation Tests"
+      location: "tests/validation/"
+      requirements:
+        - "Needle in Haystack (FuseMoE vs baseline)"
+        - "UTL score dynamics"
+        - "Dream consolidation effectiveness"
+
+  quality_gates:
+    - gate: "Pre-Commit"
+      checks:
+        - "cargo fmt --check"
+        - "cargo clippy -- -D warnings"
+        - "cargo test --lib"
+
+    - gate: "Pre-Merge"
+      checks:
+        - "cargo test --all"
+        - "cargo bench --no-run"
+        - "coverage >= 90%"
+
+    - gate: "Pre-Deploy"
+      checks:
+        - "Integration tests pass"
+        - "Benchmark regression < 5%"
+        - "Chaos tests pass"
+
+# ============================================================================
+# UTL (UNIFIED THEORY OF LEARNING) CONSTRAINTS
+# ============================================================================
+utl_constraints:
+  formula: "L = f((ΔS × ΔC) · wₑ · cos φ)"
+
+  parameters:
+    delta_s:
+      name: "Entropy Change (Novelty/Surprise)"
+      range: "[0, 1]"
+
+    delta_c:
+      name: "Coherence Change (Understanding)"
+      range: "[0, 1]"
+
+    w_e:
+      name: "Emotional Modulation Weight"
+      range: "[0.5, 1.5]"
+
+    phi:
+      name: "Phase Synchronization Angle"
+      range: "[0, π]"
+
+  loss_function:
+    formula: "J = λ_task · L_task + λ_semantic · L_semantic + λ_dyn · (1 - L)"
+    weights:
+      lambda_task: 0.4
+      lambda_semantic: 0.3
+      lambda_dyn: 0.3
+
+  johari_quadrants:
+    - quadrant: "Open"
+      condition: "low entropy (< 0.5), high coherence (> 0.5)"
+      behavior: "Direct recall"
+
+    - quadrant: "Blind"
+      condition: "high entropy (> 0.5), low coherence (< 0.5)"
+      behavior: "Discovery zone - trigger epistemic_action or dream"
+
+    - quadrant: "Hidden"
+      condition: "low entropy (< 0.5), low coherence (< 0.5)"
+      behavior: "Private knowledge - explore with get_neighborhood"
+
+    - quadrant: "Unknown"
+      condition: "high entropy (> 0.5), high coherence (> 0.5)"
+      behavior: "Exploration frontier"
+
+  lifecycle_thresholds:
+    infancy:
+      interactions: "0-50"
+      entropy_trigger: 0.9
+      coherence_trigger: 0.2
+      stance: "Capture-Heavy (store everything)"
+
+    growth:
+      interactions: "50-500"
+      entropy_trigger: 0.7
+      coherence_trigger: 0.4
+      stance: "Balanced (default thresholds)"
+
+    maturity:
+      interactions: "500+"
+      entropy_trigger: 0.6
+      coherence_trigger: 0.5
+      stance: "Curation-Heavy (quality focus)"
+
+# ============================================================================
+# 5-LAYER BIO-NERVOUS SYSTEM
+# ============================================================================
+bio_nervous_system:
+  layers:
+    - layer: 1
+      name: "Sensing"
+      function: "Multi-modal input processing"
+      latency_budget: "5ms"
+      throughput: "10K inputs/sec"
+      components:
+        - "12-Model Embedding Pipeline"
+        - "PII Scrubber"
+        - "Adversarial Detector"
+      utl_role: "ΔS measurement"
+
+    - layer: 2
+      name: "Reflex"
+      function: "Pattern-matched fast responses"
+      latency_budget: "100μs"
+      cache_hit_rate: "> 80%"
+      components:
+        - "Hopfield Query Cache"
+      utl_role: "Low-latency bypass (confidence > 0.95)"
+
+    - layer: 3
+      name: "Memory"
+      function: "Modern Hopfield associative storage"
+      latency_budget: "1ms"
+      capacity: "2^768 patterns (1536D vectors)"
+      noise_tolerance: "> 20%"
+      components:
+        - "Modern Hopfield Network"
+        - "FAISS GPU Index"
+      utl_role: "Pattern consolidation"
+
+    - layer: 4
+      name: "Learning"
+      function: "UTL-driven weight optimization"
+      update_frequency: "100Hz"
+      gradient_clip: 1.0
+      components:
+        - "UTL Optimizer"
+        - "Neuromodulation Controller"
+      utl_role: "L score optimization"
+
+    - layer: 5
+      name: "Coherence"
+      function: "Global state synchronization"
+      sync_interval: "10ms"
+      consistency: "Eventual"
+      components:
+        - "Thalamic Gate"
+        - "Predictive Coder"
+        - "Context Distiller"
+      utl_role: "φ synchronization"
+
+# ============================================================================
+# NEUROMODULATION MAPPING
+# ============================================================================
+neuromodulation:
+  modulators:
+    - name: "Dopamine"
+      biological: "Reward prediction error"
+      system_parameter: "hopfield.beta"
+      range: "[1.0, 5.0]"
+      effect: "↑ = sharper retrieval (exploitation)"
+
+    - name: "Serotonin"
+      biological: "Temporal discounting"
+      system_parameter: "fuse_moe.top_k"
+      range: "[2, 8]"
+      effect: "↑ = more experts (exploration)"
+
+    - name: "Noradrenaline"
+      biological: "Arousal/Surprise"
+      system_parameter: "attention.temperature"
+      range: "[0.5, 2.0]"
+      effect: "↑ = flatter attention (exploration)"
+
+    - name: "Acetylcholine"
+      biological: "Learning rate"
+      system_parameter: "utl.learning_rate"
+      range: "[0.001, 0.002]"
+      effect: "↑ = faster memory update"
+
+# ============================================================================
+# DREAM LAYER CONFIGURATION
+# ============================================================================
+dream_layer:
+  trigger:
+    activity_threshold: 0.15
+    idle_duration: "10 minutes"
+
+  phases:
+    nrem:
+      duration: "3 minutes"
+      purpose: "Hippocampus-guided replay of recent memories"
+      behavior: "Tight coupling between graph regions"
+      replay_recency_bias: 0.8
+
+    rem:
+      duration: "2 minutes"
+      purpose: "Free exploration of semantic attractors"
+      behavior: "Generate synthetic queries, seek novel connections"
+      exploration_temperature: 2.0
+
+  constraints:
+    synthetic_query_count: 100
+    min_semantic_leap: 0.7
+    abort_on_query: true
+    wake_latency: "< 100ms"
+    gpu_usage: "< 30%"
+
+# ============================================================================
+# MCP PROTOCOL COMPLIANCE
+# ============================================================================
+mcp_protocol:
+  version: "2024-11-05"
+  transport:
+    - "stdio"
+    - "sse"
+
+  capabilities:
+    tools: true
+    resources: true
+    prompts: true
+    logging: true
+
+  error_codes:
+    - code: -32700
+      message: "Parse error"
+      description: "Invalid JSON"
+
+    - code: -32600
+      message: "Invalid Request"
+      description: "Invalid JSON-RPC"
+
+    - code: -32601
+      message: "Method not found"
+      description: "Unknown method"
+
+    - code: -32602
+      message: "Invalid params"
+      description: "Invalid parameters"
+
+    - code: -32603
+      message: "Internal error"
+      description: "Server error"
+
+    - code: -32000
+      message: "SessionNotFound"
+      description: "Session ID invalid"
+
+    - code: -32001
+      message: "GraphQueryError"
+      description: "Graph query failed"
+
+    - code: -32002
+      message: "StorageError"
+      description: "Storage operation failed"
+
+    - code: -32003
+      message: "CausalInferenceError"
+      description: "Causal query failed"
+
+    - code: -32004
+      message: "RateLimitExceeded"
+      description: "Too many requests"
+
+  required_response_header:
+    cognitive_pulse:
+      fields:
+        - "entropy"
+        - "coherence"
+        - "suggested_action"
+      purpose: "Meta-cognitive state in every response"
+      token_cost: "~30 tokens"
+
+# ============================================================================
+# EMBEDDING ARCHITECTURE
+# ============================================================================
+embedding_architecture:
+  models:
+    - id: "E1"
+      name: "Semantic"
+      dimension: 1024
+      math: "Dense Transformer"
+      hardware: "Tensor Core FP8"
+      latency: "< 5ms"
+
+    - id: "E2"
+      name: "Temporal-Recent"
+      dimension: 512
+      math: "Exponential Decay"
+      hardware: "Vector Unit"
+      latency: "< 2ms"
+
+    - id: "E3"
+      name: "Temporal-Periodic"
+      dimension: 512
+      math: "Fourier Basis"
+      hardware: "FFT Unit"
+      latency: "< 2ms"
+
+    - id: "E4"
+      name: "Temporal-Positional"
+      dimension: 512
+      math: "Sinusoidal PE"
+      hardware: "CUDA Core"
+      latency: "< 2ms"
+
+    - id: "E5"
+      name: "Causal"
+      dimension: 768
+      math: "SCM Intervention"
+      hardware: "Tensor Core"
+      latency: "< 8ms"
+
+    - id: "E6"
+      name: "Sparse"
+      dimension: "~30K (5% active)"
+      math: "Top-K Activation"
+      hardware: "Sparse Tensor"
+      latency: "< 3ms"
+
+    - id: "E7"
+      name: "Code"
+      dimension: 1536
+      math: "AST-aware Transformer"
+      hardware: "Tensor Core FP16"
+      latency: "< 10ms"
+
+    - id: "E8"
+      name: "Graph/GNN"
+      dimension: 1536
+      math: "Message Passing"
+      hardware: "CUDA Graph"
+      latency: "< 5ms"
+
+    - id: "E9"
+      name: "HDC"
+      dimension: "10K-bit"
+      math: "XOR/Hamming"
+      hardware: "Vector Unit"
+      latency: "< 1ms"
+
+    - id: "E10"
+      name: "Multimodal"
+      dimension: 1024
+      math: "Cross-Attention"
+      hardware: "Tensor Core"
+      latency: "< 15ms"
+
+    - id: "E11"
+      name: "Entity/TransE"
+      dimension: 256
+      math: "Translation h+r≈t"
+      hardware: "CUDA Core"
+      latency: "< 2ms"
+
+    - id: "E12"
+      name: "Late-Interaction"
+      dimension: "128D/token"
+      math: "ColBERT MaxSim"
+      hardware: "CUDA Tile"
+      latency: "< 8ms"
+
+  fusion:
+    fuse_moe:
+      top_k: 4
+      laplace_alpha: 0.01
+
+    came_ab:
+      attention_heads: 8
+      bridge_learning_rate: 0.001
+
+# ============================================================================
+# VERBOSITY LEVELS (TOKEN ECONOMY)
+# ============================================================================
+verbosity_levels:
+  - level: 0
+    name: "RawOnly"
+    tokens: "~100"
+    use_case: "Simple lookups, high-confidence retrieval"
+
+  - level: 1
+    name: "TextAndIds"
+    tokens: "~200"
+    use_case: "Normal operations (DEFAULT)"
+
+  - level: 2
+    name: "FullInsights"
+    tokens: "~800"
+    use_case: "ONLY when delta_c < 0.4 (confused state)"
+    includes:
+      - "causal_links"
+      - "entailment_cones"
+      - "UTL scores"
+      - "conflict_analysis"
+
+# ============================================================================
+# IMPLEMENTATION PHASES
+# ============================================================================
+implementation_phases:
+  - phase: 0
+    name: "Ghost Nervous System"
+    duration: "2-4 weeks"
+    deliverables:
+      - "Full MCP tool interface (all 20+ tools respond)"
+      - "SQLite storage (no GPU requirement)"
+      - "External embedding API (OpenAI/Cohere)"
+      - "Mocked UTL scores"
+      - "Synthetic Data Seeding"
+      - "Tool Gating Enforcement"
+    success_criteria: "Agent calls get_graph_manifest on first contact"
+
+  - phase: 1
+    name: "Core Infrastructure"
+    duration: "4 weeks"
+
+  - phase: 2
+    name: "Embedding Pipeline"
+    duration: "4 weeks"
+
+  - phase: 3
+    name: "Knowledge Graph"
+    duration: "4 weeks"
+
+  - phase: 4
+    name: "UTL Integration"
+    duration: "4 weeks"
+
+  - phase: 5
+    name: "Bio-Nervous System"
+    duration: "4 weeks"
+
+  - phase: 6
+    name: "CUDA Optimization"
+    duration: "3 weeks"
+
+  - phase: 7
+    name: "GDS Integration"
+    duration: "3 weeks"
+
+  - phase: 8
+    name: "Dream Layer"
+    duration: "3 weeks"
+
+  - phase: 9
+    name: "Neuromodulation"
+    duration: "3 weeks"
+
+  - phase: 10
+    name: "Immune System"
+    duration: "3 weeks"
+
+  - phase: 11
+    name: "Active Inference"
+    duration: "2 weeks"
+
+  - phase: 12
+    name: "MCP Hardening"
+    duration: "4 weeks"
+
+  - phase: 13
+    name: "Testing & Validation"
+    duration: "4 weeks"
+
+  - phase: 14
+    name: "Production Deployment"
+    duration: "4 weeks"
+
+  total_duration: "~49 weeks"
+
+# ============================================================================
+# AGENT PROTOCOL (AI WORKFLOW)
+# ============================================================================
+agent_protocol:
+  session_start:
+    - "Read .ai/activeContext.md (current state)"
+    - "Read .ai/decisionLog.md (settled decisions)"
+    - "Read specs/constitution.yaml (immutable rules)"
+    - "Identify current task from .ai/progress.md"
+    - "Call get_graph_manifest for Bio-Nervous understanding"
+    - "Call get_memetic_status for current entropy/coherence"
+
+  cognitive_handshake:
+    first_action: "Call get_system_instructions"
+    keep_in_context: "system_prompt_fragment (~300 tokens)"
+
+  mental_state_checks:
+    - trigger: "entropy > 0.7 for 5+ minutes"
+      action: "Call trigger_dream OR let system auto-dream"
+
+    - trigger: "coherence < 0.4"
+      action: "Process curation_tasks or trigger_dream"
+
+    - trigger: "search returns empty"
+      action: "Adjust noradrenaline, search again broader"
+
+    - trigger: "search returns irrelevant"
+      action: "Call reflect_on_memory, execute suggested sequence"
+
+    - trigger: "search returns conflicting"
+      action: "Check conflict_alert, merge_concepts or ask_user"
+
+  curation_duties:
+    when: "suggested_action='curate'"
+    actions:
+      - "Process curation_tasks from get_memetic_status"
+      - "Use merge_concepts with summarize strategy for important nodes"
+      - "Add rationale field on every store_memory"
+      - "Check priors_vibe_check before merging"
+
+  session_end:
+    - "Update .ai/activeContext.md"
+    - "Update .ai/progress.md if tasks completed"
+    - "Add architectural decisions to decisionLog.md"
+
+# ============================================================================
+# REFERENCES
+# ============================================================================
+references:
+  internal:
+    - "vision_and_layers.md - Core Vision & Bio-Nervous System"
+    - "technical_engine.md - Technical Specifications"
+    - "execution_and_mcp.md - MCP Interface & Operations"
+
+  external_research:
+    - name: "NeuroDream"
+      url: "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=5377250"
+
+    - name: "Sleep Replay Consolidation"
+      url: "https://www.nature.com/articles/s41467-022-34938-7"
+
+    - name: "Free Energy Principle"
+      url: "https://en.wikipedia.org/wiki/Free_energy_principle"
+
+    - name: "Active Inference"
+      url: "https://direct.mit.edu/books/oa-monograph/5299/Active-InferenceThe-Free-Energy-Principle-in-Mind"
+
+    - name: "Predictive Coding"
+      url: "https://www.nature.com/articles/s41467-025-64234-z"
+
+    - name: "Neuromodulation in DNNs"
+      url: "https://www.cell.com/trends/neurosciences/abstract/S0166-2236(21)00256-3"
+
+    - name: "Homeostatic Plasticity"
+      url: "https://elifesciences.org/articles/88376"
+
+    - name: "Hyperbolic Entailment Cones"
+      url: "http://proceedings.mlr.press/v80/ganea18a/ganea18a.pdf"
+
+    - name: "Poincaré Embeddings"
+      url: "https://arxiv.org/abs/1705.08039"
+
+    - name: "UniGuardian Defense"
+      url: "https://arxiv.org/abs/2502.13141"
+
+    - name: "OWASP LLM Top 10 2025"
+      url: "https://genai.owasp.org/llmrisk/llm01-prompt-injection/"
+
+# ============================================================================
+# END OF CONSTITUTION
+# ============================================================================
