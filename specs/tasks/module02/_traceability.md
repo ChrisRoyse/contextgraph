@@ -16,7 +16,7 @@ This matrix ensures every requirement, component, and behavior from the Module 0
 | Domain | Marblestone context domain enum | TASK-M02-007 | `crates/context-graph-core/src/marblestone.rs` | ✅ |
 | EdgeType | Graph edge relationship types (4 variants per constitution.yaml, migrated from graph_edge.rs) | TASK-M02-009 | `crates/context-graph-core/src/marblestone.rs` | ✅ |
 | EmotionalState | UTL emotional state enum | TASK-M02-019 | `crates/context-graph-core/src/types/utl.rs` | ✅ |
-| SuggestedAction | Cognitive pulse action enum | TASK-M02-020 | `crates/context-graph-core/src/pulse.rs` | ☐ |
+| SuggestedAction | Cognitive pulse action enum | TASK-M02-020 | `crates/context-graph-core/src/types/pulse.rs` | ✅ |
 | StorageError | Storage operation error types | TASK-M02-025 | `crates/context-graph-storage/src/lib.rs` | ☐ |
 | TransitionTrigger | Johari transition trigger types | TASK-M02-012 | `crates/context-graph-core/src/types/johari.rs` | ✅ |
 
@@ -123,7 +123,7 @@ This matrix ensures every requirement, component, and behavior from the Module 0
 | Default for NeurotransmitterWeights | Default implementation | TASK-M02-008 | ✅ |
 | Default for Domain | Default implementation | TASK-M02-007 | ✅ |
 | Default for EmotionalState | Default implementation | TASK-M02-019 | ☐ |
-| Default for SuggestedAction | Default implementation | TASK-M02-020 | ☐ |
+| Default for SuggestedAction | Default implementation | TASK-M02-020 | ✅ |
 | Default for CognitivePulse | Default implementation | TASK-M02-022 | ☐ |
 
 ### Validation Rules

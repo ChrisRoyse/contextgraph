@@ -7,7 +7,7 @@
 - **Foundation:** 12 tasks
 - **Logic:** 6 tasks
 - **Surface:** 10 tasks
-- **Current Progress:** 19/28 (68%) - Tasks 001-019 VERIFIED (Foundation Layer + Logic Layer + Surface M02-019 COMPLETE)
+- **Current Progress:** 20/28 (71%) - Tasks 001-020 VERIFIED (Foundation Layer + Logic Layer + Surface M02-019/M02-020 COMPLETE)
 - **Version:** 1.0.0
 - **Created:** 2025-12-31
 - **Dependencies:** module-01-ghost-system
@@ -118,8 +118,8 @@ graph TD
 | 17 | TASK-M02-017 | Implement Node CRUD Operations | logic | 014, 016 | 4.0 | ✅ Complete |
 | 18 | TASK-M02-018 | Implement Edge CRUD Operations | logic | 011, 017 | 3.0 | ✅ Complete |
 | 19 | TASK-M02-019 | Complete EmotionalState Enum | surface | — | 1.5 | ✅ Complete |
-| 20 | TASK-M02-020 | Audit SuggestedAction Enum | surface | — | 0.5 | ⏳ Ready |
-| 21 | TASK-M02-021 | Audit CognitivePulse Struct | surface | 019, 020 | 1.0 | ⛔ Blocked |
+| 20 | TASK-M02-020 | Complete SuggestedAction Enum | surface | — | 0.5 | ✅ Complete |
+| 21 | TASK-M02-021 | Audit CognitivePulse Struct | surface | 019, 020 | 1.0 | ⏳ Ready |
 | 22 | TASK-M02-022 | Implement CognitivePulse Methods | surface | 021 | 3.0 | ⛔ Blocked |
 | 23 | TASK-M02-023 | Implement Secondary Index Operations | surface | 017 | 3.0 | ⏳ Ready |
 | 24 | TASK-M02-024 | Implement Embedding Storage Operations | surface | 014, 016 | 2.0 | ⏳ Ready |
@@ -158,8 +158,8 @@ graph TD
 | TASK-M02-017 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Commit fa2a31a: 138/138 tests pass, store_node/get_node/update_node/delete_node |
 | TASK-M02-018 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 18/18 edge tests pass, 0 clippy warnings, 6 methods (store/get/update/delete/get_from/get_to) |
 | TASK-M02-019 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 8/8 tests pass, 0 clippy warnings, 7 variants (added Engaged, Confused), weight_modifier(), description() |
-| TASK-M02-020 | — | — | — | **READY** - SuggestedAction exists in types/pulse.rs, needs audit vs spec |
-| TASK-M02-021 | — | — | — | Blocked on 019, 020 - CognitivePulse exists in types/pulse.rs, needs audit |
+| TASK-M02-020 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 9/9 tests pass, 0 clippy warnings, Default+descriptions+MCP tools |
+| TASK-M02-021 | — | — | — | **READY** (019, 020 complete) - CognitivePulse exists in types/pulse.rs, needs audit |
 | TASK-M02-022 | — | — | — | Blocked on 021 - Methods may already exist in pulse.rs |
 | TASK-M02-023 | — | — | — | **READY** (017 complete) - Secondary Index Operations |
 | TASK-M02-024 | — | — | — | **READY** (014, 016 complete) - Embedding Storage Operations |
