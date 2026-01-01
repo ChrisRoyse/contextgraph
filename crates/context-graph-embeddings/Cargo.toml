@@ -40,6 +40,9 @@ chrono = { version = "0.4", features = ["serde"] }
 # Zero-copy binary serialization for GDS-compatible storage
 bytemuck = { version = "1.14", features = ["derive"] }
 
+# Efficient bit vector operations for HDC (Hyperdimensional Computing) model
+bitvec = "1.0"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.10"

@@ -313,10 +313,10 @@ embeddings:
     E5_Causal: { dim: 768, math: SCM_Intervention, hw: TensorCore, lat: "<8ms" }
     E6_Sparse: { dim: "~30K 5%active", math: TopK, hw: SparseTensor, lat: "<3ms" }
     E7_Code: { dim: 1536, math: AST_Transformer, hw: TensorCore_FP16, lat: "<10ms" }
-    E8_Graph_GNN: { dim: 1536, math: MessagePassing, hw: CUDA_Graph, lat: "<5ms" }
-    E9_HDC: { dim: "10K-bit", math: XOR_Hamming, hw: VectorUnit, lat: "<1ms" }
-    E10_Multimodal: { dim: 1024, math: CrossAttention, hw: TensorCore, lat: "<15ms" }
-    E11_Entity_TransE: { dim: 256, math: "h+r≈t", hw: CUDA, lat: "<2ms" }
+    E8_Graph_MiniLM: { dim: 384, math: MeanPooling, hw: TensorCore, lat: "<5ms" }
+    E9_HDC: { dim: "10K-bit->1024", math: XOR_Hamming, hw: VectorUnit, lat: "<1ms" }
+    E10_Multimodal: { dim: 768, math: CrossAttention, hw: TensorCore, lat: "<15ms" }
+    E11_Entity_MiniLM: { dim: 384, math: "h+r≈t", hw: TensorCore, lat: "<2ms" }
     E12_LateInteraction: { dim: "128D/tok", math: ColBERT_MaxSim, hw: CUDA_Tile, lat: "<8ms" }
   fusion:
     fuse_moe: { top_k: 4, laplace_alpha: 0.01 }
