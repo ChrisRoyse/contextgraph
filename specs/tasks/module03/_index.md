@@ -4,15 +4,21 @@
 metadata:
   module_id: M03
   module_name: 12-Model Embedding Pipeline
-  version: 2.4.0
-  total_tasks: 68
-  foundation_tasks: 16
-  logic_tasks: 33
-  surface_tasks: 19
+  version: 2.6.0
+  total_tasks: 76
+  foundation_tasks: 17
+  logic_tasks: 37
+  surface_tasks: 22
   generated: 2026-01-01
   updated: 2026-01-01
   approach: inside-out-bottom-up
   changelog:
+    - "v2.6.0: Added M03-S22 (Tokenizer JSON Artifact Lifecycle) - glue for M03-S13/M03-L29"
+    - "v2.6.0: Added M03-L36 (MSE-Minimizing Quantization Calibration) - glue for M03-L28"
+    - "v2.6.0: Added M03-L37 (L1 Unicode Sanitization & NFC Normalization) - pre-PII layer"
+    - "v2.6.0: Added M03-F17 (Optimized Binary Protocol for Graph Storage) - Module 4 glue"
+    - "v2.5.0: Added M03-L34 (Pre-Concat Normalization), M03-L35 (Token-Vector Attribution)"
+    - "v2.5.0: Added M03-S20 (CUDA Pre-flight), M03-S21 (Memory-Mapped Weights)"
     - "v2.4.0: Added M03-L32 (HDC Vector Persistence), M03-L33 (SPLADE Projection)"
     - "v2.4.0: Added M03-S18 (Tracing & Instrumentation), M03-S19 (Alignment Verification)"
     - "v2.3.0: Added M03-S17 (Fail-Safe Async Orchestrator), M03-L29 (Tokenizer Cache)"
@@ -27,9 +33,9 @@ metadata:
 
 | Layer | Task Range | Count | Focus |
 |-------|------------|-------|-------|
-| Foundation | M03-F01 → M03-F16 | 16 | Types, traits, configuration |
-| Logic | M03-L01 → M03-L33 | 33 | Models, batch, cache, fusion, security, neuromod, quantization, tokenization, GEMM, persistence |
-| Surface | M03-S01 → M03-S19 | 19 | Pipeline, CUDA, GDS, warm-up, async orchestration, tracing, alignment, artifacts, tests |
+| Foundation | M03-F01 → M03-F17 | 17 | Types, traits, configuration, binary serialization |
+| Logic | M03-L01 → M03-L37 | 37 | Models, batch, cache, fusion, security, neuromod, quantization, tokenization, GEMM, persistence, normalization, attribution, calibration, sanitization |
+| Surface | M03-S01 → M03-S22 | 22 | Pipeline, CUDA, GDS, warm-up, async orchestration, tracing, alignment, pre-flight, mmap, artifacts, tokenizers, tests |
 
 ---
 
@@ -57,8 +63,9 @@ Execute tasks in this order to satisfy all dependencies:
 | 14 | M03-F11 | EmbeddingConfig Root | M03-F01 | 2 |
 | 15 | M03-F12 | ModelRegistryConfig | M03-F01 | 1.5 |
 | 16 | M03-F16 | Module Structure/Exports | M03-F01→M03-F15 | 2 |
+| 17 | M03-F17 | Optimized Binary Protocol (Graph Storage) | M03-F05, M03-F03, M03-S15 | 4 |
 
-**Foundation Subtotal: 24 hours**
+**Foundation Subtotal: 28 hours**
 
 ### Phase 2: Logic Layer - Models (Week 2)
 
@@ -104,34 +111,41 @@ Execute tasks in this order to satisfy all dependencies:
 | 47 | M03-L31 | FuseMoE Weight Registry and Initialization | M03-L23, M03-L21, M03-S13 | 4 |
 | 48 | M03-L32 | HDC Base-Vector Persistence | M03-L11, M03-F01, M03-S13 | 3 |
 | 49 | M03-L33 | Sparse Projection Matrix Management (SPLADE) | M03-L08, M03-L31, M03-S13 | 3 |
+| 50 | M03-L34 | Inter-Model Scale Normalization (Pre-Concat) | M03-F03, M03-F02, M03-L17 | 3 |
+| 51 | M03-L35 | Token-to-Vector Attribution Map (ColBERT) | M03-F05, M03-L14, M03-L29 | 3 |
+| 52 | M03-L36 | MSE-Minimizing Quantization Calibration | M03-L28, M03-L31, M03-S13, M03-S19 | 5 |
+| 53 | M03-L37 | L1 Unicode Sanitization & NFC Normalization | M03-F06, M03-F08 | 3 |
 
-**Phase 3 Subtotal: 76.5 hours**
+**Phase 3 Subtotal: 90.5 hours**
 
 ### Phase 4: Surface Layer (Week 4)
 
 | Order | Task ID | Title | Dependencies | Est. Hours |
 |-------|---------|-------|--------------|------------|
-| 50 | M03-S08 | Configuration File Loading | M03-F11 | 2 |
-| 51 | M03-S04 | CUDA Device Trait | M03-F16 | 3 |
-| 52 | M03-S05 | GPU Memory Pool | M03-S04 | 3 |
-| 53 | M03-S15 | GPU Direct Storage (GDS) Integration | M03-S04, M03-S05 | 6 |
-| 54 | M03-S06 | CUDA Kernel Stubs | M03-S04 | 2 |
-| 55 | M03-S13 | Model Artifact Manager | M03-F01, M03-F11, M03-F12, M03-L01 | 5 |
-| 56 | M03-S14 | Green Context SM Partitioning | M03-S04, M03-S05 | 6 |
-| 57 | M03-S01 | EmbeddingPipeline Core | M03-L01, M03-L17, M03-L19, M03-L23, M03-L25, M03-S13, M03-S15, M03-L29 | 5 |
-| 58 | M03-S17 | Fail-Safe Async Orchestrator | M03-S01, M03-L17, M03-L23 | 4 |
-| 59 | M03-S18 | Tracing & Async Instrumentation | M03-S01, M03-S17, M03-L17 | 4 |
-| 60 | M03-S16 | Pipeline Warm-up & JIT Trigger | M03-S01, M03-S05, M03-L23 | 3 |
-| 61 | M03-S02 | PipelineMetrics/HealthStatus | M03-S01 | 1.5 |
-| 62 | M03-S03 | EmbeddingProvider Bridge | M03-S01, M03-S17 | 2 |
-| 63 | M03-S07 | HotSwap Model Loading | M03-L01 | 3 |
-| 64 | M03-S09 | Unit Tests Suite | M03-F01→M03-F16 | 4 |
-| 65 | M03-S10 | Integration Tests | M03-S01, M03-S03, M03-S16, M03-S17 | 6 |
-| 66 | M03-S19 | Semantic Alignment Verification | M03-S01, M03-L23, M03-S10 | 4 |
-| 67 | M03-S11 | Benchmarks | M03-S01, M03-S16, M03-S17, M03-S18 | 4 |
-| 68 | M03-S12 | Documentation/Examples | M03-S01 | 3 |
+| 52 | M03-S08 | Configuration File Loading | M03-F11 | 2 |
+| 53 | M03-S04 | CUDA Device Trait | M03-F16 | 3 |
+| 54 | M03-S20 | CUDA System Pre-flight & Capability Check | M03-S04, M03-F16 | 4 |
+| 55 | M03-S05 | GPU Memory Pool | M03-S04 | 3 |
+| 56 | M03-S15 | GPU Direct Storage (GDS) Integration | M03-S04, M03-S05 | 6 |
+| 57 | M03-S21 | Memory-Mapped Weights (Zero-Copy Fallback) | M03-S13, M03-S15, M03-F01 | 4 |
+| 58 | M03-S06 | CUDA Kernel Stubs | M03-S04 | 2 |
+| 59 | M03-S13 | Model Artifact Manager | M03-F01, M03-F11, M03-F12, M03-L01 | 5 |
+| 60 | M03-S14 | Green Context SM Partitioning | M03-S04, M03-S05 | 6 |
+| 61 | M03-S01 | EmbeddingPipeline Core | M03-L01, M03-L17, M03-L19, M03-L23, M03-L25, M03-S13, M03-S15, M03-L29, M03-L34, M03-S20 | 5 |
+| 62 | M03-S17 | Fail-Safe Async Orchestrator | M03-S01, M03-L17, M03-L23 | 4 |
+| 63 | M03-S18 | Tracing & Async Instrumentation | M03-S01, M03-S17, M03-L17 | 4 |
+| 64 | M03-S16 | Pipeline Warm-up & JIT Trigger | M03-S01, M03-S05, M03-L23 | 3 |
+| 65 | M03-S02 | PipelineMetrics/HealthStatus | M03-S01 | 1.5 |
+| 66 | M03-S03 | EmbeddingProvider Bridge | M03-S01, M03-S17 | 2 |
+| 67 | M03-S07 | HotSwap Model Loading | M03-L01, M03-S21 | 3 |
+| 68 | M03-S09 | Unit Tests Suite | M03-F01→M03-F16 | 4 |
+| 69 | M03-S10 | Integration Tests | M03-S01, M03-S03, M03-S16, M03-S17 | 6 |
+| 70 | M03-S19 | Semantic Alignment Verification | M03-S01, M03-L23, M03-S10 | 4 |
+| 71 | M03-S11 | Benchmarks | M03-S01, M03-S16, M03-S17, M03-S18 | 4 |
+| 72 | M03-S12 | Documentation/Examples | M03-S01 | 3 |
+| 73 | M03-S22 | Tokenizer JSON Artifact Lifecycle | M03-S13, M03-L29, M03-F01 | 3 |
 
-**Phase 4 Subtotal: 70.5 hours**
+**Phase 4 Subtotal: 81.5 hours**
 
 ---
 
@@ -156,6 +170,7 @@ graph TB
         F14[M03-F14: FusionConfig]
         F15[M03-F15: Cache/GpuConfig]
         F16[M03-F16: Module Exports]
+        F17[M03-F17: Binary Protocol]
     end
 
     subgraph Logic_Models["Logic Layer - Models (Week 2)"]
@@ -192,6 +207,10 @@ graph TB
         L31[M03-L31: Weight Registry]
         L32[M03-L32: HDC Persistence]
         L33[M03-L33: SPLADE Projection]
+        L34[M03-L34: Pre-Concat Norm]
+        L35[M03-L35: Token Attribution]
+        L36[M03-L36: Quant Calibration]
+        L37[M03-L37: Unicode Sanitize]
     end
 
     subgraph Surface["Surface Layer (Week 4)"]
@@ -212,6 +231,9 @@ graph TB
         S17[M03-S17: Async Orchestrator]
         S18[M03-S18: Tracing]
         S19[M03-S19: Alignment Verification]
+        S20[M03-S20: CUDA Pre-flight]
+        S21[M03-S21: Mmap Weights]
+        S22[M03-S22: Tokenizer Artifacts]
     end
 
     %% Foundation dependencies
@@ -296,6 +318,33 @@ graph TB
     L31 --> L33
     S13 --> L33
 
+    %% New task dependencies (v2.5.0)
+    F03 --> L34
+    F02 --> L34
+    L17 --> L34
+    F05 --> L35
+    L14 --> L35
+    L29 --> L35
+    S04 --> S20
+    F16 --> S20
+    S13 --> S21
+    S15 --> S21
+    F01 --> S21
+
+    %% New task dependencies (v2.6.0 - Glue Tasks)
+    F05 --> F17
+    F03 --> F17
+    S15 --> F17
+    L28 --> L36
+    L31 --> L36
+    S13 --> L36
+    S19 --> L36
+    F06 --> L37
+    F08 --> L37
+    S13 --> S22
+    L29 --> S22
+    F01 --> S22
+
     %% Surface dependencies
     F11 --> S08
     F16 --> S04
@@ -309,6 +358,9 @@ graph TB
     L23 --> S01
     S15 --> S01
     L29 --> S01
+    L34 --> S01
+    S20 --> S01
+    S21 --> S07
     S01 --> S17
     L17 --> S17
     L23 --> S17
@@ -413,6 +465,14 @@ M03-F01 (ModelId) ────────────────────�
 | **SPLADE Stable** | M03-L33 | Projection matrix persistence |
 | **Tracing Ready** | M03-S18 | P95 latency debugging |
 | **Alignment Verified** | M03-S19 | Unified space coherence |
+| **Pre-Concat Norm Ready** | M03-L34 | Balanced gating inputs |
+| **Attribution Ready** | M03-L35 | Module 4 token storage |
+| **Pre-flight Ready** | M03-S20 | Hardware capability check |
+| **Mmap Fallback Ready** | M03-S21 | GDS alternative |
+| **Tokenizers Ready** | M03-S22 | TokenizationManager init |
+| **Quantization Calibrated** | M03-L36 | FP4 semantic preservation |
+| **Input Sanitized** | M03-L37 | PII scrubber input |
+| **Binary Protocol Ready** | M03-F17 | Module 4 graph storage |
 | **Provider Compatible** | M03-S03 | Module 4 |
 | **All Tests Pass** | M03-S09, M03-S10 | Release |
 | **Performance Met** | M03-S11 benchmarks | Release |
@@ -447,8 +507,9 @@ M03-F01 (ModelId) ────────────────────�
 | M03-F14 | `M03-F14.md` | FusionConfig Struct |
 | M03-F15 | `M03-F15.md` | CacheConfig and GpuConfig |
 | M03-F16 | `M03-F16.md` | Module Structure/Exports |
+| M03-F17 | `M03-F17.md` | Optimized Binary Protocol for Graph Storage |
 
-### Logic Layer (31 files)
+### Logic Layer (37 files)
 | Task ID | File | Title |
 |---------|------|-------|
 | M03-L01 | `M03-L01.md` | ModelRegistry Core |
@@ -484,8 +545,12 @@ M03-F01 (ModelId) ────────────────────�
 | M03-L31 | `M03-L31.md` | FuseMoE Weight Registry and Initialization |
 | M03-L32 | `M03-L32.md` | HDC Base-Vector Persistence |
 | M03-L33 | `M03-L33.md` | Sparse Projection Matrix Management (SPLADE) |
+| M03-L34 | `M03-L34.md` | Inter-Model Scale Normalization (Pre-Concat) |
+| M03-L35 | `M03-L35.md` | Token-to-Vector Attribution Map (ColBERT) |
+| M03-L36 | `M03-L36.md` | MSE-Minimizing Quantization Calibration |
+| M03-L37 | `M03-L37.md` | L1 Unicode Sanitization & NFC Normalization |
 
-### Surface Layer (19 files)
+### Surface Layer (22 files)
 | Task ID | File | Title |
 |---------|------|-------|
 | M03-S01 | `M03-S01.md` | EmbeddingPipeline Core |
@@ -507,6 +572,9 @@ M03-F01 (ModelId) ────────────────────�
 | M03-S17 | `M03-S17.md` | Fail-Safe Async Orchestrator (FusionInputAssembler) |
 | M03-S18 | `M03-S18.md` | Tracing & Async Instrumentation |
 | M03-S19 | `M03-S19.md` | Semantic Alignment Verification |
+| M03-S20 | `M03-S20.md` | CUDA System Pre-flight & Capability Check |
+| M03-S21 | `M03-S21.md` | Memory-Mapped Weights (Zero-Copy Fallback) |
+| M03-S22 | `M03-S22.md` | Tokenizer JSON Artifact Lifecycle |
 
 ---
 
@@ -545,6 +613,60 @@ M03-F01 (ModelId) ────────────────────�
 | GPU memory | <24GB | M03-S10 |
 
 ---
+
+## New Tasks Summary (v2.6.0 - Glue Tasks)
+
+### M03-S22: Tokenizer JSON Artifact Lifecycle
+- **Purpose**: Extend M03-S13 to manage tokenizer config files (tokenizer.json, tokenizer_config.json, special_tokens_map.json)
+- **Dependencies**: M03-S13 (ArtifactManager), M03-L29 (TokenizationManager), M03-F01 (ModelId)
+- **Effort**: 3 hours
+- **Key Feature**: Offline-first tokenizer loading, 8 tokenizer families, HuggingFace API bypass
+
+### M03-L36: MSE-Minimizing Quantization Calibration
+- **Purpose**: Compute optimal block-scale factors for FP8/FP4 quantization with minimal semantic drift
+- **Dependencies**: M03-L28 (Blackwell Quantization), M03-L31 (WeightRegistry), M03-S13, M03-S19
+- **Effort**: 5 hours
+- **Key Feature**: Binary search MSE optimization, >99% semantic correlation, cache invalidation on checkpoint change
+
+### M03-L37: L1 Unicode Sanitization & NFC Normalization
+- **Purpose**: Input sanitization layer BEFORE PII scrubbing to prevent GPU kernel crashes
+- **Dependencies**: M03-F06 (ModelInput), M03-F08 (EmbeddingError)
+- **Effort**: 3 hours
+- **Key Feature**: UTF-8 validation, NFC normalization, control char stripping, BOM removal, null byte rejection
+
+### M03-F17: Optimized Binary Protocol for Graph Storage
+- **Purpose**: Zero-copy binary serialization for FusedEmbedding in Knowledge Graph (Module 4)
+- **Dependencies**: M03-F05 (FusedEmbedding), M03-F03 (ModelEmbedding), M03-S15 (GDS)
+- **Effort**: 4 hours
+- **Key Feature**: <6.5KB per embedding, GDS-compatible 64-byte alignment, version-resilient format
+
+---
+
+## New Tasks Summary (v2.5.0)
+
+### M03-L34: Inter-Model Scale Normalization (Pre-Concat)
+- **Purpose**: L2-normalize each model's output before concatenation to prevent magnitude bias
+- **Dependencies**: M03-F03 (ModelEmbedding), M03-F02 (Dimensions), M03-L17 (BatchProcessor)
+- **Effort**: 3 hours
+- **Key Feature**: All 12 sub-vectors have unit norm in 8320D input, balanced gating
+
+### M03-L35: Token-to-Vector Attribution Map (ColBERT)
+- **Purpose**: Bidirectional mapping between token strings and ColBERT 128D vectors
+- **Dependencies**: M03-F05 (FusedEmbedding aux_data), M03-L14 (ColBERT), M03-L29 (TokenizationManager)
+- **Effort**: 3 hours
+- **Key Feature**: get_token_with_vector(), to_graph_nodes() for Module 4 integration
+
+### M03-S20: CUDA System Pre-flight & Capability Check
+- **Purpose**: Detect GPU architecture and enable "Compatibility Mode" on non-Blackwell hardware
+- **Dependencies**: M03-S04 (CUDA Device), M03-F16 (Module Exports)
+- **Effort**: 4 hours
+- **Key Feature**: Automatic fallback when FP4/GDS/Green Contexts unavailable
+
+### M03-S21: Memory-Mapped Weights (Zero-Copy Fallback)
+- **Purpose**: Mmap-based weight loading when GDS is unavailable
+- **Dependencies**: M03-S13 (ArtifactManager), M03-S15 (GDS), M03-F01 (ModelId)
+- **Effort**: 4 hours
+- **Key Feature**: OS-managed paging, no 12GB RAM spike during model loading
 
 ---
 
@@ -632,4 +754,4 @@ M03-F01 (ModelId) ────────────────────�
 
 *Index Generated: 2026-01-01*
 *Module: 03 - 12-Model Embedding Pipeline*
-*Version: 2.4.0*
+*Version: 2.6.0*

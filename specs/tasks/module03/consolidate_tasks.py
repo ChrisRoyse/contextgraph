@@ -20,6 +20,7 @@ def consolidate_files():
         "M03-F05.md", "M03-F06.md", "M03-F07.md", "M03-F08.md",
         "M03-F09.md", "M03-F10.md", "M03-F11.md", "M03-F12.md",
         "M03-F13.md", "M03-F14.md", "M03-F15.md", "M03-F16.md",
+        "M03-F17.md",
         # Logic layer
         "M03-L01.md", "M03-L02.md", "M03-L03.md", "M03-L04.md",
         "M03-L05.md", "M03-L06.md", "M03-L07.md", "M03-L08.md",
@@ -29,13 +30,15 @@ def consolidate_files():
         "M03-L21.md", "M03-L22.md", "M03-L23.md", "M03-L24.md",
         "M03-L25.md", "M03-L26.md", "M03-L27.md", "M03-L28.md",
         "M03-L29.md", "M03-L30.md", "M03-L31.md", "M03-L32.md",
-        "M03-L33.md",
+        "M03-L33.md", "M03-L34.md", "M03-L35.md", "M03-L36.md",
+        "M03-L37.md",
         # Surface layer
         "M03-S01.md", "M03-S02.md", "M03-S03.md", "M03-S04.md",
         "M03-S05.md", "M03-S06.md", "M03-S07.md", "M03-S08.md",
         "M03-S09.md", "M03-S10.md", "M03-S11.md", "M03-S12.md",
         "M03-S13.md", "M03-S14.md", "M03-S15.md", "M03-S16.md",
-        "M03-S17.md", "M03-S18.md", "M03-S19.md",
+        "M03-S17.md", "M03-S18.md", "M03-S19.md", "M03-S20.md",
+        "M03-S21.md", "M03-S22.md",
     ]
 
     output_path = script_dir / "module03_consolidated_tasks.txt"
