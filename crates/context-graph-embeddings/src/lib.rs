@@ -33,7 +33,13 @@ pub mod types;
 pub use error::{EmbeddingError, EmbeddingResult};
 pub use provider::EmbeddingProvider;
 pub use stub::StubEmbedder;
-pub use traits::EmbeddingModel;
+pub use traits::{
+    DevicePlacement,
+    EmbeddingModel,
+    ModelFactory,
+    QuantizationMode,
+    SingleModelConfig,
+};
 pub use types::ModelId;
 
 /// Default embedding dimension (FuseMoE output, OpenAI ada-002 compatible).
