@@ -68,8 +68,8 @@ This matrix ensures every requirement, component, and behavior from the Module 0
 | CognitivePulse::from_values() | Create pulse from entropy/coherence | TASK-M02-021 | ✅ |
 | CognitivePulse::with_emotion() | Create pulse with EmotionalState | TASK-M02-021 | ✅ |
 | CognitivePulse::is_healthy() | Check if system state is healthy | TASK-M02-021 | ✅ |
-| CognitivePulse::update() | Update pulse metrics | TASK-M02-022 | ☐ |
-| CognitivePulse::blend() | Blend two pulses | TASK-M02-022 | ☐ |
+| CognitivePulse::update() | Update pulse metrics | TASK-M02-022 | ✅ |
+| CognitivePulse::blend() | Blend two pulses | TASK-M02-022 | ✅ |
 | EmotionalState::weight_modifier() | Get UTL weight modifier | TASK-M02-019 | ✅ |
 
 ### Storage Operations

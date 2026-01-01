@@ -7,7 +7,7 @@
 - **Foundation:** 12 tasks
 - **Logic:** 6 tasks
 - **Surface:** 10 tasks
-- **Current Progress:** 21/28 (75%) - Tasks 001-021 VERIFIED (Foundation + Logic + Surface M02-019/020/021 COMPLETE)
+- **Current Progress:** 22/28 (79%) - Tasks 001-022 VERIFIED (Foundation + Logic + Surface M02-019/020/021/022 COMPLETE)
 - **Version:** 1.0.0
 - **Created:** 2025-12-31
 - **Dependencies:** module-01-ghost-system
@@ -120,7 +120,7 @@ graph TD
 | 19 | TASK-M02-019 | Complete EmotionalState Enum | surface | — | 1.5 | ✅ Complete |
 | 20 | TASK-M02-020 | Complete SuggestedAction Enum | surface | — | 0.5 | ✅ Complete |
 | 21 | TASK-M02-021 | Complete CognitivePulse Struct (7 Fields) | surface | 019, 020 | 2.0 | ✅ Complete |
-| 22 | TASK-M02-022 | Implement CognitivePulse Methods | surface | 021 | 3.0 | ⏳ Ready |
+| 22 | TASK-M02-022 | Implement CognitivePulse Methods | surface | 021 | 3.0 | ✅ Complete |
 | 23 | TASK-M02-023 | Implement Secondary Index Operations | surface | 017 | 3.0 | ⏳ Ready |
 | 24 | TASK-M02-024 | Implement Embedding Storage Operations | surface | 014, 016 | 2.0 | ⏳ Ready |
 | 25 | TASK-M02-025 | Implement StorageError Enum | surface | 013 | 1.5 | ⏳ Ready |
@@ -160,7 +160,7 @@ graph TD
 | TASK-M02-019 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 8/8 tests pass, 0 clippy warnings, 7 variants (added Engaged, Confused), weight_modifier(), description() |
 | TASK-M02-020 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 9/9 tests pass, 0 clippy warnings, Default+descriptions+MCP tools |
 | TASK-M02-021 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 23/23 pulse tests pass, 0 clippy warnings, 7-field struct with full method suite |
-| TASK-M02-022 | — | — | — | **READY** (021 complete) - Methods may already exist (computed, from_values, with_emotion, is_healthy) |
+| TASK-M02-022 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 40/40 tests pass, 0 clippy warnings, update() and blend() methods |
 | TASK-M02-023 | — | — | — | **READY** (017 complete) - Secondary Index Operations |
 | TASK-M02-024 | — | — | — | **READY** (014, 016 complete) - Embedding Storage Operations |
 | TASK-M02-025 | — | — | — | **PARTIAL** - StorageError exists in rocksdb_backend.rs, may need expansion |

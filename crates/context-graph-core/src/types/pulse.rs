@@ -184,6 +184,105 @@ impl CognitivePulse {
         self.entropy < 0.8 && self.coherence > 0.3
     }
 
+    /// Updates entropy and coherence by applying deltas.
+    ///
+    /// Recomputes suggested_action based on new values.
+    /// All values are clamped to valid ranges.
+    ///
+    /// # Arguments
+    /// * `delta_entropy` - Change to apply to entropy
+    /// * `delta_coherence` - Change to apply to coherence
+    ///
+    /// # Example
+    /// ```rust
+    /// use context_graph_core::types::CognitivePulse;
+    ///
+    /// let mut pulse = CognitivePulse::default();
+    /// assert_eq!(pulse.entropy, 0.5);
+    /// assert_eq!(pulse.coherence, 0.5);
+    ///
+    /// pulse.update(0.2, -0.1);
+    /// assert_eq!(pulse.entropy, 0.7);
+    /// assert_eq!(pulse.coherence, 0.4);
+    /// ```
+    pub fn update(&mut self, delta_entropy: f32, delta_coherence: f32) {
+        // Store old coherence for delta calculation
+        let old_coherence = self.coherence;
+
+        // Apply deltas with clamping
+        self.entropy = (self.entropy + delta_entropy).clamp(0.0, 1.0);
+        self.coherence = (self.coherence + delta_coherence).clamp(0.0, 1.0);
+
+        // Update coherence_delta to reflect this change
+        self.coherence_delta = (self.coherence - old_coherence).clamp(-1.0, 1.0);
+
+        // Recompute suggested action
+        self.suggested_action = Self::compute_action(self.entropy, self.coherence);
+
+        // Update timestamp to now
+        self.timestamp = Utc::now();
+    }
+
+    /// Linearly interpolates between two pulses.
+    ///
+    /// Creates a new pulse that is a blend of `self` and `other`.
+    /// The blend factor `t` determines the weight:
+    /// - t = 0.0 → result equals self
+    /// - t = 1.0 → result equals other
+    /// - t = 0.5 → result is midpoint
+    ///
+    /// # Arguments
+    /// * `other` - The other pulse to blend with
+    /// * `t` - Blend factor clamped to [0.0, 1.0]
+    ///
+    /// # Returns
+    /// A new CognitivePulse with interpolated values.
+    ///
+    /// # Example
+    /// ```rust
+    /// use context_graph_core::types::CognitivePulse;
+    ///
+    /// let pulse1 = CognitivePulse::from_values(0.2, 0.8);
+    /// let pulse2 = CognitivePulse::from_values(0.8, 0.2);
+    ///
+    /// let blended = pulse1.blend(&pulse2, 0.5);
+    /// assert_eq!(blended.entropy, 0.5);  // (0.2 + 0.8) / 2
+    /// assert_eq!(blended.coherence, 0.5); // (0.8 + 0.2) / 2
+    /// ```
+    pub fn blend(&self, other: &CognitivePulse, t: f32) -> CognitivePulse {
+        let t = t.clamp(0.0, 1.0);
+
+        // Linear interpolation helper
+        let lerp = |a: f32, b: f32| a + t * (b - a);
+
+        // Interpolate numeric fields
+        let entropy = lerp(self.entropy, other.entropy);
+        let coherence = lerp(self.coherence, other.coherence);
+        let coherence_delta = lerp(self.coherence_delta, other.coherence_delta);
+        let emotional_weight = lerp(self.emotional_weight, other.emotional_weight);
+
+        // For non-interpolatable fields, use threshold-based selection
+        // t < 0.5 → use self, t >= 0.5 → use other
+        let source_layer = if t < 0.5 {
+            self.source_layer
+        } else {
+            other.source_layer
+        };
+
+        // Compute new action from blended values
+        let suggested_action = Self::compute_action(entropy, coherence);
+
+        CognitivePulse {
+            entropy,
+            coherence,
+            coherence_delta,
+            emotional_weight,
+            suggested_action,
+            source_layer,
+            timestamp: Utc::now(),
+        }
+    }
+
     /// Create a pulse with a specific emotional state.
     ///
     /// Derives emotional_weight from the provided EmotionalState.
@@ -596,5 +695,279 @@ mod tests {
                 .contains("critique_context")
         );
         assert!(SuggestedAction::Review.description().contains("reflect_on_memory"));
+    }
+
+    // =======================================================================
+    // CognitivePulse::update() Tests (TASK-M02-022)
+    // =======================================================================
+
+    #[test]
+    fn test_update_modifies_entropy_and_coherence() {
+        let mut pulse = CognitivePulse::default();
+        assert_eq!(pulse.entropy, 0.5);
+        assert_eq!(pulse.coherence, 0.5);
+
+        pulse.update(0.2, -0.1);
+
+        assert_eq!(pulse.entropy, 0.7);
+        assert_eq!(pulse.coherence, 0.4);
+    }
+
+    #[test]
+    fn test_update_clamps_values() {
+        let mut pulse = CognitivePulse::default();
+
+        // Try to exceed bounds
+        pulse.update(1.0, 1.0);
+        assert_eq!(pulse.entropy, 1.0);
+        assert_eq!(pulse.coherence, 1.0);
+
+        // Try to go below zero
+        pulse.update(-2.0, -2.0);
+        assert_eq!(pulse.entropy, 0.0);
+        assert_eq!(pulse.coherence, 0.0);
+    }
+
+    #[test]
+    fn test_update_recomputes_action() {
+        let mut pulse = CognitivePulse::from_values(0.5, 0.5);
+        assert_eq!(pulse.suggested_action, SuggestedAction::Continue);
+
+        // Push to high entropy, low coherence → Stabilize
+        pulse.update(0.3, -0.2);
+        assert_eq!(pulse.entropy, 0.8);
+        assert_eq!(pulse.coherence, 0.3);
+        assert_eq!(pulse.suggested_action, SuggestedAction::Stabilize);
+    }
+
+    #[test]
+    fn test_update_updates_coherence_delta() {
+        let mut pulse = CognitivePulse::default();
+        assert_eq!(pulse.coherence_delta, 0.0);
+
+        pulse.update(0.0, 0.2);
+
+        // coherence went from 0.5 to 0.7, so delta = 0.2
+        assert!((pulse.coherence_delta - 0.2).abs() < 0.001);
+    }
+
+    #[test]
+    fn test_update_updates_timestamp() {
+        let mut pulse = CognitivePulse::default();
+        let original_timestamp = pulse.timestamp;
+
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        pulse.update(0.1, 0.1);
+
+        assert!(pulse.timestamp > original_timestamp);
+    }
+
+    // =======================================================================
+    // CognitivePulse::blend() Tests (TASK-M02-022)
+    // =======================================================================
+
+    #[test]
+    fn test_blend_at_zero_equals_self() {
+        let pulse1 = CognitivePulse::from_values(0.2, 0.8);
+        let pulse2 = CognitivePulse::from_values(0.8, 0.2);
+
+        let blended = pulse1.blend(&pulse2, 0.0);
+
+        assert_eq!(blended.entropy, 0.2);
+        assert_eq!(blended.coherence, 0.8);
+    }
+
+    #[test]
+    fn test_blend_at_one_equals_other() {
+        let pulse1 = CognitivePulse::from_values(0.2, 0.8);
+        let pulse2 = CognitivePulse::from_values(0.8, 0.2);
+
+        let blended = pulse1.blend(&pulse2, 1.0);
+
+        // Use approximate comparison for floating-point values
+        assert!((blended.entropy - 0.8).abs() < 0.0001);
+        assert!((blended.coherence - 0.2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn test_blend_at_midpoint() {
+        let pulse1 = CognitivePulse::from_values(0.2, 0.8);
+        let pulse2 = CognitivePulse::from_values(0.8, 0.2);
+
+        let blended = pulse1.blend(&pulse2, 0.5);
+
+        assert_eq!(blended.entropy, 0.5);
+        assert_eq!(blended.coherence, 0.5);
+    }
+
+    #[test]
+    fn test_blend_clamps_t() {
+        let pulse1 = CognitivePulse::from_values(0.2, 0.8);
+        let pulse2 = CognitivePulse::from_values(0.8, 0.2);
+
+        // t > 1.0 should clamp to 1.0
+        let blended = pulse1.blend(&pulse2, 2.0);
+        assert_eq!(blended.entropy, 0.8);
+
+        // t < 0.0 should clamp to 0.0
+        let blended = pulse1.blend(&pulse2, -1.0);
+        assert_eq!(blended.entropy, 0.2);
+    }
+
+    #[test]
+    fn test_blend_interpolates_all_numeric_fields() {
+        let pulse1 = CognitivePulse::new(
+            0.2,
+            0.8,
+            0.1,
+            1.0,
+            SuggestedAction::Ready,
+            Some(LayerId::Sensing),
+        );
+        let pulse2 = CognitivePulse::new(
+            0.8,
+            0.2,
+            -0.1,
+            1.4,
+            SuggestedAction::Explore,
+            Some(LayerId::Coherence),
+        );
+
+        let blended = pulse1.blend(&pulse2, 0.5);
+
+        assert_eq!(blended.entropy, 0.5);
+        assert_eq!(blended.coherence, 0.5);
+        assert_eq!(blended.coherence_delta, 0.0); // (0.1 + -0.1) / 2
+        assert_eq!(blended.emotional_weight, 1.2); // (1.0 + 1.4) / 2
+    }
+
+    #[test]
+    fn test_blend_source_layer_threshold() {
+        let pulse1 = CognitivePulse::new(
+            0.5,
+            0.5,
+            0.0,
+            1.0,
+            SuggestedAction::Continue,
+            Some(LayerId::Sensing),
+        );
+        let pulse2 = CognitivePulse::new(
+            0.5,
+            0.5,
+            0.0,
+            1.0,
+            SuggestedAction::Continue,
+            Some(LayerId::Coherence),
+        );
+
+        // t < 0.5 → use self's source_layer
+        let blended = pulse1.blend(&pulse2, 0.49);
+        assert_eq!(blended.source_layer, Some(LayerId::Sensing));
+
+        // t >= 0.5 → use other's source_layer
+        let blended = pulse1.blend(&pulse2, 0.5);
+        assert_eq!(blended.source_layer, Some(LayerId::Coherence));
+    }
+
+    #[test]
+    fn test_blend_recomputes_action() {
+        let pulse1 = CognitivePulse::from_values(0.2, 0.9); // Ready
+        let pulse2 = CognitivePulse::from_values(0.9, 0.2); // Stabilize
+
+        // Midpoint should compute a new action
+        let blended = pulse1.blend(&pulse2, 0.5);
+
+        // entropy=0.55, coherence=0.55 → should compute appropriate action
+        // Not testing specific action, just that it computes something
+        assert!(matches!(
+            blended.suggested_action,
+            SuggestedAction::Continue | SuggestedAction::Explore | SuggestedAction::Review
+        ));
+    }
+
+    #[test]
+    fn test_blend_creates_new_timestamp() {
+        let pulse1 = CognitivePulse::default();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+        let pulse2 = CognitivePulse::default();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+
+        let blended = pulse1.blend(&pulse2, 0.5);
+
+        // Blended timestamp should be newest
+        assert!(blended.timestamp >= pulse2.timestamp);
+    }
+
+    // =======================================================================
+    // Edge Case Tests (TASK-M02-022)
+    // =======================================================================
+
+    #[test]
+    fn edge_case_update_extreme_deltas() {
+        let mut pulse = CognitivePulse::from_values(0.5, 0.5);
+
+        println!(
+            "BEFORE: entropy={}, coherence={}",
+            pulse.entropy, pulse.coherence
+        );
+
+        pulse.update(100.0, -100.0);
+
+        println!(
+            "AFTER: entropy={}, coherence={}",
+            pulse.entropy, pulse.coherence
+        );
+
+        assert_eq!(
+            pulse.entropy, 1.0,
+            "Extreme positive delta should clamp to 1.0"
+        );
+        assert_eq!(
+            pulse.coherence, 0.0,
+            "Extreme negative delta should clamp to 0.0"
+        );
+    }
+
+    #[test]
+    fn edge_case_blend_identical_pulses() {
+        let pulse = CognitivePulse::from_values(0.6, 0.7);
+
+        println!(
+            "ORIGINAL: entropy={}, coherence={}",
+            pulse.entropy, pulse.coherence
+        );
+
+        let blended = pulse.blend(&pulse, 0.5);
+
+        println!(
+            "BLENDED: entropy={}, coherence={}",
+            blended.entropy, blended.coherence
+        );
+
+        assert_eq!(blended.entropy, pulse.entropy);
+        assert_eq!(blended.coherence, pulse.coherence);
+    }
+
+    #[test]
+    fn edge_case_update_action_transition() {
+        let mut pulse = CognitivePulse::from_values(0.35, 0.75);
+
+        println!(
+            "STATE 1: entropy={}, coherence={}, action={:?}",
+            pulse.entropy, pulse.coherence, pulse.suggested_action
+        );
+
+        // Low entropy + high coherence = Ready
+        assert_eq!(pulse.suggested_action, SuggestedAction::Ready);
+
+        pulse.update(0.5, -0.5);
+
+        println!(
+            "STATE 2: entropy={}, coherence={}, action={:?}",
+            pulse.entropy, pulse.coherence, pulse.suggested_action
+        );
+
+        // High entropy + low coherence = Stabilize
+        assert_eq!(pulse.suggested_action, SuggestedAction::Stabilize);
     }
 }
