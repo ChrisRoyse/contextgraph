@@ -27,6 +27,7 @@
 pub mod config;
 pub mod error;
 pub mod provider;
+pub mod storage;
 pub mod stub;
 pub mod traits;
 pub mod types;
