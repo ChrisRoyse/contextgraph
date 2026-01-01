@@ -284,6 +284,35 @@ impl ModelId {
             Self::LateInteraction => 8,
         }
     }
+
+    /// Returns the string representation of the model ID for configuration.
+    ///
+    /// These names are used in config files (e.g., `preload_models = ["semantic", "code"]`).
+    ///
+    /// # Example
+    /// ```rust
+    /// use context_graph_embeddings::types::ModelId;
+    ///
+    /// assert_eq!(ModelId::Semantic.as_str(), "semantic");
+    /// assert_eq!(ModelId::LateInteraction.as_str(), "late_interaction");
+    /// ```
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Semantic => "semantic",
+            Self::TemporalRecent => "temporal_recent",
+            Self::TemporalPeriodic => "temporal_periodic",
+            Self::TemporalPositional => "temporal_positional",
+            Self::Causal => "causal",
+            Self::Sparse => "sparse",
+            Self::Code => "code",
+            Self::Graph => "graph",
+            Self::Hdc => "hdc",
+            Self::Multimodal => "multimodal",
+            Self::Entity => "entity",
+            Self::LateInteraction => "late_interaction",
+        }
+    }
 }
 
 impl std::fmt::Display for ModelId {

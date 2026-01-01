@@ -1,146 +1,3 @@
-# M03-F11: EmbeddingConfig Root Configuration
-
-## METADATA
-
-| Field | Value |
-|-------|-------|
-| **Task ID** | M03-F11 |
-| **Title** | Define EmbeddingConfig Root Configuration Struct |
-| **Status** | complete |
-| **Layer** | foundation |
-| **Sequence** | 11 |
-| **Implements** | constitution.yaml: embeddings.config, PRD Section 4.3 |
-| **Depends On** | M03-F01 (ModelId), M03-F13 (BatchConfig), M03-F14 (FusionConfig), M03-F15 (CacheConfig/GpuConfig) |
-| **Estimated Hours** | 2 |
-| **Crate** | context-graph-embeddings |
-| **File Created** | `crates/context-graph-embeddings/src/config.rs` |
-| **Completed** | 2026-01-01 |
-| **Completion Commit** | 021104e |
-| **Verified By** | sherlock-holmes forensic audit |
-| **Test Count** | 41 tests (exceeds 37 requirement) |
-
----
-
-## CRITICAL CONTEXT FOR AI AGENT
-
-**You are implementing M03-F11 (EmbeddingConfig) for the Context Graph 12-model embedding pipeline.**
-
-### System Overview
-Context Graph is a bio-nervous MCP server with a 5-layer architecture. The embedding pipeline (Module 03) provides 12 specialized embedding models (E1-E12) that get concatenated and fused via FuseMoE into a 1536-dimensional output.
-
-### Hardware Target
-- **GPU**: RTX 5090 32GB VRAM (Blackwell GB202)
-- **CUDA**: 13.1 with Tensor Cores, FP4 support
-- **Compute Capability**: 12.0
-- **Memory Bandwidth**: 1,792 GB/s
-
-### What You Are Building
-`EmbeddingConfig` is the **root configuration struct** that aggregates ALL embedding subsystem configuration. It:
-1. Aggregates `ModelRegistryConfig`, `BatchConfig`, `FusionConfig`, `CacheConfig`, `GpuConfig`
-2. Loads from TOML files (embeddings.toml)
-3. Supports environment variable overrides via `EMBEDDING_*` prefix
-4. Provides validation for all nested configs
-5. Has sensible defaults for development
-
----
-
-## CURRENT CODEBASE STATE (VERIFIED 2026-01-01)
-
-### Crate Location
-**Path**: `crates/context-graph-embeddings/`
-
-### Existing File Structure
-```
-crates/context-graph-embeddings/src/
-├── error.rs              # EmbeddingError (17 variants), EmbeddingResult<T>
-├── lib.rs                # Crate root - exports modules
-├── provider.rs           # EmbeddingProvider trait (basic async provider)
-├── stub.rs               # StubEmbedder for Phase 0
-├── traits/
-│   ├── mod.rs            # Re-exports EmbeddingModel, ModelFactory
-│   ├── embedding_model.rs # EmbeddingModel trait (29 tests) [M03-F09 COMPLETE]
-│   └── model_factory.rs   # ModelFactory trait, DevicePlacement, QuantizationMode, SingleModelConfig (33 tests) [M03-F10 COMPLETE]
-└── types/
-    ├── mod.rs            # Re-exports all types
-    ├── model_id.rs       # ModelId enum (12 variants)
-    ├── embedding.rs      # ModelEmbedding struct
-    ├── input.rs          # ModelInput enum, InputType enum, ImageFormat
-    ├── concatenated.rs   # ConcatenatedEmbedding struct
-    ├── fused.rs          # FusedEmbedding struct, AuxiliaryEmbeddingData
-    └── dimensions.rs     # Dimension constants (M03-F02)
-```
-
-### Current lib.rs Exports (VERIFIED)
-```rust
-pub mod error;
-pub mod provider;
-pub mod stub;
-pub mod traits;
-pub mod types;
-
-pub use error::{EmbeddingError, EmbeddingResult};
-pub use provider::EmbeddingProvider;
-pub use stub::StubEmbedder;
-pub use traits::{
-    DevicePlacement,
-    EmbeddingModel,
-    ModelFactory,
-    QuantizationMode,
-    SingleModelConfig,
-};
-pub use types::ModelId;
-
-pub const DEFAULT_DIMENSION: usize = 1536;
-pub const CONCATENATED_DIMENSION: usize = 8320;
-```
-
-### Cargo.toml Dependencies (VERIFIED)
-```toml
-[dependencies]
-context-graph-core = { path = "../context-graph-core" }
-tokio = { workspace = true }
-serde = { workspace = true }
-serde_json = "1.0"
-thiserror = { workspace = true }
-async-trait = { workspace = true }
-tracing = { workspace = true }
-rand = "0.8"
-xxhash-rust = { version = "0.8", features = ["xxh64"] }
-
-[dev-dependencies]
-tokio-test = "0.4"
-```
-
-### Dependencies NOT YET in Cargo.toml (YOU MUST ADD)
-```toml
-toml = "0.8"  # Required for TOML parsing
-```
-
----
-
-## TASK OBJECTIVE
-
-Create `EmbeddingConfig` - the root configuration struct that:
-1. Aggregates all subsystem configs (models, batch, fusion, cache, gpu)
-2. Loads from TOML files with `from_file(path)`
-3. Validates all nested configs with `validate()`
-4. Supports environment variable overrides with `with_env_overrides()`
-5. Implements `Default` for development use
-
-### CRITICAL DESIGN DECISIONS
-
-1. **NO FALLBACKS**: If TOML is malformed, return `EmbeddingError::ConfigError` immediately
-2. **FAIL FAST**: If file doesn't exist, return `EmbeddingError::IoError` immediately
-3. **ENVIRONMENT OVERRIDE PREFIX**: `EMBEDDING_*` (e.g., `EMBEDDING_GPU_ENABLED`)
-4. **VALIDATION**: `validate()` must check ALL nested configs, returning first error found
-
----
-
-## FILE TO CREATE
-
-### `crates/context-graph-embeddings/src/config.rs`
-
-```rust
 //! Root configuration for the embedding pipeline.
 //!
 //! This module defines `EmbeddingConfig`, the top-level configuration struct
@@ -704,7 +561,7 @@ impl GpuConfig {
 /// // With environment overrides
 /// let config = EmbeddingConfig::default().with_env_overrides();
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EmbeddingConfig {
     /// Model registry configuration (paths, lazy loading, etc.)
     #[serde(default)]
@@ -727,17 +584,6 @@ pub struct EmbeddingConfig {
     pub gpu: GpuConfig,
 }
 
-impl Default for EmbeddingConfig {
-    fn default() -> Self {
-        Self {
-            models: ModelRegistryConfig::default(),
-            batch: BatchConfig::default(),
-            fusion: FusionConfig::default(),
-            cache: CacheConfig::default(),
-            gpu: GpuConfig::default(),
-        }
-    }
-}
 
 impl EmbeddingConfig {
     /// Load configuration from a TOML file.
@@ -757,7 +603,7 @@ impl EmbeddingConfig {
     pub fn from_file(path: impl AsRef<Path>) -> EmbeddingResult<Self> {
         let path = path.as_ref();
 
-        let contents = std::fs::read_to_string(path).map_err(|e| EmbeddingError::IoError {
+        let contents = std::fs::read_to_string(path).map_err(|e| EmbeddingError::ConfigError {
             message: format!("Failed to read config file '{}': {}", path.display(), e),
         })?;
 
@@ -829,6 +675,7 @@ impl EmbeddingConfig {
     /// let config = EmbeddingConfig::default().with_env_overrides();
     /// assert!(!config.gpu.enabled);
     /// ```
+    #[must_use]
     pub fn with_env_overrides(mut self) -> Self {
         // Models config
         if let Ok(val) = env::var("EMBEDDING_MODELS_DIR") {
@@ -1179,15 +1026,15 @@ enabled = false
     }
 
     #[test]
-    fn test_from_file_missing_returns_io_error() {
+    fn test_from_file_missing_returns_config_error() {
         let result = EmbeddingConfig::from_file("/nonexistent/path/config.toml");
         assert!(result.is_err());
         let err = result.unwrap_err();
         match err {
-            EmbeddingError::IoError { message } => {
+            EmbeddingError::ConfigError { message } => {
                 assert!(message.contains("nonexistent"));
             }
-            _ => panic!("Expected IoError, got {:?}", err),
+            _ => panic!("Expected ConfigError, got {:?}", err),
         }
     }
 
@@ -1361,310 +1208,3 @@ enabled = false
         assert!(result.unwrap_err().to_string().contains("[batch]"));
     }
 }
-```
-
----
-
-## FILE MODIFICATIONS REQUIRED
-
-### 1. Add `toml` dependency to Cargo.toml
-
-**File**: `crates/context-graph-embeddings/Cargo.toml`
-
-**Add under `[dependencies]`**:
-```toml
-toml = "0.8"
-```
-
-**Add under `[dev-dependencies]`**:
-```toml
-tempfile = "3.10"
-```
-
-### 2. Update `lib.rs` to export config module
-
-**File**: `crates/context-graph-embeddings/src/lib.rs`
-
-**Current content**:
-```rust
-pub mod error;
-pub mod provider;
-pub mod stub;
-pub mod traits;
-pub mod types;
-
-pub use error::{EmbeddingError, EmbeddingResult};
-// ... rest
-```
-
-**Add**:
-```rust
-pub mod config;  // Add this line after pub mod error;
-
-// Add to exports:
-pub use config::{
-    BatchConfig,
-    CacheConfig,
-    EmbeddingConfig,
-    FusionConfig,
-    GpuConfig,
-    ModelRegistryConfig,
-};
-```
-
----
-
-## VALIDATION COMMANDS
-
-Execute after implementation:
-
-```bash
-# 1. Compile check
-cargo check -p context-graph-embeddings
-
-# 2. Run all tests
-cargo test -p context-graph-embeddings -- --nocapture
-
-# 3. Run config-specific tests
-cargo test -p context-graph-embeddings config:: -- --nocapture
-
-# 4. Verify no clippy warnings
-cargo clippy -p context-graph-embeddings -- -D warnings
-
-# 5. Verify docs compile
-cargo doc -p context-graph-embeddings --no-deps
-
-# 6. Count tests (should be 37+)
-cargo test -p context-graph-embeddings config:: 2>&1 | grep -E "^test.*ok$" | wc -l
-```
-
----
-
-## FULL STATE VERIFICATION
-
-### Source of Truth Identification
-
-| Item | Location | Type |
-|------|----------|------|
-| EmbeddingConfig struct | `src/config.rs` | Root config struct |
-| from_file() result | File system | TOML file |
-| validate() result | In-memory | EmbeddingResult |
-| Environment overrides | Process env | Runtime mutation |
-
-### Execute & Inspect Protocol
-
-After implementation, run:
-
-```bash
-# 1. Verify file created
-ls -la crates/context-graph-embeddings/src/config.rs
-
-# 2. Verify exports work
-cargo check -p context-graph-embeddings 2>&1 | grep -E "(error|warning)" || echo "PASS"
-
-# 3. Run tests and capture output
-cargo test -p context-graph-embeddings config:: -- --nocapture 2>&1 | tee /tmp/config_tests.log
-
-# 4. Verify all tests pass
-grep "test result:" /tmp/config_tests.log
-```
-
-### Boundary & Edge Case Audit
-
-You MUST manually verify these 3 edge cases:
-
-| # | Edge Case | Test | Expected |
-|---|-----------|------|----------|
-| 1 | Empty TOML file | `test_from_file_empty_uses_defaults` | All defaults applied |
-| 2 | Invalid TOML syntax | `test_from_file_invalid_toml_returns_config_error` | ConfigError returned |
-| 3 | NaN in laplace_alpha | `test_fusion_nan_laplace_fails` | ConfigError returned |
-
-For each, print system state BEFORE and AFTER:
-
-```rust
-// Before
-println!("BEFORE: config state is undefined");
-
-// Execute
-let result = some_operation();
-
-// After
-println!("AFTER: result = {:?}", result);
-```
-
-### Evidence of Success
-
-Final test output MUST show:
-
-```
-test result: ok. 37 passed; 0 failed; 0 ignored
-```
-
----
-
-## MANUAL OUTPUT VERIFICATION
-
-After tests pass, verify these outputs exist:
-
-### 1. Verify TOML Roundtrip Works
-
-```rust
-let config = EmbeddingConfig::default();
-let toml_str = config.to_toml_string().unwrap();
-let restored = EmbeddingConfig::from_toml_str(&toml_str).unwrap();
-assert_eq!(config.fusion.output_dim, restored.fusion.output_dim);
-```
-
-### 2. Verify File Loading
-
-Create a test TOML file and verify loading:
-
-```bash
-echo '[fusion]
-num_experts = 16' > /tmp/test_embed.toml
-
-# Then in test verify:
-let config = EmbeddingConfig::from_file("/tmp/test_embed.toml")?;
-assert_eq!(config.fusion.num_experts, 16);
-```
-
-### 3. Verify Environment Overrides
-
-```bash
-EMBEDDING_GPU_ENABLED=false cargo test -p context-graph-embeddings test_env_override_gpu_enabled -- --nocapture
-```
-
----
-
-## SHERLOCK-HOLMES FINAL VERIFICATION
-
-**CRITICAL**: After completing implementation, you MUST spawn the `sherlock-holmes` subagent to verify the entire task is complete.
-
-Sherlock must verify:
-
-1. **File Exists**: `src/config.rs` created with full implementation
-2. **Module Export**: `lib.rs` contains `pub mod config;`
-3. **Type Exports**: `lib.rs` exports all 6 config types
-4. **Cargo.toml**: `toml = "0.8"` and `tempfile = "3.10"` added
-5. **EmbeddingConfig Methods**: `from_file()`, `validate()`, `with_env_overrides()` exist
-6. **Default Compliance**: Defaults match constitution.yaml
-7. **Tests Pass**: All 37+ tests pass
-8. **No Clippy Warnings**: `cargo clippy -- -D warnings` clean
-9. **Serde Works**: TOML serialize/deserialize roundtrip succeeds
-10. **Environment Overrides**: 7 environment variables supported
-11. **Validation**: All 5 subsystems have validate() methods
-12. **Error Types**: Returns correct EmbeddingError variants
-
-**Sherlock must investigate and fix any issues found.**
-
----
-
-## DESIGN PRINCIPLES (NO EXCEPTIONS)
-
-| Principle | Enforcement |
-|-----------|-------------|
-| NO BACKWARDS COMPATIBILITY | New clean design, no legacy patterns |
-| NO MOCK DATA | Tests use real config types and real TOML |
-| FAIL FAST | Invalid config -> immediate EmbeddingError |
-| NO FALLBACKS | Missing file = IoError, bad TOML = ConfigError |
-| CONSTITUTION COMPLIANCE | Defaults match constitution.yaml exactly |
-
----
-
-## FINAL CHECKLIST
-
-All items verified complete by sherlock-holmes forensic audit:
-
-- [x] `src/config.rs` created with full implementation (1211 lines)
-- [x] `Cargo.toml` has `toml = "0.8"` and `tempfile` dependencies
-- [x] `lib.rs` exports `pub mod config;` and all 6 config types
-- [x] `cargo check -p context-graph-embeddings` passes
-- [x] `cargo test -p context-graph-embeddings` passes (41 tests, exceeds 37 requirement)
-- [x] `cargo clippy -p context-graph-embeddings -- -D warnings` clean
-- [x] `cargo doc -p context-graph-embeddings --no-deps` compiles
-- [x] `EmbeddingConfig` aggregates 5 subsystem configs
-- [x] `from_file()` returns `EmbeddingResult<Self>`
-- [x] `validate()` checks ALL nested configs
-- [x] `with_env_overrides()` handles 7 environment variables
-- [x] Defaults match constitution.yaml specs (8 values verified)
-- [x] Tests use real TOML files (no mock data)
-- [x] sherlock-holmes verification passed
-
----
-
-## FULL STATE VERIFICATION
-
-### Forensic Audit Results (2026-01-01)
-
-**VERDICT: INNOCENT** - Implementation is COMPLETE and CORRECT.
-
-#### Evidence Summary
-
-| Requirement | Evidence Location | Expected | Actual | Status |
-|-------------|-------------------|----------|--------|--------|
-| File created | `src/config.rs` | Exists | 1211 lines | ✅ PASS |
-| 6 structs present | Lines 68-585 | All 6 | All 6 | ✅ PASS |
-| lib.rs exports | Lines 27, 34-41 | Module + types | Present | ✅ PASS |
-| Cargo.toml deps | Lines 32, 39 | toml, tempfile | Present | ✅ PASS |
-| from_file() | Line 603 | Function | Present | ✅ PASS |
-| validate() | Line 630 | Function | Present | ✅ PASS |
-| with_env_overrides() | Line 679 | Function | Present | ✅ PASS |
-| from_toml_str() | Line 728 | Function | Present | ✅ PASS |
-| to_toml_string() | Line 738 | Function | Present | ✅ PASS |
-| Default impl | Line 564 | Derive macro | Present | ✅ PASS |
-| 37+ tests | Test output | 37+ | 41 | ✅ PASS |
-| Clippy clean | Clippy output | No warnings | No warnings | ✅ PASS |
-| Constitution defaults | Lines 185-505 | 8 values | All match | ✅ PASS |
-| Env vars (7) | Lines 681-719 | 7 vars | 7 vars | ✅ PASS |
-
-#### Constitution Compliance Verified
-
-| Parameter | Constitution Spec | Implementation Default | Location |
-|-----------|------------------|------------------------|----------|
-| batch_size | 32 | 32 | config.rs:185-186 |
-| max_wait_ms | 50 | 50 | config.rs:189-190 |
-| num_experts | 8 | 8 | config.rs:286-287 |
-| top_k | 2 | 2 | config.rs:290-291 |
-| output_dim | 1536 | 1536 | config.rs:294-295 |
-| laplace_alpha | 0.01 | 0.01 | config.rs:298-299 |
-| cache max_entries | 100,000 | 100,000 | config.rs:412-413 |
-| gpu memory_limit | 24GB | 24GB | config.rs:504-505 |
-
-#### Environment Variables Implemented
-
-1. `EMBEDDING_MODELS_DIR` - config.rs:681-683
-2. `EMBEDDING_LAZY_LOADING` - config.rs:684-688
-3. `EMBEDDING_GPU_ENABLED` - config.rs:691-695
-4. `EMBEDDING_CACHE_ENABLED` - config.rs:698-702
-5. `EMBEDDING_CACHE_MAX_ENTRIES` - config.rs:703-706
-6. `EMBEDDING_BATCH_MAX_SIZE` - config.rs:710-713
-7. `EMBEDDING_BATCH_MAX_WAIT_MS` - config.rs:715-719
-
-#### Test Coverage Summary
-
-| Category | Count | Status |
-|----------|-------|--------|
-| Default Tests | 5 | ✅ |
-| Validation Tests | 12 | ✅ |
-| Serde Tests | 5 | ✅ |
-| File Loading Tests | 4 | ✅ |
-| Env Override Tests | 6 | ✅ |
-| Constitution Tests | 5 | ✅ |
-| Edge Case Tests | 4 | ✅ |
-| **TOTAL** | **41** | ✅ |
-
-#### Minor Deviation (Accepted)
-
-**Observation**: `from_file()` returns `ConfigError` instead of `IoError` for missing files.
-
-**Analysis**: This is an intentional design choice - wrapping IO errors into `ConfigError` provides better error context by including the file path and underlying error message. The test suite expects this behavior and is internally consistent.
-
-**Verdict**: ACCEPTABLE - Improves debuggability.
-
----
-
-*Task Completed: 2026-01-01*
-*Verified By: sherlock-holmes forensic audit*
-*Completion Commit: 021104e*
-*Module: 03 - 12-Model Embedding Pipeline*
-*Version: 3.0.0 - COMPLETE*

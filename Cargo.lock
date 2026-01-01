@@ -312,9 +312,11 @@ dependencies = [
  "rand",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror",
  "tokio",
  "tokio-test",
+ "toml",
  "tracing",
  "xxhash-rust",
 ]

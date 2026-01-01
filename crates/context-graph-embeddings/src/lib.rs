@@ -24,12 +24,21 @@
 //! assert_eq!(ModelId::Semantic.dimension(), 1024);
 //! ```
 
+pub mod config;
 pub mod error;
 pub mod provider;
 pub mod stub;
 pub mod traits;
 pub mod types;
 
+pub use config::{
+    BatchConfig,
+    CacheConfig,
+    EmbeddingConfig,
+    FusionConfig,
+    GpuConfig,
+    ModelRegistryConfig,
+};
 pub use error::{EmbeddingError, EmbeddingResult};
 pub use provider::EmbeddingProvider;
 pub use stub::StubEmbedder;
