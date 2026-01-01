@@ -7,7 +7,7 @@
 - **Foundation:** 12 tasks
 - **Logic:** 6 tasks
 - **Surface:** 10 tasks
-- **Current Progress:** 16/28 (57%) - Tasks 001-016 VERIFIED (Foundation Layer + Logic Serialization + Column Families + RocksDB Backend)
+- **Current Progress:** 18/28 (64%) - Tasks 001-018 VERIFIED (Foundation Layer + Logic Layer COMPLETE)
 - **Version:** 1.0.0
 - **Created:** 2025-12-31
 - **Dependencies:** module-01-ghost-system
@@ -115,13 +115,13 @@ graph TD
 | 14 | TASK-M02-014 | Implement Bincode Serialization | logic | 013 | 2.5 | ✅ Complete |
 | 15 | TASK-M02-015 | Define Column Family Descriptors | logic | 013 | 3.0 | ✅ Complete |
 | 16 | TASK-M02-016 | Implement RocksDB Backend Open/Close | logic | 014, 015 | 3.0 | ✅ Complete |
-| 17 | TASK-M02-017 | Implement Node CRUD Operations | logic | 014, 016 | 4.0 | ⏳ Ready |
-| 18 | TASK-M02-018 | Implement Edge CRUD Operations | logic | 011, 017 | 3.0 | ⛔ Blocked |
-| 19 | TASK-M02-019 | Define EmotionalState Enum | surface | — | 1.0 | ⏳ Ready |
-| 20 | TASK-M02-020 | Define SuggestedAction Enum | surface | — | 1.0 | ⏳ Ready |
-| 21 | TASK-M02-021 | Define CognitivePulse Struct | surface | 019, 020 | 2.0 | ⛔ Blocked |
+| 17 | TASK-M02-017 | Implement Node CRUD Operations | logic | 014, 016 | 4.0 | ✅ Complete |
+| 18 | TASK-M02-018 | Implement Edge CRUD Operations | logic | 011, 017 | 3.0 | ✅ Complete |
+| 19 | TASK-M02-019 | Complete EmotionalState Enum | surface | — | 1.5 | ⏳ Ready |
+| 20 | TASK-M02-020 | Audit SuggestedAction Enum | surface | — | 0.5 | ⏳ Ready |
+| 21 | TASK-M02-021 | Audit CognitivePulse Struct | surface | 019, 020 | 1.0 | ⛔ Blocked |
 | 22 | TASK-M02-022 | Implement CognitivePulse Methods | surface | 021 | 3.0 | ⛔ Blocked |
-| 23 | TASK-M02-023 | Implement Secondary Index Operations | surface | 017 | 3.0 | ⛔ Blocked |
+| 23 | TASK-M02-023 | Implement Secondary Index Operations | surface | 017 | 3.0 | ⏳ Ready |
 | 24 | TASK-M02-024 | Implement Embedding Storage Operations | surface | 014, 016 | 2.0 | ⏳ Ready |
 | 25 | TASK-M02-025 | Implement StorageError Enum | surface | 013 | 1.5 | ⏳ Ready |
 | 26 | TASK-M02-026 | Implement Memex Trait Abstraction | surface | 017, 018, 023 | 2.0 | ⛔ Blocked |
@@ -155,15 +155,15 @@ graph TD
 | TASK-M02-014 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 41/41 tests pass, 0 clippy warnings, hybrid approach (msgpack+bincode) |
 | TASK-M02-015 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 23/23 tests pass, 0 clippy warnings, 12 CFs match spec |
 | TASK-M02-016 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 31/31 tests pass, 0 clippy warnings |
-| TASK-M02-017 | — | — | — | **READY** (014, 016 complete) - Node CRUD Operations |
-| TASK-M02-018 | — | — | — | Depends on 011, 017 |
-| TASK-M02-019 | — | — | — | No dependencies |
-| TASK-M02-020 | — | — | — | No dependencies |
-| TASK-M02-021 | — | — | — | Depends on 019, 020 |
-| TASK-M02-022 | — | — | — | Depends on 021 |
-| TASK-M02-023 | — | — | — | Depends on 017 |
+| TASK-M02-017 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Commit fa2a31a: 138/138 tests pass, store_node/get_node/update_node/delete_node |
+| TASK-M02-018 | 2025-12-31 | 2025-12-31 | 2025-12-31 | Sherlock-Holmes verified: 18/18 edge tests pass, 0 clippy warnings, 6 methods (store/get/update/delete/get_from/get_to) |
+| TASK-M02-019 | — | — | — | **READY** - EmotionalState exists but needs completion (missing 2 variants, wrong values) |
+| TASK-M02-020 | — | — | — | **READY** - SuggestedAction exists in types/pulse.rs, needs audit vs spec |
+| TASK-M02-021 | — | — | — | Blocked on 019, 020 - CognitivePulse exists in types/pulse.rs, needs audit |
+| TASK-M02-022 | — | — | — | Blocked on 021 - Methods may already exist in pulse.rs |
+| TASK-M02-023 | — | — | — | **READY** (017 complete) - Secondary Index Operations |
 | TASK-M02-024 | — | — | — | **READY** (014, 016 complete) - Embedding Storage Operations |
-| TASK-M02-025 | — | — | — | **READY** (013 complete) - StorageError Enum |
+| TASK-M02-025 | — | — | — | **PARTIAL** - StorageError exists in rocksdb_backend.rs, may need expansion |
 | TASK-M02-026 | — | — | — | Depends on 017, 018, 023 |
 | TASK-M02-027 | — | — | — | Depends on 017, 018, 022, 023 |
 | TASK-M02-028 | — | — | — | Depends on 027 |
