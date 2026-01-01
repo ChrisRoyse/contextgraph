@@ -50,7 +50,7 @@ Execute tasks in this order to satisfy all dependencies:
 | 1 | M03-F01 | ModelId Enum Definition | - | 2 |
 | 2 | M03-F06 | ModelInput Enum | - | 1.5 |
 | 3 | M03-F07 | InputType Enum | - | 0.5 |
-| 4 | M03-F08 | EmbeddingError Enum (Extended) | - | 2 |
+| 4 | M03-F08 | EmbeddingError Enum (Extended) | M03-F01, M03-F06, M03-F07 | 2 |
 | 5 | M03-F13 | BatchConfig Struct | - | 1 |
 | 6 | M03-F14 | FusionConfig Struct | - | 1 |
 | 7 | M03-F15 | CacheConfig and GpuConfig | - | 1.5 |
@@ -240,6 +240,9 @@ graph TB
     F01 --> F02
     F01 --> F03
     F01 --> F05
+    F01 --> F08
+    F06 --> F08
+    F07 --> F08
     F01 --> F09
     F01 --> F11
     F01 --> F12

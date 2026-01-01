@@ -10,6 +10,6 @@ pub mod dimensions;
 pub use concatenated::ConcatenatedEmbedding;
 pub use embedding::ModelEmbedding;
 pub use fused::{AuxiliaryEmbeddingData, FusedEmbedding};
-pub use input::{ImageFormat, ModelInput};
+pub use input::{ImageFormat, InputType, ModelInput};
 pub use model_id::ModelId;
 pub use model_id::TokenizerFamily;
