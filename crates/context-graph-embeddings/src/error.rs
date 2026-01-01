@@ -59,6 +59,26 @@ pub enum EmbeddingError {
     #[error("Model not initialized: {model_id:?}")]
     NotInitialized { model_id: ModelId },
 
+    /// Model is already loaded in the registry.
+    #[error("Model already loaded: {model_id:?}")]
+    ModelAlreadyLoaded { model_id: ModelId },
+
+    /// Model is not loaded in the registry.
+    #[error("Model not loaded: {model_id:?}")]
+    ModelNotLoaded { model_id: ModelId },
+
+    /// Memory budget exceeded for loading models.
+    #[error("Memory budget exceeded: requested {requested_bytes} bytes, available {available_bytes} bytes (budget: {budget_bytes} bytes)")]
+    MemoryBudgetExceeded {
+        requested_bytes: usize,
+        available_bytes: usize,
+        budget_bytes: usize,
+    },
+
+    /// Internal error (should not occur in normal operation).
+    #[error("Internal error: {message}")]
+    InternalError { message: String },
+
     // === Validation Errors ===
     /// Embedding vector dimension mismatch.
     #[error("Invalid dimension: expected {expected}, got {actual}")]

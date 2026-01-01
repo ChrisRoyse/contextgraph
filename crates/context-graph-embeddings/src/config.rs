@@ -59,14 +59,16 @@ use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::types::ModelId;
 
 // ============================================================================
-// MODEL REGISTRY CONFIG
+// MODEL PATH CONFIG
 // ============================================================================
 
-/// Configuration for the model registry and loading.
+/// Configuration for model file paths and loading behavior.
 ///
 /// Controls model paths, lazy loading behavior, and preloaded models.
+/// Note: For runtime registry configuration (memory budget, concurrency),
+/// use `models::ModelRegistryConfig` instead.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ModelRegistryConfig {
+pub struct ModelPathConfig {
     /// Directory containing model files.
     /// Relative paths are resolved from working directory.
     #[serde(default = "default_models_dir")]
@@ -104,7 +106,7 @@ fn default_max_loaded_models() -> usize {
     12 // All models can be loaded by default
 }
 
-impl Default for ModelRegistryConfig {
+impl Default for ModelPathConfig {
     fn default() -> Self {
         Self {
             models_dir: default_models_dir(),
@@ -115,7 +117,7 @@ impl Default for ModelRegistryConfig {
     }
 }
 
-impl ModelRegistryConfig {
+impl ModelPathConfig {
     /// Validate the configuration.
     ///
     /// # Errors
@@ -927,9 +929,9 @@ impl GpuConfig {
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EmbeddingConfig {
-    /// Model registry configuration (paths, lazy loading, etc.)
+    /// Model path configuration (paths, lazy loading, etc.)
     #[serde(default)]
-    pub models: ModelRegistryConfig,
+    pub models: ModelPathConfig,
 
     /// Batch processing configuration
     #[serde(default)]
@@ -1136,7 +1138,7 @@ mod tests {
 
     #[test]
     fn test_model_registry_config_default() {
-        let config = ModelRegistryConfig::default();
+        let config = ModelPathConfig::default();
         assert_eq!(config.models_dir, "./models");
         assert!(config.lazy_loading);
         assert!(config.preload_models.is_empty());
@@ -1192,7 +1194,7 @@ mod tests {
 
     #[test]
     fn test_model_registry_empty_dir_fails() {
-        let config = ModelRegistryConfig {
+        let config = ModelPathConfig {
             models_dir: "".to_string(),
             ..Default::default()
         };
@@ -1203,7 +1205,7 @@ mod tests {
 
     #[test]
     fn test_model_registry_invalid_preload_fails() {
-        let config = ModelRegistryConfig {
+        let config = ModelPathConfig {
             preload_models: vec!["invalid_model".to_string()],
             ..Default::default()
         };
@@ -1214,7 +1216,7 @@ mod tests {
 
     #[test]
     fn test_model_registry_valid_preload_succeeds() {
-        let config = ModelRegistryConfig {
+        let config = ModelPathConfig {
             preload_models: vec!["semantic".to_string(), "code".to_string()],
             ..Default::default()
         };

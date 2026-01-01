@@ -295,9 +295,9 @@ impl EmbeddingBinaryCodec {
 
         // Parse expert weights (big-endian)
         let mut expert_weights = [0.0f32; NUM_EXPERTS];
-        for i in 0..NUM_EXPERTS {
+        for (i, weight) in expert_weights.iter_mut().enumerate() {
             let offset = 64 + (FUSED_OUTPUT * 4) + i * 4;
-            expert_weights[i] = f32::from_be_bytes([
+            *weight = f32::from_be_bytes([
                 bytes[offset],
                 bytes[offset + 1],
                 bytes[offset + 2],
@@ -384,7 +384,7 @@ impl EmbeddingBinaryCodec {
         bytes: &'a [u8],
     ) -> Result<FusedEmbeddingRef<'a>, DecodeError> {
         // Validate alignment for zero-copy
-        if bytes.as_ptr() as usize % 64 != 0 {
+        if !(bytes.as_ptr() as usize).is_multiple_of(64) {
             return Err(DecodeError::AlignmentError {
                 expected: 64,
                 actual: bytes.as_ptr() as usize % 64,
@@ -484,9 +484,9 @@ impl<'a> FusedEmbeddingRef<'a> {
     /// (stack allocation for the fixed-size array).
     pub fn vector(&self) -> [f32; FUSED_OUTPUT] {
         let mut result = [0.0f32; FUSED_OUTPUT];
-        for i in 0..FUSED_OUTPUT {
+        for (i, val) in result.iter_mut().enumerate() {
             let offset = i * 4;
-            result[i] = f32::from_be_bytes([
+            *val = f32::from_be_bytes([
                 self.vector_bytes[offset],
                 self.vector_bytes[offset + 1],
                 self.vector_bytes[offset + 2],
@@ -504,9 +504,9 @@ impl<'a> FusedEmbeddingRef<'a> {
     /// Get expert weights with byte-swapping from big-endian.
     pub fn expert_weights(&self) -> [f32; NUM_EXPERTS] {
         let mut result = [0.0f32; NUM_EXPERTS];
-        for i in 0..NUM_EXPERTS {
+        for (i, val) in result.iter_mut().enumerate() {
             let offset = i * 4;
-            result[i] = f32::from_be_bytes([
+            *val = f32::from_be_bytes([
                 self.weights_bytes[offset],
                 self.weights_bytes[offset + 1],
                 self.weights_bytes[offset + 2],

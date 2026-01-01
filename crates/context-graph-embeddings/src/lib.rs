@@ -26,6 +26,7 @@
 
 pub mod config;
 pub mod error;
+pub mod models;
 pub mod provider;
 pub mod storage;
 pub mod stub;
@@ -39,7 +40,7 @@ pub use config::{
     EvictionPolicy,
     FusionConfig,
     GpuConfig,
-    ModelRegistryConfig,
+    ModelPathConfig,
     PaddingStrategy,
 };
 pub use error::{EmbeddingError, EmbeddingResult};
@@ -71,6 +72,9 @@ pub use types::{
 
 // Re-export dimensions module for constant access
 pub use types::dimensions;
+
+// Model registry re-exports
+pub use models::{MemoryTracker, ModelRegistry, ModelRegistryConfig, RegistryStats};
 
 /// Default embedding dimension (FuseMoE output, OpenAI ada-002 compatible).
 pub const DEFAULT_DIMENSION: usize = 1536;
