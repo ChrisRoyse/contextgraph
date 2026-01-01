@@ -27,6 +27,11 @@ pub use column_families::{
     nodes_options, system_options,
 };
 
+// Re-export RocksDB backend types (TASK-M02-016)
+pub use rocksdb_backend::{
+    RocksDbConfig, RocksDbMemex, StorageError, DEFAULT_CACHE_SIZE, DEFAULT_MAX_OPEN_FILES,
+};
+
 // Re-export core types for storage consumers
 pub use context_graph_core::marblestone::{Domain, EdgeType, NeurotransmitterWeights};
 pub use context_graph_core::types::{
