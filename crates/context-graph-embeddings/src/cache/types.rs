@@ -8,6 +8,7 @@ use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use once_cell::sync::Lazy;
+use serde::{Deserialize, Serialize};
 use xxhash_rust::xxh64::xxh64;
 
 use crate::types::{FusedEmbedding, ModelInput};
@@ -22,7 +23,7 @@ static START_INSTANT: Lazy<Instant> = Lazy::new(Instant::now);
 /// - `Copy` + `Eq` + `Hash` enables direct HashMap key usage
 /// - 8 bytes = single register, no allocation
 /// - xxHash64 collision probability: ~1/2^64
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct CacheKey {
     /// xxHash64 of content (from ModelInput::content_hash() or FusedEmbedding.content_hash)
     pub content_hash: u64,
