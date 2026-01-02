@@ -451,6 +451,21 @@ impl FusedEmbedding {
     pub fn is_normalized(&self) -> bool {
         (self.magnitude() - 1.0).abs() < 1e-5
     }
+
+    /// Total memory size in bytes for cache budgeting.
+    ///
+    /// Returns the base binary size (6198 bytes) plus any auxiliary data size.
+    /// This matches the serialized format size for accurate memory tracking.
+    #[inline]
+    #[must_use]
+    pub fn memory_size(&self) -> usize {
+        let aux_size = self
+            .aux_data
+            .as_ref()
+            .map(|a| a.memory_size())
+            .unwrap_or(0);
+        CORE_BINARY_SIZE + aux_size
+    }
 }
 
 impl AuxiliaryEmbeddingData {

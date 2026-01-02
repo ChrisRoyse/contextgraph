@@ -25,6 +25,7 @@
 //! ```
 
 pub mod batch;
+pub mod cache;
 pub mod config;
 pub mod error;
 pub mod models;

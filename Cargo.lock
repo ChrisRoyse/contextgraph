@@ -357,6 +357,7 @@ dependencies = [
  "chrono",
  "context-graph-core",
  "image",
+ "once_cell",
  "rand",
  "serde",
  "serde_json",

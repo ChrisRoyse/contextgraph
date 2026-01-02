@@ -40,6 +40,9 @@ xxhash-rust = { version = "0.8", features = ["xxh64"] }
 # Time handling for temporal embeddings
 chrono = { version = "0.4", features = ["serde"] }
 
+# Lazy static initialization for cache timestamps
+once_cell = "1.19"
+
 # Zero-copy binary serialization for GDS-compatible storage
 bytemuck = { version = "1.14", features = ["derive"] }
 
