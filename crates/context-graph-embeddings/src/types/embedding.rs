@@ -282,6 +282,93 @@ impl ModelEmbedding {
 
         Ok(dot_product / (norm_a * norm_b))
     }
+
+    // ========== GPU Tensor Conversions ==========
+
+    /// Convert embedding to GPU tensor.
+    ///
+    /// # Arguments
+    /// * `device` - The GPU device to create the tensor on
+    ///
+    /// # Returns
+    /// A 1D tensor containing the embedding vector.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// use context_graph_embeddings::gpu::device;
+    ///
+    /// let embedding = ModelEmbedding::new(ModelId::Semantic, vec![0.1, 0.2, 0.3], 100);
+    /// let tensor = embedding.to_tensor(device())?;
+    /// assert_eq!(tensor.dims(), &[3]);
+    /// ```
+    #[cfg(feature = "candle")]
+    pub fn to_tensor(&self, device: &candle_core::Device) -> candle_core::Result<candle_core::Tensor> {
+        candle_core::Tensor::from_slice(&self.vector, (self.vector.len(),), device)
+    }
+
+    /// Create embedding from GPU tensor.
+    ///
+    /// # Arguments
+    /// * `tensor` - A 1D tensor containing embedding values
+    /// * `model_id` - The model ID for the new embedding
+    ///
+    /// # Returns
+    /// A new ModelEmbedding with the tensor values and zero latency.
+    ///
+    /// # Example
+    /// ```rust,ignore
+    /// let tensor = Tensor::from_slice(&[0.1, 0.2, 0.3], (3,), device)?;
+    /// let embedding = ModelEmbedding::from_tensor(&tensor, ModelId::Semantic)?;
+    /// assert_eq!(embedding.dimension(), 3);
+    /// ```
+    #[cfg(feature = "candle")]
+    pub fn from_tensor(tensor: &candle_core::Tensor, model_id: ModelId) -> candle_core::Result<Self> {
+        let vector: Vec<f32> = tensor.to_vec1()?;
+        Ok(Self::new(model_id, vector, 0))
+    }
+
+    /// Convert batch of embeddings to GPU tensor.
+    ///
+    /// # Arguments
+    /// * `embeddings` - Slice of embeddings to batch
+    /// * `device` - The GPU device to create the tensor on
+    ///
+    /// # Returns
+    /// A 2D tensor of shape [batch_size, dim].
+    #[cfg(feature = "candle")]
+    pub fn batch_to_tensor(
+        embeddings: &[Self],
+        device: &candle_core::Device,
+    ) -> candle_core::Result<candle_core::Tensor> {
+        if embeddings.is_empty() {
+            return candle_core::Tensor::zeros((0, 0), candle_core::DType::F32, device);
+        }
+
+        let dim = embeddings[0].dimension();
+        let batch_size = embeddings.len();
+
+        // Flatten all vectors into a single slice
+        let data: Vec<f32> = embeddings.iter().flat_map(|e| e.vector.iter().copied()).collect();
+
+        candle_core::Tensor::from_slice(&data, (batch_size, dim), device)
+    }
+
+    /// Create batch of embeddings from GPU tensor.
+    ///
+    /// # Arguments
+    /// * `tensor` - A 2D tensor of shape [batch_size, dim]
+    /// * `model_id` - The model ID for all embeddings in the batch
+    ///
+    /// # Returns
+    /// Vector of ModelEmbedding instances.
+    #[cfg(feature = "candle")]
+    pub fn batch_from_tensor(
+        tensor: &candle_core::Tensor,
+        model_id: ModelId,
+    ) -> candle_core::Result<Vec<Self>> {
+        let vectors: Vec<Vec<f32>> = tensor.to_vec2()?;
+        Ok(vectors.into_iter().map(|v| Self::new(model_id, v, 0)).collect())
+    }
 }
 
 impl Default for ModelEmbedding {

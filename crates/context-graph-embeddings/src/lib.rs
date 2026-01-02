@@ -29,6 +29,7 @@ pub mod cache;
 pub mod config;
 pub mod error;
 pub mod fusion;
+pub mod gpu;
 pub mod models;
 pub mod provider;
 pub mod storage;
