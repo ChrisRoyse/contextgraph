@@ -8,6 +8,12 @@ license = "MIT"
 repository = "https://github.com/contextgraph/contextgraph"
 keywords = ["knowledge-graph", "faiss", "hyperbolic", "vector-search", "gpu"]
 
+[features]
+default = []
+# Enable FAISS GPU support. Requires libfaiss_c to be installed on the system.
+# Without this feature, GPU-related tests will be skipped.
+faiss-gpu = []
+
 [dependencies]
 # Workspace crates
 context-graph-core = { path = "../context-graph-core" }

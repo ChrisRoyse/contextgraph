@@ -37,13 +37,11 @@
 //! - Compute Capability 12.0
 
 pub mod faiss_ffi;
+pub mod gpu_index;
 
 // Re-exports for convenience
-pub use faiss_ffi::{check_faiss_result, GpuResources, MetricType};
-
-// TODO: M04-T10 - Implement FaissGpuIndex
-// pub mod gpu_index;
-// pub use gpu_index::FaissGpuIndex;
+pub use faiss_ffi::{check_faiss_result, MetricType};
+pub use gpu_index::{FaissGpuIndex, GpuResources};
 
 // TODO: M04-T11 - Implement SearchResult
 // pub mod search_result;
