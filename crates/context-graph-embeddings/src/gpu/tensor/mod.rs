@@ -9,18 +9,25 @@
 //!
 //! # Usage
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::gpu::GpuTensor;
+//! ```rust,no_run
+//! # use context_graph_embeddings::gpu::GpuTensor;
+//! # use context_graph_embeddings::gpu::init_gpu;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! init_gpu()?;
 //!
 //! // Create from CPU vector
 //! let vec = vec![1.0f32, 2.0, 3.0, 4.0];
 //! let tensor = GpuTensor::from_vec(&vec)?;
 //!
-//! // Perform GPU operations
-//! let normalized = tensor.normalize()?;
+//! // Check tensor properties
+//! assert_eq!(tensor.dim(), 4);
+//! assert_eq!(tensor.shape(), &[4]);
 //!
 //! // Convert back to CPU
-//! let result: Vec<f32> = normalized.to_vec()?;
+//! let result: Vec<f32> = tensor.to_vec()?;
+//! assert_eq!(result.len(), 4);
+//! # Ok(())
+//! # }
 //! ```
 
 mod core;

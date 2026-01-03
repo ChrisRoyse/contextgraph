@@ -27,13 +27,16 @@ use crate::error::{EmbeddingError, EmbeddingResult};
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```
 /// use context_graph_embeddings::fusion::gating::routing::select_top_k;
 ///
 /// let probs = vec![0.1, 0.3, 0.2, 0.4]; // 4 experts
 /// let (indices, weights) = select_top_k(&probs, 1, 4, 2).unwrap();
 /// assert_eq!(indices.len(), 2);
 /// assert_eq!(weights.len(), 2);
+/// // Weights are normalized to sum to 1
+/// let sum: f32 = weights.iter().sum();
+/// assert!((sum - 1.0).abs() < 1e-5);
 /// ```
 pub fn select_top_k(
     probs: &[f32],

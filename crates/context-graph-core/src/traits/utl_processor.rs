@@ -18,12 +18,23 @@ use crate::types::{MemoryNode, UtlContext, UtlMetrics};
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use context_graph_core::traits::UtlProcessor;
+/// ```
+/// use context_graph_core::types::UtlMetrics;
 ///
-/// let processor = StubUtlProcessor::new();
-/// let score = processor.compute_learning_score("new input", &context).await?;
-/// println!("Learning score: {}", score);
+/// // UTL equation: L = f((ΔS × ΔC) · wₑ · cos φ)
+/// let metrics = UtlMetrics {
+///     entropy: 0.5,           // Information content
+///     coherence: 0.7,         // Understanding level
+///     surprise: 0.8,          // High novelty (ΔS)
+///     coherence_change: 0.6,  // Understanding gain (ΔC)
+///     emotional_weight: 1.0,  // Emotional salience (wₑ)
+///     alignment: 0.9,         // Goal alignment (cos φ)
+///     learning_score: 0.0,    // Computed from components
+/// };
+///
+/// // Learning is maximized when all components are high
+/// assert!(metrics.surprise > 0.5);
+/// assert!(metrics.alignment > 0.5);
 /// ```
 #[async_trait]
 pub trait UtlProcessor: Send + Sync {

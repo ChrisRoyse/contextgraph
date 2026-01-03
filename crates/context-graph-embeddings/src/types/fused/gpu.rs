@@ -14,10 +14,18 @@ impl FusedEmbedding {
     /// A 1D tensor of shape [1536] containing the fused embedding.
     ///
     /// # Example
-    /// ```rust,ignore
-    /// let fused = FusedEmbedding::stub(12345);
+    /// ```
+    /// # use context_graph_embeddings::types::FusedEmbedding;
+    /// # use context_graph_embeddings::gpu::{init_gpu, device};
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// init_gpu()?;
+    /// let fused = FusedEmbedding::new(
+    ///     vec![0.1f32; 1536], [0.125f32; 8], [0, 1, 2, 3], 100, 12345,
+    /// )?;
     /// let tensor = fused.to_tensor(device())?;
     /// assert_eq!(tensor.dims(), &[1536]);
+    /// # Ok(())
+    /// # }
     /// ```
     #[cfg(feature = "candle")]
     pub fn to_tensor(

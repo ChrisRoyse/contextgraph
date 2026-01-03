@@ -24,22 +24,21 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
+//! ```
 //! use context_graph_embeddings::types::{ConcatenatedEmbedding, ModelEmbedding, ModelId};
 //!
 //! let mut concat = ConcatenatedEmbedding::new();
+//! assert_eq!(concat.filled_count(), 0);
 //!
-//! // Add embeddings from each model
-//! for model_id in ModelId::all() {
-//!     let dim = model_id.projected_dimension();
-//!     let mut emb = ModelEmbedding::new(*model_id, vec![0.1; dim], 100);
-//!     emb.set_projected(true);
-//!     concat.set(emb);
-//! }
+//! // Add one embedding to demonstrate
+//! let model_id = ModelId::Semantic;
+//! let dim = model_id.projected_dimension();
+//! let mut emb = ModelEmbedding::new(model_id, vec![0.1; dim], 100);
+//! emb.set_projected(true);
+//! concat.set(emb);
 //!
-//! // Now build the concatenated vector
-//! concat.concatenate();
-//! assert_eq!(concat.concatenated.len(), 8320);
+//! assert_eq!(concat.filled_count(), 1);
+//! assert!(!concat.is_complete()); // Need all 12
 //! ```
 
 mod core;

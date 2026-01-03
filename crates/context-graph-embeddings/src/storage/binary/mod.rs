@@ -14,9 +14,14 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::storage::{EmbeddingBinaryCodec, EMBEDDING_MAGIC};
-//! use context_graph_embeddings::FusedEmbedding;
+//! ```
+//! # use context_graph_embeddings::storage::{EmbeddingBinaryCodec, EMBEDDING_MAGIC};
+//! # use context_graph_embeddings::types::FusedEmbedding;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create a test embedding
+//! let embedding = FusedEmbedding::new(
+//!     vec![0.25f32; 1536], [0.125f32; 8], [0, 1, 2, 3], 750, 0x12345678,
+//! )?;
 //!
 //! let codec = EmbeddingBinaryCodec::new();
 //! let bytes = codec.encode(&embedding)?;
@@ -24,6 +29,8 @@
 //!
 //! let decoded = codec.decode(&bytes)?;
 //! assert_eq!(decoded.content_hash, embedding.content_hash);
+//! # Ok(())
+//! # }
 //! ```
 
 mod decode;

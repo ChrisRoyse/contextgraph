@@ -32,14 +32,22 @@ use super::timestamp::{extract_timestamp, parse_timestamp};
 ///
 /// # Construction
 ///
-/// ```rust,ignore
+/// ```rust,no_run
 /// use context_graph_embeddings::models::TemporalPositionalModel;
+/// use context_graph_embeddings::error::EmbeddingResult;
+/// use context_graph_embeddings::EmbeddingModel; // For is_initialized() trait method
 ///
-/// // Default base (10000.0)
-/// let model = TemporalPositionalModel::new();
+/// fn example() -> EmbeddingResult<()> {
+///     // Default base (10000.0)
+///     let model = TemporalPositionalModel::new();
+///     assert!(model.is_initialized());
+///     assert_eq!(model.base(), 10000.0);
 ///
-/// // Custom base frequency
-/// let model = TemporalPositionalModel::with_base(5000.0)?;
+///     // Custom base frequency
+///     let model = TemporalPositionalModel::with_base(5000.0)?;
+///     assert_eq!(model.base(), 5000.0);
+///     Ok(())
+/// }
 /// ```
 pub struct TemporalPositionalModel {
     /// Base frequency for positional encoding (default 10000.0).

@@ -28,37 +28,17 @@
 //! The trait requires `Send + Sync` bounds to ensure safe usage in
 //! multi-threaded async contexts. All implementations must be thread-safe.
 //!
-//! # Example Implementation
+//! # Example: Query Model Properties
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::traits::EmbeddingModel;
-//! use context_graph_embeddings::types::{ModelId, ModelEmbedding, ModelInput, InputType};
-//! use context_graph_embeddings::error::{EmbeddingError, EmbeddingResult};
-//! use async_trait::async_trait;
+//! ```
+//! # use context_graph_embeddings::types::ModelId;
+//! // Models have well-defined properties from ModelId
+//! let model_id = ModelId::Semantic;
 //!
-//! struct SemanticModel {
-//!     initialized: bool,
-//! }
-//!
-//! #[async_trait]
-//! impl EmbeddingModel for SemanticModel {
-//!     fn model_id(&self) -> ModelId {
-//!         ModelId::Semantic
-//!     }
-//!
-//!     fn supported_input_types(&self) -> &[InputType] {
-//!         &[InputType::Text, InputType::Code]
-//!     }
-//!
-//!     async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
-//!         // Implementation...
-//!         todo!()
-//!     }
-//!
-//!     fn is_initialized(&self) -> bool {
-//!         self.initialized
-//!     }
-//! }
+//! // Query dimension and latency budget
+//! assert_eq!(model_id.dimension(), 1024);
+//! assert_eq!(model_id.latency_budget_ms(), 5);
+//! assert!(model_id.is_pretrained());
 //! ```
 
 mod trait_def;

@@ -4,15 +4,30 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::storage::GdsFile;
+//! ```
+//! # use context_graph_embeddings::storage::{GdsFile, BatchBinaryEncoder};
+//! # use context_graph_embeddings::types::FusedEmbedding;
+//! # use std::path::Path;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create test embedding and GDS file
+//! let embedding = FusedEmbedding::new(
+//!     vec![0.4f32; 1536], [0.125f32; 8], [0, 1, 2, 3], 700, 0xFACEFACE,
+//! )?;
+//! let temp_dir = tempfile::tempdir()?;
+//! let gds_path = temp_dir.path().join("reader_test");
+//! let mut encoder = BatchBinaryEncoder::with_capacity(10);
+//! for _ in 0..3 { encoder.push(&embedding)?; }
+//! encoder.write_gds_file(&gds_path)?;
 //!
-//! let mut gds = GdsFile::open(Path::new("embeddings"))?;
+//! // Read from GDS file
+//! let mut gds = GdsFile::open(&gds_path)?;
 //! println!("File contains {} embeddings", gds.len());
 //!
 //! // O(1) random access
-//! let embedding = gds.read(42)?;
-//! println!("Content hash: {:#x}", embedding.content_hash);
+//! let emb = gds.read(1)?;
+//! println!("Content hash: {:#x}", emb.content_hash);
+//! # Ok(())
+//! # }
 //! ```
 
 use super::error::GdsFileError;

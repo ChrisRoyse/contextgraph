@@ -16,11 +16,14 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
-//! use context_graph_cuda::{VectorOps, StubVectorOps};
+//! ```
+//! use context_graph_cuda::{StubVectorOps, VectorOps};
 //!
+//! // Create stub vector ops for CPU fallback
 //! let ops = StubVectorOps::new();
-//! let similarity = ops.cosine_similarity(&vec_a, &vec_b).await?;
+//! // Stub uses CPU, so GPU is not available
+//! assert!(!ops.is_gpu_available());
+//! assert_eq!(ops.device_name(), "CPU (Stub)");
 //! ```
 
 pub mod error;

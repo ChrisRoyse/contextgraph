@@ -10,15 +10,28 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::storage::BatchBinaryEncoder;
+//! ```
+//! # use context_graph_embeddings::storage::BatchBinaryEncoder;
+//! # use context_graph_embeddings::types::FusedEmbedding;
+//! # use std::path::Path;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Create test embedding
+//! let embedding = FusedEmbedding::new(
+//!     vec![0.5f32; 1536], [0.125f32; 8], [0, 1, 2, 3], 500, 0xCAFEBABE,
+//! )?;
 //!
-//! let mut encoder = BatchBinaryEncoder::with_capacity(1000);
-//! for embedding in embeddings {
+//! let temp_dir = tempfile::tempdir()?;
+//! let gds_path = temp_dir.path().join("embeddings");
+//! let mut encoder = BatchBinaryEncoder::with_capacity(10);
+//! for _ in 0..3 {
 //!     encoder.push(&embedding)?;
 //! }
-//! encoder.write_gds_file(Path::new("embeddings"))?;
+//! encoder.write_gds_file(&gds_path)?;
 //! // Creates: embeddings.cgeb (data) + embeddings.cgei (index)
+//! assert!(gds_path.with_extension("cgeb").exists());
+//! assert!(gds_path.with_extension("cgei").exists());
+//! # Ok(())
+//! # }
 //! ```
 
 mod encoder;

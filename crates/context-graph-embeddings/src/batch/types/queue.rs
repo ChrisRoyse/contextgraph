@@ -26,24 +26,28 @@ use super::stats::{BatchQueueStats, BatchQueueSummary};
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use context_graph_embeddings::batch::BatchQueue;
-/// use context_graph_embeddings::config::BatchConfig;
-/// use context_graph_embeddings::types::ModelId;
-///
+/// ```
+/// # use context_graph_embeddings::batch::{BatchQueue, BatchRequest};
+/// # use context_graph_embeddings::config::BatchConfig;
+/// # use context_graph_embeddings::types::{ModelId, ModelInput};
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = BatchConfig::default();
 /// let mut queue = BatchQueue::new(ModelId::Semantic, config);
 ///
 /// // Add requests
+/// let input = ModelInput::text("Test input")?;
 /// let (request, _rx) = BatchRequest::new(input, ModelId::Semantic);
 /// queue.push(request);
 ///
-/// // Check if ready to process
-/// if queue.should_flush() {
-///     if let Some(batch) = queue.drain_batch() {
-///         // Process batch...
-///     }
+/// assert_eq!(queue.len(), 1);
+///
+/// // Drain batch for processing
+/// if let Some(batch) = queue.drain_batch() {
+///     assert_eq!(batch.len(), 1);
+///     batch.fail("doc test cleanup");
 /// }
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug)]
 pub struct BatchQueue {

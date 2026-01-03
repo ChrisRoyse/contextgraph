@@ -11,13 +11,15 @@ use std::sync::atomic::{AtomicU64, Ordering};
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```
+/// # use context_graph_embeddings::batch::BatchQueueStats;
 /// let stats = BatchQueueStats::default();
 /// stats.record_request();
 /// stats.record_batch(10, 5000); // 10 items, 5ms wait
 ///
 /// let summary = stats.summary();
-/// println!("Processed {} batches", summary.batches_processed);
+/// assert_eq!(summary.batches_processed, 1);
+/// assert_eq!(summary.requests_received, 1);
 /// ```
 #[derive(Debug, Default)]
 pub struct BatchQueueStats {

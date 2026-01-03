@@ -17,12 +17,16 @@ impl ModelEmbedding {
     /// A 1D tensor containing the embedding vector.
     ///
     /// # Example
-    /// ```rust,ignore
-    /// use context_graph_embeddings::gpu::device;
-    ///
+    /// ```
+    /// # use context_graph_embeddings::types::{ModelEmbedding, ModelId};
+    /// # use context_graph_embeddings::gpu::{init_gpu, device};
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// init_gpu()?;
     /// let embedding = ModelEmbedding::new(ModelId::Semantic, vec![0.1, 0.2, 0.3], 100);
     /// let tensor = embedding.to_tensor(device())?;
     /// assert_eq!(tensor.dims(), &[3]);
+    /// # Ok(())
+    /// # }
     /// ```
     #[cfg(feature = "candle")]
     pub fn to_tensor(
@@ -42,10 +46,17 @@ impl ModelEmbedding {
     /// A new ModelEmbedding with the tensor values and zero latency.
     ///
     /// # Example
-    /// ```rust,ignore
-    /// let tensor = Tensor::from_slice(&[0.1, 0.2, 0.3], (3,), device)?;
+    /// ```
+    /// # use context_graph_embeddings::types::{ModelEmbedding, ModelId};
+    /// # use context_graph_embeddings::gpu::{init_gpu, device};
+    /// # use candle_core::Tensor;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// init_gpu()?;
+    /// let tensor = Tensor::from_slice(&[0.1f32, 0.2, 0.3], (3,), device())?;
     /// let embedding = ModelEmbedding::from_tensor(&tensor, ModelId::Semantic)?;
     /// assert_eq!(embedding.dimension(), 3);
+    /// # Ok(())
+    /// # }
     /// ```
     #[cfg(feature = "candle")]
     pub fn from_tensor(

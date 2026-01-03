@@ -18,18 +18,21 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::{ModelRegistry, ModelRegistryConfig, ModelId};
+//! ```rust
+//! use context_graph_embeddings::{ModelId, ModelRegistryConfig};
 //!
-//! let config = ModelRegistryConfig::default();
-//! let registry = ModelRegistry::new(config)?;
-//!
-//! // Load and use a model
-//! let semantic = registry.get_or_load(ModelId::Semantic).await?;
-//! let embedding = semantic.embed(&input).await?;
-//!
-//! // Check model dimensions
+//! // Check model dimensions statically
 //! assert_eq!(ModelId::Semantic.dimension(), 1024);
+//! assert_eq!(ModelId::Code.dimension(), 256);  // CodeT5p embed_dim
+//! assert_eq!(ModelId::Entity.dimension(), 384);
+//!
+//! // Verify projected dimensions for FuseMoE
+//! assert_eq!(ModelId::Semantic.projected_dimension(), 1024);
+//! assert_eq!(ModelId::Code.projected_dimension(), 768);  // Projected from 256
+//!
+//! // Registry config defaults
+//! let config = ModelRegistryConfig::default();
+//! assert!(config.max_concurrent_loads > 0);
 //! ```
 
 // =============================================================================

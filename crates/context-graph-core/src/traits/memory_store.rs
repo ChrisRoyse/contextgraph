@@ -48,12 +48,16 @@ impl SearchOptions {
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use context_graph_core::traits::MemoryStore;
+/// ```
+/// use context_graph_core::traits::SearchOptions;
+/// use context_graph_core::types::JohariQuadrant;
 ///
-/// let store = InMemoryStore::new();
-/// let id = store.store(node).await?;
-/// let retrieved = store.retrieve(id).await?;
+/// // Create search options for memory query
+/// let options = SearchOptions::new(10)
+///     .with_min_similarity(0.8)
+///     .with_johari_filter(JohariQuadrant::Open);
+/// assert_eq!(options.top_k, 10);
+/// assert_eq!(options.min_similarity, Some(0.8));
 /// ```
 #[async_trait]
 pub trait MemoryStore: Send + Sync {

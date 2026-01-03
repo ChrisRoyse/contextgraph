@@ -13,9 +13,14 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
+//! ```
 //! use context_graph_core::types::MemoryNode;
-//! use context_graph_core::traits::MemoryStore;
+//! use context_graph_core::traits::{MemoryStore, SearchOptions};
+//!
+//! // Create search options for querying
+//! let options = SearchOptions::new(10)
+//!     .with_min_similarity(0.8);
+//! assert_eq!(options.top_k, 10);
 //! ```
 
 pub mod config;

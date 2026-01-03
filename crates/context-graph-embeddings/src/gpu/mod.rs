@@ -28,7 +28,10 @@ pub use model_loader::{
     AttentionWeights, BertConfig, BertWeights, EmbeddingWeights, EncoderLayerWeights, FfnWeights,
     GpuModelLoader, ModelLoadError, PoolerWeights,
 };
-pub use ops::{cosine_similarity_gpu, l2_norm_gpu, matmul_gpu, normalize_gpu, softmax_gpu};
+pub use ops::{
+    cosine_similarity_gpu, l2_norm_gpu, matmul_gpu, normalize_gpu, softmax_gpu,
+    softmax_with_temperature_gpu,
+};
 pub use tensor::GpuTensor;
 
 /// GPU device information for runtime queries.

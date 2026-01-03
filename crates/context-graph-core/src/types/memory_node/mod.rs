@@ -11,12 +11,13 @@
 //! - Naming: snake_case fields per constitution.yaml
 //!
 //! # Example
-//! ```rust,ignore
-//! use context_graph_core::types::{MemoryNode, NodeMetadata};
+//! ```
+//! use context_graph_core::types::MemoryNode;
 //!
-//! let embedding = vec![0.1; 1536];
+//! let embedding = vec![0.1f32; 1536];
 //! let mut node = MemoryNode::new("knowledge content".to_string(), embedding);
 //! node.metadata.add_tag("important");
+//! assert!(node.metadata.tags.contains(&"important".to_string()));
 //! ```
 
 mod metadata;

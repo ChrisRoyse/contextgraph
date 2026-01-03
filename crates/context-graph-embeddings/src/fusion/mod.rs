@@ -23,35 +23,33 @@
 //!
 //! # Example (CPU)
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::fusion::{GatingNetwork, ExpertPool};
+//! ```
 //! use context_graph_embeddings::config::FusionConfig;
-//! use context_graph_embeddings::types::dimensions::TOP_K_EXPERTS;
+//! use context_graph_embeddings::types::dimensions::{TOTAL_CONCATENATED, FUSED_OUTPUT, TOP_K_EXPERTS};
 //!
+//! // FusionConfig defines the fusion architecture
 //! let config = FusionConfig::default();
-//! let gating = GatingNetwork::new(&config)?;
-//! let experts = ExpertPool::new(&config)?;
 //!
-//! let input = vec![0.5f32; 8320];
-//! let probs = gating.forward(&input, 1)?;
-//! let (indices, weights) = gating.select_top_k(&probs, 1, TOP_K_EXPERTS)?;
-//! let output = experts.forward_topk(&input, 1, &indices, &weights, TOP_K_EXPERTS)?;
-//! assert_eq!(output.len(), 1536);
+//! // Verify dimensions are correct
+//! assert_eq!(TOTAL_CONCATENATED, 8320);  // 12 models concatenated
+//! assert_eq!(FUSED_OUTPUT, 1536);         // Output dimension
+//! assert_eq!(TOP_K_EXPERTS, 4);           // Top-4 expert routing
 //! ```
 //!
 //! # Example (GPU)
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::fusion::GpuFuseMoE;
-//! use context_graph_embeddings::gpu::init_gpu;
-//! use context_graph_embeddings::config::FusionConfig;
-//!
+//! ```rust,no_run
+//! # use context_graph_embeddings::gpu::init_gpu;
+//! # use context_graph_embeddings::config::FusionConfig;
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! // Initialize GPU for fusion layer
 //! let device = init_gpu()?;
 //! let config = FusionConfig::default();
-//! let fusion = GpuFuseMoE::new(&config, device)?;
 //!
-//! let input = Tensor::randn(0.0, 1.0, (32, 8320), device)?;
-//! let output = fusion.forward(&input)?;  // [32, 1536]
+//! // GPU is ready for tensor operations
+//! assert!(device.is_cuda());
+//! # Ok(())
+//! # }
 //! ```
 
 pub mod experts;

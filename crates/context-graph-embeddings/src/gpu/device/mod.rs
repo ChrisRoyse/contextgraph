@@ -20,15 +20,18 @@
 //!
 //! # Usage
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::gpu::{init_gpu, device};
-//!
+//! ```
+//! # use context_graph_embeddings::gpu::{init_gpu, device};
+//! # use candle_core::{Tensor, DType};
+//! # fn main() -> candle_core::Result<()> {
 //! // Initialize at startup - WILL FAIL if no GPU available
 //! init_gpu()?;
 //!
 //! // Get device for tensor operations
 //! let dev = device();
 //! let tensor = Tensor::zeros((1024,), DType::F32, dev)?;
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Error Handling

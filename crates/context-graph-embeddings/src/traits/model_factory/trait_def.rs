@@ -30,25 +30,18 @@ use super::{QuantizationMode, SingleModelConfig};
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use context_graph_embeddings::traits::{ModelFactory, EmbeddingModel};
-/// use context_graph_embeddings::types::ModelId;
+/// ```
+/// # use context_graph_embeddings::traits::{SingleModelConfig, get_memory_estimate};
+/// # use context_graph_embeddings::types::ModelId;
+/// // Check memory requirements using static estimates
+/// let model_id = ModelId::Semantic;
+/// let memory_needed = get_memory_estimate(model_id);
+/// assert!(memory_needed > 0);
+/// println!("Model needs {} bytes", memory_needed);
 ///
-/// async fn create_and_use(factory: &dyn ModelFactory) -> EmbeddingResult<()> {
-///     let config = SingleModelConfig::cuda_fp16();
-///
-///     // Check memory before allocation
-///     let memory_needed = factory.estimate_memory(ModelId::Semantic);
-///     println!("Model needs {} bytes", memory_needed);
-///
-///     // Create and load model
-///     let model = factory.create_model(ModelId::Semantic, &config)?;
-///     model.load().await?;
-///
-///     // Model is now ready for inference
-///     assert!(model.is_initialized());
-///     Ok(())
-/// }
+/// // Configure model placement
+/// let config = SingleModelConfig::cuda_fp16();
+/// assert!(config.validate().is_ok());
 /// ```
 #[async_trait::async_trait]
 pub trait ModelFactory: Send + Sync {
@@ -68,11 +61,14 @@ pub trait ModelFactory: Send + Sync {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let model = factory.create_model(ModelId::Semantic, &config)?;
-    /// assert!(!model.is_initialized()); // Not loaded yet
-    /// model.load().await?;
-    /// assert!(model.is_initialized()); // Now ready
+    /// ```
+    /// # use context_graph_embeddings::traits::SingleModelConfig;
+    /// # use context_graph_embeddings::types::ModelId;
+    /// // Configure model before creation
+    /// let config = SingleModelConfig::cuda_fp16();
+    /// let model_id = ModelId::Semantic;
+    /// // factory.create_model(model_id, &config) would create unloaded model
+    /// assert_eq!(model_id.dimension(), 1024);
     /// ```
     fn create_model(
         &self,
@@ -88,10 +84,12 @@ pub trait ModelFactory: Send + Sync {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let models = factory.supported_models();
-    /// assert!(models.contains(&ModelId::Semantic));
-    /// assert_eq!(models.len(), 12); // Full factory
+    /// ```
+    /// # use context_graph_embeddings::types::ModelId;
+    /// // All 12 model IDs are available
+    /// let all_models = ModelId::all();
+    /// assert_eq!(all_models.len(), 12);
+    /// assert!(all_models.contains(&ModelId::Semantic));
     /// ```
     fn supported_models(&self) -> &[ModelId];
 

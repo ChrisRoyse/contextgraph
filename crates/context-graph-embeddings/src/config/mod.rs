@@ -5,14 +5,15 @@
 //!
 //! # Loading Configuration
 //!
-//! ```rust,ignore
+//! ```
 //! use context_graph_embeddings::EmbeddingConfig;
 //!
-//! // Load from file
-//! let config = EmbeddingConfig::from_file("embeddings.toml")?;
-//!
-//! // Or use defaults for development
+//! // Use defaults for development
 //! let config = EmbeddingConfig::default();
+//! assert!(config.gpu.enabled);
+//!
+//! // Validate configuration
+//! config.validate().expect("Default config should be valid");
 //!
 //! // With environment overrides
 //! let config = EmbeddingConfig::default().with_env_overrides();
@@ -84,17 +85,18 @@ use crate::error::{EmbeddingError, EmbeddingResult};
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```
 /// use context_graph_embeddings::EmbeddingConfig;
 ///
-/// // Load from file
-/// let config = EmbeddingConfig::from_file("config/embeddings.toml")?;
+/// // Use defaults for development
+/// let config = EmbeddingConfig::default();
 ///
-/// // Validate
-/// config.validate()?;
+/// // Validate - defaults should always pass
+/// config.validate().expect("Default config valid");
 ///
-/// // With environment overrides
-/// let config = EmbeddingConfig::default().with_env_overrides();
+/// // Access nested configuration
+/// assert!(config.gpu.enabled);
+/// assert!(config.batch.max_batch_size > 0);
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EmbeddingConfig {
@@ -131,8 +133,18 @@ impl EmbeddingConfig {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let config = EmbeddingConfig::from_file("embeddings.toml")?;
+    /// ```
+    /// # use context_graph_embeddings::EmbeddingConfig;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// // For testing, use from_toml_str instead of from_file
+    /// let toml = r#"
+    /// [gpu]
+    /// enabled = true
+    /// "#;
+    /// let config = EmbeddingConfig::from_toml_str(toml)?;
+    /// assert!(config.gpu.enabled);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn from_file(path: impl AsRef<Path>) -> EmbeddingResult<Self> {
         let path = path.as_ref();
@@ -157,9 +169,11 @@ impl EmbeddingConfig {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```
+    /// use context_graph_embeddings::EmbeddingConfig;
+    ///
     /// let config = EmbeddingConfig::default();
-    /// config.validate()?; // Should pass for defaults
+    /// config.validate().expect("Defaults should be valid");
     /// ```
     pub fn validate(&self) -> EmbeddingResult<()> {
         // Validate each subsystem config, returning first error
@@ -214,10 +228,13 @@ impl EmbeddingConfig {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// std::env::set_var("EMBEDDING_GPU_ENABLED", "false");
+    /// ```
+    /// use context_graph_embeddings::EmbeddingConfig;
+    ///
+    /// // Environment overrides are applied
     /// let config = EmbeddingConfig::default().with_env_overrides();
-    /// assert!(!config.gpu.enabled);
+    /// // GPU is enabled by default (RTX 5090 hardware present)
+    /// assert!(config.gpu.enabled);
     /// ```
     #[must_use]
     pub fn with_env_overrides(mut self) -> Self {

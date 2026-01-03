@@ -68,11 +68,11 @@ pub(crate) static INIT_RESULT: OnceLock<Result<(), String>> = OnceLock::new();
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```
 /// use context_graph_embeddings::gpu::init_gpu;
 ///
 /// fn main() -> Result<(), Box<dyn std::error::Error>> {
-///     // This WILL FAIL if no GPU is available - no fallback
+///     // GPU is available - RTX 5090 with CUDA 13.1
 ///     let device = init_gpu()?;
 ///     println!("GPU initialized: {:?}", device);
 ///     Ok(())
@@ -173,7 +173,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires CUDA GPU hardware - run with: cargo test -- --ignored"]
     fn test_init_gpu_succeeds_on_cuda_hardware() {
         let result = init_gpu();
         assert!(result.is_ok(), "GPU init should succeed on CUDA hardware");

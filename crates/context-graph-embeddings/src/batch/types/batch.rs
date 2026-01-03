@@ -27,14 +27,28 @@ use super::request::BatchRequest;
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```
+/// # use context_graph_embeddings::batch::{Batch, BatchRequest};
+/// # use context_graph_embeddings::types::{ModelId, ModelInput};
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
 /// let mut batch = Batch::new(ModelId::Semantic);
+/// assert!(batch.is_empty());
+///
+/// // Add requests to batch
+/// let input1 = ModelInput::text("Hello")?;
+/// let (request1, _rx1) = BatchRequest::new(input1, ModelId::Semantic);
 /// batch.add(request1);
+///
+/// let input2 = ModelInput::text("World")?;
+/// let (request2, _rx2) = BatchRequest::new(input2, ModelId::Semantic);
 /// batch.add(request2);
 ///
-/// // After processing...
-/// let results = vec![embedding1, embedding2];
-/// batch.complete(results);
+/// assert_eq!(batch.len(), 2);
+/// // Batch would be processed then completed with batch.complete(results)
+/// // For doc test cleanup:
+/// batch.fail("doc test");
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug)]
 pub struct Batch {

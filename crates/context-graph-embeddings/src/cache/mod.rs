@@ -12,24 +12,18 @@
 //!
 //! # Example
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::cache::{CacheKey, CacheManager};
+//! ```
+//! use context_graph_embeddings::cache::CacheKey;
 //! use context_graph_embeddings::config::CacheConfig;
 //!
-//! let config = CacheConfig::default();
-//! let cache = CacheManager::new(config)?;
-//!
-//! // Cache an embedding
+//! // Create cache key from content
 //! let key = CacheKey::from_content("Hello world");
-//! cache.put(key, fused_embedding)?;
+//! assert!(key.content_hash != 0);
 //!
-//! // Retrieve later
-//! if let Some(embedding) = cache.get(&key) {
-//!     println!("Cache hit! Dimension: {}", embedding.vector.len());
-//! }
-//!
-//! // Check cache stats
-//! println!("Hit rate: {:.1}%", cache.hit_rate() * 100.0);
+//! // Verify cache config defaults
+//! let config = CacheConfig::default();
+//! assert!(config.enabled);
+//! assert!(config.max_entries > 0);
 //! ```
 
 pub mod manager;

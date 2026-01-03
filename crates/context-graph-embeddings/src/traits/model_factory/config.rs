@@ -14,13 +14,15 @@ use super::{DevicePlacement, QuantizationMode};
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```
+/// # use context_graph_embeddings::traits::{SingleModelConfig, DevicePlacement, QuantizationMode};
 /// let config = SingleModelConfig {
 ///     device: DevicePlacement::Cuda(0),
 ///     quantization: QuantizationMode::Fp16,
 ///     max_batch_size: 32,
 ///     use_flash_attention: true,
 /// };
+/// assert!(config.validate().is_ok());
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SingleModelConfig {

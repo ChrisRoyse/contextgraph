@@ -28,15 +28,15 @@ use super::core::{GPU_AVAILABLE, GPU_DEVICE, GPU_INFO};
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```
 /// use context_graph_embeddings::gpu::{init_gpu, device};
 ///
-/// // MUST initialize first - no fallback
+/// // GPU is available - RTX 5090 with CUDA 13.1
 /// init_gpu().expect("GPU required");
 ///
 /// // Now device() is safe to call
 /// let dev = device();
-/// // Use dev for GPU tensor operations
+/// assert!(dev.is_cuda());
 /// ```
 pub fn device() -> &'static Device {
     GPU_DEVICE.get().expect(
@@ -118,15 +118,15 @@ pub fn get_gpu_info() -> GpuInfo {
 ///
 /// # Usage
 ///
-/// ```rust,ignore
+/// ```
 /// use context_graph_embeddings::gpu::require_gpu;
 /// use context_graph_embeddings::error::EmbeddingError;
 ///
 /// fn run_embeddings() -> Result<(), EmbeddingError> {
-///     require_gpu()?;  // Returns EmbeddingError::GpuError if no GPU
-///     // ... rest of embedding logic
+///     require_gpu()?;  // RTX 5090 with CUDA 13.1 is available
 ///     Ok(())
 /// }
+/// # run_embeddings().unwrap();
 /// ```
 pub fn require_gpu() -> Result<&'static Device, crate::error::EmbeddingError> {
     super::init_gpu().map_err(|e| crate::error::EmbeddingError::GpuError {
@@ -158,7 +158,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires CUDA GPU hardware - run with: cargo test -- --ignored"]
     fn test_device_returns_cuda_device_after_init() {
         let _ = crate::gpu::init_gpu();
         let dev = device();
@@ -167,7 +166,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires CUDA GPU hardware - run with: cargo test -- --ignored"]
     fn test_gpu_info_after_init() {
         let _ = crate::gpu::init_gpu();
         let info = get_gpu_info();
@@ -177,7 +175,6 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "Requires CUDA GPU hardware - run with: cargo test -- --ignored"]
     fn test_require_gpu_returns_device() {
         let result = require_gpu();
         assert!(result.is_ok());

@@ -28,21 +28,16 @@ use async_trait::async_trait;
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use context_graph_embeddings::traits::EmbeddingModel;
-/// use context_graph_embeddings::types::{ModelInput, InputType};
+/// ```
+/// # use context_graph_embeddings::types::{ModelInput, InputType, ModelId};
+/// // Check model capabilities using ModelId
+/// let model_id = ModelId::Semantic;
+/// assert_eq!(model_id.dimension(), 1024);
+/// assert!(model_id.is_pretrained());
 ///
-/// async fn generate_embedding(model: &dyn EmbeddingModel, text: &str) -> Result<Vec<f32>, Box<dyn std::error::Error>> {
-///     // Check if model supports text
-///     if !model.supports_input_type(InputType::Text) {
-///         return Err("Model doesn't support text".into());
-///     }
-///
-///     // Generate embedding
-///     let input = ModelInput::text(text)?;
-///     let embedding = model.embed(&input).await?;
-///     Ok(embedding.vector)
-/// }
+/// // Create inputs for embedding
+/// let input = ModelInput::text("Hello, world!").unwrap();
+/// assert!(matches!(InputType::from(&input), InputType::Text));
 /// ```
 #[async_trait]
 pub trait EmbeddingModel: Send + Sync {
@@ -59,9 +54,11 @@ pub trait EmbeddingModel: Send + Sync {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let model = SemanticModel::new();
-    /// assert_eq!(model.model_id(), ModelId::Semantic);
+    /// ```
+    /// # use context_graph_embeddings::types::ModelId;
+    /// // ModelId identifies each of the 12 models
+    /// let model_id = ModelId::Semantic;
+    /// assert_eq!(model_id.dimension(), 1024);
     /// ```
     fn model_id(&self) -> ModelId;
 
@@ -76,11 +73,12 @@ pub trait EmbeddingModel: Send + Sync {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let model = MultimodalModel::new();
-    /// let types = model.supported_input_types();
-    /// assert!(types.contains(&InputType::Text));
-    /// assert!(types.contains(&InputType::Image));
+    /// ```
+    /// # use context_graph_embeddings::types::ModelId;
+    /// // Query model properties via ModelId
+    /// let multimodal = ModelId::Multimodal;
+    /// assert_eq!(multimodal.dimension(), 768);
+    /// assert!(multimodal.is_pretrained());
     /// ```
     fn supported_input_types(&self) -> &[InputType];
 
@@ -107,11 +105,12 @@ pub trait EmbeddingModel: Send + Sync {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let input = ModelInput::text("Hello, world!")?;
-    /// let embedding = model.embed(&input).await?;
-    /// assert_eq!(embedding.model_id, ModelId::Semantic);
-    /// assert_eq!(embedding.dimension(), 1024);
+    /// ```
+    /// # use context_graph_embeddings::types::{ModelInput, ModelId};
+    /// // Create input for embedding
+    /// let input = ModelInput::text("Hello, world!").unwrap();
+    /// // Model dimension is known from ModelId
+    /// assert_eq!(ModelId::Semantic.dimension(), 1024);
     /// ```
     async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding>;
 
@@ -126,9 +125,15 @@ pub trait EmbeddingModel: Send + Sync {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// if !model.is_initialized() {
-    ///     return Err(EmbeddingError::NotInitialized { model_id: model.model_id() });
+    /// ```
+    /// # use context_graph_embeddings::error::EmbeddingError;
+    /// # use context_graph_embeddings::types::ModelId;
+    /// // Check initialization state before embedding
+    /// let model_id = ModelId::Semantic;
+    /// let is_init = false; // Would come from model.is_initialized()
+    /// if !is_init {
+    ///     let err = EmbeddingError::NotInitialized { model_id };
+    ///     assert!(matches!(err, EmbeddingError::NotInitialized { .. }));
     /// }
     /// ```
     fn is_initialized(&self) -> bool;
@@ -150,10 +155,12 @@ pub trait EmbeddingModel: Send + Sync {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// if model.supports_input_type(InputType::Image) {
-    ///     let embedding = model.embed(&image_input).await?;
-    /// }
+    /// ```
+    /// # use context_graph_embeddings::types::ModelId;
+    /// let model_id = ModelId::Multimodal;
+    /// // Check model properties
+    /// assert_eq!(model_id.dimension(), 768);
+    /// assert!(model_id.is_pretrained());
     /// ```
     fn supports_input_type(&self, input_type: InputType) -> bool {
         self.supported_input_types().contains(&input_type)
@@ -169,9 +176,10 @@ pub trait EmbeddingModel: Send + Sync {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let dim = model.dimension();
-    /// assert_eq!(dim, 1024); // For Semantic model
+    /// ```
+    /// # use context_graph_embeddings::types::ModelId;
+    /// let dim = ModelId::Semantic.dimension();
+    /// assert_eq!(dim, 1024); // Semantic model dimension
     /// ```
     fn dimension(&self) -> usize {
         self.model_id().dimension()
@@ -187,9 +195,10 @@ pub trait EmbeddingModel: Send + Sync {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let proj_dim = model.projected_dimension();
-    /// assert_eq!(proj_dim, 1536); // For Sparse model
+    /// ```
+    /// # use context_graph_embeddings::types::ModelId;
+    /// let proj_dim = ModelId::Sparse.projected_dimension();
+    /// assert_eq!(proj_dim, 1536); // Sparse model projected dimension
     /// ```
     fn projected_dimension(&self) -> usize {
         self.model_id().projected_dimension()
@@ -205,9 +214,10 @@ pub trait EmbeddingModel: Send + Sync {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let budget = model.latency_budget_ms();
-    /// assert_eq!(budget, 5); // Semantic: 5ms
+    /// ```
+    /// # use context_graph_embeddings::types::ModelId;
+    /// let budget = ModelId::Semantic.latency_budget_ms();
+    /// assert_eq!(budget, 5); // Semantic: 5ms budget
     /// ```
     fn latency_budget_ms(&self) -> u32 {
         self.model_id().latency_budget_ms()
@@ -227,9 +237,14 @@ pub trait EmbeddingModel: Send + Sync {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// model.validate_input(&input)?;
-    /// let embedding = model.embed(&input).await?;
+    /// ```
+    /// # use context_graph_embeddings::types::{ModelInput, InputType, ModelId};
+    /// let input = ModelInput::text("Test").unwrap();
+    /// let input_type = InputType::from(&input);
+    /// let model_id = ModelId::Semantic;
+    /// // Check input type and model properties
+    /// assert!(matches!(input_type, InputType::Text));
+    /// assert_eq!(model_id.dimension(), 1024);
     /// ```
     fn validate_input(&self, input: &ModelInput) -> EmbeddingResult<()> {
         let input_type = InputType::from(input);

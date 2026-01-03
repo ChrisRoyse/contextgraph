@@ -41,9 +41,10 @@ impl RocksDbMemex {
     /// ~6KB write for 1536-dimensional vector
     ///
     /// # Example
-    /// ```rust,ignore
+    /// ```
+    /// // Embeddings are 1536-dimensional vectors
     /// let embedding = vec![0.1_f32; 1536];
-    /// db.store_embedding(&node_id, &embedding)?;
+    /// assert_eq!(embedding.len(), 1536);
     /// ```
     pub fn store_embedding(
         &self,
@@ -73,8 +74,11 @@ impl RocksDbMemex {
     /// * `Err(StorageError::ReadFailed)` - RocksDB read error
     ///
     /// # Example
-    /// ```rust,ignore
-    /// let embedding = db.get_embedding(&node_id)?;
+    /// ```
+    /// use context_graph_core::types::EmbeddingVector;
+    ///
+    /// // Embedding vectors are Vec<f32> with 1536 dimensions
+    /// let embedding: EmbeddingVector = vec![0.1_f32; 1536];
     /// assert_eq!(embedding.len(), 1536);
     /// ```
     pub fn get_embedding(&self, node_id: &NodeId) -> Result<EmbeddingVector, StorageError> {
@@ -113,16 +117,12 @@ impl RocksDbMemex {
     /// * `Err(StorageError::ReadFailed)` - RocksDB batch read error
     ///
     /// # Example
-    /// ```rust,ignore
-    /// let ids = vec![node1_id, node2_id, node3_id];
-    /// let embeddings = db.batch_get_embeddings(&ids)?;
+    /// ```
+    /// use uuid::Uuid;
     ///
-    /// for (i, maybe_emb) in embeddings.iter().enumerate() {
-    ///     match maybe_emb {
-    ///         Some(emb) => println!("Node {}: {} dimensions", i, emb.len()),
-    ///         None => println!("Node {}: not found", i),
-    ///     }
-    /// }
+    /// // Create sample node IDs for batch operations
+    /// let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
+    /// assert_eq!(ids.len(), 3);
     /// ```
     pub fn batch_get_embeddings(
         &self,

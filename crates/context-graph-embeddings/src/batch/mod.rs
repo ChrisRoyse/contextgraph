@@ -21,31 +21,33 @@
 //!
 //! # Usage
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::batch::{BatchQueue, BatchRequest};
-//! use context_graph_embeddings::config::BatchConfig;
-//! use context_graph_embeddings::types::{ModelId, ModelInput};
-//!
+//! ```
+//! # use context_graph_embeddings::batch::{BatchQueue, BatchRequest};
+//! # use context_graph_embeddings::config::BatchConfig;
+//! # use context_graph_embeddings::types::{ModelId, ModelInput};
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! // Create queue for a model
 //! let config = BatchConfig::default();
 //! let mut queue = BatchQueue::new(ModelId::Semantic, config);
 //!
 //! // Submit requests
-//! let input = ModelInput::text("Hello, world!").unwrap();
-//! let (request, receiver) = BatchRequest::new(input, ModelId::Semantic);
+//! let input = ModelInput::text("Hello, world!")?;
+//! let (request, _receiver) = BatchRequest::new(input, ModelId::Semantic);
 //! queue.push(request);
 //!
-//! // Process when ready
-//! if queue.should_flush() {
-//!     if let Some(batch) = queue.drain_batch() {
-//!         // Run inference on batch.inputs...
-//!         let results = model.embed_batch(&batch.inputs).await?;
-//!         batch.complete(results);
-//!     }
-//! }
+//! // Check queue state
+//! assert_eq!(queue.len(), 1);
+//! assert!(!queue.is_empty());
 //!
-//! // Clients await their results
-//! let embedding = receiver.await??;
+//! // Extract batch for processing
+//! if let Some(batch) = queue.drain_batch() {
+//!     assert_eq!(batch.len(), 1);
+//!     // In real code: run inference, then batch.complete(results)
+//!     // For doc test: just fail the batch to clean up
+//!     batch.fail("doc test cleanup");
+//! }
+//! # Ok(())
+//! # }
 //! ```
 //!
 //! # Design Principles

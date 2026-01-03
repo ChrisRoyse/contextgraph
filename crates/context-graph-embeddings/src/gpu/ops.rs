@@ -12,14 +12,18 @@
 //!
 //! # Usage
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::gpu::{l2_norm_gpu, cosine_similarity_gpu};
-//!
-//! let a = Tensor::from_slice(&[1.0, 2.0, 3.0], (3,), device)?;
-//! let b = Tensor::from_slice(&[4.0, 5.0, 6.0], (3,), device)?;
+//! ```
+//! # use context_graph_embeddings::gpu::{init_gpu, l2_norm_gpu, cosine_similarity_gpu};
+//! # use candle_core::Tensor;
+//! # fn main() -> candle_core::Result<()> {
+//! # let device = init_gpu()?;
+//! let a = Tensor::from_slice(&[1.0f32, 2.0, 3.0], (3,), device)?;
+//! let b = Tensor::from_slice(&[4.0f32, 5.0, 6.0], (3,), device)?;
 //!
 //! let norm = l2_norm_gpu(&a)?;
 //! let sim = cosine_similarity_gpu(&a, &b)?;
+//! # Ok(())
+//! # }
 //! ```
 
 use candle_core::{Tensor, D};
@@ -35,9 +39,15 @@ use candle_core::{Tensor, D};
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// let tensor = Tensor::from_slice(&[3.0, 4.0], (2,), device)?;
+/// ```
+/// # use context_graph_embeddings::gpu::{init_gpu, l2_norm_gpu};
+/// # use candle_core::Tensor;
+/// # fn main() -> candle_core::Result<()> {
+/// # let device = init_gpu()?;
+/// let tensor = Tensor::from_slice(&[3.0f32, 4.0], (2,), device)?;
 /// let norm = l2_norm_gpu(&tensor)?; // 5.0
+/// # Ok(())
+/// # }
 /// ```
 pub fn l2_norm_gpu(tensor: &Tensor) -> candle_core::Result<f32> {
     tensor.sqr()?.sum_all()?.sqrt()?.to_vec0()
@@ -68,10 +78,16 @@ pub fn l2_norm_batch_gpu(tensor: &Tensor) -> candle_core::Result<Tensor> {
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// let tensor = Tensor::from_slice(&[3.0, 4.0], (2,), device)?;
+/// ```
+/// # use context_graph_embeddings::gpu::{init_gpu, normalize_gpu};
+/// # use candle_core::Tensor;
+/// # fn main() -> candle_core::Result<()> {
+/// # let device = init_gpu()?;
+/// let tensor = Tensor::from_slice(&[3.0f32, 4.0], (2,), device)?;
 /// let normalized = normalize_gpu(&tensor)?;
 /// // Result: [0.6, 0.8] (unit vector)
+/// # Ok(())
+/// # }
 /// ```
 pub fn normalize_gpu(tensor: &Tensor) -> candle_core::Result<Tensor> {
     let norm = tensor.sqr()?.sum_keepdim(D::Minus1)?.sqrt()?;
@@ -91,10 +107,16 @@ pub fn normalize_gpu(tensor: &Tensor) -> candle_core::Result<Tensor> {
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// let a = Tensor::from_slice(&[1.0, 0.0], (2,), device)?;
-/// let b = Tensor::from_slice(&[0.707, 0.707], (2,), device)?;
+/// ```
+/// # use context_graph_embeddings::gpu::{init_gpu, cosine_similarity_gpu};
+/// # use candle_core::Tensor;
+/// # fn main() -> candle_core::Result<()> {
+/// # let device = init_gpu()?;
+/// let a = Tensor::from_slice(&[1.0f32, 0.0], (2,), device)?;
+/// let b = Tensor::from_slice(&[0.707f32, 0.707], (2,), device)?;
 /// let sim = cosine_similarity_gpu(&a, &b)?; // ~0.707
+/// # Ok(())
+/// # }
 /// ```
 pub fn cosine_similarity_gpu(a: &Tensor, b: &Tensor) -> candle_core::Result<f32> {
     let dot = a.mul(b)?.sum_all()?;
@@ -137,11 +159,17 @@ pub fn cosine_similarity_batch_gpu(a: &Tensor, b: &Tensor) -> candle_core::Resul
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```
+/// # use context_graph_embeddings::gpu::{init_gpu, matmul_gpu};
+/// # use candle_core::{Tensor, DType};
+/// # fn main() -> candle_core::Result<()> {
+/// # let device = init_gpu()?;
 /// // Linear layer: input @ weight.T + bias
 /// let input = Tensor::zeros((32, 8320), DType::F32, device)?;  // batch of 32
 /// let weight = Tensor::zeros((4096, 8320), DType::F32, device)?;
 /// let output = matmul_gpu(&input, &weight.t()?)?;  // [32, 4096]
+/// # Ok(())
+/// # }
 /// ```
 pub fn matmul_gpu(a: &Tensor, b: &Tensor) -> candle_core::Result<Tensor> {
     a.matmul(b)
@@ -173,9 +201,15 @@ pub fn batched_matmul_gpu(a: &Tensor, b: &Tensor) -> candle_core::Result<Tensor>
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// let logits = Tensor::from_slice(&[1.0, 2.0, 3.0], (3,), device)?;
+/// ```
+/// # use context_graph_embeddings::gpu::{init_gpu, softmax_gpu};
+/// # use candle_core::Tensor;
+/// # fn main() -> candle_core::Result<()> {
+/// # let device = init_gpu()?;
+/// let logits = Tensor::from_slice(&[1.0f32, 2.0, 3.0], (3,), device)?;
 /// let probs = softmax_gpu(&logits)?;  // [0.09, 0.24, 0.67]
+/// # Ok(())
+/// # }
 /// ```
 pub fn softmax_gpu(tensor: &Tensor) -> candle_core::Result<Tensor> {
     candle_nn::ops::softmax(tensor, D::Minus1)
@@ -198,10 +232,16 @@ pub fn softmax_gpu(tensor: &Tensor) -> candle_core::Result<Tensor> {
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// let logits = Tensor::from_slice(&[1.0, 2.0, 3.0], (3,), device)?;
+/// ```
+/// # use context_graph_embeddings::gpu::{init_gpu, softmax_with_temperature_gpu};
+/// # use candle_core::Tensor;
+/// # fn main() -> candle_core::Result<()> {
+/// # let device = init_gpu()?;
+/// let logits = Tensor::from_slice(&[1.0f32, 2.0, 3.0], (3,), device)?;
 /// let sharp = softmax_with_temperature_gpu(&logits, 0.5)?;  // More peaked
 /// let flat = softmax_with_temperature_gpu(&logits, 2.0)?;   // More uniform
+/// # Ok(())
+/// # }
 /// ```
 pub fn softmax_with_temperature_gpu(
     tensor: &Tensor,

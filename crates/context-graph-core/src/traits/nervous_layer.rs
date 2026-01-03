@@ -21,12 +21,17 @@ use crate::types::{LayerId, LayerInput, LayerOutput};
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use context_graph_core::traits::NervousLayer;
+/// ```
+/// use context_graph_core::types::LayerId;
+/// use std::time::Duration;
 ///
-/// let layer = ReflexLayer::new();
-/// let output = layer.process(input).await?;
-/// assert!(output.duration_us < layer.latency_budget().as_micros() as u64);
+/// // Nervous layer latency budgets from constitution
+/// let reflex_budget = Duration::from_micros(100);  // Reflex: 100μs
+/// let memory_budget = Duration::from_millis(1);    // Memory: 1ms
+/// let learning_budget = Duration::from_millis(10); // Learning: 10ms
+///
+/// assert!(reflex_budget < memory_budget);
+/// assert!(memory_budget < learning_budget);
 /// ```
 #[async_trait]
 pub trait NervousLayer: Send + Sync {

@@ -512,12 +512,15 @@ pub trait Memex: Send + Sync {
     /// # Usage
     ///
     /// Call periodically for monitoring:
-    /// ```rust,ignore
-    /// let health = memex.health_check()?;
+    /// ```
+    /// use context_graph_storage::StorageHealth;
+    ///
+    /// // Create a health snapshot for monitoring
+    /// let health = StorageHealth::default();
     /// if !health.is_healthy {
-    ///     log::error!("Storage unhealthy!");
+    ///     eprintln!("Storage unhealthy!");
     /// }
-    /// metrics.gauge("storage.nodes", health.node_count);
+    /// assert!(health.is_healthy);
     /// ```
     ///
     /// `Constraint: latency < 10ms`

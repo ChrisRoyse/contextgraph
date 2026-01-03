@@ -45,10 +45,16 @@ impl GpuTensor {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust,no_run
+    /// # use context_graph_embeddings::gpu::GpuTensor;
+    /// # use context_graph_embeddings::gpu::init_gpu;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// init_gpu()?;
     /// let embedding = vec![0.1, 0.2, 0.3, 0.4];
     /// let tensor = GpuTensor::from_vec(&embedding)?;
     /// assert_eq!(tensor.dim(), 4);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn from_vec(data: &[f32]) -> candle_core::Result<Self> {
         let dev = device();
@@ -66,11 +72,17 @@ impl GpuTensor {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust,no_run
+    /// # use context_graph_embeddings::gpu::GpuTensor;
+    /// # use context_graph_embeddings::gpu::init_gpu;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// init_gpu()?;
     /// // 2 vectors of dimension 4
     /// let batch = vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
     /// let tensor = GpuTensor::from_batch(&batch, 2, 4)?;
     /// assert_eq!(tensor.batch_size(), 2);
+    /// # Ok(())
+    /// # }
     /// ```
     pub fn from_batch(data: &[f32], batch_size: usize, dim: usize) -> candle_core::Result<Self> {
         assert_eq!(data.len(), batch_size * dim, "Data length mismatch");

@@ -18,18 +18,20 @@ use crate::types::{ModelEmbedding, ModelId, ModelInput};
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use context_graph_embeddings::batch::BatchRequest;
-/// use context_graph_embeddings::types::{ModelId, ModelInput};
+/// ```
+/// # use context_graph_embeddings::batch::BatchRequest;
+/// # use context_graph_embeddings::types::{ModelId, ModelInput};
+/// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+/// let input = ModelInput::text("Hello, world!")?;
+/// let (request, _receiver) = BatchRequest::new(input, ModelId::Semantic);
 ///
-/// let input = ModelInput::text("Hello, world!").unwrap();
-/// let (request, receiver) = BatchRequest::new(input, ModelId::Semantic);
-///
-/// // Submit request to queue...
-/// // queue.push(request);
-///
-/// // Later, receive result
-/// let result = receiver.await.unwrap();
+/// // Request has a unique ID
+/// assert!(!request.id.is_nil());
+/// // Request tracks model and priority
+/// assert_eq!(request.model_id, ModelId::Semantic);
+/// assert_eq!(request.priority, 0);
+/// # Ok(())
+/// # }
 /// ```
 #[derive(Debug)]
 pub struct BatchRequest {
@@ -71,9 +73,15 @@ impl BatchRequest {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
-    /// let input = ModelInput::text("Hello").unwrap();
-    /// let (request, receiver) = BatchRequest::new(input, ModelId::Semantic);
+    /// ```
+    /// # use context_graph_embeddings::batch::BatchRequest;
+    /// # use context_graph_embeddings::types::{ModelId, ModelInput};
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let input = ModelInput::text("Hello")?;
+    /// let (request, _receiver) = BatchRequest::new(input, ModelId::Semantic);
+    /// assert_eq!(request.model_id, ModelId::Semantic);
+    /// # Ok(())
+    /// # }
     /// ```
     #[must_use]
     pub fn new(

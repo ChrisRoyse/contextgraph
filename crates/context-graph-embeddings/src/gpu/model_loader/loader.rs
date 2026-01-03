@@ -19,13 +19,16 @@ use crate::gpu::init_gpu;
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust,no_run
 /// use context_graph_embeddings::gpu::GpuModelLoader;
-/// use std::path::Path;
+/// use candle_core::DType;
 ///
-/// let loader = GpuModelLoader::new()?;
-/// let weights = loader.load_bert_weights(Path::new("/models/semantic"))?;
-/// println!("Loaded {} parameters", weights.param_count());
+/// // Create loader (initializes GPU)
+/// let loader = GpuModelLoader::new().expect("GPU init");
+///
+/// // Verify device and dtype
+/// assert!(loader.device().is_cuda());
+/// assert_eq!(loader.dtype(), DType::F32);
 /// ```
 pub struct GpuModelLoader {
     /// Reference to the GPU device singleton.

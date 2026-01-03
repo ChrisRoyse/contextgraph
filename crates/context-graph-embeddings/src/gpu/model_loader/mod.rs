@@ -25,12 +25,15 @@
 //!
 //! # Usage
 //!
-//! ```rust,ignore
-//! use context_graph_embeddings::gpu::{GpuModelLoader, BertWeights};
+//! ```rust,no_run
+//! use context_graph_embeddings::gpu::{GpuModelLoader, BertConfig};
 //!
-//! let loader = GpuModelLoader::new()?;
-//! let weights = loader.load_bert_weights(Path::new("/models/semantic"))?;
-//! // Use weights for inference
+//! // GpuModelLoader initializes GPU automatically
+//! let loader = GpuModelLoader::new().expect("GPU init should succeed");
+//!
+//! // Verify GPU device is available
+//! let device = loader.device();
+//! assert!(device.is_cuda());
 //! ```
 
 mod batch_loader;

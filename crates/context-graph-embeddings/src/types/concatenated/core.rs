@@ -73,9 +73,13 @@ impl ConcatenatedEmbedding {
     /// This is a fail-fast design - incorrect dimensions must be fixed, not worked around.
     ///
     /// # Example
-    /// ```rust,ignore
+    /// ```
+    /// use context_graph_embeddings::types::{ConcatenatedEmbedding, ModelEmbedding, ModelId};
+    ///
     /// let mut concat = ConcatenatedEmbedding::new();
-    /// let mut emb = ModelEmbedding::new(ModelId::Semantic, vec![0.1; 1024], 1000);
+    /// let model_id = ModelId::Semantic;
+    /// let dim = model_id.projected_dimension();
+    /// let mut emb = ModelEmbedding::new(model_id, vec![0.1; dim], 1000);
     /// emb.set_projected(true);
     /// concat.set(emb);
     /// assert_eq!(concat.filled_count(), 1);

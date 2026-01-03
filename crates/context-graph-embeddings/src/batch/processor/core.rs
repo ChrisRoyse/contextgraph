@@ -39,22 +39,16 @@ use super::worker;
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// use context_graph_embeddings::batch::{BatchProcessor, BatchProcessorConfig};
-/// use context_graph_embeddings::models::ModelRegistry;
-/// use context_graph_embeddings::types::{ModelId, ModelInput};
+/// ```
+/// use context_graph_embeddings::batch::BatchProcessorConfig;
 ///
-/// let registry = Arc::new(ModelRegistry::new(...).await?);
+/// // Configure batch processing
 /// let config = BatchProcessorConfig::default();
 ///
-/// let processor = BatchProcessor::new(registry, config).await?;
-///
-/// // Submit requests
-/// let input = ModelInput::text("Hello, world!").unwrap();
-/// let embedding = processor.submit(ModelId::Semantic, input).await?;
-///
-/// // Shutdown when done
-/// processor.shutdown().await;
+/// // Verify default settings
+/// assert!(config.max_concurrent_batches > 0);
+/// assert!(config.request_buffer_size > 0);
+/// config.validate().expect("Default config should be valid");
 /// ```
 pub struct BatchProcessor {
     /// Model registry for accessing loaded models.
