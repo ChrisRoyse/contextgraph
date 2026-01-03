@@ -50,7 +50,7 @@ pub use config::{ConeConfig, HyperbolicConfig, IndexConfig};
 pub use entailment::EntailmentCone;
 pub use error::{GraphError, GraphResult};
 pub use hyperbolic::{PoincareBall, PoincarePoint};
-pub use index::{FaissGpuIndex, GpuResources, MetricType};
+pub use index::{FaissGpuIndex, GpuResources, MetricType, SearchResult, SearchResultItem};
 
 // Re-export core types for convenience
 pub use context_graph_core::marblestone::{Domain, EdgeType, NeurotransmitterWeights};

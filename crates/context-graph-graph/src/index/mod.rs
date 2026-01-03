@@ -38,11 +38,9 @@
 
 pub mod faiss_ffi;
 pub mod gpu_index;
+pub mod search_result;
 
 // Re-exports for convenience
 pub use faiss_ffi::{check_faiss_result, MetricType};
 pub use gpu_index::{FaissGpuIndex, GpuResources};
-
-// TODO: M04-T11 - Implement SearchResult
-// pub mod search_result;
-// pub use search_result::SearchResult;
+pub use search_result::{SearchResult, SearchResultItem};

@@ -189,8 +189,8 @@ graph TD
 | 11 | M04-T08 | Define GraphError Enum | foundation | T00 | :white_check_mark: Complete | 1.5 |
 | 12 | M04-T08a | **Implement Error Conversions (From traits)** | foundation | T08 | :white_check_mark: Complete | 1 |
 | 13 | M04-T09 | Define FAISS FFI Bindings | logic | T08a | :white_check_mark: Complete | 4 |
-| 14 | M04-T10 | Implement FaissGpuIndex Wrapper | logic | T01, T09 | :hourglass: Ready | 5 |
-| 15 | M04-T11 | Implement SearchResult Struct | logic | T10 | :no_entry: Blocked | 1.5 |
+| 14 | M04-T10 | Implement FaissGpuIndex Wrapper | logic | T01, T09 | :white_check_mark: Complete | 5 |
+| 15 | M04-T11 | Implement SearchResult Struct | logic | T10 | :white_check_mark: Complete | 1.5 |
 | 16 | M04-T12 | Define Graph Storage Column Families | logic | T08a | :hourglass: Ready | 2 |
 | 17 | M04-T13 | Implement GraphStorage Backend | logic | T04, T06, T12 | :no_entry: Blocked | 4 |
 | 18 | M04-T13a | **Implement Storage Schema Migrations** | logic | T13 | :no_entry: Blocked | 2 |
