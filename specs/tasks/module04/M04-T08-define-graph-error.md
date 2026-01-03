@@ -2,16 +2,12 @@
 id: "M04-T08"
 title: "Define GraphError Enum"
 description: |
-  Implement comprehensive GraphError enum for knowledge graph operations.
-  Variants: FaissIndexCreation, FaissTrainingFailed, FaissSearchFailed, FaissAddFailed,
-  IndexNotTrained, InsufficientTrainingData, GpuResourceAllocation, GpuTransferFailed,
-  StorageOpen, Storage, ColumnFamilyNotFound, CorruptedData, VectorIdMismatch, InvalidConfig,
-  NodeNotFound, EdgeNotFound, InvalidHyperbolicPoint.
-  Use thiserror for derivation.
+  TASK STATUS: PARTIALLY COMPLETE - GraphError enum exists with 26 variants.
+  REMAINING: Add missing variants (StorageOpen), verify Send+Sync bounds, add static_assertions.
 layer: "foundation"
-status: "pending"
+status: "in_progress"
 priority: "high"
-estimated_hours: 1.5
+estimated_hours: 0.5
 sequence: 11
 depends_on:
   - "M04-T00"
@@ -20,21 +16,75 @@ spec_refs:
 files_to_create: []
 files_to_modify:
   - path: "crates/context-graph-graph/src/error.rs"
-    description: "Define GraphError enum with all variants"
-test_file: "crates/context-graph-graph/tests/error_tests.rs"
+    description: "Add missing variants and compile-time assertions"
+test_file: "crates/context-graph-graph/src/error.rs (inline #[cfg(test)])"
 ---
 
-## Context
+## CRITICAL: Current Codebase State (2026-01-03)
 
-GraphError provides comprehensive error handling for all knowledge graph operations. Clear, descriptive errors are essential for debugging FAISS GPU operations, RocksDB storage issues, and hyperbolic geometry edge cases. Using thiserror allows automatic Error trait implementation with human-readable messages.
+### What Already Exists
+
+**File**: `crates/context-graph-graph/src/error.rs` (260 lines)
+
+**GraphError enum already has 26 variants:**
+1. `FaissIndexCreation(String)`
+2. `FaissTrainingFailed(String)`
+3. `FaissSearchFailed(String)`
+4. `FaissAddFailed(String)`
+5. `IndexNotTrained`
+6. `InsufficientTrainingData { required: usize, provided: usize }`
+7. `GpuResourceAllocation(String)`
+8. `GpuTransferFailed(String)`
+9. `GpuDeviceUnavailable(String)`
+10. `Storage(String)`
+11. `ColumnFamilyNotFound(String)`
+12. `CorruptedData { location: String, details: String }`
+13. `MigrationFailed(String)`
+14. `InvalidConfig(String)`
+15. `DimensionMismatch { expected: usize, actual: usize }`
+16. `NodeNotFound(String)`
+17. `EdgeNotFound(String, String)` - tuple variant
+18. `DuplicateNode(String)`
+19. `InvalidHyperbolicPoint { norm: f32 }`
+20. `InvalidCurvature(f32)`
+21. `MobiusOperationFailed(String)`
+22. `InvalidAperture(f32)`
+23. `ZeroConeAxis`
+24. `PathNotFound(String, String)`
+25. `DepthLimitExceeded(usize)`
+26. `CycleDetected(String)`
+27. `VectorIdMismatch(String)`
+28. `InvalidNtWeights { field: String, value: f32 }`
+29. `Serialization(String)`
+30. `Deserialization(String)`
+31. `Io(#[from] std::io::Error)`
+
+**GraphResult<T> type alias exists.**
+
+**11 unit tests pass.**
+
+### What Is MISSING (Must Implement)
+
+1. **StorageOpen variant** - Missing structured variant for path+cause:
+   ```rust
+   #[error("Failed to open storage at {path}: {cause}")]
+   StorageOpen { path: String, cause: String },
+   ```
+
+2. **static_assertions for Send + Sync** - Must add compile-time check:
+   ```rust
+   // At end of file, outside impl blocks
+   static_assertions::assert_impl_all!(GraphError: Send, Sync, std::error::Error);
+   ```
+
+3. **static_assertions dependency** - Add to Cargo.toml if not present
 
 ## Scope
 
 ### In Scope
-- Define GraphError enum with 17+ variants
-- Use thiserror derive macro
-- Add descriptive error messages with context
-- Ensure Error is Send + Sync for async compatibility
+- Add `StorageOpen { path, cause }` variant
+- Add `static_assertions::assert_impl_all!` compile-time check
+- Verify all 31+ variants compile and test correctly
 
 ### Out of Scope
 - From trait implementations (see M04-T08a)
@@ -42,164 +92,183 @@ GraphError provides comprehensive error handling for all knowledge graph operati
 
 ## Definition of Done
 
-### Signatures
+### Required Code Changes
 
+**1. Add to Cargo.toml (if missing):**
+```toml
+static_assertions = "1.1"
+```
+
+**2. Add to error.rs imports:**
 ```rust
-use thiserror::Error;
+// At top of file, after existing imports
+```
 
-/// Comprehensive error type for knowledge graph operations
-#[derive(Error, Debug)]
-pub enum GraphError {
-    // ========== FAISS GPU Index Errors ==========
-
-    /// Failed to create FAISS index
-    #[error("Failed to create FAISS index: {0}")]
-    FaissIndexCreation(String),
-
-    /// Failed to train FAISS index
-    #[error("Failed to train FAISS index: {0}")]
-    FaissTrainingFailed(String),
-
-    /// Failed to search FAISS index
-    #[error("FAISS search failed: {0}")]
-    FaissSearchFailed(String),
-
-    /// Failed to add vectors to FAISS index
-    #[error("Failed to add vectors to FAISS index: {0}")]
-    FaissAddFailed(String),
-
-    /// Index must be trained before search/add operations
-    #[error("Index not trained - call train() with sufficient vectors before search/add")]
-    IndexNotTrained,
-
-    /// Not enough vectors provided for training
-    #[error("Insufficient training data: provided {provided} vectors, required {required}")]
-    InsufficientTrainingData {
-        provided: usize,
-        required: usize,
-    },
-
-    // ========== GPU Resource Errors ==========
-
-    /// Failed to allocate GPU resources
-    #[error("GPU resource allocation failed: {0}")]
-    GpuResourceAllocation(String),
-
-    /// Failed to transfer data to/from GPU
-    #[error("GPU data transfer failed: {0}")]
-    GpuTransferFailed(String),
-
-    // ========== Storage Errors ==========
-
-    /// Failed to open storage
+**3. Add StorageOpen variant after line 67 (before Storage variant):**
+```rust
+    /// Failed to open storage at specific path.
     #[error("Failed to open storage at {path}: {cause}")]
-    StorageOpen {
-        path: String,
-        cause: String,
-    },
+    StorageOpen { path: String, cause: String },
+```
 
-    /// General storage operation error
-    #[error("Storage error: {0}")]
-    Storage(String),
+**4. Add static assertion at end of file (before #[cfg(test)]):**
+```rust
+// Compile-time verification that GraphError is thread-safe
+static_assertions::assert_impl_all!(GraphError: Send, Sync, std::error::Error);
+```
 
-    /// Requested column family does not exist
-    #[error("Column family not found: {0}")]
-    ColumnFamilyNotFound(String),
-
-    /// Data corruption detected
-    #[error("Corrupted data in storage: {0}")]
-    CorruptedData(String),
-
-    /// Vector ID mismatch between index and storage
-    #[error("Vector ID mismatch: index has {index_id}, storage has {storage_id}")]
-    VectorIdMismatch {
-        index_id: i64,
-        storage_id: i64,
-    },
-
-    // ========== Configuration Errors ==========
-
-    /// Invalid configuration parameter
-    #[error("Invalid configuration: {0}")]
-    InvalidConfig(String),
-
-    // ========== Graph Errors ==========
-
-    /// Node not found in graph
-    #[error("Node not found: {0}")]
-    NodeNotFound(String),
-
-    /// Edge not found in graph
-    #[error("Edge not found: source={source}, target={target}")]
-    EdgeNotFound {
-        source: String,
-        target: String,
-    },
-
-    // ========== Hyperbolic Geometry Errors ==========
-
-    /// Invalid hyperbolic point (norm >= 1)
-    #[error("Invalid hyperbolic point: norm {norm} >= 1.0 (must be strictly inside ball)")]
-    InvalidHyperbolicPoint {
-        norm: f32,
-    },
-
-    // ========== Serialization Errors ==========
-
-    /// JSON serialization/deserialization error
-    #[error("Serialization error: {0}")]
-    Serialization(String),
-
-    /// IO error
-    #[error("IO error: {0}")]
-    Io(String),
+**5. Add test for new variant:**
+```rust
+#[test]
+fn test_error_display_storage_open() {
+    let err = GraphError::StorageOpen {
+        path: "/data/graph.db".to_string(),
+        cause: "permission denied".to_string(),
+    };
+    let msg = err.to_string();
+    assert!(msg.contains("/data/graph.db"));
+    assert!(msg.contains("permission denied"));
 }
 
-// Ensure GraphError is Send + Sync for async compatibility
-static_assertions::assert_impl_all!(GraphError: Send, Sync);
+#[test]
+fn test_graph_error_is_send_sync() {
+    fn assert_send_sync<T: Send + Sync>() {}
+    assert_send_sync::<GraphError>();
+}
 ```
 
 ### Constraints
+- NO BACKWARDS COMPATIBILITY HACKS - if something breaks, it fails
 - All variants must have descriptive #[error()] messages
-- GraphError must be Send + Sync
-- InsufficientTrainingData must include provided/required counts
-- Error messages should be actionable (tell user what to do)
+- GraphError must be Send + Sync (enforced by static_assertions)
+- Tests must use REAL error types, not mocks
 
 ### Acceptance Criteria
-- [ ] GraphError enum with 17+ variants
-- [ ] All variants have descriptive #[error()] messages
-- [ ] Error is Send + Sync
-- [ ] InsufficientTrainingData includes provided/required counts
-- [ ] Compiles with `cargo build`
-- [ ] Tests pass with `cargo test`
-- [ ] No clippy warnings
-
-## Implementation Approach
-
-### Pseudocode/Algorithm
-1. Add thiserror to dependencies
-2. Add static_assertions for compile-time checks
-3. Define enum with all variants
-4. Use structured variants for errors with multiple fields
-5. Use String variants for errors with dynamic messages
-
-### Edge Cases
-- Long error messages: Keep concise but informative
-- Sensitive data in errors: Don't include passwords/tokens
-- Chained errors: Use source attribute where needed (M04-T08a)
+- [ ] StorageOpen variant added with path and cause fields
+- [ ] static_assertions crate added to dependencies
+- [ ] assert_impl_all! macro verifies Send + Sync + Error
+- [ ] All 32+ variants compile
+- [ ] `cargo build -p context-graph-graph` succeeds
+- [ ] `cargo test -p context-graph-graph error` - all tests pass
+- [ ] `cargo clippy -p context-graph-graph -- -D warnings` - no warnings
 
 ## Verification
 
-### Test Commands
+### Test Commands (Execute These Exactly)
 ```bash
+# Step 1: Build the crate
 cargo build -p context-graph-graph
-cargo test -p context-graph-graph error
+
+# Step 2: Run error-specific tests
+cargo test -p context-graph-graph error -- --nocapture
+
+# Step 3: Run clippy
 cargo clippy -p context-graph-graph -- -D warnings
+
+# Step 4: Verify Send+Sync at compile time (implicit via static_assertions)
+# If code compiles, Send+Sync is verified
 ```
 
-### Manual Verification
-- [ ] All variants can be constructed
-- [ ] Display trait formats messages correctly
-- [ ] Error trait is implemented
-- [ ] Send + Sync bounds are satisfied
-- [ ] InsufficientTrainingData displays both counts
+### Manual Verification Checklist
+- [ ] StorageOpen variant can be constructed
+- [ ] StorageOpen Display trait formats message correctly
+- [ ] static_assertions line compiles (proves Send+Sync)
+- [ ] All existing 11 tests still pass
+- [ ] 2 new tests pass (StorageOpen display, Send+Sync)
+
+## Full State Verification (MANDATORY)
+
+### Source of Truth
+The final result is stored in:
+- **File**: `crates/context-graph-graph/src/error.rs`
+- **Cargo.toml**: `crates/context-graph-graph/Cargo.toml`
+
+### Execute & Inspect Protocol
+After making changes:
+1. Run `cargo build -p context-graph-graph` - MUST compile
+2. Run `cargo test -p context-graph-graph error -- --nocapture`
+3. Read the test output - verify actual pass/fail counts
+4. Grep for `StorageOpen` in error.rs to confirm it exists:
+   ```bash
+   grep -n "StorageOpen" crates/context-graph-graph/src/error.rs
+   ```
+5. Verify static_assertions line exists:
+   ```bash
+   grep -n "assert_impl_all" crates/context-graph-graph/src/error.rs
+   ```
+
+### Boundary & Edge Case Audit
+
+**Edge Case 1: Empty path in StorageOpen**
+```rust
+let err = GraphError::StorageOpen {
+    path: "".to_string(),
+    cause: "invalid".to_string(),
+};
+println!("BEFORE: constructing StorageOpen with empty path");
+let msg = err.to_string();
+println!("AFTER: message = {}", msg);
+// Expected: "Failed to open storage at : invalid"
+assert!(msg.contains("Failed to open storage"));
+```
+
+**Edge Case 2: Unicode in error messages**
+```rust
+let err = GraphError::StorageOpen {
+    path: "/данные/граф.db".to_string(),  // Russian
+    cause: "权限被拒绝".to_string(),  // Chinese
+};
+println!("BEFORE: constructing with unicode");
+let msg = err.to_string();
+println!("AFTER: message = {}", msg);
+assert!(msg.contains("данные"));
+```
+
+**Edge Case 3: Very long path**
+```rust
+let long_path = "a".repeat(10000);
+let err = GraphError::StorageOpen {
+    path: long_path.clone(),
+    cause: "test".to_string(),
+};
+println!("BEFORE: constructing with 10000 char path");
+let msg = err.to_string();
+println!("AFTER: message length = {}", msg.len());
+assert!(msg.len() > 10000);
+```
+
+### Evidence of Success
+After completion, provide:
+1. Full output of `cargo test -p context-graph-graph error`
+2. Output of `grep -n "StorageOpen" crates/context-graph-graph/src/error.rs`
+3. Output of `grep -n "assert_impl_all" crates/context-graph-graph/src/error.rs`
+4. Confirmation that `cargo clippy` produces no warnings
+
+## Implementation Approach
+
+1. Open `crates/context-graph-graph/Cargo.toml`
+2. Add `static_assertions = "1.1"` to [dependencies] if not present
+3. Open `crates/context-graph-graph/src/error.rs`
+4. Add `StorageOpen` variant after line 67
+5. Add `static_assertions::assert_impl_all!` before `#[cfg(test)]`
+6. Add 2 new tests
+7. Run verification commands
+8. Provide evidence of success
+
+## Files Reference
+
+```
+crates/context-graph-graph/
+├── Cargo.toml              # Add static_assertions dependency
+└── src/
+    └── error.rs            # Main file to modify (260 lines currently)
+```
+
+## SHERLOCK-HOLMES VERIFICATION REQUIRED
+
+After completing implementation, spawn `sherlock-holmes` agent to:
+1. Verify all changes compile
+2. Verify all tests pass
+3. Check for any regressions
+4. Confirm Send+Sync bounds are satisfied
+5. Validate error messages are descriptive

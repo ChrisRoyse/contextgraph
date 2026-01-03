@@ -15,7 +15,7 @@ description: |
 
   Include update_aperture() for training.
 layer: "foundation"
-status: "ready"
+status: "complete"
 priority: "critical"
 estimated_hours: 3
 sequence: 10
@@ -30,6 +30,17 @@ files_to_modify:
   - path: "crates/context-graph-graph/src/entailment/cones.rs"
     description: "Implement contains(), membership_score(), update_aperture() - replace todo!() stubs"
 test_file: "crates/context-graph-graph/src/entailment/cones.rs"
+verified_by: "sherlock-holmes"
+verification_date: "2026-01-03"
+verification_notes: |
+  FORENSIC VERIFICATION COMPLETE:
+  - contains() implemented at lines 249-252 using compute_angle() and effective_aperture()
+  - compute_angle() helper at lines 272-309 with all edge cases handled
+  - membership_score() uses EXACT canonical formula: exp(-2.0 * (angle - aperture))
+  - update_aperture() clamps to [0.5, 2.0] at lines 383-385
+  - 46/46 tests pass including 17 M04-T07 specific containment tests
+  - No todo!() macros remain
+  - No deviations from specification found
 ---
 
 ## Source of Truth
