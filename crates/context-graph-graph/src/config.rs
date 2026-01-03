@@ -14,27 +14,51 @@
 
 use serde::{Deserialize, Serialize};
 
-/// FAISS IVF-PQ index configuration.
+/// Configuration for FAISS IVF-PQ GPU index.
 ///
-/// Configures the FAISS GPU index for 1M+ vector search with <2ms latency.
+/// Configures the FAISS GPU index for 10M+ vector search with <5ms latency.
 ///
 /// # Performance Targets
-/// - 1M vectors, k=100: <2ms latency
-/// - Memory: ~8GB for 1M 1536D vectors with PQ64x8
+/// - 10M vectors, k=10: <5ms latency
+/// - 10M vectors, k=100: <10ms latency
+/// - Memory: ~8GB VRAM for 10M 1536D vectors with PQ64x8
 ///
-/// TODO: M04-T01 - Add validation and builder pattern
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// # Constitution Reference
+/// - perf.latency.faiss_1M_k100: <2ms
+/// - stack.deps: faiss@0.12+gpu
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct IndexConfig {
-    /// Embedding dimension (default: 1536 per constitution E7_Code)
+    /// Vector dimension (must match embedding dimension).
+    /// Default: 1536 per constitution embeddings.models.E7_Code
     pub dimension: usize,
-    /// Number of inverted lists for IVF (default: 16384 = 4 * sqrt(1M))
+
+    /// Number of inverted lists (clusters).
+    /// Default: 16384 = 4 * sqrt(10M) for optimal recall/speed tradeoff
     pub nlist: usize,
-    /// Number of lists to probe during search (default: 128)
+
+    /// Number of clusters to probe during search.
+    /// Default: 128 balances accuracy vs search time
     pub nprobe: usize,
-    /// Number of PQ subquantizers (default: 64, must divide dimension)
+
+    /// Number of product quantization segments.
+    /// Must evenly divide dimension. Default: 64 (1536/64 = 24 bytes per segment)
     pub pq_segments: usize,
-    /// Bits per PQ code (default: 8)
-    pub pq_bits: usize,
+
+    /// Bits per quantization code.
+    /// Valid values: 4, 8, 12, 16. Default: 8
+    pub pq_bits: u8,
+
+    /// GPU device ID.
+    /// Default: 0 (primary GPU)
+    pub gpu_id: i32,
+
+    /// Use float16 for reduced memory.
+    /// Default: true (halves VRAM usage)
+    pub use_float16: bool,
+
+    /// Minimum vectors required for training (256 * nlist).
+    /// Default: 4,194,304 (256 * 16384)
+    pub min_train_vectors: usize,
 }
 
 impl Default for IndexConfig {
@@ -45,7 +69,43 @@ impl Default for IndexConfig {
             nprobe: 128,
             pq_segments: 64,
             pq_bits: 8,
+            gpu_id: 0,
+            use_float16: true,
+            min_train_vectors: 4_194_304, // 256 * 16384
         }
+    }
+}
+
+impl IndexConfig {
+    /// Generate FAISS factory string for index creation.
+    ///
+    /// Returns format: "IVF{nlist},PQ{pq_segments}x{pq_bits}"
+    ///
+    /// # Example
+    /// ```
+    /// use context_graph_graph::config::IndexConfig;
+    /// let config = IndexConfig::default();
+    /// assert_eq!(config.factory_string(), "IVF16384,PQ64x8");
+    /// ```
+    pub fn factory_string(&self) -> String {
+        format!("IVF{},PQ{}x{}", self.nlist, self.pq_segments, self.pq_bits)
+    }
+
+    /// Calculate minimum training vectors based on nlist.
+    ///
+    /// FAISS requires at least 256 vectors per cluster for quality training.
+    ///
+    /// # Returns
+    /// 256 * nlist
+    ///
+    /// # Example
+    /// ```
+    /// use context_graph_graph::config::IndexConfig;
+    /// let config = IndexConfig::default();
+    /// assert_eq!(config.calculate_min_train_vectors(), 4_194_304);
+    /// ```
+    pub fn calculate_min_train_vectors(&self) -> usize {
+        256 * self.nlist
     }
 }
 
@@ -114,13 +174,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_index_config_default() {
+    fn test_index_config_default_values() {
         let config = IndexConfig::default();
         assert_eq!(config.dimension, 1536);
         assert_eq!(config.nlist, 16384);
         assert_eq!(config.nprobe, 128);
         assert_eq!(config.pq_segments, 64);
         assert_eq!(config.pq_bits, 8);
+        assert_eq!(config.gpu_id, 0);
+        assert!(config.use_float16);
+        assert_eq!(config.min_train_vectors, 4_194_304);
     }
 
     #[test]
@@ -131,6 +194,79 @@ mod tests {
             0,
             "PQ segments must divide dimension evenly"
         );
+    }
+
+    #[test]
+    fn test_index_config_min_train_vectors_formula() {
+        let config = IndexConfig::default();
+        assert_eq!(
+            config.min_train_vectors,
+            256 * config.nlist,
+            "min_train_vectors must equal 256 * nlist"
+        );
+    }
+
+    #[test]
+    fn test_factory_string_default() {
+        let config = IndexConfig::default();
+        assert_eq!(config.factory_string(), "IVF16384,PQ64x8");
+    }
+
+    #[test]
+    fn test_factory_string_custom() {
+        let config = IndexConfig {
+            dimension: 768,
+            nlist: 4096,
+            nprobe: 64,
+            pq_segments: 32,
+            pq_bits: 4,
+            gpu_id: 1,
+            use_float16: false,
+            min_train_vectors: 256 * 4096,
+        };
+        assert_eq!(config.factory_string(), "IVF4096,PQ32x4");
+    }
+
+    #[test]
+    fn test_calculate_min_train_vectors() {
+        let config = IndexConfig::default();
+        assert_eq!(config.calculate_min_train_vectors(), 4_194_304);
+
+        let custom = IndexConfig {
+            nlist: 1024,
+            ..Default::default()
+        };
+        assert_eq!(custom.calculate_min_train_vectors(), 256 * 1024);
+    }
+
+    #[test]
+    fn test_index_config_serialization_roundtrip() {
+        let config = IndexConfig::default();
+        let json = serde_json::to_string(&config).expect("Serialization failed");
+        let deserialized: IndexConfig =
+            serde_json::from_str(&json).expect("Deserialization failed");
+        assert_eq!(config, deserialized);
+    }
+
+    #[test]
+    fn test_index_config_json_format() {
+        let config = IndexConfig::default();
+        let json = serde_json::to_string_pretty(&config).expect("Serialization failed");
+        assert!(json.contains("\"dimension\": 1536"));
+        assert!(json.contains("\"nlist\": 16384"));
+        assert!(json.contains("\"nprobe\": 128"));
+        assert!(json.contains("\"pq_segments\": 64"));
+        assert!(json.contains("\"pq_bits\": 8"));
+        assert!(json.contains("\"gpu_id\": 0"));
+        assert!(json.contains("\"use_float16\": true"));
+        assert!(json.contains("\"min_train_vectors\": 4194304"));
+    }
+
+    #[test]
+    fn test_pq_bits_type_is_u8() {
+        let config = IndexConfig::default();
+        // This is a compile-time check - if pq_bits is not u8, this won't compile
+        let _: u8 = config.pq_bits;
     }
 
     #[test]
@@ -151,15 +287,6 @@ mod tests {
         assert!(config.aperture_decay > 0.0 && config.aperture_decay <= 1.0);
         assert!(config.min_aperture > 0.0);
         assert!(config.min_aperture < config.base_aperture);
-    }
-
-    #[test]
-    fn test_index_config_serialization() {
-        let config = IndexConfig::default();
-        let json = serde_json::to_string(&config).expect("Failed to serialize");
-        let deserialized: IndexConfig =
-            serde_json::from_str(&json).expect("Failed to deserialize");
-        assert_eq!(config.dimension, deserialized.dimension);
     }
 
     #[test]

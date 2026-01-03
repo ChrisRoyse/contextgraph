@@ -6,7 +6,7 @@ description: |
   min_train_vectors), fixing pq_bits type (usize→u8), and implementing factory_string()
   and calculate_min_train_vectors() methods.
 layer: "foundation"
-status: "pending"
+status: "completed"
 priority: "critical"
 estimated_hours: 2
 sequence: 2
