@@ -4,19 +4,22 @@
 metadata:
   module_id: "module-05"
   module_name: "UTL Integration"
-  version: "1.0.0"
+  version: "1.3.0"
   phase: 4
-  total_tasks: 25
+  total_tasks: 57
   approach: "inside-out-bottom-up"
   created: "2025-12-31"
+  updated: "2026-01-04"
   dependencies:
     - module-02-core-infrastructure
     - module-03-embedding-pipeline
     - module-04-knowledge-graph
-  estimated_duration: "4 weeks"
+  estimated_duration: "7 weeks"
   spec_refs:
     - SPEC-UTL-005 (Functional)
     - TECH-UTL-005 (Technical)
+    - constitution.yaml (UTL, steering, Marblestone sections)
+    - contextgraphprd.md (inject_context, store_memory, steering)
 ```
 
 ---
@@ -25,9 +28,51 @@ metadata:
 
 This module implements the Unified Theory of Learning (UTL), the core learning equation that governs memory acquisition, prioritization, and consolidation. Tasks are organized in inside-out, bottom-up order:
 
+0. **Initialization** (Task 0): Crate scaffolding and Cargo.toml setup
 1. **Foundation Layer** (Tasks 1-8): Core types - Configuration, LifecycleStage, LambdaWeights, JohariQuadrant
 2. **Logic Layer** (Tasks 9-17): Surprise computation, Coherence tracking, Emotional weighting, Phase oscillator
 3. **Surface Layer** (Tasks 18-25): UTLProcessor, MCP integration, testing, benchmarks
+4. **Integration Layer** (Tasks 26-37): MCP tools, MemoryNode extension, configuration files, KnowledgeGraph hooks
+5. **Extended Integration** (Tasks 38-47): inject_context UTL, persistence, feature flags, steering, validation
+6. **Completion Layer** (Tasks 48-57): Salience update, loss function, interface stubs, type migration, CI/CD
+
+---
+
+## Initialization: Crate Scaffolding
+
+```yaml
+tasks:
+  # ============================================================
+  # INITIALIZATION: Crate Setup
+  # ============================================================
+
+  - id: "M05-T00"
+    title: "Initialize context-graph-utl Crate Structure"
+    description: |
+      Create the new context-graph-utl crate with complete directory structure.
+      Set up Cargo.toml with all required dependencies (thiserror, serde, chrono, uuid, tokio, tracing).
+      Add context-graph-core as internal dependency.
+      Create module structure: lib.rs, config.rs, error.rs, processor.rs, metrics.rs.
+      Create submodule directories: surprise/, coherence/, emotional/, phase/, johari/, lifecycle/.
+      Set up tests/ and benches/ directories.
+      Add crate to workspace Cargo.toml.
+    layer: "initialization"
+    priority: "critical"
+    estimated_hours: 2
+    file_path: "crates/context-graph-utl/Cargo.toml"
+    dependencies: []
+    acceptance_criteria:
+      - "context-graph-utl crate compiles with no errors"
+      - "Cargo.toml has all dependencies from TECH-UTL-005 Section 13"
+      - "All subdirectory mod.rs files created"
+      - "Crate added to workspace and builds"
+      - "lib.rs exports public API stubs"
+      - "cargo test --package context-graph-utl passes (empty tests)"
+    test_file: "crates/context-graph-utl/tests/mod.rs"
+    spec_refs:
+      - "TECH-UTL-005 Section 1.2"
+      - "TECH-UTL-005 Section 13"
+```
 
 ---
 
@@ -774,197 +819,391 @@ tasks:
     spec_refs:
       - "TECH-UTL-005 Section 12"
       - "SPEC-UTL-005 Section 12, 13"
-```
 
----
+  # ============================================================
+  # INTEGRATION LAYER: MCP Tools & System Integration
+  # ============================================================
 
-## Dependency Graph
+  - id: "M05-T26"
+    title: "Implement utl_status MCP Tool"
+    description: |
+      Implement the utl_status MCP tool handler for querying UTL state.
+      UtlStatusRequest: session_id (Option<Uuid>).
+      UtlStatusResponse: lifecycle_phase, interaction_count, entropy, coherence,
+      learning_score, johari_quadrant, consolidation_phase, phase_angle,
+      emotional_state (EmotionalStateResponse), thresholds (ThresholdsResponse),
+      suggested_action.
+      Add handler to MCP server tool registry.
+      Include session-scoped and global status modes.
+    layer: "integration"
+    priority: "critical"
+    estimated_hours: 3
+    file_path: "crates/context-graph-mcp/src/tools/utl_status.rs"
+    dependencies:
+      - "M05-T22"
+      - "M05-T24"
+    acceptance_criteria:
+      - "utl_status tool registered in MCP server"
+      - "Returns complete UtlStatusResponse with all fields"
+      - "Session-scoped queries work correctly"
+      - "Global queries aggregate across sessions"
+      - "Response matches SPEC-UTL-005 Section 10.1 schema"
+    test_file: "crates/context-graph-mcp/tests/utl_status_tests.rs"
+    spec_refs:
+      - "SPEC-UTL-005 Section 10.1"
 
-```
-M05-T01 (UtlConfig) ─────────────────────────────────────────────────────────────┐
-M05-T02 (SurpriseConfig) ──► M05-T09 (KL Divergence) ──► M05-T10 (Surprise Methods) ──► M05-T11 (SurpriseCalculator)
-M05-T03 (CoherenceConfig) ──► M05-T12 (CoherenceEntry) ──► M05-T13 (CoherenceTracker) ──► M05-T14 (Structural/Contradiction)
-M05-T04 (EmotionalConfig) ──► M05-T15 (EmotionalState) ──► M05-T16 (EmotionalWeightCalculator)
-                                                                                  │
-M05-T05 (LifecycleStage) ──┬──► M05-T07 (LifecycleConfig) ──────────────────────┐ │
-M05-T06 (LambdaWeights) ───┘                                                     │ │
-                                                                                  │ │
-M05-T05 + M05-T06 + M05-T07 ──► M05-T19 (LifecycleManager) ─────────────────────┼─┤
-                                                                                  │ │
-M05-T08 (JohariQuadrant) ──► M05-T18 (JohariClassifier) ────────────────────────┼─┤
-                                                                                  │ │
-M05-T17 (PhaseOscillator) ──────────────────────────────────────────────────────┼─┤
-                                                                                  │ │
-M05-T20 (Core UTL Function) ────────────────────────────────────────────────────┼─┤
-                                                                                  │ │
-M05-T21 (LearningSignal) ──────────────────────────────────────────────────────┼─┤
-                                                                                  │ │
-M05-T23 (UtlError) ─────────────────────────────────────────────────────────────┼─┤
-                                                                                  │ │
-M05-T11 + M05-T13 + M05-T16 + M05-T17 + M05-T18 + M05-T19 + M05-T20 + M05-T21 ──┴─┴─► M05-T22 (UtlProcessor)
-                                                                                          │
-M05-T05 + M05-T06 + M05-T08 ──► M05-T24 (UtlMetrics) ─────────────────────────────────────┤
-                                                                                          │
-M05-T22 + M05-T24 ──► M05-T25 (Integration Tests) ────────────────────────────────────────┘
-```
+  - id: "M05-T27"
+    title: "Integrate UTL Metrics into get_memetic_status"
+    description: |
+      Extend existing get_memetic_status MCP tool with UTL metrics.
+      Add UTLMetrics field to MemeticStatusResponse.
+      UTLMetrics struct: entropy, coherence, learning_score, johari_quadrant, phase.
+      Ensure backward compatibility with existing response fields.
+      Update MCP schema documentation.
+    layer: "integration"
+    priority: "high"
+    estimated_hours: 2
+    file_path: "crates/context-graph-mcp/src/tools/memetic_status.rs"
+    dependencies:
+      - "M05-T24"
+      - "M05-T26"
+    acceptance_criteria:
+      - "MemeticStatusResponse includes utl_metrics field"
+      - "UTLMetrics has all 5 required fields"
+      - "Existing get_memetic_status functionality unchanged"
+      - "Backward compatible with old response format"
+    test_file: "crates/context-graph-mcp/tests/memetic_status_tests.rs"
+    spec_refs:
+      - "SPEC-UTL-005 Section 10.2"
 
----
+  - id: "M05-T28"
+    title: "Implement CognitivePulse Header for MCP Responses"
+    description: |
+      Implement CognitivePulse struct for inclusion in every MCP response.
+      Fields: entropy (f32), coherence (f32), learning_score (f32),
+      quadrant (JohariQuadrant), suggested_action (SuggestedAction).
+      Create MCP middleware/interceptor to inject CognitivePulse into responses.
+      Document header format in MCP schema.
+    layer: "integration"
+    priority: "high"
+    estimated_hours: 3
+    file_path: "crates/context-graph-mcp/src/middleware/cognitive_pulse.rs"
+    dependencies:
+      - "M05-T22"
+      - "M05-T18"
+    acceptance_criteria:
+      - "CognitivePulse struct with 5 fields"
+      - "Every MCP response includes CognitivePulse header"
+      - "Middleware correctly computes current UTL state"
+      - "Header format documented"
+      - "Performance impact < 1ms per response"
+    test_file: "crates/context-graph-mcp/tests/cognitive_pulse_tests.rs"
+    spec_refs:
+      - "SPEC-UTL-005 Section 10.3"
 
-## Implementation Order (Recommended)
+  - id: "M05-T29"
+    title: "Extend MemoryNode with UTL Fields"
+    description: |
+      Extend MemoryNode struct in context-graph-core with UTL-specific fields.
+      Add: utl_state (Option<UtlState>), johari_quadrant (JohariQuadrant),
+      observer_perspective (Option<ObserverPerspective>), priors_vibe_check (Option<PriorsVibeCheck>).
+      ObserverPerspective: domain (String), confidence_priors (HashMap<String, f32>).
+      PriorsVibeCheck: assumption_embedding ([f32; 128]), domain_priors (Vec<String>), prior_confidence (f32).
+      Update serialization and storage layer.
+    layer: "integration"
+    priority: "critical"
+    estimated_hours: 3
+    file_path: "crates/context-graph-core/src/types/memory_node.rs"
+    dependencies:
+      - "M05-T21"
+      - "M05-T08"
+    acceptance_criteria:
+      - "MemoryNode has all 4 new optional fields"
+      - "ObserverPerspective struct implemented"
+      - "PriorsVibeCheck struct with 128-dim embedding"
+      - "RocksDB serialization updated"
+      - "Existing node data migration handled"
+      - "Backward compatible with old nodes"
+    test_file: "crates/context-graph-core/tests/memory_node_utl_tests.rs"
+    spec_refs:
+      - "SPEC-UTL-005 Section 11.1"
 
-### Week 1: Foundation Types
-1. M05-T01: UtlConfig and UtlThresholds
-2. M05-T02: SurpriseConfig for KL divergence
-3. M05-T03: CoherenceConfig for rolling window
-4. M05-T04: EmotionalConfig for valence/arousal
-5. M05-T05: LifecycleStage enum (Marblestone)
-6. M05-T06: LifecycleLambdaWeights struct
-7. M05-T07: LifecycleConfig and StageConfig
-8. M05-T08: JohariQuadrant and SuggestedAction
+  - id: "M05-T30"
+    title: "Implement SessionContext for UTL Computation"
+    description: |
+      Implement SessionContext struct for maintaining UTL computation context.
+      Fields: session_id (Uuid), recent_nodes (Vec<MemoryNode>), current_entropy (f32),
+      current_coherence (f32), interaction_count (u64), last_activity (DateTime<Utc>).
+      Methods: new(session_id), new_empty(), update_with_node(node),
+      get_context_embeddings(), clear(), is_stale(threshold_seconds).
+      Integrate with session management from Module 2.
+    layer: "integration"
+    priority: "high"
+    estimated_hours: 2
+    file_path: "crates/context-graph-utl/src/context.rs"
+    dependencies:
+      - "M05-T22"
+    acceptance_criteria:
+      - "SessionContext struct with 6 fields"
+      - "new_empty() creates context with default values"
+      - "update_with_node() adds to recent_nodes"
+      - "get_context_embeddings() returns embedding slice"
+      - "Session integration works with existing session manager"
+    test_file: "crates/context-graph-utl/tests/context_tests.rs"
+    spec_refs:
+      - "SPEC-UTL-005 Section 11.2"
 
-### Week 2: Component Logic
-9. M05-T09: KL Divergence computation
-10. M05-T10: Surprise computation methods
-11. M05-T11: SurpriseCalculator struct
-12. M05-T12: CoherenceEntry and window
-13. M05-T13: CoherenceTracker with semantic
-14. M05-T14: Structural coherence and contradictions
-15. M05-T15: EmotionalState struct
-16. M05-T16: EmotionalWeightCalculator
-17. M05-T17: PhaseOscillator
+  - id: "M05-T31"
+    title: "Implement Sentiment Lexicon for Emotional Calculator"
+    description: |
+      Create sentiment lexicon data for EmotionalWeightCalculator.
+      Include positive words (valence > 0): excellent, wonderful, great, success, happy, etc.
+      Include negative words (valence < 0): error, failed, danger, critical, problem, etc.
+      Create emotional keywords lookup for valence/arousal modulation.
+      Store as embedded Rust hashmap (no external file dependency).
+      Target vocabulary: 500+ sentiment-weighted terms.
+    layer: "integration"
+    priority: "medium"
+    estimated_hours: 2
+    file_path: "crates/context-graph-utl/src/emotional/lexicon.rs"
+    dependencies:
+      - "M05-T16"
+    acceptance_criteria:
+      - "Sentiment lexicon with 500+ words"
+      - "Each word has valence score [-1, 1]"
+      - "Arousal keywords identified separately"
+      - "Lookup is O(1) via HashMap"
+      - "Embedded in binary (no runtime file I/O)"
+    test_file: "crates/context-graph-utl/tests/lexicon_tests.rs"
+    spec_refs:
+      - "SPEC-UTL-005 Section 5.2.1"
 
-### Week 3: Surface Layer
-18. M05-T18: JohariClassifier
-19. M05-T19: LifecycleManager state machine
-20. M05-T20: Core UTL learning magnitude
-21. M05-T21: LearningSignal and UtlState
-22. M05-T22: UtlProcessor orchestrator
-23. M05-T23: UtlError enum
+  - id: "M05-T32"
+    title: "Implement PhaseConfig Struct"
+    description: |
+      Implement PhaseConfig struct for phase oscillator configuration.
+      Fields: base_frequency (0.1), modulation_min (0.1), modulation_max (3.0),
+      encoding_threshold (0.33), consolidation_threshold (0.67),
+      consolidation_phase_threshold (2.1), consolidation_importance_threshold (0.4),
+      consolidation_staleness_seconds (300).
+      Include Default impl with spec-defined values.
+    layer: "integration"
+    priority: "high"
+    estimated_hours: 1
+    file_path: "crates/context-graph-utl/src/config.rs"
+    dependencies:
+      - "M05-T01"
+    acceptance_criteria:
+      - "PhaseConfig struct with 8 fields"
+      - "Default returns spec-defined values"
+      - "Serde serialization works"
+      - "Integrates with PhaseOscillator"
+    test_file: "crates/context-graph-utl/tests/config_tests.rs"
+    spec_refs:
+      - "TECH-UTL-005 Section 10"
+      - "SPEC-UTL-005 Section 15.1"
 
-### Week 4: Integration and Testing
-24. M05-T24: UtlMetrics and UtlStatus
-25. M05-T25: Integration tests and benchmarks
+  - id: "M05-T33"
+    title: "Implement JohariConfig Struct"
+    description: |
+      Implement JohariConfig struct for Johari classifier configuration.
+      Fields: entropy_threshold (0.5), coherence_threshold (0.5).
+      Add per-quadrant RetrievalStrategy configuration.
+      Include Default impl with spec-defined values.
+    layer: "integration"
+    priority: "high"
+    estimated_hours: 1
+    file_path: "crates/context-graph-utl/src/config.rs"
+    dependencies:
+      - "M05-T01"
+    acceptance_criteria:
+      - "JohariConfig struct with 2 threshold fields"
+      - "Per-quadrant strategy overrides optional"
+      - "Default returns spec-defined values"
+      - "Integrates with JohariClassifier"
+    test_file: "crates/context-graph-utl/tests/config_tests.rs"
+    spec_refs:
+      - "TECH-UTL-005 Section 10"
+      - "SPEC-UTL-005 Section 7.4"
 
----
+  - id: "M05-T34"
+    title: "Create UTL Configuration File (config/utl.yaml)"
+    description: |
+      Create complete UTL configuration file following SPEC-UTL-005 Section 15.1.
+      Include all sections: utl, surprise, coherence, emotional, phase, johari, lifecycle.
+      Add Marblestone lambda_weights per lifecycle stage.
+      Document all parameters with comments.
+      Integrate with config loading system from Module 2.
+    layer: "integration"
+    priority: "high"
+    estimated_hours: 1.5
+    file_path: "config/utl.yaml"
+    dependencies:
+      - "M05-T01"
+      - "M05-T02"
+      - "M05-T03"
+      - "M05-T04"
+      - "M05-T32"
+      - "M05-T33"
+    acceptance_criteria:
+      - "config/utl.yaml exists with all sections"
+      - "All default values match specification"
+      - "YAML parses correctly into UtlConfig struct"
+      - "Config loader integration works"
+      - "Comments document each parameter"
+    test_file: "crates/context-graph-utl/tests/config_loading_tests.rs"
+    spec_refs:
+      - "SPEC-UTL-005 Section 15.1"
 
-## Quality Gates
+  - id: "M05-T35"
+    title: "Implement KnowledgeGraph Integration for Coherence"
+    description: |
+      Complete KnowledgeGraph integration for structural coherence and contradiction detection.
+      Implement compute_structural_coherence() using graph connectivity.
+      Implement compute_contradiction_penalty() using search_similar() and edge analysis.
+      Add find_contradiction_edge() calls for conflict detection.
+      Replace stub implementations from M05-T14 with real graph queries.
+      Handle graceful degradation when graph unavailable.
+    layer: "integration"
+    priority: "high"
+    estimated_hours: 4
+    file_path: "crates/context-graph-utl/src/coherence/structural.rs"
+    dependencies:
+      - "M05-T14"
+      - "Module 4 completion"
+    acceptance_criteria:
+      - "Structural coherence uses actual graph metrics"
+      - "Contradiction detection queries similar nodes"
+      - "Edge analysis identifies conflicting information"
+      - "Performance: < 5ms for graph queries"
+      - "Graceful fallback when graph unavailable"
+    test_file: "crates/context-graph-utl/tests/structural_coherence_tests.rs"
+    spec_refs:
+      - "SPEC-UTL-005 Section 4.2"
+      - "SPEC-UTL-005 Section 17.1"
 
-| Gate | Criteria | Required For |
-|------|----------|--------------|
-| Foundation Complete | M05-T01 through M05-T08 pass all tests | Week 2 start |
-| Logic Complete | M05-T09 through M05-T17 pass all tests | Week 3 start |
-| Surface Complete | M05-T18 through M05-T24 pass all tests | Week 4 start |
-| Module Complete | All 25 tasks complete, benchmarks pass | Module 6 start |
+  - id: "M05-T36"
+    title: "Implement UTL Steering Subsystem Hooks"
+    description: |
+      Implement steering subsystem integration as per constitution.yaml steering section.
+      Create SteeringHook trait for UTL-to-steering communication.
+      Implement compute_steering_signal(utl_state) -> SteeringSignal.
+      SteeringSignal: entropy_direction, coherence_direction, exploration_budget.
+      Add lifecycle-aware steering adjustments (Infancy=explore, Maturity=exploit).
+      Integrate with neuromodulation system (Acetylcholine learning rate modulation).
+    layer: "integration"
+    priority: "medium"
+    estimated_hours: 3
+    file_path: "crates/context-graph-utl/src/steering/hooks.rs"
+    dependencies:
+      - "M05-T19"
+      - "M05-T22"
+    acceptance_criteria:
+      - "SteeringHook trait defined"
+      - "SteeringSignal struct with 3 fields"
+      - "compute_steering_signal() works correctly"
+      - "Lifecycle-aware adjustments implemented"
+      - "Interface ready for Module 10 neuromodulation"
+    test_file: "crates/context-graph-utl/tests/steering_tests.rs"
+    spec_refs:
+      - "constitution.yaml steering section"
+      - "constitution.yaml neuromodulation section"
 
----
+  - id: "M05-T37"
+    title: "Implement Johari Quadrant to Verbosity Tier Mapping"
+    description: |
+      Implement mapping from Johari quadrant to MCP response verbosity tier.
+      Map as per constitution.yaml response_modes:
+      - Open (high confidence) -> Tier 0 (RawOnly, ~100 tokens)
+      - Hidden/Blind -> Tier 1 (TextAndIds, ~200 tokens, DEFAULT)
+      - Unknown (low coherence) -> Tier 2 (FullInsights, ~800 tokens)
+      Implement VerbositySelector trait for quadrant-aware response formatting.
+      Integrate with MCP response generation layer.
+    layer: "integration"
+    priority: "medium"
+    estimated_hours: 2
+    file_path: "crates/context-graph-mcp/src/response/verbosity.rs"
+    dependencies:
+      - "M05-T18"
+      - "M05-T28"
+    acceptance_criteria:
+      - "Quadrant to verbosity tier mapping implemented"
+      - "VerbositySelector trait defined"
+      - "Open -> Tier 0, Hidden/Blind -> Tier 1, Unknown -> Tier 2"
+      - "Automatic verbosity selection in MCP responses"
+      - "Manual override capability preserved"
+    test_file: "crates/context-graph-mcp/tests/verbosity_tests.rs"
+    spec_refs:
+      - "constitution.yaml response_modes section"
+      - "SPEC-UTL-005 Section 7"
 
-## Performance Targets Summary
+  # ============================================================
+  # INTEGRATION LAYER: Additional Required Tasks (Gap Analysis)
+  # ============================================================
 
-| Operation | Target | P99 Target | Conditions |
-|-----------|--------|------------|------------|
-| `compute_learning_magnitude` | <100us | <500us | Core equation only |
-| Full UTL computation | <10ms | <50ms | All components |
-| Surprise (KL) | <5ms | <20ms | 1536D, 50 context |
-| Surprise (distance) | <1ms | <5ms | 1536D, 50 context |
-| Coherence computation | <5ms | <25ms | 100 window entries |
-| Emotional weight | <1ms | <5ms | Text analysis |
-| Phase update | <10us | <50us | Simple math |
-| Johari classification | <1us | <5us | Two comparisons |
+  - id: "M05-T38"
+    title: "Integrate UTL Computation into inject_context MCP Tool"
+    description: |
+      Integrate UTL computation into the primary inject_context MCP tool.
+      inject_context is the PRIMARY retrieval mechanism per PRD Section 3.1.
+      Algorithm:
+      1. Before retrieval, compute current UTL state (delta_s, delta_c from context)
+      2. Use Johari quadrant to adjust retrieval strategy (search depth, k)
+      3. Include UTL metrics in response (utl_metrics field)
+      4. Add conflict_alert field for semantic conflict detection
+      5. Add tool_gating_warning when entropy > 0.8
+      Response schema: { context, utl_metrics, conflict_alert, tool_gating_warning }
+      Performance target: UTL overhead <5ms on top of base retrieval.
+    layer: "integration"
+    priority: "critical"
+    estimated_hours: 4
+    file_path: "crates/context-graph-mcp/src/tools/inject_context.rs"
+    dependencies:
+      - "M05-T22"
+      - "M05-T26"
+      - "M05-T18"
+    acceptance_criteria:
+      - "inject_context computes UTL state before retrieval"
+      - "Retrieval strategy varies by Johari quadrant"
+      - "Response includes utl_metrics with entropy/coherence/learning_score"
+      - "tool_gating_warning present when entropy > 0.8"
+      - "conflict_alert populated when contradictions detected"
+      - "UTL computation overhead <5ms"
+      - "Backward compatible with existing inject_context clients"
+    test_file: "crates/context-graph-mcp/tests/inject_context_utl_tests.rs"
+    spec_refs:
+      - "PRD Section 3.1 (inject_context)"
+      - "constitution.yaml mcp section"
+      - "SPEC-UTL-005 Section 10"
 
----
-
-## Marblestone Integration Summary
-
-Tasks with Marblestone features:
-- **M05-T05**: LifecycleStage enum (Infancy/Growth/Maturity)
-- **M05-T06**: LifecycleLambdaWeights (lambda_novelty/lambda_consolidation)
-- **M05-T07**: LifecycleConfig with per-stage thresholds
-- **M05-T19**: LifecycleManager state machine with transitions
-- **M05-T20**: compute_learning_magnitude_weighted() with lambda application
-- **M05-T22**: UtlProcessor applies lambda weights to all computations
-
----
-
-## Critical Constraints
-
-**NO NaN/Infinity**: All UTL computations MUST clamp inputs and validate outputs.
-- Inputs clamped to valid ranges before computation
-- Results validated before return
-- InvalidComputation error raised for NaN/Infinity
-
-**Lambda Weight Invariant**: lambda_novelty + lambda_consolidation = 1.0.
-- Validated in LifecycleLambdaWeights::new()
-- Enforced at stage transitions
-
-**Lifecycle Transitions**:
-- Infancy -> Growth at 50 interactions
-- Growth -> Maturity at 500 interactions
-- Lambda weights update atomically with stage
-
----
-
-## File Structure
-
-```
-crates/context-graph-utl/
-├── src/
-│   ├── lib.rs                    # Public API, compute_learning_magnitude
-│   ├── config.rs                 # All configuration structs
-│   ├── error.rs                  # UtlError enum
-│   ├── processor.rs              # UtlProcessor main orchestrator
-│   ├── metrics.rs                # UtlMetrics, UtlStatus
-│   │
-│   ├── surprise/
-│   │   ├── mod.rs                # Module exports
-│   │   ├── kl_divergence.rs      # KL divergence, cosine similarity
-│   │   └── calculator.rs         # SurpriseCalculator
-│   │
-│   ├── coherence/
-│   │   ├── mod.rs                # Module exports
-│   │   └── tracker.rs            # CoherenceTracker, CoherenceEntry
-│   │
-│   ├── emotional/
-│   │   ├── mod.rs                # Module exports
-│   │   └── calculator.rs         # EmotionalWeightCalculator, EmotionalState
-│   │
-│   ├── phase/
-│   │   ├── mod.rs                # Module exports
-│   │   └── oscillator.rs         # PhaseOscillator, ConsolidationPhase
-│   │
-│   ├── johari/
-│   │   ├── mod.rs                # Module exports
-│   │   ├── quadrant.rs           # JohariQuadrant, SuggestedAction
-│   │   └── classifier.rs         # JohariClassifier, RetrievalStrategy
-│   │
-│   └── lifecycle/
-│       ├── mod.rs                # Module exports
-│       ├── stage.rs              # LifecycleStage enum
-│       ├── lambda.rs             # LifecycleLambdaWeights
-│       └── manager.rs            # LifecycleManager
-│
-├── tests/
-│   ├── config_tests.rs           # Configuration tests
-│   ├── surprise_tests.rs         # Surprise computation tests
-│   ├── coherence_tests.rs        # Coherence tracking tests
-│   ├── emotional_tests.rs        # Emotional weight tests
-│   ├── phase_tests.rs            # Phase oscillator tests
-│   ├── johari_tests.rs           # Johari classification tests
-│   ├── lifecycle_tests.rs        # Lifecycle manager tests
-│   ├── utl_core_tests.rs         # Core UTL function tests
-│   ├── processor_tests.rs        # UtlProcessor tests
-│   ├── metrics_tests.rs          # Metrics tests
-│   ├── error_tests.rs            # Error handling tests
-│   └── integration_tests.rs      # Full integration tests
-│
-├── benches/
-│   └── utl_bench.rs              # Performance benchmarks
-│
-└── Cargo.toml
-```
-
----
-
-*Generated: 2025-12-31*
-*Module: 05 - UTL Integration*
-*Version: 1.0.0*
-*Total Tasks: 25*
+  - id: "M05-T39"
+    title: "Implement UtlState Persistence to RocksDB"
+    description: |
+      Implement persistent storage of UtlState to RocksDB for cross-session continuity.
+      Storage layer must handle:
+      1. UtlState serialization/deserialization (bincode or CBOR for efficiency)
+      2. Session-scoped UTL state (keyed by session_id)
+      3. Global/aggregate UTL state (lifecycle stage, interaction_count)
+      4. UtlState migration for existing MemoryNode data without UTL fields
+      5. Atomic updates for lifecycle stage transitions
+      Column families: "utl_session_state", "utl_global_state".
+      Include restore_utl_state(session_id) and persist_utl_state(session_id, state).
+    layer: "integration"
+    priority: "critical"
+    estimated_hours: 3
+    file_path: "crates/context-graph-storage/src/utl_persistence.rs"
+    dependencies:
+      - "M05-T21"
+      - "M05-T19"
+    acceptance_criteria:
+      - "UtlState persists to RocksDB on update"
+      - "Session-scoped state keyed by session_id"
+      - "Global lifecycle state survives server restart"
+      - "restore_utl_state() loads previous state correctly"
+      - "Migration handles nodes without utl_state field"
+      - "Atomic lifecycle transitions (no partial state)"
+      - "Serialization overhead <1ms"
+    test_file: "crates/context-graph-storage/tests/utl_persistence_tests.rs"
+    spec_refs:
+      - "SPEC-UTL-005 Section 11.3"
+      - "constitution.yaml dirs.crates"
