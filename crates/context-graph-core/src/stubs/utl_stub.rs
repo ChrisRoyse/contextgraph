@@ -100,6 +100,26 @@ impl UtlProcessor for StubUtlProcessor {
             alignment,
         })
     }
+
+    fn get_status(&self) -> serde_json::Value {
+        // Stub returns default/initial status
+        serde_json::json!({
+            "lifecycle_phase": "Infancy",
+            "interaction_count": 0,
+            "entropy": 0.0,
+            "coherence": 0.0,
+            "learning_score": 0.0,
+            "johari_quadrant": "Hidden",
+            "consolidation_phase": "Wake",
+            "phase_angle": 0.0,
+            "thresholds": {
+                "entropy_trigger": 0.9,
+                "coherence_trigger": 0.2,
+                "min_importance_store": 0.1,
+                "consolidation_threshold": 0.3
+            }
+        })
+    }
 }
 
 #[cfg(test)]

@@ -65,6 +65,7 @@ impl Handlers {
             tool_names::GET_MEMETIC_STATUS => self.call_get_memetic_status(id).await,
             tool_names::GET_GRAPH_MANIFEST => self.call_get_graph_manifest(id).await,
             tool_names::SEARCH_GRAPH => self.call_search_graph(id, arguments).await,
+            tool_names::UTL_STATUS => self.call_utl_status(id).await,
             _ => JsonRpcResponse::error(
                 id,
                 error_codes::TOOL_NOT_FOUND,
@@ -287,5 +288,18 @@ impl Handlers {
             }
             Err(e) => Self::tool_error(id, &format!("Search failed: {}", e)),
         }
+    }
+
+    /// utl_status tool implementation.
+    ///
+    /// Returns current UTL system state including lifecycle phase, entropy,
+    /// coherence, learning score, Johari quadrant, and consolidation phase.
+    pub(super) async fn call_utl_status(&self, id: Option<JsonRpcId>) -> JsonRpcResponse {
+        debug!("Handling utl_status tool call");
+
+        // Get status from UTL processor (returns serde_json::Value)
+        let status = self.utl_processor.get_status();
+
+        Self::tool_result(id, status)
     }
 }

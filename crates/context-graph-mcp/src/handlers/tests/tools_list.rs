@@ -5,7 +5,7 @@ use crate::protocol::JsonRpcId;
 use super::{create_test_handlers, make_request};
 
 #[tokio::test]
-async fn test_tools_list_returns_all_5_tools() {
+async fn test_tools_list_returns_all_6_tools() {
     let handlers = create_test_handlers();
     let request = make_request("tools/list", Some(JsonRpcId::Number(1)), None);
 
@@ -24,11 +24,11 @@ async fn test_tools_list_returns_all_5_tools() {
         .as_array()
         .expect("tools must be an array");
 
-    // Verify exactly 5 tools returned
+    // Verify exactly 6 tools returned (5 original + utl_status)
     assert_eq!(
         tools.len(),
-        5,
-        "Must return exactly 5 tools, got {}",
+        6,
+        "Must return exactly 6 tools, got {}",
         tools.len()
     );
 }
@@ -115,5 +115,9 @@ async fn test_tools_list_contains_expected_tool_names() {
     assert!(
         tool_names.contains(&"search_graph"),
         "Missing search_graph tool"
+    );
+    assert!(
+        tool_names.contains(&"utl_status"),
+        "Missing utl_status tool"
     );
 }

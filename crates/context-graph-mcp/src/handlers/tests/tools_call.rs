@@ -284,3 +284,139 @@ async fn test_tool_error_sets_is_error_true() {
         .expect("content must be an array");
     assert!(!content.is_empty(), "Error content must not be empty");
 }
+
+// =========================================================================
+// utl_status Tool Tests
+// =========================================================================
+
+#[tokio::test]
+async fn test_tools_call_utl_status() {
+    let handlers = create_test_handlers();
+    let params = json!({
+        "name": "utl_status",
+        "arguments": {}
+    });
+    let request = make_request("tools/call", Some(JsonRpcId::Number(1)), Some(params));
+
+    let response = handlers.dispatch(request).await;
+
+    assert!(
+        response.error.is_none(),
+        "utl_status should not return an error"
+    );
+    let result = response.result.expect("tools/call must return a result");
+
+    // MCP REQUIREMENT: isError MUST be false for successful calls
+    let is_error = result
+        .get("isError")
+        .expect("Response must contain isError")
+        .as_bool()
+        .expect("isError must be a boolean");
+    assert!(!is_error, "isError must be false for utl_status");
+
+    // Verify MCP format
+    let content = result
+        .get("content")
+        .expect("Response must contain content array")
+        .as_array()
+        .expect("content must be an array");
+    assert!(!content.is_empty(), "Content array must not be empty");
+
+    let text = content[0]
+        .get("text")
+        .expect("Content item must have text")
+        .as_str()
+        .expect("text must be a string");
+    let parsed: serde_json::Value =
+        serde_json::from_str(text).expect("Content text should be valid JSON");
+
+    // Verify UtlStatusResponse schema fields
+    assert!(
+        parsed.get("lifecycle_phase").is_some(),
+        "Response must contain lifecycle_phase"
+    );
+    assert!(
+        parsed.get("interaction_count").is_some(),
+        "Response must contain interaction_count"
+    );
+    assert!(
+        parsed.get("entropy").is_some(),
+        "Response must contain entropy"
+    );
+    assert!(
+        parsed.get("coherence").is_some(),
+        "Response must contain coherence"
+    );
+    assert!(
+        parsed.get("learning_score").is_some(),
+        "Response must contain learning_score"
+    );
+    assert!(
+        parsed.get("johari_quadrant").is_some(),
+        "Response must contain johari_quadrant"
+    );
+    assert!(
+        parsed.get("consolidation_phase").is_some(),
+        "Response must contain consolidation_phase"
+    );
+    assert!(
+        parsed.get("phase_angle").is_some(),
+        "Response must contain phase_angle"
+    );
+    assert!(
+        parsed.get("thresholds").is_some(),
+        "Response must contain thresholds"
+    );
+
+    // Verify thresholds sub-structure
+    let thresholds = parsed.get("thresholds").unwrap();
+    assert!(
+        thresholds.get("entropy_trigger").is_some(),
+        "thresholds must contain entropy_trigger"
+    );
+    assert!(
+        thresholds.get("coherence_trigger").is_some(),
+        "thresholds must contain coherence_trigger"
+    );
+    assert!(
+        thresholds.get("min_importance_store").is_some(),
+        "thresholds must contain min_importance_store"
+    );
+    assert!(
+        thresholds.get("consolidation_threshold").is_some(),
+        "thresholds must contain consolidation_threshold"
+    );
+}
+
+#[tokio::test]
+async fn test_tools_call_utl_status_returns_stub_values() {
+    let handlers = create_test_handlers();
+    let params = json!({
+        "name": "utl_status",
+        "arguments": {}
+    });
+    let request = make_request("tools/call", Some(JsonRpcId::Number(1)), Some(params));
+
+    let response = handlers.dispatch(request).await;
+    let result = response.result.expect("tools/call must return a result");
+    let content = result.get("content").unwrap().as_array().unwrap();
+    let text = content[0].get("text").unwrap().as_str().unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(text).unwrap();
+
+    // Verify stub returns expected initial values
+    assert_eq!(
+        parsed.get("lifecycle_phase").unwrap().as_str().unwrap(),
+        "Infancy",
+        "Stub should return Infancy lifecycle phase"
+    );
+    assert_eq!(
+        parsed.get("interaction_count").unwrap().as_u64().unwrap(),
+        0,
+        "Stub should return 0 interaction count"
+    );
+    assert_eq!(
+        parsed.get("consolidation_phase").unwrap().as_str().unwrap(),
+        "Wake",
+        "Stub should return Wake consolidation phase"
+    );
+}

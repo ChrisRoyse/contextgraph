@@ -68,4 +68,12 @@ pub trait UtlProcessor: Send + Sync {
 
     /// Get full UTL metrics for input.
     async fn compute_metrics(&self, input: &str, context: &UtlContext) -> CoreResult<UtlMetrics>;
+
+    /// Get current UTL system status as JSON.
+    ///
+    /// Returns the complete system status including lifecycle stage,
+    /// thresholds, lambda weights, phase angle, and computation metrics.
+    ///
+    /// The returned JSON matches the `UtlStatusResponse` schema from context-graph-utl.
+    fn get_status(&self) -> serde_json::Value;
 }

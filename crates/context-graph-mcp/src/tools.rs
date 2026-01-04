@@ -167,6 +167,17 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
                 "required": ["query"]
             }),
         ),
+        // utl_status - query UTL system state
+        ToolDefinition::new(
+            "utl_status",
+            "Query current UTL (Unified Theory of Learning) system state including lifecycle phase, \
+             entropy, coherence, learning score, Johari quadrant, and consolidation phase.",
+            json!({
+                "type": "object",
+                "properties": {},
+                "required": []
+            }),
+        ),
     ]
 }
 
@@ -177,6 +188,7 @@ pub mod tool_names {
     pub const GET_MEMETIC_STATUS: &str = "get_memetic_status";
     pub const GET_GRAPH_MANIFEST: &str = "get_graph_manifest";
     pub const SEARCH_GRAPH: &str = "search_graph";
+    pub const UTL_STATUS: &str = "utl_status";
 }
 
 #[cfg(test)]
@@ -186,7 +198,7 @@ mod tests {
     #[test]
     fn test_get_tool_definitions() {
         let tools = get_tool_definitions();
-        assert_eq!(tools.len(), 5);
+        assert_eq!(tools.len(), 6);
 
         let tool_names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
         assert!(tool_names.contains(&"inject_context"));
@@ -194,6 +206,7 @@ mod tests {
         assert!(tool_names.contains(&"get_memetic_status"));
         assert!(tool_names.contains(&"get_graph_manifest"));
         assert!(tool_names.contains(&"search_graph"));
+        assert!(tool_names.contains(&"utl_status"));
     }
 
     #[test]
