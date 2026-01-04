@@ -7,11 +7,11 @@
 //!
 //! | Column Family | Key | Value | Optimization |
 //! |---------------|-----|-------|--------------|
-//! | adjacency | NodeId (16B UUID) | Vec<GraphEdge> (bincode) | Prefix scans |
-//! | hyperbolic | NodeId (16B UUID) | [f32; 64] = 256 bytes | Point lookups |
-//! | entailment_cones | NodeId (16B UUID) | EntailmentCone = 268 bytes | Bloom filter |
-//! | faiss_ids | NodeId (16B UUID) | i64 = 8 bytes | Point lookups |
-//! | nodes | NodeId (16B UUID) | MemoryNode (bincode) | Point lookups |
+//! | adjacency | NodeId (8B i64) | Vec<GraphEdge> (bincode) | Prefix scans |
+//! | hyperbolic | NodeId (8B i64) | [f32; 64] = 256 bytes | Point lookups |
+//! | entailment_cones | NodeId (8B i64) | EntailmentCone = 268 bytes | Bloom filter |
+//! | faiss_ids | NodeId (8B i64) | i64 = 8 bytes | Point lookups |
+//! | nodes | NodeId (8B i64) | MemoryNode (bincode) | Point lookups |
 //! | metadata | key string | JSON value | Small CF |
 //!
 //! # GPU Integration
@@ -27,8 +27,28 @@
 //! - storage: RocksDB 0.22
 //! - SEC-06: Soft delete 30-day recovery
 //! - perf.latency.faiss_1M_k100: <2ms (storage must not bottleneck)
+//!
+//! # Module Structure
+//!
+//! - [`rocksdb`]: GraphStorage implementation (M04-T13)
+//! - [`migrations`]: Schema migration system (M04-T13a)
 
-use rocksdb::{BlockBasedOptions, Cache, ColumnFamilyDescriptor, Options};
+// ========== Submodules ==========
+
+pub mod migrations;
+pub mod storage_impl;  // renamed to avoid conflict with rocksdb crate
+
+// ========== Re-exports ==========
+
+// GraphStorage and types (M04-T13)
+pub use storage_impl::{EntailmentCone, GraphEdge, GraphStorage, NodeId, PoincarePoint};
+
+// Migrations (M04-T13a)
+pub use migrations::{MigrationInfo, Migrations, SCHEMA_VERSION};
+
+// ========== Dependencies ==========
+
+use rocksdb::{BlockBasedOptions, Cache, ColumnFamilyDescriptor, Options, DBCompressionType, SliceTransform};
 
 use crate::error::{GraphError, GraphResult};
 
@@ -281,7 +301,7 @@ fn adjacency_cf_descriptor(config: &StorageConfig, cache: &Cache) -> ColumnFamil
 
     // Compression: LZ4 for fast decompression (GPU batch loading)
     if config.enable_compression {
-        opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+        opts.set_compression_type(DBCompressionType::Lz4);
     }
 
     // Block-based table with shared cache
@@ -295,7 +315,7 @@ fn adjacency_cf_descriptor(config: &StorageConfig, cache: &Cache) -> ColumnFamil
     opts.set_block_based_table_factory(&block_opts);
 
     // Optimize for prefix scans (16-byte UUID keys)
-    opts.set_prefix_extractor(rocksdb::SliceTransform::create_fixed_prefix(16));
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(16));
 
     ColumnFamilyDescriptor::new(CF_ADJACENCY, opts)
 }
@@ -310,7 +330,7 @@ fn hyperbolic_cf_descriptor(config: &StorageConfig, cache: &Cache) -> ColumnFami
 
     // LZ4 compression (256 bytes of floats compress well)
     if config.enable_compression {
-        opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+        opts.set_compression_type(DBCompressionType::Lz4);
     }
 
     // Block-based table optimized for point lookups
@@ -339,7 +359,7 @@ fn cones_cf_descriptor(config: &StorageConfig, cache: &Cache) -> ColumnFamilyDes
 
     // LZ4 compression
     if config.enable_compression {
-        opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+        opts.set_compression_type(DBCompressionType::Lz4);
     }
 
     // Block-based table with bloom filter
@@ -389,7 +409,7 @@ fn nodes_cf_descriptor(config: &StorageConfig, cache: &Cache) -> ColumnFamilyDes
 
     // LZ4 compression for variable-size node data
     if config.enable_compression {
-        opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+        opts.set_compression_type(DBCompressionType::Lz4);
     }
 
     // Block-based table
@@ -452,7 +472,7 @@ pub fn get_db_options() -> Options {
     opts.increase_parallelism(parallelism);
 
     // Background jobs: min 2, max based on CPU count (cap at reasonable level)
-    let bg_jobs = cpu_count.min(8).max(2);
+    let bg_jobs = cpu_count.clamp(2, 8);
     opts.set_max_background_jobs(bg_jobs);
 
     opts
