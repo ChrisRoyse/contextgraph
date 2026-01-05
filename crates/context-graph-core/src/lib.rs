@@ -6,19 +6,18 @@
 //! # Architecture
 //!
 //! This crate defines:
-//! - Domain types (`MemoryNode`, `GraphEdge`, `JohariQuadrant`, etc.)
-//! - Core traits (`UTLProcessor`, `MemoryStore`, `NervousLayer`, etc.)
+//! - Domain types (`TeleologicalFingerprint`, `SemanticFingerprint`, `PurposeVector`, etc.)
+//! - Core traits (`TeleologicalMemoryStore`, `MultiArrayEmbeddingProvider`, `NervousLayer`, etc.)
 //! - Error types and result aliases
 //! - Configuration structures
 //!
 //! # Example
 //!
 //! ```
-//! use context_graph_core::types::MemoryNode;
-//! use context_graph_core::traits::{MemoryStore, SearchOptions};
+//! use context_graph_core::traits::{TeleologicalMemoryStore, TeleologicalSearchOptions};
 //!
 //! // Create search options for querying
-//! let options = SearchOptions::new(10)
+//! let options = TeleologicalSearchOptions::quick(10)
 //!     .with_min_similarity(0.8);
 //! assert_eq!(options.top_k, 10);
 //! ```
@@ -26,7 +25,6 @@
 pub mod config;
 pub mod error;
 pub mod marblestone;
-pub mod memory;
 pub mod stubs;
 pub mod traits;
 pub mod types;
