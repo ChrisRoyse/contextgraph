@@ -495,6 +495,7 @@ name = "context-graph-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "bincode",
  "chrono",
  "config",
  "rand 0.8.5",
