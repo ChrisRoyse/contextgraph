@@ -2,9 +2,21 @@
 
 ## Overview
 
-The Logic Layer implements computation, retrieval, and reasoning logic for the Multi-Array Teleological Fingerprint architecture.
+The Logic Layer implements computation, retrieval, and reasoning logic for the Multi-Array Teleological Fingerprint architecture with **13 embedding spaces** (E1-E12 dense + E13 SPLADE) and a **5-stage optimized retrieval pipeline**.
 
-**Layer Purpose**: Build the computational engines (query execution, similarity computation, alignment calculation) and retrieval pipelines that operate on Foundation Layer data structures.
+**Layer Purpose**: Build the computational engines (query execution, similarity computation, alignment calculation) and the **5-stage retrieval pipeline** that operate on Foundation Layer data structures.
+
+> **Performance Target**: <60ms end-to-end latency @ 1M memories using staged retrieval with early termination.
+
+### 5-Stage Pipeline Architecture
+
+| Stage | Component | Index Type | Candidates | Description |
+|-------|-----------|------------|------------|-------------|
+| 1 | SPLADE Sparse | Inverted Index | 1000 | E13 lexical retrieval for initial candidates |
+| 2 | Matryoshka 128D | HNSW | 200 | Fast dense filtering with truncated embeddings |
+| 3 | Full 13-Space HNSW | 13x HNSW | 100 | Per-space search across all embedding spaces |
+| 4 | Cross-Encoder | Rerank | 20 | Neural reranking of top candidates |
+| 5 | RRF Fusion | `1/(k+rank)` | Final | Combine ranks: k=60 default |
 
 ## Dependency Graph
 
@@ -71,16 +83,16 @@ graph TD
 
 ## Execution Order
 
-| # | Task ID | Title | Priority | Dependencies | Effort |
-|---|---------|-------|----------|--------------|--------|
-| 1 | TASK-L001 | Multi-Embedding Query Executor | P0 | F001, F005, F007 | L |
-| 1 | TASK-L002 | Purpose Vector Computation | P0 | F001, F002 | M |
-| 1 | TASK-L004 | Johari Transition Manager | P0 | F002, F003 | L |
-| 2 | TASK-L003 | Goal Alignment Calculator | P0 | L002, F002 | M |
-| 2 | TASK-L005 | Per-Space HNSW Index Builder | P1 | F001, F004, F005 | L |
-| 3 | TASK-L006 | Purpose Pattern Index | P1 | L002, L005 | M |
-| 3 | TASK-L007 | Cross-Space Similarity Engine | P0 | L001, L002, L005 | L |
-| 4 | TASK-L008 | Teleological Retrieval Pipeline | P0 | L001-L007 | XL |
+| # | Task ID | Title | Priority | Dependencies | Effort | Pipeline Stage |
+|---|---------|-------|----------|--------------|--------|----------------|
+| 1 | TASK-L001 | Multi-Embedding Query Executor (13 spaces + SPLADE) | P0 | F001, F005, F007 | L | S1-S5 |
+| 1 | TASK-L002 | Purpose Vector Computation (13D + E13 SPLADE) | P0 | F001, F002 | M | - |
+| 1 | TASK-L004 | Johari Transition Manager | P0 | F002, F003 | L | - |
+| 2 | TASK-L003 | Goal Alignment Calculator | P0 | L002, F002 | M | - |
+| 2 | TASK-L005 | Per-Space HNSW + Matryoshka 128D + SPLADE Inverted | P1 | F001, F004, F005 | L | S1-S3 |
+| 3 | TASK-L006 | Purpose Pattern Index (13D) | P1 | L002, L005 | M | - |
+| 3 | TASK-L007 | Cross-Space Similarity Engine + RRF Fusion | P0 | L001, L002, L005 | L | S5 |
+| 4 | TASK-L008 | 5-Stage Teleological Retrieval Pipeline | P0 | L001-L007 | XL | S1-S5 |
 
 ## Critical Path
 
@@ -125,7 +137,8 @@ Tasks can be executed in parallel within each group:
 - TASK-L007: Cross-Space Similarity Engine (needs L001, L002, L005)
 
 ### Group 4 (Final Integration)
-- TASK-L008: Teleological Retrieval Pipeline (needs L001-L007)
+- TASK-L008: 5-Stage Teleological Retrieval Pipeline (needs L001-L007)
+  - Integrates Matryoshka pre-filtering, HNSW search, SPLADE rerank, and RRF fusion
 
 ## Traceability Matrix
 
@@ -157,56 +170,87 @@ All task documents located in `/home/cabdru/contextgraph/docs2/projection/specs/
 ## Component Architecture
 
 ```
-Logic Layer Components:
+Logic Layer Components (5-Stage Pipeline with 13 Embedding Spaces):
 
-+--------------------------------------------------+
-|           TASK-L008: Teleological Pipeline        |
-|  +-----------+  +-----------+  +-----------+     |
-|  | Pre-filter|->| Rerank    |->| Alignment |     |
-|  +-----------+  +-----------+  +-----------+     |
-|        |              |              |           |
-|        v              v              v           |
-|  +-----------+  +-----------+  +-----------+     |
-|  | Late Int. |->| Misalign  |->| Results   |     |
-|  +-----------+  +-----------+  +-----------+     |
-+--------------------------------------------------+
++------------------------------------------------------------------+
+|                   TASK-L008: 5-Stage Teleological Pipeline        |
+|  +-------------+  +-------------+  +-------------+  +-----------+ |
+|  | Stage 1:    |->| Stage 2:    |->| Stage 3:    |->| Stage 4:  | |
+|  | SPLADE      |  | Matryoshka  |  | Full HNSW   |  | Cross-    | |
+|  | Sparse      |  | 128D        |  | 13-Space    |  | Encoder   | |
+|  | (E13)       |  |             |  | (E1-E13)    |  | Rerank    | |
+|  +-------------+  +-------------+  +-------------+  +-----------+ |
+|        |                                                |         |
+|        v                                                v         |
+|  +-------------+  +-------------+  +-------------+  +-----------+ |
+|  | Stage 5:    |->| Alignment   |->| Misalign    |->| Final     | |
+|  | RRF Fusion  |  | Filter      |  | Detection   |  | Results   | |
+|  | k=60        |  | (13D)       |  |             |  |           | |
+|  +-------------+  +-------------+  +-------------+  +-----------+ |
++------------------------------------------------------------------+
          |              |              |
          v              v              v
 +----------------+ +-----------+ +------------------+
 | L001: Query    | | L007:     | | L003: Goal       |
 | Executor       | | Cross-    | | Alignment        |
-| (12-space)     | | Space Sim | | Calculator       |
+| (13-space)     | | Space Sim | | Calculator       |
+| + SPLADE E13   | | + RRF     | |                  |
 +----------------+ +-----------+ +------------------+
          |              |              |
          v              v              v
 +----------------+ +-----------+ +------------------+
 | L005: HNSW     | | L002:     | | L004: Johari     |
 | Index Builder  | | Purpose   | | Transition       |
-| (12 indexes)   | | Vector    | | Manager          |
+| (13 indexes)   | | Vector    | | Manager          |
+| + Matryoshka   | | (13D)     | |                  |
+| + SPLADE Inv.  | |           | |                  |
 +----------------+ +-----------+ +------------------+
          |              |
          v              v
 +----------------+ +-----------+
 | L006: Purpose  | | Foundation|
 | Pattern Index  | | Layer     |
-| (12D)          | | (F001-F008)|
+| (13D)          | | (F001-F008)|
 +----------------+ +-----------+
 ```
 
 ## Key Algorithms
 
-### Multi-UTL Formula (L007)
+### Multi-UTL Formula (L007) - 13 Spaces
 ```
-L_multi = sigmoid(2.0 * (SUM_i tau_i * lambda_S * Delta_S_i) *
-                         (SUM_j tau_j * lambda_C * Delta_C_j) *
+L_multi = sigmoid(2.0 * (SUM_i=1..13 tau_i * lambda_S * Delta_S_i) *
+                         (SUM_j=1..13 tau_j * lambda_C * Delta_C_j) *
                          w_e * cos(phi))
 ```
 
-### Cross-Space Aggregation (L001, L007)
-- Weighted Average: `sum(w_i * sim_i) / sum(w_i)`
-- MaxPooling: `max(sim_i)`
-- RRF: `sum(1 / (k + rank_i))`
-- Purpose-Weighted: Weight by purpose vector alignment
+### RRF Fusion (L001, L007) - Primary Fusion Method
+```
+RRF(d) = SUM_i 1/(k + rank_i(d))  where k=60 (default)
+
+Example: Document d appears at rank 0, 2, 1 across 3 spaces
+RRF(d) = 1/(60+1) + 1/(60+3) + 1/(60+2) = 1/61 + 1/63 + 1/62 = 0.0492
+```
+
+### Cross-Space Aggregation (L001, L007) - 13 Spaces
+- **RRF Fusion**: `sum(1 / (k + rank_i))` - Primary method with k=60
+- Weighted Average: `sum(w_i * sim_i) / sum(w_i)` (13D weights)
+- MaxPooling: `max(sim_i)` across 13 spaces
+- Purpose-Weighted: Weight by 13D purpose vector alignment
+
+### E13 SPLADE Alignment (L002)
+- Term overlap score with goal vocabulary
+- Keyword coverage computation
+- Sparse vector dot product for lexical matching
+
+### 5-Stage Retrieval Pipeline (L008)
+```
+Stage 1: SPLADE Sparse (E13) -> 1000 candidates (inverted index)
+Stage 2: Matryoshka 128D -> 200 candidates (truncated HNSW)
+Stage 3: Full 13-Space HNSW -> 100 candidates (per-space search)
+Stage 4: Cross-Encoder Rerank -> 20 candidates (neural reranking)
+Stage 5: RRF Fusion (k=60) -> Final ranked results
+```
+**Target**: <60ms @ 1M memories with early termination
 
 ### Johari State Machine (L004)
 ```
@@ -227,8 +271,20 @@ After Logic Layer is complete, Surface Layer tasks will build:
 
 Surface Layer depends on: All TASK-L* tasks
 
+## Index Configuration Summary
+
+| Index Type | Dimension | Task | Stage | Purpose |
+|------------|-----------|------|-------|---------|
+| SPLADE Inverted | Sparse (~30K vocab) | L005 | 1 | Initial lexical candidates |
+| Matryoshka 128D | 128 | L005 | 2 | Fast dense filtering |
+| HNSW E1-E12 | Various (256-10000) | L005 | 3 | Per-space content search |
+| HNSW E13 | 30522 | L005 | 3 | SPLADE dense fallback |
+| Purpose Pattern | 13 | L006 | - | Goal alignment search |
+
 ---
 
 *Logic Layer task index created: 2026-01-04*
+*Updated: 2026-01-05 (13-space architecture, 5-stage pipeline, RRF fusion)*
 *Tasks: 8 total*
 *Dependencies: Foundation Layer (F001-F008)*
+*Architecture: 13 embedding spaces (E1-E12 dense + E13 SPLADE)*

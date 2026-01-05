@@ -28,15 +28,39 @@ Implement the complete teleological retrieval pipeline that orchestrates multi-s
 
 ## Context
 
-The Teleological Retrieval Pipeline is the capstone of the Logic Layer, integrating all preceding components into a unified retrieval flow:
+The Teleological Retrieval Pipeline is the capstone of the Logic Layer, integrating all preceding components into a unified 5-stage retrieval flow optimized for sub-60ms latency:
 
-1. **Fast Pre-filter**: HNSW search across active embedding spaces
-2. **Multi-Embedding Rerank**: Cross-space similarity aggregation
-3. **Teleological Alignment**: Purpose and goal scoring
-4. **Late Interaction Rerank**: Fine-grained token matching
-5. **Misalignment Check**: Flag off-purpose results
+1. **Stage 1: SPARSE PRE-FILTER (BM25 + E13 SPLADE)** - <5ms, 10K candidates
+   - Hybrid sparse retrieval combining BM25 lexical matching with SPLADE learned sparse representations
+   - E13 SPLADE embedding provides semantic-aware sparse vectors
+   - Configurable weighting between BM25 and SPLADE scores
+   - Supports up to 1M candidate corpus with efficient pruning
 
-This enables retrieval that balances content relevance with goal alignment, producing not just similar memories but *purposefully relevant* memories.
+2. **Stage 2: FAST DENSE ANN (Matryoshka 128D)** - <10ms, 1K candidates
+   - HNSW search using Matryoshka truncated embeddings (128D by default)
+   - Adaptive dimension selection based on corpus size (128/256/512/1024)
+   - 4-8x faster than full-dimension search with minimal recall loss
+   - Cross-space search across active embedding spaces
+
+3. **Stage 3: MULTI-SPACE RERANK (RRF Fusion)** - <20ms, 100 candidates
+   - Reciprocal Rank Fusion (RRF) combines rankings from multiple embedding spaces
+   - Configurable RRF k parameter (default 60.0) for score calibration
+   - Optional weighted sum or relative score fusion alternatives
+   - Purpose-aware weighting for teleological relevance
+
+4. **Stage 4: TELEOLOGICAL ALIGNMENT FILTER** - <10ms, 50 candidates
+   - Purpose vector alignment scoring
+   - Goal alignment calculation against active goals
+   - Combined purpose/goal scoring with configurable weights
+   - Filters candidates below alignment thresholds
+
+5. **Stage 5: LATE INTERACTION RERANK (E12 MaxSim)** - <15ms, final 10
+   - Fine-grained token-level similarity using E12 ColBERT embeddings
+   - MaxSim computation for precise relevance scoring
+   - Blends with prior scores for final ranking
+   - Misalignment flagging for off-purpose results
+
+This enables retrieval that balances content relevance with goal alignment, producing not just similar memories but *purposefully relevant* memories with end-to-end latency under 60ms.
 
 ## Technical Specification
 
@@ -84,6 +108,78 @@ pub struct PrefilterConfig {
 
     /// HNSW ef_search override
     pub ef_search: Option<usize>,
+
+    /// Sparse pre-filter configuration (BM25 + SPLADE)
+    pub sparse_prefilter: SparsePrefilterConfig,
+}
+
+#[derive(Clone, Debug)]
+pub struct SparsePrefilterConfig {
+    /// Enable sparse pre-filtering
+    pub enabled: bool,
+
+    /// Weight balance between BM25 and SPLADE (0.0 = pure BM25, 1.0 = pure SPLADE)
+    pub sparse_weight: f32,
+
+    /// Top-K results from SPLADE retrieval
+    pub splade_top_k: usize,
+
+    /// BM25 k1 parameter for term frequency saturation
+    pub bm25_k1: f32,
+
+    /// BM25 b parameter for document length normalization
+    pub bm25_b: f32,
+
+    /// Maximum candidates from sparse stage
+    pub max_candidates: usize,
+}
+
+impl Default for SparsePrefilterConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            sparse_weight: 0.5,  // Balanced BM25 + SPLADE
+            splade_top_k: 10_000,
+            bm25_k1: 1.2,
+            bm25_b: 0.75,
+            max_candidates: 10_000,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct MatryoshkaConfig {
+    /// Truncation dimension for Matryoshka embeddings
+    /// Options: 128, 256, 512, 1024 (full)
+    pub truncation_dim: MatryoshkaDim,
+
+    /// Automatically select dimension based on corpus size
+    /// - < 10K: use 128D
+    /// - 10K-100K: use 256D
+    /// - 100K-1M: use 512D
+    /// - > 1M: use 1024D
+    pub adaptive_dim: bool,
+
+    /// Minimum recall threshold for adaptive selection
+    pub min_recall_threshold: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum MatryoshkaDim {
+    D128 = 128,
+    D256 = 256,
+    D512 = 512,
+    D1024 = 1024,
+}
+
+impl Default for MatryoshkaConfig {
+    fn default() -> Self {
+        Self {
+            truncation_dim: MatryoshkaDim::D128,
+            adaptive_dim: true,
+            min_recall_threshold: 0.95,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -96,6 +192,44 @@ pub struct RerankConfig {
 
     /// Whether to use purpose weighting
     pub use_purpose_weighting: bool,
+
+    /// Fusion method for combining multi-space rankings
+    pub fusion_method: FusionMethod,
+
+    /// RRF k parameter (default 60.0) - higher values give more weight to lower ranks
+    pub rrf_k: f32,
+
+    /// Matryoshka embedding configuration for fast ANN
+    pub matryoshka: MatryoshkaConfig,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FusionMethod {
+    /// Reciprocal Rank Fusion: score = sum(1 / (k + rank_i))
+    RRF,
+    /// Weighted sum of normalized scores
+    WeightedSum,
+    /// Relative score normalization before fusion
+    RelativeScore,
+}
+
+impl Default for FusionMethod {
+    fn default() -> Self {
+        FusionMethod::RRF
+    }
+}
+
+impl Default for RerankConfig {
+    fn default() -> Self {
+        Self {
+            weighting_strategy: WeightingStrategy::Adaptive,
+            pass_through_k: 100,
+            use_purpose_weighting: true,
+            fusion_method: FusionMethod::RRF,
+            rrf_k: 60.0,
+            matryoshka: MatryoshkaConfig::default(),
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -212,16 +346,39 @@ pub struct QueryMetadata {
     pub active_goals: Vec<GoalId>,
 }
 
-/// Statistics about pipeline execution
+/// Statistics about pipeline execution (5-stage pipeline)
 #[derive(Clone, Debug)]
 pub struct PipelineStats {
+    /// Total end-to-end latency
     pub total_time_ms: f32,
-    pub prefilter_time_ms: f32,
-    pub rerank_time_ms: f32,
+
+    /// Stage 1: Sparse pre-filter (BM25 + E13 SPLADE) - target <5ms
+    pub sparse_prefilter_time_ms: f32,
+
+    /// Stage 2: Fast dense ANN (Matryoshka 128D) - target <10ms
+    pub matryoshka_ann_time_ms: f32,
+
+    /// Stage 3: Multi-space rerank (RRF Fusion) - target <20ms
+    pub rrf_rerank_time_ms: f32,
+
+    /// Stage 4: Teleological alignment filter - target <10ms
     pub alignment_time_ms: f32,
+
+    /// Stage 5: Late interaction rerank (E12 MaxSim) - target <15ms
     pub late_interaction_time_ms: f32,
-    pub misalignment_time_ms: f32,
+
+    /// Candidates remaining after each stage
+    /// [sparse_out, matryoshka_out, rrf_out, alignment_out, final_out]
     pub candidates_per_stage: [usize; 5],
+
+    /// Matryoshka dimension used (128/256/512/1024)
+    pub matryoshka_dim_used: usize,
+
+    /// Whether SPLADE was used in pre-filter
+    pub splade_enabled: bool,
+
+    /// RRF k parameter used
+    pub rrf_k_used: f32,
 }
 
 /// Detailed breakdown per stage
@@ -437,10 +594,18 @@ impl TeleologicalRetrievalPipeline for DefaultTeleologicalPipeline {
 
 ### Constraints
 
-- End-to-end latency < 100ms for typical queries
-- Support up to 100K candidates in pre-filter
+- End-to-end latency < 60ms for typical queries (was 100ms)
+- Stage timing budgets:
+  - Stage 1 (Sparse Pre-filter): < 5ms
+  - Stage 2 (Matryoshka ANN): < 10ms
+  - Stage 3 (RRF Rerank): < 20ms
+  - Stage 4 (Alignment Filter): < 10ms
+  - Stage 5 (Late Interaction): < 15ms
+- Support up to 1M candidates in pre-filter (was 100K)
 - Memory efficient (no full materialization until needed)
 - Thread-safe and parallelizable
+- Matryoshka truncation must maintain > 95% recall vs full dimension
+- SPLADE index must support incremental updates
 
 ## Pseudo Code
 
@@ -460,52 +625,152 @@ FUNCTION retrieve(query):
     ELSE:
         query_purpose = query.purpose
 
-    // ===== STAGE 1: PRE-FILTER =====
-    // Fast HNSW search across active embedding spaces
-    prefilter_candidates = []
+    // ===== STAGE 1: SPARSE PRE-FILTER (BM25 + E13 SPLADE) =====
+    // Target: <5ms, 10K candidates from up to 1M corpus
+    sparse_start = now()
+    sparse_candidates = []
 
+    IF config.prefilter.sparse_prefilter.enabled:
+        // Get E13 SPLADE sparse vector from query embeddings
+        query_splade = query_embeddings.embeddings[12]  // E13: SPLADE
+
+        // BM25 retrieval
+        bm25_results = bm25_index.search(
+            query.text,
+            config.prefilter.sparse_prefilter.splade_top_k,
+            k1 = config.prefilter.sparse_prefilter.bm25_k1,
+            b = config.prefilter.sparse_prefilter.bm25_b
+        )
+
+        // SPLADE retrieval (learned sparse)
+        splade_results = splade_index.search(
+            query_splade,
+            config.prefilter.sparse_prefilter.splade_top_k
+        )
+
+        // Combine BM25 + SPLADE scores
+        sparse_weight = config.prefilter.sparse_prefilter.sparse_weight
+        FOR memory_id IN UNION(bm25_results, splade_results):
+            bm25_score = bm25_results.get(memory_id, 0.0)
+            splade_score = splade_results.get(memory_id, 0.0)
+            combined = (1.0 - sparse_weight) * bm25_score + sparse_weight * splade_score
+            sparse_candidates.push((memory_id, combined))
+
+        // Sort and truncate to max_candidates
+        sparse_candidates.sort_by_score_desc()
+        sparse_candidates.truncate(config.prefilter.sparse_prefilter.max_candidates)
+    ELSE:
+        // Fallback: use all indexed memories
+        sparse_candidates = index_manager.get_all_ids()
+
+    sparse_time = now() - sparse_start  // Target: <5ms
+
+    // ===== STAGE 2: FAST DENSE ANN (Matryoshka 128D) =====
+    // Target: <10ms, 1K candidates from 10K
+    matryoshka_start = now()
+
+    // Select Matryoshka dimension adaptively or use configured
+    IF config.rerank.matryoshka.adaptive_dim:
+        corpus_size = sparse_candidates.len()
+        matryoshka_dim = SELECT_DIM(corpus_size):
+            < 10K:   MatryoshkaDim::D128
+            10K-100K: MatryoshkaDim::D256
+            100K-1M:  MatryoshkaDim::D512
+            > 1M:    MatryoshkaDim::D1024
+    ELSE:
+        matryoshka_dim = config.rerank.matryoshka.truncation_dim
+
+    // Truncate query embeddings to Matryoshka dimension
+    truncated_query_embeddings = truncate_matryoshka(
+        query_embeddings,
+        matryoshka_dim
+    )
+
+    // HNSW search across active spaces using truncated embeddings
+    ann_candidates = []
     FOR space_idx IN config.prefilter.active_spaces:
-        query_vector = query_embeddings.embeddings[space_idx]
+        query_vector = truncated_query_embeddings.embeddings[space_idx]
         IF query_vector IS NOT NULL:
-            space_results = index_manager.search(
+            // Only search within sparse pre-filtered candidates
+            space_results = index_manager.search_filtered(
                 space_idx,
                 query_vector,
                 config.prefilter.per_space_k,
-                config.prefilter.ef_search
+                config.prefilter.ef_search,
+                filter_ids = sparse_candidates.ids()
             )
-            prefilter_candidates.extend(space_results)
+            ann_candidates.extend(space_results)
 
     // Deduplicate by memory_id, keeping highest similarity
-    prefilter_candidates = deduplicate_by_id(prefilter_candidates)
+    ann_candidates = deduplicate_by_id(ann_candidates)
+    ann_candidates.truncate(1000)  // 1K candidates for next stage
 
-    // ===== STAGE 2: MULTI-EMBEDDING RERANK =====
-    // Compute cross-space similarity for all candidates
-    rerank_results = []
+    matryoshka_time = now() - matryoshka_start  // Target: <10ms
 
-    FOR (memory_id, _) IN prefilter_candidates:
-        memory_fingerprint = memory_store.get_fingerprint(memory_id)
+    // ===== STAGE 3: MULTI-SPACE RERANK (RRF Fusion) =====
+    // Target: <20ms, 100 candidates from 1K
+    rrf_start = now()
 
-        similarity = similarity_engine.compute_similarity(
-            query_embeddings,
-            memory_fingerprint.semantic_fingerprint,
-            CrossSpaceConfig {
-                weighting_strategy: config.rerank.weighting_strategy,
-                use_purpose_weighting: config.rerank.use_purpose_weighting,
-                ...
-            }
-        )
+    // Collect rankings from each embedding space
+    space_rankings = {}  // space_idx -> [(memory_id, rank)]
+    FOR space_idx IN config.prefilter.active_spaces:
+        query_vector = query_embeddings.embeddings[space_idx]  // Full dimension now
+        IF query_vector IS NOT NULL:
+            space_results = []
+            FOR (memory_id, _) IN ann_candidates:
+                memory_fp = memory_store.get_fingerprint(memory_id)
+                sim = cosine_similarity(query_vector, memory_fp.embeddings[space_idx])
+                space_results.push((memory_id, sim))
 
-        rerank_results.push((memory_id, similarity))
+            space_results.sort_by_sim_desc()
+            space_rankings[space_idx] = space_results.enumerate()  // Add rank
 
-    // Sort by cross-space similarity
-    rerank_results.sort_by(|(_, s1), (_, s2)| s2.score.cmp(s1.score))
-    rerank_results.truncate(config.rerank.pass_through_k)
+    // Apply fusion method
+    rrf_scores = {}
+    MATCH config.rerank.fusion_method:
+        FusionMethod::RRF:
+            // Reciprocal Rank Fusion: score = sum(1 / (k + rank))
+            k = config.rerank.rrf_k  // default 60.0
+            FOR (space_idx, rankings) IN space_rankings:
+                FOR (memory_id, rank) IN rankings:
+                    rrf_scores[memory_id] += 1.0 / (k + rank)
 
-    // ===== STAGE 3: TELEOLOGICAL ALIGNMENT =====
-    // Score by purpose and goal alignment
+        FusionMethod::WeightedSum:
+            // Normalize and sum weighted scores
+            FOR (space_idx, rankings) IN space_rankings:
+                weight = get_space_weight(space_idx, config)
+                FOR (memory_id, sim) IN rankings:
+                    rrf_scores[memory_id] += weight * sim
+
+        FusionMethod::RelativeScore:
+            // Normalize scores relative to max in each space
+            FOR (space_idx, rankings) IN space_rankings:
+                max_sim = rankings[0].sim
+                FOR (memory_id, sim) IN rankings:
+                    rrf_scores[memory_id] += sim / max_sim
+
+    // Apply purpose weighting if enabled
+    IF config.rerank.use_purpose_weighting:
+        FOR memory_id IN rrf_scores.keys():
+            memory_fp = memory_store.get_fingerprint(memory_id)
+            purpose_boost = cosine_similarity(
+                query_purpose.alignment,
+                memory_fp.purpose_vector.alignment
+            )
+            rrf_scores[memory_id] *= (1.0 + 0.2 * purpose_boost)  // 20% max boost
+
+    // Sort and truncate
+    rerank_results = rrf_scores.to_sorted_vec()
+    rerank_results.truncate(config.rerank.pass_through_k)  // 100 candidates
+
+    rrf_time = now() - rrf_start  // Target: <20ms
+
+    // ===== STAGE 4: TELEOLOGICAL ALIGNMENT FILTER =====
+    // Target: <10ms, 50 candidates from 100
+    alignment_start = now()
     alignment_results = []
 
-    FOR (memory_id, cross_sim) IN rerank_results:
+    FOR (memory_id, rrf_score) IN rerank_results:
         memory_fingerprint = memory_store.get_fingerprint(memory_id)
 
         // Purpose alignment
@@ -520,47 +785,43 @@ FUNCTION retrieve(query):
             config.alignment.active_goals
         )
 
-        // Combined score
-        combined = cross_sim.score * (1.0 - config.alignment.purpose_weight - config.alignment.goal_weight)
+        // Combined score with teleological weighting
+        combined = rrf_score * (1.0 - config.alignment.purpose_weight - config.alignment.goal_weight)
                  + purpose_sim * config.alignment.purpose_weight
                  + goal_score.composite_score * config.alignment.goal_weight
 
-        alignment_results.push((memory_id, combined, purpose_sim, goal_score))
+        alignment_results.push((memory_id, combined, purpose_sim, goal_score, rrf_score))
 
-    // Sort by combined score
+    // Sort by combined score and truncate
     alignment_results.sort_by_key(|r| -r.1)
-    alignment_results.truncate(config.alignment.pass_through_k)
+    alignment_results.truncate(config.alignment.pass_through_k)  // 50 candidates
 
-    // ===== STAGE 4: LATE INTERACTION (Optional) =====
-    IF config.late_interaction.enabled:
-        late_results = []
-        query_tokens = query_embeddings.embeddings[9]  // E10: late interaction
+    alignment_time = now() - alignment_start  // Target: <10ms
 
-        FOR (memory_id, combined, purpose_sim, goal_score) IN alignment_results:
-            memory_fingerprint = memory_store.get_fingerprint(memory_id)
-            memory_tokens = memory_fingerprint.semantic_fingerprint.embeddings[9]
-
-            IF query_tokens IS NOT NULL AND memory_tokens IS NOT NULL:
-                // MaxSim computation
-                max_sim_score = compute_max_sim(query_tokens, memory_tokens)
-
-                // Blend with previous score
-                final_score = combined * (1.0 - config.late_interaction.weight)
-                            + max_sim_score * config.late_interaction.weight
-            ELSE:
-                final_score = combined
-
-            late_results.push((memory_id, final_score, purpose_sim, goal_score))
-
-        working_results = late_results
-    ELSE:
-        working_results = alignment_results
-
-    // ===== STAGE 5: MISALIGNMENT CHECK =====
+    // ===== STAGE 5: LATE INTERACTION RERANK (E12 MaxSim) =====
+    // Target: <15ms, final 10 results from 50
+    late_start = now()
     final_results = []
     filtered_misaligned = []
 
-    FOR (memory_id, score, purpose_sim, goal_score) IN working_results:
+    // Get E12 ColBERT token embeddings for query
+    query_tokens = query_embeddings.embeddings[11]  // E12: ColBERT late interaction
+
+    FOR (memory_id, combined, purpose_sim, goal_score, rrf_score) IN alignment_results:
+        memory_fingerprint = memory_store.get_fingerprint(memory_id)
+        memory_tokens = memory_fingerprint.semantic_fingerprint.embeddings[11]  // E12
+
+        IF config.late_interaction.enabled AND query_tokens IS NOT NULL AND memory_tokens IS NOT NULL:
+            // MaxSim computation: for each query token, find max similarity to any doc token
+            max_sim_score = compute_max_sim(query_tokens, memory_tokens)
+
+            // Blend with previous score
+            final_score = combined * (1.0 - config.late_interaction.weight)
+                        + max_sim_score * config.late_interaction.weight
+        ELSE:
+            final_score = combined
+
+        // Misalignment check
         is_misaligned = goal_score.composite_score < config.misalignment.alignment_threshold
                      OR goal_score.misalignment_flags.any_set()
 
@@ -579,8 +840,8 @@ FUNCTION retrieve(query):
 
         final_results.push(ScoredMemory {
             memory_id,
-            score,
-            content_similarity: ...,
+            score: final_score,
+            content_similarity: rrf_score,
             purpose_alignment: purpose_sim,
             goal_alignment: goal_score.composite_score,
             johari_quadrant: dominant_quadrant,
@@ -590,12 +851,36 @@ FUNCTION retrieve(query):
 
     // Final sort and limit
     final_results.sort_by_key(|m| -m.score)
-    final_results.truncate(config.final_limit)
+    final_results.truncate(config.final_limit)  // Final 10 results
+
+    late_time = now() - late_start  // Target: <15ms
 
     RETURN TeleologicalRetrievalResult {
         results: final_results,
-        query_metadata: ...,
-        pipeline_stats: ...,
+        query_metadata: QueryMetadata {
+            computed_embeddings: query.embeddings.is_none(),
+            computed_purpose: query.purpose.is_none(),
+            active_spaces: config.prefilter.active_spaces.to_list(),
+            active_goals: config.alignment.active_goals.clone(),
+        },
+        pipeline_stats: PipelineStats {
+            total_time_ms: (now() - start).as_ms(),  // Target: <60ms total
+            sparse_prefilter_time_ms: sparse_time.as_ms(),
+            matryoshka_ann_time_ms: matryoshka_time.as_ms(),
+            rrf_rerank_time_ms: rrf_time.as_ms(),
+            alignment_time_ms: alignment_time.as_ms(),
+            late_interaction_time_ms: late_time.as_ms(),
+            candidates_per_stage: [
+                sparse_candidates.len(),   // ~10K after sparse
+                ann_candidates.len(),      // ~1K after Matryoshka
+                rerank_results.len(),      // ~100 after RRF
+                alignment_results.len(),   // ~50 after alignment
+                final_results.len(),       // ~10 final
+            ],
+            matryoshka_dim_used: matryoshka_dim as usize,
+            splade_enabled: config.prefilter.sparse_prefilter.enabled,
+            rrf_k_used: config.rerank.rrf_k,
+        },
         breakdown: IF config.include_breakdown THEN Some(...) ELSE None
     }
 ```

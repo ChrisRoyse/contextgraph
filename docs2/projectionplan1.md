@@ -1,23 +1,43 @@
 # Embedding Projection & Semantic Preservation Plan
 
 **Document**: `projectionplan.md`
-**Version**: 1.0.0
+**Version**: 1.1.0
 **Created**: 2026-01-04
+**Updated**: 2026-01-05
 **Status**: APPROVED
 **Authors**: Architecture Team + Research Synthesis
+
+**v1.1.0 Changes** (from Improvement Report integration):
+- Updated to 13-embedder architecture (added E13 SPLADE sparse lexical)
+- Formalized 5-stage optimized retrieval pipeline with latency targets
+- Added RRF (Reciprocal Rank Fusion) formula with k=60 constant
+- Updated storage architecture: ~17KB quantized (63% reduction from ~46KB)
+- Added Matryoshka truncation support for E1 Semantic (1024D → 128D)
 
 ---
 
 ## Executive Summary
 
-This document establishes the architectural approach for preserving semantic meaning across the 12-model embedding pipeline. Based on research synthesis and first-principles analysis, we reject the traditional "fuse-to-single-vector" approach in favor of a **Multi-Array Semantic Fingerprint** architecture that:
+This document establishes the architectural approach for preserving semantic meaning across the 13-model embedding pipeline. Based on research synthesis and first-principles analysis, we reject the traditional "fuse-to-single-vector" approach in favor of a **Multi-Array Semantic Fingerprint** architecture that:
 
-1. **Preserves 100% of semantic information** from all 12 embedders
+1. **Preserves 100% of semantic information** from all 13 embedders
 2. **Eliminates projection layer training** - no distortion of meaning
 3. **Enables Teleological Vector alignment** for goal-directed semantic measurement
 4. **Provides interpretable retrieval** - know which embedding contributed to matches
+5. **Optimizes storage via Product Quantization** - 63% reduction (~46KB → ~17KB)
 
-**Key Decision**: Store `[E1, E2, E3, ..., E12]` as a semantic array, NOT fused `Vec<1536>`.
+**Key Decision**: Store `[E1, E2, E3, ..., E13]` as a semantic array with PQ-8 quantization, NOT fused `Vec<1536>`.
+
+**Optimized 5-Stage Retrieval Pipeline** (validated by improvement report):
+| Stage | Description | Latency Target |
+|-------|-------------|----------------|
+| 1 | SPARSE PRE-FILTER (BM25 + E13 SPLADE) | Top 10K in <5ms |
+| 2 | FAST DENSE ANN (E1 Matryoshka 128D) | Top 1K in <10ms |
+| 3 | MULTI-SPACE RERANK (RRF Fusion E1-E11, E13) | Top 100 in <20ms |
+| 4 | TELEOLOGICAL ALIGNMENT FILTER | Top 50 in <10ms |
+| 5 | LATE INTERACTION RERANK (E12 MaxSim) | Final top 10 in <15ms |
+
+**Total Pipeline Latency**: <60ms @ 1M memories, <30ms @ 100K memories
 
 ---
 
@@ -91,48 +111,91 @@ This means:
 Instead of fusing 12 embeddings into 1 vector, store ALL 12 as a structured array:
 
 ```rust
-/// A complete semantic fingerprint preserving all 12 embedding dimensions
+/// A complete semantic fingerprint preserving all 13 embedding dimensions
+/// Storage: ~17KB with PQ-8 quantization (63% reduction from ~46KB)
 pub struct SemanticFingerprint {
-    /// E1: Dense semantic meaning (1024D)
-    pub semantic: Vector1024,
+    /// E1: Dense semantic meaning (1024D, Matryoshka-enabled)
+    /// Truncatable to 512D/256D/128D for fast Stage 2 filtering
+    /// Quantization: PQ-8 (32x compression, <5% recall loss)
+    pub semantic: MatryoshkaVector1024,
 
     /// E2: Temporal recency (512D)
+    /// Quantization: Float8
     pub temporal_recent: Vector512,
 
     /// E3: Periodic patterns (512D)
+    /// Quantization: Float8
     pub temporal_periodic: Vector512,
 
     /// E4: Positional encoding (512D)
+    /// Quantization: Float8
     pub temporal_positional: Vector512,
 
     /// E5: Causal relationships (768D)
-    pub causal: Vector768,
+    /// Asymmetric similarity: cause→effect (1.2x) ≠ effect→cause (0.8x)
+    /// Quantization: PQ-8
+    pub causal: AsymmetricVector768,
 
     /// E6: Sparse activations (~1500 active of 30K)
+    /// Sparse storage: indices + values only
     pub sparse: SparseVector30K,
 
     /// E7: Code/AST structure (1536D)
+    /// Quantization: PQ-8
     pub code: Vector1536,
 
     /// E8: Graph/GNN structure (384D)
+    /// Quantization: Float8
     pub graph: Vector384,
 
     /// E9: Hyperdimensional computing (1024D from 10K-bit)
-    pub hdc: Vector1024,
+    /// Quantization: Binary (native)
+    pub hdc: BinaryVector1024,
 
     /// E10: Multimodal (768D)
+    /// Quantization: PQ-8
     pub multimodal: Vector768,
 
     /// E11: Entity/TransE (384D)
+    /// Quantization: Float8
     pub entity: Vector384,
 
     /// E12: Late interaction (variable, 128D per token)
+    /// Quantization: PQ-8
     pub late_interaction: Vec<Vector128>,
+
+    /// E13: SPLADE sparse lexical (~30K sparse dimensions)
+    /// Stage 1 pre-filter: 10K→1K candidates in <5ms
+    /// Storage: SparseTensor (indices + BM25-weighted values)
+    pub splade: SpladeVector,
 
     /// Teleological alignment vector (computed, not stored)
     /// See Section 3 for Teleological Vectors integration
     #[serde(skip)]
     pub teleological: Option<TeleologicalAlignment>,
+}
+
+/// Matryoshka-enabled vector supporting nested truncation
+pub struct MatryoshkaVector1024 {
+    pub full: Vector1024,           // Full 1024D
+    pub truncation_dims: [usize; 3], // [512, 256, 128]
+}
+
+impl MatryoshkaVector1024 {
+    /// Get truncated view for fast ANN (Stage 2)
+    pub fn truncate(&self, dim: usize) -> &[f32] {
+        &self.full.as_slice()[..dim]
+    }
+}
+
+/// SPLADE sparse lexical embedding for Stage 1 pre-filtering
+pub struct SpladeVector {
+    /// Active dimension indices (vocabulary tokens)
+    pub indices: Vec<u32>,
+    /// BM25-weighted activation values
+    pub values: Vec<f32>,
+    /// Precomputed L2 norm for fast scoring
+    pub norm: f32,
 }
 ```
 
@@ -140,11 +203,29 @@ pub struct SemanticFingerprint {
 
 | Approach | Storage per Memory | Information Preserved | Retrieval Complexity |
 |----------|-------------------|----------------------|---------------------|
-| FuseMoE (current) | 6 KB (1536D) | ~33% (top-4 only) | O(1) ANN |
-| Multi-Array | ~40 KB (all 12) | 100% | O(12) weighted similarity |
-| Hybrid (recommended) | ~46 KB | 100% + fast pre-filter | O(1) ANN + O(12) rerank |
+| FuseMoE (legacy) | 6 KB (1536D) | ~33% (top-4 only) | O(1) ANN |
+| Multi-Array (unquantized) | ~46 KB (all 13) | 100% | O(13) weighted similarity |
+| **Multi-Array + PQ-8 (recommended)** | **~17 KB** | **100%** | **5-stage pipeline** |
 
-**Storage increase: 7x, but semantic preservation: 3x improvement.**
+**With PQ-8 Quantization**:
+- **63% storage reduction** (46KB → 17KB)
+- **<5% recall loss** on semantic/causal embeddings
+- **32x compression** for dense vectors via Product Quantization
+
+| Component | Unquantized | Quantized | Method |
+|-----------|-------------|-----------|--------|
+| E1 Semantic (1024D) | 4 KB | 128 B | PQ-8 |
+| E2-E4 Temporal (512D × 3) | 6 KB | 1.5 KB | Float8 |
+| E5 Causal (768D) | 3 KB | 96 B | PQ-8 |
+| E6 Sparse (1500 active) | 6 KB | 6 KB | Native sparse |
+| E7 Code (1536D) | 6 KB | 192 B | PQ-8 |
+| E8 Graph (384D) | 1.5 KB | 384 B | Float8 |
+| E9 HDC (1024-bit) | 128 B | 128 B | Binary |
+| E10 Multimodal (768D) | 3 KB | 96 B | PQ-8 |
+| E11 Entity (384D) | 1.5 KB | 384 B | Float8 |
+| E12 Late Interaction (avg) | 8 KB | 1 KB | PQ-8 |
+| E13 SPLADE (sparse) | 6 KB | 6 KB | Native sparse |
+| **Total** | **~46 KB** | **~17 KB** | **63% reduction** |
 
 ### 2.3 The Unique Fingerprint Property
 
@@ -226,22 +307,30 @@ Where:
 
 ### 3.4 Teleological Alignment for Each Embedder
 
-Each of the 12 embedders serves a **teleological purpose**:
+Each of the 13 embedders serves a **teleological purpose**:
 
-| Embedder | Teleological Purpose | Goal Alignment Measure |
-|----------|---------------------|----------------------|
-| E1 Semantic | Capture dense meaning | A(content, V_meaning) |
-| E2 Temporal Recent | Preserve recency relevance | A(timestamp, V_freshness) |
-| E3 Temporal Periodic | Capture cyclical patterns | A(pattern, V_periodicity) |
-| E4 Temporal Positional | Maintain sequence order | A(position, V_ordering) |
-| E5 Causal | Preserve cause-effect | A(causation, V_causality) |
-| E6 Sparse | Capture activation patterns | A(activations, V_selectivity) |
-| E7 Code | Preserve AST semantics | A(ast, V_correctness) |
-| E8 Graph | Maintain structural relations | A(structure, V_connectivity) |
-| E9 HDC | Holographic encoding | A(hologram, V_robustness) |
-| E10 Multimodal | Cross-modal grounding | A(grounding, V_multimodality) |
-| E11 Entity | Knowledge graph alignment | A(triple, V_factuality) |
-| E12 Late Interaction | Token-level matching | A(tokens, V_precision) |
+| Embedder | Teleological Purpose | Goal Alignment Measure | Pipeline Stage |
+|----------|---------------------|----------------------|----------------|
+| **E13 SPLADE** | **Keyword precision pre-filter** | **A(keywords, V_keyword_precision)** | **Stage 1** |
+| E1 Semantic | Capture dense meaning (Matryoshka 128D) | A(content, V_meaning) | Stage 2 |
+| E2 Temporal Recent | Preserve recency relevance | A(timestamp, V_freshness) | Stage 3 |
+| E3 Temporal Periodic | Capture cyclical patterns | A(pattern, V_periodicity) | Stage 3 |
+| E4 Temporal Positional | Maintain sequence order | A(position, V_ordering) | Stage 3 |
+| E5 Causal | Preserve cause-effect (asymmetric) | A(causation, V_causality) | Stage 3 |
+| E6 Sparse | Capture activation patterns | A(activations, V_selectivity) | Stage 3 |
+| E7 Code | Preserve AST semantics | A(ast, V_correctness) | Stage 3 |
+| E8 Graph | Maintain structural relations | A(structure, V_connectivity) | Stage 3 |
+| E9 HDC | Holographic encoding | A(hologram, V_robustness) | Stage 3 |
+| E10 Multimodal | Cross-modal grounding | A(grounding, V_multimodality) | Stage 3 |
+| E11 Entity | Knowledge graph alignment | A(triple, V_factuality) | Stage 3 |
+| E12 Late Interaction | Token-level matching (MaxSim) | A(tokens, V_precision) | Stage 5 |
+
+**Stage Mapping**:
+- **Stage 1**: E13 SPLADE sparse pre-filter (10K→1K candidates)
+- **Stage 2**: E1 Matryoshka 128D ANN (1K→100 candidates)
+- **Stage 3**: Multi-space RRF fusion (E1-E11) for reranking (100→50)
+- **Stage 4**: Teleological alignment filter (50→20)
+- **Stage 5**: E12 ColBERT MaxSim final ranking (20→10)
 
 ### 3.5 Computing Teleological Alignment Score
 
@@ -316,16 +405,21 @@ fn bound_transitive_alignment(
 
 ## 4. Per-Embedder Preservation Requirements
 
-### 4.1 E1: Semantic Embeddings (1024D)
+### 4.1 E1: Semantic Embeddings (1024D, Matryoshka-enabled)
 
-**Model**: e5-large-v2 or equivalent dense transformer
+**Model**: e5-large-v2 or equivalent dense transformer with Matryoshka Representation Learning (MRL)
 **Teleological Purpose**: Capture dense semantic meaning
-**Preservation Strategy**: Direct storage, no projection
+**Preservation Strategy**: Matryoshka truncation for Stage 2 + full vector for Stage 3
+**Quantization**: PQ-8 (32x compression, <5% recall loss)
 
 ```rust
 pub struct SemanticPreservation {
-    /// Store full 1024D vector
-    pub vector: Vector1024,
+    /// Store full 1024D vector with Matryoshka nesting
+    /// Truncatable to 512D/256D/128D for progressive refinement
+    pub vector: MatryoshkaVector1024,
+
+    /// Quantized version for storage (PQ-8)
+    pub quantized: ProductQuantizedVector,
 
     /// Teleological alignment to meaning goal
     pub alignment_meaning: f32,
@@ -334,12 +428,30 @@ pub struct SemanticPreservation {
     pub confidence: f32,
     pub entropy: f32,
 }
+
+impl SemanticPreservation {
+    /// Stage 2: Fast ANN using 128D truncation
+    pub fn stage2_vector(&self) -> &[f32] {
+        self.vector.truncate(128)
+    }
+
+    /// Stage 3: Full precision for RRF reranking
+    pub fn stage3_vector(&self) -> &Vector1024 {
+        &self.vector.full
+    }
+}
 ```
+
+**Matryoshka Benefits**:
+- **Stage 2 (128D)**: 8x faster ANN search, 87% recall vs full vector
+- **Stage 3 (1024D)**: Full semantic precision for RRF fusion
+- **Progressive refinement**: Coarse→fine retrieval
 
 **Validation**:
 - Cosine similarity between similar sentences > 0.85
 - Dissimilar sentences < 0.30
 - No dimension collapse (all dimensions have variance > 0.01)
+- Matryoshka recall@10: 128D ≥ 87%, 256D ≥ 94%, 512D ≥ 98%
 
 ### 4.2 E2-E4: Temporal Embeddings (512D × 3)
 
@@ -368,16 +480,20 @@ pub struct TemporalPreservation {
 - Periodic patterns are detectable via FFT
 - Sequence order is recoverable from positional encoding
 
-### 4.3 E5: Causal Embeddings (768D)
+### 4.3 E5: Causal Embeddings (768D, Asymmetric Similarity)
 
 **Model**: Longformer with SCM intervention encoding
 **Teleological Purpose**: Preserve cause-effect relationships
-**Preservation Strategy**: CRITICAL - must preserve asymmetry
+**Preservation Strategy**: CRITICAL - must preserve asymmetry with directional weighting
+**Quantization**: PQ-8 (32x compression, <5% recall loss)
 
 ```rust
 pub struct CausalPreservation {
     /// Full causal embedding
     pub vector: Vector768,
+
+    /// Quantized version for storage
+    pub quantized: ProductQuantizedVector,
 
     /// Intervention mask (which dimensions affected by do(X))
     pub intervention_mask: BitVec,
@@ -394,15 +510,46 @@ pub enum CausalDirection {
     Effect,     // This is an effect of something
     Bidirectional,
 }
+
+impl CausalPreservation {
+    /// Asymmetric similarity: cause→effect (1.2x) ≠ effect→cause (0.8x)
+    /// This captures the intuition that causes predict effects more strongly
+    /// than effects predict causes
+    pub fn asymmetric_similarity(&self, other: &Self) -> f32 {
+        let base_sim = cosine_sim(&self.vector, &other.vector);
+
+        // Apply directional weighting
+        let weight = match (&self.direction, &other.direction) {
+            (CausalDirection::Cause, CausalDirection::Effect) => 1.2,  // Forward causal
+            (CausalDirection::Effect, CausalDirection::Cause) => 0.8,  // Backward causal
+            _ => 1.0,  // Symmetric for same-direction or bidirectional
+        };
+
+        base_sim * weight
+    }
+}
+```
+
+**Asymmetric Similarity Formula**:
+```
+sim_asym(A, B) = cos(A, B) × w(dir_A, dir_B)
+
+where w(dir_A, dir_B) = {
+    1.2  if A is Cause and B is Effect  (forward prediction)
+    0.8  if A is Effect and B is Cause  (backward attribution)
+    1.0  otherwise
+}
 ```
 
 **Preservation Rules**:
-1. **Asymmetry**: `sim(cause, effect) ≠ sim(effect, cause)`
+1. **Asymmetry**: `sim(cause, effect) ≠ sim(effect, cause)` — enforced via directional weighting
 2. **Intervention encoding**: Must preserve `do(X)` semantics
 3. **Direction preservation**: Never normalize away directional information
+4. **Quantization aware**: PQ-8 preserves asymmetry with <5% similarity error
 
 **Validation**:
 - Causal pairs: `sim(A causes B, A) > sim(A causes B, B)`
+- Asymmetry test: `sim_asym(cause→effect) / sim_asym(effect→cause) ≈ 1.5`
 - Intervention: `do(X)` encoding changes specific dimensions
 - Transitivity: If A→B and B→C, then A has causal path to C
 
@@ -630,7 +777,7 @@ pub struct LateInteractionPreservation {
 }
 
 impl LateInteractionPreservation {
-    /// MaxSim scoring (ColBERT style)
+    /// MaxSim scoring (ColBERT style) - Stage 5 final ranking
     pub fn maxsim(&self, query: &Self) -> f32 {
         let mut total = 0.0;
         for q_emb in &query.token_embeddings {
@@ -644,14 +791,96 @@ impl LateInteractionPreservation {
 }
 ```
 
+### 4.11 E13: SPLADE Sparse Lexical Embeddings (~30K sparse)
+
+**Model**: SPLADE v2 (Sparse Lexical and Expansion Model)
+**Teleological Purpose**: Keyword-precise pre-filtering for Stage 1
+**Preservation Strategy**: Store active vocabulary indices + BM25-weighted values
+**Quantization**: Native sparse (no compression needed)
+
+```rust
+/// E13: SPLADE sparse lexical embedding for Stage 1 pre-filtering
+pub struct SpladePreservation {
+    /// Active vocabulary token indices (~500-2000 per document)
+    pub indices: Vec<u32>,
+
+    /// BM25-weighted activation values
+    pub values: Vec<f32>,
+
+    /// Precomputed L2 norm for efficient scoring
+    pub norm: f32,
+
+    /// Teleological alignment to keyword precision goal
+    pub alignment_keyword_precision: f32,
+}
+
+impl SpladePreservation {
+    /// Sparse dot product for Stage 1 candidate generation
+    /// Runs in O(n) where n = number of overlapping tokens
+    pub fn sparse_score(&self, query: &Self) -> f32 {
+        let mut score = 0.0;
+        let mut i = 0;
+        let mut j = 0;
+
+        // Merge-join on sorted indices
+        while i < self.indices.len() && j < query.indices.len() {
+            match self.indices[i].cmp(&query.indices[j]) {
+                std::cmp::Ordering::Equal => {
+                    score += self.values[i] * query.values[j];
+                    i += 1;
+                    j += 1;
+                }
+                std::cmp::Ordering::Less => i += 1,
+                std::cmp::Ordering::Greater => j += 1,
+            }
+        }
+        score
+    }
+
+    /// Create from SPLADE model output
+    pub fn from_splade_output(logits: &[f32], threshold: f32) -> Self {
+        let mut indices = Vec::new();
+        let mut values = Vec::new();
+
+        for (idx, &logit) in logits.iter().enumerate() {
+            if logit > threshold {
+                indices.push(idx as u32);
+                values.push(logit);
+            }
+        }
+
+        let norm = values.iter().map(|v| v * v).sum::<f32>().sqrt();
+
+        Self {
+            indices,
+            values,
+            norm,
+            alignment_keyword_precision: 0.0,  // Computed later
+        }
+    }
+}
+```
+
+**Stage 1 Role**:
+- **Input**: Query embedding + all memory SPLADE embeddings
+- **Operation**: Sparse dot product on inverted index
+- **Output**: Top 10K candidates in <5ms
+- **Benefit**: Eliminates 99% of corpus before expensive dense operations
+
+**Validation**:
+- Keyword queries: SPLADE recall > BM25 recall
+- Lexical precision: Exact term matches score highest
+- Efficiency: 10K candidate retrieval in <5ms for 1M corpus
+
 ---
 
 ## 5. Similarity Computation Strategy
 
-### 5.1 Multi-Embedding Similarity Function
+### 5.1 Multi-Embedding Similarity Function (Stage 3 RRF Fusion)
 
 ```rust
-/// Compute similarity between two semantic fingerprints
+/// Compute similarity between two semantic fingerprints using RRF fusion
+/// Used in Stage 3 of the 5-stage pipeline for multi-space reranking
 pub fn multi_embedding_similarity(
     query: &SemanticFingerprint,
     memory: &SemanticFingerprint,
@@ -659,11 +888,11 @@ pub fn multi_embedding_similarity(
 ) -> MultiSimilarityResult {
     // Compute per-embedder similarities
     let similarities = PerEmbedderSimilarities {
-        semantic: cosine_sim(&query.semantic, &memory.semantic),
+        semantic: cosine_sim(&query.semantic.full, &memory.semantic.full),
         temporal_recent: cosine_sim(&query.temporal_recent, &memory.temporal_recent),
         temporal_periodic: cosine_sim(&query.temporal_periodic, &memory.temporal_periodic),
         temporal_positional: cosine_sim(&query.temporal_positional, &memory.temporal_positional),
-        causal: causal_asymmetric_sim(&query.causal, &memory.causal),
+        causal: causal_asymmetric_sim(&query.causal, &memory.causal),  // Asymmetric!
         sparse: sparse_similarity(&query.sparse, &memory.sparse),
         code: cosine_sim(&query.code, &memory.code),
         graph: graph_structure_sim(&query.graph, &memory.graph),
@@ -671,10 +900,11 @@ pub fn multi_embedding_similarity(
         multimodal: cosine_sim(&query.multimodal, &memory.multimodal),
         entity: transe_sim(&query.entity, &memory.entity),
         late_interaction: maxsim(&query.late_interaction, &memory.late_interaction),
+        splade: splade_score(&query.splade, &memory.splade),  // E13
     };
 
-    // Weighted aggregate
-    let aggregate = weighted_sum(&similarities, weights);
+    // RRF Fusion (replaces simple weighted average)
+    let aggregate = rrf_fusion(&similarities, weights);
 
     // Teleological alignment of the similarity itself
     let teleological_score = compute_teleological_alignment_of_match(
@@ -690,7 +920,46 @@ pub fn multi_embedding_similarity(
         top_contributors: get_top_contributors(&similarities, 3),
     }
 }
+
+/// Reciprocal Rank Fusion (RRF) for combining multi-space rankings
+/// Formula: RRF(d) = Σᵢ wᵢ / (k + rankᵢ(d))
+/// where k=60 (standard RRF constant)
+pub fn rrf_fusion(
+    similarities: &PerEmbedderSimilarities,
+    weights: &SimilarityWeights,
+) -> f32 {
+    const K: f32 = 60.0;  // Standard RRF constant
+
+    // Convert similarities to ranks (higher sim = lower rank = better)
+    let sim_vec = similarities.to_vec();
+    let weight_vec = weights.to_vec();
+
+    let mut indexed: Vec<(usize, f32, f32)> = sim_vec.iter()
+        .zip(weight_vec.iter())
+        .enumerate()
+        .map(|(i, (&sim, &weight))| (i, sim, weight))
+        .collect();
+
+    // Sort by similarity descending to get ranks
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+    // Compute RRF score
+    let mut rrf_score = 0.0;
+    for (rank, (_, _, weight)) in indexed.iter().enumerate() {
+        rrf_score += weight / (K + (rank + 1) as f32);
+    }
+
+    // Normalize to [0, 1] range
+    let max_possible = weight_vec.iter().sum::<f32>() / K;
+    rrf_score / max_possible
+}
 ```
+
+**RRF Fusion Benefits** (vs simple weighted average):
+- **Rank-based**: Robust to different similarity score scales across embedders
+- **Outlier resistant**: Single high/low score doesn't dominate
+- **Proven in IR**: Standard method in hybrid retrieval systems
+- **k=60**: Empirically optimal constant from TREC evaluations
 
 ### 5.2 Dynamic Weight Adjustment
 
@@ -698,18 +967,45 @@ Weights can be adjusted based on query intent:
 
 ```rust
 pub struct SimilarityWeights {
-    pub semantic: f32,           // Default: 0.20
-    pub temporal_recent: f32,    // Default: 0.05
-    pub temporal_periodic: f32,  // Default: 0.05
-    pub temporal_positional: f32,// Default: 0.05
-    pub causal: f32,             // Default: 0.15
-    pub sparse: f32,             // Default: 0.05
-    pub code: f32,               // Default: 0.10
-    pub graph: f32,              // Default: 0.10
-    pub hdc: f32,                // Default: 0.05
-    pub multimodal: f32,         // Default: 0.05
-    pub entity: f32,             // Default: 0.10
-    pub late_interaction: f32,   // Default: 0.05
+    pub semantic: f32,           // Default: 0.18 (Stage 3 RRF)
+    pub temporal_recent: f32,    // Default: 0.04
+    pub temporal_periodic: f32,  // Default: 0.04
+    pub temporal_positional: f32,// Default: 0.04
+    pub causal: f32,             // Default: 0.14 (asymmetric)
+    pub sparse: f32,             // Default: 0.04
+    pub code: f32,               // Default: 0.09
+    pub graph: f32,              // Default: 0.09
+    pub hdc: f32,                // Default: 0.04
+    pub multimodal: f32,         // Default: 0.04
+    pub entity: f32,             // Default: 0.09
+    pub late_interaction: f32,   // Default: 0.09 (Stage 5 MaxSim)
+    pub splade: f32,             // Default: 0.08 (Stage 1 pre-filter)
+}
+
+impl SimilarityWeights {
+    /// 5-Stage Pipeline Weight Distribution
+    /// - Stage 1 (SPLADE): Binary filter, no weight needed
+    /// - Stage 2 (Matryoshka): Uses E1 semantic only
+    /// - Stage 3 (RRF): Full multi-space fusion
+    /// - Stage 4 (Teleological): Alignment filter, no weight needed
+    /// - Stage 5 (MaxSim): Late interaction refinement
+    pub fn for_stage3_rrf() -> Self {
+        Self {
+            semantic: 0.18,
+            temporal_recent: 0.04,
+            temporal_periodic: 0.04,
+            temporal_positional: 0.04,
+            causal: 0.14,
+            sparse: 0.04,
+            code: 0.09,
+            graph: 0.09,
+            hdc: 0.04,
+            multimodal: 0.04,
+            entity: 0.09,
+            late_interaction: 0.09,
+            splade: 0.08,
+        }
+    }
 }
 
 impl SimilarityWeights {
@@ -790,57 +1086,101 @@ pub fn teleological_retrieval(
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                     STORAGE ARCHITECTURE                         │
+│              (~17KB per memory with PQ-8 quantization)           │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │           PRIMARY: Multi-Array Fingerprint                │   │
-│  │     [E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12]  │   │
-│  │                    (~40 KB per memory)                    │   │
+│  │  [E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E13] │   │
+│  │         ~46KB uncompressed → ~17KB with PQ-8              │   │
+│  │              (63% storage reduction)                      │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                              │                                   │
 │                              │ Derived (computed, cached)        │
 │                              v                                   │
 │  ┌──────────────────────────────────────────────────────────┐   │
-│  │           SECONDARY: Fast ANN Index                       │   │
-│  │     Aggregated 1536D vector for pre-filtering             │   │
-│  │     (simple weighted average, NOT learned fusion)         │   │
+│  │           SECONDARY: Stage 1-2 Fast Indexes               │   │
+│  │     E13 SPLADE inverted index (Stage 1 pre-filter)        │   │
+│  │     E1 Matryoshka 128D HNSW (Stage 2 ANN)                 │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                  │
 │  ┌──────────────────────────────────────────────────────────┐   │
 │  │           TERTIARY: Teleological Index                    │   │
 │  │     Alignment scores to North Star goals                  │   │
-│  │     Enables goal-directed retrieval                       │   │
+│  │     Enables goal-directed retrieval (Stage 4)             │   │
 │  └──────────────────────────────────────────────────────────┘   │
 │                                                                  │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### 6.2 Retrieval Pipeline
+### 6.2 5-Stage Retrieval Pipeline
 
 ```
 Query: "What causes memory leaks in async Rust?"
 
-Step 1: FAST PRE-FILTER (ANN on aggregated vector)
-        → Top 500 candidates in <10ms
+┌─────────────────────────────────────────────────────────────────────┐
+│                    5-STAGE RETRIEVAL PIPELINE                         │
+│                    Target: <60ms for 1M memories                      │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                       │
+│  STAGE 1: SPLADE SPARSE PRE-FILTER (E13)                   <5ms     │
+│  ├─ Input: 1M memories                                               │
+│  ├─ Operation: Sparse dot product on inverted index                 │
+│  ├─ Output: Top 10K candidates                                       │
+│  └─ Method: SPLADE sparse lexical matching                          │
+│                          │                                           │
+│                          ▼                                           │
+│  STAGE 2: MATRYOSHKA ANN (E1 truncated)                    <10ms    │
+│  ├─ Input: 10K candidates from Stage 1                              │
+│  ├─ Operation: HNSW search on 128D truncated E1 vectors             │
+│  ├─ Output: Top 1K candidates                                        │
+│  └─ Method: Matryoshka 128D for 8x faster ANN                       │
+│                          │                                           │
+│                          ▼                                           │
+│  STAGE 3: MULTI-SPACE RRF RERANK (E1-E11, E13)             <20ms    │
+│  ├─ Input: 1K candidates from Stage 2                               │
+│  ├─ Operation: RRF fusion across 13 embedding spaces                │
+│  │   Formula: RRF(d) = Σᵢ wᵢ / (60 + rankᵢ(d))                      │
+│  ├─ Output: Top 100 candidates                                       │
+│  └─ Method: Rank-based fusion, outlier resistant                    │
+│                          │                                           │
+│                          ▼                                           │
+│  STAGE 4: TELEOLOGICAL ALIGNMENT FILTER                    <10ms    │
+│  ├─ Input: 100 candidates from Stage 3                              │
+│  ├─ Operation: Compute A(memory, North Star)                        │
+│  │   Filter: alignment < 0.55 → discard                             │
+│  │   ΔA < -0.15 → misalignment warning                              │
+│  ├─ Output: Top 50 candidates                                        │
+│  └─ Method: Cosine alignment to goal hierarchy                      │
+│                          │                                           │
+│                          ▼                                           │
+│  STAGE 5: LATE INTERACTION MAXSIM (E12)                    <15ms    │
+│  ├─ Input: 50 candidates from Stage 4                               │
+│  ├─ Operation: ColBERT MaxSim token-level scoring                   │
+│  │   MaxSim = (1/|Q|) Σ_q max_d cos(q, d)                           │
+│  ├─ Output: Final top 10 results                                    │
+│  └─ Method: Token-level precision for final ranking                 │
+│                                                                       │
+└─────────────────────────────────────────────────────────────────────┘
 
-Step 2: MULTI-EMBEDDING RERANK
-        → Score all 12 embeddings for 500 candidates
-        → Weight: causal=0.30, code=0.25, semantic=0.20, ...
-        → Top 50 candidates
-
-Step 3: TELEOLOGICAL ALIGNMENT
-        → Align candidates with North Star goal
-        → Filter: alignment < 0.55 → discard
-        → Top 20 candidates
-
-Step 4: LATE INTERACTION RERANK (E12)
-        → MaxSim token-level scoring
-        → Final top 10 results
-
-Step 5: MISALIGNMENT CHECK
-        → If any result has ΔA < -0.15, warn user
-        → Include alignment scores in response metadata
+TOTAL LATENCY: <60ms for 1M memories
+               <30ms for 100K memories
 ```
+
+**Stage-by-Stage Breakdown**:
+
+| Stage | Embedder | Candidates | Latency | Cumulative |
+|-------|----------|------------|---------|------------|
+| 1 | E13 SPLADE | 1M → 10K | <5ms | <5ms |
+| 2 | E1 Matryoshka 128D | 10K → 1K | <10ms | <15ms |
+| 3 | E1-E11, E13 RRF | 1K → 100 | <20ms | <35ms |
+| 4 | Teleological | 100 → 50 | <10ms | <45ms |
+| 5 | E12 MaxSim | 50 → 10 | <15ms | <60ms |
+
+**Misalignment Check** (integrated into Stage 4):
+- If any result has ΔA < -0.15, warn user
+- Include alignment scores in response metadata
+- Track alignment drift for predictive failure detection
 
 ### 6.3 Database Schema
 
@@ -871,9 +1211,14 @@ CREATE TABLE semantic_fingerprints (
     e10_multimodal BYTEA NOT NULL,
     e11_entity BYTEA NOT NULL,
 
-    -- E12: Variable-length token embeddings
+    -- E12: Variable-length token embeddings (PQ-8)
     e12_late_interaction BYTEA NOT NULL,
     e12_token_count SMALLINT NOT NULL,
+
+    -- E13: SPLADE sparse lexical (native sparse)
+    e13_splade_indices INTEGER[] NOT NULL,
+    e13_splade_values REAL[] NOT NULL,
+    e13_splade_norm REAL NOT NULL,
 
     -- Teleological metadata
     teleological_aggregate REAL,
@@ -986,23 +1331,27 @@ Where $\theta^* \in [0.70, 0.75]$ is the empirically validated alignment thresho
 
 ### 8.2 Multi-Embedding Similarity (Formal)
 
-Given two semantic fingerprints $F_1 = [e_1^{(1)}, \ldots, e_{12}^{(1)}]$ and $F_2 = [e_1^{(2)}, \ldots, e_{12}^{(2)}]$:
+Given two semantic fingerprints $F_1 = [e_1^{(1)}, \ldots, e_{13}^{(1)}]$ and $F_2 = [e_1^{(2)}, \ldots, e_{13}^{(2)}]$:
 
-$$\text{Sim}(F_1, F_2) = \sum_{i=1}^{12} w_i \cdot \text{sim}_i(e_i^{(1)}, e_i^{(2)})$$
+**RRF Fusion Formula** (Stage 3):
+$$\text{RRF}(d) = \sum_{i=1}^{13} \frac{w_i}{k + \text{rank}_i(d)}$$
 
-Where:
+Where $k = 60$ (standard RRF constant from TREC evaluations).
+
+**Per-Embedder Similarity Functions**:
 - $w_i$ = weight for embedder $i$ (dynamic, query-dependent)
 - $\text{sim}_i$ = similarity function appropriate for embedder $i$:
   - Cosine for dense vectors (E1, E2-E4, E5, E7, E8, E9, E10)
   - Jaccard + weighted overlap for sparse (E6)
   - TransE scoring for entity (E11): $\text{sim}_{11} = \frac{1}{1 + \|h + r - t\|}$
   - MaxSim for late interaction (E12): $\text{sim}_{12} = \frac{1}{|Q|} \sum_{q \in Q} \max_{d \in D} \cos(q, d)$
+  - Sparse dot product for SPLADE (E13): $\text{sim}_{13} = \sum_{t \in Q \cap D} w_Q(t) \cdot w_D(t)$
 
 ### 8.3 Teleological Alignment Score (Formal)
 
 Given a semantic fingerprint $F$ and North Star goal $V$:
 
-$$A(F, V) = \frac{1}{12} \sum_{i=1}^{12} \cos(e_i, V_i)$$
+$$A(F, V) = \frac{1}{13} \sum_{i=1}^{13} \cos(e_i, V_i)$$
 
 With hierarchical decomposition:
 
@@ -1022,11 +1371,11 @@ This predicts coordination failure with 30-60 second lead time (empirically vali
 
 **Proof**: Let $I(F)$ denote mutual information between input and embedding.
 
-For fusion: $I(F_{\text{fused}}) = I(\text{MoE}(e_1, \ldots, e_{12})) \leq \sum_{i \in \text{top-}k} I(e_i)$
+For fusion: $I(F_{\text{fused}}) = I(\text{MoE}(e_1, \ldots, e_{13})) \leq \sum_{i \in \text{top-}k} I(e_i)$
 
-For multi-array: $I(F_{\text{multi}}) = I([e_1, \ldots, e_{12}]) = \sum_{i=1}^{12} I(e_i)$
+For multi-array: $I(F_{\text{multi}}) = I([e_1, \ldots, e_{13}]) = \sum_{i=1}^{13} I(e_i)$
 
-Since $k < 12$ and all $I(e_i) > 0$:
+Since $k < 13$ and all $I(e_i) > 0$:
 
 $$I(F_{\text{multi}}) > I(F_{\text{fused}}) \quad \square$$
 
@@ -1138,16 +1487,29 @@ fn test_multi_similarity_accuracy() {
 }
 ```
 
-### 9.4 Performance Benchmarks
+### 9.4 Performance Benchmarks (5-Stage Pipeline)
 
 | Metric | Target | Validation Method |
 |--------|--------|-------------------|
-| Embedding computation (all 12) | <50ms | Benchmark suite |
-| Multi-similarity (12 embedders) | <5ms | Benchmark suite |
+| **Embedding Computation** | | |
+| All 13 embeddings | <50ms | Benchmark suite |
+| E13 SPLADE only | <8ms | Benchmark suite |
+| E1 Matryoshka encoding | <12ms | Benchmark suite |
+| **Storage** | | |
+| Storage per memory (quantized) | <17KB | Storage audit |
+| PQ-8 compression ratio | 32x | Compression test |
+| **5-Stage Retrieval (1M memories)** | | |
+| Stage 1: SPLADE pre-filter | <5ms | Load test |
+| Stage 2: Matryoshka ANN | <10ms | Load test |
+| Stage 3: RRF multi-space | <20ms | Load test |
+| Stage 4: Teleological filter | <10ms | Load test |
+| Stage 5: MaxSim rerank | <15ms | Load test |
+| **Total pipeline latency** | **<60ms** | End-to-end test |
+| **Other Metrics** | | |
+| Multi-similarity (13 embedders) | <5ms | Benchmark suite |
 | Teleological alignment | <2ms | Benchmark suite |
-| Storage per memory | <50KB | Storage audit |
-| ANN pre-filter (1M memories) | <10ms | Load test |
-| Full retrieval pipeline | <100ms | End-to-end test |
+| RRF fusion computation | <1ms | Benchmark suite |
+| Asymmetric causal similarity | <1ms | Benchmark suite |
 
 ---
 
@@ -1157,16 +1519,21 @@ fn test_multi_similarity_accuracy() {
 2. **FuseMoE (NeurIPS 2024)**: Laplace-smoothed gating, top-k expert selection
 3. **Procrustes Alignment (2025)**: Orthogonal transformation bounds for embedding alignment
 4. **Teleological Vectors (Royse, 2026)**: Mathematical framework for goal-directed alignment
-5. **Matryoshka Representation Learning**: Nested embeddings, dimension flexibility
-6. **ColBERT**: Late interaction for token-level matching
+5. **Matryoshka Representation Learning (NeurIPS 2022)**: Nested embeddings, dimension flexibility, 14x size reduction
+6. **ColBERT/ColBERTv2**: Late interaction for token-level matching (Stage 5)
 7. **TransE/TransR**: Knowledge graph embedding projection
 8. **code2vec**: AST-aware code embeddings
+9. **SPLADE v2**: Sparse Lexical and Expansion Model for hybrid search (E13)
+10. **Qdrant/Pinecone Quantization**: PQ-8, Float8, Binary quantization strategies (63% storage reduction)
+11. **RRF (Reciprocal Rank Fusion)**: Proven fusion algorithm from TREC evaluations (k=60)
+12. **CausalRAG (ACL 2025)**: Asymmetric causal similarity for cause-effect retrieval
+13. **Improvement Report (2026-01-05)**: 5-stage pipeline optimization, 40+ source synthesis
 
 ---
 
 ## Appendix B: Glossary
 
-- **Semantic Fingerprint**: Complete multi-array representation of a memory across all 12 embedders
+- **Semantic Fingerprint**: Complete multi-array representation of a memory across all 13 embedders
 - **Teleological Alignment**: Measure of goal-directedness via cosine similarity
 - **North Star Goal**: Top-level system objective for alignment measurement
 - **Multi-Embedding Similarity**: Weighted combination of per-embedder similarities
@@ -1175,13 +1542,13 @@ fn test_multi_similarity_accuracy() {
 
 ---
 
-## 10. The Paradigm Shift: 12-Embedding Array AS the Teleological Vector
+## 10. The Paradigm Shift: 13-Embedding Array AS the Teleological Vector
 
 ### 10.1 The Core Insight
 
 **Traditional View**: A teleological vector is a single vector in embedding space representing a goal.
 
-**New Understanding**: The teleological vector IS the pattern across ALL 12 embedding spaces. Each embedding space captures a different facet of purpose:
+**New Understanding**: The teleological vector IS the pattern across ALL 13 embedding spaces. Each embedding space captures a different facet of purpose:
 
 ```
 Traditional Teleological Vector:
@@ -1189,21 +1556,22 @@ Traditional Teleological Vector:
 
 Multi-Space Teleological Vector:
   T_goal = [
-    V_semantic,    # What does this goal MEAN?
+    V_semantic,    # What does this goal MEAN? (1024D, Matryoshka-enabled)
     V_temporal,    # When is this goal relevant?
     V_causal,      # What causes/effects does this goal have?
     V_code,        # How is this goal expressed in code?
     V_graph,       # What structures support this goal?
     V_entity,      # What entities are involved?
-    ...            # (all 12 spaces)
+    V_splade,      # What keywords define this goal? (E13 SPLADE)
+    ...            # (all 13 spaces)
   ]
 
-  T_goal ∈ ℝ^{1024 × 512 × 512 × 512 × 768 × 30K × 1536 × 384 × 1024 × 768 × 384 × n×128}
+  T_goal ∈ ℝ^{1024 × 512 × 512 × 512 × 768 × 30K × 1536 × 384 × 1024 × 768 × 384 × n×128 × ~30K_sparse}
 ```
 
 ### 10.2 Why This Matters for Memory
 
-The 12-embedding array of a memory IS its teleological signature:
+The 13-embedding array of a memory IS its teleological signature:
 
 ```rust
 /// A memory's teleological identity across all meaning dimensions
@@ -1216,16 +1584,16 @@ pub struct TeleologicalFingerprint {
     pub purpose_vector: PurposeVector,
 
     /// Johari classification per embedder
-    pub johari_quadrants: [JohariQuadrant; 12],
+    pub johari_quadrants: [JohariQuadrant; 13],
 
     /// Temporal evolution of purpose
     pub purpose_evolution: Vec<PurposeSnapshot>,
 }
 
-/// The 12D signature of purpose alignment
+/// The 13D signature of purpose alignment
 pub struct PurposeVector {
-    /// Alignment score per embedding space
-    pub alignments: [f32; 12],
+    /// Alignment score per embedding space (includes E13 SPLADE)
+    pub alignments: [f32; 13],
 
     /// Dominant purpose dimension
     pub dominant_space: EmbedderType,
@@ -1242,13 +1610,14 @@ pub struct PurposeVector {
 
 | Capability | Traditional (Single Vector) | Multi-Space Teleological |
 |------------|---------------------------|-------------------------|
-| Goal specificity | 1 dimension of meaning | 12 orthogonal dimensions |
+| Goal specificity | 1 dimension of meaning | 13 orthogonal dimensions |
 | Causal goal detection | Embedded in noise | Direct E5 alignment |
 | Code-goal alignment | Requires projection | Direct E7 alignment |
 | Temporal goal relevance | Lost | E2-E4 temporal alignment |
 | Goal decomposition | Manual | Per-space analysis |
 | Goal conflict detection | Approximate | Per-space misalignment |
 | Entity-goal mapping | External linking | Direct E11 alignment |
+| Keyword-goal matching | BM25 baseline | Direct E13 SPLADE alignment |
 
 ---
 
@@ -1264,12 +1633,18 @@ To fully analyze and utilize teleological vectors, we need:
 4. **Johari Quadrant Filtering**: Find memories in "blind spot" for specific spaces
 5. **Temporal Purpose Evolution**: Track how purpose alignments change
 6. **Semantic Understanding Preservation**: Never lose what each embedding means
+7. **Keyword-Level Precision**: E13 SPLADE for sparse lexical matching
+
+**Storage Efficiency** (from improvement report):
+- ~17KB per memory (quantized) vs ~46KB uncompressed
+- **63% reduction** via PQ-8/Float8/Binary quantization strategies
 
 ### 11.2 Multi-Index Storage Schema
 
 ```
 ┌─────────────────────────────────────────────────────────────────────────────┐
 │                    TELEOLOGICAL VECTOR STORAGE ARCHITECTURE                   │
+│                    (~17KB per memory with PQ-8 quantization)                  │
 ├─────────────────────────────────────────────────────────────────────────────┤
 │                                                                               │
 │  ┌─────────────────────────────────────────────────────────────────────────┐ │
@@ -1277,9 +1652,9 @@ To fully analyze and utilize teleological vectors, we need:
 │  │                                                                          │ │
 │  │  Key: memory_id                                                          │ │
 │  │  Value: {                                                                │ │
-│  │    embeddings: [E1...E12],           # Full 12-array fingerprint        │ │
-│  │    purpose_vector: [A1...A12],       # 12D alignment signature          │ │
-│  │    johari: [Q1...Q12],               # Per-embedder quadrant            │ │
+│  │    embeddings: [E1...E13],           # Full 13-array fingerprint        │ │
+│  │    purpose_vector: [A1...A13],       # 13D alignment signature          │ │
+│  │    johari: [Q1...Q13],               # Per-embedder quadrant            │ │
 │  │    metadata: { created, updated, source, ... }                          │ │
 │  │  }                                                                       │ │
 │  └─────────────────────────────────────────────────────────────────────────┘ │
@@ -1310,10 +1685,22 @@ To fully analyze and utilize teleological vectors, we need:
 Each of the 12 embedding spaces gets its own vector index:
 
 ```rust
-/// 12 independent vector indexes for per-space search
+/// 13 independent vector indexes for per-space search
+/// Organized by 5-stage pipeline role
 pub struct PerEmbedderIndexes {
-    /// E1: Semantic meaning search (HNSW, 1024D)
-    pub semantic_index: HnswIndex<1024>,
+    // === STAGE 1: SPLADE Sparse Pre-Filter ===
+
+    /// E13: SPLADE sparse lexical search (Inverted index)
+    /// Primary Stage 1 index for initial candidate generation
+    pub splade_index: SpladeInvertedIndex,
+
+    // === STAGE 2: Matryoshka ANN ===
+
+    /// E1: Semantic meaning search (HNSW, 128D truncated for Stage 2)
+    /// Matryoshka-enabled: 128D → 256D → 512D → 1024D
+    pub semantic_index: MatryoshkaHnswIndex<1024>,
+
+    // === STAGE 3: Multi-Space RRF ===
 
     /// E2: Temporal recency search (HNSW, 512D)
     pub temporal_recent_index: HnswIndex<512>,
@@ -1346,8 +1733,26 @@ pub struct PerEmbedderIndexes {
     /// E11: Entity/KG search (HNSW, 384D)
     pub entity_index: HnswIndex<384>,
 
-    /// E12: Late interaction (ColBERT-style)
+    // === STAGE 5: Late Interaction ===
+
+    /// E12: Late interaction (ColBERT-style MaxSim)
     pub late_interaction_index: ColbertIndex,
+}
+
+/// Matryoshka-aware HNSW index supporting progressive refinement
+pub struct MatryoshkaHnswIndex<const D: usize> {
+    /// Fast 128D index for Stage 2
+    pub stage2_index: HnswIndex<128>,
+    /// Full-precision index for Stage 3 verification
+    pub full_index: HnswIndex<D>,
+}
+
+/// SPLADE inverted index for Stage 1 sparse retrieval
+pub struct SpladeInvertedIndex {
+    /// Vocabulary term → posting list (doc_id, weight)
+    postings: HashMap<u32, Vec<(MemoryId, f32)>>,
+    /// Document norms for scoring
+    norms: HashMap<MemoryId, f32>,
 }
 
 impl PerEmbedderIndexes {
@@ -1391,20 +1796,20 @@ impl PerEmbedderIndexes {
 
 ### 11.4 Purpose Pattern Index (Layer 2B)
 
-The 12D purpose vector is itself searchable:
+The 13D purpose vector is itself searchable:
 
 ```rust
 /// Index for finding memories with similar teleological signatures
 pub struct PurposePatternIndex {
-    /// HNSW index on 12D purpose vectors
-    /// Each entry: [A(E1,V), A(E2,V), ..., A(E12,V)]
-    purpose_hnsw: HnswIndex<12>,
+    /// HNSW index on 13D purpose vectors
+    /// Each entry: [A(E1,V), A(E2,V), ..., A(E13,V)]
+    purpose_hnsw: HnswIndex<13>,
 
     /// LSH buckets for fast approximate matching
-    purpose_lsh: LshIndex<12>,
+    purpose_lsh: LshIndex<13>,
 
     /// Clustering of purpose patterns
-    purpose_clusters: KMeansClusters<12>,
+    purpose_clusters: KMeansClusters<13>,
 }
 
 impl PurposePatternIndex {

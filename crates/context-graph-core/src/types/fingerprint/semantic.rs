@@ -1,12 +1,12 @@
-//! SemanticFingerprint: The core 12-embedding array data structure.
+//! SemanticFingerprint: The core 13-embedding array data structure.
 //!
 //! This module provides the foundational data structure for the Teleological Vector Architecture.
-//! It stores all 12 embedding types WITHOUT fusion to preserve full semantic information.
+//! It stores all 13 embedding types WITHOUT fusion to preserve full semantic information.
 //!
 //! # Design Philosophy
 //!
 //! **NO FUSION**: Each embedding space is preserved independently for:
-//! - Per-space HNSW search (12x independent indexes)
+//! - Per-space HNSW search (13x independent indexes)
 //! - Per-space Johari quadrant classification
 //! - Per-space teleological alignment computation
 //! - 100% information preservation
@@ -31,6 +31,7 @@
 //! | E10 | CLIP | 768 |
 //! | E11 | MiniLM (Entity) | 384 |
 //! | E12 | ColBERT (Late-Interaction) | 128 per token |
+//! | E13 | SPLADE v3 (Sparse) | 30522 vocab |
 
 use serde::{Deserialize, Serialize};
 
@@ -76,7 +77,17 @@ pub const E11_DIM: usize = 384;
 /// E12: Late-Interaction (ColBERT) per-token embedding dimension.
 pub const E12_TOKEN_DIM: usize = 128;
 
-/// Total dense dimensions (excluding E6 sparse and E12 variable-length).
+/// E13: SPLADE v3 sparse embedding vocabulary size.
+///
+/// SPLADE v3 uses BERT vocabulary (30,522 tokens).
+/// This is a NEW field for Stage 1 (sparse pre-filter) of the 5-stage retrieval pipeline.
+pub const E13_SPLADE_VOCAB: usize = 30_522;
+
+/// Total number of embedders in the teleological vector architecture.
+/// Updated from 12 to 13 with addition of E13 SPLADE.
+pub const NUM_EMBEDDERS: usize = 13;
+
+/// Total dense dimensions (excluding E6 sparse, E12 variable-length, and E13 sparse).
 ///
 /// Calculated as: E1 + E2 + E3 + E4 + E5 + E7 + E8 + E9 + E10 + E11
 /// = 1024 + 512 + 512 + 512 + 768 + 256 + 384 + 10000 + 768 + 384 = 15120
@@ -89,7 +100,7 @@ pub const TOTAL_DENSE_DIMS: usize =
 
 /// Reference type for returning embedding slices without copying.
 ///
-/// This enum allows uniform access to all 12 embedding types while preserving
+/// This enum allows uniform access to all 13 embedding types while preserving
 /// their different representations (dense, sparse, token-level).
 #[derive(Debug)]
 pub enum EmbeddingSlice<'a> {
@@ -107,7 +118,7 @@ pub enum EmbeddingSlice<'a> {
 // SEMANTIC FINGERPRINT
 // ============================================================================
 
-/// SemanticFingerprint: Stores all 12 embeddings without fusion.
+/// SemanticFingerprint: Stores all 13 embeddings without fusion.
 ///
 /// # Philosophy
 ///
@@ -146,6 +157,7 @@ pub enum EmbeddingSlice<'a> {
 /// | e10_multimodal | Dense | 768 | CLIP |
 /// | e11_entity | Dense | 384 | MiniLM entity |
 /// | e12_late_interaction | Token-level | 128/token | ColBERT |
+/// | e13_splade | Sparse | 30522 vocab | SPLADE v3 |
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SemanticFingerprint {
     /// E1: Semantic (e5-large-v2) - 1024D dense embedding.
@@ -208,6 +220,13 @@ pub struct SemanticFingerprint {
     /// Token-level embeddings for maximum matching (MaxSim) retrieval.
     /// Each inner Vec has exactly E12_TOKEN_DIM (128) elements.
     pub e12_late_interaction: Vec<Vec<f32>>,
+
+    /// E13: SPLADE v3 sparse embedding for lexical-semantic hybrid search.
+    ///
+    /// Provides explicit keyword matching for Stage 1 of 5-stage retrieval pipeline.
+    /// Uses BM25 + SPLADE hybrid scoring for initial candidate selection.
+    /// Vocabulary size: 30,522 (BERT vocab).
+    pub e13_splade: SparseVector,
 }
 
 impl SemanticFingerprint {
@@ -241,22 +260,23 @@ impl SemanticFingerprint {
             e10_multimodal: vec![0.0; E10_DIM],
             e11_entity: vec![0.0; E11_DIM],
             e12_late_interaction: Vec::new(),
+            e13_splade: SparseVector::empty(),
         }
     }
 
-    /// Get embedding by index (0-11).
+    /// Get embedding by index (0-12).
     ///
     /// Returns a reference to the embedding at the given index wrapped in an
     /// [`EmbeddingSlice`] to handle different embedding types uniformly.
     ///
     /// # Arguments
     ///
-    /// * `idx` - Embedding index from 0 to 11 (inclusive)
+    /// * `idx` - Embedding index from 0 to 12 (inclusive)
     ///
     /// # Returns
     ///
     /// * `Some(EmbeddingSlice)` - The embedding slice if index is valid
-    /// * `None` - If index is out of bounds (>= 12)
+    /// * `None` - If index is out of bounds (>= 13)
     ///
     /// # Example
     ///
@@ -289,6 +309,7 @@ impl SemanticFingerprint {
             9 => Some(EmbeddingSlice::Dense(&self.e10_multimodal)),
             10 => Some(EmbeddingSlice::Dense(&self.e11_entity)),
             11 => Some(EmbeddingSlice::TokenLevel(&self.e12_late_interaction)),
+            12 => Some(EmbeddingSlice::Sparse(&self.e13_splade)),
             _ => None,
         }
     }
@@ -303,6 +324,7 @@ impl SemanticFingerprint {
     /// - Dense embeddings: dimension * sizeof(f32) = dimension * 4 bytes
     /// - E6 sparse: SparseVector::memory_size()
     /// - E12 tokens: token_count * 128 * sizeof(f32)
+    /// - E13 sparse: SparseVector::memory_size()
     ///
     /// # Example
     ///
@@ -331,7 +353,7 @@ impl SemanticFingerprint {
             * std::mem::size_of::<f32>();
 
         // E6 sparse vector
-        let sparse_size = self.e6_sparse.memory_size();
+        let e6_sparse_size = self.e6_sparse.memory_size();
 
         // E12 late-interaction tokens
         let token_size: usize = self
@@ -340,7 +362,10 @@ impl SemanticFingerprint {
             .map(|t| t.len() * std::mem::size_of::<f32>())
             .sum();
 
-        dense_size + sparse_size + token_size
+        // E13 sparse vector
+        let e13_sparse_size = self.e13_splade.memory_size();
+
+        dense_size + e6_sparse_size + token_size + e13_sparse_size
     }
 
     /// Validate all embeddings have correct dimensions.
@@ -364,6 +389,7 @@ impl SemanticFingerprint {
     /// 7. E9: Must have exactly 10000 dimensions
     /// 8. E10: Must have exactly 768 dimensions
     /// 9. E12: Each token must have exactly 128 dimensions
+    /// 10. E13: Sparse indices must be < E13_SPLADE_VOCAB
     pub fn validate(&self) -> Result<(), String> {
         // E1: Semantic
         if self.e1_semantic.len() != E1_DIM {
@@ -485,6 +511,24 @@ impl SemanticFingerprint {
             }
         }
 
+        // E13: SPLADE v3 - validate indices within vocabulary bounds
+        for &idx in &self.e13_splade.indices {
+            if idx as usize >= E13_SPLADE_VOCAB {
+                return Err(format!(
+                    "E13 splade index {} exceeds vocabulary size {}",
+                    idx, E13_SPLADE_VOCAB
+                ));
+            }
+        }
+        // Also verify indices and values lengths match
+        if self.e13_splade.indices.len() != self.e13_splade.values.len() {
+            return Err(format!(
+                "E13 splade indices ({}) and values ({}) length mismatch",
+                self.e13_splade.indices.len(),
+                self.e13_splade.values.len()
+            ));
+        }
+
         Ok(())
     }
 
@@ -508,6 +552,28 @@ impl SemanticFingerprint {
         self.e12_late_interaction.len()
     }
 
+    /// Get the number of non-zero entries in E13 SPLADE embedding.
+    ///
+    /// This is useful for monitoring sparsity and estimating storage requirements.
+    /// Typical SPLADE embeddings have ~5% active entries (~1,500 non-zeros).
+    ///
+    /// # Returns
+    ///
+    /// The number of active (non-zero) entries in the E13 SPLADE sparse vector.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use context_graph_core::types::fingerprint::SemanticFingerprint;
+    ///
+    /// let fp = SemanticFingerprint::zeroed();
+    /// assert_eq!(fp.e13_splade_nnz(), 0); // Empty fingerprint
+    /// ```
+    #[inline]
+    pub fn e13_splade_nnz(&self) -> usize {
+        self.e13_splade.nnz()
+    }
+
     /// Get embedding name by index.
     ///
     /// # Returns
@@ -527,6 +593,7 @@ impl SemanticFingerprint {
             9 => Some("E10_Multimodal"),
             10 => Some("E11_Entity"),
             11 => Some("E12_Late_Interaction"),
+            12 => Some("E13_SPLADE"),
             _ => None,
         }
     }
@@ -552,6 +619,7 @@ impl SemanticFingerprint {
             9 => Some(E10_DIM),
             10 => Some(E11_DIM),
             11 => Some(E12_TOKEN_DIM),
+            12 => Some(E13_SPLADE_VOCAB),
             _ => None,
         }
     }
@@ -578,6 +646,7 @@ impl PartialEq for SemanticFingerprint {
             && self.e10_multimodal == other.e10_multimodal
             && self.e11_entity == other.e11_entity
             && self.e12_late_interaction == other.e12_late_interaction
+            && self.e13_splade == other.e13_splade
     }
 }
 
@@ -608,6 +677,7 @@ mod tests {
         // Verify sparse and token embeddings are empty
         assert!(fp.e6_sparse.is_empty());
         assert!(fp.e12_late_interaction.is_empty());
+        assert!(fp.e13_splade.is_empty());
     }
 
     #[test]
@@ -638,8 +708,8 @@ mod tests {
     fn test_semantic_fingerprint_get_embedding() {
         let fp = SemanticFingerprint::zeroed();
 
-        // Test all 12 embeddings are accessible
-        for idx in 0..12 {
+        // Test all 13 embeddings are accessible
+        for idx in 0..NUM_EMBEDDERS {
             assert!(
                 fp.get_embedding(idx).is_some(),
                 "Embedding {} should be accessible",
@@ -648,7 +718,7 @@ mod tests {
         }
 
         // Test out of bounds returns None
-        assert!(fp.get_embedding(12).is_none());
+        assert!(fp.get_embedding(13).is_none());
         assert!(fp.get_embedding(100).is_none());
     }
 
@@ -682,6 +752,12 @@ mod tests {
         match fp.get_embedding(11) {
             Some(EmbeddingSlice::TokenLevel(_)) => {}
             _ => panic!("E12 should be TokenLevel"),
+        }
+
+        // E12 should be Sparse (index 12) - E13 SPLADE
+        match fp.get_embedding(12) {
+            Some(EmbeddingSlice::Sparse(_)) => {}
+            _ => panic!("E13 should be Sparse"),
         }
     }
 
@@ -766,8 +842,12 @@ mod tests {
         fp.e5_causal[50] = 3.14;
         fp.e9_hdc[9999] = -1.0;
 
-        // Add sparse entries
+        // Add sparse entries for E6
         fp.e6_sparse = SparseVector::new(vec![100, 200, 300], vec![0.5, 0.6, 0.7])
+            .expect("valid sparse vector");
+
+        // Add sparse entries for E13
+        fp.e13_splade = SparseVector::new(vec![500, 1000, 1500], vec![0.8, 0.9, 1.0])
             .expect("valid sparse vector");
 
         // Add tokens
@@ -790,6 +870,7 @@ mod tests {
         assert_eq!(restored.e5_causal[50], 3.14);
         assert_eq!(restored.e9_hdc[9999], -1.0);
         assert_eq!(restored.e6_sparse.nnz(), 3);
+        assert_eq!(restored.e13_splade.nnz(), 3);
         assert_eq!(restored.token_count(), 3);
     }
 
@@ -821,6 +902,12 @@ mod tests {
         let mut fp3 = SemanticFingerprint::zeroed();
         fp3.e12_late_interaction = vec![vec![0.0; E12_TOKEN_DIM]; 10];
         assert!(fp3.validate().is_ok());
+
+        // Fingerprint with valid E13 sparse entries should pass
+        let mut fp4 = SemanticFingerprint::zeroed();
+        fp4.e13_splade = SparseVector::new(vec![100, 200, 30521], vec![0.1, 0.2, 0.3])
+            .expect("valid sparse vector");
+        assert!(fp4.validate().is_ok());
     }
 
     #[test]
@@ -876,7 +963,11 @@ mod tests {
             SemanticFingerprint::embedding_name(11),
             Some("E12_Late_Interaction")
         );
-        assert_eq!(SemanticFingerprint::embedding_name(12), None);
+        assert_eq!(
+            SemanticFingerprint::embedding_name(12),
+            Some("E13_SPLADE")
+        );
+        assert_eq!(SemanticFingerprint::embedding_name(13), None);
     }
 
     #[test]
@@ -884,7 +975,11 @@ mod tests {
         assert_eq!(SemanticFingerprint::embedding_dim(0), Some(E1_DIM));
         assert_eq!(SemanticFingerprint::embedding_dim(5), Some(E6_SPARSE_VOCAB));
         assert_eq!(SemanticFingerprint::embedding_dim(11), Some(E12_TOKEN_DIM));
-        assert_eq!(SemanticFingerprint::embedding_dim(12), None);
+        assert_eq!(
+            SemanticFingerprint::embedding_dim(12),
+            Some(E13_SPLADE_VOCAB)
+        );
+        assert_eq!(SemanticFingerprint::embedding_dim(13), None);
     }
 
     #[test]
@@ -902,6 +997,8 @@ mod tests {
         assert_eq!(E10_DIM, 768);
         assert_eq!(E11_DIM, 384);
         assert_eq!(E12_TOKEN_DIM, 128);
+        assert_eq!(E13_SPLADE_VOCAB, 30_522);
+        assert_eq!(NUM_EMBEDDERS, 13);
 
         // Verify TOTAL_DENSE_DIMS calculation
         let calculated = E1_DIM
@@ -915,5 +1012,17 @@ mod tests {
             + E10_DIM
             + E11_DIM;
         assert_eq!(TOTAL_DENSE_DIMS, calculated);
+    }
+
+    #[test]
+    fn test_e13_splade_nnz() {
+        let mut fp = SemanticFingerprint::zeroed();
+        assert_eq!(fp.e13_splade_nnz(), 0);
+
+        // Add some sparse entries
+        fp.e13_splade =
+            SparseVector::new(vec![100, 200, 300, 400, 500], vec![0.1, 0.2, 0.3, 0.4, 0.5])
+                .expect("valid sparse vector");
+        assert_eq!(fp.e13_splade_nnz(), 5);
     }
 }

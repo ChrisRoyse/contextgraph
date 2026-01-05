@@ -1,19 +1,16 @@
-//! SemanticFingerprint and supporting types for 12-embedding storage.
+//! Fingerprint types for the Context Graph system.
 //!
-//! This module provides the foundational data structures for the Teleological Vector Architecture,
-//! which stores all 12 embedding types WITHOUT fusion to preserve full semantic information.
-//!
-//! # Key Types
-//!
-//! - [`SemanticFingerprint`] - Core 12-embedding storage struct (NO FUSION)
-//! - [`EmbeddingSlice`] - Reference type for uniform embedding access
-//! - [`SparseVector`] - Memory-efficient sparse vector for E6 (SPLADE) embeddings
-//! - [`SparseVectorError`] - Error types for sparse vector validation
+//! This module provides the complete teleological fingerprint hierarchy:
+//! - SemanticFingerprint: 13-embedding array (TASK-F001) ✅
+//! - SparseVector: SPLADE sparse vector for E6 and E13 (TASK-F001) ✅
+//! - PurposeVector: 13D alignment to North Star (TASK-F002)
+//! - JohariFingerprint: Per-embedder awareness (TASK-F003 stub)
+//! - TeleologicalFingerprint: Complete node representation (TASK-F002)
 //!
 //! # Design Philosophy
 //!
 //! **NO FUSION**: Each embedding space is preserved independently for:
-//! 1. Per-space similarity search (12x HNSW indexes)
+//! 1. Per-space similarity search (13x HNSW indexes)
 //! 2. Per-space Johari quadrant classification
 //! 3. Per-space teleological alignment computation
 //! 4. Full semantic information preservation (~46KB vs 6KB fused = 67% info loss avoided)
@@ -37,9 +34,29 @@
 
 mod semantic;
 mod sparse;
+mod purpose;
+mod evolution;
+mod johari;
+mod teleological;
 
+// Re-export SemanticFingerprint types (TASK-F001)
 pub use semantic::{
-    EmbeddingSlice, SemanticFingerprint, E10_DIM, E11_DIM, E12_TOKEN_DIM, E1_DIM, E2_DIM, E3_DIM,
-    E4_DIM, E5_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM, TOTAL_DENSE_DIMS,
+    EmbeddingSlice, SemanticFingerprint, E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB,
+    E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
+    NUM_EMBEDDERS, TOTAL_DENSE_DIMS,
 };
+
+// Re-export SparseVector types (TASK-F001)
 pub use sparse::{SparseVector, SparseVectorError, MAX_SPARSE_ACTIVE, SPARSE_VOCAB_SIZE};
+
+// Re-export Purpose types (TASK-F002)
+pub use purpose::{AlignmentThreshold, PurposeVector};
+
+// Re-export Evolution types (TASK-F002)
+pub use evolution::{EvolutionTrigger, PurposeSnapshot};
+
+// Re-export Johari types (TASK-F003 stub)
+pub use johari::JohariFingerprint;
+
+// Re-export TeleologicalFingerprint (TASK-F002)
+pub use teleological::TeleologicalFingerprint;

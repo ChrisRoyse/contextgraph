@@ -20,15 +20,21 @@ metadata:
 
 ## Problem Statement
 
-Build and maintain 12 separate HNSW indexes, one for each embedding space, with optimized parameters per space dimension and query patterns.
+Build and maintain 13 separate HNSW indexes plus specialized indexes for the 5-stage retrieval pipeline, including Matryoshka 128D for Stage 2 fast filtering and SPLADE inverted index for Stage 1 sparse retrieval.
 
 ## Context
 
-The Multi-Array architecture stores 12 separate embedding spaces that require independent HNSW indexes. Unlike a single fused index, this approach enables:
+The Multi-Array architecture stores 13 separate embedding spaces (E1-E13) that require independent HNSW indexes. The 5-stage pipeline also requires:
+- **Stage 1: SPLADE Inverted Index** - Sparse lexical retrieval for initial candidates
+- **Stage 2: Matryoshka 128D Index** - Dimensionality-reduced dense index for fast filtering
+- **Stages 3-5: Full HNSW Indexes** - Per-space indexes for final retrieval and reranking
+
+This approach enables:
 - Per-space tuning (different M, efConstruction per dimension)
 - Selective space activation (skip unused indexes)
 - Independent scaling (high-traffic spaces can be larger)
 - Graceful degradation (one index failure doesn't affect others)
+- **Progressive refinement** through pipeline stages
 
 ## Technical Specification
 
@@ -73,8 +79,52 @@ pub enum DistanceMetric {
     DotProduct,
 }
 
+/// Configuration for Matryoshka 128D index (Stage 2 fast filtering)
+pub const MATRYOSHKA_128D_CONFIG: HnswIndexConfig = HnswIndexConfig {
+    space_index: 100,  // Special index ID for Matryoshka
+    space_name: "matryoshka_128d",
+    dimension: 128,
+    m: 32,              // Higher M for low dimension
+    ef_construction: 300,
+    ef_search: 150,
+    distance_metric: DistanceMetric::Cosine,
+    use_simd: true,
+    max_elements: 1_000_000,
+};
+
+/// Configuration for SPLADE inverted index (Stage 1 sparse retrieval)
+#[derive(Clone, Debug)]
+pub struct SpladeIndexConfig {
+    /// Space index for E13 SPLADE
+    pub space_index: usize,
+
+    /// Vocabulary size (BERT-base)
+    pub vocab_size: usize,
+
+    /// Maximum posting list length
+    pub max_posting_length: usize,
+
+    /// Quantization bits for term weights (0 = no quantization)
+    pub weight_quantization_bits: u8,
+
+    /// Maximum elements in index
+    pub max_elements: usize,
+}
+
+impl Default for SpladeIndexConfig {
+    fn default() -> Self {
+        Self {
+            space_index: 12,  // E13
+            vocab_size: 30522,
+            max_posting_length: 100_000,
+            weight_quantization_bits: 8,
+            max_elements: 1_000_000,
+        }
+    }
+}
+
 /// Default configurations for each embedding space
-pub const SPACE_CONFIGS: [HnswIndexConfig; 12] = [
+pub const SPACE_CONFIGS: [HnswIndexConfig; 13] = [
     // E1: Semantic Core (dense, high-dimensional)
     HnswIndexConfig {
         space_index: 0,
@@ -219,6 +269,18 @@ pub const SPACE_CONFIGS: [HnswIndexConfig; 12] = [
         use_simd: true,
         max_elements: 500_000,
     },
+    // E13: SPLADE Sparse Embeddings (stored as dense for HNSW fallback)
+    HnswIndexConfig {
+        space_index: 12,
+        space_name: "splade",
+        dimension: 30522,  // Vocabulary size
+        m: 8,
+        ef_construction: 100,
+        ef_search: 50,
+        distance_metric: DistanceMetric::DotProduct,
+        use_simd: true,
+        max_elements: 1_000_000,
+    },
 ];
 
 /// Status of a single index
@@ -245,11 +307,17 @@ pub enum IndexHealth {
 ### Core Trait
 
 ```rust
-/// Manages multiple HNSW indexes for the 12 embedding spaces
+/// Manages multiple HNSW indexes for the 13 embedding spaces plus pipeline indexes
 #[async_trait]
 pub trait MultiSpaceIndexManager: Send + Sync {
-    /// Initialize all indexes
+    /// Initialize all indexes (13 per-space + Matryoshka 128D + SPLADE inverted)
     async fn initialize(&mut self, configs: &[HnswIndexConfig]) -> Result<(), IndexError>;
+
+    /// Initialize Matryoshka 128D index for Stage 2 fast filtering
+    async fn initialize_matryoshka(&mut self, config: &HnswIndexConfig) -> Result<(), IndexError>;
+
+    /// Initialize SPLADE inverted index for Stage 1 sparse retrieval
+    async fn initialize_splade_inverted(&mut self, config: &SpladeIndexConfig) -> Result<(), IndexError>;
 
     /// Build/rebuild a specific index
     async fn build_index(
@@ -290,6 +358,34 @@ pub trait MultiSpaceIndexManager: Send + Sync {
         k: usize,
     ) -> Result<Vec<Vec<(MemoryId, f32)>>, IndexError>;
 
+    /// Stage 1: SPLADE sparse retrieval
+    async fn search_splade(
+        &self,
+        sparse_query: &[(usize, f32)],  // (term_id, weight) pairs
+        k: usize,
+    ) -> Result<Vec<(MemoryId, f32)>, IndexError>;
+
+    /// Stage 2: Matryoshka 128D fast filtering
+    async fn search_matryoshka_128d(
+        &self,
+        query_128d: &[f32],
+        k: usize,
+    ) -> Result<Vec<(MemoryId, f32)>, IndexError>;
+
+    /// Add to Matryoshka 128D index (truncated from full embedding)
+    async fn add_matryoshka(
+        &mut self,
+        memory_id: MemoryId,
+        full_embedding: &[f32],  // Will be truncated to 128D
+    ) -> Result<(), IndexError>;
+
+    /// Add to SPLADE inverted index
+    async fn add_splade(
+        &mut self,
+        memory_id: MemoryId,
+        sparse_embedding: &[(usize, f32)],  // (term_id, weight) pairs
+    ) -> Result<(), IndexError>;
+
     /// Remove a vector from all indexes
     async fn remove(&mut self, memory_id: MemoryId) -> Result<(), IndexError>;
 
@@ -315,10 +411,32 @@ pub trait MultiSpaceIndexManager: Send + Sync {
 ```rust
 /// Implementation using hnswlib-rs or similar
 pub struct HnswMultiSpaceIndex {
-    indexes: [Option<HnswIndex>; 12],
-    configs: [HnswIndexConfig; 12],
-    status: [IndexStatus; 12],
+    /// 13 per-space HNSW indexes (E1-E13)
+    indexes: [Option<HnswIndex>; 13],
+    configs: [HnswIndexConfig; 13],
+    status: [IndexStatus; 13],
+
+    /// Matryoshka 128D index for Stage 2 fast filtering
+    matryoshka_index: Option<HnswIndex>,
+    matryoshka_config: HnswIndexConfig,
+
+    /// SPLADE inverted index for Stage 1 sparse retrieval
+    splade_inverted_index: Option<SpladeInvertedIndex>,
+    splade_config: SpladeIndexConfig,
+
     storage_path: PathBuf,
+}
+
+/// SPLADE inverted index structure
+pub struct SpladeInvertedIndex {
+    /// Posting lists: term_id -> [(memory_id, weight)]
+    posting_lists: HashMap<usize, Vec<(MemoryId, f32)>>,
+
+    /// Document norms for score normalization
+    doc_norms: HashMap<MemoryId, f32>,
+
+    /// Total documents indexed
+    num_docs: usize,
 }
 
 impl HnswMultiSpaceIndex {
@@ -406,12 +524,15 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
 
 #### In Scope
 
-- 12 HNSW index instances
+- **13 HNSW index instances** (E1-E13)
 - Per-space configuration
 - Parallel multi-index search
 - Index persistence/loading
 - Health monitoring
 - Incremental updates
+- **Matryoshka 128D index** for Stage 2 fast filtering
+- **SPLADE inverted index** for Stage 1 sparse retrieval
+- 5-stage pipeline index coordination
 
 #### Out of Scope
 
@@ -523,14 +644,21 @@ FUNCTION load():
 ### Implementation Checklist
 
 - [ ] `HnswIndexConfig` struct with per-space defaults
-- [ ] `SPACE_CONFIGS` constant with 12 configurations
+- [ ] `SPACE_CONFIGS` constant with **13 configurations** (E1-E13)
 - [ ] `IndexStatus` and `IndexHealth` types
 - [ ] `MultiSpaceIndexManager` trait
-- [ ] HNSW-based implementation
+- [ ] HNSW-based implementation (13x per-space)
 - [ ] Parallel multi-index search
 - [ ] Index persistence to disk
 - [ ] Index loading from disk
 - [ ] Health monitoring
+- [ ] **`MATRYOSHKA_128D_CONFIG`** for Stage 2 index
+- [ ] **`SpladeIndexConfig`** for Stage 1 inverted index
+- [ ] **`SpladeInvertedIndex`** with posting lists
+- [ ] **`search_splade()`** for Stage 1 sparse retrieval
+- [ ] **`search_matryoshka_128d()`** for Stage 2 fast filtering
+- [ ] **`add_matryoshka()`** with 128D truncation
+- [ ] **`add_splade()`** for inverted index updates
 
 ### Testing Requirements
 
@@ -543,13 +671,39 @@ mod tests {
     async fn test_initialize_all_indexes() {
         let mut manager = HnswMultiSpaceIndex::new(temp_dir());
         manager.initialize(&SPACE_CONFIGS).await.unwrap();
+        manager.initialize_matryoshka(&MATRYOSHKA_128D_CONFIG).await.unwrap();
+        manager.initialize_splade_inverted(&SpladeIndexConfig::default()).await.unwrap();
 
         let status = manager.status();
-        assert_eq!(status.len(), 12);
+        assert_eq!(status.len(), 13);  // 13 per-space indexes
         for s in status {
             assert!(s.is_loaded);
             assert_eq!(s.health, IndexHealth::Healthy);
         }
+    }
+
+    #[tokio::test]
+    async fn test_matryoshka_128d_search() {
+        let mut manager = create_test_manager().await;
+        add_test_data(&mut manager, 100).await;
+
+        // Matryoshka uses truncated 128D vectors
+        let query_128d = vec![0.1; 128];
+        let results = manager.search_matryoshka_128d(&query_128d, 10).await.unwrap();
+
+        assert_eq!(results.len(), 10);
+    }
+
+    #[tokio::test]
+    async fn test_splade_inverted_search() {
+        let mut manager = create_test_manager().await;
+        add_test_data(&mut manager, 100).await;
+
+        // SPLADE uses sparse (term_id, weight) pairs
+        let sparse_query = vec![(100, 0.8), (500, 0.6), (1000, 0.4)];
+        let results = manager.search_splade(&sparse_query, 10).await.unwrap();
+
+        assert!(results.len() <= 10);
     }
 
     #[tokio::test]
@@ -658,6 +812,9 @@ cargo test -p context-graph-core hnsw_memory -- --nocapture
 | HNSW configuration | projectionplan2.md:hnsw | Complete |
 | Parallel search | projectionplan1.md:performance | Complete |
 | Index persistence | projectionplan2.md:storage | Complete |
+| **13x per-space HNSW** | projectionplan2.md:13-spaces | Complete |
+| **Matryoshka 128D Stage 2** | projectionplan2.md:matryoshka | Complete |
+| **SPLADE inverted Stage 1** | projectionplan2.md:splade | Complete |
 
 ---
 

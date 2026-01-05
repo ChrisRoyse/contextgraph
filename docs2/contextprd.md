@@ -200,33 +200,35 @@ Each of 12 embedding spaces has independent Johari classification:
 
 ---
 
-## 3. 12-MODEL EMBEDDING → TELEOLOGICAL FINGERPRINT
+## 3. 13-MODEL EMBEDDING → TELEOLOGICAL FINGERPRINT
 
-**Paradigm**: NO FUSION — Store all 12 embeddings. The array IS the teleological vector.
-**Storage**: ~46KB per memory (100% info preserved vs 33% with old fusion)
+**Paradigm**: NO FUSION — Store all 13 embeddings (E1-E12 + E13 SPLADE). The array IS the teleological vector.
+**Storage**: ~17KB per memory (quantized) vs 46KB uncompressed — 63% reduction via PQ-8/Float8/Binary
+**Info Preserved**: 100% (vs 33% with top-k=4 FuseMoE)
 
-| ID | Model | Dim | Latency | Purpose (V_goal) |
-|----|-------|-----|---------|------------------|
-| E1 | Semantic | 1024D | <5ms | V_meaning |
-| E2 | Temporal-Recent | 512D (exp decay) | <2ms | V_freshness |
-| E3 | Temporal-Periodic | 512D (Fourier) | <2ms | V_periodicity |
-| E4 | Temporal-Positional | 512D (sin PE) | <2ms | V_ordering |
-| E5 | Causal | 768D (SCM) | <8ms | V_causality |
-| E6 | Sparse | ~30K (5% active) | <3ms | V_selectivity |
-| E7 | Code | 1536D (AST) | <10ms | V_correctness |
-| E8 | Graph/GNN | 384D (MiniLM) | <5ms | V_connectivity |
-| E9 | HDC | 10K-bit→1024D | <1ms | V_robustness |
-| E10 | Multimodal | 768D | <15ms | V_multimodality |
-| E11 | Entity/TransE | 384D (h+r≈t) | <2ms | V_factuality |
-| E12 | Late-Interaction | 128D/tok (ColBERT) | <8ms | V_precision |
+| ID | Model | Dim | Latency | Purpose (V_goal) | Quantization |
+|----|-------|-----|---------|------------------|--------------|
+| E1 | Semantic | 1024D (Matryoshka: 512/256/128) | <5ms | V_meaning | PQ-8 |
+| E2 | Temporal-Recent | 512D (exp decay) | <2ms | V_freshness | Float8 |
+| E3 | Temporal-Periodic | 512D (Fourier) | <2ms | V_periodicity | Float8 |
+| E4 | Temporal-Positional | 512D (sin PE) | <2ms | V_ordering | Float8 |
+| E5 | Causal | 768D (SCM, **asymmetric**) | <8ms | V_causality | PQ-8 |
+| E6 | Sparse | ~30K (5% active) | <3ms | V_selectivity | Sparse |
+| E7 | Code | 1536D (AST) | <10ms | V_correctness | PQ-8 |
+| E8 | Graph/GNN | 384D (MiniLM) | <5ms | V_connectivity | Float8 |
+| E9 | HDC | 10K-bit→1024D | <1ms | V_robustness | Binary |
+| E10 | Multimodal | 768D | <15ms | V_multimodality | PQ-8 |
+| E11 | Entity/TransE | 384D (h+r≈t) | <2ms | V_factuality | Float8 |
+| E12 | Late-Interaction | 128D/tok (ColBERT) | <8ms | V_precision | Token pruning |
+| **E13** | **SPLADE** | **~30K sparse** | **<5ms** | **V_keyword_precision** | **Sparse** |
 
 **TeleologicalFingerprint** (replaces Vec1536):
-- `semantic_fingerprint`: [E1, E2, ..., E12] — all 12 preserved
-- `purpose_vector`: [A(E1,V), ..., A(E12,V)] — 12D teleological signature
+- `semantic_fingerprint`: [E1, E2, ..., E13] — all 13 preserved
+- `purpose_vector`: [A(E1,V), ..., A(E13,V)] — 13D teleological signature
 - `johari_quadrants`: Per-embedder awareness classification
 - `purpose_evolution`: How alignment changes over time
 
-**Similarity**: S(A,B) = Σᵢ wᵢ·cos(Aᵢ, Bᵢ) — query-adaptive weights, NOT gating
+**Similarity**: RRF(d) = Σᵢ 1/(k + rankᵢ(d)) — Reciprocal Rank Fusion across per-space results
 
 ---
 
@@ -237,10 +239,10 @@ Each of 12 embedding spaces has independent Johari classification:
 id: UUID
 content: str[≤65536]
 fingerprint: TeleologicalFingerprint {
-  embeddings: [E1..E12]           # All 12 embedding vectors
-  purpose_vector: f32[12]         # Per-embedder alignment to North Star
-  johari_quadrants: [JQ1..JQ12]   # Per-embedder awareness classification
-  johari_confidence: f32[12]      # Confidence per classification
+  embeddings: [E1..E13]           # All 13 embedding vectors (E1-E12 + E13 SPLADE)
+  purpose_vector: f32[13]         # Per-embedder alignment to North Star
+  johari_quadrants: [JQ1..JQ13]   # Per-embedder awareness classification
+  johari_confidence: f32[13]      # Confidence per classification
   north_star_alignment: f32       # Aggregate alignment score
   dominant_embedder: u8           # 1-12, which space dominates
   coherence_score: f32            # Kuramoto sync level
@@ -249,7 +251,7 @@ created_at: TIMESTAMPTZ
 last_accessed: TIMESTAMPTZ
 importance: f32[0,1]
 access_count: u32
-utl_state: {delta_s[12], delta_c[12], w_e, phi}  # Per-embedder ΔS/ΔC
+utl_state: {delta_s[13], delta_c[13], w_e, phi}  # Per-embedder ΔS/ΔC (13 spaces)
 agent_id?: UUID
 semantic_cluster?: UUID
 priors_vibe_check: {assumption_embedding[128], domain_priors, prior_confidence}
@@ -505,17 +507,34 @@ RTX 5090: 32GB GDDR7, 1792 GB/s, 21760 CUDA, 680 Tensor (5th gen), Compute 12.0,
 
 ## 14. PERFORMANCE TARGETS
 
+### 14.1 Embedding & Storage
 | Op | Target |
 |----|--------|
-| Single Embed (all 12) | <30ms |
-| Batch Embed (64 × 12) | <100ms |
+| Single Embed (all 13) | <35ms |
+| Batch Embed (64 × 13) | <120ms |
+| Storage per memory (quantized) | ~17KB |
+| Storage per memory (uncompressed) | ~46KB |
+
+### 14.2 5-Stage Retrieval Pipeline
+| Stage | Op | Target |
+|-------|----|----|
+| Stage 1 | SPLADE sparse pre-filter | <5ms |
+| Stage 2 | Matryoshka 128D ANN (10K→1K) | <10ms |
+| Stage 3 | Multi-space RRF rerank | <20ms |
+| Stage 4 | Teleological alignment filter | <10ms |
+| Stage 5 | Late interaction MaxSim | <15ms |
+| **Total** | **Full pipeline @ 1M memories** | **<60ms** |
+| **Total** | **Full pipeline @ 100K memories** | **<30ms** |
+
+### 14.3 Other Operations
+| Op | Target |
+|----|--------|
 | Per-Space HNSW search | <2ms |
-| Purpose Vector search | <1ms |
-| Multi-space weighted sim | <5ms |
+| Purpose Vector search (13D) | <1ms |
 | Hopfield (per space) | <1ms |
 | Cache hit | <100μs |
-| inject_context P95 | <35ms |
-| Any tool P99 | <50ms |
+| inject_context P95 | <40ms |
+| Any tool P99 | <60ms |
 | Neuromod batch | <200μs |
 | Dream wake | <100ms |
 | Purpose evolution write | <5ms |
@@ -576,45 +595,83 @@ Soft delete default (30d recovery), permanent only: reason='user_requested'+soft
 
 ## 18. TELEOLOGICAL STORAGE ARCHITECTURE
 
-### 18.1 3-Layer Storage Design
+### 18.1 5-Stage Retrieval Pipeline
 ```
-Layer 1: Primary (RocksDB/ScyllaDB)
-  └─ Complete TeleologicalFingerprint per memory
-  └─ All 12 embeddings + purpose vector + Johari quadrants
+┌─────────────────────────────────────────────────────────────────────┐
+│                    5-STAGE OPTIMIZED RETRIEVAL                       │
+├─────────────────────────────────────────────────────────────────────┤
+│  Stage 1: SPARSE PRE-FILTER (BM25 + E13 SPLADE)                     │
+│           └─ Top 10,000 candidates in <5ms                          │
+│           └─ Inverted index for keyword precision                   │
+│                                                                     │
+│  Stage 2: FAST DENSE ANN (Matryoshka 128D)                         │
+│           └─ Top 1,000 candidates in <10ms                          │
+│           └─ Uses E1.semantic[..128] truncated                      │
+│                                                                     │
+│  Stage 3: MULTI-SPACE RERANK (RRF Fusion)                          │
+│           └─ Top 100 candidates in <20ms                            │
+│           └─ Full 13-space fingerprint with query-adaptive weights  │
+│                                                                     │
+│  Stage 4: TELEOLOGICAL ALIGNMENT FILTER                            │
+│           └─ Top 50 candidates in <10ms                             │
+│           └─ Filter: alignment < 0.55 → discard                     │
+│                                                                     │
+│  Stage 5: LATE INTERACTION RERANK (E12 MaxSim)                     │
+│           └─ Final top 10 results in <15ms                          │
+│           └─ Token-level precision                                  │
+│                                                                     │
+│  TOTAL LATENCY: <60ms for 1M memories                              │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
-Layer 2A: Per-Space Indexes (12× HNSW)
-  └─ Search within specific embedding spaces
-  └─ "Find causally similar" → E5 only
+### 18.2 Storage Layer Design
+```
+Layer 1: Primary (RocksDB/ScyllaDB) - ~17KB per memory (quantized)
+  └─ Complete TeleologicalFingerprint (E1-E13)
+  └─ All 13 embeddings (PQ-8/Float8/Binary quantized)
+  └─ Purpose vector + Johari quadrants
 
-Layer 2B: Purpose Pattern Index (12D HNSW)
-  └─ Find memories by teleological signature
-  └─ "Similar purpose" regardless of content
+Layer 2A: Sparse Index (E13 SPLADE) - Stage 1
+  └─ Inverted index on ~30K vocab
+  └─ BM25 + SPLADE hybrid scoring
 
-Layer 2C: Goal Hierarchy Index
-  └─ Navigate North Star → Mid → Local alignments
+Layer 2B: Matryoshka Index (E1[..128]) - Stage 2
+  └─ 128D HNSW for fast ANN
+  └─ Truncated from full 1024D
+
+Layer 2C: Per-Space Indexes (13× HNSW) - Stage 3
+  └─ Search within specific spaces
+  └─ RRF fusion across results
+
+Layer 2D: Purpose Pattern Index (13D HNSW) - Stage 4
+  └─ Teleological signature search
+  └─ Alignment threshold filtering
+
+Layer 2E: Goal Hierarchy Index - Stage 4
   └─ Tree structure with alignment scores
+  └─ Navigate North Star → Mid → Local
 
-Layer 3: Query Router
-  └─ Routes queries to appropriate indexes
-  └─ Query type → optimal index selection
+Layer 2F: Late Interaction Index (E12) - Stage 5
+  └─ Token-level HNSW with MaxSim
 ```
 
-### 18.2 Query Routing Examples
-| Query Type | Primary Index | Rerank With |
-|------------|---------------|-------------|
-| Semantic search | Layer2A[E1] | Full fingerprint |
-| Causal reasoning | Layer2A[E5] | E1, E11 |
-| Code search | Layer2A[E7] | E1, E8 |
-| Purpose search | Layer2B | Goal alignment |
-| Goal alignment | Layer2C | Threshold filter |
+### 18.3 Query Routing (5-Stage Pipeline)
+| Query Type | Stage Flow | Optimizations |
+|------------|------------|---------------|
+| Default | S1→S2→S3→S4→S5 | Full pipeline |
+| Fast semantic | S2→S3(E1)→S5 | Skip sparse |
+| Causal reasoning | S1→S2→S3(E5↑)→S4→S5 | E5 weight boost |
+| Code search | S1→S2→S3(E7↑)→S4→S5 | E7 weight boost |
+| Purpose search | S2→S4(primary)→S5 | Purpose-first |
+| Goal alignment | Layer2E→S4→S5 | Hierarchy-first |
 
-### 18.3 Temporal Purpose Evolution
+### 18.4 Temporal Purpose Evolution
 ```sql
 -- TimescaleDB hypertable for tracking purpose drift
 CREATE TABLE purpose_evolution (
   memory_id UUID,
   timestamp TIMESTAMPTZ,
-  purpose_vector REAL[12],
+  purpose_vector REAL[13],
   north_star_alignment REAL,
   drift_magnitude REAL
 );

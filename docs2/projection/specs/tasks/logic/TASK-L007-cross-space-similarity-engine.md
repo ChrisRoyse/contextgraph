@@ -20,16 +20,17 @@ metadata:
 
 ## Problem Statement
 
-Implement an engine that computes unified similarity scores across multiple embedding spaces, incorporating purpose alignment and configurable weighting strategies for the Multi-Array Teleological Fingerprint architecture.
+Implement an engine that computes unified similarity scores across 13 embedding spaces, incorporating purpose alignment, RRF fusion, and configurable weighting strategies for the Multi-Array Teleological Fingerprint architecture.
 
 ## Context
 
 Unlike single-space similarity, cross-space similarity must:
-- Combine scores from 12 independent embedding spaces
-- Weight spaces by purpose alignment
+- Combine scores from **13 independent embedding spaces** (E1-E12 dense + E13 SPLADE)
+- Weight spaces by purpose alignment (13D purpose vectors)
 - Handle missing embeddings gracefully
-- Support multiple combination strategies (fusion vs. late interaction)
+- Support multiple combination strategies including **RRF (Reciprocal Rank Fusion)**
 - Enable explainability (which spaces contributed)
+- **Integrate with 5-stage retrieval pipeline**
 
 The Multi-UTL formula extends the standard UTL with:
 ```
@@ -66,10 +67,10 @@ pub enum WeightingStrategy {
     /// Equal weight to all active spaces
     Uniform,
 
-    /// Static weights per space
-    Static([f32; 12]),
+    /// Static weights per space (13D: E1-E12 + E13 SPLADE)
+    Static([f32; 13]),
 
-    /// Weight by purpose vector alignment
+    /// Weight by purpose vector alignment (13D purpose)
     PurposeAligned,
 
     /// Learned weights from historical relevance
@@ -80,6 +81,10 @@ pub enum WeightingStrategy {
 
     /// Late interaction (ColBERT-style MaxSim)
     LateInteraction,
+
+    /// Reciprocal Rank Fusion across ranked lists
+    /// RRF(d) = SUM_i 1/(k + rank_i(d)) where k=60 (default)
+    RRF { k: f32 },
 }
 
 /// How to handle missing embeddings
@@ -107,33 +112,39 @@ pub struct CrossSpaceSimilarity {
     /// Raw score before sigmoid (for Multi-UTL)
     pub raw_score: f32,
 
-    /// Per-space similarity breakdown
-    pub space_scores: Option<[Option<f32>; 12]>,
+    /// Per-space similarity breakdown (13 spaces: E1-E12 + E13 SPLADE)
+    pub space_scores: Option<[Option<f32>; 13]>,
 
-    /// Which spaces contributed
+    /// Which spaces contributed (bits 0-12)
     pub active_spaces: u16,  // Bitmask
 
-    /// Contribution weight per space
-    pub space_weights: Option<[f32; 12]>,
+    /// Contribution weight per space (13D)
+    pub space_weights: Option<[f32; 13]>,
 
     /// Purpose alignment influence
     pub purpose_contribution: Option<f32>,
 
     /// Confidence in the score
     pub confidence: f32,
+
+    /// RRF score if RRF fusion was used
+    pub rrf_score: Option<f32>,
+
+    /// Per-space ranks (for RRF explanation)
+    pub space_ranks: Option<[Option<usize>; 13]>,
 }
 
-/// Multi-UTL extended parameters
+/// Multi-UTL extended parameters (13 spaces)
 #[derive(Clone, Debug)]
 pub struct MultiUtlParams {
-    /// Per-space semantic deltas (Delta_S_i)
-    pub semantic_deltas: [f32; 12],
+    /// Per-space semantic deltas (Delta_S_i) - 13D
+    pub semantic_deltas: [f32; 13],
 
-    /// Per-space coherence deltas (Delta_C_j)
-    pub coherence_deltas: [f32; 12],
+    /// Per-space coherence deltas (Delta_C_j) - 13D
+    pub coherence_deltas: [f32; 13],
 
-    /// Per-space tau weights
-    pub tau_weights: [f32; 12],
+    /// Per-space tau weights - 13D
+    pub tau_weights: [f32; 13],
 
     /// Lambda for semantic term
     pub lambda_s: f32,
@@ -146,6 +157,30 @@ pub struct MultiUtlParams {
 
     /// Phase angle (goal alignment)
     pub phi: f32,
+}
+
+/// RRF (Reciprocal Rank Fusion) configuration
+#[derive(Clone, Debug)]
+pub struct RrfConfig {
+    /// RRF k constant (typically 60)
+    /// Higher k reduces impact of top-ranked items
+    pub k: f32,
+
+    /// Minimum rank contribution threshold
+    pub min_contribution: f32,
+
+    /// Whether to normalize final RRF scores
+    pub normalize: bool,
+}
+
+impl Default for RrfConfig {
+    fn default() -> Self {
+        Self {
+            k: 60.0,
+            min_contribution: 0.0,
+            normalize: true,
+        }
+    }
 }
 ```
 
@@ -171,11 +206,19 @@ pub trait CrossSpaceSimilarityEngine: Send + Sync {
         config: &CrossSpaceConfig,
     ) -> Result<Vec<CrossSpaceSimilarity>, SimilarityError>;
 
-    /// Compute Multi-UTL score
+    /// Compute Multi-UTL score (13 spaces)
     async fn compute_multi_utl(
         &self,
         params: &MultiUtlParams,
     ) -> f32;
+
+    /// Compute RRF score from ranked lists
+    /// RRF(d) = SUM_i 1/(k + rank_i(d)) where k=60 by default
+    async fn compute_rrf(
+        &self,
+        ranked_lists: &[(usize, Vec<(MemoryId, f32)>)],  // (space_idx, ranked_results)
+        config: &RrfConfig,
+    ) -> HashMap<MemoryId, f32>;
 
     /// Update learned weights from feedback
     async fn update_weights(
@@ -233,16 +276,16 @@ impl DefaultCrossSpaceEngine {
         fp1: &TeleologicalFingerprint,
         fp2: &TeleologicalFingerprint,
         config: &CrossSpaceConfig,
-    ) -> [f32; 12] {
+    ) -> [f32; 13] {
         match &config.weighting_strategy {
-            WeightingStrategy::Uniform => [1.0 / 12.0; 12],
+            WeightingStrategy::Uniform => [1.0 / 13.0; 13],
 
             WeightingStrategy::Static(weights) => *weights,
 
             WeightingStrategy::PurposeAligned => {
-                // Average the purpose vectors and normalize
-                let mut weights = [0.0; 12];
-                for i in 0..12 {
+                // Average the purpose vectors and normalize (13D)
+                let mut weights = [0.0; 13];
+                for i in 0..13 {
                     weights[i] = (fp1.purpose_vector.alignment[i]
                         + fp2.purpose_vector.alignment[i]) / 2.0;
                 }
@@ -251,12 +294,12 @@ impl DefaultCrossSpaceEngine {
             }
 
             WeightingStrategy::Learned { model_id: _ } => {
-                self.learned_weights.unwrap_or([1.0 / 12.0; 12])
+                self.learned_weights.unwrap_or([1.0 / 13.0; 13])
             }
 
             WeightingStrategy::QueryAdaptive => {
                 // Weight by query embedding magnitude (importance)
-                let mut weights = [0.0; 12];
+                let mut weights = [0.0; 13];
                 for (i, emb) in fp1.semantic_fingerprint.embeddings.iter().enumerate() {
                     if let Some(e) = emb {
                         weights[i] = vector_magnitude(e);
@@ -268,9 +311,49 @@ impl DefaultCrossSpaceEngine {
 
             WeightingStrategy::LateInteraction => {
                 // Late interaction uses MaxSim, weights not directly applicable
-                [1.0 / 12.0; 12]
+                [1.0 / 13.0; 13]
+            }
+
+            WeightingStrategy::RRF { k: _ } => {
+                // RRF uses rank-based fusion, not weight-based
+                // Return uniform weights for fallback
+                [1.0 / 13.0; 13]
             }
         }
+    }
+
+    /// Compute RRF score from ranked lists
+    /// RRF(d) = SUM_i 1/(k + rank_i(d)) where k=60 by default
+    async fn compute_rrf(
+        &self,
+        ranked_lists: &[(usize, Vec<(MemoryId, f32)>)],
+        config: &RrfConfig,
+    ) -> HashMap<MemoryId, f32> {
+        let mut scores: HashMap<MemoryId, f32> = HashMap::new();
+
+        for (_space_idx, results) in ranked_lists {
+            for (rank, (memory_id, _sim)) in results.iter().enumerate() {
+                // RRF contribution: 1 / (k + rank)
+                // Note: rank is 0-indexed, so we use rank + 1 for standard RRF
+                let contribution = 1.0 / (config.k + (rank as f32) + 1.0);
+
+                if contribution >= config.min_contribution {
+                    *scores.entry(memory_id.clone()).or_insert(0.0) += contribution;
+                }
+            }
+        }
+
+        // Normalize if requested
+        if config.normalize && !scores.is_empty() {
+            let max_score = scores.values().cloned().fold(0.0f32, f32::max);
+            if max_score > 0.0 {
+                for score in scores.values_mut() {
+                    *score /= max_score;
+                }
+            }
+        }
+
+        scores
     }
 }
 
@@ -282,11 +365,11 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
         fp2: &TeleologicalFingerprint,
         config: &CrossSpaceConfig,
     ) -> Result<CrossSpaceSimilarity, SimilarityError> {
-        // Compute per-space similarities
-        let mut space_scores = [None; 12];
+        // Compute per-space similarities (13 spaces: E1-E12 + E13 SPLADE)
+        let mut space_scores = [None; 13];
         let mut active_mask = 0u16;
 
-        for i in 0..12 {
+        for i in 0..13 {
             let emb1 = fp1.semantic_fingerprint.embeddings[i].as_ref();
             let emb2 = fp2.semantic_fingerprint.embeddings[i].as_ref();
 
@@ -508,18 +591,20 @@ FUNCTION compute_late_interaction(fp1, fp2):
 ### Implementation Checklist
 
 - [ ] `CrossSpaceConfig` struct
-- [ ] `WeightingStrategy` enum with all variants
-- [ ] `CrossSpaceSimilarity` result type
-- [ ] `MultiUtlParams` for extended UTL
+- [ ] `WeightingStrategy` enum with all variants including **RRF**
+- [ ] `CrossSpaceSimilarity` result type (13D)
+- [ ] `MultiUtlParams` for extended UTL (13D)
+- [ ] `RrfConfig` for RRF fusion parameters
 - [ ] `CrossSpaceSimilarityEngine` trait
 - [ ] Default implementation
-- [ ] Uniform weighting
-- [ ] Static weighting
-- [ ] Purpose-aligned weighting
+- [ ] Uniform weighting (13 spaces)
+- [ ] Static weighting (13D)
+- [ ] Purpose-aligned weighting (13D purpose vector)
 - [ ] Late interaction (MaxSim)
-- [ ] Multi-UTL formula
+- [ ] Multi-UTL formula (13 spaces)
+- [ ] **RRF fusion: RRF(d) = SUM_i 1/(k + rank_i(d)) where k=60**
 - [ ] Similarity explanation
-- [ ] Weight learning interface
+- [ ] Weight learning interface (13D)
 
 ### Testing Requirements
 
@@ -548,8 +633,8 @@ mod tests {
     #[tokio::test]
     async fn test_purpose_weighting() {
         let engine = DefaultCrossSpaceEngine::new();
-        let fp1 = create_fingerprint_with_purpose([0.9, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]);
-        let fp2 = create_fingerprint_with_purpose([0.8, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1]);
+        let fp1 = create_fingerprint_with_purpose([0.9, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.2]);
+        let fp2 = create_fingerprint_with_purpose([0.8, 0.2, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.1, 0.3]);
 
         let config = CrossSpaceConfig {
             weighting_strategy: WeightingStrategy::PurposeAligned,
@@ -568,9 +653,9 @@ mod tests {
         let engine = DefaultCrossSpaceEngine::new();
 
         let params = MultiUtlParams {
-            semantic_deltas: [0.1; 12],
-            coherence_deltas: [0.1; 12],
-            tau_weights: [1.0; 12],
+            semantic_deltas: [0.1; 13],
+            coherence_deltas: [0.1; 13],
+            tau_weights: [1.0; 13],
             lambda_s: 1.0,
             lambda_c: 1.0,
             w_e: 1.0,
@@ -580,6 +665,44 @@ mod tests {
         let score = engine.compute_multi_utl(&params).await;
 
         assert!(score >= 0.0 && score <= 1.0);
+    }
+
+    #[tokio::test]
+    async fn test_rrf_fusion() {
+        let engine = DefaultCrossSpaceEngine::new();
+
+        // Simulate ranked lists from 3 spaces (including SPLADE)
+        let ranked_lists = vec![
+            (0, vec![
+                (MemoryId::from(1), 0.95),
+                (MemoryId::from(2), 0.85),
+                (MemoryId::from(3), 0.75),
+            ]),
+            (1, vec![
+                (MemoryId::from(2), 0.90),
+                (MemoryId::from(1), 0.80),
+                (MemoryId::from(4), 0.70),
+            ]),
+            (12, vec![  // E13 SPLADE
+                (MemoryId::from(1), 0.88),
+                (MemoryId::from(4), 0.78),
+                (MemoryId::from(2), 0.68),
+            ]),
+        ];
+
+        let config = RrfConfig {
+            k: 60.0,
+            min_contribution: 0.0,
+            normalize: true,
+        };
+
+        let rrf_scores = engine.compute_rrf(&ranked_lists, &config).await;
+
+        // Memory 1 appears at ranks 0, 1, 0 across 3 spaces
+        // RRF(1) = 1/61 + 1/62 + 1/61 = high score
+        // Memory 2 appears at ranks 1, 0, 2
+        // RRF(2) = 1/62 + 1/61 + 1/63
+        assert!(rrf_scores.get(&MemoryId::from(1)).unwrap() > rrf_scores.get(&MemoryId::from(4)).unwrap());
     }
 
     #[tokio::test]
@@ -670,6 +793,9 @@ cargo test -p context-graph-core weighting_strategy -- --nocapture
 | Multi-UTL formula | projectionplan2.md:multi-utl | Complete |
 | Purpose weighting | projectionplan1.md:purpose | Complete |
 | Late interaction | projectionplan2.md:colbert | Complete |
+| **13 embedding spaces** | projectionplan2.md:13-spaces | Complete |
+| **RRF fusion: RRF(d) = SUM_i 1/(k + rank_i(d))** | projectionplan2.md:rrf | Complete |
+| **E13 SPLADE integration** | projectionplan2.md:splade | Complete |
 
 ---
 

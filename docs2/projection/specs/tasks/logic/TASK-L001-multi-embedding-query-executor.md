@@ -20,15 +20,21 @@ metadata:
 
 ## Problem Statement
 
-Implement a query executor that searches across all 12 embedding spaces in parallel, aggregating results with configurable weighting strategies.
+Implement a query executor that searches across all 13 embedding spaces in parallel, aggregating results with configurable weighting strategies and supporting the 5-stage retrieval pipeline.
 
 ## Context
 
-The Multi-Array Teleological Fingerprint architecture stores 12 separate embedding spaces (E1-E12). Unlike fusion-based approaches, each space must be searched independently and results combined. This enables:
+The Multi-Array Teleological Fingerprint architecture stores 13 separate embedding spaces (E1-E13), including E13 SPLADE for sparse lexical retrieval. Unlike fusion-based approaches, each space must be searched independently and results combined using RRF (Reciprocal Rank Fusion). This enables:
 - Selective space activation (skip irrelevant spaces)
 - Per-space confidence weighting
 - Explainable retrieval (which spaces contributed)
 - Graceful degradation (missing embeddings handled)
+- **5-Stage Pipeline Integration**:
+  - Stage 1: SPLADE sparse retrieval (E13) for initial candidate set
+  - Stage 2: Matryoshka 128D dense retrieval for fast filtering
+  - Stage 3: Full embedding search across active spaces
+  - Stage 4: Cross-encoder reranking
+  - Stage 5: RRF fusion for final ranking
 
 ## Technical Specification
 
@@ -44,7 +50,7 @@ pub struct MultiEmbeddingQuery {
     pub active_spaces: EmbeddingSpaceMask,
 
     /// Per-space weight overrides (defaults to equal weighting)
-    pub space_weights: Option<[f32; 12]>,
+    pub space_weights: Option<[f32; 13]>,
 
     /// Maximum results per space before aggregation
     pub per_space_limit: usize,
@@ -57,6 +63,40 @@ pub struct MultiEmbeddingQuery {
 
     /// Whether to include space-level debug info
     pub include_space_breakdown: bool,
+
+    /// Pipeline stage configuration
+    pub pipeline_config: Option<PipelineStageConfig>,
+}
+
+/// Configuration for 5-stage retrieval pipeline
+#[derive(Clone, Debug)]
+pub struct PipelineStageConfig {
+    /// Stage 1: SPLADE sparse retrieval candidate count
+    pub splade_candidates: usize,
+
+    /// Stage 2: Matryoshka 128D filter count
+    pub matryoshka_128d_limit: usize,
+
+    /// Stage 3: Full embedding search
+    pub full_search_limit: usize,
+
+    /// Stage 4: Cross-encoder rerank count
+    pub rerank_limit: usize,
+
+    /// RRF k parameter (default: 60)
+    pub rrf_k: f32,
+}
+
+impl Default for PipelineStageConfig {
+    fn default() -> Self {
+        Self {
+            splade_candidates: 1000,
+            matryoshka_128d_limit: 200,
+            full_search_limit: 100,
+            rerank_limit: 20,
+            rrf_k: 60.0,
+        }
+    }
 }
 
 /// Bitmask for active embedding spaces
@@ -64,9 +104,12 @@ pub struct MultiEmbeddingQuery {
 pub struct EmbeddingSpaceMask(pub u16);
 
 impl EmbeddingSpaceMask {
-    pub const ALL: Self = Self(0x0FFF);  // All 12 spaces
+    pub const ALL: Self = Self(0x1FFF);  // All 13 spaces (bits 0-12)
+    pub const ALL_DENSE: Self = Self(0x0FFF);  // All 12 dense spaces (E1-E12)
     pub const SEMANTIC_ONLY: Self = Self(0x0001);  // E1 only
     pub const TEXT_CORE: Self = Self(0x0007);  // E1, E2, E3
+    pub const SPLADE_ONLY: Self = Self(0x1000);  // E13 SPLADE only
+    pub const HYBRID: Self = Self(0x1001);  // E1 semantic + E13 SPLADE
 
     pub fn is_active(&self, space_idx: usize) -> bool {
         (self.0 & (1 << space_idx)) != 0
@@ -74,6 +117,10 @@ impl EmbeddingSpaceMask {
 
     pub fn active_count(&self) -> usize {
         self.0.count_ones() as usize
+    }
+
+    pub fn includes_splade(&self) -> bool {
+        self.is_active(12)  // E13 is index 12
     }
 }
 
@@ -164,14 +211,15 @@ pub struct SpaceInfo {
 pub enum AggregationStrategy {
     /// Weighted average of similarities
     WeightedAverage {
-        weights: [f32; 12],
+        weights: [f32; 13],
         require_all: bool,
     },
 
     /// Maximum similarity across spaces
     MaxPooling,
 
-    /// Reciprocal Rank Fusion
+    /// Reciprocal Rank Fusion: RRF(d) = SUM_i 1/(k + rank_i(d))
+    /// Default k=60 as per standard RRF literature
     RRF { k: f32 },
 
     /// Learned combination (from purpose alignment)
@@ -195,7 +243,7 @@ impl AggregationStrategy {
             Self::RRF { k } => {
                 // Reciprocal Rank Fusion: sum(1 / (k + rank_i))
                 // Note: This requires rank information, not just similarity
-                unimplemented!("RRF requires rank-based input")
+                unimplemented!("RRF requires rank-based input - use aggregate_rrf")
             }
             Self::PurposeWeighted { purpose_vector } => {
                 // Weight by purpose alignment per space
@@ -208,6 +256,31 @@ impl AggregationStrategy {
                 if weight_sum > 0.0 { sum / weight_sum } else { 0.0 }
             }
         }
+    }
+
+    /// Aggregate using Reciprocal Rank Fusion across ranked lists
+    /// RRF(d) = SUM_i 1/(k + rank_i(d)) where k=60 by default
+    ///
+    /// # Arguments
+    /// * `ranked_lists` - Vec of (space_index, ranked_memory_ids) per space
+    /// * `k` - RRF constant (typically 60)
+    ///
+    /// # Returns
+    /// HashMap of memory_id -> RRF score
+    pub fn aggregate_rrf(
+        ranked_lists: &[(usize, Vec<MemoryId>)],
+        k: f32,
+    ) -> HashMap<MemoryId, f32> {
+        let mut scores: HashMap<MemoryId, f32> = HashMap::new();
+
+        for (_space_idx, ranked_ids) in ranked_lists {
+            for (rank, memory_id) in ranked_ids.iter().enumerate() {
+                let rrf_contribution = 1.0 / (k + (rank as f32) + 1.0);
+                *scores.entry(memory_id.clone()).or_insert(0.0) += rrf_contribution;
+            }
+        }
+
+        scores
     }
 }
 ```
@@ -224,12 +297,14 @@ impl AggregationStrategy {
 
 #### In Scope
 
-- Multi-space parallel query execution
+- Multi-space parallel query execution (13 spaces)
 - Configurable space selection (bitmask)
-- Multiple aggregation strategies
+- Multiple aggregation strategies including RRF fusion
 - Per-space result limits and thresholds
 - Search timing and diagnostics
 - Graceful handling of missing/failed spaces
+- **E13 SPLADE sparse query execution** (lexical retrieval)
+- **5-stage pipeline support** with configurable limits per stage
 
 #### Out of Scope
 
@@ -302,14 +377,17 @@ FUNCTION execute_multi_embedding_query(query: MultiEmbeddingQuery):
 ### Implementation Checklist
 
 - [ ] `MultiEmbeddingQueryExecutor` trait defined
-- [ ] `EmbeddingSpaceMask` with common presets
+- [ ] `EmbeddingSpaceMask` with common presets (13 spaces)
 - [ ] Parallel space search implementation
-- [ ] WeightedAverage aggregation
+- [ ] WeightedAverage aggregation (13D weights)
 - [ ] MaxPooling aggregation
-- [ ] RRF aggregation
-- [ ] PurposeWeighted aggregation (basic)
+- [ ] **RRF aggregation: RRF(d) = SUM_i 1/(k + rank_i(d)) where k=60**
+- [ ] PurposeWeighted aggregation (13D purpose vector)
 - [ ] Query timing instrumentation
 - [ ] Graceful space failure handling
+- [ ] **E13 SPLADE sparse query execution**
+- [ ] **5-stage pipeline configuration**
+- [ ] **PipelineStageConfig with configurable limits**
 
 ### Testing Requirements
 
@@ -352,12 +430,28 @@ mod tests {
     #[tokio::test]
     async fn test_weighted_aggregation() {
         let strategy = AggregationStrategy::WeightedAverage {
-            weights: [1.0, 0.5, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+            weights: [1.0, 0.5, 0.25, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             require_all: false,
         };
         let score = strategy.aggregate(&[(0, 0.8), (1, 0.6)]);
         // (0.8 * 1.0 + 0.6 * 0.5) / (1.0 + 0.5) = 1.1 / 1.5 = 0.733...
         assert!((score - 0.7333).abs() < 0.01);
+    }
+
+    #[tokio::test]
+    async fn test_rrf_aggregation() {
+        // Test RRF fusion with k=60
+        let ranked_lists = vec![
+            (0, vec![MemoryId::from(1), MemoryId::from(2), MemoryId::from(3)]),
+            (1, vec![MemoryId::from(2), MemoryId::from(1), MemoryId::from(4)]),
+            (12, vec![MemoryId::from(1), MemoryId::from(4), MemoryId::from(2)]), // SPLADE
+        ];
+
+        let scores = AggregationStrategy::aggregate_rrf(&ranked_lists, 60.0);
+
+        // Memory 1 appears at ranks 0, 1, 0 -> 1/61 + 1/62 + 1/61
+        // Memory 2 appears at ranks 1, 0, 2 -> 1/62 + 1/61 + 1/63
+        assert!(scores.get(&MemoryId::from(1)).unwrap() > scores.get(&MemoryId::from(4)).unwrap());
     }
 
     #[tokio::test]
@@ -370,7 +464,35 @@ mod tests {
         };
         // Should succeed even if one space fails
         let result = executor.execute(query).await.unwrap();
-        assert!(result.spaces_searched == 11); // 12 - 1 failed
+        assert!(result.spaces_searched == 12); // 13 - 1 failed
+    }
+
+    #[tokio::test]
+    async fn test_splade_query_execution() {
+        let executor = create_test_executor();
+        let query = MultiEmbeddingQuery {
+            query_text: "test query".into(),
+            active_spaces: EmbeddingSpaceMask::SPLADE_ONLY,
+            per_space_limit: 100,
+            final_limit: 20,
+            ..Default::default()
+        };
+        let result = executor.execute(query).await.unwrap();
+        assert!(result.spaces_searched == 1);
+        // SPLADE should return sparse lexical matches
+    }
+
+    #[tokio::test]
+    async fn test_hybrid_dense_sparse() {
+        let executor = create_test_executor();
+        let query = MultiEmbeddingQuery {
+            query_text: "test query".into(),
+            active_spaces: EmbeddingSpaceMask::HYBRID, // E1 + E13
+            pipeline_config: Some(PipelineStageConfig::default()),
+            ..Default::default()
+        };
+        let result = executor.execute(query).await.unwrap();
+        assert!(result.spaces_searched == 2);
     }
 }
 ```

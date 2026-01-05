@@ -19,15 +19,16 @@ metadata:
 
 ## Problem Statement
 
-Build a 12-dimensional HNSW index specifically for Purpose Vectors, enabling fast retrieval of memories with similar purpose alignment patterns.
+Build a 13-dimensional HNSW index specifically for Purpose Vectors, enabling fast retrieval of memories with similar purpose alignment patterns across all embedding spaces including E13 SPLADE.
 
 ## Context
 
-While per-space indexes enable content similarity search, the Purpose Pattern Index enables **purpose similarity search** - finding memories that serve similar goals regardless of their content. This supports:
+While per-space indexes enable content similarity search, the Purpose Pattern Index enables **purpose similarity search** - finding memories that serve similar goals regardless of their content. With E13 SPLADE integration, this now captures both semantic and lexical goal alignment. This supports:
 - Goal-based memory organization
 - Purpose clustering and visualization
 - Alignment pattern discovery
 - Strategic memory recommendation
+- **Lexical goal alignment via E13 SPLADE**
 
 ## Technical Specification
 
@@ -231,7 +232,7 @@ pub struct HnswPurposeIndex {
 impl HnswPurposeIndex {
     pub fn new(config: PurposeIndexConfig, storage_path: PathBuf) -> Result<Self, PurposeIndexError> {
         let index = HnswIndex::new(
-            12,  // Purpose vector is 12D
+            13,  // Purpose vector is 13D (E1-E12 dense + E13 SPLADE)
             config.max_elements,
             config.m,
             config.ef_construction,
@@ -337,7 +338,7 @@ impl PurposePatternIndex for HnswPurposeIndex {
 
 ### Constraints
 
-- Index dimension fixed at 12
+- Index dimension fixed at **13** (E1-E12 dense + E13 SPLADE)
 - Memory < 500MB for 1M entries
 - Search latency < 5ms
 - Thread-safe operations
@@ -346,8 +347,8 @@ impl PurposePatternIndex for HnswPurposeIndex {
 
 ```
 FUNCTION add_to_purpose_index(entry):
-    // Convert purpose vector to 12D array
-    vector = entry.purpose_vector.alignment  // [f32; 12]
+    // Convert purpose vector to 13D array
+    vector = entry.purpose_vector.alignment  // [f32; 13] (E1-E12 + E13 SPLADE)
 
     // Get next offset
     offset = offset_to_id.len()
@@ -363,7 +364,7 @@ FUNCTION add_to_purpose_index(entry):
     RETURN Ok(())
 
 FUNCTION search_by_purpose(query):
-    // Resolve query to 12D vector
+    // Resolve query to 13D vector
     query_vector = resolve_query_target(query.target)
 
     // Search HNSW
@@ -451,11 +452,12 @@ FUNCTION cluster_by_purpose(num_clusters):
 - [ ] `PurposeIndexEntry` struct
 - [ ] `PurposeQuery` with multiple target types
 - [ ] `PurposePatternIndex` trait
-- [ ] HNSW-based implementation (12D)
+- [ ] HNSW-based implementation (**13D**: E1-E12 + E13 SPLADE)
 - [ ] Metadata filtering support
 - [ ] Purpose-based clustering
 - [ ] Index persistence/loading
 - [ ] Statistics tracking
+- [ ] **E13 SPLADE alignment in purpose queries**
 
 ### Testing Requirements
 
@@ -484,7 +486,7 @@ mod tests {
         // Search for similar purpose
         let query = PurposeQuery {
             target: PurposeQueryTarget::Pattern {
-                alignment: [0.5; 12],
+                alignment: [0.5; 13],  // 13D: E1-E12 + E13 SPLADE
             },
             limit: 10,
             min_similarity: 0.0,
@@ -501,7 +503,7 @@ mod tests {
         let mut index = create_test_index().await;
 
         let query = PurposeQuery {
-            target: PurposeQueryTarget::Pattern { alignment: [0.5; 12] },
+            target: PurposeQueryTarget::Pattern { alignment: [0.5; 13] },  // 13D
             limit: 10,
             min_similarity: 0.0,
             goal_filter: Some(GoalId("target_goal".into())),
@@ -570,9 +572,10 @@ cargo test -p context-graph-core purpose_index_memory -- --nocapture
 
 | Requirement | Source | Coverage |
 |-------------|--------|----------|
-| 12D purpose index | projectionplan1.md:purpose-pattern | Complete |
+| **13D purpose index** | projectionplan1.md:purpose-pattern | Complete |
 | Purpose similarity | projectionplan2.md:alignment | Complete |
 | Clustering | projectionplan2.md:organization | Complete |
+| **E13 SPLADE alignment** | projectionplan2.md:splade | Complete |
 
 ---
 

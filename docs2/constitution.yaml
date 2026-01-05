@@ -9,7 +9,7 @@ meta:
   name: "Ultimate Context Graph"
   desc: "5-layer bio-nervous UTL knowledge graph with teleological vector architecture"
   updated: "2026-01-04"
-  paradigm: "Multi-Array Teleological Fingerprints - the 12-embedding array IS the teleological vector"
+  paradigm: "Multi-Array Teleological Fingerprints - the 13-embedding array IS the teleological vector"
 
 # ═══════════════════════════════════════════════
 # ABBREVIATIONS (used throughout)
@@ -22,7 +22,7 @@ meta:
 # PC=Predictive Coding, HE=Hyperbolic Entailment
 # MHN=Modern Hopfield Network, SDM=Sparse Distributed Memory
 # TF=Teleological Fingerprint, PV=Purpose Vector
-# SF=Semantic Fingerprint (12-array embedding)
+# SF=Semantic Fingerprint (13-array embedding)
 # A(v,V)=Teleological Alignment (cosine to North Star)
 
 # ═══════════════════════════════════════════════
@@ -34,7 +34,7 @@ stack:
   deps: [tokio@1.35+, serde@1.0+, uuid@1.6+, chrono@0.4+, rmcp@0.1+, cudarc@0.10+, faiss@0.12+gpu, rocksdb@0.21+, scylladb@1.0+]
   db:
     primary: { dev: rocksdb, prod: scylladb }  # Full TeleologicalFingerprint storage
-    vector_indexes: { per_embedder: "12× HNSW (E1-E12)", purpose: "12D HNSW", goal_hierarchy: "tree index" }
+    vector_indexes: { per_embedder: "13× HNSW (E1-E13)", matryoshka_128d: "HNSW for Stage 2", splade_inverted: "Inverted index for Stage 1", purpose: "13D HNSW", goal_hierarchy: "tree index" }
     temporal: timescaledb  # Purpose evolution tracking
     cache: redis7+
   embed_fallback: [openai/text-embedding-3-large, cohere/embed-english-v3.0]
@@ -47,7 +47,7 @@ dirs:
     context-graph-mcp/: "MCP server (tools/, resources/, handlers/, adapters/)"
     context-graph-core/: "Domain logic (graph/, search/, utl/, session/, curation/, teleological/)"
     context-graph-cuda/: "GPU (kernels/, hnsw/, hopfield/, neuromod/)"
-    context-graph-embeddings/: "12-model pipeline (models/, fingerprint/, purpose_vector.rs, semantic_fingerprint.rs)"
+    context-graph-embeddings/: "13-model pipeline (models/, fingerprint/, purpose_vector.rs, semantic_fingerprint.rs)"
     context-graph-storage/: "Teleological storage (rocksdb/, scylla/, indexes/, temporal/)"
   specs/: [functional/, technical/, tasks/]
   tests/: [integration/, benchmarks/, fixtures/, chaos/, validation/]
@@ -166,8 +166,8 @@ utl:
   formula_multi: "L_multi = sigmoid(2.0 · (Σᵢ τᵢλ_S·ΔSᵢ) · (Σⱼ τⱼλ_C·ΔCⱼ) · wₑ · cos φ)"
 
   params:
-    ΔSᵢ: "[0,1] entropy in embedding space i (i=1..12)"
-    ΔCⱼ: "[0,1] coherence in embedding space j (j=1..12)"
+    ΔSᵢ: "[0,1] entropy in embedding space i (i=1..13)"
+    ΔCⱼ: "[0,1] coherence in embedding space j (j=1..13)"
     τᵢ: "[0,1] teleological weight for space i (alignment to North Star)"
     wₑ: "[0.5,1.5] emotional weight"
     φ: "[0,π] phase sync across Kuramoto-coupled spaces"
@@ -176,7 +176,7 @@ utl:
 
   # Per-Embedder Johari Quadrants
   johari:
-    desc: "Each of 12 embedding spaces has independent Johari classification"
+    desc: "Each of 13 embedding spaces has independent Johari classification"
     Open: "ΔSᵢ<0.5, ΔCᵢ>0.5 → aware in this space"
     Blind: "ΔSᵢ>0.5, ΔCᵢ<0.5 → discovery opportunity in this space"
     Hidden: "ΔSᵢ<0.5, ΔCᵢ<0.5 → latent in this space"
@@ -192,15 +192,15 @@ utl:
 # TELEOLOGICAL ARCHITECTURE (Royse 2026)
 # ═══════════════════════════════════════════════
 teleological:
-  desc: "The 12-embedding array IS the teleological vector - pattern across spaces reveals purpose"
+  desc: "The 13-embedding array IS the teleological vector - pattern across spaces reveals purpose"
 
   # Core alignment formula
   alignment: "A(v, V) = cos(v, V) = (v · V) / (||v|| × ||V||)"
 
-  # Purpose Vector: 12D signature of alignment to North Star per embedding space
+  # Purpose Vector: 13D signature of alignment to North Star per embedding space
   purpose_vector:
-    formula: "PV = [A(E1,V), A(E2,V), ..., A(E12,V)]"
-    dimensions: 12
+    formula: "PV = [A(E1,V), A(E2,V), ..., A(E13,V)]"
+    dimensions: 13
     desc: "Each dimension = alignment of that embedder's output to North Star goal"
     searchable: true  # The purpose vector itself can be indexed and searched
 
@@ -236,6 +236,7 @@ teleological:
     E10_Multimodal: { goal: "V_multimodality", measure: "A(grounding, V_multimodality)" }
     E11_Entity: { goal: "V_factuality", measure: "A(triple, V_factuality)" }
     E12_LateInteraction: { goal: "V_precision", measure: "A(tokens, V_precision)" }
+    E13_SPLADE: { goal: "V_keyword_precision", measure: "A(sparse, V_keyword_precision)" }
 
 # ═══════════════════════════════════════════════
 # GRAPH EDGE MODEL (Marblestone NT)
@@ -258,7 +259,7 @@ edge_model:
 # 5-LAYER BIO-NERVOUS SYSTEM
 # ═══════════════════════════════════════════════
 layers:
-  L1_Sensing: { latency: "<5ms", throughput: "10K/s", components: [12-model embed, PII scrub, adversarial detect], utl: "ΔS measurement" }
+  L1_Sensing: { latency: "<5ms", throughput: "10K/s", components: [13-model embed, PII scrub, adversarial detect], utl: "ΔS measurement" }
   L2_Reflex:  { latency: "<100μs", hit_rate: ">80%", components: [Hopfield cache], utl: "bypass if confidence>0.95" }
   L3_Memory:  { latency: "<1ms", capacity: "2^768 patterns", noise: ">20%", components: [MHN, FAISS GPU], utl: "consolidation" }
   L4_Learning: { freq: "100Hz", grad_clip: 1.0, components: [UTL optimizer, neuromod controller], utl: "L optimization" }
@@ -376,35 +377,55 @@ mcp:
 # 12-MODEL EMBEDDING → TELEOLOGICAL FINGERPRINT
 # ═══════════════════════════════════════════════
 embeddings:
-  paradigm: "NO FUSION - Store all 12 embeddings as TeleologicalFingerprint array"
-  storage_per_memory: "~46KB (all 12 preserved, vs 6KB fused with 67% info loss)"
+  paradigm: "NO FUSION - Store all 13 embeddings as TeleologicalFingerprint array (E1-E12 + E13 SPLADE)"
+  storage_per_memory: "~17KB (quantized) vs 46KB uncompressed - 63% reduction via PQ-8/Float8/Binary"
   info_preserved: "100% (vs 33% with top-k=4 FuseMoE)"
 
+  # Quantization Strategy (per embedder)
+  quantization:
+    PQ_8: { compression: "32x", recall_impact: "<5%", embedders: [E1, E5, E7, E10] }
+    Float8: { compression: "4x", recall_impact: "<0.3%", embedders: [E2, E3, E4, E8, E11] }
+    Binary: { compression: "32x", recall_impact: "5-10%", embedders: [E9] }
+    Sparse: { compression: "native", recall_impact: "0%", embedders: [E6, E13] }
+    TokenPruning: { compression: "~50%", recall_impact: "<2%", embedders: [E12] }
+
+  # Quantization by embedder (alternative view)
+  quantization_by_embedder:
+    PQ_8: [E1, E5, E7, E10]
+    Float8: [E2, E3, E4, E8, E11]
+    Binary: [E9]
+    Sparse: [E6, E13]
+    TokenPruning: [E12]
+
   models:
-    E1_Semantic: { dim: 1024, math: Dense_Transformer, hw: TensorCore_FP8, lat: "<5ms", purpose: "V_meaning" }
-    E2_Temporal_Recent: { dim: 512, math: Exp_Decay, hw: VectorUnit, lat: "<2ms", purpose: "V_freshness" }
-    E3_Temporal_Periodic: { dim: 512, math: Fourier, hw: FFT, lat: "<2ms", purpose: "V_periodicity" }
-    E4_Temporal_Positional: { dim: 512, math: Sin_PE, hw: CUDA, lat: "<2ms", purpose: "V_ordering" }
-    E5_Causal: { dim: 768, math: SCM_Intervention, hw: TensorCore, lat: "<8ms", purpose: "V_causality" }
+    E1_Semantic: { dim: 1024, math: Dense_Transformer, hw: TensorCore_FP8, lat: "<5ms", purpose: "V_meaning", matryoshka: true, truncatable: [512, 256, 128], quantization: "PQ-8" }
+    E2_Temporal_Recent: { dim: 512, math: Exp_Decay, hw: VectorUnit, lat: "<2ms", purpose: "V_freshness", quantization: "Float8" }
+    E3_Temporal_Periodic: { dim: 512, math: Fourier, hw: FFT, lat: "<2ms", purpose: "V_periodicity", quantization: "Float8" }
+    E4_Temporal_Positional: { dim: 512, math: Sin_PE, hw: CUDA, lat: "<2ms", purpose: "V_ordering", quantization: "Float8" }
+    E5_Causal: { dim: 768, math: SCM_Intervention, hw: TensorCore, lat: "<8ms", purpose: "V_causality", quantization: "PQ-8", asymmetric_similarity: true }
     E6_Sparse: { dim: "~30K 5%active", math: TopK, hw: SparseTensor, lat: "<3ms", purpose: "V_selectivity" }
-    E7_Code: { dim: 1536, math: AST_Transformer, hw: TensorCore_FP16, lat: "<10ms", purpose: "V_correctness" }
-    E8_Graph_MiniLM: { dim: 384, math: MeanPooling, hw: TensorCore, lat: "<5ms", purpose: "V_connectivity" }
-    E9_HDC: { dim: "10K-bit->1024", math: XOR_Hamming, hw: VectorUnit, lat: "<1ms", purpose: "V_robustness" }
-    E10_Multimodal: { dim: 768, math: CrossAttention, hw: TensorCore, lat: "<15ms", purpose: "V_multimodality" }
-    E11_Entity_MiniLM: { dim: 384, math: "h+r≈t", hw: TensorCore, lat: "<2ms", purpose: "V_factuality" }
-    E12_LateInteraction: { dim: "128D/tok", math: ColBERT_MaxSim, hw: CUDA_Tile, lat: "<8ms", purpose: "V_precision" }
+    E7_Code: { dim: 1536, math: AST_Transformer, hw: TensorCore_FP16, lat: "<10ms", purpose: "V_correctness", quantization: "PQ-8" }
+    E8_Graph_MiniLM: { dim: 384, math: MeanPooling, hw: TensorCore, lat: "<5ms", purpose: "V_connectivity", quantization: "Float8" }
+    E9_HDC: { dim: "10K-bit->1024", math: XOR_Hamming, hw: VectorUnit, lat: "<1ms", purpose: "V_robustness", quantization: "Binary" }
+    E10_Multimodal: { dim: 768, math: CrossAttention, hw: TensorCore, lat: "<15ms", purpose: "V_multimodality", quantization: "PQ-8" }
+    E11_Entity_MiniLM: { dim: 384, math: "h+r≈t", hw: TensorCore, lat: "<2ms", purpose: "V_factuality", quantization: "Float8" }
+    E12_LateInteraction: { dim: "128D/tok", math: ColBERT_MaxSim, hw: CUDA_Tile, lat: "<8ms", purpose: "V_precision", token_pruning: true }
+    E13_SPLADE: { dim: "~30K sparse", math: SPLADE_v2, hw: SparseTensor, lat: "<5ms", purpose: "V_keyword_precision" }
 
   # TeleologicalFingerprint: The complete memory representation
   fingerprint:
-    semantic_fingerprint: "[E1, E2, ..., E12] - all 12 embeddings preserved"
-    purpose_vector: "[A(E1,V), ..., A(E12,V)] - 12D teleological signature"
-    johari_quadrants: "[JQ1, ..., JQ12] - per-embedder awareness classification"
+    semantic_fingerprint: "[E1, E2, ..., E13] - all 13 embeddings preserved"
+    purpose_vector: "[A(E1,V), ..., A(E13,V)] - 13D teleological signature"
+    johari_quadrants: "[JQ1, ..., JQ13] - per-embedder awareness classification"
     purpose_evolution: "TimeSeries<PurposeSnapshot> - how alignment changes over time"
 
   # Multi-Embedding Similarity (replaces FuseMoE gating)
   similarity:
-    method: "Weighted per-space cosine with query-adaptive weights"
-    formula: "S(A,B) = Σᵢ wᵢ · cos(Aᵢ, Bᵢ) where wᵢ = f(query_type, τᵢ)"
+    method: "Reciprocal Rank Fusion (RRF) across per-space results"
+    formula: "RRF(d) = Σᵢ 1/(k + rankᵢ(d)) where k=60"
+    rrf_constant: 60
+    spaces: 13
+    fallback: "Weighted per-space cosine: S(A,B) = Σᵢ wᵢ · cos(Aᵢ, Bᵢ)"
     query_types:
       semantic_search: { w_semantic: 0.40, w_causal: 0.15, w_entity: 0.15, others: "balanced" }
       causal_reasoning: { w_causal: 0.50, w_semantic: 0.20, w_entity: 0.15, others: "reduced" }
@@ -412,57 +433,132 @@ embeddings:
       temporal_navigation: { w_temporal: 0.60, w_semantic: 0.20, others: "reduced" }
       fact_checking: { w_entity: 0.50, w_causal: 0.25, w_semantic: 0.15, others: "reduced" }
 
+  # 5-STAGE OPTIMIZED RETRIEVAL PIPELINE
+  retrieval_pipeline:
+    desc: "5-stage hybrid sparse+dense pipeline for <60ms latency @ 1M memories"
+    stages:
+      stage_1_sparse_prefilter:
+        desc: "BM25 + E13 SPLADE sparse pre-filter"
+        input: "All memories (1M+)"
+        output: "Top 10,000 candidates (10K candidates)"
+        latency: "<5ms"
+        uses: [BM25, E13_SPLADE]
+        method: "Inverted index lookup + sparse dot product"
+      stage_2_fast_dense_ann:
+        desc: "Matryoshka 128D (E1 truncated) fast ANN search"
+        input: "10,000 candidates (10K candidates)"
+        output: "Top 1,000 candidates (1K candidates)"
+        latency: "<10ms"
+        uses: [E1_Semantic_truncated_128D]
+        method: "HNSW on truncated Matryoshka embedding"
+      stage_3_multispace_rerank:
+        desc: "RRF fusion across 13 spaces"
+        input: "1,000 candidates (1K candidates)"
+        output: "Top 100 candidates"
+        latency: "<20ms"
+        uses: [E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E13]
+        method: "Per-space cosine → RRF fusion across 13 spaces"
+        rrf_formula: "RRF(d) = Σᵢ 1/(k + rankᵢ(d)) where k=60"
+      stage_4_teleological_filter:
+        desc: "Purpose alignment filter"
+        input: "100 candidates"
+        output: "Top 50 candidates"
+        latency: "<10ms"
+        uses: [purpose_vector, north_star]
+        method: "Filter: alignment < 0.55 → discard; apply transitivity bounds"
+      stage_5_late_interaction_rerank:
+        desc: "E12 MaxSim token-level precision"
+        input: "50 candidates"
+        output: "Final top 10"
+        latency: "<15ms"
+        uses: [E12_LateInteraction]
+        method: "MaxSim per-token matching"
+    total_latency: "<60ms @ 1M memories"
+    total_latency_100k: "<30ms"
+
+  # Asymmetric Causal Similarity (E5)
+  causal_asymmetric_sim:
+    desc: "Cause→effect ≠ effect→cause"
+    formula: "sim = base_cos × direction_mod × (0.7 + 0.3×intervention_overlap)"
+    direction_modifiers:
+      cause_to_effect: 1.2
+      effect_to_cause: 0.8
+      same_direction: 1.0
+
 # ═══════════════════════════════════════════════
 # TELEOLOGICAL STORAGE ARCHITECTURE
 # ═══════════════════════════════════════════════
 storage:
-  desc: "3-layer storage enabling per-space search, purpose patterns, and temporal evolution"
+  desc: "4-layer storage with 5-stage retrieval, enabling hybrid sparse+dense search"
 
-  # Layer 1: Primary Storage (Full Fingerprint)
+  # Layer 1: Primary Storage (Full Fingerprint with Quantization)
   layer1_primary:
     dev: rocksdb
     prod: scylladb
-    stores: "Complete TeleologicalFingerprint per memory"
+    stores: "Complete TeleologicalFingerprint per memory (quantized ~17KB)"
     schema:
       id: UUID
-      embeddings: "[E1..E12 as BYTEA]"
-      purpose_vector: "REAL[12]"
-      johari_quadrants: "BYTEA (12 classifications)"
-      johari_confidence: "REAL[12]"
+      embeddings: "[E1..E13 as BYTEA, quantized per-embedder]"
+      embeddings_raw: "[E1..E13 as BYTEA, full precision - optional cold storage]"
+      purpose_vector: "REAL[13] -- 13D teleological signature"
+      johari_quadrants: "BYTEA (13 classifications)"
+      johari_confidence: "REAL[13]"
       north_star_alignment: "REAL"
-      dominant_embedder: "INT (1-12)"
+      dominant_embedder: "INT (1-13)"
       coherence_score: "REAL"
       created_at: TIMESTAMPTZ
       last_accessed: TIMESTAMPTZ
 
-  # Layer 2A: Per-Embedder HNSW Indexes (12 total)
-  layer2a_per_embedder:
-    desc: "Search within specific embedding spaces"
-    indexes: "12× HNSW (one per Eᵢ)"
-    use_case: "Find memories causally similar (E5 only) or code-similar (E7 only)"
+  # Layer 2A: Sparse Inverted Index (E13 SPLADE) - Stage 1
+  layer2a_sparse:
+    desc: "SPLADE sparse inverted index for Stage 1 pre-filtering"
+    index: "Inverted index on E13 SPLADE (~30K vocab)"
+    use_case: "Fast keyword-aware pre-filtering, 10K candidates in <5ms"
+    method: "BM25 + SPLADE hybrid scoring"
+
+  # Layer 2B: Matryoshka Fast ANN (E1 truncated) - Stage 2
+  layer2b_matryoshka:
+    desc: "128D truncated Matryoshka index for Stage 2 fast ANN"
+    index: "HNSW on E1_Semantic[..128]"
+    use_case: "Fast semantic pre-filter, 1K candidates in <10ms"
+    hnsw_params: { M: 32, ef_construction: 256, ef_search: 128 }
+
+  # Layer 2C: Per-Embedder Full HNSW Indexes (13 total) - Stage 3
+  layer2c_per_embedder:
+    desc: "Full-dimension per-space indexes for Stage 3 reranking"
+    indexes: "13× HNSW (E1-E13, one per embedder, quantized)"
+    use_case: "Multi-space reranking with RRF fusion across 13 spaces"
     hnsw_params: { M: 16, ef_construction: 200, ef_search: 100 }
 
-  # Layer 2B: Purpose Pattern Index
-  layer2b_purpose:
-    desc: "Search by teleological signature"
-    index: "12D HNSW on PurposeVector"
-    use_case: "Find memories with similar purpose patterns regardless of content"
+  # Layer 2D: Purpose Pattern Index (13D) - Stage 4
+  layer2d_purpose:
+    desc: "13D purpose vector index for teleological filtering"
+    index: "13D HNSW on PurposeVector"
+    dimensions: 13
+    use_case: "Filter by alignment threshold (θ ≥ 0.55)"
 
-  # Layer 2C: Goal Hierarchy Index
-  layer2c_goals:
+  # Layer 2E: Goal Hierarchy Index - Stage 4
+  layer2e_goals:
     desc: "Navigate North Star → Mid → Local alignments"
     index: "Tree structure with alignment scores"
-    use_case: "Find all memories aligned with goal V_mid[2]"
+    use_case: "Find all memories aligned with goal hierarchy"
 
-  # Layer 3: Query Router
+  # Layer 2F: Late Interaction Index (E12) - Stage 5
+  layer2f_late_interaction:
+    desc: "ColBERT-style token embedding index for Stage 5"
+    index: "Token-level HNSW with MaxSim scoring"
+    use_case: "Final precision reranking, token-level matching"
+
+  # Layer 3: 5-Stage Query Router
   layer3_router:
-    desc: "Routes queries to appropriate indexes based on query type"
+    desc: "Routes queries through 5-stage pipeline"
     routing:
-      semantic_search: "Layer2A[E1] + rerank with full fingerprint"
-      causal_query: "Layer2A[E5] primary"
-      purpose_search: "Layer2B"
-      goal_alignment: "Layer2C + filter by threshold"
-      hybrid: "Layer2A[dominant] + Layer2B + merge"
+      default: "Stage1→Stage2→Stage3→Stage4→Stage5"
+      fast_semantic: "Stage2→Stage3(E1 only)→Stage5"
+      causal_query: "Stage1→Stage2→Stage3(E5 weighted)→Stage4→Stage5"
+      code_search: "Stage1→Stage2→Stage3(E7 weighted)→Stage4→Stage5"
+      purpose_search: "Stage2→Stage4(primary)→Stage5"
+      goal_alignment: "Layer2E→Stage4→Stage5"
 
   # Temporal Purpose Evolution (TimescaleDB)
   temporal:
@@ -471,7 +567,7 @@ storage:
     schema:
       memory_id: UUID
       timestamp: TIMESTAMPTZ
-      purpose_vector: "REAL[12]"
+      purpose_vector: "REAL[13]"
       north_star_alignment: REAL
       drift_magnitude: REAL
     retention: "90 days continuous, then 1/day samples"
@@ -573,7 +669,7 @@ memory_math:
   hopfield:
     formula: "E = -Σᵢ log(Σⱼ exp(xᵢᵀξⱼ)) per space"
     capacity: "Exponential in dimension d: C ∝ exp(d)"
-    application: "12 parallel Hopfield networks, one per embedding space"
+    application: "13 parallel Hopfield networks, one per embedding space"
     retrieval: "Pattern completion within each space, then Kuramoto sync"
 
   # Sparse Distributed Memory (Kanerva)
@@ -586,7 +682,7 @@ memory_math:
 
   # Phase-Coherent Binding (Kuramoto Synchronization)
   kuramoto:
-    desc: "How 12 representations become one unified memory"
+    desc: "How 13 representations become one unified memory"
     formula: "dθᵢ/dt = ωᵢ + (K/N)Σⱼ sin(θⱼ - θᵢ)"
     coupling: "K = coupling strength between embedding spaces"
     order_param: "r = (1/N)|Σⱼ exp(iθⱼ)| measures synchronization"

@@ -19,26 +19,29 @@ metadata:
 
 ## Problem Statement
 
-Implement computation of 12-dimensional Purpose Vectors that capture how each embedding space aligns with North Star goals, enabling purpose-aware retrieval and memory organization.
+Implement computation of 13-dimensional Purpose Vectors that capture how each embedding space aligns with North Star goals, enabling purpose-aware retrieval and memory organization.
 
 ## Context
 
-The Purpose Vector is a 12D signature where each dimension represents the alignment strength of that embedding space to the user's defined goals. This enables:
+The Purpose Vector is a 13D signature where each dimension represents the alignment strength of that embedding space to the user's defined goals, including E13 SPLADE for sparse lexical alignment. This enables:
 - Purpose-weighted retrieval (prioritize aligned spaces)
 - Goal drift detection (track purpose evolution over time)
 - Misalignment flagging (identify off-purpose memories)
 - Strategic memory organization
+- **E13 SPLADE alignment** for keyword/term-based goal matching
 
 ## Technical Specification
 
 ### Data Structures
 
 ```rust
-/// A 12-dimensional purpose alignment signature
+/// A 13-dimensional purpose alignment signature
 #[derive(Clone, Debug, PartialEq)]
 pub struct PurposeVector {
     /// Alignment score per embedding space [0.0, 1.0]
-    pub alignment: [f32; 12],
+    /// E1-E12: Dense semantic spaces
+    /// E13: SPLADE sparse lexical alignment
+    pub alignment: [f32; 13],
 
     /// North Star goal this vector aligns to
     pub north_star_id: GoalId,
@@ -51,6 +54,22 @@ pub struct PurposeVector {
 
     /// Version for cache invalidation
     pub version: u32,
+
+    /// E13 SPLADE keyword alignment details (sparse)
+    pub splade_alignment: Option<SpladeAlignment>,
+}
+
+/// SPLADE-specific alignment information for E13
+#[derive(Clone, Debug, PartialEq)]
+pub struct SpladeAlignment {
+    /// Top aligned terms with goal vocabulary
+    pub aligned_terms: Vec<(String, f32)>,
+
+    /// Lexical coverage of goal keywords
+    pub keyword_coverage: f32,
+
+    /// Term overlap with goal description
+    pub term_overlap_score: f32,
 }
 
 /// Goal identifier in the hierarchy
@@ -136,16 +155,16 @@ impl PurposeVectorComputer for DefaultPurposeComputer {
         fingerprint: &SemanticFingerprint,
         config: &PurposeComputeConfig,
     ) -> Result<PurposeVector, PurposeError> {
-        let mut alignment = [0.0f32; 12];
+        let mut alignment = [0.0f32; 13];
 
         // Get North Star goal
         let north_star = config.goal_hierarchy.iter()
             .find(|g| g.level == GoalLevel::NorthStar)
             .ok_or(PurposeError::NoNorthStar)?;
 
-        // Compute alignment for each embedding space
-        for (space_idx, embedding) in fingerprint.embeddings.iter().enumerate() {
-            if let Some(emb) = embedding {
+        // Compute alignment for each dense embedding space (E1-E12)
+        for space_idx in 0..12 {
+            if let Some(emb) = fingerprint.embeddings.get(space_idx).and_then(|e| e.as_ref()) {
                 // Cosine similarity between embedding and goal embedding
                 let goal_emb = self.project_goal_to_space(north_star, space_idx)?;
                 alignment[space_idx] = cosine_similarity(emb, &goal_emb);
@@ -161,6 +180,15 @@ impl PurposeVectorComputer for DefaultPurposeComputer {
             }
         }
 
+        // Compute E13 SPLADE alignment (sparse lexical)
+        let splade_alignment = if let Some(splade_emb) = fingerprint.embeddings.get(12).and_then(|e| e.as_ref()) {
+            let splade_result = self.compute_splade_alignment(splade_emb, north_star)?;
+            alignment[12] = splade_result.term_overlap_score;
+            Some(splade_result)
+        } else {
+            None
+        };
+
         // Normalize to [0, 1] range
         let max_align = alignment.iter().cloned().fold(0.0f32, f32::max);
         if max_align > 0.0 {
@@ -175,6 +203,41 @@ impl PurposeVectorComputer for DefaultPurposeComputer {
             confidence: self.compute_confidence(&alignment),
             computed_at: Timestamp::now(),
             version: 1,
+            splade_alignment,
+        })
+    }
+
+    /// Compute SPLADE alignment for E13
+    fn compute_splade_alignment(
+        &self,
+        splade_embedding: &[f32],
+        goal: &GoalNode,
+    ) -> Result<SpladeAlignment, PurposeError> {
+        // Extract non-zero terms from SPLADE sparse vector
+        let goal_keywords = self.extract_goal_keywords(goal);
+        let memory_terms = self.decode_splade_terms(splade_embedding);
+
+        // Compute term overlap
+        let mut aligned_terms = Vec::new();
+        let mut overlap_score = 0.0;
+
+        for (term, weight) in &memory_terms {
+            if goal_keywords.contains(term) {
+                aligned_terms.push((term.clone(), *weight));
+                overlap_score += weight;
+            }
+        }
+
+        let keyword_coverage = if !goal_keywords.is_empty() {
+            aligned_terms.len() as f32 / goal_keywords.len() as f32
+        } else {
+            0.0
+        };
+
+        Ok(SpladeAlignment {
+            aligned_terms,
+            keyword_coverage,
+            term_overlap_score: overlap_score.min(1.0),
         })
     }
 }
@@ -216,8 +279,9 @@ impl PurposeVectorComputer for DefaultPurposeComputer {
 ```
 FUNCTION compute_purpose_vector(fingerprint, goals):
     north_star = find_north_star(goals)
-    alignment = [0.0; 12]
+    alignment = [0.0; 13]
 
+    // Compute dense space alignments (E1-E12)
     FOR space_idx IN 0..12:
         IF fingerprint.embeddings[space_idx] IS NOT NULL:
             // Project goal to this embedding space
@@ -244,6 +308,27 @@ FUNCTION compute_purpose_vector(fingerprint, goals):
             ELSE:
                 alignment[space_idx] = base_align
 
+    // Compute E13 SPLADE alignment (sparse lexical)
+    IF fingerprint.embeddings[12] IS NOT NULL:
+        splade_emb = fingerprint.embeddings[12]
+        goal_keywords = extract_goal_keywords(north_star)
+        memory_terms = decode_splade_terms(splade_emb)
+
+        // Compute term overlap with goal vocabulary
+        overlap_score = 0.0
+        aligned_terms = []
+        FOR (term, weight) IN memory_terms:
+            IF term IN goal_keywords:
+                aligned_terms.push((term, weight))
+                overlap_score += weight
+
+        alignment[12] = min(overlap_score, 1.0)
+        splade_alignment = SpladeAlignment {
+            aligned_terms,
+            keyword_coverage: aligned_terms.len() / goal_keywords.len(),
+            term_overlap_score: alignment[12]
+        }
+
     // Normalize
     max_val = max(alignment)
     IF max_val > 0:
@@ -258,7 +343,8 @@ FUNCTION compute_purpose_vector(fingerprint, goals):
         north_star_id: north_star.id,
         confidence,
         computed_at: now(),
-        version: 1
+        version: 1,
+        splade_alignment: splade_alignment  // E13 details
     }
 ```
 
@@ -266,12 +352,14 @@ FUNCTION compute_purpose_vector(fingerprint, goals):
 
 ### Implementation Checklist
 
-- [ ] `PurposeVector` struct with 12D alignment
+- [ ] `PurposeVector` struct with **13D alignment** (E1-E12 dense + E13 SPLADE)
+- [ ] `SpladeAlignment` struct for E13 keyword alignment details
 - [ ] `GoalNode` hierarchy structure
 - [ ] `PurposeVectorComputer` trait
-- [ ] Default implementation with cosine similarity
+- [ ] Default implementation with cosine similarity (E1-E12)
+- [ ] **E13 SPLADE alignment computation** (term overlap with goal keywords)
 - [ ] Hierarchical propagation algorithm
-- [ ] Confidence scoring
+- [ ] Confidence scoring (13D)
 - [ ] Batch computation support
 - [ ] Goal hierarchy update handling
 
@@ -285,13 +373,39 @@ mod tests {
     #[test]
     fn test_purpose_vector_creation() {
         let pv = PurposeVector {
-            alignment: [0.5; 12],
+            alignment: [0.5; 13],
             north_star_id: GoalId("test".into()),
             confidence: 0.8,
             computed_at: Timestamp::now(),
             version: 1,
+            splade_alignment: None,
         };
-        assert_eq!(pv.alignment.len(), 12);
+        assert_eq!(pv.alignment.len(), 13);
+    }
+
+    #[test]
+    fn test_splade_alignment() {
+        let splade_align = SpladeAlignment {
+            aligned_terms: vec![
+                ("machine".into(), 0.8),
+                ("learning".into(), 0.7),
+            ],
+            keyword_coverage: 0.5,
+            term_overlap_score: 0.75,
+        };
+        let pv = PurposeVector {
+            alignment: {
+                let mut a = [0.5; 13];
+                a[12] = splade_align.term_overlap_score;
+                a
+            },
+            north_star_id: GoalId("ml_goal".into()),
+            confidence: 0.8,
+            computed_at: Timestamp::now(),
+            version: 1,
+            splade_alignment: Some(splade_align),
+        };
+        assert_eq!(pv.alignment[12], 0.75);
     }
 
     #[tokio::test]
@@ -375,10 +489,11 @@ cargo bench -p context-graph-core -- purpose_compute
 
 | Requirement | Source | Coverage |
 |-------------|--------|----------|
-| 12D purpose vector | projectionplan1.md:purpose-vector | Complete |
+| **13D purpose vector** | projectionplan1.md:purpose-vector | Complete |
 | Goal alignment | projectionplan2.md:alignment | Complete |
 | Hierarchical goals | projectionplan1.md:goal-hierarchy | Complete |
 | Purpose evolution | projectionplan2.md:temporal | Partial (L007) |
+| **E13 SPLADE alignment** | projectionplan2.md:splade | Complete |
 
 ---
 

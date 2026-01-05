@@ -29,14 +29,31 @@ pub struct AlignmentEntry {
     /// Overall alignment to this goal
     pub aggregate: f32,
 
-    /// Per-embedder alignment breakdown
-    pub per_space: [f32; 12],
+    /// Per-embedder alignment breakdown (13 embedders with E13 SPLADE)
+    pub per_space: [f32; 13],
+
+    /// Per-stage alignment (5-stage pipeline)
+    pub per_stage: [f32; 5],
 
     /// When this alignment was computed
     pub computed_at: DateTime<Utc>,
 
     /// Alignment delta from previous computation
     pub delta: f32,
+}
+
+/// Stage-specific alignment scores (5-stage pipeline)
+pub struct StageAlignments {
+    /// Stage 1: SPLADE sparse (E13)
+    pub stage1_splade: f32,
+    /// Stage 2: Matryoshka 128D (E1 truncated)
+    pub stage2_matryoshka: f32,
+    /// Stage 3: RRF multi-space (E1-E11, E13)
+    pub stage3_rrf: f32,
+    /// Stage 4: Teleological filter
+    pub stage4_teleological: f32,
+    /// Stage 5: MaxSim late interaction (E12)
+    pub stage5_maxsim: f32,
 }
 
 impl GoalHierarchyIndex {
@@ -127,16 +144,34 @@ pub enum JohariQuadrant {
     Unknown,
 }
 
-/// Per-embedder Johari classification
+/// Per-embedder Johari classification (13 embedders including E13 SPLADE)
 pub struct JohariFingerprint {
-    /// Quadrant per embedding space
-    pub quadrants: [JohariQuadrant; 12],
+    /// Quadrant per embedding space (E1-E13)
+    pub quadrants: [JohariQuadrant; 13],
 
     /// Confidence of classification per space
-    pub confidence: [f32; 12],
+    pub confidence: [f32; 13],
 
     /// Transition probability matrix (for evolution prediction)
-    pub transition_probs: [[f32; 4]; 12],
+    pub transition_probs: [[f32; 4]; 13],
+
+    /// 5-stage pipeline relevance per embedder
+    pub stage_relevance: [StageRole; 13],
+}
+
+/// Role of each embedder in the 5-stage pipeline
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum StageRole {
+    /// Stage 1: SPLADE sparse pre-filter (E13)
+    Stage1PreFilter,
+    /// Stage 2: Matryoshka ANN (E1 truncated)
+    Stage2ANN,
+    /// Stage 3: RRF multi-space rerank (E1-E11, E13)
+    Stage3RRF,
+    /// Stage 4: Teleological alignment filter
+    Stage4Teleological,
+    /// Stage 5: Late interaction MaxSim (E12)
+    Stage5MaxSim,
 }
 
 /// Index for Johari-based queries
@@ -144,8 +179,11 @@ pub struct JohariIndex {
     /// Bitmap index: quadrant -> embedder -> memory_ids
     quadrant_index: HashMap<(JohariQuadrant, EmbedderType), RoaringBitmap>,
 
-    /// Pattern index: full 12-quadrant signature
-    pattern_index: HashMap<[JohariQuadrant; 12], Vec<MemoryId>>,
+    /// Pattern index: full 13-quadrant signature (E1-E13)
+    pattern_index: HashMap<[JohariQuadrant; 13], Vec<MemoryId>>,
+
+    /// Stage-based index: memories with high confidence at each stage
+    stage_index: HashMap<StageRole, BTreeSet<(f32, MemoryId)>>,
 }
 
 impl JohariIndex {
@@ -286,19 +324,29 @@ impl PurposeEvolutionStore {
         let first = &snapshots[0];
         let last = &snapshots[snapshots.len() - 1];
 
-        // Compute drift per embedding space
-        let mut drifts = [0.0f32; 12];
-        for i in 0..12 {
+        // Compute drift per embedding space (13 embedders including E13 SPLADE)
+        let mut drifts = [0.0f32; 13];
+        for i in 0..13 {
             drifts[i] = last.purpose.alignments[i] - first.purpose.alignments[i];
         }
 
         // Alert if significant drift in any space
         for (i, drift) in drifts.iter().enumerate() {
             if *drift < -0.15 {
+                // Determine severity based on pipeline stage
+                let stage = match i {
+                    12 => StageRole::Stage1PreFilter,  // E13 SPLADE
+                    0 => StageRole::Stage2ANN,         // E1 Semantic (Matryoshka)
+                    4 => StageRole::Stage3RRF,         // E5 Causal (critical)
+                    11 => StageRole::Stage5MaxSim,     // E12 Late Interaction
+                    _ => StageRole::Stage3RRF,
+                };
+
                 return Ok(Some(DriftAlert {
                     memory_id,
                     embedder: EmbedderType::from_index(i),
                     drift: *drift,
+                    stage,
                     severity: if *drift < -0.30 { Severity::Critical } else { Severity::Warning },
                 }));
             }
@@ -320,31 +368,41 @@ CREATE TABLE teleological_memories (
     id UUID PRIMARY KEY,
     content_hash BYTEA NOT NULL UNIQUE,
 
-    -- The 12-embedding array (stored as binary for efficiency)
-    e1_semantic BYTEA NOT NULL,           -- 1024 * 4 = 4KB
-    e2_temporal_recent BYTEA NOT NULL,    -- 512 * 4 = 2KB
-    e3_temporal_periodic BYTEA NOT NULL,  -- 512 * 4 = 2KB
-    e4_temporal_positional BYTEA NOT NULL,-- 512 * 4 = 2KB
-    e5_causal BYTEA NOT NULL,             -- 768 * 4 = 3KB
+    -- The 13-embedding array (stored with PQ-8 quantization, ~17KB total)
+    -- Storage reduced 63% from ~46KB via Product Quantization
+    e1_semantic BYTEA NOT NULL,           -- PQ-8: 128B (was 4KB)
+    e1_matryoshka_128d BYTEA,             -- Optional: 128D truncation for Stage 2
+    e2_temporal_recent BYTEA NOT NULL,    -- Float8: 512B (was 2KB)
+    e3_temporal_periodic BYTEA NOT NULL,  -- Float8: 512B (was 2KB)
+    e4_temporal_positional BYTEA NOT NULL,-- Float8: 512B (was 2KB)
+    e5_causal BYTEA NOT NULL,             -- PQ-8: 96B (was 3KB)
     e5_causal_direction SMALLINT NOT NULL,-- 1=cause, 2=effect, 3=bidirectional
-    e6_sparse_indices INT[] NOT NULL,     -- Active indices
-    e6_sparse_values REAL[] NOT NULL,     -- Activation values
-    e7_code BYTEA NOT NULL,               -- 1536 * 4 = 6KB
-    e8_graph BYTEA NOT NULL,              -- 384 * 4 = 1.5KB
-    e9_hdc BYTEA NOT NULL,                -- 1024 * 4 = 4KB
-    e10_multimodal BYTEA NOT NULL,        -- 768 * 4 = 3KB
-    e11_entity BYTEA NOT NULL,            -- 384 * 4 = 1.5KB
-    e12_late_interaction BYTEA NOT NULL,  -- Variable
+    e5_asymmetric_weight REAL NOT NULL DEFAULT 1.0, -- 1.2 for cause→effect, 0.8 for effect→cause
+    e6_sparse_indices INT[] NOT NULL,     -- Sparse: Active indices
+    e6_sparse_values REAL[] NOT NULL,     -- Sparse: Activation values
+    e7_code BYTEA NOT NULL,               -- PQ-8: 192B (was 6KB)
+    e8_graph BYTEA NOT NULL,              -- Float8: 384B (was 1.5KB)
+    e9_hdc BYTEA NOT NULL,                -- Binary: 128B (native)
+    e10_multimodal BYTEA NOT NULL,        -- PQ-8: 96B (was 3KB)
+    e11_entity BYTEA NOT NULL,            -- Float8: 384B (was 1.5KB)
+    e12_late_interaction BYTEA NOT NULL,  -- PQ-8: ~1KB (variable)
     e12_token_count SMALLINT NOT NULL,
+    e13_splade_indices INT[] NOT NULL,    -- SPLADE sparse: vocabulary indices
+    e13_splade_values REAL[] NOT NULL,    -- SPLADE sparse: BM25-weighted values
+    e13_splade_norm REAL NOT NULL,        -- Precomputed L2 norm for scoring
 
-    -- The 12D Purpose Vector (alignment to current North Star)
-    purpose_vector REAL[12] NOT NULL,
+    -- The 13D Purpose Vector (alignment to current North Star)
+    -- Includes E13 SPLADE alignment
+    purpose_vector REAL[13] NOT NULL,
     purpose_coherence REAL NOT NULL,      -- How aligned are all spaces?
     purpose_dominant_space SMALLINT NOT NULL, -- Which space dominates?
 
-    -- Johari quadrants per embedder (encoded as 2 bits each = 3 bytes)
-    johari_quadrants BYTEA NOT NULL,      -- 12 * 2 bits = 24 bits = 3 bytes
-    johari_confidence REAL[12] NOT NULL,
+    -- 5-Stage Pipeline scores
+    stage_scores REAL[5] NOT NULL,        -- [splade, matryoshka, rrf, teleological, maxsim]
+
+    -- Johari quadrants per embedder (encoded as 2 bits each)
+    johari_quadrants BYTEA NOT NULL,      -- 13 * 2 bits = 26 bits = 4 bytes
+    johari_confidence REAL[13] NOT NULL,
 
     -- Metadata
     created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -355,9 +413,30 @@ CREATE TABLE teleological_memories (
     source_id VARCHAR(255)
 );
 
--- Purpose vector index (12D HNSW)
+-- Purpose vector index (13D HNSW)
 CREATE INDEX idx_purpose_vector ON teleological_memories
     USING hnsw (purpose_vector vector_cosine_ops) WITH (m = 16, ef_construction = 200);
+
+-- 5-Stage Pipeline indexes
+CREATE INDEX idx_stage_scores ON teleological_memories(stage_scores);
+
+-- Stage 1: SPLADE inverted index for sparse pre-filter
+CREATE TABLE idx_e13_splade_inverted (
+    term_id INTEGER NOT NULL,
+    memory_id UUID REFERENCES teleological_memories(id),
+    weight REAL NOT NULL,
+    PRIMARY KEY (term_id, memory_id)
+);
+CREATE INDEX idx_splade_term ON idx_e13_splade_inverted(term_id);
+
+-- Stage 2: Matryoshka 128D index for fast ANN
+CREATE TABLE idx_e1_matryoshka_128 (
+    memory_id UUID REFERENCES teleological_memories(id),
+    embedding vector(128),
+    PRIMARY KEY (memory_id)
+);
+CREATE INDEX idx_e1_matryoshka_hnsw ON idx_e1_matryoshka_128
+    USING hnsw (embedding vector_cosine_ops) WITH (m = 32, ef_construction = 400);
 
 -- ============================================================
 -- PER-EMBEDDER VECTOR INDEXES (Layer 2A)
@@ -406,7 +485,7 @@ CREATE TABLE goal_hierarchy (
     parent_id UUID REFERENCES goal_hierarchy(id),
 
     -- Goal embedding (can be searched)
-    goal_embedding BYTEA NOT NULL,  -- Full 12-array goal representation
+    goal_embedding BYTEA NOT NULL,  -- Full 13-array goal representation
 
     -- Or simplified 1536D for fast search
     goal_embedding_1536 vector(1536),
@@ -428,8 +507,11 @@ CREATE TABLE memory_goal_alignment (
     -- Overall alignment
     aggregate_alignment REAL NOT NULL,
 
-    -- Per-embedder breakdown
-    per_space_alignment REAL[12] NOT NULL,
+    -- Per-embedder breakdown (13 embedders including E13 SPLADE)
+    per_space_alignment REAL[13] NOT NULL,
+
+    -- 5-Stage Pipeline alignment breakdown
+    per_stage_alignment REAL[5] NOT NULL,
 
     -- Alignment metadata
     computed_at TIMESTAMPTZ DEFAULT NOW(),
@@ -466,9 +548,12 @@ CREATE TABLE purpose_evolution (
     memory_id UUID NOT NULL,
     timestamp TIMESTAMPTZ NOT NULL,
 
-    -- Purpose vector snapshot
-    purpose_vector REAL[12] NOT NULL,
+    -- Purpose vector snapshot (13 embedders)
+    purpose_vector REAL[13] NOT NULL,
     purpose_coherence REAL NOT NULL,
+
+    -- 5-Stage pipeline scores snapshot
+    stage_scores REAL[5] NOT NULL,
 
     -- Johari snapshot
     johari_quadrants BYTEA NOT NULL,
@@ -547,7 +632,7 @@ impl TeleologicalStorage {
         purpose: &PurposeVector,
         top_k: usize,
     ) -> Result<Vec<(MemoryId, f32)>> {
-        // Search the 12D purpose vector index
+        // Search the 13D purpose vector index
         sqlx::query!(
             r#"
             SELECT id, purpose_vector <=> $1::real[] as distance
@@ -628,7 +713,7 @@ impl TeleologicalStorage {
         let mut max_drift = 0.0f32;
         let mut max_drift_space = 0;
 
-        for i in 0..12 {
+        for i in 0..13 {
             let drift = last.purpose_vector[i] - first.purpose_vector[i];
             if drift.abs() > max_drift.abs() {
                 max_drift = drift;
@@ -658,7 +743,7 @@ impl TeleologicalStorage {
 
 ### 12.1 Modern Hopfield Networks for Associative Memory
 
-The 12-embedding array enables **exponential capacity** associative memory:
+The 13-embedding array enables **exponential capacity** associative memory:
 
 ```
 Classical Hopfield (1982):
@@ -672,13 +757,16 @@ Modern Hopfield (Ramsauer et al., 2020):
 **Multi-Space Hopfield**: Apply associative memory PER embedding space:
 
 ```rust
-/// Modern Hopfield associative memory per embedding space
+/// Modern Hopfield associative memory per embedding space (13 embedders)
 pub struct MultiSpaceHopfield {
-    /// One Hopfield network per embedding space
-    networks: [HopfieldNetwork; 12],
+    /// One Hopfield network per embedding space (E1-E13)
+    networks: [HopfieldNetwork; 13],
 
     /// Cross-space attention for binding
     cross_attention: CrossSpaceAttention,
+
+    /// 5-stage pipeline integration
+    stage_weights: [f32; 5],
 }
 
 impl MultiSpaceHopfield {
@@ -703,12 +791,24 @@ impl MultiSpaceHopfield {
 
     /// Store new memory with Hebbian learning
     pub fn store(&mut self, memory: &SemanticFingerprint) {
-        for i in 0..12 {
+        for i in 0..13 {
             self.networks[i].store(memory.get_space(i));
         }
 
         // Update cross-space associations
         self.cross_attention.update(memory);
+
+        // Update 5-stage pipeline weights based on memory characteristics
+        self.update_stage_weights(memory);
+    }
+
+    fn update_stage_weights(&mut self, memory: &SemanticFingerprint) {
+        // Adjust weights based on memory's stage-specific characteristics
+        self.stage_weights[0] += 0.01 * memory.splade.norm;  // Stage 1: SPLADE
+        self.stage_weights[1] += 0.01 * memory.semantic.truncate(128).len() as f32;  // Stage 2: Matryoshka
+        self.stage_weights[2] += 0.01;  // Stage 3: RRF (always applicable)
+        self.stage_weights[3] += 0.01 * memory.causal.alignment_causality;  // Stage 4: Teleological
+        self.stage_weights[4] += 0.01 * memory.late_interaction.len() as f32;  // Stage 5: MaxSim
     }
 }
 ```
@@ -770,23 +870,26 @@ impl TeleologicalSDM {
 }
 ```
 
-### 12.3 The Binding Problem: How 12 Representations Become One Memory
+### 12.3 The Binding Problem: How 13 Representations Become One Memory
 
 The "binding problem" asks: how do distributed representations bind into unified percepts?
 
-**Phase-Coherent Binding** across embedding spaces:
+**Phase-Coherent Binding** across embedding spaces (13 embedders):
 
 ```rust
 /// Binding mechanism for multi-space teleological vectors
 pub struct PhaseCoherentBinding {
-    /// Oscillator phase per embedding space
-    phases: [f32; 12],
+    /// Oscillator phase per embedding space (E1-E13)
+    phases: [f32; 13],
 
     /// Coupling strength between spaces
-    coupling: [[f32; 12]; 12],
+    coupling: [[f32; 13]; 13],
 
     /// Natural frequency per space
-    frequencies: [f32; 12],
+    frequencies: [f32; 13],
+
+    /// 5-stage pipeline phase alignment
+    stage_phases: [f32; 5],
 }
 
 impl PhaseCoherentBinding {
@@ -804,8 +907,8 @@ impl PhaseCoherentBinding {
         let mut total = 0.0;
         let mut count = 0;
 
-        for i in 0..12 {
-            for j in (i + 1)..12 {
+        for i in 0..13 {
+            for j in (i + 1)..13 {
                 total += self.binding_strength(i, j);
                 count += 1;
             }
@@ -814,15 +917,28 @@ impl PhaseCoherentBinding {
         total / count as f32
     }
 
+    /// 5-Stage pipeline coherence
+    pub fn stage_coherence(&self) -> f32 {
+        // How well do the 5 stages bind together?
+        let mut total = 0.0;
+        for i in 0..5 {
+            for j in (i + 1)..5 {
+                let phase_diff = (self.stage_phases[i] - self.stage_phases[j]).cos();
+                total += phase_diff;
+            }
+        }
+        total / 10.0  // 5 choose 2 = 10 pairs
+    }
+
     /// Evolve phases via Kuramoto synchronization
     pub fn synchronize(&mut self, dt: f32) {
         let mut new_phases = self.phases;
 
-        for i in 0..12 {
+        for i in 0..13 {
             let mut delta = self.frequencies[i];
 
             // Coupling term: attract to other phases
-            for j in 0..12 {
+            for j in 0..13 {
                 if i != j {
                     delta += self.coupling[i][j] * (self.phases[j] - self.phases[i]).sin();
                 }
@@ -832,6 +948,18 @@ impl PhaseCoherentBinding {
         }
 
         self.phases = new_phases;
+
+        // Also synchronize stage phases
+        self.synchronize_stages(dt);
+    }
+
+    fn synchronize_stages(&mut self, dt: f32) {
+        // Map embedder phases to stage phases
+        self.stage_phases[0] = self.phases[12];  // Stage 1: E13 SPLADE
+        self.stage_phases[1] = self.phases[0];   // Stage 2: E1 Matryoshka
+        self.stage_phases[2] = (0..13).map(|i| self.phases[i]).sum::<f32>() / 13.0;  // Stage 3: RRF avg
+        self.stage_phases[3] = self.phases[4];   // Stage 4: E5 Causal (teleological)
+        self.stage_phases[4] = self.phases[11];  // Stage 5: E12 MaxSim
     }
 }
 ```
@@ -840,32 +968,43 @@ impl PhaseCoherentBinding {
 
 ## 13. Multi-Embedding UTL Integration
 
-### 13.1 Extended UTL Formula for 12-Space Teleology
+### 13.1 Extended UTL Formula for 13-Space Teleology with 5-Stage Pipeline
 
-The Unified Teleological Lens (UTL) formula extended for multi-space:
+The Unified Teleological Lens (UTL) formula extended for multi-space and 5-stage retrieval:
 
 ```
 Classic UTL:
   L = f((ΔS × ΔC) · wₑ · cos φ)
 
-Multi-Embedding UTL:
-  L_multi = sigmoid(2.0 · (Σᵢ τᵢλ_S·ΔSᵢ) · (Σⱼ τⱼλ_C·ΔCⱼ) · wₑ · cos φ)
+Multi-Embedding UTL (13 embedders):
+  L_multi = sigmoid(2.0 · (Σᵢ₌₁¹³ τᵢλ_S·ΔSᵢ) · (Σⱼ₌₁¹³ τⱼλ_C·ΔCⱼ) · wₑ · cos φ)
+
+5-Stage Augmented UTL:
+  L_5stage = L_multi × Π_{k=1}^{5} (1 + αₖ·stage_score_k)
 
 Where:
   τᵢ = teleological weight for embedder i (purpose importance)
   λ_S = semantic scaling factor
-  λ_C = causal scaling factor
+  λ_C = causal scaling factor (with asymmetric weighting for E5)
   ΔSᵢ = semantic delta in space i
   ΔCⱼ = causal delta in space j
   wₑ = embedded surprise factor
   φ = phase alignment across spaces
+  αₖ = stage importance weight (Stage 1-5)
+  stage_score_k = performance score at stage k
+
+RRF Integration (Stage 3):
+  L_rrf = Σᵢ τᵢ / (60 + rankᵢ)  -- Reciprocal Rank Fusion
 ```
 
 ```rust
-/// Multi-embedding UTL computation
+/// Multi-embedding UTL computation (13 embedders + 5-stage pipeline)
 pub struct MultiEmbeddingUTL {
-    /// Per-space teleological weights (learned)
-    tau: [f32; 12],
+    /// Per-space teleological weights (learned) - 13 embedders
+    tau: [f32; 13],
+
+    /// 5-stage pipeline importance weights
+    alpha: [f32; 5],
 
     /// Semantic scaling factor
     lambda_s: f32,
@@ -878,24 +1017,24 @@ pub struct MultiEmbeddingUTL {
 }
 
 impl MultiEmbeddingUTL {
-    /// Compute multi-space UTL score
+    /// Compute multi-space UTL score with 5-stage pipeline integration
     pub fn compute(
         &self,
         before: &SemanticFingerprint,
         after: &SemanticFingerprint,
         goal: &TeleologicalGoal,
     ) -> UTLScore {
-        // Compute per-space deltas
-        let mut semantic_deltas = [0.0f32; 12];
-        let mut causal_deltas = [0.0f32; 12];
+        // Compute per-space deltas (13 embedders)
+        let mut semantic_deltas = [0.0f32; 13];
+        let mut causal_deltas = [0.0f32; 13];
 
-        for i in 0..12 {
+        for i in 0..13 {
             let sim_before = cosine_sim(before.get_space(i), goal.get_space(i));
             let sim_after = cosine_sim(after.get_space(i), goal.get_space(i));
 
             semantic_deltas[i] = sim_after - sim_before;
 
-            // Causal delta considers direction
+            // Causal delta considers asymmetric direction for E5
             if i == 4 { // E5 is causal
                 causal_deltas[i] = asymmetric_delta(before.get_space(i), after.get_space(i));
             } else {
@@ -903,30 +1042,63 @@ impl MultiEmbeddingUTL {
             }
         }
 
-        // Weighted sum of semantic deltas
-        let weighted_semantic: f32 = (0..12)
+        // Weighted sum of semantic deltas (13 embedders)
+        let weighted_semantic: f32 = (0..13)
             .map(|i| self.tau[i] * self.lambda_s * semantic_deltas[i])
             .sum();
 
-        // Weighted sum of causal deltas
-        let weighted_causal: f32 = (0..12)
+        // Weighted sum of causal deltas (13 embedders)
+        let weighted_causal: f32 = (0..13)
             .map(|i| self.tau[i] * self.lambda_c * causal_deltas[i])
             .sum();
 
         // Phase alignment
         let phase = compute_phase_alignment(before, after, goal);
 
-        // Final UTL score
+        // Base UTL score
         let raw = weighted_semantic * weighted_causal * self.w_e * phase.cos();
-        let score = sigmoid(2.0 * raw);
+        let base_score = sigmoid(2.0 * raw);
+
+        // 5-Stage pipeline augmentation
+        let stage_scores = self.compute_stage_scores(before, after, goal);
+        let stage_multiplier: f32 = (0..5)
+            .map(|k| 1.0 + self.alpha[k] * stage_scores[k])
+            .product();
+
+        let final_score = (base_score * stage_multiplier).min(1.0);
 
         UTLScore {
-            value: score,
+            value: final_score,
             semantic_contribution: weighted_semantic,
             causal_contribution: weighted_causal,
             phase_alignment: phase,
             per_space_deltas: semantic_deltas,
+            stage_scores,
         }
+    }
+
+    /// Compute 5-stage pipeline scores
+    fn compute_stage_scores(
+        &self,
+        before: &SemanticFingerprint,
+        after: &SemanticFingerprint,
+        goal: &TeleologicalGoal,
+    ) -> [f32; 5] {
+        [
+            // Stage 1: SPLADE sparse score improvement
+            after.splade.sparse_score(&goal.splade) - before.splade.sparse_score(&goal.splade),
+            // Stage 2: Matryoshka 128D similarity improvement
+            cosine_sim(after.semantic.truncate(128), goal.semantic.truncate(128))
+                - cosine_sim(before.semantic.truncate(128), goal.semantic.truncate(128)),
+            // Stage 3: RRF fusion score (aggregate improvement)
+            0.1,  // Computed separately via RRF formula
+            // Stage 4: Teleological alignment improvement
+            after.teleological.as_ref().map(|t| t.aggregate).unwrap_or(0.0)
+                - before.teleological.as_ref().map(|t| t.aggregate).unwrap_or(0.0),
+            // Stage 5: MaxSim late interaction improvement
+            after.late_interaction_maxsim(&goal.late_interaction)
+                - before.late_interaction_maxsim(&goal.late_interaction),
+        ]
     }
 }
 ```
@@ -937,28 +1109,65 @@ Similarity weighted by teleological purpose:
 
 ```rust
 /// Teleological similarity: not just similar, but similar FOR THE SAME PURPOSE
+/// Integrates 5-stage pipeline scoring with RRF fusion
 pub fn teleological_similarity(
     a: &TeleologicalFingerprint,
     b: &TeleologicalFingerprint,
 ) -> f32 {
-    // Raw embedding similarity (per space)
-    let embedding_sims: [f32; 12] = (0..12)
-        .map(|i| cosine_sim(a.embeddings.get_space(i), b.embeddings.get_space(i)))
+    // Raw embedding similarity (per space) - 13 embedders
+    let embedding_sims: [f32; 13] = (0..13)
+        .map(|i| {
+            if i == 4 { // E5 Causal - use asymmetric similarity
+                asymmetric_causal_sim(a.embeddings.get_space(i), b.embeddings.get_space(i))
+            } else {
+                cosine_sim(a.embeddings.get_space(i), b.embeddings.get_space(i))
+            }
+        })
         .collect::<Vec<_>>()
         .try_into()
         .unwrap();
 
-    // Purpose alignment (both aligned to same purpose?)
+    // Purpose alignment (both aligned to same purpose?) - 13D
     let purpose_alignment = cosine_sim(
         &a.purpose_vector.alignments,
         &b.purpose_vector.alignments,
     );
 
-    // Weighted combination: high if similar AND same purpose
-    let embedding_aggregate: f32 = embedding_sims.iter().sum::<f32>() / 12.0;
+    // RRF fusion for embedding aggregate (Stage 3 style)
+    let embedding_aggregate = rrf_fusion_similarity(&embedding_sims);
 
-    // Teleological similarity = embedding similarity * purpose alignment
-    embedding_aggregate * purpose_alignment
+    // 5-Stage pipeline bonus
+    let stage_bonus = compute_stage_alignment(a, b);
+
+    // Teleological similarity = RRF similarity * purpose alignment * stage bonus
+    embedding_aggregate * purpose_alignment * (1.0 + 0.1 * stage_bonus)
+}
+
+/// RRF fusion for similarity scores
+fn rrf_fusion_similarity(sims: &[f32; 13]) -> f32 {
+    const K: f32 = 60.0;
+
+    // Convert similarities to ranks
+    let mut indexed: Vec<(usize, f32)> = sims.iter().enumerate()
+        .map(|(i, &s)| (i, s))
+        .collect();
+    indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
+
+    // Compute RRF score
+    let rrf: f32 = indexed.iter().enumerate()
+        .map(|(rank, _)| 1.0 / (K + (rank + 1) as f32))
+        .sum();
+
+    rrf / (13.0 / K)  // Normalize
+}
+
+/// Compute 5-stage alignment between two fingerprints
+fn compute_stage_alignment(a: &TeleologicalFingerprint, b: &TeleologicalFingerprint) -> f32 {
+    let stage1 = a.embeddings.splade.sparse_score(&b.embeddings.splade);
+    let stage2 = cosine_sim(a.embeddings.semantic.truncate(128), b.embeddings.semantic.truncate(128));
+    let stage5 = a.embeddings.late_interaction_maxsim(&b.embeddings.late_interaction);
+
+    (stage1 + stage2 + stage5) / 3.0
 }
 ```
 
@@ -1139,7 +1348,7 @@ impl SelfAwareMemoryStore {
 
 | Component | Old Approach | New Approach | Why It's Better |
 |-----------|--------------|--------------|-----------------|
-| `FuseMoE` single-vector fusion | Top-4 experts → 1536D | 12-array fingerprint | 100% information preserved |
+| `FuseMoE` single-vector fusion | Top-4 experts → 1536D | 13-array fingerprint + 5-stage pipeline | 100% information preserved |
 | `KnowledgeNode.embedding: Vector1536` | Single fused vector | `TeleologicalFingerprint` | Full semantic decomposition |
 | Simple cosine similarity | `cos(a, b)` on fused | Per-space + weighted | Query-specific relevance |
 | Static alignment threshold | Fixed θ = 0.7 | Adaptive per-space thresholds | Space-appropriate sensitivity |
@@ -1154,8 +1363,8 @@ impl SelfAwareMemoryStore {
 3. Add purpose vector computation
 
 **Phase 2: Indexing (Week 2)**
-1. Create 12 per-space HNSW indexes
-2. Implement purpose pattern index (12D)
+1. Create 13 per-space HNSW indexes + 5-stage pipeline structure
+2. Implement purpose pattern index (13D with stage roles)
 3. Add goal hierarchy storage
 
 **Phase 3: Advanced (Week 3-4)**
@@ -1167,7 +1376,7 @@ impl SelfAwareMemoryStore {
 
 This architecture enables **mathematically computed memory** through:
 
-1. **Complete Semantic Capture**: 12 orthogonal meaning dimensions
+1. **Complete Semantic Capture**: 13 orthogonal meaning dimensions
 2. **Teleological Purpose**: Every memory has measurable purpose
 3. **Johari Self-Awareness**: System knows what it knows and doesn't know
 4. **Temporal Evolution**: Memory purpose changes over time
