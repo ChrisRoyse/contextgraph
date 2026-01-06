@@ -18,10 +18,10 @@ uuid.workspace = true
 chrono.workspace = true
 rand.workspace = true
 dashmap = "5.5"
+bincode.workspace = true
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["test-util"] }
-bincode.workspace = true
 
 [[example]]
 name = "cognitive_pulse"

@@ -8,816 +8,351 @@ metadata:
   priority: "P1"
   estimated_hours: 10
   created: "2026-01-04"
-  status: "pending"
+  updated: "2026-01-05"
+  status: "IN_PROGRESS"
+  implementation_complete: true
+  verification_pending: true
   dependencies:
-    - "TASK-F001"  # SemanticFingerprint struct
-    - "TASK-F005"  # HNSW index configuration
-    - "TASK-F004"  # Storage schema
+    - "TASK-F001"  # SemanticFingerprint struct - COMPLETE
+    - "TASK-F005"  # HNSW index configuration - COMPLETE
+    - "TASK-F008"  # TeleologicalMemoryStore trait - COMPLETE
   spec_refs:
-    - "projectionplan1.md:per-embedder-indexes"
-    - "projectionplan2.md:hnsw-configuration"
+    - "constitution.yaml:storage:layer2c_per_embedder"
+    - "constitution.yaml:embeddings:retrieval_pipeline"
 ```
 
-## Problem Statement
+## CRITICAL: IMPLEMENTATION STATUS
 
-Build and maintain 13 separate HNSW indexes plus specialized indexes for the 5-stage retrieval pipeline, including Matryoshka 128D for Stage 2 fast filtering and SPLADE inverted index for Stage 1 sparse retrieval.
+**The index module has been implemented.** All core files exist in `crates/context-graph-core/src/index/`. The remaining work is:
 
-## Context
-
-The Multi-Array architecture stores 13 separate embedding spaces (E1-E13) that require independent HNSW indexes. The 5-stage pipeline also requires:
-- **Stage 1: SPLADE Inverted Index** - Sparse lexical retrieval for initial candidates
-- **Stage 2: Matryoshka 128D Index** - Dimensionality-reduced dense index for fast filtering
-- **Stages 3-5: Full HNSW Indexes** - Per-space indexes for final retrieval and reranking
-
-This approach enables:
-- Per-space tuning (different M, efConstruction per dimension)
-- Selective space activation (skip unused indexes)
-- Independent scaling (high-traffic spaces can be larger)
-- Graceful degradation (one index failure doesn't affect others)
-- **Progressive refinement** through pipeline stages
-
-## Technical Specification
-
-### Data Structures
-
-```rust
-/// Configuration for a single HNSW index
-#[derive(Clone, Debug)]
-pub struct HnswIndexConfig {
-    /// Space index (0-11)
-    pub space_index: usize,
-
-    /// Space name for logging
-    pub space_name: &'static str,
-
-    /// Vector dimension for this space
-    pub dimension: usize,
-
-    /// Maximum number of connections per layer
-    pub m: usize,
-
-    /// Size of dynamic candidate list during construction
-    pub ef_construction: usize,
-
-    /// Size of dynamic candidate list during search
-    pub ef_search: usize,
-
-    /// Distance metric
-    pub distance_metric: DistanceMetric,
-
-    /// Whether to use SIMD optimizations
-    pub use_simd: bool,
-
-    /// Maximum index size (for pre-allocation)
-    pub max_elements: usize,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum DistanceMetric {
-    Cosine,
-    Euclidean,
-    DotProduct,
-}
-
-/// Configuration for Matryoshka 128D index (Stage 2 fast filtering)
-pub const MATRYOSHKA_128D_CONFIG: HnswIndexConfig = HnswIndexConfig {
-    space_index: 100,  // Special index ID for Matryoshka
-    space_name: "matryoshka_128d",
-    dimension: 128,
-    m: 32,              // Higher M for low dimension
-    ef_construction: 300,
-    ef_search: 150,
-    distance_metric: DistanceMetric::Cosine,
-    use_simd: true,
-    max_elements: 1_000_000,
-};
-
-/// Configuration for SPLADE inverted index (Stage 1 sparse retrieval)
-#[derive(Clone, Debug)]
-pub struct SpladeIndexConfig {
-    /// Space index for E13 SPLADE
-    pub space_index: usize,
-
-    /// Vocabulary size (BERT-base)
-    pub vocab_size: usize,
-
-    /// Maximum posting list length
-    pub max_posting_length: usize,
-
-    /// Quantization bits for term weights (0 = no quantization)
-    pub weight_quantization_bits: u8,
-
-    /// Maximum elements in index
-    pub max_elements: usize,
-}
-
-impl Default for SpladeIndexConfig {
-    fn default() -> Self {
-        Self {
-            space_index: 12,  // E13
-            vocab_size: 30522,
-            max_posting_length: 100_000,
-            weight_quantization_bits: 8,
-            max_elements: 1_000_000,
-        }
-    }
-}
-
-/// Default configurations for each embedding space
-pub const SPACE_CONFIGS: [HnswIndexConfig; 13] = [
-    // E1: Semantic Core (dense, high-dimensional)
-    HnswIndexConfig {
-        space_index: 0,
-        space_name: "semantic_core",
-        dimension: 1536,
-        m: 16,
-        ef_construction: 200,
-        ef_search: 100,
-        distance_metric: DistanceMetric::Cosine,
-        use_simd: true,
-        max_elements: 1_000_000,
-    },
-    // E2: Temporal Context (medium)
-    HnswIndexConfig {
-        space_index: 1,
-        space_name: "temporal",
-        dimension: 768,
-        m: 12,
-        ef_construction: 150,
-        ef_search: 80,
-        distance_metric: DistanceMetric::Cosine,
-        use_simd: true,
-        max_elements: 1_000_000,
-    },
-    // E3: Causal Relations (medium)
-    HnswIndexConfig {
-        space_index: 2,
-        space_name: "causal",
-        dimension: 768,
-        m: 12,
-        ef_construction: 150,
-        ef_search: 80,
-        distance_metric: DistanceMetric::Cosine,
-        use_simd: true,
-        max_elements: 500_000,
-    },
-    // E4: Sparse BM25 (sparse representation)
-    HnswIndexConfig {
-        space_index: 3,
-        space_name: "sparse_bm25",
-        dimension: 30522, // Vocabulary size
-        m: 8,
-        ef_construction: 100,
-        ef_search: 50,
-        distance_metric: DistanceMetric::DotProduct,
-        use_simd: true,
-        max_elements: 1_000_000,
-    },
-    // E5: Code Embeddings
-    HnswIndexConfig {
-        space_index: 4,
-        space_name: "code",
-        dimension: 768,
-        m: 16,
-        ef_construction: 200,
-        ef_search: 100,
-        distance_metric: DistanceMetric::Cosine,
-        use_simd: true,
-        max_elements: 500_000,
-    },
-    // E6: Graph Embeddings
-    HnswIndexConfig {
-        space_index: 5,
-        space_name: "graph",
-        dimension: 256,
-        m: 24,
-        ef_construction: 200,
-        ef_search: 100,
-        distance_metric: DistanceMetric::Euclidean,
-        use_simd: true,
-        max_elements: 500_000,
-    },
-    // E7: Hyperdimensional Computing
-    HnswIndexConfig {
-        space_index: 6,
-        space_name: "hdc",
-        dimension: 10000,
-        m: 8,
-        ef_construction: 100,
-        ef_search: 50,
-        distance_metric: DistanceMetric::Cosine,
-        use_simd: true,
-        max_elements: 200_000,
-    },
-    // E8: Multimodal (CLIP-like)
-    HnswIndexConfig {
-        space_index: 7,
-        space_name: "multimodal",
-        dimension: 512,
-        m: 16,
-        ef_construction: 200,
-        ef_search: 100,
-        distance_metric: DistanceMetric::Cosine,
-        use_simd: true,
-        max_elements: 500_000,
-    },
-    // E9: Entity Linking
-    HnswIndexConfig {
-        space_index: 8,
-        space_name: "entity",
-        dimension: 256,
-        m: 24,
-        ef_construction: 200,
-        ef_search: 100,
-        distance_metric: DistanceMetric::Cosine,
-        use_simd: true,
-        max_elements: 1_000_000,
-    },
-    // E10: Late Interaction (ColBERT-style)
-    HnswIndexConfig {
-        space_index: 9,
-        space_name: "late_interaction",
-        dimension: 128,
-        m: 32,
-        ef_construction: 300,
-        ef_search: 150,
-        distance_metric: DistanceMetric::DotProduct,
-        use_simd: true,
-        max_elements: 1_000_000,
-    },
-    // E11: Contextual Embeddings
-    HnswIndexConfig {
-        space_index: 10,
-        space_name: "contextual",
-        dimension: 1024,
-        m: 16,
-        ef_construction: 200,
-        ef_search: 100,
-        distance_metric: DistanceMetric::Cosine,
-        use_simd: true,
-        max_elements: 1_000_000,
-    },
-    // E12: Meta Embeddings
-    HnswIndexConfig {
-        space_index: 11,
-        space_name: "meta",
-        dimension: 256,
-        m: 24,
-        ef_construction: 200,
-        ef_search: 100,
-        distance_metric: DistanceMetric::Cosine,
-        use_simd: true,
-        max_elements: 500_000,
-    },
-    // E13: SPLADE Sparse Embeddings (stored as dense for HNSW fallback)
-    HnswIndexConfig {
-        space_index: 12,
-        space_name: "splade",
-        dimension: 30522,  // Vocabulary size
-        m: 8,
-        ef_construction: 100,
-        ef_search: 50,
-        distance_metric: DistanceMetric::DotProduct,
-        use_simd: true,
-        max_elements: 1_000_000,
-    },
-];
-
-/// Status of a single index
-#[derive(Clone, Debug)]
-pub struct IndexStatus {
-    pub space_index: usize,
-    pub space_name: &'static str,
-    pub is_loaded: bool,
-    pub element_count: usize,
-    pub memory_usage_bytes: usize,
-    pub last_updated: Timestamp,
-    pub health: IndexHealth,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum IndexHealth {
-    Healthy,
-    Degraded,
-    Failed,
-    Rebuilding,
-}
-```
-
-### Core Trait
-
-```rust
-/// Manages multiple HNSW indexes for the 13 embedding spaces plus pipeline indexes
-#[async_trait]
-pub trait MultiSpaceIndexManager: Send + Sync {
-    /// Initialize all indexes (13 per-space + Matryoshka 128D + SPLADE inverted)
-    async fn initialize(&mut self, configs: &[HnswIndexConfig]) -> Result<(), IndexError>;
-
-    /// Initialize Matryoshka 128D index for Stage 2 fast filtering
-    async fn initialize_matryoshka(&mut self, config: &HnswIndexConfig) -> Result<(), IndexError>;
-
-    /// Initialize SPLADE inverted index for Stage 1 sparse retrieval
-    async fn initialize_splade_inverted(&mut self, config: &SpladeIndexConfig) -> Result<(), IndexError>;
-
-    /// Build/rebuild a specific index
-    async fn build_index(
-        &mut self,
-        space_index: usize,
-        vectors: impl Iterator<Item = (MemoryId, Vec<f32>)>,
-    ) -> Result<IndexStatus, IndexError>;
-
-    /// Add a vector to a specific index
-    async fn add_vector(
-        &mut self,
-        space_index: usize,
-        memory_id: MemoryId,
-        vector: Vec<f32>,
-    ) -> Result<(), IndexError>;
-
-    /// Add vectors to multiple indexes (from SemanticFingerprint)
-    async fn add_fingerprint(
-        &mut self,
-        memory_id: MemoryId,
-        fingerprint: &SemanticFingerprint,
-    ) -> Result<(), IndexError>;
-
-    /// Search a specific index
-    async fn search(
-        &self,
-        space_index: usize,
-        query: &[f32],
-        k: usize,
-        ef_search: Option<usize>,
-    ) -> Result<Vec<(MemoryId, f32)>, IndexError>;
-
-    /// Parallel search across multiple indexes
-    async fn search_multi(
-        &self,
-        spaces: &[usize],
-        queries: &[Vec<f32>],
-        k: usize,
-    ) -> Result<Vec<Vec<(MemoryId, f32)>>, IndexError>;
-
-    /// Stage 1: SPLADE sparse retrieval
-    async fn search_splade(
-        &self,
-        sparse_query: &[(usize, f32)],  // (term_id, weight) pairs
-        k: usize,
-    ) -> Result<Vec<(MemoryId, f32)>, IndexError>;
-
-    /// Stage 2: Matryoshka 128D fast filtering
-    async fn search_matryoshka_128d(
-        &self,
-        query_128d: &[f32],
-        k: usize,
-    ) -> Result<Vec<(MemoryId, f32)>, IndexError>;
-
-    /// Add to Matryoshka 128D index (truncated from full embedding)
-    async fn add_matryoshka(
-        &mut self,
-        memory_id: MemoryId,
-        full_embedding: &[f32],  // Will be truncated to 128D
-    ) -> Result<(), IndexError>;
-
-    /// Add to SPLADE inverted index
-    async fn add_splade(
-        &mut self,
-        memory_id: MemoryId,
-        sparse_embedding: &[(usize, f32)],  // (term_id, weight) pairs
-    ) -> Result<(), IndexError>;
-
-    /// Remove a vector from all indexes
-    async fn remove(&mut self, memory_id: MemoryId) -> Result<(), IndexError>;
-
-    /// Get status of all indexes
-    fn status(&self) -> Vec<IndexStatus>;
-
-    /// Get status of a specific index
-    fn index_status(&self, space_index: usize) -> Option<&IndexStatus>;
-
-    /// Warm up specific indexes (pre-load into memory)
-    async fn warm_up(&mut self, spaces: &[usize]) -> Result<(), IndexError>;
-
-    /// Persist indexes to storage
-    async fn persist(&self) -> Result<(), IndexError>;
-
-    /// Load indexes from storage
-    async fn load(&mut self) -> Result<(), IndexError>;
-}
-```
-
-### Implementation Details
-
-```rust
-/// Implementation using hnswlib-rs or similar
-pub struct HnswMultiSpaceIndex {
-    /// 13 per-space HNSW indexes (E1-E13)
-    indexes: [Option<HnswIndex>; 13],
-    configs: [HnswIndexConfig; 13],
-    status: [IndexStatus; 13],
-
-    /// Matryoshka 128D index for Stage 2 fast filtering
-    matryoshka_index: Option<HnswIndex>,
-    matryoshka_config: HnswIndexConfig,
-
-    /// SPLADE inverted index for Stage 1 sparse retrieval
-    splade_inverted_index: Option<SpladeInvertedIndex>,
-    splade_config: SpladeIndexConfig,
-
-    storage_path: PathBuf,
-}
-
-/// SPLADE inverted index structure
-pub struct SpladeInvertedIndex {
-    /// Posting lists: term_id -> [(memory_id, weight)]
-    posting_lists: HashMap<usize, Vec<(MemoryId, f32)>>,
-
-    /// Document norms for score normalization
-    doc_norms: HashMap<MemoryId, f32>,
-
-    /// Total documents indexed
-    num_docs: usize,
-}
-
-impl HnswMultiSpaceIndex {
-    pub fn new(storage_path: PathBuf) -> Self {
-        Self {
-            indexes: Default::default(),
-            configs: SPACE_CONFIGS,
-            status: [IndexStatus::default(); 12],
-            storage_path,
-        }
-    }
-
-    fn create_index(&self, config: &HnswIndexConfig) -> Result<HnswIndex, IndexError> {
-        let mut index = HnswIndex::new(
-            config.dimension,
-            config.max_elements,
-            config.m,
-            config.ef_construction,
-            config.distance_metric.into(),
-        )?;
-
-        index.set_ef(config.ef_search);
-
-        if config.use_simd {
-            index.enable_simd()?;
-        }
-
-        Ok(index)
-    }
-}
-
-#[async_trait]
-impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
-    async fn add_fingerprint(
-        &mut self,
-        memory_id: MemoryId,
-        fingerprint: &SemanticFingerprint,
-    ) -> Result<(), IndexError> {
-        // Add to each space that has an embedding
-        for (space_idx, embedding) in fingerprint.embeddings.iter().enumerate() {
-            if let Some(emb) = embedding {
-                self.add_vector(space_idx, memory_id.clone(), emb.clone()).await?;
-            }
-        }
-        Ok(())
-    }
-
-    async fn search_multi(
-        &self,
-        spaces: &[usize],
-        queries: &[Vec<f32>],
-        k: usize,
-    ) -> Result<Vec<Vec<(MemoryId, f32)>>, IndexError> {
-        // Parallel search across all requested spaces
-        let futures: Vec<_> = spaces.iter()
-            .zip(queries.iter())
-            .filter_map(|(&space_idx, query)| {
-                if let Some(index) = &self.indexes[space_idx] {
-                    Some(async move {
-                        index.search(query, k)
-                    })
-                } else {
-                    None
-                }
-            })
-            .collect();
-
-        // Execute in parallel
-        let results = futures::future::try_join_all(futures).await?;
-
-        Ok(results)
-    }
-}
-```
-
-## Implementation Requirements
-
-### Prerequisites
-
-- [ ] TASK-F001 complete (SemanticFingerprint available)
-- [ ] TASK-F005 complete (HNSW configuration defined)
-- [ ] TASK-F004 complete (Storage schema for persistence)
-
-### Scope
-
-#### In Scope
-
-- **13 HNSW index instances** (E1-E13)
-- Per-space configuration
-- Parallel multi-index search
-- Index persistence/loading
-- Health monitoring
-- Incremental updates
-- **Matryoshka 128D index** for Stage 2 fast filtering
-- **SPLADE inverted index** for Stage 1 sparse retrieval
-- 5-stage pipeline index coordination
-
-#### Out of Scope
-
-- Query execution logic (TASK-L001)
-- Purpose pattern index (TASK-L006)
-- GPU acceleration (future enhancement)
-
-### Constraints
-
-- Memory < 4GB per index (configurable)
-- Search latency < 10ms for single space
-- Thread-safe for concurrent operations
-- Atomic index updates
-
-## Pseudo Code
-
-```
-FUNCTION initialize_indexes(configs):
-    FOR config IN configs:
-        index = create_hnsw_index(
-            dimension: config.dimension,
-            max_elements: config.max_elements,
-            m: config.m,
-            ef_construction: config.ef_construction,
-            metric: config.distance_metric
-        )
-
-        IF config.use_simd:
-            index.enable_simd()
-
-        indexes[config.space_index] = index
-        status[config.space_index] = IndexStatus {
-            space_index: config.space_index,
-            is_loaded: true,
-            element_count: 0,
-            health: Healthy
-        }
-
-    RETURN Ok(())
-
-FUNCTION add_fingerprint(memory_id, fingerprint):
-    FOR space_idx IN 0..12:
-        embedding = fingerprint.embeddings[space_idx]
-        IF embedding IS NOT NULL:
-            index = indexes[space_idx]
-            IF index IS NULL:
-                CONTINUE  // Skip uninitialized indexes
-
-            TRY:
-                index.add(memory_id, embedding)
-                status[space_idx].element_count += 1
-            CATCH error:
-                status[space_idx].health = Degraded
-                LOG_ERROR("Failed to add to index {}: {}", space_idx, error)
-
-    RETURN Ok(())
-
-FUNCTION search_multi(spaces, queries, k):
-    // Launch parallel searches
-    futures = []
-    FOR (space_idx, query) IN zip(spaces, queries):
-        index = indexes[space_idx]
-        IF index IS NULL:
-            CONTINUE
-
-        future = spawn_async {
-            result = index.search(query, k)
-            (space_idx, result)
-        }
-        futures.push(future)
-
-    // Collect results
-    results = await_all(futures)
-
-    // Return in order
-    ordered = []
-    FOR space_idx IN spaces:
-        FOR (idx, result) IN results:
-            IF idx == space_idx:
-                ordered.push(result)
-                BREAK
-
-    RETURN ordered
-
-FUNCTION persist():
-    FOR space_idx IN 0..12:
-        IF indexes[space_idx] IS NOT NULL:
-            path = storage_path / format!("index_{}.hnsw", space_idx)
-            indexes[space_idx].save(path)?
-
-    RETURN Ok(())
-
-FUNCTION load():
-    FOR space_idx IN 0..12:
-        path = storage_path / format!("index_{}.hnsw", space_idx)
-        IF path.exists():
-            TRY:
-                indexes[space_idx] = HnswIndex::load(path)?
-                status[space_idx].is_loaded = true
-                status[space_idx].element_count = indexes[space_idx].len()
-            CATCH:
-                status[space_idx].health = Failed
-
-    RETURN Ok(())
-```
-
-## Definition of Done
-
-### Implementation Checklist
-
-- [ ] `HnswIndexConfig` struct with per-space defaults
-- [ ] `SPACE_CONFIGS` constant with **13 configurations** (E1-E13)
-- [ ] `IndexStatus` and `IndexHealth` types
-- [ ] `MultiSpaceIndexManager` trait
-- [ ] HNSW-based implementation (13x per-space)
-- [ ] Parallel multi-index search
-- [ ] Index persistence to disk
-- [ ] Index loading from disk
-- [ ] Health monitoring
-- [ ] **`MATRYOSHKA_128D_CONFIG`** for Stage 2 index
-- [ ] **`SpladeIndexConfig`** for Stage 1 inverted index
-- [ ] **`SpladeInvertedIndex`** with posting lists
-- [ ] **`search_splade()`** for Stage 1 sparse retrieval
-- [ ] **`search_matryoshka_128d()`** for Stage 2 fast filtering
-- [ ] **`add_matryoshka()`** with 128D truncation
-- [ ] **`add_splade()`** for inverted index updates
-
-### Testing Requirements
-
-```rust
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_initialize_all_indexes() {
-        let mut manager = HnswMultiSpaceIndex::new(temp_dir());
-        manager.initialize(&SPACE_CONFIGS).await.unwrap();
-        manager.initialize_matryoshka(&MATRYOSHKA_128D_CONFIG).await.unwrap();
-        manager.initialize_splade_inverted(&SpladeIndexConfig::default()).await.unwrap();
-
-        let status = manager.status();
-        assert_eq!(status.len(), 13);  // 13 per-space indexes
-        for s in status {
-            assert!(s.is_loaded);
-            assert_eq!(s.health, IndexHealth::Healthy);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_matryoshka_128d_search() {
-        let mut manager = create_test_manager().await;
-        add_test_data(&mut manager, 100).await;
-
-        // Matryoshka uses truncated 128D vectors
-        let query_128d = vec![0.1; 128];
-        let results = manager.search_matryoshka_128d(&query_128d, 10).await.unwrap();
-
-        assert_eq!(results.len(), 10);
-    }
-
-    #[tokio::test]
-    async fn test_splade_inverted_search() {
-        let mut manager = create_test_manager().await;
-        add_test_data(&mut manager, 100).await;
-
-        // SPLADE uses sparse (term_id, weight) pairs
-        let sparse_query = vec![(100, 0.8), (500, 0.6), (1000, 0.4)];
-        let results = manager.search_splade(&sparse_query, 10).await.unwrap();
-
-        assert!(results.len() <= 10);
-    }
-
-    #[tokio::test]
-    async fn test_add_fingerprint() {
-        let mut manager = create_test_manager().await;
-        let fingerprint = create_test_fingerprint(); // All 12 embeddings
-        let memory_id = MemoryId::new();
-
-        manager.add_fingerprint(memory_id.clone(), &fingerprint).await.unwrap();
-
-        // All indexes should have 1 element
-        for status in manager.status() {
-            assert_eq!(status.element_count, 1);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_search_single_space() {
-        let mut manager = create_test_manager().await;
-        add_test_data(&mut manager, 100).await;
-
-        let query = vec![0.1; SPACE_CONFIGS[0].dimension];
-        let results = manager.search(0, &query, 10, None).await.unwrap();
-
-        assert_eq!(results.len(), 10);
-        // Results should be sorted by similarity
-        for i in 1..results.len() {
-            assert!(results[i-1].1 >= results[i].1);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_search_multi_parallel() {
-        let mut manager = create_test_manager().await;
-        add_test_data(&mut manager, 100).await;
-
-        let spaces = vec![0, 1, 2];
-        let queries = vec![
-            vec![0.1; SPACE_CONFIGS[0].dimension],
-            vec![0.1; SPACE_CONFIGS[1].dimension],
-            vec![0.1; SPACE_CONFIGS[2].dimension],
-        ];
-
-        let results = manager.search_multi(&spaces, &queries, 10).await.unwrap();
-
-        assert_eq!(results.len(), 3);
-    }
-
-    #[tokio::test]
-    async fn test_persist_and_load() {
-        let dir = temp_dir();
-        let mut manager = HnswMultiSpaceIndex::new(dir.clone());
-        manager.initialize(&SPACE_CONFIGS).await.unwrap();
-        add_test_data(&mut manager, 100).await;
-
-        manager.persist().await.unwrap();
-
-        let mut manager2 = HnswMultiSpaceIndex::new(dir);
-        manager2.load().await.unwrap();
-
-        for (s1, s2) in manager.status().iter().zip(manager2.status().iter()) {
-            assert_eq!(s1.element_count, s2.element_count);
-        }
-    }
-}
-```
-
-### Verification Commands
-
-```bash
-# Run unit tests
-cargo test -p context-graph-core hnsw_index
-
-# Run with larger dataset
-cargo test -p context-graph-core hnsw_index --features large-tests
-
-# Benchmark search performance
-cargo bench -p context-graph-core -- hnsw_search
-
-# Memory usage test
-cargo test -p context-graph-core hnsw_memory -- --nocapture
-```
-
-## Files to Create
-
-| File | Description |
-|------|-------------|
-| `crates/context-graph-core/src/index/mod.rs` | Index module |
-| `crates/context-graph-core/src/index/config.rs` | HnswIndexConfig and SPACE_CONFIGS |
-| `crates/context-graph-core/src/index/manager.rs` | MultiSpaceIndexManager trait |
-| `crates/context-graph-core/src/index/hnsw_impl.rs` | HNSW implementation |
-| `crates/context-graph-core/src/index/status.rs` | IndexStatus and health |
-
-## Files to Modify
-
-| File | Change |
-|------|--------|
-| `crates/context-graph-core/src/lib.rs` | Add `pub mod index` |
-| `crates/context-graph-core/Cargo.toml` | Add hnswlib dependency |
-
-## Traceability
-
-| Requirement | Source | Coverage |
-|-------------|--------|----------|
-| Per-embedder indexes | projectionplan1.md:per-embedder | Complete |
-| HNSW configuration | projectionplan2.md:hnsw | Complete |
-| Parallel search | projectionplan1.md:performance | Complete |
-| Index persistence | projectionplan2.md:storage | Complete |
-| **13x per-space HNSW** | projectionplan2.md:13-spaces | Complete |
-| **Matryoshka 128D Stage 2** | projectionplan2.md:matryoshka | Complete |
-| **SPLADE inverted Stage 1** | projectionplan2.md:splade | Complete |
+1. **Run tests** to verify the implementation
+2. **Update lib.rs** to export the module correctly (already done)
+3. **Verify Cargo.toml** has required dependencies
 
 ---
 
-*Task created: 2026-01-04*
+## NO BACKWARDS COMPATIBILITY - FAIL FAST SEMANTICS
+
+- **NO FALLBACKS** - If index operations fail, they error immediately
+- **NO MOCK DATA** - Tests use real data and verify actual outcomes
+- **FAIL FAST** - Invalid configurations panic with context
+
+---
+
+## Current Codebase State (VERIFIED 2026-01-05)
+
+### What Already Exists - COMPLETE
+
+| Component | Location | Status |
+|-----------|----------|--------|
+| `EmbedderIndex` enum (15 variants) | `crates/context-graph-storage/src/teleological/indexes/hnsw_config/embedder.rs` | COMPLETE |
+| `HnswConfig` struct | `crates/context-graph-storage/src/teleological/indexes/hnsw_config/config.rs` | COMPLETE |
+| `DistanceMetric` enum (5 variants) | `crates/context-graph-storage/src/teleological/indexes/hnsw_config/distance.rs` | COMPLETE |
+| `InvertedIndexConfig` struct | `crates/context-graph-storage/src/teleological/indexes/hnsw_config/config.rs` | COMPLETE |
+| `get_hnsw_config()` function | `crates/context-graph-storage/src/teleological/indexes/hnsw_config/functions.rs` | COMPLETE |
+| `all_hnsw_configs()` function | `crates/context-graph-storage/src/teleological/indexes/hnsw_config/functions.rs` | COMPLETE |
+| Dimension constants (E1-E13) | `crates/context-graph-storage/src/teleological/indexes/hnsw_config/constants.rs` | COMPLETE |
+| `compute_distance()`, `cosine_similarity()` | `crates/context-graph-storage/src/teleological/indexes/metrics.rs` | COMPLETE |
+| `TeleologicalMemoryStore` trait | `crates/context-graph-core/src/traits/teleological_memory_store.rs` | COMPLETE |
+| `MultiEmbeddingQueryExecutor` trait | `crates/context-graph-core/src/retrieval/executor.rs` | COMPLETE |
+| `SemanticFingerprint` struct | `crates/context-graph-core/src/types/fingerprint/semantic/` | COMPLETE |
+| `JohariTransitionManager` trait | `crates/context-graph-core/src/johari/manager.rs` | COMPLETE |
+
+### Index Module - IMPLEMENTED (Verification Required)
+
+| Component | Location | Status |
+|-----------|----------|--------|
+| `MultiSpaceIndexManager` trait | `crates/context-graph-core/src/index/manager.rs` | IMPLEMENTED |
+| `HnswMultiSpaceIndex` struct | `crates/context-graph-core/src/index/hnsw_impl.rs` | IMPLEMENTED |
+| `SimpleHnswIndex` struct | `crates/context-graph-core/src/index/hnsw_impl.rs` | IMPLEMENTED |
+| `SpladeInvertedIndex` struct | `crates/context-graph-core/src/index/splade_impl.rs` | IMPLEMENTED |
+| `IndexStatus` / `IndexHealth` | `crates/context-graph-core/src/index/status.rs` | IMPLEMENTED |
+| `IndexError` enum | `crates/context-graph-core/src/index/error.rs` | IMPLEMENTED |
+| `HnswConfig` (local copy) | `crates/context-graph-core/src/index/config.rs` | IMPLEMENTED |
+| `mod.rs` exports | `crates/context-graph-core/src/index/mod.rs` | IMPLEMENTED |
+
+### lib.rs Module Export - VERIFIED
+
+```rust
+// crates/context-graph-core/src/lib.rs already includes:
+pub mod index;
+```
+
+---
+
+## Architecture Overview
+
+### 5-Stage Retrieval Pipeline
+
+| Stage | Index Type | Embedder | Purpose | Target Latency |
+|-------|------------|----------|---------|----------------|
+| 1 | Inverted | E13 SPLADE | Sparse recall (10K candidates) | <5ms |
+| 2 | HNSW | E1 Matryoshka 128D | Fast ANN filter (1K candidates) | <10ms |
+| 3 | HNSW × 10 | E1-E5, E7-E11 | Full precision (100 candidates) | <20ms |
+| 4 | HNSW | PurposeVector 13D | Teleological filter (50 candidates) | <10ms |
+| 5 | MaxSim | E12 ColBERT | Final rerank (10 results) | <15ms |
+
+### Index Counts
+
+- **12 HNSW indexes**: E1-E5, E7-E11, E1Matryoshka128, PurposeVector
+- **2 Inverted indexes**: E6Sparse (legacy), E13Splade (Stage 1)
+- **1 MaxSim**: E12LateInteraction (Stage 5, future)
+
+---
+
+## Dimension Constants (DO NOT REDEFINE)
+
+```rust
+// Use from context_graph_core::index::config or context_graph_storage
+pub const E1_DIM: usize = 1024;
+pub const E1_MATRYOSHKA_DIM: usize = 128;
+pub const E2_DIM: usize = 512;
+pub const E3_DIM: usize = 512;
+pub const E4_DIM: usize = 512;
+pub const E5_DIM: usize = 768;
+pub const E6_SPARSE_VOCAB: usize = 30_522;
+pub const E7_DIM: usize = 256;
+pub const E8_DIM: usize = 384;
+pub const E9_DIM: usize = 10_000;
+pub const E10_DIM: usize = 768;
+pub const E11_DIM: usize = 384;
+pub const E12_TOKEN_DIM: usize = 128;
+pub const E13_SPLADE_VOCAB: usize = 30_522;
+pub const PURPOSE_VECTOR_DIM: usize = 13;
+pub const NUM_EMBEDDERS: usize = 13;
+```
+
+---
+
+## Key APIs (Already Implemented)
+
+### MultiSpaceIndexManager Trait
+
+```rust
+// crates/context-graph-core/src/index/manager.rs
+#[async_trait]
+pub trait MultiSpaceIndexManager: Send + Sync {
+    async fn initialize(&mut self) -> IndexResult<()>;
+    async fn add_vector(&mut self, embedder: EmbedderIndex, memory_id: Uuid, vector: &[f32]) -> IndexResult<()>;
+    async fn add_fingerprint(&mut self, memory_id: Uuid, fingerprint: &SemanticFingerprint) -> IndexResult<()>;
+    async fn add_purpose_vector(&mut self, memory_id: Uuid, purpose: &[f32]) -> IndexResult<()>;
+    async fn add_splade(&mut self, memory_id: Uuid, sparse: &[(usize, f32)]) -> IndexResult<()>;
+    async fn search(&self, embedder: EmbedderIndex, query: &[f32], k: usize) -> IndexResult<Vec<(Uuid, f32)>>;
+    async fn search_splade(&self, sparse_query: &[(usize, f32)], k: usize) -> IndexResult<Vec<(Uuid, f32)>>;
+    async fn search_matryoshka(&self, query_128d: &[f32], k: usize) -> IndexResult<Vec<(Uuid, f32)>>;
+    async fn search_purpose(&self, purpose_query: &[f32], k: usize) -> IndexResult<Vec<(Uuid, f32)>>;
+    async fn remove(&mut self, memory_id: Uuid) -> IndexResult<()>;
+    fn status(&self) -> Vec<IndexStatus>;
+    async fn persist(&self, path: &Path) -> IndexResult<()>;
+    async fn load(&mut self, path: &Path) -> IndexResult<()>;
+}
+```
+
+### IndexError Enum (Fail-Fast)
+
+```rust
+// crates/context-graph-core/src/index/error.rs
+#[derive(Error, Debug)]
+pub enum IndexError {
+    DimensionMismatch { embedder: EmbedderIndex, expected: usize, actual: usize },
+    InvalidEmbedder { embedder: EmbedderIndex },
+    NotInitialized { embedder: EmbedderIndex },
+    InvalidTermId { term_id: usize, vocab_size: usize },
+    ZeroNormVector { memory_id: Uuid },
+    NotFound { memory_id: Uuid },
+    StorageError { context: String, message: String },
+    CorruptedIndex { path: String },
+    IoError { context: String, message: String },
+    SerializationError { context: String, message: String },
+}
+```
+
+### IndexHealth (NO DEGRADED MODE)
+
+```rust
+// crates/context-graph-core/src/index/status.rs
+pub enum IndexHealth {
+    Healthy,     // Normal operation
+    Failed,      // Must rebuild - NO fallbacks
+    Rebuilding,  // Being reconstructed
+}
+```
+
+---
+
+## Verification Requirements
+
+### Step 1: Build Verification
+
+```bash
+cd /home/cabdru/contextgraph
+cargo build -p context-graph-core 2>&1 | head -50
+```
+
+**Expected**: Compiles without errors.
+
+### Step 2: Unit Test Execution
+
+```bash
+cargo test -p context-graph-core index:: --nocapture 2>&1
+```
+
+**Expected Output Pattern**:
+```
+[VERIFIED] IndexHealth defaults to Healthy
+[VERIFIED] Health operational state checks
+[VERIFIED] Health write capability checks
+[VERIFIED] IndexStatus::new_empty creates healthy empty index
+[VERIFIED] update_count calculates memory correctly
+[VERIFIED] mark_failed sets Failed state
+[VERIFIED] mark_rebuilding sets Rebuilding state
+[VERIFIED] mark_healthy sets Healthy state
+[VERIFIED] MultiIndexHealth aggregation correct
+[VERIFIED] DimensionMismatch error format: ...
+[VERIFIED] InvalidEmbedder error format: ...
+[VERIFIED] InvalidTermId error format: ...
+[VERIFIED] ZeroNormVector error format: ...
+[VERIFIED] StorageError helper: ...
+[VERIFIED] EmbedderIndex::uses_hnsw() works correctly
+[VERIFIED] all_hnsw() returns 12 embedders
+[VERIFIED] EmbedderIndex::dimension() works correctly
+[VERIFIED] HnswConfig::new() creates valid config
+[VERIFIED] InvertedIndexConfig::e13_splade() config correct
+```
+
+### Step 3: Edge Case Audit (MANDATORY)
+
+These edge cases MUST pass:
+
+1. **Empty index search**: Returns empty Vec, not error
+2. **Dimension mismatch**: Returns `IndexError::DimensionMismatch`
+3. **Invalid term_id**: Returns `IndexError::InvalidTermId`
+4. **Zero-norm vector**: Returns `IndexError::ZeroNormVector`
+5. **Non-HNSW embedder**: Returns `IndexError::InvalidEmbedder`
+
+---
+
+## Full State Verification Protocol (MANDATORY)
+
+### 1. Source of Truth Identification
+
+| Operation | Source of Truth | Verification Method |
+|-----------|-----------------|---------------------|
+| Initialize | `status()` returns 12 HNSW statuses | Count where `uses_hnsw() == true` |
+| Add vector | `IndexStatus.element_count` | Check status after add, verify increment |
+| Search | `Vec<(Uuid, f32)>` result | Verify returned UUID matches added ID |
+| Persist | Files exist at path | `std::fs::metadata(path)` returns Ok |
+| Load | Search returns persisted data | Compare results pre/post load |
+
+### 2. Execute & Inspect Protocol
+
+For EVERY test:
+```rust
+println!("[BEFORE] {}", describe_current_state());
+let result = operation().await;
+println!("[AFTER] {}", describe_current_state());
+assert!(expected_condition);
+println!("[VERIFIED] {}", what_was_verified);
+```
+
+### 3. Evidence of Success Log
+
+After verification, tests must print:
+```
+[VERIFIED] 12 HNSW indexes initialized
+[VERIFIED] Dimension validation: 1024 expected, 512 got -> ERROR
+[VERIFIED] Vector added and searchable with similarity ~1.0
+[VERIFIED] SPLADE search returns BM25-scored candidates
+[VERIFIED] Persist/load roundtrip preserves vectors
+[VERIFIED] Empty index returns empty Vec
+[VERIFIED] Non-HNSW embedder rejected with InvalidEmbedder
+[VERIFIED] Invalid term_id rejected
+```
+
+---
+
+## Integration Points
+
+### Used By
+
+- **TASK-L006** (Purpose Pattern Index): Uses `search_purpose()`
+- **TASK-L007** (Cross-Space Similarity): Uses `search()` across spaces
+- **TASK-L008** (5-Stage Pipeline): Orchestrates all index operations
+
+### Depends On
+
+- **TASK-F001**: `SemanticFingerprint` struct for `add_fingerprint()`
+- **TASK-F005**: HNSW configuration (dimensions, M, ef values)
+- **TASK-F008**: `TeleologicalMemoryStore` for storage integration
+
+---
+
+## Files Summary
+
+```
+crates/context-graph-core/src/index/
+├── mod.rs           # Module exports (HnswMultiSpaceIndex, SpladeInvertedIndex, etc.)
+├── config.rs        # Local copies of HnswConfig, EmbedderIndex, constants
+├── error.rs         # IndexError enum with fail-fast semantics
+├── status.rs        # IndexStatus, IndexHealth, MultiIndexHealth
+├── manager.rs       # MultiSpaceIndexManager trait definition
+├── hnsw_impl.rs     # HnswMultiSpaceIndex and SimpleHnswIndex implementations
+└── splade_impl.rs   # SpladeInvertedIndex with BM25 scoring
+```
+
+---
+
+## Success Criteria Checklist
+
+- [x] `mod.rs` exports all public types
+- [x] `config.rs` defines dimension constants and EmbedderIndex
+- [x] `error.rs` defines IndexError with descriptive messages
+- [x] `status.rs` defines IndexHealth (no degraded mode)
+- [x] `manager.rs` defines MultiSpaceIndexManager trait
+- [x] `hnsw_impl.rs` implements HnswMultiSpaceIndex
+- [x] `splade_impl.rs` implements SpladeInvertedIndex
+- [x] `lib.rs` exports `pub mod index`
+- [ ] `cargo build` succeeds
+- [ ] All unit tests pass
+- [ ] Edge cases print [VERIFIED] logs
+- [ ] Persist/load roundtrip works
+
+---
+
+## Verification Commands
+
+```bash
+# 1. Verify build
+cargo build -p context-graph-core
+
+# 2. Run all index tests
+cargo test -p context-graph-core index:: --nocapture
+
+# 3. Check file structure
+ls -la crates/context-graph-core/src/index/
+
+# 4. Count test output verifications
+cargo test -p context-graph-core index:: --nocapture 2>&1 | grep -c "\[VERIFIED\]"
+```
+
+---
+
+## Traceability Matrix
+
+| Requirement | Source | Implementation |
+|-------------|--------|----------------|
+| 12 HNSW indexes | constitution.yaml:layer2c | `EmbedderIndex::all_hnsw()` returns 12 |
+| E1Matryoshka128 128D | constitution.yaml:layer2b | `search_matryoshka()` |
+| E13 SPLADE inverted | constitution.yaml:layer2a | `SpladeInvertedIndex` |
+| Purpose vector 13D | constitution.yaml:layer2d | `search_purpose()` |
+| M=16 default | constitution.yaml | `HnswConfig::default_for_dimension()` |
+| <10ms search target | constitution.yaml:perf | Async implementation |
+| BM25+SPLADE hybrid | constitution.yaml:stage_1 | `SpladeInvertedIndex::search()` |
+| Fail-fast errors | constitution.yaml:errors | `IndexError` variants |
+
+---
+
+*Task updated: 2026-01-05*
+*Status: Implementation complete, verification pending*
 *Layer: Logic*
 *Priority: P1 - Core indexing infrastructure*

@@ -27,6 +27,7 @@
 pub mod alignment;
 pub mod config;
 pub mod error;
+pub mod index;
 pub mod johari;
 pub mod marblestone;
 pub mod purpose;
