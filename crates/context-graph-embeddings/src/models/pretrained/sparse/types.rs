@@ -11,6 +11,8 @@ use tokenizers::Tokenizer;
 
 use crate::gpu::BertWeights;
 
+use super::projection::ProjectionMatrix;
+
 /// Sparse vector dimension (BERT vocabulary size).
 pub const SPARSE_VOCAB_SIZE: usize = 30522;
 
@@ -207,5 +209,8 @@ pub(crate) enum ModelState {
         tokenizer: Box<Tokenizer>,
         /// MLM head weights for vocabulary projection.
         mlm_head: MlmHeadWeights,
+        /// Learned projection matrix for sparse-to-dense conversion.
+        /// CRITICAL: Uses neural projection, NOT hash modulo (AP-007).
+        projection: Box<ProjectionMatrix>,
     },
 }

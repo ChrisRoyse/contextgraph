@@ -285,6 +285,55 @@ pub enum EmbeddingError {
         /// Maximum allowed recall loss threshold
         max_allowed: f32,
     },
+
+    // =========================================================================
+    // QuantizationRouter Error Variants (TASK-EMB-020)
+    // =========================================================================
+
+    /// Quantizer for the specified method is not yet implemented.
+    #[error("[{model_id:?}] Quantizer not implemented: {method}")]
+    QuantizerNotImplemented {
+        /// Model that requires quantization
+        model_id: ModelId,
+        /// Quantization method not yet implemented
+        method: String,
+    },
+
+    /// Quantization operation failed.
+    #[error("[{model_id:?}] Quantization failed: {reason}")]
+    QuantizationFailed {
+        /// Model being quantized
+        model_id: ModelId,
+        /// Reason for failure
+        reason: String,
+    },
+
+    /// Dequantization operation failed.
+    #[error("[{model_id:?}] Dequantization failed: {reason}")]
+    DequantizationFailed {
+        /// Model being dequantized
+        model_id: ModelId,
+        /// Reason for failure
+        reason: String,
+    },
+
+    /// Unsupported operation for this model.
+    #[error("[{model_id:?}] Unsupported operation: {operation}")]
+    UnsupportedOperation {
+        /// Model for which operation is unsupported
+        model_id: ModelId,
+        /// Operation that is not supported
+        operation: String,
+    },
+
+    /// Invalid input for the specified model.
+    #[error("[{model_id:?}] Invalid input: {reason}")]
+    InvalidModelInput {
+        /// Model that received invalid input
+        model_id: ModelId,
+        /// Reason input is invalid
+        reason: String,
+    },
 }
 
 impl EmbeddingError {

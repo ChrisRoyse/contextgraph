@@ -16,6 +16,7 @@
 
 mod types;
 pub mod binary;
+pub mod router;
 
 #[cfg(test)]
 mod edge_case_verification;
@@ -25,3 +26,4 @@ pub use types::{
     QuantizedEmbedding,
 };
 pub use binary::BinaryQuantizationError;
+pub use router::QuantizationRouter;

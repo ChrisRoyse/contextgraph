@@ -84,7 +84,7 @@ pub use types::dimensions;
 // Quantization re-exports
 pub use quantization::{
     BinaryEncoder, Float8Encoder, PQ8Codebook, QuantizationMetadata, QuantizationMethod,
-    QuantizedEmbedding,
+    QuantizedEmbedding, QuantizationRouter,
 };
 
 // Model registry re-exports

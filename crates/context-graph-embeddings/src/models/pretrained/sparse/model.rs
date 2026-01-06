@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Instant;
 
 use tokenizers::Tokenizer;
 
@@ -181,6 +182,26 @@ impl SparseModel {
         let safetensors_path = self.model_path.join("model.safetensors");
         let mlm_head = load_mlm_head(&safetensors_path, device, &weights.config)?;
 
+        // Load projection matrix (REQUIRED - no fallback)
+        let projection = super::projection::ProjectionMatrix::load(&self.model_path)
+            .map_err(|e| EmbeddingError::ModelLoadError {
+                model_id: self.model_id,
+                source: Box::new(std::io::Error::other(format!(
+                    "ProjectionMatrix load failed: {}",
+                    e
+                ))),
+            })?;
+
+        tracing::info!(
+            "ProjectionMatrix loaded: shape [{}, {}], checksum {:02x}{:02x}{:02x}{:02x}...",
+            super::types::SPARSE_VOCAB_SIZE,
+            super::types::SPARSE_PROJECTED_DIMENSION,
+            projection.checksum()[0],
+            projection.checksum()[1],
+            projection.checksum()[2],
+            projection.checksum()[3]
+        );
+
         tracing::info!(
             "SparseModel loaded: {} BERT params + MLM head, hidden_size={}",
             weights.param_count(),
@@ -199,6 +220,7 @@ impl SparseModel {
             weights: Box::new(weights),
             tokenizer: Box::new(tokenizer),
             mlm_head,
+            projection: Box::new(projection),
         };
         self.loaded.store(true, Ordering::SeqCst);
         Ok(())
@@ -266,6 +288,7 @@ impl SparseModel {
                 weights,
                 tokenizer,
                 mlm_head,
+                projection: _, // Not used for sparse output
             } => gpu_forward_sparse(&text, weights, tokenizer, mlm_head),
             _ => Err(EmbeddingError::NotInitialized {
                 model_id: ModelId::Sparse,
@@ -276,13 +299,17 @@ impl SparseModel {
     /// Embed input to dense 1536D vector (for multi-array storage compatibility).
     /// Per Constitution E6_Sparse: "~30K 5%active" projects to 1536D.
     ///
-    /// # TEMPORARY: PANICS until TASK-EMB-012 is complete
+    /// # Pipeline
+    /// 1. Validate input is text type
+    /// 2. Extract text and tokenize
+    /// 3. Forward through BERT + MLM head -> SparseVector (30522D)
+    /// 4. Project sparse -> dense via learned ProjectionMatrix (1536D)
+    /// 5. Return L2-normalized embedding
     ///
-    /// The hash-based `to_dense_projected()` has been removed per Constitution AP-007.
-    /// This method will panic until `ProjectionMatrix` integration is complete.
-    ///
-    /// # Panics
-    /// Always panics with clear message indicating migration needed.
+    /// # Errors
+    /// - `NotInitialized` - Model not loaded
+    /// - `UnsupportedModality` - Input is not text
+    /// - `GpuError` - GPU operation failed (NO CPU fallback - AP-007)
     pub async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {
@@ -291,15 +318,62 @@ impl SparseModel {
         }
 
         self.validate_input(input)?;
+        let text = extract_text(input)?;
 
-        // CRITICAL: to_dense_projected() has been removed (Constitution AP-007)
-        // ProjectionMatrix integration is required (TASK-EMB-012)
-        panic!(
-            "[EMB-MIGRATION] SparseModel::embed() is temporarily unavailable.\n\
-             The hash-based projection was removed (violated AP-007).\n\
-             Waiting for ProjectionMatrix integration (TASK-EMB-012).\n\
-             For sparse output, use embed_sparse() directly."
-        );
+        let state = self
+            .model_state
+            .read()
+            .map_err(|e| EmbeddingError::InternalError {
+                message: format!("SparseModel failed to acquire read lock: {}", e),
+            })?;
+
+        match &*state {
+            ModelState::Loaded {
+                weights,
+                tokenizer,
+                mlm_head,
+                projection,
+            } => {
+                let start = Instant::now();
+
+                // Step 1: Forward through BERT + MLM head to get sparse vector
+                let sparse_vector = gpu_forward_sparse(&text, weights, tokenizer, mlm_head)?;
+
+                tracing::debug!(
+                    "Sparse vector: {} non-zero elements, sparsity={:.2}%",
+                    sparse_vector.nnz(),
+                    sparse_vector.sparsity() * 100.0
+                );
+
+                // Step 2: Project sparse (30522D) -> dense (1536D) using learned matrix
+                // CRITICAL: No hash fallback (AP-007). Uses real GPU matmul.
+                let dense_vector = projection.project(&sparse_vector).map_err(|e| {
+                    EmbeddingError::GpuError {
+                        message: format!("Sparse projection failed: {}", e),
+                    }
+                })?;
+
+                let latency_us = start.elapsed().as_micros() as u64;
+
+                tracing::debug!(
+                    "Projected to {}D dense vector in {}us",
+                    dense_vector.len(),
+                    latency_us
+                );
+
+                // Step 3: Return as ModelEmbedding
+                Ok(ModelEmbedding {
+                    model_id: self.model_id,
+                    vector: dense_vector,
+                    latency_us,
+                    attention_weights: None,
+                    is_projected: true, // Mark as projected from sparse
+                })
+            }
+            _ => Err(EmbeddingError::NotInitialized {
+                model_id: self.model_id,
+            }),
+        }
     }
 
     /// Validate input is text type.
