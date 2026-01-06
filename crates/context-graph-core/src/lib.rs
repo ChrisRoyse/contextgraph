@@ -32,6 +32,7 @@ pub mod johari;
 pub mod marblestone;
 pub mod purpose;
 pub mod retrieval;
+pub mod similarity;
 pub mod stubs;
 pub mod traits;
 pub mod types;
