@@ -33,7 +33,7 @@
 
 use serde_json::json;
 
-use crate::protocol::JsonRpcId;
+use crate::protocol::{error_codes, JsonRpcId};
 use crate::weights::{get_profile_names, WEIGHT_PROFILES};
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 
@@ -259,7 +259,10 @@ async fn test_search_multi_invalid_aggregation_fails() {
     assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
 }
 
-/// Test search/multi with include_pipeline_breakdown flag.
+/// Test search/multi with include_pipeline_breakdown=true returns PIPELINE_METRICS_UNAVAILABLE.
+///
+/// TASK-EMB-024: Pipeline breakdown metrics are NOT YET IMPLEMENTED.
+/// NO hardcoded fallback values - must fail fast until real metrics available.
 #[tokio::test]
 async fn test_search_multi_pipeline_breakdown() {
     let handlers = create_test_handlers();
@@ -279,17 +282,23 @@ async fn test_search_multi_pipeline_breakdown() {
     let search_request = make_request("search/multi", Some(JsonRpcId::Number(2)), Some(search_params));
     let response = handlers.dispatch(search_request).await;
 
-    assert!(response.error.is_none(), "search/multi should succeed");
-    let result = response.result.expect("Should have result");
-
-    // Verify pipeline breakdown is present
+    // VERIFY FAIL-FAST BEHAVIOR
+    // TASK-EMB-024: Pipeline breakdown is NOT YET IMPLEMENTED
     assert!(
-        result.get("pipeline_breakdown").is_some(),
-        "Should include pipeline_breakdown when requested"
+        response.error.is_some(),
+        "search/multi with include_pipeline_breakdown=true MUST return error (TASK-EMB-024)"
     );
-    let breakdown = result.get("pipeline_breakdown").unwrap();
-    assert!(breakdown.get("stage1_splade_ms").is_some(), "Should have stage 1 timing");
-    assert!(breakdown.get("stage3_full_hnsw_ms").is_some(), "Should have stage 3 timing");
+
+    let error = response.error.as_ref().unwrap();
+    assert_eq!(
+        error.code,
+        error_codes::PIPELINE_METRICS_UNAVAILABLE,
+        "Should return PIPELINE_METRICS_UNAVAILABLE (-32052)"
+    );
+    assert!(
+        error.message.contains("Pipeline breakdown") || error.message.contains("not yet implemented"),
+        "Error message should indicate feature is not implemented"
+    );
 }
 
 // =============================================================================
