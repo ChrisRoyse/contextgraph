@@ -1117,7 +1117,7 @@ async fn test_full_state_verification_search_error_codes() {
 /// Verifies that multi-space search works correctly with real persistent storage.
 #[tokio::test]
 async fn test_rocksdb_integration_search_multi() {
-    let (handlers, _tempdir) = create_test_handlers_with_rocksdb();
+    let (handlers, _tempdir) = create_test_handlers_with_rocksdb().await;
 
     // Store multiple items to search
     let contents = [
@@ -1201,7 +1201,7 @@ async fn test_rocksdb_integration_search_multi() {
 /// Verifies that custom weight profiles work with real RocksDB storage.
 #[tokio::test]
 async fn test_rocksdb_integration_search_multi_custom_weights() {
-    let (handlers, _tempdir) = create_test_handlers_with_rocksdb();
+    let (handlers, _tempdir) = create_test_handlers_with_rocksdb().await;
 
     // Store content
     let store_params = json!({
@@ -1265,7 +1265,7 @@ async fn test_rocksdb_integration_search_multi_custom_weights() {
 /// Verifies that single-space search targeting specific embedding works.
 #[tokio::test]
 async fn test_rocksdb_integration_search_single_space() {
-    let (handlers, _tempdir) = create_test_handlers_with_rocksdb();
+    let (handlers, _tempdir) = create_test_handlers_with_rocksdb().await;
 
     // Store content
     let store_params = json!({
@@ -1318,7 +1318,7 @@ async fn test_rocksdb_integration_search_single_space() {
 /// Verifies that purpose-based search works with real storage.
 #[tokio::test]
 async fn test_rocksdb_integration_search_by_purpose() {
-    let (handlers, _tempdir) = create_test_handlers_with_rocksdb();
+    let (handlers, _tempdir) = create_test_handlers_with_rocksdb().await;
 
     // Store multiple items with different content
     let contents = [
@@ -1372,7 +1372,7 @@ async fn test_rocksdb_integration_search_by_purpose() {
 /// Verifies that weight profiles endpoint returns correct 13-weight profiles.
 #[tokio::test]
 async fn test_rocksdb_integration_weight_profiles() {
-    let (handlers, _tempdir) = create_test_handlers_with_rocksdb();
+    let (handlers, _tempdir) = create_test_handlers_with_rocksdb().await;
 
     let request = make_request("search/weight_profiles", Some(JsonRpcId::Number(1)), None);
     let response = handlers.dispatch(request).await;
@@ -1434,7 +1434,7 @@ async fn test_rocksdb_integration_weight_profiles() {
 /// Verifies that proper error codes are returned for invalid operations.
 #[tokio::test]
 async fn test_rocksdb_integration_search_error_handling() {
-    let (handlers, _tempdir) = create_test_handlers_with_rocksdb();
+    let (handlers, _tempdir) = create_test_handlers_with_rocksdb().await;
 
     // Test INVALID_PARAMS for missing query in search/multi
     let missing_query = make_request(

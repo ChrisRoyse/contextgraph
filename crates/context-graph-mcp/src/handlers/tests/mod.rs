@@ -114,15 +114,20 @@ pub(crate) fn create_test_handlers_no_north_star() -> Handlers {
 /// - **Alignment**: DefaultAlignmentCalculator (real cosine similarity)
 /// - **Goals**: Test hierarchy with North Star
 ///
+/// # HNSW Initialization
+///
+/// This function **MUST** be async to initialize HNSW indexes before use.
+/// Without HNSW initialization, store operations will fail with "Index not initialized" errors.
+///
 /// # Example
 ///
 /// ```ignore
 /// #[tokio::test]
 /// async fn test_with_real_storage() {
-///     let (handlers, _tempdir) = create_test_handlers_with_rocksdb();
+///     let (handlers, _tempdir) = create_test_handlers_with_rocksdb().await;
 ///     // _tempdir keeps the database alive until end of test
 ///
-///     // Store and retrieve operations use real RocksDB
+///     // Store and retrieve operations use real RocksDB with initialized HNSW
 ///     let result = handlers.handle_memory_store(...).await;
 ///     assert!(result.is_ok());
 /// }
@@ -130,16 +135,24 @@ pub(crate) fn create_test_handlers_no_north_star() -> Handlers {
 ///
 /// # Panics
 ///
-/// Panics if TempDir creation or RocksDB opening fails. This is intentional -
-/// tests should fail immediately if infrastructure cannot be set up.
-pub(crate) fn create_test_handlers_with_rocksdb() -> (Handlers, TempDir) {
+/// Panics if TempDir creation, RocksDB opening, or HNSW initialization fails.
+/// This is intentional - tests should fail immediately if infrastructure cannot be set up.
+pub(crate) async fn create_test_handlers_with_rocksdb() -> (Handlers, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for RocksDB test");
     let db_path = tempdir.path().join("test_rocksdb");
 
-    let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(
-        RocksDbTeleologicalStore::open(&db_path)
-            .expect("Failed to open RocksDbTeleologicalStore in test"),
-    );
+    // Open RocksDB store
+    let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
+        .expect("Failed to open RocksDbTeleologicalStore in test");
+
+    // CRITICAL: Initialize HNSW indexes BEFORE wrapping in Arc<dyn>
+    // Without this, store operations fail with "Index for E1Semantic not initialized"
+    rocksdb_store
+        .initialize_hnsw()
+        .await
+        .expect("Failed to initialize HNSW indexes in test");
+
+    let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
 
     // Use real UTL processor adapter for live computation
     let utl_processor: Arc<dyn UtlProcessor> = Arc::new(UtlProcessorAdapter::with_defaults());
@@ -178,21 +191,28 @@ pub(crate) fn create_test_handlers_with_rocksdb() -> (Handlers, TempDir) {
 /// ```ignore
 /// #[tokio::test]
 /// async fn test_missing_north_star_error() {
-///     let (handlers, _tempdir) = create_test_handlers_with_rocksdb_no_north_star();
+///     let (handlers, _tempdir) = create_test_handlers_with_rocksdb_no_north_star().await;
 ///
 ///     // Should fail because no North Star is configured
 ///     let result = handlers.handle_purpose_align(...).await;
 ///     assert!(result.error.is_some());
 /// }
 /// ```
-pub(crate) fn create_test_handlers_with_rocksdb_no_north_star() -> (Handlers, TempDir) {
+pub(crate) async fn create_test_handlers_with_rocksdb_no_north_star() -> (Handlers, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for RocksDB test");
     let db_path = tempdir.path().join("test_rocksdb");
 
-    let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(
-        RocksDbTeleologicalStore::open(&db_path)
-            .expect("Failed to open RocksDbTeleologicalStore in test"),
-    );
+    // Open RocksDB store
+    let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
+        .expect("Failed to open RocksDbTeleologicalStore in test");
+
+    // CRITICAL: Initialize HNSW indexes BEFORE wrapping in Arc<dyn>
+    rocksdb_store
+        .initialize_hnsw()
+        .await
+        .expect("Failed to initialize HNSW indexes in test");
+
+    let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
 
     let utl_processor: Arc<dyn UtlProcessor> = Arc::new(UtlProcessorAdapter::with_defaults());
     let multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider> =
@@ -310,7 +330,7 @@ pub(crate) fn create_test_hierarchy() -> GoalHierarchy {
 /// ```ignore
 /// #[tokio::test]
 /// async fn test_fsv_store_verification() {
-///     let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access();
+///     let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
 ///
 ///     // Store via MCP handler
 ///     let response = handlers.dispatch(store_request).await;
@@ -320,7 +340,7 @@ pub(crate) fn create_test_hierarchy() -> GoalHierarchy {
 ///     assert_eq!(count, 1, "Must have stored 1 fingerprint");
 /// }
 /// ```
-pub(crate) fn create_test_handlers_with_rocksdb_store_access() -> (
+pub(crate) async fn create_test_handlers_with_rocksdb_store_access() -> (
     Handlers,
     Arc<dyn TeleologicalMemoryStore>,
     TempDir,
@@ -328,10 +348,17 @@ pub(crate) fn create_test_handlers_with_rocksdb_store_access() -> (
     let tempdir = TempDir::new().expect("Failed to create temp directory for RocksDB test");
     let db_path = tempdir.path().join("test_rocksdb_fsv");
 
-    let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(
-        RocksDbTeleologicalStore::open(&db_path)
-            .expect("Failed to open RocksDbTeleologicalStore in FSV test"),
-    );
+    // Open RocksDB store
+    let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
+        .expect("Failed to open RocksDbTeleologicalStore in FSV test");
+
+    // CRITICAL: Initialize HNSW indexes BEFORE wrapping in Arc<dyn>
+    rocksdb_store
+        .initialize_hnsw()
+        .await
+        .expect("Failed to initialize HNSW indexes in FSV test");
+
+    let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(rocksdb_store);
 
     // Use real UTL processor adapter for live computation
     let utl_processor: Arc<dyn UtlProcessor> = Arc::new(UtlProcessorAdapter::with_defaults());

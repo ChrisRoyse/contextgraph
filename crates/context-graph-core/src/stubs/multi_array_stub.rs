@@ -183,6 +183,11 @@ impl StubMultiArrayProvider {
     }
 
     /// Generate a deterministic sparse vector.
+    ///
+    /// # IMPORTANT: Non-Zero Guarantee
+    ///
+    /// Values are guaranteed to be in range [0.1, 1.0] to ensure non-zero norm.
+    /// HNSW/SPLADE indexes require non-zero vectors for cosine similarity.
     fn generate_sparse_vector(content: &str) -> SparseVector {
         let base_sum: u32 = content.bytes().map(u32::from).sum();
         // Generate 10 sparse entries based on content
@@ -194,10 +199,17 @@ impl StubMultiArrayProvider {
         indices.sort();
         indices.dedup();
 
+        // Generate non-zero values: range [0.1, 1.0] guarantees non-zero norm
+        // Use different formula than deterministic_value to avoid zero clamping
+        let base = Self::content_hash(content);
         let values: Vec<f32> = indices
             .iter()
             .enumerate()
-            .map(|(i, _)| Self::deterministic_value(Self::content_hash(content), i))
+            .map(|(i, _)| {
+                // Generate value in [0.1, 1.0] - never zero
+                let variation = ((i as f32 * 0.13) % 0.9) + base * 0.1;
+                0.1 + (variation % 0.9)
+            })
             .collect();
 
         SparseVector::new(indices, values).unwrap_or_else(|_| SparseVector::empty())

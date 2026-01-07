@@ -7,11 +7,22 @@
 //!
 //! FAIL FAST: All errors return immediately with detailed error codes.
 //! NO fallbacks, NO default values, NO mock data.
+//!
+//! # Purpose Vector Computation (AP-007)
+//!
+//! Purpose vectors MUST be computed at storage time from the semantic fingerprint
+//! and current goal hierarchy. This ensures every stored memory has alignment
+//! metadata for retrieval and indexing. From constitution.yaml:
+//! ```text
+//! purpose_vector: PV = [A(E1,V), A(E2,V), ..., A(E13,V)]
+//! where A(Ei, V) = cos(θ) between embedder i and North Star goal V
+//! ```
 
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
+use context_graph_core::purpose::PurposeVectorComputer;
 use context_graph_core::traits::TeleologicalSearchOptions;
 use context_graph_core::types::{CognitivePulse, SuggestedAction};
 use context_graph_core::types::fingerprint::{
@@ -104,10 +115,64 @@ impl Handlers {
         hasher.update(content.as_bytes());
         let content_hash: [u8; 32] = hasher.finalize().into();
 
-        // Create TeleologicalFingerprint
+        // AP-007: Compute purpose vector from semantic fingerprint and goal hierarchy
+        // Purpose vectors MUST be computed at storage time, not deferred
+        // From constitution.yaml: PV = [A(E1,V), A(E2,V), ..., A(E13,V)]
+        // where A(Ei, V) = cos(θ) between embedder i and North Star goal V
+        let purpose_vector = {
+            let hierarchy = self.goal_hierarchy.read().clone();
+
+            // If no North Star goal is defined, log error and fail (AP-007: FAIL FAST)
+            if hierarchy.north_star().is_none() {
+                error!(
+                    "memory/store: Goal hierarchy missing North Star goal. \
+                     Cannot compute purpose vector. \
+                     CONFIGURATION ERROR: Use purpose/north_star_update to configure goal hierarchy."
+                );
+                return JsonRpcResponse::error(
+                    id,
+                    error_codes::STORAGE_ERROR,
+                    "Goal hierarchy not configured. Cannot compute purpose vector. \
+                     Use purpose/north_star_update endpoint to set North Star goal.",
+                );
+            }
+
+            // Compute purpose vector using PurposeVectorComputer
+            // This computes alignment for each of 13 embedding spaces
+            let config = context_graph_core::purpose::PurposeComputeConfig::with_hierarchy(hierarchy);
+
+            match context_graph_core::purpose::DefaultPurposeComputer::new()
+                .compute_purpose(&embedding_output.fingerprint, &config)
+                .await
+            {
+                Ok(pv) => {
+                    debug!(
+                        aggregate_alignment = pv.aggregate_alignment(),
+                        dominant_embedder = pv.dominant_embedder,
+                        coherence = pv.coherence,
+                        "Purpose vector computed for semantic fingerprint"
+                    );
+                    pv
+                }
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        "memory/store: Failed to compute purpose vector. \
+                         Cannot store memory without alignment metadata."
+                    );
+                    return JsonRpcResponse::error(
+                        id,
+                        error_codes::STORAGE_ERROR,
+                        format!("Purpose vector computation failed: {}", e),
+                    );
+                }
+            }
+        };
+
+        // Create TeleologicalFingerprint with computed purpose vector
         let fingerprint = TeleologicalFingerprint::new(
             embedding_output.fingerprint,
-            PurposeVector::default(), // Will be computed by alignment system
+            purpose_vector,
             JohariFingerprint::zeroed(), // Will be classified by Johari system
             content_hash,
         );

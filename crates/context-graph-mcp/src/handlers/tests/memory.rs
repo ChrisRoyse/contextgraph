@@ -788,7 +788,7 @@ async fn test_full_state_verification_error_codes() {
 /// 5. Hard deleted (permanently removed)
 #[tokio::test]
 async fn test_rocksdb_integration_crud_cycle() {
-    let (handlers, _tempdir) = create_test_handlers_with_rocksdb();
+    let (handlers, _tempdir) = create_test_handlers_with_rocksdb().await;
 
     // =========================================================================
     // STEP 1: STORE - Create TeleologicalFingerprint in RocksDB
@@ -1001,7 +1001,7 @@ async fn test_rocksdb_integration_crud_cycle() {
 /// data integrity across operations.
 #[tokio::test]
 async fn test_rocksdb_integration_multiple_fingerprints() {
-    let (handlers, _tempdir) = create_test_handlers_with_rocksdb();
+    let (handlers, _tempdir) = create_test_handlers_with_rocksdb().await;
 
     let contents = [
         "First test content for RocksDB multi-item test",
@@ -1109,7 +1109,7 @@ async fn test_rocksdb_integration_multiple_fingerprints() {
 /// Verifies that proper error codes are returned when using real storage.
 #[tokio::test]
 async fn test_rocksdb_integration_error_handling() {
-    let (handlers, _tempdir) = create_test_handlers_with_rocksdb();
+    let (handlers, _tempdir) = create_test_handlers_with_rocksdb().await;
 
     // Test INVALID_PARAMS for missing content
     let no_content = make_request(
@@ -1157,7 +1157,7 @@ async fn test_rocksdb_integration_error_handling() {
 /// actual 6-component values, not stub zeros.
 #[tokio::test]
 async fn test_rocksdb_integration_utl_computation() {
-    let (handlers, _tempdir) = create_test_handlers_with_rocksdb();
+    let (handlers, _tempdir) = create_test_handlers_with_rocksdb().await;
 
     // Store a fingerprint
     let store_params = json!({

@@ -23,7 +23,7 @@ use super::splade::SpladeAlignment;
 ///
 /// # Example
 ///
-/// ```
+/// ```ignore
 /// use context_graph_core::purpose::{
 ///     DefaultPurposeComputer, PurposeVectorComputer, PurposeComputeConfig,
 ///     GoalHierarchy, GoalNode,

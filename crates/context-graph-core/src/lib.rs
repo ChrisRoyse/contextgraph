@@ -25,8 +25,10 @@
 //! ```
 
 pub mod alignment;
+pub mod atc;
 pub mod config;
 pub mod error;
+pub mod gwt;
 pub mod index;
 pub mod johari;
 pub mod marblestone;

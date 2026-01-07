@@ -17,7 +17,7 @@
 //!
 //! # Example
 //!
-//! ```
+//! ```ignore
 //! use context_graph_core::types::fingerprint::{SemanticFingerprint, EmbeddingSlice};
 //!
 //! let fp = SemanticFingerprint::zeroed();

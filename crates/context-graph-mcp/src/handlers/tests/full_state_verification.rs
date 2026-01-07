@@ -637,7 +637,7 @@ async fn test_rocksdb_fsv_store_creates_fingerprint() {
     println!("FSV-ROCKSDB-001: Store Creates Fingerprint in REAL RocksDB");
     println!("================================================================================");
 
-    let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access();
+    let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
     // _tempdir MUST stay alive for the duration of this test
 
     // === BEFORE STATE ===
@@ -726,7 +726,7 @@ async fn test_rocksdb_fsv_retrieve_returns_stored_data() {
     println!("FSV-ROCKSDB-002: Retrieve Returns Data from REAL RocksDB");
     println!("================================================================================");
 
-    let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access();
+    let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
 
     // Store a fingerprint first
     let content = "Neural networks process information in layers";
@@ -801,7 +801,7 @@ async fn test_rocksdb_fsv_delete_removes_from_store() {
     println!("FSV-ROCKSDB-003: Delete Removes Fingerprint from REAL RocksDB");
     println!("================================================================================");
 
-    let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access();
+    let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
 
     // Store a fingerprint
     let content = "Deep learning requires substantial computational resources";
@@ -867,7 +867,7 @@ async fn test_rocksdb_fsv_multiple_fingerprints() {
     println!("FSV-ROCKSDB-004: Multiple Fingerprints in REAL RocksDB");
     println!("================================================================================");
 
-    let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access();
+    let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
 
     let contents = vec![
         "First document about machine learning",

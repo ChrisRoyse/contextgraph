@@ -45,7 +45,7 @@ impl ModelId {
             Self::Multimodal => "multimodal",
             Self::Entity => "entity",
             Self::LateInteraction => "late-interaction",
-            Self::Splade => "splade",
+            Self::Splade => "splade-v3",
         }
     }
 

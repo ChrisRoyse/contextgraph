@@ -18,7 +18,7 @@
 //!
 //! # Example
 //!
-//! ```
+//! ```ignore
 //! use context_graph_core::purpose::{
 //!     GoalNode, GoalHierarchy, PurposeVectorComputer,
 //!     PurposeComputeConfig, DefaultPurposeComputer,

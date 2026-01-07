@@ -16,6 +16,7 @@ use std::time::Instant;
 use safetensors::SafeTensors;
 use sha2::{Digest, Sha256};
 
+use crate::types::ModelId;
 use crate::warm::config::WarmConfig;
 use crate::warm::cuda_alloc::WarmCudaAllocator;
 use crate::warm::error::{WarmError, WarmResult};
@@ -58,6 +59,14 @@ pub fn load_single_model(
 
     let load_start = Instant::now();
 
+    // Parse model ID string to ModelId enum for type-safe operations
+    let model_enum = ModelId::try_from(model_id).map_err(|e| {
+        tracing::error!("Failed to parse model ID '{}': {}", model_id, e);
+        WarmError::ModelNotRegistered {
+            model_id: model_id.to_string(),
+        }
+    })?;
+
     // Get model metadata from registry
     let (expected_bytes, expected_dimension) = {
         let reg = registry
@@ -70,6 +79,28 @@ pub fn load_single_model(
             })?;
         (entry.expected_bytes, entry.expected_dimension)
     };
+
+    // Check if this is a custom model (temporal, HDC) that computes embeddings mathematically
+    // Custom models do NOT require weight files - they are algorithmic implementations
+    if model_enum.is_custom() {
+        tracing::info!(
+            "Model {} is a custom implementation (no pretrained weights required)",
+            model_id
+        );
+        return load_custom_model(
+            model_id,
+            expected_bytes,
+            expected_dimension,
+            config,
+            registry,
+            memory_pools,
+            cuda_allocator,
+            validator,
+            load_start,
+        );
+    }
+
+    // For pretrained models, proceed with weight loading
 
     // Transition: Pending -> Loading
     {
@@ -91,7 +122,11 @@ pub fn load_single_model(
     }
 
     // Load real model weights from SafeTensors file
-    let weight_path = config.model_weights_path.join(format!("{}.safetensors", model_id));
+    // Use ModelId::model_path() for correct directory structure: {base}/{subdir}/model.safetensors
+    let weight_path = model_enum
+        .model_path(&config.model_weights_path)
+        .join("model.safetensors");
+    tracing::debug!("Loading weights from: {:?}", weight_path);
     let (file_bytes, checksum_bytes, _metadata) = load_weights(&weight_path, model_id)?;
 
     // Convert [u8; 32] to u64 for handle (first 8 bytes as checksum identifier)
@@ -143,6 +178,101 @@ pub fn load_single_model(
     let load_duration = load_start.elapsed();
     tracing::info!(
         "Model {} loaded successfully in {:?} ({} VRAM)",
+        model_id,
+        load_duration,
+        format_bytes(expected_bytes)
+    );
+
+    Ok(())
+}
+
+/// Load a custom model (temporal, HDC) that computes embeddings algorithmically.
+///
+/// Custom models do NOT require pretrained weight files - they implement
+/// mathematical transformations directly (exponential decay, Fourier basis, etc.).
+///
+/// # Arguments
+/// * `model_id` - Model identifier (e.g., "E2_TemporalRecent")
+/// * `expected_bytes` - Expected VRAM size for the model's computation buffers
+/// * `expected_dimension` - Output dimension for validation
+/// * `config` - Warm loading configuration
+/// * `registry` - Shared registry for state tracking
+/// * `memory_pools` - Memory pools for accounting
+/// * `cuda_allocator` - CUDA allocator for GPU memory
+/// * `validator` - Model validator
+/// * `load_start` - Start time for duration tracking
+///
+/// # Returns
+/// * `Ok(())` - Model loaded and marked as Warm
+/// * `Err(WarmError)` - If allocation or validation fails
+#[allow(clippy::too_many_arguments)]
+fn load_custom_model(
+    model_id: &str,
+    expected_bytes: usize,
+    expected_dimension: usize,
+    config: &WarmConfig,
+    registry: &SharedWarmRegistry,
+    memory_pools: &mut WarmMemoryPools,
+    cuda_allocator: &mut WarmCudaAllocator,
+    validator: &WarmValidator,
+    load_start: Instant,
+) -> WarmResult<()> {
+    // Transition: Pending -> Loading
+    {
+        let mut reg = registry
+            .write()
+            .map_err(|_| WarmError::RegistryLockPoisoned)?;
+        reg.start_loading(model_id)?;
+    }
+
+    // Custom models still need VRAM for computation buffers
+    // Allocate REAL VRAM via cudaMalloc (non-evictable)
+    let vram_ptr = allocate_model_vram(model_id, expected_bytes, memory_pools, cuda_allocator)?;
+
+    // Update progress - custom models load instantly (no weight file to read)
+    {
+        let mut reg = registry
+            .write()
+            .map_err(|_| WarmError::RegistryLockPoisoned)?;
+        reg.update_progress(model_id, 100, expected_bytes)?;
+    }
+
+    // Transition: Loading -> Validating
+    {
+        let mut reg = registry
+            .write()
+            .map_err(|_| WarmError::RegistryLockPoisoned)?;
+        reg.mark_validating(model_id)?;
+    }
+
+    // Run validation (validates VRAM allocation is real and properly sized)
+    validate_model(model_id, vram_ptr, expected_bytes, expected_dimension, config, validator)?;
+
+    // Generate a deterministic checksum for custom models based on model_id
+    // This ensures consistent checksums across runs without needing weight files
+    let mut hasher = Sha256::new();
+    hasher.update(model_id.as_bytes());
+    hasher.update(b"custom_model_v1");
+    let hash_result = hasher.finalize();
+    let checksum = u64::from_le_bytes([
+        hash_result[0], hash_result[1], hash_result[2], hash_result[3],
+        hash_result[4], hash_result[5], hash_result[6], hash_result[7],
+    ]);
+
+    // Create model handle
+    let handle = ModelHandle::new(vram_ptr, expected_bytes, config.cuda_device_id, checksum);
+
+    // Transition: Validating -> Warm
+    {
+        let mut reg = registry
+            .write()
+            .map_err(|_| WarmError::RegistryLockPoisoned)?;
+        reg.mark_warm(model_id, handle)?;
+    }
+
+    let load_duration = load_start.elapsed();
+    tracing::info!(
+        "Custom model {} loaded successfully in {:?} ({} VRAM) - no weight file required",
         model_id,
         load_duration,
         format_bytes(expected_bytes)
