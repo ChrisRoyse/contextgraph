@@ -1,13 +1,15 @@
-# Context Graph Constitution v4.1.0 (Optimized)
+# Context Graph Constitution v4.2.0 (Optimized)
 # Bio-Nervous MCP | UTL | Teleological Vectors | GWT | Adaptive Thresholds
+# Aligned with constitution.md spec v2.0
 # ═══════════════════════════════════════════════════════════════════════
 
 meta:
-  v: "4.1.0"
+  v: "4.2.0"
   name: "Ultimate Context Graph"
   desc: "5-layer bio-nervous UTL knowledge graph: 13-embedding teleological fingerprints, Kuramoto-synchronized GWT consciousness, adaptive self-learning thresholds, NORTH autonomous services"
   paradigm: "Multi-Array Teleological Fingerprints with GWT — 13-embedding array IS the teleological vector, Kuramoto-synchronized, no hardcoded thresholds"
   modules: { foundation: "NORTH-001-007", services: "NORTH-008-020", teleological: "TELEO-001-015" }
+  spec_alignment: "constitution.md v2.0"
 
 # ABBREVIATIONS (used throughout)
 # UTL=Unified Theory of Learning, L=Learning score, ΔS=entropy, ΔC=coherence
@@ -56,14 +58,116 @@ dirs:
   .ai/: [activeContext.md, decisionLog.md, progress.md]
 
 # ═══════════════════════════════════════════════════════════════════════
+# ARCHITECTURAL RULES (Critical constraints - must not violate)
+# ═══════════════════════════════════════════════════════════════════════
+architectural_rules:
+  ARCH-01:
+    title: "TeleologicalArray is the Atomic Storage Unit"
+    severity: critical
+    description: "Every stored memory MUST be represented as a TeleologicalArray containing exactly 13 embedding vectors. Store all 13 or store nothing."
+    enforcement: "Compile-time via type system; runtime via invariant checks"
+    rationale: "The 13 embeddings capture orthogonal semantic dimensions. Partial storage loses information."
+
+  ARCH-02:
+    title: "Compare Only Compatible Embedding Types (Apples-to-Apples)"
+    severity: critical
+    description: "Similarity comparisons MUST be apples-to-apples: E1 to E1, E4 to E4, full array to full array. NEVER compare E1 to E5 or any cross-embedder similarity."
+    enforcement: "Type-safe EmbedderType enum; compile-time check via generics"
+    rationale: "Different embedders capture different semantic spaces. Cross-comparison is meaningless."
+
+  ARCH-03:
+    title: "Autonomous Operation Without Manual Configuration"
+    severity: critical
+    description: "System MUST operate autonomously without manual goal setting. Goals emerge from data patterns via clustering. No set_north_star() or equivalent."
+    enforcement: "API design; no manual goal-setting methods exposed"
+    rationale: "Manual configuration creates brittleness. System discovers what matters by observing actual user behavior."
+
+  ARCH-04:
+    title: "Entry-Point Discovery for Retrieval"
+    severity: high
+    description: "All searches MUST follow entry-point discovery: (1) Query enters ONE embedding space, (2) Fast ANN in single HNSW, (3) Retrieve full TeleologicalArrays, (4) Multi-space reranking with RRF."
+    enforcement: "Search API design; SearchAgent implementation"
+    rationale: "Searching all 13 indices is O(13n). Entry-point discovery achieves O(n) search with O(k*13) reranking."
+
+  ARCH-05:
+    title: "All 13 Embedders Must Be Present"
+    severity: critical
+    description: "Every TeleologicalArray MUST contain all 13 embeddings (E1-E13). Missing embedders are a fatal error."
+    enforcement: "TeleologicalArray struct with [Embedding; 13]; EmbeddingAgent validates before storage"
+    rationale: "Sparse arrays break comparison semantics. Purpose vectors become incomparable with missing embedders."
+
+  ARCH-06:
+    title: "All Memory Operations Through MCP Tools"
+    severity: high
+    description: "External access MUST go through MCP tools: inject_context, store_memory, search_graph, discover_goals, consolidate_memories. Direct database access forbidden."
+    enforcement: "MCP server as sole interface; no direct RocksDB exposure"
+    rationale: "MCP tools provide security boundary, input validation, rate limiting."
+
+  ARCH-07:
+    title: "Hooks Control Memory Lifecycle"
+    severity: high
+    description: "Claude Code hooks MUST drive memory operations: SessionStart (init), PreToolUse (inject context), PostToolUse (store patterns), SessionEnd (consolidate/dream)."
+    enforcement: "Hook configuration in .claude/settings.json"
+    rationale: "Autonomous operation requires automatic triggers. Hooks make memory invisible to users."
+
+  ARCH-08:
+    title: "CUDA GPU is Required for Production"
+    severity: high
+    description: "System REQUIRES CUDA GPU (RTX 5090 / Blackwell). No CPU fallbacks in production. Test environments may use stubs via test-utils feature flag."
+    enforcement: "Cargo feature flags; cuda feature is default"
+    rationale: "13-model embedding on CPU is 10-100x slower. Performance budgets cannot be met without GPU."
+
+# ═══════════════════════════════════════════════════════════════════════
 # CODING STANDARDS
 # ═══════════════════════════════════════════════════════════════════════
 naming:
-  files: { rust: snake_case.rs, cuda: snake_case.cu, tests: "{mod}_test.rs" }
+  files: { rust: snake_case.rs, cuda: snake_case.cu, tests: "{mod}_test.rs", typescript: kebab-case.ts }
   types: PascalCase
-  funcs: snake_case_verb_first
+  funcs: { rust: snake_case_verb_first, typescript: camelCase_verb_first }
   vars: { local: snake_case, const: SCREAMING_SNAKE }
   json: snake_case
+
+rust_standards:
+  naming:
+    structs: PascalCase
+    traits: "PascalCase with -able/-er suffix (e.g., Searchable, Embedder)"
+    enums: PascalCase
+    type_aliases: "PascalCase (e.g., type MemoryId = Uuid)"
+  error_handling:
+    - "Use thiserror for library error types"
+    - "Use anyhow for application-level errors"
+    - "Never panic in library code; return Result"
+    - "Propagate errors with ? operator"
+    - "Add context with .context() or .with_context()"
+  async_patterns:
+    - "Use tokio as async runtime (workspace dependency)"
+    - "Prefer async fn over impl Future for readability"
+    - "Use tokio::spawn for parallel tasks"
+    - "Use tokio::sync primitives (Mutex, RwLock, mpsc)"
+    - "Avoid blocking in async context; use spawn_blocking for CPU-bound work"
+  type_safety:
+    - "Use newtype pattern for domain IDs (struct MemoryId(Uuid))"
+    - "Encode embedder type in generics where possible"
+    - "Use NonZeroU* for counts that cannot be zero"
+    - "Prefer enums over boolean flags for clarity"
+
+typescript_standards:
+  naming:
+    files: kebab-case.ts
+    directories: kebab-case
+    interfaces: "PascalCase (I prefix optional)"
+    types: PascalCase
+    functions: "camelCase, verb-first (e.g., injectContext)"
+    constants: "SCREAMING_SNAKE_CASE or camelCase for config"
+  file_organization:
+    - "Skills in .claude/skills/[skill-name]/SKILL.md"
+    - "Agents in .claude/agents/[agent-name].md"
+    - "Commands in .claude/commands/[command-name]/"
+    - "Helpers in .claude/helpers/"
+  skill_structure:
+    - "YAML frontmatter with name, description, allowed-tools, model"
+    - "Markdown body with Purpose, When to Use, Process sections"
+    - "Explicit MCP tool references"
 
 rules:
   - "One type/module, max 500 lines"
@@ -82,21 +186,36 @@ doc_format: "/// Brief\\n/// # Args/Returns/Errors/Panics\\n/// `Constraint: X <
 # ANTI-PATTERNS (FORBIDDEN)
 # ═══════════════════════════════════════════════════════════════════════
 forbidden:
-  AP-001: "unwrap() in prod"
-  AP-002: "Hardcoded secrets"
-  AP-003: "Magic numbers"
-  AP-004: "Blocking I/O in async"
-  AP-005: "FAISS mutation without lock"
-  AP-006: "New util without checking utils/"
-  AP-007: "Stub data in prod"
-  AP-008: "Direct API from handlers"
-  AP-009: "NaN/Infinity in UTL"
-  AP-010: "store_memory without rationale"
-  AP-011: "merge_concepts without priors_vibe_check"
-  AP-012: "Trust distilled summaries (use hydrate_citation)"
-  AP-013: "Ignore Cognitive Pulse"
-  AP-014: "Permanent delete without user_requested"
-  AP-015: "GPU alloc without pool"
+  # Critical - Architecture violations
+  AP-01: { severity: critical, reason: "Breaks core architecture", rule: "No manual goal setting (set_north_star, define_goal, etc.) - Goals MUST emerge autonomously" }
+  AP-02: { severity: critical, reason: "Type safety violation", rule: "No cross-embedder comparison (comparing E1 similarity to E5 similarity)" }
+  AP-03: { severity: critical, reason: "Destroys information", rule: "No dimension projection to fake compatibility - Never project 1024D to 512D" }
+  AP-04: { severity: critical, reason: "Violates atomicity", rule: "No partial TeleologicalArray storage - All 13 embeddings or nothing" }
+  AP-05: { severity: critical, reason: "Meaningless results", rule: "No embedding fusion into single vector - Multi-embedding arrays must remain multi-embedding" }
+
+  # High severity
+  AP-06: { severity: high, reason: "Security bypass", rule: "No direct database access from Claude Code - All access through MCP tools only" }
+  AP-07: { severity: high, reason: "Performance regression", rule: "No CPU fallback in production builds - GPU required, use test-utils feature for testing" }
+  AP-08: { severity: high, reason: "Blocks async runtime", rule: "No synchronous I/O in async context - Use spawn_blocking for blocking operations" }
+  AP-09: { severity: high, reason: "Memory leak risk", rule: "No unbounded caches or queues - All caches must have size limits and eviction" }
+  AP-10: { severity: high, reason: "Computation errors", rule: "No NaN/Infinity in UTL calculations" }
+
+  # Medium severity - Code quality
+  AP-11: { severity: medium, reason: "Code duplication", rule: "Check existing utils before creating new helpers" }
+  AP-12: { severity: medium, reason: "Maintainability", rule: "No magic numbers; define named constants (e.g., EMBEDDER_COUNT = 13)" }
+  AP-13: { severity: medium, reason: "Testing", rule: "No inline test fixtures; use tests/fixtures/ directory" }
+  AP-14: { severity: medium, reason: "Deprecated pattern", rule: "No .unwrap() in library code - Use .expect() with context or return Result" }
+  AP-15: { severity: medium, reason: "Security", rule: "Hardcoded secrets forbidden - Use environment variables" }
+
+  # Operational
+  AP-16: { severity: high, reason: "Data loss", rule: "No permanent delete without user_requested flag" }
+  AP-17: { severity: medium, reason: "Quality", rule: "store_memory without rationale forbidden" }
+  AP-18: { severity: medium, reason: "Consistency", rule: "merge_concepts without priors_vibe_check forbidden" }
+  AP-19: { severity: medium, reason: "Reliability", rule: "Trust distilled summaries forbidden (use hydrate_citation)" }
+  AP-20: { severity: medium, reason: "Awareness", rule: "Ignore Cognitive Pulse feedback forbidden" }
+  AP-21: { severity: high, reason: "Resource management", rule: "GPU alloc without pool forbidden" }
+  AP-22: { severity: high, reason: "Thread safety", rule: "FAISS mutation without lock forbidden" }
+  AP-23: { severity: medium, reason: "Code organization", rule: "Direct API from handlers forbidden - Use service layer" }
 
 # ═══════════════════════════════════════════════════════════════════════
 # SECURITY [SEC-##]
@@ -351,25 +470,240 @@ mcp:
     NORTH-020: [get_health_status, trigger_healing, get_healing_history]
 
 # ═══════════════════════════════════════════════════════════════════════
+# CLAUDE CODE INTEGRATION (Hooks, Skills, Subagents)
+# ═══════════════════════════════════════════════════════════════════════
+claude_code_integration:
+  hooks:
+    SessionStart:
+      required: true
+      timeout_ms: 5000
+      on_failure: "log warning, continue session"
+      actions:
+        - "Initialize workspace"
+        - "Load SELF_EGO_NODE"
+        - "Warm embedding caches"
+
+    PreToolUse:
+      required: true
+      matcher: "Read|Grep|Glob|Bash"
+      timeout_ms: 3000
+      on_failure: "continue without injection"
+      constraint: "MUST NOT block for more than 100ms in critical path"
+      actions:
+        - "Inject relevant context before tool execution"
+
+    PostToolUse:
+      required: true
+      matcher: "Edit|Write|Bash"
+      timeout_ms: 5000
+      async_allowed: true
+      actions:
+        - "Store learned patterns from tool output"
+
+    SessionEnd:
+      required: true
+      timeout_ms: 30000
+      mode: "Deep dreaming"
+      actions:
+        - "Run memory consolidation"
+        - "Goal discovery"
+
+    PreCompact:
+      required: false
+      timeout_ms: 10000
+      actions:
+        - "Extract salient memories before context compaction"
+
+    SubagentStop:
+      required: false
+      timeout_ms: 5000
+      actions:
+        - "Merge subagent learnings into main memory"
+
+  skills:
+    memory-inject:
+      model: haiku
+      trigger: "Auto-invoke on context needs"
+      mcp_tool: inject_context
+      permissions: read-only
+      constraint: "No store_memory access"
+
+    semantic-search:
+      model: sonnet
+      trigger: "Explicit search with entry-point selection"
+      mcp_tool: search_graph
+      features:
+        - "All comparison modes supported"
+        - "Returns per-space scores"
+
+    goal-discovery:
+      model: opus
+      trigger: "Discover emergent goals from patterns"
+      mcp_tool: discover_goals
+      permissions: read-only
+      constraint: "No manual goal setting"
+      returns: "Ranked goals with confidence"
+
+    consolidate:
+      model: sonnet
+      trigger: "Memory dreaming and pruning"
+      mcp_tool: consolidate_memories
+      permissions: elevated
+      modes: [light, deep, REM]
+
+  subagents:
+    embedding-agent:
+      model: haiku
+      purpose: "Generate all 13 embeddings in parallel"
+      constraint: "Must validate array completeness"
+      performance_target: "<500ms"
+
+    search-agent:
+      model: haiku
+      purpose: "Entry-point discovery and reranking"
+      features:
+        - "Select optimal embedder for query"
+      performance_target: "<30ms"
+
+    goal-agent:
+      model: opus
+      purpose: "Autonomous goal emergence"
+      features:
+        - "K-means clustering on purpose vectors"
+        - "Update SELF_EGO_NODE"
+
+    dream-agent:
+      model: sonnet
+      purpose: "Memory consolidation"
+      features:
+        - "Hippocampal replay simulation"
+        - "Prune below salience threshold"
+
+# ═══════════════════════════════════════════════════════════════════════
 # 13-MODEL EMBEDDING → TELEOLOGICAL FINGERPRINT
 # ═══════════════════════════════════════════════════════════════════════
 embeddings:
   paradigm: "NO FUSION - Store all 13 embeddings; ~17KB quantized (63% reduction), 100% info preserved"
 
-  models: # dim|math|hw|lat|purpose|quant
-    E1_Semantic: { dim: 1024, math: Dense_Transformer, lat: "<5ms", quant: "PQ-8", matryoshka: [512,256,128] }
-    E2_Temporal_Recent: { dim: 512, math: Exp_Decay, lat: "<2ms", quant: Float8 }
-    E3_Temporal_Periodic: { dim: 512, math: Fourier, lat: "<2ms", quant: Float8 }
-    E4_Temporal_Positional: { dim: 512, math: Sin_PE, lat: "<2ms", quant: Float8 }
-    E5_Causal: { dim: 768, math: SCM_Intervention, lat: "<8ms", quant: "PQ-8", asymmetric: true }
-    E6_Sparse: { dim: "~30K 5%", math: TopK, lat: "<3ms", quant: Sparse }
-    E7_Code: { dim: 1536, math: AST_Transformer, lat: "<10ms", quant: "PQ-8" }
-    E8_Graph: { dim: 384, math: MeanPooling, lat: "<5ms", quant: Float8 }
-    E9_HDC: { dim: "10K→1024", math: XOR_Hamming, lat: "<1ms", quant: Binary }
-    E10_Multimodal: { dim: 768, math: CrossAttention, lat: "<15ms", quant: "PQ-8" }
-    E11_Entity: { dim: 384, math: "h+r≈t", lat: "<2ms", quant: Float8 }
-    E12_LateInteraction: { dim: "128D/tok", math: ColBERT_MaxSim, lat: "<8ms", quant: TokenPruning }
-    E13_SPLADE: { dim: "~30K sparse", math: SPLADE_v2, lat: "<5ms", quant: Sparse }
+  models: # dim|math|lat|quant|entry_point
+    E1_Semantic:
+      dim: 1024
+      type: dense
+      math: Dense_Transformer
+      lat: "<5ms"
+      quant: "PQ-8"
+      matryoshka: [512,256,128]
+      entry_point: "Default for general queries"
+      model_ref: "sentence-transformers/all-MiniLM-L12-v2 or similar"
+
+    E2_Temporal_Recent:
+      dim: 512
+      type: dense
+      math: Exp_Decay
+      lat: "<2ms"
+      quant: Float8
+      entry_point: "For 'recent', 'latest', 'new' queries"
+      encodes: "time-since-creation features"
+
+    E3_Temporal_Periodic:
+      dim: 512
+      type: dense
+      math: Fourier
+      lat: "<2ms"
+      quant: Float8
+      entry_point: "For 'every Monday', 'morning routine' queries"
+      encodes: "day-of-week, time-of-day cyclical patterns"
+
+    E4_Temporal_Positional:
+      dim: 512
+      type: dense
+      math: Sin_PE
+      lat: "<2ms"
+      quant: Float8
+      entry_point: "For 'who', 'what', entity-focused queries"
+      encodes: "named entity links, who/what relationships"
+
+    E5_Causal:
+      dim: 768
+      type: dense
+      math: SCM_Intervention
+      lat: "<8ms"
+      quant: "PQ-8"
+      asymmetric: true
+      entry_point: "For 'why', 'because', 'caused by' queries"
+      encodes: "cause-effect chains, because/therefore relationships"
+
+    E6_Sparse:
+      dim: "~30K 5%"
+      type: sparse
+      math: TopK
+      lat: "<3ms"
+      quant: Sparse
+      entry_point: "For exact keyword queries"
+      encodes: "sparse lexical, keyword precision"
+
+    E7_Code:
+      dim: 1536
+      type: dense
+      math: AST_Transformer
+      lat: "<10ms"
+      quant: "PQ-8"
+      entry_point: "For code queries, technical context"
+      encodes: "discourse context, surrounding conversation"
+
+    E8_Graph:
+      dim: 384
+      type: dense
+      math: MeanPooling
+      lat: "<5ms"
+      quant: Float8
+      entry_point: "For 'feels like', emotional queries"
+      encodes: "affective valence, sentiment and emotion"
+
+    E9_HDC:
+      dim: "10K→1024"
+      type: binary
+      math: XOR_Hamming
+      lat: "<1ms"
+      quant: Binary
+      entry_point: "For pattern matching, structural queries"
+      encodes: "structural patterns, grammar and structure"
+
+    E10_Multimodal:
+      dim: 768
+      type: dense
+      math: CrossAttention
+      lat: "<15ms"
+      quant: "PQ-8"
+      entry_point: "For 'how to', intent queries"
+      encodes: "intent and function, what the content does"
+
+    E11_Entity:
+      dim: 384
+      type: dense
+      math: "h+r≈t"
+      lat: "<2ms"
+      quant: Float8
+      entry_point: "For cross-modal retrieval"
+      encodes: "multi-modal links, bridges text/code/diagrams"
+
+    E12_LateInteraction:
+      dim: "128D/tok"
+      type: dense_per_token
+      math: ColBERT_MaxSim
+      lat: "<8ms"
+      quant: TokenPruning
+      entry_point: "For precise document matching"
+      encodes: "ColBERT-style token-level, variable length"
+
+    E13_SPLADE:
+      dim: "~30K sparse"
+      type: sparse
+      math: SPLADE_v2
+      lat: "<5ms"
+      quant: Sparse
+      entry_point: "For keyword expansion queries"
+      encodes: "term matching variant, complementary to E6"
 
   fingerprint:
     semantic_fingerprint: "[E1..E13]"
@@ -568,3 +902,71 @@ hardware:
   cuda: { v: "13.1", features: { cuda_tile: "60-80% dev reduction", green_contexts: "SM partitioning", fp4: "70% mem, 3x throughput", grouped_gemm: "4x MoE speedup" } }
   precision: { "E1,E5,E7,E10": "FP8/PQ-8", "E2-4,E8,E11": Float8, E9: Binary, "E6,E13": Sparse, E12: TokenPruning }
   green_contexts: { context_a: { sm: "70%", purpose: "GW+Kuramoto real-time" }, context_b: { sm: "30%", purpose: "Dream+Gardener background" } }
+
+# ═══════════════════════════════════════════════════════════════════════
+# VERSION HISTORY
+# ═══════════════════════════════════════════════════════════════════════
+version_history:
+  "4.2.0":
+    date: "2025-01-09"
+    changes:
+      - "Added ARCH-01 to ARCH-08 architectural rules from constitution.md v2.0"
+      - "Added Claude Code integration section (hooks, skills, subagents)"
+      - "Enhanced anti-patterns with severity and rationale (AP-01 to AP-23)"
+      - "Added TypeScript coding standards"
+      - "Enhanced embeddings with entry_point and encodes fields"
+      - "Aligned with constitution.md specification v2.0"
+
+  "4.1.0":
+    date: "2025-01-08"
+    changes:
+      - "Initial optimized YAML constitution"
+      - "Bio-nervous 5-layer architecture"
+      - "GWT consciousness integration"
+      - "NORTH autonomous services (008-020)"
+      - "Adaptive threshold calibration"
+
+  "2.0.0":
+    date: "2025-01-09"
+    source: "constitution.md"
+    changes:
+      - "Initial spec for Teleological Array System refactor"
+      - "Established 13-embedder architecture"
+      - "Apples-to-apples comparison semantics"
+      - "Autonomous-first design"
+      - "Claude Code integration requirements"
+
+# ═══════════════════════════════════════════════════════════════════════
+# QUICK REFERENCE (from constitution.md)
+# ═══════════════════════════════════════════════════════════════════════
+quick_reference:
+  critical_rules:
+    ARCH-01: "TeleologicalArray is atomic (all 13 embeddings)"
+    ARCH-02: "Apples-to-apples comparison only"
+    ARCH-03: "Autonomous-first (no manual goals)"
+    AP-01: "No manual goal setting"
+    AP-02: "No cross-embedder comparison"
+    AP-03: "No dimension projection"
+    AP-04: "No partial array storage"
+
+  performance_targets:
+    entry_point_search: "<5ms p95"
+    full_retrieval: "<30ms p95"
+    thirteen_model_embedding: "<500ms p95"
+    pre_tool_use_hook: "<100ms p95"
+    memory_per_array: "<17KB quantized"
+
+  embedder_summary:
+    E1: { name: Semantic, dims: 1024, type: dense, use: "General meaning" }
+    E2: { name: TemporalRecent, dims: 512, type: dense, use: "Recency" }
+    E3: { name: TemporalPeriodic, dims: 512, type: dense, use: "Cycles" }
+    E4: { name: Entity, dims: 512, type: dense, use: "Who/what" }
+    E5: { name: Causal, dims: 768, type: dense, use: "Why/because" }
+    E6: { name: SPLADE, dims: "~30K", type: sparse, use: "Keywords" }
+    E7: { name: Code, dims: 1536, type: dense, use: "Code/tech" }
+    E8: { name: Emotional, dims: 384, type: dense, use: "Sentiment" }
+    E9: { name: Syntactic, dims: 1024, type: binary, use: "Structure" }
+    E10: { name: Pragmatic, dims: 768, type: dense, use: "Intent" }
+    E11: { name: Entity, dims: 384, type: dense, use: "Multi-modal" }
+    E12: { name: LateInteraction, dims: "128/tok", type: dense, use: "Precise match" }
+    E13: { name: KeywordSPLADE, dims: "~30K", type: sparse, use: "Term expansion" }

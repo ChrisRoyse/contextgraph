@@ -12,7 +12,69 @@ The search system enables finding relevant teleological arrays using various com
 4. **Full Array Comparison**: After discovery, compare complete teleological fingerprints
 5. **Configurable Fusion**: Search matrices define how to weight and combine results
 
-### 1.2 Search Flow
+### 1.2 Target Architecture Flow
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     CLAUDE CODE INTEGRATION LAYER                   │
+│                                                                     │
+│  UserPromptSubmit Hook → Query Enhancement → Intent Detection       │
+│  PreToolUse Hook → Context Injection → Session/Purpose Alignment    │
+│  Skills → Auto-invoked on keywords → Semantic/Causal/Temporal       │
+│  Subagents → Parallel search coordination → Result aggregation      │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    MEMORY INJECTION (MCP)                           │
+│                                                                     │
+│  Session context, teleological purpose, learned thresholds          │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│               AUTONOMOUS EMBEDDING (13 MODELS)                      │
+│                                                                     │
+│  Query → Parallel embedding across all 13 spaces → TeleologicalArray│
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│              TELEOLOGICAL ARRAY STORAGE (HNSW INDICES)              │
+│                                                                     │
+│  13 HNSW indices, one per embedding space, 150x-12,500x faster      │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│         ENTRY-POINT DISCOVERY (ANY OF 13 SPACES)                    │
+│                                                                     │
+│  Parallel search all 13 indices → Union candidates                  │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│           FULL ARRAY COMPARISON (APPLES TO APPLES)                  │
+│                                                                     │
+│  Fetch complete arrays → Per-embedder similarity → Matrix aggregation│
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                            │
+                            ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│          AUTONOMOUS GOAL EMERGENCE (CLUSTERING)                     │
+│                                                                     │
+│  Correlation analysis → Purpose alignment → Goal clustering          │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.3 Search Flow Detail
 
 ```
 Query TeleologicalArray
@@ -78,23 +140,31 @@ User Query (natural language)
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    UserPromptSubmit Hook                            │
 │                                                                     │
+│  TRIGGERS: Before any tool is called                                │
+│  PURPOSE: Enhance queries with intent detection and expansion       │
+│                                                                     │
 │  1. Analyze query intent (semantic, temporal, causal, code)        │
 │  2. Detect implicit constraints (time ranges, entity refs)          │
 │  3. Expand query with synonyms/related concepts                     │
 │  4. Select optimal search matrix preset                             │
 │  5. Configure discovery strategy based on intent                    │
+│  6. AUTO-INVOKE appropriate search skill                            │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
          │
-         ▼ (Enhanced Query)
+         ▼ (Enhanced Query + Selected Skill)
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    PreToolUse Hook (search tools)                   │
+│                                                                     │
+│  TRIGGERS: Before each MCP search tool invocation                   │
+│  PURPOSE: Inject session context and learned parameters             │
 │                                                                     │
 │  1. Inject session context (recent memories, active goals)          │
 │  2. Add teleological purpose alignment filters                      │
 │  3. Apply user preference weights to search matrix                  │
 │  4. Configure per-space thresholds from learned patterns            │
 │  5. Enable/disable spaces based on query type                       │
+│  6. Add ReasoningBank-learned optimal configurations                │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
          │
@@ -105,17 +175,22 @@ User Query (natural language)
 ┌─────────────────────────────────────────────────────────────────────┐
 │                    PostToolUse Hook (search results)                │
 │                                                                     │
+│  TRIGGERS: After search tool returns results                        │
+│  PURPOSE: Learn from search patterns for future optimization        │
+│                                                                     │
 │  1. Log search patterns for learning                                │
 │  2. Update query-result correlation cache                           │
 │  3. Track which embedding spaces contributed most                   │
 │  4. Feed results to teleological purpose analyzer                   │
+│  5. Store successful patterns in ReasoningBank                      │
+│  6. Trigger autonomous goal emergence clustering                    │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
 ### 2.2 UserPromptSubmit Hook Implementation
 
-The `UserPromptSubmit` hook fires before any tool is called, enabling query enhancement.
+The `UserPromptSubmit` hook fires before any tool is called, enabling query enhancement and automatic skill invocation.
 
 ```typescript
 // .claude/hooks/search-query-enhance.ts
@@ -134,7 +209,8 @@ export const searchQueryEnhanceHook: Hook<SearchQueryContext> = {
   // Only activate for search-related prompts
   matcher: (ctx) => {
     const searchKeywords = ['find', 'search', 'retrieve', 'lookup', 'recall',
-                           'remember', 'what was', 'show me', 'get'];
+                           'remember', 'what was', 'show me', 'get', 'discover',
+                           'explore', 'context', 'related', 'similar'];
     return searchKeywords.some(kw =>
       ctx.userQuery.toLowerCase().includes(kw)
     );
@@ -143,9 +219,15 @@ export const searchQueryEnhanceHook: Hook<SearchQueryContext> = {
   async execute(ctx: SearchQueryContext): Promise<QueryEnhancement> {
     const analysis = await analyzeQueryIntent(ctx.userQuery);
 
+    // Determine which skill to auto-invoke
+    const selectedSkill = selectSkillForIntent(analysis);
+
     return {
       // Enhanced query with expanded terms
       enhancedQuery: expandQuery(ctx.userQuery, analysis),
+
+      // Auto-invoke skill
+      invokeSkill: selectedSkill,
 
       // Recommended search configuration
       searchConfig: {
@@ -167,20 +249,23 @@ export const searchQueryEnhanceHook: Hook<SearchQueryContext> = {
         intentType: analysis.type,
         confidence: analysis.confidence,
         expansions: analysis.synonymsAdded,
+        skillSelected: selectedSkill,
       }
     };
   }
 };
 
-// Intent analysis determines optimal search configuration
+// Intent analysis determines optimal search configuration and skill
 async function analyzeQueryIntent(query: string): Promise<IntentAnalysis> {
   const patterns = {
-    semantic: /what|meaning|about|explain|describe/i,
+    semantic: /what|meaning|about|explain|describe|find|search/i,
     temporal: /when|recent|yesterday|last|before|after|during/i,
     causal: /why|cause|because|result|effect|lead to/i,
     code: /function|class|method|api|implementation|code/i,
     entity: /who|person|company|project|named/i,
     relational: /related|similar|like|connected|associated/i,
+    exploratory: /explore|discover|any connection|comprehensive/i,
+    context: /context|background|relevant|what do we know/i,
   };
 
   const matches: IntentType[] = [];
@@ -196,6 +281,21 @@ async function analyzeQueryIntent(query: string): Promise<IntentAnalysis> {
   };
 }
 
+// Select skill based on detected intent
+function selectSkillForIntent(analysis: IntentAnalysis): string {
+  const skillMap: Record<IntentType, string> = {
+    semantic: 'semantic-search',
+    temporal: 'temporal-search',
+    causal: 'causal-search',
+    code: 'code-search',
+    entity: 'entity-search',
+    relational: 'multi-space-search',
+    exploratory: 'entry-point-search',
+    context: 'context-search',
+  };
+  return skillMap[analysis.type] || 'semantic-search';
+}
+
 // Select search matrix preset based on intent
 function selectPreset(analysis: IntentAnalysis): string {
   const presetMap: Record<IntentType, string> = {
@@ -205,6 +305,8 @@ function selectPreset(analysis: IntentAnalysis): string {
     code: 'code_focused',
     entity: 'knowledge_graph',
     relational: 'correlation_aware',
+    exploratory: 'entry_point_optimized',
+    context: 'correlation_aware',
   };
   return presetMap[analysis.type] || 'identity';
 }
@@ -215,6 +317,9 @@ function selectStrategy(analysis: IntentAnalysis): DiscoveryStrategy {
     return { type: 'QuorumN', n: 3 };
   }
   if (analysis.secondaryTypes.length >= 2) {
+    return { type: 'UnionAll' };
+  }
+  if (analysis.type === 'exploratory') {
     return { type: 'UnionAll' };
   }
   return { type: 'Tiered', primary: analysis.type, expandThreshold: 50 };
@@ -229,6 +334,8 @@ function selectSpaces(analysis: IntentAnalysis): EmbedderMask {
     code: [Embedder.Code, Embedder.Semantic, Embedder.LateInteraction],
     entity: [Embedder.Entity, Embedder.Semantic, Embedder.Causal],
     relational: [Embedder.Graph, Embedder.Entity, Embedder.Causal],
+    exploratory: Embedder.all(), // All 13 spaces
+    context: Embedder.all(),
   };
 
   const spaces = new Set(spaceMap[analysis.type] || [Embedder.Semantic]);
@@ -242,7 +349,7 @@ function selectSpaces(analysis: IntentAnalysis): EmbedderMask {
 
 ### 2.3 PreToolUse Hook Implementation
 
-The `PreToolUse` hook fires before each tool invocation, enabling context injection.
+The `PreToolUse` hook fires before each tool invocation, enabling context injection and learned parameter application.
 
 ```typescript
 // .claude/hooks/search-context-inject.ts
@@ -261,14 +368,16 @@ export const searchContextInjectHook: Hook<SearchToolContext> = {
   // Only activate for search-related MCP tools
   matcher: (ctx) => {
     const searchTools = [
-      'search_teleological',
-      'search_single_space',
-      'search_muvera',
-      'search_semantic',
-      'search_causal',
-      'search_temporal',
+      'mcp__contextgraph__search_teleological',
+      'mcp__contextgraph__search_single_space',
+      'mcp__contextgraph__search_muvera',
+      'mcp__contextgraph__search_semantic',
+      'mcp__contextgraph__search_causal',
+      'mcp__contextgraph__search_temporal',
+      'mcp__contextgraph__search_code',
+      'mcp__contextgraph__search_entity',
     ];
-    return searchTools.includes(ctx.tool.name);
+    return searchTools.some(t => ctx.tool.name.includes(t));
   },
 
   async execute(ctx: SearchToolContext): Promise<ToolCallModification> {
@@ -297,6 +406,13 @@ export const searchContextInjectHook: Hook<SearchToolContext> = {
 
       // Add user preference weights
       userWeights: ctx.sessionState.userPreferences?.searchWeights,
+
+      // Enable autonomous goal emergence
+      goalEmergence: {
+        enabled: true,
+        clusterResults: true,
+        detectPatterns: true,
+      },
     };
 
     return {
@@ -349,7 +465,7 @@ export const searchResultLearnHook: Hook<HookContext> = {
   name: 'search-result-learn',
   event: 'PostToolUse',
 
-  matcher: (ctx) => ctx.tool?.name?.startsWith('search_'),
+  matcher: (ctx) => ctx.tool?.name?.includes('search'),
 
   async execute(ctx: HookContext): Promise<void> {
     const result = ctx.toolResult as SearchResults;
@@ -378,6 +494,11 @@ export const searchResultLearnHook: Hook<HookContext> = {
 
     // Update space contribution tracking
     await updateSpaceContributions(result.discovery_stats);
+
+    // Trigger autonomous goal emergence if enabled
+    if (ctx.tool.parameters.goalEmergence?.enabled) {
+      await triggerGoalEmergence(result.matches);
+    }
   }
 };
 
@@ -400,6 +521,26 @@ function calculateSearchReward(result: SearchResults, ctx: HookContext): number 
 
   return Math.min(1.0, Math.max(0, reward));
 }
+
+async function triggerGoalEmergence(matches: SearchMatch[]): Promise<void> {
+  // Cluster results by purpose
+  const purposeClusters = new Map<string, SearchMatch[]>();
+
+  for (const match of matches) {
+    const purposeId = match.array.purpose?.id || 'unknown';
+    if (!purposeClusters.has(purposeId)) {
+      purposeClusters.set(purposeId, []);
+    }
+    purposeClusters.get(purposeId)!.push(match);
+  }
+
+  // Detect emerging goals from clusters
+  for (const [purposeId, cluster] of purposeClusters) {
+    if (cluster.length >= 3) {
+      await detectEmergingGoal(purposeId, cluster);
+    }
+  }
+}
 ```
 
 ### 2.5 Hook Configuration
@@ -415,6 +556,7 @@ hooks:
       enableExpansion: true
       maxExpansions: 5
       learnFromHistory: true
+      autoInvokeSkill: true
 
   - name: search-context-inject
     event: PreToolUse
@@ -424,6 +566,7 @@ hooks:
       injectPurpose: true
       injectSession: true
       learnedThresholds: true
+      enableGoalEmergence: true
 
   - name: search-result-learn
     event: PostToolUse
@@ -433,6 +576,7 @@ hooks:
       storePatterns: true
       updateContributions: true
       minRewardToStore: 0.3
+      triggerGoalEmergence: true
 ```
 
 ## 3. Search Skills
@@ -454,6 +598,8 @@ User Input: "find memories related to authentication"
 │     - "related", "similar", "like" → multi-space-search             │
 │     - "caused", "leads to", "because" → causal-search               │
 │     - "when", "recent", "yesterday" → temporal-search               │
+│     - "explore", "discover", "any connection" → entry-point-search  │
+│     - "context", "background" → context-search                      │
 │  3. Score skill relevance                                           │
 │  4. Auto-invoke highest-scoring skill                               │
 │                                                                     │
@@ -739,11 +885,11 @@ their results. Useful when you know the nature of your query.
 
 ## Aggregation Strategies
 
-- **weighted_sum**: Σ(weight_i * score_i) - balanced fusion
+- **weighted_sum**: sum(weight_i * score_i) - balanced fusion
 - **rrf**: Reciprocal Rank Fusion - good for hybrid
 - **max**: Best score across spaces - OR-like behavior
 - **min**: Worst score across spaces - AND-like behavior
-- **geometric**: (Π score_i^weight_i) - penalizes low scores
+- **geometric**: (product score_i^weight_i) - penalizes low scores
 
 ## Example Usage
 
@@ -769,18 +915,23 @@ Results:
 ```
 ```
 
-### 3.5 Context Search Skill (Complete Example)
+### 3.5 Context Search Skill (Complete SKILL.md Example)
+
+This is a complete, production-ready skill definition that demonstrates all SKILL.md capabilities.
 
 ```yaml
 # .claude/skills/context-search/SKILL.md
 ---
+# SKILL METADATA
 name: context-search
+version: 1.0.0
+author: contextgraph
 description: |
   Search for relevant context by combining session history, teleological
   purpose alignment, and multi-space similarity. Optimized for providing
   context to AI assistants during conversation.
-version: 1.0.0
-author: contextgraph
+
+# TRIGGER KEYWORDS - These words auto-invoke this skill
 triggers:
   - context
   - "get context"
@@ -788,34 +939,46 @@ triggers:
   - "what context"
   - "relevant context"
   - background
+  - "what do we know"
+  - "related info"
+
+# COMMAND ARGUMENTS
 arguments:
   - name: query
     type: string
     required: true
     description: The topic or question needing context
+
   - name: depth
     type: string
     default: normal
     enum: [shallow, normal, deep]
     description: How much context to retrieve
+
   - name: recency_weight
     type: number
     default: 0.3
     min: 0
     max: 1
     description: Weight given to recent memories vs semantic relevance
+
   - name: purpose_alignment
     type: boolean
     default: true
     description: Filter results by teleological purpose alignment
+
   - name: include_causal_chain
     type: boolean
     default: false
     description: Include causal predecessors and successors
+
+# MCP TOOLS THIS SKILL USES
 tools:
   - mcp__contextgraph__search_teleological
   - mcp__contextgraph__get_purpose_chain
   - mcp__contextgraph__expand_causal
+
+# SKILL-SPECIFIC CONFIGURATION
 config:
   max_results:
     shallow: 5
@@ -829,6 +992,27 @@ config:
     shallow: entry_point_optimized
     normal: correlation_aware
     deep: recall_maximizing
+
+# HOOKS THIS SKILL INTEGRATES WITH
+hooks:
+  pre_execute:
+    - name: search-context-inject
+      inject:
+        - sessionContext
+        - purposeFilter
+        - learnedThresholds
+  post_execute:
+    - name: search-result-learn
+      store_pattern: true
+
+# SUBAGENT COORDINATION
+subagents:
+  - type: semantic-search-agent
+    always_include: true
+  - type: temporal-search-agent
+    include_when: query.contains_temporal_reference
+  - type: causal-search-agent
+    include_when: include_causal_chain == true
 ---
 
 # Context Search Skill
@@ -846,9 +1030,50 @@ answer questions or complete tasks. It combines:
 3. **Purpose alignment** - Filter by teleological goal compatibility
 4. **Causal expansion** - Optionally include cause-effect chains
 
+## How It Works With Hooks
+
+### UserPromptSubmit Integration
+
+When a user types something like "get context for authentication", the
+UserPromptSubmit hook:
+
+1. Detects "context" keyword
+2. Auto-selects this skill
+3. Enhances query with session context
+4. Passes control to skill execution
+
+```typescript
+// Hook detects and selects skill
+if (query.includes('context')) {
+  return {
+    invokeSkill: 'context-search',
+    enhancedQuery: expandWithSessionContext(query),
+  };
+}
+```
+
+### PreToolUse Integration
+
+Before each MCP tool call, the PreToolUse hook injects:
+
+```typescript
+{
+  sessionContext: {
+    recentArrayIds: [...],  // Last 10 memories accessed
+    activeTopics: [...],     // Current conversation topics
+    conversationEmbedding: [...],  // Embedding of recent turns
+  },
+  purposeFilter: {
+    alignWithPurpose: currentPurposeId,
+    minAlignment: 0.3,
+  },
+  learnedThresholds: [...],  // From ReasoningBank
+}
+```
+
 ## Search Configuration by Depth
 
-### Shallow (Quick context)
+### Shallow (Quick context, <20ms)
 ```rust
 SearchQuery {
   discovery: DiscoveryConfig {
@@ -863,7 +1088,7 @@ SearchQuery {
 }
 ```
 
-### Normal (Balanced)
+### Normal (Balanced, <50ms)
 ```rust
 SearchQuery {
   discovery: DiscoveryConfig {
@@ -875,7 +1100,7 @@ SearchQuery {
 }
 ```
 
-### Deep (Comprehensive)
+### Deep (Comprehensive, <150ms)
 ```rust
 SearchQuery {
   discovery: DiscoveryConfig {
@@ -889,24 +1114,7 @@ SearchQuery {
 
 ## Execution Steps
 
-### Step 1: Session Context Injection
-
-The skill automatically injects session context via the PreToolUse hook:
-
-```typescript
-// Injected by search-context-inject hook
-{
-  sessionContext: {
-    recentArrayIds: [...],  // Last 10 memories accessed
-    activeTopics: [...],     // Current conversation topics
-    conversationEmbedding: [...],  // Embedding of recent turns
-  }
-}
-```
-
-### Step 2: Query Enhancement
-
-The UserPromptSubmit hook enhances the query:
+### Step 1: Query Enhancement (via UserPromptSubmit hook)
 
 ```typescript
 // Enhanced query structure
@@ -915,6 +1123,24 @@ The UserPromptSubmit hook enhances the query:
   expandedTerms: [...],  // Synonyms and related concepts
   detectedEntities: [...],  // Named entities in query
   temporalHints: {...},  // Time references if any
+}
+```
+
+### Step 2: Context Injection (via PreToolUse hook)
+
+Session context and learned parameters are injected before search:
+
+```typescript
+{
+  sessionContext: {
+    recentArrayIds: [...],
+    activeTopics: [...],
+    conversationEmbedding: [...],
+  },
+  purposeFilter: {
+    alignWithPurpose: purposeId,
+    minAlignment: 0.3,
+  },
 }
 ```
 
@@ -980,10 +1206,10 @@ for candidate in &aligned {
 
 Format results with rich context information:
 
-```
+```handlebars
 ## Context for: "{{query}}"
 
-### Primary Context ({{matches.len()}} items)
+### Primary Context ({{matches.len}} items)
 
 {{#each matches}}
 #### {{rank}}. {{title}} [{{similarity | format_percent}}]
@@ -1040,7 +1266,7 @@ layer handles provider-specific API differences...
 **Alignment**: 88%
 **Discovered via**: Semantic, Causal
 
-Transactions follow a state machine: PENDING → PROCESSING →
+Transactions follow a state machine: PENDING -> PROCESSING ->
 COMPLETED/FAILED. State transitions are idempotent and logged
 for audit purposes...
 ```
@@ -1072,7 +1298,7 @@ The Stripe webhook endpoint was timing out under load due to...
 
 ## Integration with Subagents
 
-This skill can be executed by search subagents in a swarm:
+This skill can spawn specialized subagents for complex queries:
 
 ```typescript
 // Spawn context-search subagent
@@ -1117,6 +1343,10 @@ skill_discovery:
       prefer: [temporal-search, context-search]
     - if: query.contains("why") or query.contains("cause")
       prefer: [causal-search, entry-point-search]
+    - if: query.contains("context") or query.contains("background")
+      prefer: [context-search]
+    - if: query.contains("explore") or query.contains("discover")
+      prefer: [entry-point-search]
 
   # Default skill when no specific match
   default_skill: semantic-search
@@ -1154,6 +1384,14 @@ auto_invoke:
     temporal-search:
       keywords: [when, recent, yesterday, "last week", before, after]
       confidence_threshold: 0.85
+
+    code-search:
+      keywords: [function, class, method, implementation, code, api]
+      confidence_threshold: 0.8
+
+    entity-search:
+      keywords: [who, person, company, project, named, entity]
+      confidence_threshold: 0.75
 ```
 
 ## 4. Search Subagents
@@ -2362,13 +2600,13 @@ pub struct SearchMatrix {
 
 #[derive(Clone, Copy, Debug)]
 pub enum AggregationType {
-    /// Weighted sum: Σ w_i * score_i
+    /// Weighted sum: sum w_i * score_i
     WeightedSum,
 
-    /// Weighted geometric mean: (Π score_i^w_i)
+    /// Weighted geometric mean: (product score_i^w_i)
     WeightedGeometric,
 
-    /// Reciprocal Rank Fusion: Σ 1/(k + rank_i)
+    /// Reciprocal Rank Fusion: sum 1/(k + rank_i)
     RRF { k: f32 },
 
     /// Maximum across weighted scores
@@ -2640,153 +2878,143 @@ impl SearchMatrixLibrary {
 | High precision (answers) | `precision_maximizing` | QuorumN(3) | Confident matches only |
 | Performance-critical | `entry_point_optimized` | Muvera | 8x speedup |
 
-## 9. Search Strategies by Complexity
+## 9. Autonomous Goal Emergence
 
-### 9.1 Single Embedder Search (Fastest)
+### 9.1 Overview
 
-When you only need to search one dimension:
+The search system supports autonomous goal emergence through clustering and pattern detection. When results are returned, they can be analyzed for emerging themes and purposes.
 
 ```rust
-/// Single embedder search strategy
-pub struct SingleEmbedderSearch {
-    /// Which embedder to use
-    embedder: Embedder,
+/// Autonomous goal emergence from search results
+pub struct GoalEmergenceAnalyzer {
+    /// Purpose clustering threshold
+    clustering_threshold: f32,
 
-    /// Index for this embedder
-    index: Arc<dyn EmbedderIndex>,
+    /// Minimum cluster size for goal detection
+    min_cluster_size: usize,
+
+    /// Pattern recognition model
+    pattern_model: Arc<dyn PatternRecognizer>,
 }
 
-impl SingleEmbedderSearch {
-    pub async fn search(
+impl GoalEmergenceAnalyzer {
+    /// Analyze search results for emerging goals
+    pub async fn analyze(
         &self,
-        query_embedding: &EmbedderOutput,
-        top_k: usize,
-    ) -> Result<Vec<(Uuid, f32)>, SearchError> {
-        validate_embedder_output(query_embedding, self.embedder)?;
-        self.index.search(query_embedding, top_k).await
-    }
-}
+        results: &SearchResults,
+    ) -> Result<EmergentGoals, AnalysisError> {
+        // Cluster results by purpose
+        let purpose_clusters = self.cluster_by_purpose(&results.matches)?;
 
-// Use cases:
-// - Pure semantic search: E1 (Semantic)
-// - Entity lookup: E11 (Entity/TransE)
-// - Keyword search: E6 or E13 (SPLADE)
-// - Recent memories: E2 (Temporal Recent)
-// - Code patterns: E7 (Code/AST)
-```
+        // Detect patterns within clusters
+        let patterns = self.detect_patterns(&purpose_clusters)?;
 
-### 9.2 Embedder Group Search (Fast)
+        // Identify emerging goals
+        let goals = self.identify_goals(&patterns)?;
 
-Search a predefined subset of embedders:
-
-```rust
-/// Group-based search combining specific embedders
-pub struct EmbedderGroupSearch {
-    /// Which group to use
-    group: EmbedderGroup,
-
-    /// Indices for embedders in the group
-    indices: Vec<Arc<dyn EmbedderIndex>>,
-}
-
-impl EmbedderGroupSearch {
-    pub async fn search(
-        &self,
-        query_array: &TeleologicalArray,
-        top_k: usize,
-    ) -> Result<Vec<SearchMatch>, SearchError> {
-        let active_embedders = self.group.to_mask().iter_enabled().collect::<Vec<_>>();
-
-        // Parallel search across group
-        let searches: Vec<_> = active_embedders.iter().map(|&idx| {
-            let index = self.indices[idx].clone();
-            let embedding = query_array.embeddings[idx].clone();
-            async move { index.search(&embedding, top_k * 2).await }
-        }).collect();
-
-        let results = futures::future::try_join_all(searches).await?;
-
-        // Union and score with equal weights
-        self.aggregate_with_equal_weights(results, active_embedders.len(), top_k).await
-    }
-}
-
-// Predefined groups:
-// - Temporal: E2 + E3 + E4
-// - Relational: E5 + E11 (Causal + Entity)
-// - Lexical: E6 + E12 + E13 (Sparse + Late + SPLADE)
-// - Multimodal: E1 + E10 (Semantic + Multimodal)
-```
-
-### 9.3 Full Entry-Point Discovery (Comprehensive)
-
-The complete multi-space search:
-
-```rust
-/// Full entry-point discovery with configurable comparison
-pub struct FullTeleologicalSearch {
-    discovery: EntryPointDiscovery,
-    comparison: FullArrayComparison,
-}
-
-impl TeleologicalSearchEngine for FullTeleologicalSearch {
-    async fn search(&self, query: SearchQuery) -> Result<SearchResults, SearchError> {
-        let start = Instant::now();
-
-        // Stage 1: Entry-point discovery across all spaces
-        let discovered = self.discovery.discover(
-            &query.query_array,
-            &query.discovery,
-        ).await?;
-
-        // Stage 2: Full teleological comparison
-        let matrix = query.comparison.to_matrix();
-        let mut scored = self.comparison.compare_candidates(
-            &query.query_array,
-            &discovered.candidates,
-            &matrix,
-        ).await?;
-
-        // Stage 3: Filtering and ranking
-        if let Some(min_sim) = query.min_similarity {
-            scored.retain(|c| c.final_score >= min_sim);
-        }
-
-        scored.truncate(query.top_k);
-
-        // Build results
-        let matches = scored.into_iter().enumerate().map(|(i, candidate)| {
-            SearchMatch {
-                array: candidate.array,
-                similarity: candidate.final_score,
-                embedder_scores: if query.include_breakdown {
-                    Some(candidate.embedder_scores)
-                } else {
-                    None
-                },
-                discovered_via: candidate.discovered_via,
-                correlations: if query.analyze_correlations {
-                    Some(CorrelationAnalysis::compute(
-                        &query.query_array,
-                        &candidate.array,
-                        &candidate.embedder_scores,
-                    ))
-                } else {
-                    None
-                },
-                rank: i + 1,
-            }
-        }).collect();
-
-        Ok(SearchResults {
-            matches,
-            query_time_us: start.elapsed().as_micros() as u64,
-            candidates_discovered: discovered.candidates.len(),
-            candidates_evaluated: discovered.candidates.len(),
-            discovery_stats: discovered.stats,
-            metadata: SearchMetadata::default(),
+        Ok(EmergentGoals {
+            clusters: purpose_clusters,
+            patterns,
+            goals,
+            confidence: self.compute_confidence(&goals),
         })
     }
+
+    fn cluster_by_purpose(&self, matches: &[SearchMatch]) -> Result<Vec<PurposeCluster>, AnalysisError> {
+        let mut clusters: HashMap<String, Vec<&SearchMatch>> = HashMap::new();
+
+        for match_ in matches {
+            let purpose_id = match_.array.purpose.as_ref()
+                .map(|p| p.id.clone())
+                .unwrap_or_else(|| "unknown".to_string());
+
+            clusters.entry(purpose_id).or_default().push(match_);
+        }
+
+        clusters.into_iter()
+            .filter(|(_, members)| members.len() >= self.min_cluster_size)
+            .map(|(purpose_id, members)| {
+                Ok(PurposeCluster {
+                    purpose_id,
+                    members: members.into_iter().cloned().collect(),
+                    centroid: self.compute_centroid(&members)?,
+                })
+            })
+            .collect()
+    }
+
+    fn identify_goals(&self, patterns: &[Pattern]) -> Result<Vec<EmergentGoal>, AnalysisError> {
+        patterns.iter()
+            .filter(|p| p.strength >= self.clustering_threshold)
+            .map(|pattern| {
+                Ok(EmergentGoal {
+                    description: self.generate_goal_description(pattern)?,
+                    supporting_memories: pattern.supporting_matches.clone(),
+                    confidence: pattern.strength,
+                    suggested_purpose: self.suggest_purpose(pattern)?,
+                })
+            })
+            .collect()
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct EmergentGoals {
+    /// Clusters of related memories by purpose
+    pub clusters: Vec<PurposeCluster>,
+
+    /// Detected patterns across clusters
+    pub patterns: Vec<Pattern>,
+
+    /// Identified emerging goals
+    pub goals: Vec<EmergentGoal>,
+
+    /// Overall confidence in goal emergence
+    pub confidence: f32,
+}
+
+#[derive(Clone, Debug)]
+pub struct EmergentGoal {
+    /// Human-readable goal description
+    pub description: String,
+
+    /// Memories supporting this goal
+    pub supporting_memories: Vec<Uuid>,
+
+    /// Confidence score
+    pub confidence: f32,
+
+    /// Suggested teleological purpose
+    pub suggested_purpose: Option<Purpose>,
+}
+```
+
+### 9.2 Integration with Search Flow
+
+Goal emergence is triggered via the PostToolUse hook:
+
+```typescript
+// In search-result-learn hook
+async function triggerGoalEmergence(matches: SearchMatch[]): Promise<EmergentGoals> {
+  const analyzer = new GoalEmergenceAnalyzer({
+    clusteringThreshold: 0.6,
+    minClusterSize: 3,
+  });
+
+  const goals = await analyzer.analyze({ matches });
+
+  // Store emerging goals for future reference
+  for (const goal of goals.goals) {
+    await reasoningBank.storePattern({
+      task: 'goal-emergence',
+      input: { matchIds: goal.supporting_memories },
+      output: { goal: goal.description, purpose: goal.suggested_purpose },
+      reward: goal.confidence,
+      success: goal.confidence > 0.7,
+    });
+  }
+
+  return goals;
 }
 ```
 

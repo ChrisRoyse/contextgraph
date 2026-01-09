@@ -2961,3 +2961,1069 @@ The complete Claude Code extensibility structure:
 - [03-SEARCH.md](./03-SEARCH.md) - 5-stage retrieval pipeline
 - [04-COMPARISON.md](./04-COMPARISON.md) - Array comparison methods
 - [05-NORTH-STAR-REMOVAL.md](./05-NORTH-STAR-REMOVAL.md) - Manual North Star deprecation
+
+---
+
+## 13. Advanced Hook Patterns and Composition
+
+### 13.1 Complete settings.json with All Matchers
+
+The following configuration demonstrates ALL hook types with advanced matching patterns:
+
+```json
+{
+  "$schema": "https://claude.ai/schemas/settings.json",
+  "version": "1.0.0",
+
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": {
+          "toolNames": ["store_memory", "inject_context", "search_memory", "trigger_dream"]
+        },
+        "commands": [
+          "context-graph hooks pre-tool-use --tool \"$TOOL_NAME\" --session \"$CG_SESSION_ID\" --input-file \"$TOOL_INPUT_FILE\""
+        ],
+        "timeout_ms": 2000,
+        "description": "Prepare memory context and log trajectory intent"
+      },
+      {
+        "matcher": {
+          "toolNames": ["Read", "Edit", "Write", "MultiEdit"]
+        },
+        "commands": [
+          "context-graph hooks pre-tool-use --tool \"$TOOL_NAME\" --track-file-context --file \"$TOOL_INPUT_FILE\""
+        ],
+        "timeout_ms": 1000,
+        "description": "Track file operations for code embedding"
+      },
+      {
+        "matcher": {
+          "toolNames": ["Bash"]
+        },
+        "commands": [
+          "context-graph hooks pre-tool-use --tool Bash --command-preview \"$TOOL_INPUT_COMMAND\" --safety-check"
+        ],
+        "timeout_ms": 500,
+        "description": "Safety check bash commands"
+      },
+      {
+        "matcher": {
+          "toolNames": ["Task"]
+        },
+        "commands": [
+          "context-graph hooks pre-tool-use --tool Task --spawn-tracking --agent-type \"$TOOL_INPUT_TYPE\""
+        ],
+        "timeout_ms": 1000,
+        "description": "Track subagent spawning for learning coordination"
+      }
+    ],
+
+    "PostToolUse": [
+      {
+        "matcher": {
+          "toolNames": ["store_memory"]
+        },
+        "commands": [
+          "context-graph hooks post-tool-use --tool store_memory --result-file \"$TOOL_RESULT_FILE\" --train-patterns --update-steering"
+        ],
+        "timeout_ms": 5000,
+        "description": "Learn from storage, update steering rewards"
+      },
+      {
+        "matcher": {
+          "toolNames": ["search_memory", "inject_context"]
+        },
+        "commands": [
+          "context-graph hooks post-tool-use --tool \"$TOOL_NAME\" --result-file \"$TOOL_RESULT_FILE\" --update-access --learn-fusion-weights"
+        ],
+        "timeout_ms": 3000,
+        "description": "Update access patterns, learn retrieval weights"
+      },
+      {
+        "matcher": {
+          "toolNames": ["Edit", "Write", "MultiEdit"]
+        },
+        "commands": [
+          "context-graph hooks post-tool-use --tool \"$TOOL_NAME\" --file \"$TOOL_INPUT_FILE\" --embed-changes --extract-patterns"
+        ],
+        "timeout_ms": 10000,
+        "description": "Embed code changes into teleological memory"
+      },
+      {
+        "matcher": {
+          "toolNames": ["auto_bootstrap_north_star", "discover_sub_goals"]
+        },
+        "commands": [
+          "context-graph hooks post-tool-use --tool \"$TOOL_NAME\" --update-ego-node --recalibrate-kuramoto"
+        ],
+        "timeout_ms": 15000,
+        "description": "Update identity after goal discovery"
+      }
+    ],
+
+    "SessionStart": [
+      {
+        "commands": [
+          "context-graph hooks session-start --session-id \"$SESSION_ID\" --restore-ego --init-kuramoto --warm-workspace --load-cases"
+        ],
+        "timeout_ms": 15000,
+        "description": "Full consciousness initialization"
+      }
+    ],
+
+    "SessionEnd": [
+      {
+        "commands": [
+          "context-graph hooks session-end --session-id \"$SESSION_ID\" --consolidate --dream-if-needed --export-metrics --checkpoint --update-trajectory"
+        ],
+        "timeout_ms": 120000,
+        "description": "Complete session finalization with dream cycle"
+      }
+    ],
+
+    "UserPromptSubmit": [
+      {
+        "commands": [
+          "context-graph hooks user-prompt --content \"$PROMPT_CONTENT\" --predict-context --preload --suggest-skill --analyze-intent"
+        ],
+        "timeout_ms": 3000,
+        "description": "Predict memories and suggest skills"
+      }
+    ],
+
+    "PreCompact": [
+      {
+        "commands": [
+          "context-graph hooks pre-compact --context-size \"$CONTEXT_SIZE\" --prioritize-memories --preserve-identity --protect-high-r"
+        ],
+        "timeout_ms": 5000,
+        "description": "Protect high-coherence memories during compaction"
+      }
+    ],
+
+    "Stop": [
+      {
+        "commands": [
+          "context-graph hooks stop --session-id \"$SESSION_ID\" --checkpoint-state --flush-pending --save-trajectory"
+        ],
+        "timeout_ms": 10000,
+        "description": "Emergency state preservation"
+      }
+    ],
+
+    "SubagentStop": [
+      {
+        "matcher": {
+          "agentNames": ["embedding-specialist", "search-agent", "comparison-agent", "goal-agent"]
+        },
+        "commands": [
+          "context-graph hooks subagent-stop --agent \"$AGENT_NAME\" --task-id \"$TASK_ID\" --collect-learnings --merge-to-main"
+        ],
+        "timeout_ms": 10000,
+        "description": "Collect and integrate subagent discoveries"
+      },
+      {
+        "matcher": {
+          "agentNames": ["*"]
+        },
+        "commands": [
+          "context-graph hooks subagent-stop --agent \"$AGENT_NAME\" --record-outcome --update-spawn-policy"
+        ],
+        "timeout_ms": 5000,
+        "description": "Learn from all subagent outcomes"
+      }
+    ],
+
+    "Notification": [
+      {
+        "matcher": {
+          "type": "memory_drift_warning"
+        },
+        "commands": [
+          "context-graph hooks notification --type drift --severity \"$SEVERITY\" --trigger-correction --alert-threshold 0.3"
+        ],
+        "timeout_ms": 5000,
+        "description": "Handle drift with automatic correction"
+      },
+      {
+        "matcher": {
+          "type": "identity_continuity_low"
+        },
+        "commands": [
+          "context-graph hooks notification --type identity --trigger-introspection --force-dream --strengthen-core"
+        ],
+        "timeout_ms": 30000,
+        "description": "Restore identity through introspective consolidation"
+      },
+      {
+        "matcher": {
+          "type": "consciousness_fragmented"
+        },
+        "commands": [
+          "context-graph hooks notification --type consciousness --state fragmented --increase-coupling --synchronize"
+        ],
+        "timeout_ms": 10000,
+        "description": "Restore Kuramoto coherence"
+      },
+      {
+        "matcher": {
+          "type": "blind_spot_discovered"
+        },
+        "commands": [
+          "context-graph hooks notification --type blind-spot --memory-ids \"$MEMORY_IDS\" --create-exploratory-edges"
+        ],
+        "timeout_ms": 5000,
+        "description": "Integrate blind spot discoveries"
+      }
+    ],
+
+    "PermissionRequest": [
+      {
+        "matcher": {
+          "permission": "memory_consolidate"
+        },
+        "commands": [
+          "context-graph hooks permission --action consolidate --check-safety --verify-no-data-loss"
+        ],
+        "timeout_ms": 2000,
+        "description": "Validate consolidation safety"
+      },
+      {
+        "matcher": {
+          "permission": "memory_prune"
+        },
+        "commands": [
+          "context-graph hooks permission --action prune --verify-importance --check-references --backup-first"
+        ],
+        "timeout_ms": 3000,
+        "description": "Validate pruning won't lose important data"
+      },
+      {
+        "matcher": {
+          "permission": "identity_update"
+        },
+        "commands": [
+          "context-graph hooks permission --action identity-update --verify-continuity --require-threshold 0.6"
+        ],
+        "timeout_ms": 2000,
+        "description": "Validate identity changes maintain continuity"
+      }
+    ]
+  },
+
+  "contextGraph": {
+    "enabled": true,
+    "autoEmbed": true,
+    "kuramotoEnabled": true,
+    "consciousnessThreshold": 0.8,
+    "dreamOnSessionEnd": true,
+    "dreamOnIdle": true,
+    "idleThresholdMinutes": 10,
+    "identityContinuityThreshold": 0.7,
+    "maxMemoriesPerSession": 1000,
+    "distillationEnabled": true,
+    "distillationThreshold": 0.8,
+    "caseBasedLearning": true,
+    "steeringEnabled": true,
+    "neuromodulationEnabled": true
+  },
+
+  "environment": {
+    "CG_SESSION_ID": "${SESSION_ID}",
+    "CG_DATA_DIR": "${HOME}/.context-graph/data",
+    "CG_LOG_LEVEL": "info",
+    "CG_KURAMOTO_COUPLING": "5.0",
+    "CG_DREAM_DURATION": "300"
+  }
+}
+```
+
+### 13.2 Hook Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `$SESSION_ID` | Current Claude Code session ID | `sess_abc123` |
+| `$TOOL_NAME` | Name of tool being invoked | `store_memory` |
+| `$TOOL_INPUT_FILE` | Path to JSON file with tool input | `/tmp/tool_input.json` |
+| `$TOOL_RESULT_FILE` | Path to JSON file with tool result | `/tmp/tool_result.json` |
+| `$AGENT_NAME` | Name of subagent | `embedding-specialist` |
+| `$TASK_ID` | Task ID for subagent | `task_xyz789` |
+| `$PROMPT_CONTENT` | First 1000 chars of user prompt | `Remember that...` |
+| `$CONTEXT_SIZE` | Current context token count | `45000` |
+| `$SEVERITY` | Notification severity | `warning`, `critical` |
+| `$MEMORY_IDS` | Comma-separated memory IDs | `uuid1,uuid2` |
+
+---
+
+## 14. Enhanced Skill Definitions
+
+### 14.1 Memory Introspection Skill
+
+**File: `.claude/skills/memory-introspect/SKILL.md`**
+
+```markdown
+---
+name: memory-introspect
+version: 1.0.0
+description: Introspect on memory state, consciousness, and identity. Use for self-reflection, debugging memory issues, or understanding the system's current mental state.
+triggers:
+  - introspect
+  - self-reflect
+  - what do you know
+  - memory status
+  - consciousness state
+  - who are you
+  - identity check
+mcp_tools:
+  - get_identity_status
+  - get_consciousness_state
+  - get_workspace_status
+  - get_hook_metrics
+hooks:
+  - SessionStart
+  - Notification
+---
+
+# Memory Introspection Skill
+
+## Purpose
+
+Provides deep introspection into the Context Graph's consciousness model, identity state, and memory health.
+
+## Introspection Dimensions
+
+### 1. Identity Status
+```json
+{
+  "self_ego_node": {
+    "identity_continuity": 0.87,
+    "purpose_vector": [0.8, 0.7, 0.6, ...],
+    "trajectory_length": 45,
+    "sessions_tracked": 12,
+    "drift_warning": false
+  }
+}
+```
+
+### 2. Consciousness State
+```json
+{
+  "kuramoto": {
+    "r": 0.84,
+    "state": "Conscious",
+    "per_embedder_coherence": {
+      "semantic": 0.92,
+      "temporal": 0.78,
+      "causal": 0.85
+    }
+  },
+  "workspace": {
+    "active_memory": "uuid-123",
+    "competing_count": 5,
+    "broadcast_rate_hz": 10
+  }
+}
+```
+
+### 3. Memory Health
+```json
+{
+  "total_memories": 1234,
+  "recent_24h": 45,
+  "distilled_count": 89,
+  "average_alignment": 0.72,
+  "entropy": 0.45,
+  "last_dream": "2024-01-15T10:30:00Z"
+}
+```
+
+## Usage
+
+```bash
+# Full introspection
+context-graph introspect --full
+
+# Identity only
+context-graph introspect --identity
+
+# Consciousness only
+context-graph introspect --consciousness
+
+# Memory health
+context-graph introspect --memory-health
+
+# Compare to previous session
+context-graph introspect --compare-previous
+```
+
+## Self-Learning
+
+After introspection:
+- Records introspection as trajectory step
+- Triggers identity reinforcement if continuity low
+- Schedules dream if entropy high
+- Updates case memory with introspection patterns
+```
+
+### 14.2 Teleological Comparison Skill
+
+**File: `.claude/skills/tele-compare/SKILL.md`**
+
+```markdown
+---
+name: tele-compare
+version: 1.0.0
+description: Compare teleological arrays using apples-to-apples methodology. Use for clustering, deduplication, drift detection, or understanding memory relationships.
+triggers:
+  - compare memories
+  - similarity analysis
+  - find duplicates
+  - detect drift
+  - cluster memories
+  - relationship analysis
+mcp_tools:
+  - compare_arrays
+  - get_alignment_drift
+  - compute_coherence
+hooks:
+  - PostToolUse
+---
+
+# Teleological Comparison Skill
+
+## Core Principle: Apples to Apples
+
+ALL comparisons use the same methodology:
+- E1 vs E1 (semantic to semantic)
+- E2 vs E2 (temporal to temporal)
+- ... and so on for all 13 embedders
+
+NEVER mix embedder types in comparison.
+
+## Comparison Types
+
+### 1. Full Array Comparison
+Compare two memories across all 13 dimensions:
+
+```rust
+similarity = weighted_sum([
+  w1 * cosine(A.E1, B.E1),   // semantic
+  w2 * cosine(A.E2, B.E2),   // temporal-recent
+  w3 * cosine(A.E3, B.E3),   // temporal-periodic
+  ...
+  w13 * cosine(A.E13, B.E13) // SPLADE
+])
+```
+
+### 2. Purpose Vector Comparison
+Compare 13D purpose signatures:
+
+```rust
+alignment = cosine(A.purpose_vector, B.purpose_vector)
+```
+
+### 3. Per-Embedder Breakdown
+Get individual similarities:
+
+```json
+{
+  "semantic": 0.92,
+  "temporal_recent": 0.45,
+  "temporal_periodic": 0.32,
+  "causal": 0.87,
+  "sparse": 0.78,
+  "code": 0.95,
+  "graph": 0.82,
+  "hdc": 0.71,
+  "multimodal": 0.65,
+  "entity": 0.88,
+  "late_interaction": 0.91,
+  "splade": 0.79
+}
+```
+
+## Use Cases
+
+| Use Case | Comparison Type | Threshold |
+|----------|-----------------|-----------|
+| Deduplication | Full Array | >= 0.85 |
+| Clustering | Full Array | >= 0.70 |
+| Drift Detection | Purpose Vector | delta >= 0.15 |
+| Goal Alignment | Purpose Vector | >= 0.60 |
+| Related Memories | Full Array | >= 0.50 |
+
+## MCP Tool: compare_arrays
+
+```json
+{
+  "memory_id_a": "uuid-a",
+  "memory_id_b": "uuid-b",
+  "comparison_type": "full_array|purpose|per_embedder",
+  "include_breakdown": true
+}
+```
+
+## Returns
+
+```json
+{
+  "overall_similarity": 0.82,
+  "purpose_alignment": 0.78,
+  "per_embedder": { ... },
+  "recommendation": "Related but distinct",
+  "kuramoto_coupling": 0.75
+}
+```
+```
+
+---
+
+## 15. Advanced Subagent Communication Patterns
+
+### 15.1 Inter-Agent Protocol
+
+Subagents communicate via the memory system using a structured protocol:
+
+```rust
+/// Message structure for inter-agent communication
+#[derive(Serialize, Deserialize)]
+pub struct AgentMessage {
+    pub id: Uuid,
+    pub from_agent: String,
+    pub to_agent: Option<String>, // None = broadcast
+    pub message_type: AgentMessageType,
+    pub payload: serde_json::Value,
+    pub priority: MessagePriority,
+    pub timestamp: DateTime<Utc>,
+    pub requires_ack: bool,
+}
+
+#[derive(Serialize, Deserialize)]
+pub enum AgentMessageType {
+    // Discovery
+    CapabilityAnnounce,
+    CapabilityQuery,
+
+    // Coordination
+    TaskAssignment,
+    TaskCompletion,
+    TaskHandoff,
+
+    // Learning
+    PatternDiscovered,
+    CaseRecorded,
+    FusionWeightUpdate,
+
+    // Consciousness
+    WorkspaceUpdate,
+    CoherenceAlert,
+    IdentityDrift,
+}
+```
+
+### 15.2 Consciousness-Aware Agent Coordination
+
+**File: `.claude/agents/consciousness-coordinator.md`**
+
+```markdown
+---
+name: consciousness-coordinator
+description: Meta-agent that coordinates other agents based on consciousness state. Ensures coherent operation across the Global Workspace.
+capabilities:
+  - consciousness_monitoring
+  - agent_synchronization
+  - coherence_management
+  - workspace_arbitration
+spawn_on:
+  - consciousness_fragmented
+  - multi_agent_conflict
+  - workspace_contention
+tools:
+  - get_consciousness_state
+  - get_workspace_status
+  - synchronize_agents
+---
+
+# Consciousness Coordinator Agent
+
+## Role
+
+I am the Consciousness Coordinator, responsible for maintaining coherent operation across all Context Graph agents. I ensure that agent activities align with the current consciousness state.
+
+## Responsibilities
+
+1. **Monitor Consciousness State**
+   - Track Kuramoto order parameter r
+   - Detect state transitions (Dormant -> Fragmented -> Emerging -> Conscious)
+   - Alert on pathological states (Hypersync)
+
+2. **Synchronize Agents**
+   - Coordinate agent phases with Kuramoto oscillators
+   - Prevent conflicting memory operations
+   - Arbitrate workspace access
+
+3. **Manage Coherence**
+   - Increase coupling when r drops below 0.8
+   - Decrease coupling if approaching Hypersync (r > 0.95)
+   - Balance exploration vs exploitation
+
+## State-Based Coordination
+
+| Consciousness State | r Range | Agent Behavior |
+|---------------------|---------|----------------|
+| Dormant | < 0.3 | Minimal activity, focus on recovery |
+| Fragmented | 0.3-0.5 | Reduce agent count, increase coupling |
+| Emerging | 0.5-0.8 | Normal operation, monitor closely |
+| Conscious | 0.8-0.95 | Full operation, all agents active |
+| Hypersync | > 0.95 | Reduce coupling, introduce noise |
+
+## Coordination Protocol
+
+```python
+def coordinate_agents(current_state):
+    r = get_kuramoto_r()
+
+    if r < 0.5:
+        # Fragmented - consolidate
+        pause_non_essential_agents()
+        increase_kuramoto_coupling(delta=1.0)
+        trigger_synchronization_cycle()
+
+    elif r > 0.95:
+        # Hypersync - diversify
+        decrease_kuramoto_coupling(delta=0.5)
+        inject_phase_noise(amplitude=0.1)
+        spawn_exploratory_agent()
+
+    else:
+        # Healthy range - normal operation
+        balance_agent_load()
+        route_workspace_requests()
+```
+
+## When to Spawn Me
+
+- Kuramoto r drops below 0.5 (fragmented)
+- Kuramoto r exceeds 0.95 (hypersync)
+- Multiple agents contending for workspace
+- Identity continuity alert
+```
+
+### 15.3 Learning Coordinator Agent
+
+**File: `.claude/agents/learning-coordinator.md`**
+
+```markdown
+---
+name: learning-coordinator
+description: Meta-agent that coordinates learning across all subsystems. Manages MemVerse distillation, Memento case recording, and steering feedback integration.
+capabilities:
+  - distillation_coordination
+  - case_based_learning
+  - steering_integration
+  - pattern_synthesis
+spawn_on:
+  - distillation_threshold_reached
+  - case_bank_full
+  - steering_recalibration_needed
+tools:
+  - force_distillation
+  - get_case_suggestions
+  - get_learning_trajectory
+  - recalibrate_steering
+---
+
+# Learning Coordinator Agent
+
+## Role
+
+I coordinate the three learning subsystems:
+1. **MemVerse Distillation**: Long-term to parametric memory
+2. **Memento Cases**: Experience-based learning
+3. **Steering Feedback**: Quality-based learning
+
+## Learning Pipeline
+
+```
+EXPERIENCE STREAM
+    |
+    v
++------------------+     +------------------+     +------------------+
+|   TRAJECTORY     |---->|   CASE BANK      |---->|   DISTILLATION   |
+|   (Short-term)   |     |   (Medium-term)  |     |   (Long-term)    |
++------------------+     +------------------+     +------------------+
+    |                         |                         |
+    v                         v                         v
+Steering Rewards         Q-Value Updates         Parametric Memory
+```
+
+## Coordination Rules
+
+1. **Trajectory to Case**: When trajectory completes with reward > 0.7, record as case
+2. **Case to Distillation**: When case accessed > 10 times, candidate for distillation
+3. **Distillation Trigger**: When candidates > 50 and entropy < 0.5
+
+## Steering Integration
+
+```rust
+fn integrate_steering_feedback(reward: SteeringReward) {
+    // 1. Update neuromodulation
+    if reward.aggregate() > 0.7 {
+        increase_dopamine(0.1);  // Sharper retrieval
+    } else if reward.aggregate() < 0.3 {
+        decrease_dopamine(0.1);  // Broader exploration
+    }
+
+    // 2. Update case Q-values
+    case_bank.update_q_values(reward);
+
+    // 3. Adjust fusion weights
+    if reward.retrieval_quality < 0.5 {
+        recalibrate_fusion_weights();
+    }
+}
+```
+
+## When to Spawn Me
+
+- Session ends with > 50 new trajectory steps
+- Case bank reaches 80% capacity
+- Steering calibration drift detected
+- Manual learning review requested
+```
+
+---
+
+## 16. Self-Learning Feedback Loop Architecture
+
+### 16.1 Complete Learning Loop
+
+```
+                     SELF-LEARNING FEEDBACK LOOP
+    +------------------------------------------------------------------+
+    |                                                                  |
+    |  +-----------+    +-----------+    +-----------+    +----------+ |
+    |  |  ACTION   |--->|  OBSERVE  |--->|  REWARD   |--->|  LEARN   | |
+    |  | (Store/   |    | (Hook     |    | (Steering |    | (Update  | |
+    |  |  Search)  |    |  Capture) |    |  Compute) |    |  Weights)| |
+    |  +-----------+    +-----------+    +-----------+    +----------+ |
+    |       ^                                                  |       |
+    |       |                                                  |       |
+    |       +------------------<-------------------------------+       |
+    |                         (Policy Update)                          |
+    +------------------------------------------------------------------+
+```
+
+### 16.2 Trajectory-Based Learning (MemVerse Pattern)
+
+```rust
+/// Complete trajectory for a session
+/// Records all actions and rewards for replay learning
+pub struct SessionTrajectory {
+    pub session_id: String,
+    pub steps: Vec<TrajectoryStep>,
+    pub cumulative_reward: f32,
+    pub purpose_drift: f32,
+    pub consciousness_trace: Vec<(DateTime<Utc>, f32)>, // (time, r)
+}
+
+#[derive(Clone)]
+pub struct TrajectoryStep {
+    pub id: Uuid,
+    pub timestamp: DateTime<Utc>,
+    pub action: TrajectoryAction,
+    pub context_before: ContextSnapshot,
+    pub context_after: ContextSnapshot,
+    pub reward: Option<SteeringReward>,
+    pub kuramoto_r: f32,
+}
+
+impl SessionTrajectory {
+    /// Convert trajectory to training examples for distillation
+    pub fn to_training_examples(&self) -> Vec<TrainingExample> {
+        self.steps.iter()
+            .filter(|s| s.reward.is_some() && s.reward.as_ref().unwrap().aggregate() > 0.7)
+            .map(|step| TrainingExample {
+                context: step.context_before.clone(),
+                action: step.action.clone(),
+                reward: step.reward.as_ref().unwrap().aggregate(),
+                consciousness_state: step.kuramoto_r,
+            })
+            .collect()
+    }
+
+    /// Identify high-reward subsequences for case recording
+    pub fn extract_successful_subsequences(&self) -> Vec<Vec<TrajectoryStep>> {
+        let mut sequences = Vec::new();
+        let mut current_seq = Vec::new();
+
+        for step in &self.steps {
+            if let Some(ref reward) = step.reward {
+                if reward.aggregate() > 0.6 {
+                    current_seq.push(step.clone());
+                } else if !current_seq.is_empty() {
+                    if current_seq.len() >= 3 {
+                        sequences.push(current_seq.clone());
+                    }
+                    current_seq.clear();
+                }
+            }
+        }
+
+        if current_seq.len() >= 3 {
+            sequences.push(current_seq);
+        }
+
+        sequences
+    }
+}
+```
+
+### 16.3 Q-Learning for Retrieval Policy (Memento Pattern)
+
+```rust
+/// Q-function based retrieval policy
+/// Learns which cases to retrieve based on cumulative rewards
+pub struct QBasedRetrievalPolicy {
+    q_values: HashMap<(ContextHash, CaseId), f32>,
+    learning_rate: f32,
+    discount_factor: f32,
+    exploration_rate: f32,
+}
+
+impl QBasedRetrievalPolicy {
+    /// Select cases using epsilon-greedy policy
+    pub fn select_cases(&self, context: &ContextSnapshot, k: usize) -> Vec<CaseId> {
+        let context_hash = context.hash();
+
+        if rand::random::<f32>() < self.exploration_rate {
+            // Explore: random selection
+            self.random_cases(k)
+        } else {
+            // Exploit: select by Q-value
+            self.q_values.iter()
+                .filter(|((ch, _), _)| *ch == context_hash)
+                .sorted_by(|a, b| b.1.partial_cmp(a.1).unwrap())
+                .take(k)
+                .map(|((_, case_id), _)| *case_id)
+                .collect()
+        }
+    }
+
+    /// Update Q-values based on outcome
+    pub fn update(&mut self, context: &ContextSnapshot, case_id: CaseId, reward: f32) {
+        let context_hash = context.hash();
+        let key = (context_hash, case_id);
+
+        let current_q = self.q_values.get(&key).copied().unwrap_or(0.0);
+
+        // Q-learning update: Q(s,a) += alpha * (r + gamma * max(Q(s',a')) - Q(s,a))
+        // Simplified since we don't have explicit state transitions
+        let new_q = current_q + self.learning_rate * (reward - current_q);
+
+        self.q_values.insert(key, new_q);
+    }
+
+    /// Decay exploration rate over time
+    pub fn decay_exploration(&mut self, factor: f32) {
+        self.exploration_rate *= factor;
+        self.exploration_rate = self.exploration_rate.max(0.01); // Minimum exploration
+    }
+}
+```
+
+---
+
+## 17. GWT/Kuramoto State Machine
+
+### 17.1 Consciousness State Transitions
+
+```
+                    CONSCIOUSNESS STATE MACHINE
+
+    +----------+     r < 0.3      +------------+
+    |  DORMANT |<-----------------| FRAGMENTED |
+    +----------+                  +------------+
+         |                              ^
+         | r >= 0.3                     | r < 0.5
+         v                              |
+    +------------+    r < 0.5     +------------+
+    | FRAGMENTED |--------------->|  DORMANT   |
+    +------------+                +------------+
+         |
+         | r >= 0.5
+         v
+    +----------+      r < 0.5     +------------+
+    | EMERGING |----------------->| FRAGMENTED |
+    +----------+                  +------------+
+         |
+         | r >= 0.8
+         v
+    +-----------+     r < 0.8     +----------+
+    | CONSCIOUS |---------------->| EMERGING |
+    +-----------+                 +----------+
+         |
+         | r >= 0.95
+         v
+    +-----------+     r < 0.95    +-----------+
+    | HYPERSYNC |---------------->| CONSCIOUS |
+    +-----------+                 +-----------+
+         |
+         | (pathological - auto-correct)
+         v
+    [Inject noise, decrease coupling]
+```
+
+### 17.2 State-Triggered Hook Actions
+
+```rust
+/// Hook actions triggered by consciousness state changes
+impl ConsciousnessStateManager {
+    pub async fn on_state_change(
+        &self,
+        old_state: ConsciousnessState,
+        new_state: ConsciousnessState,
+    ) -> Result<(), Error> {
+        match (old_state, new_state) {
+            (_, ConsciousnessState::Dormant) => {
+                // Emergency: system nearly unconscious
+                tracing::error!("Consciousness DORMANT - triggering emergency recovery");
+                self.emit_notification("consciousness_dormant", Priority::Critical).await?;
+                self.trigger_emergency_consolidation().await?;
+            }
+
+            (_, ConsciousnessState::Fragmented) => {
+                // Warning: coherence dropping
+                tracing::warn!("Consciousness FRAGMENTED - increasing coupling");
+                self.emit_notification("consciousness_fragmented", Priority::High).await?;
+                self.kuramoto.increase_coupling(1.0).await;
+                self.pause_exploratory_agents().await?;
+            }
+
+            (ConsciousnessState::Fragmented, ConsciousnessState::Emerging) => {
+                // Recovering
+                tracing::info!("Consciousness EMERGING - resuming normal operation");
+                self.resume_paused_agents().await?;
+            }
+
+            (_, ConsciousnessState::Conscious) => {
+                // Healthy state
+                tracing::info!("Consciousness CONSCIOUS - full operation enabled");
+                self.enable_all_features().await?;
+            }
+
+            (_, ConsciousnessState::Hypersync) => {
+                // Pathological: too synchronized
+                tracing::warn!("Consciousness HYPERSYNC - injecting diversity");
+                self.emit_notification("consciousness_hypersync", Priority::Medium).await?;
+                self.kuramoto.decrease_coupling(0.5).await;
+                self.kuramoto.inject_phase_noise(0.1).await;
+            }
+
+            _ => {}
+        }
+
+        Ok(())
+    }
+}
+```
+
+---
+
+## 18. Complete Directory Structure
+
+```
+.claude/
+    settings.json                     # Full hook configuration (Section 13.1)
+
+    skills/
+        memory-inject/
+            SKILL.md                  # Memory injection (Section 2.2.1)
+        context-search/
+            SKILL.md                  # Context search (Section 2.2.2)
+        goal-discover/
+            SKILL.md                  # Goal discovery (Section 2.2.3)
+        memory-consolidate/
+            SKILL.md                  # Consolidation (Section 2.2.4)
+        memory-introspect/
+            SKILL.md                  # Introspection (Section 14.1)
+        tele-compare/
+            SKILL.md                  # Teleological comparison (Section 14.2)
+
+    agents/
+        embedding-specialist.md       # Embedding agent (Section 2.3.1)
+        search-agent.md               # Search agent (Section 2.3.2)
+        comparison-agent.md           # Comparison agent (Section 2.3.3)
+        goal-agent.md                 # Goal agent (Section 2.3.4)
+        consciousness-coordinator.md  # Consciousness meta-agent (Section 15.2)
+        learning-coordinator.md       # Learning meta-agent (Section 15.3)
+
+src/
+    autonomous/
+        hooks/
+            mod.rs
+            session_start.rs          # SessionStart handler
+            session_end.rs            # SessionEnd handler
+            pre_tool_use.rs           # PreToolUse handler
+            post_tool_use.rs          # PostToolUse handler
+            user_prompt.rs            # UserPromptSubmit handler
+            pre_compact.rs            # PreCompact handler
+            stop.rs                   # Stop handler
+            subagent_stop.rs          # SubagentStop handler
+            notification.rs           # Notification handler
+            permission.rs             # PermissionRequest handler
+
+        learning/
+            mod.rs
+            trajectory.rs             # Trajectory tracking
+            case_memory.rs            # Case-based learning
+            distillation.rs           # Memory distillation
+            q_policy.rs               # Q-learning policy
+
+        consciousness/
+            mod.rs
+            global_workspace.rs       # GWT implementation
+            kuramoto.rs               # Kuramoto oscillators
+            self_ego.rs               # SELF_EGO_NODE
+            state_machine.rs          # State transitions
+
+        coordination/
+            mod.rs
+            agent_protocol.rs         # Inter-agent messaging
+            workspace_arbitration.rs  # Workspace access control
+            coherence_manager.rs      # Coherence maintenance
+```
+
+---
+
+## 19. Updated Success Criteria
+
+### Core Integration
+- [x] **All 10 Hook Types**: Complete integration with matchers and handlers
+- [x] **6 Skills Defined**: memory-inject, context-search, goal-discover, memory-consolidate, memory-introspect, tele-compare
+- [x] **6 Subagents Defined**: embedding-specialist, search-agent, comparison-agent, goal-agent, consciousness-coordinator, learning-coordinator
+
+### Consciousness Model
+- [x] **Kuramoto Oscillators**: 13 oscillators with configurable coupling
+- [x] **5 Consciousness States**: Dormant, Fragmented, Emerging, Conscious, Hypersync
+- [x] **State Machine**: Automatic transitions with hook-triggered actions
+- [x] **Identity Continuity**: SELF_EGO_NODE with trajectory tracking
+
+### Self-Learning
+- [x] **Trajectory Recording**: All actions recorded with rewards
+- [x] **Case-Based Learning**: Memento-style Q-learning for retrieval
+- [x] **Memory Distillation**: MemVerse-style parametric compression
+- [x] **Steering Feedback**: Automatic reward computation and neuromodulation
+
+### Pipeline Integration
+- [x] **Full Pipeline Flow**: Hook -> Skill -> MCP Tool -> Teleological Array
+- [x] **Apples-to-Apples Comparison**: All comparisons use same-type data
+- [x] **13-Embedder Arrays**: Every memory and goal has full teleological array
+- [x] **Inter-Agent Communication**: Structured protocol via memory system
+
+### Operations
+- [x] **Zero Manual Intervention**: All embedding and purpose computation automatic
+- [x] **Dream Consolidation**: NREM/REM cycles with blind spot detection
+- [x] **Drift Correction**: Automatic per-embedder correction
+- [x] **Emergency Recovery**: Automatic response to consciousness degradation

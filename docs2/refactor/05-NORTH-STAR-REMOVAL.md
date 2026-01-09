@@ -630,7 +630,62 @@ actions:
         session: "{{session_id}}"
 ```
 
-### 3.6 Hook Configuration: Autonomous Discovery Settings
+### 3.6 Claude Code Hook Integration
+
+Claude Code's native hooks system integrates directly with autonomous discovery:
+
+```json
+// claude-code-hooks.json - Claude Code native hook configuration
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": {
+          "toolName": "Write|Edit|MultiEdit"
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "contextgraph pattern-extract --file \"$FILE\" --embed --store",
+            "timeout": 5000,
+            "onError": "ignore"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": {
+          "toolName": "Task"
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "contextgraph purpose align --task \"$TASK_DESCRIPTION\" --inject-context",
+            "timeout": 3000
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": {
+          "type": "session_end"
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "contextgraph purpose discover --trigger session-end --export-metrics",
+            "timeout": 30000
+          }
+        ]
+      }
+    ]
+  }
+}
+```
+
+### 3.7 Hook Configuration: Autonomous Discovery Settings
 
 ```json
 // .claude/hooks.config.json
@@ -670,6 +725,22 @@ actions:
     }
   }
 }
+```
+
+### 3.8 Claude Flow V3 Hook Integration
+
+For claude-flow v3 users, hooks integrate with the daemon system:
+
+```bash
+# Register discovery hooks with claude-flow daemon
+npx claude-flow@v3alpha hooks session-end --register contextgraph-discovery
+npx claude-flow@v3alpha hooks background --register contextgraph-refinement --interval 30m
+
+# Enable autonomous discovery workers
+npx claude-flow@v3alpha daemon start --workers "ultralearn,consolidate"
+
+# Configure hook triggers
+npx claude-flow@v3alpha hooks worker dispatch --trigger purpose-discovery
 ```
 
 ---
@@ -944,6 +1015,30 @@ actions:
           {{/if}}
 ```
 
+### 4.5 Claude Code Skill Registration
+
+Register skills with Claude Code for automatic invocation:
+
+```bash
+# Register goal discovery skill
+claude skill register goal-discovery --trigger-patterns \
+  "what are my goals" \
+  "what am I working on" \
+  "show discovered purposes"
+
+# Register pattern analysis skill
+claude skill register pattern-analysis --trigger-patterns \
+  "analyze patterns" \
+  "what themes" \
+  "review trends"
+
+# Register reflective query skill
+claude skill register reflective-query --trigger-patterns \
+  "what have I been working on" \
+  "summarize my work" \
+  "show my focus areas"
+```
+
 ---
 
 ## 5. Discovery Subagents
@@ -1202,7 +1297,56 @@ output:
     - purpose_conflict_resolved
 ```
 
-### 5.5 Agent Coordination Configuration
+### 5.5 Claude Code Task Tool Integration
+
+Spawn discovery agents using Claude Code's Task tool:
+
+```javascript
+// Spawn discovery swarm for autonomous goal discovery
+Task("clustering-agent", `
+  You are a specialized clustering agent for teleological arrays.
+
+  Your mission:
+  1. Retrieve all stored teleological arrays from contextgraph
+  2. Cluster them hierarchically across all 13 embedding spaces
+  3. Compute cluster centroids (full teleological arrays, NOT single embeddings)
+  4. Assess cluster coherence and importance
+  5. Store discovered purpose clusters
+
+  Use MCP tools:
+  - contextgraph/memory/list_all - Get all teleological arrays
+  - contextgraph/clustering/hierarchical - Run clustering
+  - contextgraph/purpose/store - Store discovered purposes
+
+  Report findings to goal-emergence-agent via memory.
+`, "specialist");
+
+Task("pattern-detection-agent", `
+  You are a pattern detection agent for emerging themes.
+
+  Your mission:
+  1. Monitor new memories for novelty signals
+  2. Detect patterns that don't fit existing clusters
+  3. Identify trending topics and semantic shifts
+  4. Feed emerging patterns to clustering-agent
+
+  Use surprise-adaptive motivation: balance curiosity vs control.
+`, "analyst");
+
+Task("goal-emergence-agent", `
+  You are the coordinator for autonomous goal emergence.
+
+  Your mission:
+  1. Synthesize inputs from clustering-agent and pattern-detection-agent
+  2. Declare new purposes when clusters meet thresholds
+  3. Manage purpose lifecycle (decay, archive, reactivate)
+  4. Determine the current dominant North Star
+
+  NO manual goal setting allowed - purposes ONLY emerge from data patterns.
+`, "coordinator");
+```
+
+### 5.6 Agent Coordination Configuration
 
 ```json
 // .claude/agents/discovery-coordination.json
@@ -1244,6 +1388,41 @@ output:
     }
   }
 }
+```
+
+### 5.7 Claude Flow V3 Swarm Integration
+
+For claude-flow v3, integrate discovery agents with the swarm system:
+
+```bash
+# Initialize discovery swarm
+npx claude-flow@v3alpha swarm init --topology hierarchical --strategy adaptive
+
+# Spawn discovery agents via MCP
+mcp__claude-flow__agent_spawn({
+  type: "specialist",
+  name: "clustering-agent",
+  capabilities: ["teleological_clustering", "centroid_computation"]
+})
+
+mcp__claude-flow__agent_spawn({
+  type: "analyst",
+  name: "pattern-detection-agent",
+  capabilities: ["novelty_detection", "trend_analysis"]
+})
+
+mcp__claude-flow__agent_spawn({
+  type: "coordinator",
+  name: "goal-emergence-agent",
+  capabilities: ["purpose_synthesis", "hierarchy_management"]
+})
+
+# Orchestrate discovery task
+mcp__claude-flow__task_orchestrate({
+  task: "Autonomous teleological purpose discovery",
+  strategy: "adaptive",
+  priority: "medium"
+})
 ```
 
 ---
@@ -1395,6 +1574,20 @@ impl PurposeStore {
     // NO set_purpose(), NO create_purpose(), NO import_purpose()
 }
 ```
+
+### 6.6 The Role of Each Extensibility Layer
+
+| Layer | Role in Autonomy | Without It |
+|-------|------------------|------------|
+| **Hooks** | Trigger discovery automatically at session boundaries, edits, idle time | Would require manual "discover now" commands |
+| **Skills** | Surface emergent purposes on natural language queries | Would require explicit API calls to see goals |
+| **Subagents** | Coordinate clustering, pattern detection, emergence continuously | Would be single-threaded, blocking operations |
+
+Together, these three layers create a **fully autonomous system** where:
+- Goals emerge without user intervention
+- Discovery happens in the background
+- Users can query goals naturally
+- Multiple agents work in parallel
 
 ---
 
@@ -1908,6 +2101,8 @@ mod autonomous_discovery_tests {
 - [ ] Goal discovery skill defined and triggers on reflective queries
 - [ ] Pattern analysis skill defined
 - [ ] Reflective query skill defined
+- [ ] Claude Code native hook configuration complete
+- [ ] Claude Flow V3 hook integration documented
 
 ### 12.4 Subagent Checklist
 
@@ -1916,6 +2111,8 @@ mod autonomous_discovery_tests {
 - [ ] Goal emergence agent defined as coordinator
 - [ ] Agent coordination configuration complete
 - [ ] Inter-agent communication working
+- [ ] Claude Code Task tool integration documented
+- [ ] Claude Flow V3 swarm integration documented
 
 ### 12.5 Testing Checklist
 
@@ -1971,3 +2168,14 @@ The addition of **hooks, skills, and subagents** transforms theoretical autonomy
 - **Subagents** coordinate clustering, pattern detection, and goal emergence continuously
 
 The result is a mathematically valid, self-organizing system where purposes genuinely emerge from the patterns in stored memories - with **zero manual configuration required**.
+
+### Claude Code Integration Summary
+
+| Component | Integration Point | Purpose |
+|-----------|------------------|---------|
+| **Hooks** | `PostToolUse`, `PreToolUse`, `Notification` | Automatic triggering |
+| **Skills** | Pattern-based triggers, explicit invocation | Natural language access |
+| **Subagents** | Task tool spawning, swarm coordination | Parallel processing |
+| **MCP Tools** | contextgraph/* namespace | Data access and storage |
+
+This architecture ensures that **autonomy is not just theoretical but operationally real** through Claude Code's extensibility mechanisms.

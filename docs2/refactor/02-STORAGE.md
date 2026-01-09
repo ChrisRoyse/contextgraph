@@ -27,7 +27,86 @@ The storage layer is responsible for persisting and retrieving `TeleologicalArra
 
 **Hook-Driven Architecture**: Storage operations integrate with Claude Code hooks for automatic memory capture, session consolidation, and proactive optimization.
 
-### 1.2 Research-Backed Decisions
+### 1.2 Target Architecture Pipeline
+
+The storage layer implements the following pipeline for autonomous AI agent memory:
+
+```
+┌──────────────────────────────────────────────────────────────────────────────┐
+│                    TELEOLOGICAL STORAGE PIPELINE                             │
+│         Memory Injection → Embedding → Storage → Discovery → Emergence       │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │ STAGE 1: MEMORY INJECTION (Claude Code Hooks)                          │
+    │                                                                         │
+    │   PostToolUse ──┬── Edit/Write events ──▶ File change memories          │
+    │                 ├── Bash events ─────────▶ Command/output memories      │
+    │                 └── Read events ─────────▶ File context memories        │
+    │                                                                         │
+    │   SessionEnd ────── Conversation end ────▶ Session consolidation        │
+    │   PreCompact ────── RocksDB compact ─────▶ Purpose-aligned prioritize   │
+    └─────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │ STAGE 2: AUTONOMOUS EMBEDDING (13 Models in Parallel)                  │
+    │                                                                         │
+    │   Pending Queue ──▶ EmbeddingProcessorAgent ──▶ TeleologicalArray      │
+    │                                                                         │
+    │   ┌─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┬─────┐  │
+    │   │ E1  │ E2  │ E3  │ E4  │ E5  │ E6  │ E7  │ E8  │ E9  │ E10 │ E11 │  │
+    │   │Sem. │Temp │Temp │Temp │Caus │SPLA │Code │Graph│ HDC │Multi│Entity  │
+    │   │     │Rec. │Per. │Pos. │     │DE   │     │     │     │modal│     │  │
+    │   └─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┴─────┘  │
+    │                         │ E12: LateInteraction │ E13: SpladeKeyword │  │
+    │                         └─────────────────────┴───────────────────┘    │
+    └─────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │ STAGE 3: TELEOLOGICAL ARRAY STORAGE                                    │
+    │                                                                         │
+    │   ┌─────────────────────┐     ┌──────────────────────────────────────┐ │
+    │   │  RocksDB Primary    │     │  13 Per-Embedder HNSW Indices        │ │
+    │   │  (Atomic Arrays)    │◀───▶│  (Apples-to-Apples Comparison)       │ │
+    │   │                     │     │                                      │ │
+    │   │  cf_arrays          │     │  e01_semantic/   ─▶ HNSW 1024D       │ │
+    │   │  cf_metadata        │     │  e02_temporal/   ─▶ HNSW 512D        │ │
+    │   │  cf_sessions        │     │  e06_splade/     ─▶ Inverted Index   │ │
+    │   │  cf_tiers           │     │  e12_late/       ─▶ Token Index      │ │
+    │   │  cf_id_map          │     │  ...             ─▶ (13 total)       │ │
+    │   └─────────────────────┘     └──────────────────────────────────────┘ │
+    └─────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │ STAGE 4: ENTRY-POINT DISCOVERY (Any of 13 Spaces)                      │
+    │                                                                         │
+    │   Query ──▶ Route to embedder(s) ──▶ Per-embedder HNSW search          │
+    │                                                                         │
+    │   Search Modes:                                                         │
+    │   • Single Embedder: Query E1 space only (fastest)                      │
+    │   • Multi-Embedder:  Query E1+E6+E12, RRF aggregate                    │
+    │   • Full Array:      Query all 13, weighted fusion                     │
+    │                                                                         │
+    │   Entry Points: Find closest in ANY space, return FULL array           │
+    └─────────────────────────────────────────────────────────────────────────┘
+                                   │
+                                   ▼
+    ┌─────────────────────────────────────────────────────────────────────────┐
+    │ STAGE 5: AUTONOMOUS GOAL EMERGENCE (Clustering)                        │
+    │                                                                         │
+    │   Retrieved Arrays ──▶ Purpose Evaluator ──▶ Emergent Goals            │
+    │                                                                         │
+    │   • Cluster by purpose_vector similarity                                │
+    │   • Identify dominant themes across 13D purpose space                   │
+    │   • No manual North Star - goals emerge from data patterns              │
+    │   • Tier migration based on purpose alignment                           │
+    └─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 1.3 Research-Backed Decisions
 
 Based on 2025 best practices for multi-vector storage:
 
@@ -39,69 +118,102 @@ Based on 2025 best practices for multi-vector storage:
 | WriteBatch for atomicity | Atomic multi-statement operations | [Amazon Keyspaces Logged Batches](https://aws.amazon.com/blogs/database/amazon-keyspaces-now-supports-logged-batches-for-atomic-multi-statement-operations/) |
 | Tiered storage (hot/warm/cold) | Memory-SSD-object architecture by access frequency | [Vector Search Cloud Architectures](https://arxiv.org/html/2601.01937) |
 
-### 1.3 Storage Pipeline with Hooks
-
-```
-                    STORAGE PIPELINE WITH HOOK INTEGRATION
-    ================================================================
-
-    [Claude Code Tool Use]
-           |
-           v
-    +------------------+
-    | PostToolUse Hook |-----> Captures context, extracts content
-    +------------------+
-           |
-           v
-    +----------------------+
-    | Storage Skills       |-----> Queues for batch embedding
-    | (batch-embed skill)  |
-    +----------------------+
-           |
-           v
-    +------------------------+
-    | Storage Subagent       |-----> Background 13-model embedding
-    | (embedding-processor)  |
-    +------------------------+
-           |
-           v
-    +------------------+     +------------------+
-    | RocksDB Primary  |<--->| 13 HNSW Indices  |
-    | (atomic arrays)  |     | (per-embedder)   |
-    +------------------+     +------------------+
-           |
-           v
-    +------------------+
-    | SessionEnd Hook  |-----> Consolidates, compacts, optimizes
-    +------------------+
-           |
-           v
-    +----------------------+
-    | PreCompact Hook      |-----> Prioritizes memories by purpose
-    +----------------------+
-```
+---
 
 ## 2. Hook-Triggered Storage
 
-Claude Code hooks provide automatic storage triggers that capture memories without explicit user intervention.
+Claude Code hooks provide automatic storage triggers that capture memories without explicit user intervention. This section details how each hook integrates with the storage layer.
 
-### 2.1 PostToolUse Hook for Memory Storage
+### 2.1 Hook Integration Overview
 
-The `PostToolUse` hook fires after any tool completes, enabling automatic memory capture:
+```
+┌────────────────────────────────────────────────────────────────────────────┐
+│                    CLAUDE CODE HOOKS → STORAGE INTEGRATION                 │
+└────────────────────────────────────────────────────────────────────────────┘
 
-```typescript
-// Hook configuration in .claude/settings.json
+  ┌──────────────┐     ┌─────────────────┐     ┌──────────────────────────┐
+  │ Claude Code  │────▶│  PostToolUse    │────▶│ Immediate Memory Queue   │
+  │ Tool Execute │     │  Hook Handler   │     │ (Pending Embedding)      │
+  └──────────────┘     └─────────────────┘     └──────────────────────────┘
+                                                          │
+  ┌──────────────┐     ┌─────────────────┐                │
+  │ Conversation │────▶│  SessionStart   │────────────────┤
+  │ Begin        │     │  Hook Handler   │                │
+  └──────────────┘     └─────────────────┘                │
+                                                          ▼
+  ┌──────────────┐     ┌─────────────────┐     ┌──────────────────────────┐
+  │ Conversation │────▶│  SessionEnd     │────▶│ Consolidation Pipeline   │
+  │ End          │     │  Hook Handler   │     │ (Flush + Merge + Tier)   │
+  └──────────────┘     └─────────────────┘     └──────────────────────────┘
+                                                          │
+  ┌──────────────┐     ┌─────────────────┐                │
+  │ RocksDB      │────▶│  PreCompact     │────────────────┤
+  │ Compaction   │     │  Hook Handler   │                │
+  └──────────────┘     └─────────────────┘                │
+                                                          ▼
+                                               ┌──────────────────────────┐
+                                               │ TeleologicalArrayStore   │
+                                               │ (13-Index Storage)       │
+                                               └──────────────────────────┘
+```
+
+### 2.2 PostToolUse Hook for Memory Storage
+
+The `PostToolUse` hook fires after any tool completes, enabling automatic memory capture.
+
+#### Configuration in `.claude/settings.json`
+
+```json
 {
   "hooks": {
     "PostToolUse": [
       {
         "matcher": {
-          "tool_name": "Edit|Write|Bash"
+          "tool_name": "Edit|Write|MultiEdit"
         },
         "hooks": [
           {
             "type": "command",
-            "command": "npx contextgraph store-memory --source hook",
+            "command": "npx contextgraph store-memory --type edit --file \"$FILE_PATH\" --session \"$SESSION_ID\"",
+            "timeout": 5000,
+            "run_in_background": true
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "tool_name": "Bash"
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx contextgraph store-memory --type command --cmd \"$COMMAND\" --exit-code $EXIT_CODE",
+            "timeout": 3000,
+            "run_in_background": true
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "tool_name": "Read"
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx contextgraph index-file --path \"$FILE_PATH\" --context \"$CONVERSATION_CONTEXT\"",
+            "timeout": 10000,
+            "run_in_background": true
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "tool_name": "WebFetch|WebSearch"
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx contextgraph store-memory --type web --url \"$URL\" --summary \"$RESPONSE_SUMMARY\"",
             "timeout": 5000,
             "run_in_background": true
           }
@@ -112,11 +224,14 @@ The `PostToolUse` hook fires after any tool completes, enabling automatic memory
 }
 ```
 
+#### Implementation
+
 ```rust
 /// PostToolUse hook handler for automatic memory storage.
 ///
-/// Triggers on: Edit, Write, Bash, Read (configurable)
+/// Triggers on: Edit, Write, Bash, Read, WebFetch, WebSearch (configurable)
 /// Captures: tool context, file content, conversation state
+/// Action: Queue for 13-model embedding pipeline
 pub struct PostToolUseStorageHook {
     /// Pending memories awaiting batch embedding
     pending_queue: Arc<RwLock<Vec<PendingMemory>>>,
@@ -129,6 +244,52 @@ pub struct PostToolUseStorageHook {
 
     /// Primary store
     store: Arc<dyn TeleologicalArrayStore>,
+
+    /// Hook dispatcher for chaining
+    hook_dispatcher: Arc<HookDispatcher>,
+}
+
+/// Pending memory awaiting embedding.
+#[derive(Clone, Debug)]
+pub struct PendingMemory {
+    /// Unique identifier
+    pub id: Uuid,
+
+    /// Raw content to embed
+    pub content: String,
+
+    /// Memory source metadata
+    pub source: MemorySource,
+
+    /// Conversation context
+    pub context: MemoryContext,
+
+    /// Processing priority
+    pub priority: Priority,
+
+    /// Session ID for grouping
+    pub session_id: String,
+}
+
+/// Source of a memory capture.
+#[derive(Clone, Debug)]
+pub enum MemorySource {
+    /// Captured from a hook
+    Hook {
+        hook_type: HookType,
+        tool_name: String,
+        triggered_at: DateTime<Utc>,
+    },
+    /// Manually injected
+    Manual {
+        injected_by: String,
+        injected_at: DateTime<Utc>,
+    },
+    /// Imported from external source
+    Import {
+        source_path: PathBuf,
+        imported_at: DateTime<Utc>,
+    },
 }
 
 impl PostToolUseStorageHook {
@@ -161,10 +322,14 @@ impl PostToolUseStorageHook {
             },
             context: self.build_context(&event),
             priority: self.calculate_priority(&event),
+            session_id: event.session_id.clone(),
         };
 
         // Add to queue (non-blocking)
-        self.pending_queue.write().await.push(pending);
+        {
+            let mut queue = self.pending_queue.write().await;
+            queue.push(pending);
+        }
 
         // Check batch threshold
         if self.should_flush_batch().await {
@@ -178,7 +343,7 @@ impl PostToolUseStorageHook {
     fn should_capture(&self, tool_name: &str) -> bool {
         matches!(tool_name,
             "Edit" | "Write" | "Bash" | "Read" | "MultiEdit" |
-            "NotebookEdit" | "WebFetch" | "WebSearch"
+            "NotebookEdit" | "WebFetch" | "WebSearch" | "Grep" | "Glob"
         )
     }
 
@@ -225,18 +390,115 @@ impl PostToolUseStorageHook {
                     content
                 ))
             }
+            "WebFetch" | "WebSearch" => {
+                let url = event.params.get("url").unwrap_or(&String::new());
+                let response = event.output.as_ref()
+                    .map(|o| truncate(&o.content, 2000))
+                    .unwrap_or_default();
+
+                Ok(format!(
+                    "URL: {}\nContent: {}",
+                    url,
+                    response
+                ))
+            }
             _ => Ok(String::new()),
         }
+    }
+
+    /// Build context from tool event for later retrieval.
+    fn build_context(&self, event: &ToolCompleteEvent) -> MemoryContext {
+        MemoryContext {
+            conversation_id: event.conversation_id.clone(),
+            session_id: event.session_id.clone(),
+            user_query: event.user_query.clone(),
+            tool_chain: event.tool_chain.clone(),
+            timestamp: Utc::now(),
+        }
+    }
+
+    /// Calculate priority based on tool importance.
+    fn calculate_priority(&self, event: &ToolCompleteEvent) -> Priority {
+        match event.tool_name.as_str() {
+            "Edit" | "Write" | "MultiEdit" => Priority::High,
+            "Bash" if event.exit_code == Some(0) => Priority::Normal,
+            "Bash" => Priority::Low, // Failed commands
+            "Read" => Priority::Low,
+            _ => Priority::Normal,
+        }
+    }
+
+    /// Check if batch should be flushed.
+    async fn should_flush_batch(&self) -> bool {
+        let queue = self.pending_queue.read().await;
+        queue.len() >= self.batch_config.flush_threshold
+            || self.time_since_last_flush() > self.batch_config.max_delay
+    }
+
+    /// Trigger background batch embedding.
+    async fn trigger_batch_embedding(&self) -> Result<(), HookError> {
+        // Signal the EmbeddingProcessorAgent
+        self.hook_dispatcher.dispatch(HookEvent::BatchEmbeddingRequested {
+            queue_size: self.pending_queue.read().await.len(),
+        }).await;
+        Ok(())
     }
 }
 ```
 
-### 2.2 SessionEnd Hook for Consolidation
+### 2.3 SessionStart Hook for Context Initialization
 
-The `SessionEnd` hook triggers memory consolidation when a Claude Code session ends:
+```rust
+/// SessionStart hook handler for memory context initialization.
+///
+/// Fires when a new Claude Code session begins.
+/// Initializes session context and preloads relevant memories.
+pub struct SessionStartHook {
+    store: Arc<dyn TeleologicalArrayStore>,
+    session_manager: Arc<SessionManager>,
+}
 
-```typescript
-// Hook configuration for session consolidation
+impl SessionStartHook {
+    /// Handle session start event.
+    pub async fn on_session_start(&self, event: SessionStartEvent) -> Result<(), HookError> {
+        // Create session record
+        let session = Session {
+            id: event.session_id.clone(),
+            started_at: Utc::now(),
+            working_directory: event.working_directory.clone(),
+            initial_context: event.initial_context.clone(),
+        };
+
+        self.session_manager.create_session(session).await?;
+
+        // Preload relevant memories for this context
+        if let Some(context) = &event.initial_context {
+            self.preload_relevant_memories(&event.session_id, context).await?;
+        }
+
+        Ok(())
+    }
+
+    /// Preload memories relevant to the session context.
+    async fn preload_relevant_memories(
+        &self,
+        session_id: &str,
+        context: &str,
+    ) -> Result<(), HookError> {
+        // This will be handled by the search layer
+        // Just emit event for now
+        Ok(())
+    }
+}
+```
+
+### 2.4 SessionEnd Hook for Consolidation
+
+The `SessionEnd` hook triggers memory consolidation when a Claude Code session ends.
+
+#### Configuration
+
+```json
 {
   "hooks": {
     "SessionEnd": [
@@ -245,8 +507,8 @@ The `SessionEnd` hook triggers memory consolidation when a Claude Code session e
         "hooks": [
           {
             "type": "command",
-            "command": "npx contextgraph consolidate-session --session-id $SESSION_ID",
-            "timeout": 30000
+            "command": "npx contextgraph consolidate-session --session-id \"$SESSION_ID\" --export-metrics",
+            "timeout": 60000
           }
         ]
       }
@@ -255,18 +517,47 @@ The `SessionEnd` hook triggers memory consolidation when a Claude Code session e
 }
 ```
 
+#### Implementation
+
 ```rust
 /// SessionEnd hook handler for memory consolidation.
 ///
 /// Performs end-of-session operations:
 /// 1. Flush pending embeddings
-/// 2. Consolidate related memories
+/// 2. Consolidate related memories (merge similar)
 /// 3. Update temporal indices
-/// 4. Optimize hot memories
+/// 4. Optimize hot memories (tier promotion)
+/// 5. Export session metrics
 pub struct SessionEndConsolidationHook {
     store: Arc<dyn TeleologicalArrayStore>,
     index_manager: Arc<IndexManager>,
     consolidator: Arc<MemoryConsolidator>,
+    metrics_exporter: Arc<MetricsExporter>,
+}
+
+/// Session consolidation statistics.
+#[derive(Clone, Debug, Default)]
+pub struct ConsolidationStats {
+    /// Memories flushed from pending queue
+    pub flushed_count: usize,
+
+    /// Memories merged (deduplicated)
+    pub merged_count: usize,
+
+    /// New links created between memories
+    pub linked_count: usize,
+
+    /// Memories promoted to hot tier
+    pub promoted_count: usize,
+
+    /// Memories demoted to cold tier
+    pub demoted_count: usize,
+
+    /// Session duration in seconds
+    pub session_duration_secs: u64,
+
+    /// Total memories in session
+    pub total_memories: usize,
 }
 
 impl SessionEndConsolidationHook {
@@ -275,28 +566,45 @@ impl SessionEndConsolidationHook {
         let mut stats = ConsolidationStats::default();
 
         // 1. Flush any pending embeddings
-        let pending = self.flush_pending_embeddings().await?;
+        let pending = self.flush_pending_embeddings(&event.session_id).await?;
         stats.flushed_count = pending;
 
-        // 2. Get session memories
+        // 2. Get all session memories
         let session_memories = self.store.list_by_session(&event.session_id).await?;
+        stats.total_memories = session_memories.len();
 
         // 3. Consolidate related memories (merge similar, link related)
         let consolidated = self.consolidator.consolidate(&session_memories).await?;
-        stats.consolidated_count = consolidated.merged_count;
+        stats.merged_count = consolidated.merged_count;
         stats.linked_count = consolidated.link_count;
 
-        // 4. Update temporal indices (E2, E3)
+        // 4. Update temporal indices (E2, E3, E4)
         self.update_temporal_indices(&session_memories).await?;
 
         // 5. Promote hot memories to faster tier
-        let promoted = self.optimize_memory_tiers(&session_memories).await?;
-        stats.promoted_count = promoted;
+        let tier_changes = self.optimize_memory_tiers(&session_memories).await?;
+        stats.promoted_count = tier_changes.promoted;
+        stats.demoted_count = tier_changes.demoted;
 
-        // 6. Store consolidation metadata
+        // 6. Calculate session duration
+        stats.session_duration_secs = (Utc::now() - event.started_at).num_seconds() as u64;
+
+        // 7. Store consolidation metadata
         self.store_session_summary(&event.session_id, &stats).await?;
 
+        // 8. Export metrics if requested
+        if event.export_metrics {
+            self.metrics_exporter.export_session(&event.session_id, &stats).await?;
+        }
+
         Ok(stats)
+    }
+
+    /// Flush pending embeddings for a session.
+    async fn flush_pending_embeddings(&self, session_id: &str) -> Result<usize, HookError> {
+        // Signal the embedding processor to flush
+        // Returns count of flushed items
+        todo!("Implement pending queue flush")
     }
 
     /// Consolidate related memories using clustering.
@@ -322,12 +630,49 @@ impl SessionEndConsolidationHook {
 
         Ok(result)
     }
+
+    /// Update temporal indices for session memories.
+    async fn update_temporal_indices(&self, memories: &[TeleologicalArray]) -> Result<(), HookError> {
+        // Recompute E2 (recency) based on access patterns
+        // Update E3 (periodic) based on session timing
+        // Refresh E4 (positional) based on conversation flow
+        for memory in memories {
+            self.index_manager.update_temporal_embeddings(memory.id).await?;
+        }
+        Ok(())
+    }
+
+    /// Optimize memory tiers based on purpose alignment.
+    async fn optimize_memory_tiers(&self, memories: &[TeleologicalArray]) -> Result<TierChanges, HookError> {
+        let mut changes = TierChanges::default();
+
+        for memory in memories {
+            let purpose_score = memory.theta_to_purpose;
+            let access_score = self.calculate_access_score(memory);
+
+            let target_tier = self.determine_target_tier(purpose_score, access_score);
+            let current_tier = memory.metadata.as_ref()
+                .map(|m| m.tier)
+                .unwrap_or(MemoryTier::Warm);
+
+            if target_tier != current_tier {
+                self.store.migrate_tier(memory.id, target_tier).await?;
+                match target_tier.cmp(&current_tier) {
+                    std::cmp::Ordering::Less => changes.promoted += 1,
+                    std::cmp::Ordering::Greater => changes.demoted += 1,
+                    std::cmp::Ordering::Equal => {}
+                }
+            }
+        }
+
+        Ok(changes)
+    }
 }
 ```
 
-### 2.3 PreCompact Hook for Memory Prioritization
+### 2.5 PreCompact Hook for Memory Prioritization
 
-The `PreCompact` hook fires before RocksDB compaction, allowing intelligent memory prioritization:
+The `PreCompact` hook fires before RocksDB compaction, allowing intelligent memory prioritization.
 
 ```rust
 /// PreCompact hook for teleological memory prioritization.
@@ -341,6 +686,30 @@ pub struct PreCompactPrioritizationHook {
     store: Arc<dyn TeleologicalArrayStore>,
     purpose_evaluator: Arc<PurposeEvaluator>,
     tier_config: TierConfig,
+}
+
+/// Tier configuration thresholds.
+#[derive(Clone, Debug)]
+pub struct TierConfig {
+    /// Minimum purpose score for hot tier
+    pub hot_threshold: f32,
+    /// Minimum purpose score for warm tier
+    pub warm_threshold: f32,
+    /// Minimum purpose score for cold tier
+    pub cold_threshold: f32,
+    /// Recency weight (vs purpose weight)
+    pub recency_weight: f32,
+}
+
+impl Default for TierConfig {
+    fn default() -> Self {
+        Self {
+            hot_threshold: 0.8,
+            warm_threshold: 0.5,
+            cold_threshold: 0.2,
+            recency_weight: 0.3, // 30% recency, 70% purpose
+        }
+    }
 }
 
 impl PreCompactPrioritizationHook {
@@ -366,7 +735,7 @@ impl PreCompactPrioritizationHook {
             let target_tier = self.determine_tier(score, &memory);
 
             if target_tier != memory.current_tier() {
-                self.migrate_tier(memory.id, target_tier).await?;
+                self.store.migrate_tier(memory.id, target_tier).await?;
             }
         }
 
@@ -376,7 +745,8 @@ impl PreCompactPrioritizationHook {
     /// Determine target tier based on purpose score and recency.
     fn determine_tier(&self, purpose_score: f32, memory: &TeleologicalArray) -> MemoryTier {
         let recency_factor = self.calculate_recency_factor(memory.created_at);
-        let combined_score = purpose_score * 0.7 + recency_factor * 0.3;
+        let combined_score = purpose_score * (1.0 - self.tier_config.recency_weight)
+            + recency_factor * self.tier_config.recency_weight;
 
         match combined_score {
             s if s >= self.tier_config.hot_threshold => MemoryTier::Hot,
@@ -385,12 +755,19 @@ impl PreCompactPrioritizationHook {
             _ => MemoryTier::Archive,
         }
     }
+
+    /// Calculate recency factor (exponential decay).
+    fn calculate_recency_factor(&self, created_at: DateTime<Utc>) -> f32 {
+        let age_hours = (Utc::now() - created_at).num_hours() as f32;
+        let half_life_hours = 24.0 * 7.0; // 1 week half-life
+        (-age_hours / half_life_hours).exp()
+    }
 }
 ```
 
-### 2.4 Hook Configuration
+### 2.6 Complete Hook Configuration
 
-Complete hook configuration for storage integration in `.claude/settings.json`:
+Full hook configuration for storage integration in `.claude/settings.json`:
 
 ```json
 {
@@ -403,7 +780,7 @@ Complete hook configuration for storage integration in `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx contextgraph store-memory --type edit --file \"$FILE_PATH\"",
+            "command": "npx contextgraph store-memory --type edit --file \"$FILE_PATH\" --session \"$SESSION_ID\" --context \"$CONVERSATION_CONTEXT\"",
             "timeout": 5000,
             "run_in_background": true
           }
@@ -416,7 +793,7 @@ Complete hook configuration for storage integration in `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx contextgraph store-memory --type command --cmd \"$COMMAND\"",
+            "command": "npx contextgraph store-memory --type command --cmd \"$COMMAND\" --exit-code $EXIT_CODE --session \"$SESSION_ID\"",
             "timeout": 3000,
             "run_in_background": true
           }
@@ -429,8 +806,34 @@ Complete hook configuration for storage integration in `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx contextgraph index-file --path \"$FILE_PATH\"",
+            "command": "npx contextgraph index-file --path \"$FILE_PATH\" --session \"$SESSION_ID\"",
             "timeout": 10000,
+            "run_in_background": true
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "tool_name": "WebFetch|WebSearch"
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx contextgraph store-memory --type web --url \"$URL\" --session \"$SESSION_ID\"",
+            "timeout": 5000,
+            "run_in_background": true
+          }
+        ]
+      },
+      {
+        "matcher": {
+          "tool_name": "Grep|Glob"
+        },
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx contextgraph store-memory --type search --pattern \"$PATTERN\" --session \"$SESSION_ID\"",
+            "timeout": 3000,
             "run_in_background": true
           }
         ]
@@ -442,7 +845,7 @@ Complete hook configuration for storage integration in `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx contextgraph session-start --id \"$SESSION_ID\"",
+            "command": "npx contextgraph session-start --id \"$SESSION_ID\" --cwd \"$WORKING_DIRECTORY\"",
             "timeout": 5000
           }
         ]
@@ -454,7 +857,7 @@ Complete hook configuration for storage integration in `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx contextgraph consolidate-session --session-id \"$SESSION_ID\" --export-metrics",
+            "command": "npx contextgraph consolidate-session --session-id \"$SESSION_ID\" --export-metrics --optimize-tiers",
             "timeout": 60000
           }
         ]
@@ -466,7 +869,7 @@ Complete hook configuration for storage integration in `.claude/settings.json`:
         "hooks": [
           {
             "type": "command",
-            "command": "npx contextgraph prioritize-memories --strategy purpose-aligned",
+            "command": "npx contextgraph prioritize-memories --strategy purpose-aligned --start-key \"$START_KEY\" --end-key \"$END_KEY\"",
             "timeout": 30000
           }
         ]
@@ -476,25 +879,56 @@ Complete hook configuration for storage integration in `.claude/settings.json`:
 }
 ```
 
+---
+
 ## 3. Storage Skills
 
 Storage skills provide high-level operations that Claude Code can invoke for batch storage operations.
 
-### 3.1 Batch Embedding Skill
+### 3.1 Skill Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                         STORAGE SKILLS ARCHITECTURE                      │
+└──────────────────────────────────────────────────────────────────────────┘
+
+  ┌───────────────────┐     ┌───────────────────┐     ┌──────────────────┐
+  │  batch-embed      │     │  index-manage     │     │  storage-cleanup │
+  │  Skill            │     │  Skill            │     │  Skill           │
+  │                   │     │                   │     │                  │
+  │  • Batch embed    │     │  • Rebuild index  │     │  • Purge old     │
+  │  • Priority queue │     │  • Optimize index │     │  • Tier migrate  │
+  │  • Parallel exec  │     │  • Index stats    │     │  • Deduplicate   │
+  └───────────────────┘     └───────────────────┘     └──────────────────┘
+           │                         │                        │
+           └─────────────────────────┼────────────────────────┘
+                                     │
+                                     ▼
+                        ┌────────────────────────┐
+                        │  TeleologicalArrayStore │
+                        │  (13-Index Storage)     │
+                        └────────────────────────┘
+```
+
+### 3.2 Batch Embedding Skill
 
 ```yaml
 # .claude/skills/batch-embed.yaml
 name: batch-embed
-description: Batch embed multiple contents into TeleologicalArrays
+description: Batch embed multiple contents into TeleologicalArrays using all 13 models
 triggers:
   - "batch embed"
   - "embed multiple"
   - "bulk embedding"
+  - "embed files"
 
 parameters:
   contents:
     type: array
     description: Array of content strings to embed
+  files:
+    type: array
+    description: Array of file paths to embed
   priority:
     type: string
     enum: [low, normal, high, critical]
@@ -502,12 +936,18 @@ parameters:
   wait_for_completion:
     type: boolean
     default: false
+    description: Wait for embedding to complete before returning
+  parallel_embedders:
+    type: integer
+    default: 4
+    description: Number of embedders to run in parallel
 
 execution:
   command: npx contextgraph batch-embed
   args:
     - --priority=$priority
     - --wait=$wait_for_completion
+    - --parallel=$parallel_embedders
   stdin: $contents
   timeout: 300000
 ```
@@ -523,6 +963,36 @@ pub struct BatchEmbedSkill {
     batch_config: BatchEmbedConfig,
 }
 
+/// Batch embed request.
+#[derive(Clone, Debug)]
+pub struct BatchEmbedRequest {
+    /// Content strings to embed
+    pub contents: Vec<String>,
+    /// File paths to read and embed
+    pub files: Vec<PathBuf>,
+    /// Processing priority
+    pub priority: Option<Priority>,
+    /// Wait for completion
+    pub wait_for_completion: bool,
+    /// Parallel embedder count
+    pub parallel_embedders: usize,
+    /// Request start time
+    pub start_time: Instant,
+}
+
+/// Batch embed result.
+#[derive(Clone, Debug)]
+pub struct BatchEmbedResult {
+    /// IDs of stored arrays
+    pub ids: Vec<Uuid>,
+    /// Number successfully embedded
+    pub embedded_count: usize,
+    /// Number failed
+    pub failed_count: usize,
+    /// Processing duration in ms
+    pub duration_ms: u64,
+}
+
 impl BatchEmbedSkill {
     /// Execute batch embedding.
     ///
@@ -531,53 +1001,77 @@ impl BatchEmbedSkill {
     /// 3. Await all 13 embedder outputs per content
     /// 4. Store complete arrays atomically
     pub async fn execute(&self, request: BatchEmbedRequest) -> Result<BatchEmbedResult, SkillError> {
-        let contents = request.contents;
+        // Combine contents and file contents
+        let mut all_contents = request.contents.clone();
+        for file_path in &request.files {
+            let content = tokio::fs::read_to_string(file_path).await?;
+            all_contents.push(content);
+        }
+
         let priority = request.priority.unwrap_or(Priority::Normal);
 
         // Validate batch size
-        if contents.len() > self.batch_config.max_batch_size {
+        if all_contents.len() > self.batch_config.max_batch_size {
             return Err(SkillError::BatchTooLarge {
                 max: self.batch_config.max_batch_size,
-                actual: contents.len(),
+                actual: all_contents.len(),
             });
         }
 
         // Create embedding tasks for all content
-        let embedding_futures: Vec<_> = contents
+        let semaphore = Arc::new(Semaphore::new(request.parallel_embedders));
+        let embedding_futures: Vec<_> = all_contents
             .iter()
-            .map(|content| self.embed_single(content, priority))
+            .map(|content| {
+                let sem = semaphore.clone();
+                let embedder = self.embedder_service.clone();
+                let content = content.clone();
+                async move {
+                    let _permit = sem.acquire().await?;
+                    embedder.embed_all(&content, priority).await
+                }
+            })
             .collect();
 
         // Execute all embeddings in parallel
-        let arrays = futures::future::try_join_all(embedding_futures).await?;
+        let results = futures::future::join_all(embedding_futures).await;
+
+        // Collect successful embeddings
+        let mut arrays = Vec::new();
+        let mut failed_count = 0;
+        for (i, result) in results.into_iter().enumerate() {
+            match result {
+                Ok(embeddings) => {
+                    let array = TeleologicalArray {
+                        id: Uuid::new_v4(),
+                        embeddings,
+                        source_content: Some(all_contents[i].clone()),
+                        created_at: Utc::now(),
+                        ..Default::default()
+                    };
+                    arrays.push(array);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to embed content {}: {}", i, e);
+                    failed_count += 1;
+                }
+            }
+        }
 
         // Store batch atomically
         let ids = self.store.store_batch(arrays).await?;
 
         Ok(BatchEmbedResult {
+            embedded_count: ids.len(),
+            failed_count,
             ids,
-            embedded_count: contents.len(),
             duration_ms: request.start_time.elapsed().as_millis() as u64,
-        })
-    }
-
-    /// Embed single content through all 13 embedders.
-    async fn embed_single(&self, content: &str, priority: Priority) -> Result<TeleologicalArray, SkillError> {
-        // Parallel embedding through all 13 models
-        let embeddings = self.embedder_service.embed_all(content, priority).await?;
-
-        Ok(TeleologicalArray {
-            id: Uuid::new_v4(),
-            embeddings,
-            source_content: content.to_string(),
-            created_at: Utc::now(),
-            metadata: TeleologicalMetadata::default(),
         })
     }
 }
 ```
 
-### 3.2 Index Management Skill
+### 3.3 Index Management Skill
 
 ```yaml
 # .claude/skills/index-manage.yaml
@@ -587,6 +1081,7 @@ triggers:
   - "rebuild index"
   - "optimize index"
   - "index stats"
+  - "index health"
 
 subcommands:
   rebuild:
@@ -594,12 +1089,12 @@ subcommands:
     parameters:
       embedder:
         type: string
-        enum: [semantic, temporal_recent, temporal_periodic, entity, causal, splade, contextual, emotional, syntactic, pragmatic, crossmodal, late_interaction, keyword, all]
+        enum: [semantic, temporal_recent, temporal_periodic, temporal_positional, causal, splade_primary, code, graph, hdc, multimodal, entity, late_interaction, splade_keyword, all]
         default: all
     command: npx contextgraph index rebuild --embedder=$embedder
 
   stats:
-    description: Get index statistics
+    description: Get index statistics for all 13 embedders
     parameters:
       format:
         type: string
@@ -615,6 +1110,14 @@ subcommands:
         enum: [read_heavy, write_heavy, balanced]
         default: balanced
     command: npx contextgraph index optimize --workload=$workload
+
+  health:
+    description: Check index health and consistency
+    parameters:
+      fix:
+        type: boolean
+        default: false
+    command: npx contextgraph index health --fix=$fix
 ```
 
 ```rust
@@ -655,31 +1158,31 @@ impl IndexManageSkill {
     pub async fn optimize(&self, workload: WorkloadType) -> Result<OptimizationResult, SkillError> {
         let current_stats = self.stats_collector.collect().await?;
 
-        // Analyze workload patterns
-        let read_ratio = current_stats.read_ops as f64 /
-            (current_stats.read_ops + current_stats.write_ops).max(1) as f64;
-
         // Calculate optimal parameters per embedder
         let mut optimizations = Vec::new();
 
         for embedder in Embedder::all() {
-            let current = self.index_manager.index_stats(embedder).await?;
+            let current = self.index_manager.index_stats(*embedder).await?;
 
             let new_params = match workload {
                 WorkloadType::ReadHeavy => HnswConfig {
-                    ef_search: (current.hnsw_stats.as_ref().map(|h| h.ef_search).unwrap_or(100) * 2).min(500),
+                    ef_search: (current.hnsw_stats.as_ref()
+                        .map(|h| h.ef_search)
+                        .unwrap_or(100) as f64 * 1.5) as usize,
                     ..current.config()
                 },
                 WorkloadType::WriteHeavy => HnswConfig {
-                    ef_construction: (current.hnsw_stats.as_ref().map(|h| h.ef_construction).unwrap_or(200) / 2).max(50),
+                    ef_construction: (current.hnsw_stats.as_ref()
+                        .map(|h| h.ef_construction)
+                        .unwrap_or(200) as f64 * 0.75) as usize,
                     ..current.config()
                 },
                 WorkloadType::Balanced => current.config(),
             };
 
             if new_params != current.config() {
-                self.index_manager.update_config(embedder, new_params).await?;
-                optimizations.push((embedder, new_params));
+                self.index_manager.update_config(*embedder, new_params.clone()).await?;
+                optimizations.push((*embedder, new_params));
             }
         }
 
@@ -689,10 +1192,44 @@ impl IndexManageSkill {
             changes: optimizations,
         })
     }
+
+    /// Check index health and consistency.
+    pub async fn health(&self, fix: bool) -> Result<HealthReport, SkillError> {
+        let mut report = HealthReport::default();
+
+        for embedder in Embedder::all() {
+            let stats = self.index_manager.index_stats(*embedder).await?;
+
+            // Check for issues
+            if stats.vector_count == 0 {
+                report.issues.push(HealthIssue {
+                    embedder: *embedder,
+                    issue_type: IssueType::EmptyIndex,
+                    severity: Severity::Warning,
+                });
+            }
+
+            if stats.p99_search_us > 10_000 {
+                report.issues.push(HealthIssue {
+                    embedder: *embedder,
+                    issue_type: IssueType::HighLatency,
+                    severity: Severity::Warning,
+                });
+            }
+
+            // Auto-fix if requested
+            if fix && !report.issues.is_empty() {
+                self.auto_fix_issues(*embedder, &report.issues).await?;
+            }
+        }
+
+        report.healthy = report.issues.iter().all(|i| i.severity != Severity::Critical);
+        Ok(report)
+    }
 }
 ```
 
-### 3.3 Cleanup Skill
+### 3.4 Storage Cleanup Skill
 
 ```yaml
 # .claude/skills/storage-cleanup.yaml
@@ -702,6 +1239,7 @@ triggers:
   - "cleanup storage"
   - "purge old memories"
   - "storage maintenance"
+  - "deduplicate memories"
 
 parameters:
   older_than_days:
@@ -712,6 +1250,10 @@ parameters:
     type: number
     default: 0.2
     description: Minimum purpose alignment score to keep
+  deduplicate:
+    type: boolean
+    default: true
+    description: Merge duplicate memories
   dry_run:
     type: boolean
     default: true
@@ -722,6 +1264,7 @@ execution:
   args:
     - --older-than=$older_than_days
     - --min-score=$min_purpose_score
+    - --deduplicate=$deduplicate
     - --dry-run=$dry_run
   timeout: 600000
 ```
@@ -731,14 +1274,36 @@ execution:
 pub struct CleanupSkill {
     store: Arc<dyn TeleologicalArrayStore>,
     purpose_evaluator: Arc<PurposeEvaluator>,
+    deduplicator: Arc<MemoryDeduplicator>,
+}
+
+/// Cleanup request parameters.
+#[derive(Clone, Debug)]
+pub struct CleanupRequest {
+    pub older_than_days: i64,
+    pub min_purpose_score: f32,
+    pub deduplicate: bool,
+    pub dry_run: bool,
+}
+
+/// Cleanup result statistics.
+#[derive(Clone, Debug, Default)]
+pub struct CleanupResult {
+    pub would_delete: usize,
+    pub would_keep: usize,
+    pub would_merge: usize,
+    pub deleted: usize,
+    pub merged: usize,
+    pub bytes_freed: u64,
+    pub dry_run: bool,
 }
 
 impl CleanupSkill {
     /// Execute cleanup based on age and purpose score.
     pub async fn execute(&self, request: CleanupRequest) -> Result<CleanupResult, SkillError> {
-        let cutoff_date = Utc::now() - Duration::days(request.older_than_days as i64);
+        let cutoff_date = Utc::now() - Duration::days(request.older_than_days);
 
-        // Find candidates for deletion
+        // Find candidates for deletion (old + low purpose)
         let candidates = self.store.list_before(cutoff_date).await?;
 
         let mut to_delete = Vec::new();
@@ -748,41 +1313,97 @@ impl CleanupSkill {
             let purpose_score = self.purpose_evaluator.alignment_score(&memory);
 
             if purpose_score < request.min_purpose_score {
-                to_delete.push(memory.id);
+                to_delete.push(memory);
             } else {
                 to_keep.push((memory.id, purpose_score));
             }
+        }
+
+        // Find duplicates if requested
+        let mut to_merge = Vec::new();
+        if request.deduplicate {
+            let all_memories = self.store.list_all().await?;
+            to_merge = self.deduplicator.find_duplicates(&all_memories).await?;
         }
 
         if request.dry_run {
             return Ok(CleanupResult {
                 would_delete: to_delete.len(),
                 would_keep: to_keep.len(),
+                would_merge: to_merge.len(),
                 deleted: 0,
+                merged: 0,
+                bytes_freed: 0,
                 dry_run: true,
             });
         }
 
         // Actually delete
-        for id in &to_delete {
-            self.store.delete(*id).await?;
+        let mut bytes_freed = 0u64;
+        for memory in &to_delete {
+            bytes_freed += self.estimate_size(memory);
+            self.store.delete(memory.id).await?;
+        }
+
+        // Merge duplicates
+        for duplicate_group in &to_merge {
+            self.deduplicator.merge_group(duplicate_group).await?;
         }
 
         Ok(CleanupResult {
             would_delete: 0,
             would_keep: to_keep.len(),
+            would_merge: 0,
             deleted: to_delete.len(),
+            merged: to_merge.len(),
+            bytes_freed,
             dry_run: false,
         })
     }
 }
 ```
 
+---
+
 ## 4. Storage Subagents
 
 Storage subagents handle heavy-lifting operations in the background, freeing the main Claude Code agent.
 
-### 4.1 Background Embedding Agent
+### 4.1 Subagent Architecture
+
+```
+┌──────────────────────────────────────────────────────────────────────────┐
+│                      STORAGE SUBAGENT ARCHITECTURE                        │
+└──────────────────────────────────────────────────────────────────────────┘
+
+  ┌─────────────────────────────────────────────────────────────────────────┐
+  │                        SUBAGENT COORDINATOR                             │
+  │                                                                         │
+  │   Lifecycle: Spawn on SessionStart, Shutdown on SessionEnd              │
+  │   Coordination: Shared message queue, mutex-free where possible         │
+  └─────────────────────────────────────────────────────────────────────────┘
+           │                    │                    │
+           ▼                    ▼                    ▼
+  ┌─────────────────┐  ┌─────────────────┐  ┌─────────────────┐
+  │   Embedding     │  │     Index       │  │      Tier       │
+  │   Processor     │  │   Optimizer     │  │    Migrator     │
+  │                 │  │                 │  │                 │
+  │ • 13-model      │  │ • HNSW tune     │  │ • Access track  │
+  │   embedding     │  │ • Latency       │  │ • Purpose eval  │
+  │ • Priority      │  │   monitor       │  │ • Hot/warm/cold │
+  │   queue         │  │ • Auto-rebuild  │  │   migration     │
+  │ • Batch flush   │  │                 │  │                 │
+  └─────────────────┘  └─────────────────┘  └─────────────────┘
+           │                    │                    │
+           └────────────────────┼────────────────────┘
+                                │
+                                ▼
+                   ┌────────────────────────┐
+                   │  TeleologicalArrayStore │
+                   └────────────────────────┘
+```
+
+### 4.2 Embedding Processor Agent
 
 ```rust
 /// Background agent for processing embedding queues.
@@ -807,9 +1428,54 @@ pub struct EmbeddingProcessorAgent {
 
     /// Shutdown signal
     shutdown: Arc<AtomicBool>,
+
+    /// Processing metrics
+    metrics: Arc<AgentMetrics>,
+}
+
+/// Embedding agent configuration.
+#[derive(Clone, Debug)]
+pub struct EmbeddingAgentConfig {
+    /// Maximum batch size
+    pub batch_size: usize,
+    /// Maximum idle time before checking queue
+    pub idle_timeout_ms: u64,
+    /// Maximum retries on embedding failure
+    pub max_retries: usize,
+    /// Parallel embedder count (for each batch item)
+    pub parallel_embedders: usize,
+}
+
+impl Default for EmbeddingAgentConfig {
+    fn default() -> Self {
+        Self {
+            batch_size: 50,
+            idle_timeout_ms: 100,
+            max_retries: 3,
+            parallel_embedders: 4,
+        }
+    }
 }
 
 impl EmbeddingProcessorAgent {
+    /// Create a new embedding processor agent.
+    pub fn new(
+        pending_queue: Arc<RwLock<VecDeque<PendingMemory>>>,
+        embedder: Arc<EmbeddingService>,
+        store: Arc<dyn TeleologicalArrayStore>,
+        config: EmbeddingAgentConfig,
+    ) -> Self {
+        Self {
+            id: format!("embedding-processor-{}", Uuid::new_v4()),
+            pending_queue,
+            embedder,
+            store,
+            config,
+            shutdown: Arc::new(AtomicBool::new(false)),
+            metrics: Arc::new(AgentMetrics::default()),
+        }
+    }
+
     /// Run the agent's main loop.
     pub async fn run(&self) -> Result<(), AgentError> {
         tracing::info!(agent_id = %self.id, "Embedding processor agent starting");
@@ -820,20 +1486,30 @@ impl EmbeddingProcessorAgent {
 
             if batch.is_empty() {
                 // No work, sleep briefly
-                tokio::time::sleep(Duration::from_millis(100)).await;
+                tokio::time::sleep(Duration::from_millis(self.config.idle_timeout_ms)).await;
                 continue;
             }
 
             // Process batch through all 13 embedders
+            let start = Instant::now();
             match self.process_batch(batch).await {
                 Ok(arrays) => {
+                    let count = arrays.len();
                     // Store completed arrays
                     if let Err(e) = self.store.store_batch(arrays).await {
                         tracing::error!(error = %e, "Failed to store embedded arrays");
+                        self.metrics.store_failures.fetch_add(1, Ordering::SeqCst);
+                    } else {
+                        self.metrics.embedded_count.fetch_add(count, Ordering::SeqCst);
+                        self.metrics.total_latency_ms.fetch_add(
+                            start.elapsed().as_millis() as u64,
+                            Ordering::SeqCst
+                        );
                     }
                 }
                 Err(e) => {
                     tracing::error!(error = %e, "Batch embedding failed");
+                    self.metrics.embedding_failures.fetch_add(1, Ordering::SeqCst);
                 }
             }
         }
@@ -842,36 +1518,72 @@ impl EmbeddingProcessorAgent {
         Ok(())
     }
 
+    /// Signal agent to shutdown.
+    pub fn shutdown(&self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+    }
+
     /// Collect a batch from the pending queue.
     async fn collect_batch(&self) -> Vec<PendingMemory> {
         let mut queue = self.pending_queue.write().await;
+
+        // Sort by priority (critical first)
+        queue.make_contiguous().sort_by_key(|p| std::cmp::Reverse(p.priority));
+
         let count = queue.len().min(self.config.batch_size);
         queue.drain(..count).collect()
     }
 
     /// Process batch through all 13 embedders.
     async fn process_batch(&self, batch: Vec<PendingMemory>) -> Result<Vec<TeleologicalArray>, AgentError> {
+        let semaphore = Arc::new(Semaphore::new(self.config.parallel_embedders));
+
         let futures: Vec<_> = batch
             .into_iter()
-            .map(|pending| async move {
-                let embeddings = self.embedder.embed_all(&pending.content, pending.priority).await?;
+            .map(|pending| {
+                let sem = semaphore.clone();
+                let embedder = self.embedder.clone();
+                async move {
+                    let _permit = sem.acquire().await?;
+                    let embeddings = embedder.embed_all(&pending.content, pending.priority).await?;
 
-                Ok::<_, AgentError>(TeleologicalArray {
-                    id: pending.id,
-                    embeddings,
-                    source_content: pending.content,
-                    created_at: pending.source.triggered_at(),
-                    metadata: TeleologicalMetadata::from_context(pending.context),
-                })
+                    Ok::<_, AgentError>(TeleologicalArray {
+                        id: pending.id,
+                        embeddings,
+                        source_content: Some(pending.content),
+                        created_at: pending.source.triggered_at(),
+                        metadata: Some(TeleologicalMetadata::from_context(pending.context)),
+                        ..Default::default()
+                    })
+                }
             })
             .collect();
 
-        futures::future::try_join_all(futures).await
+        let results: Vec<Result<TeleologicalArray, AgentError>> =
+            futures::future::join_all(futures).await;
+
+        // Filter successful results
+        let arrays: Vec<TeleologicalArray> = results
+            .into_iter()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        Ok(arrays)
+    }
+
+    /// Get agent metrics.
+    pub fn metrics(&self) -> AgentMetricsSnapshot {
+        AgentMetricsSnapshot {
+            embedded_count: self.metrics.embedded_count.load(Ordering::SeqCst),
+            embedding_failures: self.metrics.embedding_failures.load(Ordering::SeqCst),
+            store_failures: self.metrics.store_failures.load(Ordering::SeqCst),
+            avg_latency_ms: self.metrics.average_latency(),
+        }
     }
 }
 ```
 
-### 4.2 Index Optimization Agent
+### 4.3 Index Optimization Agent
 
 ```rust
 /// Background agent for continuous index optimization.
@@ -886,6 +1598,30 @@ pub struct IndexOptimizationAgent {
     shutdown: Arc<AtomicBool>,
 }
 
+/// Optimization agent configuration.
+#[derive(Clone, Debug)]
+pub struct OptimizationAgentConfig {
+    /// Check interval in seconds
+    pub check_interval_secs: u64,
+    /// Maximum P99 latency in microseconds before optimization
+    pub max_p99_latency_us: u64,
+    /// Minimum ef_search / M ratio
+    pub min_ef_ratio: f32,
+    /// Latency improvement threshold to trigger change
+    pub improvement_threshold: f32,
+}
+
+impl Default for OptimizationAgentConfig {
+    fn default() -> Self {
+        Self {
+            check_interval_secs: 300, // 5 minutes
+            max_p99_latency_us: 5000, // 5ms
+            min_ef_ratio: 3.0,
+            improvement_threshold: 0.1, // 10% improvement
+        }
+    }
+}
+
 impl IndexOptimizationAgent {
     /// Run the optimization loop.
     pub async fn run(&self) -> Result<(), AgentError> {
@@ -897,16 +1633,23 @@ impl IndexOptimizationAgent {
 
             // Analyze each embedder's index
             for embedder in Embedder::all() {
-                let idx_stats = &stats[embedder as usize];
+                let idx_stats = &stats[*embedder as usize];
 
                 // Check if optimization needed
                 if self.needs_optimization(idx_stats) {
-                    self.optimize_embedder(embedder, idx_stats).await?;
+                    match self.optimize_embedder(*embedder, idx_stats).await {
+                        Ok(_) => {
+                            tracing::info!(embedder = ?embedder, "Index optimized");
+                        }
+                        Err(e) => {
+                            tracing::warn!(embedder = ?embedder, error = %e, "Optimization failed");
+                        }
+                    }
                 }
             }
 
             // Sleep until next check
-            tokio::time::sleep(self.config.check_interval).await;
+            tokio::time::sleep(Duration::from_secs(self.config.check_interval_secs)).await;
         }
 
         Ok(())
@@ -921,7 +1664,7 @@ impl IndexOptimizationAgent {
 
         // Optimize if recall appears degraded (based on ef_search ratio)
         if let Some(hnsw) = &stats.hnsw_stats {
-            let ef_ratio = hnsw.ef_search as f64 / hnsw.max_connections as f64;
+            let ef_ratio = hnsw.ef_search as f32 / hnsw.max_connections as f32;
             if ef_ratio < self.config.min_ef_ratio {
                 return true;
             }
@@ -931,23 +1674,39 @@ impl IndexOptimizationAgent {
     }
 
     /// Optimize a specific embedder's index.
-    async fn optimize_embedder(&self, embedder: Embedder, stats: &IndexStats) -> Result<(), AgentError> {
+    async fn optimize_embedder(
+        &self,
+        embedder: Embedder,
+        stats: &IndexStats,
+    ) -> Result<(), AgentError> {
         tracing::info!(embedder = ?embedder, "Optimizing index");
+
+        let current_config = self.index_manager.config(embedder);
 
         // Determine optimization strategy
         let new_config = if stats.p99_search_us > self.config.max_p99_latency_us {
             // Latency too high: increase ef_search for better recall
             HnswConfig {
-                ef_search: (stats.hnsw_stats.as_ref()
-                    .map(|h| h.ef_search)
-                    .unwrap_or(100) as f64 * 1.5) as usize,
-                ..self.index_manager.config(embedder)
+                ef_search: ((current_config.ef_search as f64) * 1.5) as usize,
+                ..current_config
+            }
+        } else if let Some(hnsw) = &stats.hnsw_stats {
+            let ef_ratio = hnsw.ef_search as f32 / hnsw.max_connections as f32;
+            if ef_ratio < self.config.min_ef_ratio {
+                // Recall potentially degraded: increase ef_search
+                HnswConfig {
+                    ef_search: (hnsw.max_connections as f32 * self.config.min_ef_ratio) as usize,
+                    ..current_config
+                }
+            } else {
+                // No optimization needed
+                return Ok(());
             }
         } else {
-            // Standard optimization
-            self.calculate_optimal_config(embedder, stats)
+            return Ok(());
         };
 
+        // Apply new configuration
         self.index_manager.update_config(embedder, new_config).await?;
 
         Ok(())
@@ -955,7 +1714,7 @@ impl IndexOptimizationAgent {
 }
 ```
 
-### 4.3 Tier Migration Agent
+### 4.4 Tier Migration Agent
 
 ```rust
 /// Background agent for memory tier migration.
@@ -971,6 +1730,36 @@ pub struct TierMigrationAgent {
     shutdown: Arc<AtomicBool>,
 }
 
+/// Tier migration configuration.
+#[derive(Clone, Debug)]
+pub struct TierMigrationConfig {
+    /// Check interval in seconds
+    pub check_interval_secs: u64,
+    /// Hot tier threshold (0-1)
+    pub hot_threshold: f32,
+    /// Warm tier threshold (0-1)
+    pub warm_threshold: f32,
+    /// Cold tier threshold (0-1)
+    pub cold_threshold: f32,
+    /// Access weight (vs purpose weight)
+    pub access_weight: f32,
+    /// Maximum migrations per cycle
+    pub max_migrations_per_cycle: usize,
+}
+
+impl Default for TierMigrationConfig {
+    fn default() -> Self {
+        Self {
+            check_interval_secs: 3600, // 1 hour
+            hot_threshold: 0.8,
+            warm_threshold: 0.5,
+            cold_threshold: 0.2,
+            access_weight: 0.4,
+            max_migrations_per_cycle: 100,
+        }
+    }
+}
+
 impl TierMigrationAgent {
     /// Run the tier migration loop.
     pub async fn run(&self) -> Result<(), AgentError> {
@@ -980,38 +1769,55 @@ impl TierMigrationAgent {
             // Get candidates for migration
             let candidates = self.find_migration_candidates().await?;
 
+            let mut migrations = 0;
             for (memory_id, current_tier, target_tier) in candidates {
+                if migrations >= self.config.max_migrations_per_cycle {
+                    break;
+                }
+
                 if current_tier != target_tier {
-                    self.migrate(memory_id, target_tier).await?;
+                    match self.store.migrate_tier(memory_id, target_tier).await {
+                        Ok(_) => {
+                            migrations += 1;
+                            tracing::debug!(
+                                memory_id = %memory_id,
+                                from = ?current_tier,
+                                to = ?target_tier,
+                                "Memory migrated"
+                            );
+                        }
+                        Err(e) => {
+                            tracing::warn!(
+                                memory_id = %memory_id,
+                                error = %e,
+                                "Migration failed"
+                            );
+                        }
+                    }
                 }
             }
 
+            if migrations > 0 {
+                tracing::info!(count = migrations, "Tier migration cycle complete");
+            }
+
             // Sleep until next check
-            tokio::time::sleep(self.config.check_interval).await;
+            tokio::time::sleep(Duration::from_secs(self.config.check_interval_secs)).await;
         }
 
         Ok(())
     }
 
     /// Find memories that should be migrated.
-    async fn find_migration_candidates(&self) -> Result<Vec<(Uuid, MemoryTier, MemoryTier)>, AgentError> {
+    async fn find_migration_candidates(
+        &self,
+    ) -> Result<Vec<(Uuid, MemoryTier, MemoryTier)>, AgentError> {
         let mut candidates = Vec::new();
 
-        // Check hot tier for demotion candidates
-        let hot_memories = self.store.list_by_tier(MemoryTier::Hot).await?;
-        for memory in hot_memories {
-            let access_score = self.access_tracker.score(memory.id);
-            let purpose_score = self.purpose_evaluator.alignment_score(&memory);
-
-            let target = self.calculate_target_tier(access_score, purpose_score);
-            if target != MemoryTier::Hot {
-                candidates.push((memory.id, MemoryTier::Hot, target));
-            }
-        }
-
-        // Check warm/cold tiers for promotion candidates
-        for tier in [MemoryTier::Warm, MemoryTier::Cold] {
+        // Check each tier for migration candidates
+        for tier in [MemoryTier::Hot, MemoryTier::Warm, MemoryTier::Cold] {
             let memories = self.store.list_by_tier(tier).await?;
+
             for memory in memories {
                 let access_score = self.access_tracker.score(memory.id);
                 let purpose_score = self.purpose_evaluator.alignment_score(&memory);
@@ -1023,12 +1829,18 @@ impl TierMigrationAgent {
             }
         }
 
+        // Sort by urgency (biggest tier jumps first)
+        candidates.sort_by_key(|(_, from, to)| {
+            std::cmp::Reverse((*from as i8 - *to as i8).abs())
+        });
+
         Ok(candidates)
     }
 
     /// Calculate target tier based on access and purpose scores.
     fn calculate_target_tier(&self, access_score: f32, purpose_score: f32) -> MemoryTier {
-        let combined = access_score * 0.4 + purpose_score * 0.6;
+        let combined = access_score * self.config.access_weight
+            + purpose_score * (1.0 - self.config.access_weight);
 
         match combined {
             s if s >= self.config.hot_threshold => MemoryTier::Hot,
@@ -1040,7 +1852,7 @@ impl TierMigrationAgent {
 }
 ```
 
-### 4.4 Subagent Spawning Configuration
+### 4.5 Subagent Spawning Configuration
 
 ```yaml
 # .claude/agents/storage-agents.yaml
@@ -1053,11 +1865,16 @@ agents:
       - pending_queue_threshold: 10
     config:
       batch_size: 50
-      max_concurrent: 4
-      priority_order: [critical, high, normal, low]
+      idle_timeout_ms: 100
+      max_retries: 3
+      parallel_embedders: 4
     resources:
       memory_limit: 2GB
       cpu_limit: 2
+    health_check:
+      interval_secs: 60
+      timeout_secs: 5
+      unhealthy_threshold: 3
 
   index-optimizer:
     type: background
@@ -1066,12 +1883,16 @@ agents:
       - session_start
       - schedule: "*/15 * * * *"  # Every 15 minutes
     config:
-      check_interval_seconds: 300
+      check_interval_secs: 300
       max_p99_latency_us: 5000
       min_ef_ratio: 3.0
+      improvement_threshold: 0.1
     resources:
       memory_limit: 512MB
       cpu_limit: 1
+    health_check:
+      interval_secs: 120
+      timeout_secs: 10
 
   tier-migrator:
     type: background
@@ -1079,14 +1900,21 @@ agents:
     spawn_on:
       - schedule: "0 * * * *"  # Every hour
     config:
-      check_interval_seconds: 3600
+      check_interval_secs: 3600
       hot_threshold: 0.8
       warm_threshold: 0.5
       cold_threshold: 0.2
+      access_weight: 0.4
+      max_migrations_per_cycle: 100
     resources:
       memory_limit: 256MB
       cpu_limit: 0.5
+    health_check:
+      interval_secs: 300
+      timeout_secs: 30
 ```
+
+---
 
 ## 5. Storage Interface
 
@@ -1156,6 +1984,19 @@ pub trait TeleologicalArrayStore: Send + Sync {
 
     /// List memories created before a timestamp.
     async fn list_before(&self, before: DateTime<Utc>) -> Result<Vec<TeleologicalArray>, StorageError>;
+
+    /// Migrate a memory to a different tier.
+    async fn migrate_tier(&self, id: Uuid, target_tier: MemoryTier) -> Result<(), StorageError>;
+
+    /// List memories in a key range (for compaction hooks).
+    async fn list_range(
+        &self,
+        start_key: Option<&[u8]>,
+        end_key: Option<&[u8]>,
+    ) -> Result<Vec<TeleologicalArray>, StorageError>;
+
+    /// List all memories (use with caution).
+    async fn list_all(&self) -> Result<Vec<TeleologicalArray>, StorageError>;
 }
 ```
 
@@ -1257,6 +2098,8 @@ pub struct SearchFilter {
 }
 ```
 
+---
+
 ## 6. Index Architecture
 
 ### 6.1 Per-Embedder Index Design
@@ -1302,7 +2145,7 @@ pub enum IndexType {
 }
 
 /// HNSW configuration optimized per embedder dimension.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct HnswConfig {
     /// Maximum number of connections per node.
     /// Higher M = better recall, more memory.
@@ -1337,7 +2180,7 @@ impl HnswConfig {
         }
     }
 
-    /// Configuration for medium-dim embedders (E2-E5, E7-E10: 256-768D).
+    /// Configuration for medium-dim embedders (E2-E5, E8-E11: 256-768D).
     pub fn for_medium_dim() -> Self {
         Self {
             m: 24,
@@ -1348,19 +2191,19 @@ impl HnswConfig {
         }
     }
 
-    /// Configuration for cross-modal embedder (E11: 768D).
-    pub fn for_cross_modal() -> Self {
+    /// Configuration for code embedder (E7: 1536D).
+    pub fn for_code() -> Self {
         Self {
-            m: 24,
-            ef_construction: 200,
-            ef_search: 100,
+            m: 32,
+            ef_construction: 256,
+            ef_search: 128,
             metric: DistanceMetric::Cosine,
-            memory_tier: MemoryTier::Warm,
+            memory_tier: MemoryTier::Hot,
         }
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum DistanceMetric {
     Cosine,
     Euclidean,
@@ -1369,16 +2212,16 @@ pub enum DistanceMetric {
     AsymmetricCosine,
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum MemoryTier {
     /// Kept in memory, fastest access.
-    Hot,
+    Hot = 0,
     /// Memory-mapped, moderate access.
-    Warm,
+    Warm = 1,
     /// Disk-resident, slowest access.
-    Cold,
+    Cold = 2,
     /// Compressed archive storage.
-    Archive,
+    Archive = 3,
 }
 ```
 
@@ -1389,14 +2232,14 @@ pub enum MemoryTier {
 | E1 Semantic | HNSW | 1024D | 32 | 128 | Cosine | Hot |
 | E2 TemporalRecent | HNSW | 512D | 24 | 100 | Cosine | Warm |
 | E3 TemporalPeriodic | HNSW | 512D | 24 | 100 | Cosine | Warm |
-| E4 EntityRelationship | HNSW | 768D | 24 | 100 | Cosine | Warm |
-| E5 Causal | HNSW | 512D | 24 | 100 | Asymmetric | Warm |
+| E4 TemporalPositional | HNSW | 512D | 24 | 100 | Cosine | Warm |
+| E5 Causal | HNSW | 768D | 24 | 100 | Asymmetric | Warm |
 | E6 SpladePrimary | Inverted | ~30K sparse | N/A | N/A | Sparse Dot | Hot |
-| E7 Contextual | HNSW | 1024D | 32 | 128 | Cosine | Warm |
-| E8 Emotional | HNSW | 256D | 16 | 64 | Cosine | Cold |
-| E9 Syntactic | HNSW | 512D | 24 | 100 | Cosine | Cold |
-| E10 Pragmatic | HNSW | 512D | 24 | 100 | Cosine | Warm |
-| E11 CrossModal | HNSW | 768D | 24 | 100 | Cosine | Warm |
+| E7 Code | HNSW | 1536D | 32 | 128 | Cosine | Hot |
+| E8 Graph | HNSW | 384D | 16 | 64 | Cosine | Cold |
+| E9 HDC | HNSW | 1024D | 32 | 128 | Cosine | Cold |
+| E10 Multimodal | HNSW | 768D | 24 | 100 | Cosine | Warm |
+| E11 Entity | HNSW | 384D | 16 | 64 | Cosine | Warm |
 | E12 LateInteraction | TokenLevel | 128D/tok | N/A | N/A | MaxSim | Cold |
 | E13 SpladeKeyword | Inverted | ~30K sparse | N/A | N/A | Sparse Dot | Hot |
 
@@ -1420,17 +2263,17 @@ Storage Structure:
   |   |
   |   +-- e02_temporal_recent/   # E2: HNSW index (512D)
   |   +-- e03_temporal_periodic/ # E3: HNSW index (512D)
-  |   +-- e04_entity/            # E4: HNSW index (768D)
-  |   +-- e05_causal/            # E5: HNSW index (512D, asymmetric)
+  |   +-- e04_temporal_pos/      # E4: HNSW index (512D)
+  |   +-- e05_causal/            # E5: HNSW index (768D, asymmetric)
   |   +-- e06_splade/            # E6: Inverted index
   |   |   +-- postings.bin       # Posting lists
   |   |   +-- vocab.bin          # Token vocabulary
   |   |
-  |   +-- e07_contextual/        # E7: HNSW index (1024D)
-  |   +-- e08_emotional/         # E8: HNSW index (256D)
-  |   +-- e09_syntactic/         # E9: HNSW index (512D)
-  |   +-- e10_pragmatic/         # E10: HNSW index (512D)
-  |   +-- e11_crossmodal/        # E11: HNSW index (768D)
+  |   +-- e07_code/              # E7: HNSW index (1536D)
+  |   +-- e08_graph/             # E8: HNSW index (384D)
+  |   +-- e09_hdc/               # E9: HNSW index (1024D)
+  |   +-- e10_multimodal/        # E10: HNSW index (768D)
+  |   +-- e11_entity/            # E11: HNSW index (384D)
   |   +-- e12_late/              # E12: Token-level index
   |   |   +-- token_vectors.bin  # Per-token embeddings
   |   |   +-- doc_index.bin      # Document -> token mapping
@@ -1490,6 +2333,21 @@ impl IndexManager {
         })
     }
 
+    /// Create with hook dispatcher.
+    pub fn new_with_hooks(
+        config: &IndexManagerConfig,
+        hook_dispatcher: Arc<HookDispatcher>,
+    ) -> Result<Self, StorageError> {
+        let indices = create_all_indices(config)?;
+        Ok(Self {
+            indices,
+            id_map: Arc::new(RwLock::new(IdMap::new())),
+            maintenance_queue: IndexMaintenanceQueue::new(),
+            stats: Arc::new(IndexStatsCollector::new()),
+            hook_dispatcher,
+        })
+    }
+
     /// Add an array to all 13 indices atomically.
     ///
     /// This operation:
@@ -1514,14 +2372,14 @@ impl IndexManager {
         // Check for failures and rollback if needed
         let errors: Vec<_> = results.iter()
             .enumerate()
-            .filter_map(|(i, r)| r.as_ref().err().map(|e| (i, e)))
+            .filter_map(|(i, r)| r.as_ref().err().map(|e| (i, e.clone())))
             .collect();
 
         if !errors.is_empty() {
             // Rollback: remove from indices that succeeded
             self.rollback_add(internal_id, &errors).await;
             return Err(StorageError::IndexUpdateFailed {
-                embedders: errors.iter().map(|(i, _)| Embedder::all()[*i]).collect(),
+                embedders: errors.iter().map(|(i, _)| Embedder::from_index(*i)).collect(),
             });
         }
 
@@ -1534,9 +2392,22 @@ impl IndexManager {
         Ok(())
     }
 
+    /// Remove an array from all 13 indices.
+    pub async fn remove(&self, id: Uuid) -> Result<(), StorageError> {
+        let internal_id = self.id_map.read().await.get(id)
+            .ok_or(StorageError::NotFound(id))?;
+
+        let futures: Vec<_> = self.indices.iter()
+            .map(|index| index.remove(internal_id))
+            .collect();
+
+        let _ = futures::future::join_all(futures).await;
+        self.id_map.write().await.remove(id);
+
+        Ok(())
+    }
+
     /// Search a single embedder's index.
-    ///
-    /// Returns internal IDs and similarity scores.
     pub async fn search_embedder(
         &self,
         embedder: Embedder,
@@ -1544,7 +2415,7 @@ impl IndexManager {
         top_k: usize,
     ) -> Result<Vec<(u64, f32)>, StorageError> {
         let idx = embedder as usize;
-        self.indices[idx].search(query, top_k).await
+        self.indices[idx].search(query, top_k).await.map_err(Into::into)
     }
 
     /// Search multiple embedders and aggregate with RRF.
@@ -1582,6 +2453,76 @@ impl IndexManager {
 
         Ok(resolved)
     }
+
+    /// Update temporal embeddings for a memory.
+    pub async fn update_temporal_embeddings(&self, id: Uuid) -> Result<(), StorageError> {
+        // Update E2, E3, E4 indices based on access patterns
+        // This is called by SessionEnd consolidation
+        todo!("Implement temporal embedding update")
+    }
+
+    /// Get configuration for an embedder's index.
+    pub fn config(&self, embedder: Embedder) -> HnswConfig {
+        self.indices[embedder as usize].config()
+    }
+
+    /// Update configuration for an embedder's index.
+    pub async fn update_config(&self, embedder: Embedder, config: HnswConfig) -> Result<(), StorageError> {
+        self.indices[embedder as usize].update_config(config).await.map_err(Into::into)
+    }
+
+    /// Rebuild index for a specific embedder.
+    pub async fn rebuild_index(&self, embedder: Embedder) -> Result<IndexStats, StorageError> {
+        self.indices[embedder as usize].rebuild().await.map_err(Into::into)
+    }
+
+    /// Rebuild all 13 indices in parallel.
+    pub async fn rebuild_all_indices(&self) -> Result<Vec<IndexStats>, StorageError> {
+        let futures: Vec<_> = self.indices.iter()
+            .map(|index| index.rebuild())
+            .collect();
+
+        let results = futures::future::join_all(futures).await;
+        results.into_iter().map(|r| r.map_err(Into::into)).collect()
+    }
+
+    /// Get statistics for a specific embedder's index.
+    pub async fn index_stats(&self, embedder: Embedder) -> Result<IndexStats, StorageError> {
+        Ok(self.indices[embedder as usize].stats())
+    }
+
+    /// Get statistics for all 13 indices.
+    pub async fn all_stats(&self) -> [IndexStats; 13] {
+        std::array::from_fn(|i| self.indices[i].stats())
+    }
+
+    /// Aggregate results using Reciprocal Rank Fusion.
+    fn rrf_aggregate(
+        &self,
+        results: &[(Embedder, Result<Vec<(u64, f32)>, IndexError>)],
+        k: f32,
+    ) -> Result<Vec<(u64, f32, [f32; 13])>, StorageError> {
+        let mut scores: HashMap<u64, (f32, [f32; 13])> = HashMap::new();
+
+        for (embedder, result) in results {
+            if let Ok(hits) = result {
+                for (rank, (id, sim)) in hits.iter().enumerate() {
+                    let rrf_score = 1.0 / (k + rank as f32 + 1.0);
+                    let entry = scores.entry(*id).or_insert((0.0, [0.0; 13]));
+                    entry.0 += rrf_score;
+                    entry.1[*embedder as usize] = *sim;
+                }
+            }
+        }
+
+        let mut sorted: Vec<_> = scores.into_iter()
+            .map(|(id, (score, per_emb))| (id, score, per_emb))
+            .collect();
+
+        sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        Ok(sorted)
+    }
 }
 
 /// Trait for individual embedder indices.
@@ -1603,15 +2544,23 @@ pub trait EmbedderIndex: Send + Sync {
     ) -> Result<Vec<(u64, f32)>, IndexError>;
 
     /// Rebuild the entire index from scratch.
-    async fn rebuild(&self, embeddings: &[(u64, EmbedderOutput)]) -> Result<(), IndexError>;
+    async fn rebuild(&self) -> Result<IndexStats, IndexError>;
 
     /// Get index statistics.
     fn stats(&self) -> IndexStats;
 
     /// Get the embedder type this index serves.
     fn embedder(&self) -> Embedder;
+
+    /// Get current configuration.
+    fn config(&self) -> HnswConfig;
+
+    /// Update configuration.
+    async fn update_config(&self, config: HnswConfig) -> Result<(), IndexError>;
 }
 ```
+
+---
 
 ## 7. RocksDB Implementation
 
@@ -1621,25 +2570,25 @@ pub trait EmbedderIndex: Send + Sync {
 /// RocksDB column families for teleological storage.
 pub struct TeleologicalColumnFamilies {
     /// Primary array storage (key: UUID bytes, value: serialized TeleologicalArray).
-    cf_arrays: ColumnFamily,
+    pub cf_arrays: ColumnFamily,
 
     /// Array metadata (key: UUID bytes, value: ArrayMetadata).
-    cf_metadata: ColumnFamily,
+    pub cf_metadata: ColumnFamily,
 
     /// UUID to internal ID mapping (key: UUID bytes, value: u64 LE).
-    cf_id_map: ColumnFamily,
+    pub cf_id_map: ColumnFamily,
 
     /// Internal ID to UUID reverse mapping (key: u64 LE, value: UUID bytes).
-    cf_reverse_id_map: ColumnFamily,
+    pub cf_reverse_id_map: ColumnFamily,
 
     /// Soft-deleted arrays (key: UUID bytes, value: deletion timestamp).
-    cf_tombstones: ColumnFamily,
+    pub cf_tombstones: ColumnFamily,
 
     /// Session to array ID mapping (key: session_id, value: array IDs).
-    cf_sessions: ColumnFamily,
+    pub cf_sessions: ColumnFamily,
 
     /// Tier to array ID mapping (key: tier, value: array IDs).
-    cf_tiers: ColumnFamily,
+    pub cf_tiers: ColumnFamily,
 }
 ```
 
@@ -1726,7 +2675,6 @@ impl RocksDbTeleologicalStore {
 
 #[async_trait]
 impl TeleologicalArrayStore for RocksDbTeleologicalStore {
-    /// Store a teleological array atomically.
     async fn store(&self, array: TeleologicalArray) -> Result<Uuid, StorageError> {
         let id = array.id;
 
@@ -1760,7 +2708,6 @@ impl TeleologicalArrayStore for RocksDbTeleologicalStore {
         Ok(id)
     }
 
-    /// Store multiple arrays in a batch (optimized for autonomous agents).
     async fn store_batch(&self, arrays: Vec<TeleologicalArray>) -> Result<Vec<Uuid>, StorageError> {
         if arrays.is_empty() {
             return Ok(Vec::new());
@@ -1982,490 +2929,89 @@ impl TeleologicalArrayStore for RocksDbTeleologicalStore {
 
         Ok(results)
     }
-}
-```
 
-## 8. Batch Operations for Autonomous Agents
+    async fn migrate_tier(&self, id: Uuid, target_tier: MemoryTier) -> Result<(), StorageError> {
+        // Get current metadata
+        let metadata_bytes = self.db.get_cf(&self.cf.cf_metadata, id.as_bytes())?
+            .ok_or(StorageError::NotFound(id))?;
 
-### 8.1 Batch Store Optimization
+        let mut metadata: ArrayMetadata = serde_json::from_slice(&metadata_bytes)?;
+        let old_tier = metadata.tier;
 
-Autonomous agents often need to store many arrays at once (e.g., after processing a document or conversation). Batch operations are optimized for this use case.
+        // Update metadata
+        metadata.tier = target_tier;
+        let new_metadata_bytes = serde_json::to_vec(&metadata)?;
 
-```rust
-/// Batch operation configuration for autonomous agents.
-#[derive(Clone, Debug)]
-pub struct BatchConfig {
-    /// Maximum batch size before auto-flush.
-    pub max_batch_size: usize,
+        // Update tier indices
+        let mut batch = WriteBatch::default();
 
-    /// Maximum memory usage before auto-flush (bytes).
-    pub max_batch_memory: usize,
-
-    /// Flush interval (ms).
-    pub flush_interval_ms: u64,
-
-    /// Enable parallel index updates.
-    pub parallel_index_updates: bool,
-
-    /// Number of parallel index update workers.
-    pub index_workers: usize,
-}
-
-impl Default for BatchConfig {
-    fn default() -> Self {
-        Self {
-            max_batch_size: 1000,
-            max_batch_memory: 256 * 1024 * 1024, // 256MB
-            flush_interval_ms: 1000,
-            parallel_index_updates: true,
-            index_workers: 4,
-        }
-    }
-}
-
-/// Batch writer for high-throughput autonomous agent operations.
-pub struct BatchWriter {
-    store: Arc<dyn TeleologicalArrayStore>,
-    config: BatchConfig,
-    pending: RwLock<Vec<TeleologicalArray>>,
-    pending_memory: AtomicUsize,
-    last_flush: RwLock<Instant>,
-}
-
-impl BatchWriter {
-    /// Add an array to the batch.
-    ///
-    /// May trigger auto-flush if batch limits are reached.
-    pub async fn add(&self, array: TeleologicalArray) -> Result<(), StorageError> {
-        let array_size = estimate_array_size(&array);
-
-        // Check if we need to flush
-        if self.should_flush(array_size) {
-            self.flush().await?;
+        // Remove from old tier index
+        let old_tier_key = (old_tier as u8).to_le_bytes();
+        if let Some(old_ids_bytes) = self.db.get_cf(&self.cf.cf_tiers, &old_tier_key)? {
+            let mut old_ids: Vec<Uuid> = bincode::deserialize(&old_ids_bytes)?;
+            old_ids.retain(|&i| i != id);
+            let new_old_ids_bytes = bincode::serialize(&old_ids)?;
+            batch.put_cf(&self.cf.cf_tiers, &old_tier_key, &new_old_ids_bytes);
         }
 
-        // Add to pending batch
-        self.pending.write().await.push(array);
-        self.pending_memory.fetch_add(array_size, Ordering::SeqCst);
+        // Add to new tier index
+        let new_tier_key = (target_tier as u8).to_le_bytes();
+        let mut new_ids: Vec<Uuid> = match self.db.get_cf(&self.cf.cf_tiers, &new_tier_key)? {
+            Some(bytes) => bincode::deserialize(&bytes)?,
+            None => Vec::new(),
+        };
+        new_ids.push(id);
+        let new_ids_bytes = bincode::serialize(&new_ids)?;
+        batch.put_cf(&self.cf.cf_tiers, &new_tier_key, &new_ids_bytes);
+
+        // Update metadata
+        batch.put_cf(&self.cf.cf_metadata, id.as_bytes(), &new_metadata_bytes);
+
+        // Write atomically
+        self.db.write_opt(&batch, &self.write_opts)?;
 
         Ok(())
     }
 
-    /// Flush all pending arrays to storage.
-    pub async fn flush(&self) -> Result<Vec<Uuid>, StorageError> {
-        let arrays = std::mem::take(&mut *self.pending.write().await);
-        self.pending_memory.store(0, Ordering::SeqCst);
-        *self.last_flush.write().await = Instant::now();
-
-        if arrays.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        self.store.store_batch(arrays).await
-    }
-
-    fn should_flush(&self, additional_size: usize) -> bool {
-        let current_size = self.pending_memory.load(Ordering::SeqCst);
-        let current_count = self.pending.blocking_read().len();
-
-        current_count >= self.config.max_batch_size
-            || current_size + additional_size > self.config.max_batch_memory
-    }
-}
-```
-
-### 8.2 Batch Search for Retrieval
-
-```rust
-/// Batch search across multiple queries.
-///
-/// Optimized for autonomous agents that need to search for
-/// multiple items simultaneously.
-pub async fn search_batch(
-    store: &dyn IndexedTeleologicalStore,
-    queries: Vec<SearchQuery>,
-    options: BatchSearchOptions,
-) -> Result<Vec<Vec<SearchResult>>, StorageError> {
-    if queries.is_empty() {
-        return Ok(Vec::new());
-    }
-
-    // Group queries by embedder for efficient batching
-    let mut by_embedder: HashMap<Embedder, Vec<(usize, &EmbedderOutput)>> = HashMap::new();
-
-    for (idx, query) in queries.iter().enumerate() {
-        by_embedder
-            .entry(query.embedder)
-            .or_default()
-            .push((idx, &query.embedding));
-    }
-
-    // Search each embedder's batch in parallel
-    let futures: Vec<_> = by_embedder.into_iter()
-        .map(|(embedder, batch)| async move {
-            let results = store.search_embedder_batch(embedder, &batch, options.top_k).await?;
-            Ok::<_, StorageError>((batch.iter().map(|(i, _)| *i).collect::<Vec<_>>(), results))
-        })
-        .collect();
-
-    let batch_results = futures::future::try_join_all(futures).await?;
-
-    // Reorganize results by original query order
-    let mut results = vec![Vec::new(); queries.len()];
-    for (indices, embedder_results) in batch_results {
-        for (i, idx) in indices.into_iter().enumerate() {
-            results[idx] = embedder_results[i].clone();
-        }
-    }
-
-    Ok(results)
-}
-```
-
-## 9. Serialization
-
-### 9.1 Array Serialization
-
-```rust
-/// Serialization format for teleological arrays.
-#[derive(Clone, Copy, Debug)]
-pub enum SerializationFormat {
-    /// MessagePack - compact and fast (default).
-    MessagePack,
-
-    /// Bincode - fastest but less portable.
-    Bincode,
-
-    /// CBOR - good interoperability.
-    Cbor,
-}
-
-pub struct ArraySerializer {
-    format: SerializationFormat,
-    compressor: Option<EmbeddingCompressor>,
-}
-
-impl ArraySerializer {
-    /// Serialize a complete TeleologicalArray.
-    ///
-    /// The array is serialized as a single atomic unit:
-    /// - Header: version, embedder count (13), metadata
-    /// - Body: all 13 embedder outputs in order
-    pub fn serialize(&self, array: &TeleologicalArray) -> Result<Vec<u8>, SerializationError> {
-        let serializable = if let Some(ref compressor) = self.compressor {
-            SerializableTeleologicalArray::compressed(array, compressor)
-        } else {
-            SerializableTeleologicalArray::from(array)
+    async fn list_range(
+        &self,
+        start_key: Option<&[u8]>,
+        end_key: Option<&[u8]>,
+    ) -> Result<Vec<TeleologicalArray>, StorageError> {
+        let mode = match start_key {
+            Some(key) => IteratorMode::From(key, Direction::Forward),
+            None => IteratorMode::Start,
         };
 
-        match self.format {
-            SerializationFormat::MessagePack => {
-                rmp_serde::to_vec(&serializable).map_err(Into::into)
-            }
-            SerializationFormat::Bincode => {
-                bincode::serialize(&serializable).map_err(Into::into)
-            }
-            SerializationFormat::Cbor => {
-                let mut buf = Vec::new();
-                ciborium::into_writer(&serializable, &mut buf)?;
-                Ok(buf)
-            }
-        }
-    }
+        let iter = self.db.iterator_cf(&self.cf.cf_arrays, mode);
+        let mut results = Vec::new();
 
-    pub fn deserialize(&self, bytes: &[u8]) -> Result<TeleologicalArray, SerializationError> {
-        let serializable: SerializableTeleologicalArray = match self.format {
-            SerializationFormat::MessagePack => {
-                rmp_serde::from_slice(bytes)?
-            }
-            SerializationFormat::Bincode => {
-                bincode::deserialize(bytes)?
-            }
-            SerializationFormat::Cbor => {
-                ciborium::from_reader(bytes)?
-            }
-        };
+        for item in iter {
+            let (key, value) = item?;
 
-        if let Some(ref compressor) = self.compressor {
-            serializable.decompress(compressor)
-        } else {
-            Ok(serializable.into())
-        }
-    }
-}
-```
-
-### 9.2 Embedding Compression
-
-```rust
-/// Compression for embeddings to reduce storage size.
-///
-/// Storage targets (per the PRD):
-/// - Quantized: ~17KB per memory
-/// - Uncompressed: ~46KB per memory
-/// - 63% reduction via PQ-8/Float8/Binary
-pub struct EmbeddingCompressor {
-    /// Per-embedder quantization settings.
-    quantization: [QuantizationLevel; 13],
-
-    /// Product quantization codebooks (for PQ-8).
-    pq_codebooks: HashMap<Embedder, ProductQuantizer>,
-}
-
-#[derive(Clone, Copy, Debug)]
-pub enum QuantizationLevel {
-    /// Full precision (f32) - 4 bytes per dimension.
-    None,
-
-    /// Half precision (f16) - 2 bytes per dimension.
-    Half,
-
-    /// 8-bit quantization - 1 byte per dimension.
-    Int8,
-
-    /// Product quantization with 8 subquantizers.
-    /// ~1 byte per 8 dimensions.
-    ProductQuantization8,
-
-    /// Binary (for E9 HDC) - 1 bit per dimension.
-    Binary,
-}
-
-impl EmbeddingCompressor {
-    /// Create compressor with PRD-recommended settings.
-    pub fn from_prd() -> Self {
-        Self {
-            quantization: [
-                QuantizationLevel::ProductQuantization8, // E1 Semantic
-                QuantizationLevel::Half,                 // E2 TemporalRecent
-                QuantizationLevel::Half,                 // E3 TemporalPeriodic
-                QuantizationLevel::Half,                 // E4 EntityRelationship
-                QuantizationLevel::ProductQuantization8, // E5 Causal
-                QuantizationLevel::None,                 // E6 SpladePrimary (sparse)
-                QuantizationLevel::ProductQuantization8, // E7 Contextual
-                QuantizationLevel::Half,                 // E8 Emotional
-                QuantizationLevel::Half,                 // E9 Syntactic
-                QuantizationLevel::Half,                 // E10 Pragmatic
-                QuantizationLevel::ProductQuantization8, // E11 CrossModal
-                QuantizationLevel::None,                 // E12 LateInteraction (token-level)
-                QuantizationLevel::None,                 // E13 SpladeKeyword (sparse)
-            ],
-            pq_codebooks: HashMap::new(),
-        }
-    }
-
-    /// Compress a dense embedding.
-    pub fn compress_dense(&self, embedder: Embedder, embedding: &[f32]) -> CompressedEmbedding {
-        match self.quantization[embedder as usize] {
-            QuantizationLevel::None => {
-                CompressedEmbedding::F32(embedding.to_vec())
-            }
-            QuantizationLevel::Half => {
-                let f16s: Vec<f16> = embedding.iter().map(|&f| f16::from_f32(f)).collect();
-                CompressedEmbedding::F16(f16s)
-            }
-            QuantizationLevel::Int8 => {
-                let (scale, zero_point, data) = quantize_int8(embedding);
-                CompressedEmbedding::Int8 { scale, zero_point, data }
-            }
-            QuantizationLevel::ProductQuantization8 => {
-                if let Some(pq) = self.pq_codebooks.get(&embedder) {
-                    let codes = pq.encode(embedding);
-                    CompressedEmbedding::PQ8 { codes }
-                } else {
-                    // Fallback to f16 if no codebook
-                    let f16s: Vec<f16> = embedding.iter().map(|&f| f16::from_f32(f)).collect();
-                    CompressedEmbedding::F16(f16s)
+            // Check end key
+            if let Some(end) = end_key {
+                if key.as_ref() >= end {
+                    break;
                 }
             }
-            QuantizationLevel::Binary => {
-                let bits = quantize_binary(embedding);
-                CompressedEmbedding::Binary(bits)
-            }
-        }
-    }
-}
-```
 
-## 10. Statistics and Monitoring
-
-```rust
-#[derive(Clone, Debug, Serialize)]
-pub struct StorageStats {
-    /// Total number of arrays stored.
-    pub total_arrays: usize,
-
-    /// Number of soft-deleted arrays.
-    pub tombstone_count: usize,
-
-    /// Total storage size in bytes.
-    pub storage_bytes: u64,
-
-    /// Per-embedder index statistics.
-    pub index_stats: [IndexStats; 13],
-
-    /// Average array size in bytes.
-    pub avg_array_bytes: usize,
-
-    /// Last compaction timestamp.
-    pub last_compaction: Option<DateTime<Utc>>,
-
-    /// Cache hit rate (0.0 - 1.0).
-    pub cache_hit_rate: f32,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct IndexStats {
-    /// Which embedder this index serves.
-    pub embedder: Embedder,
-
-    /// Number of vectors indexed.
-    pub vector_count: usize,
-
-    /// Index size in bytes.
-    pub index_bytes: u64,
-
-    /// Index type (HNSW, Inverted, TokenLevel).
-    pub index_type: IndexType,
-
-    /// HNSW-specific stats (if applicable).
-    pub hnsw_stats: Option<HnswStats>,
-
-    /// Average search latency in microseconds.
-    pub avg_search_us: u64,
-
-    /// P99 search latency in microseconds.
-    pub p99_search_us: u64,
-
-    /// Last rebuild timestamp.
-    pub last_rebuild: Option<DateTime<Utc>>,
-
-    /// Memory tier.
-    pub memory_tier: MemoryTier,
-}
-
-#[derive(Clone, Debug, Serialize)]
-pub struct HnswStats {
-    /// Number of graph layers.
-    pub num_layers: usize,
-
-    /// Entry point ID.
-    pub entry_point: u64,
-
-    /// Average connections per node.
-    pub avg_connections: f32,
-
-    /// Maximum connections (M parameter).
-    pub max_connections: usize,
-
-    /// ef_construction used.
-    pub ef_construction: usize,
-
-    /// ef_search current setting.
-    pub ef_search: usize,
-}
-```
-
-## 11. Migration from Current System
-
-### 11.1 Current State Assessment
-
-The existing `TeleologicalFingerprint` is close to the target `TeleologicalArray`. Key differences:
-
-| Current | Target | Action |
-|---------|--------|--------|
-| `TeleologicalFingerprint` | `TeleologicalArray` | Rename type |
-| `SemanticFingerprint` (nested) | `embeddings: [EmbedderOutput; 13]` | Flatten structure |
-| `theta_to_north_star: f32` | **REMOVED** | Delete field (broken) |
-| `purpose_vector: PurposeVector` | Keep as-is | No change |
-| `johari_fingerprint: JohariFingerprint` | Keep as-is | No change |
-
-### 11.2 Migration Steps
-
-1. **Phase 1: Introduce New Types**
-   - Create `TeleologicalArray` alongside existing `TeleologicalFingerprint`
-   - Create adapter functions for conversion
-   - Update storage interfaces to accept both
-
-2. **Phase 2: Migrate Storage Layer**
-   - Implement new `TeleologicalArrayStore` trait
-   - Create 13 separate HNSW indices
-   - Migrate existing data with conversion
-
-3. **Phase 3: Migrate Search Layer**
-   - Update all search functions to use `ComparisonType`
-   - Remove any cross-embedder comparison code
-   - Implement RRF aggregation for multi-embedder search
-
-4. **Phase 4: Remove Legacy**
-   - Remove `theta_to_north_star` field
-   - Remove broken North Star alignment code
-   - Remove `TeleologicalFingerprint` type
-
-### 11.3 Data Migration Script
-
-```rust
-/// Migrate existing fingerprints to teleological arrays.
-pub async fn migrate_fingerprints(
-    old_store: &dyn TeleologicalMemoryStore,
-    new_store: &dyn TeleologicalArrayStore,
-    batch_size: usize,
-) -> Result<MigrationStats, MigrationError> {
-    let mut stats = MigrationStats::default();
-    let mut offset = 0;
-
-    loop {
-        // Retrieve batch of old fingerprints
-        let fingerprints = old_store.list(offset, batch_size).await?;
-        if fingerprints.is_empty() {
-            break;
+            let array = self.serializer.deserialize(&value)?;
+            results.push(array);
         }
 
-        // Convert to arrays
-        let arrays: Vec<TeleologicalArray> = fingerprints
-            .into_iter()
-            .map(convert_fingerprint_to_array)
-            .collect();
-
-        // Store batch in new format
-        new_store.store_batch(arrays).await?;
-
-        stats.migrated_count += batch_size;
-        offset += batch_size;
-
-        tracing::info!("Migrated {} fingerprints", stats.migrated_count);
+        Ok(results)
     }
 
-    Ok(stats)
-}
-
-/// Convert a TeleologicalFingerprint to a TeleologicalArray.
-fn convert_fingerprint_to_array(fp: TeleologicalFingerprint) -> TeleologicalArray {
-    TeleologicalArray {
-        id: fp.id,
-        embeddings: [
-            EmbedderOutput::Dense(fp.semantic.e1_semantic.to_vec()),
-            EmbedderOutput::Dense(fp.semantic.e2_temporal_recent.to_vec()),
-            EmbedderOutput::Dense(fp.semantic.e3_temporal_periodic.to_vec()),
-            EmbedderOutput::Dense(fp.semantic.e4_entity_relationship.to_vec()),
-            EmbedderOutput::Dense(fp.semantic.e5_causal.to_vec()),
-            EmbedderOutput::Sparse(convert_sparse(&fp.semantic.e6_splade)),
-            EmbedderOutput::Dense(fp.semantic.e7_contextual.to_vec()),
-            EmbedderOutput::Dense(fp.semantic.e8_emotional.to_vec()),
-            EmbedderOutput::Dense(fp.semantic.e9_syntactic.to_vec()),
-            EmbedderOutput::Dense(fp.semantic.e10_pragmatic.to_vec()),
-            EmbedderOutput::Dense(fp.semantic.e11_cross_modal.to_vec()),
-            EmbedderOutput::TokenLevel(convert_late_interaction(&fp.semantic.e12_late_interaction)),
-            EmbedderOutput::Sparse(convert_sparse(&fp.semantic.e13_splade_keyword)),
-        ],
-        source_content: fp.original_content,
-        created_at: fp.created_at,
-        metadata: TeleologicalMetadata::from(fp.metadata),
+    async fn list_all(&self) -> Result<Vec<TeleologicalArray>, StorageError> {
+        self.list_range(None, None).await
     }
 }
 ```
 
-## 12. Performance Targets
+---
+
+## 8. Performance Targets
 
 Based on the PRD requirements:
 
@@ -2483,7 +3029,9 @@ Based on the PRD requirements:
 | Hook dispatch latency | <1ms | Background execution |
 | Session consolidation | <30s | End-of-session processing |
 
-## 13. References
+---
+
+## 9. References
 
 ### Internal
 - [01-ARCHITECTURE.md](./01-ARCHITECTURE.md) - Core types and comparison architecture

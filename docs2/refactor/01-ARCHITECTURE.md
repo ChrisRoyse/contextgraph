@@ -532,6 +532,67 @@ flowchart TB
     SAS -->|"Merge subagent learnings"| COMPARE
 ```
 
+### 2.1.1 Detailed Hook-to-Type Flow
+
+```mermaid
+flowchart LR
+    subgraph "Hook Events"
+        H1[PreToolUse]
+        H2[PostToolUse]
+        H3[SessionStart]
+        H4[SessionEnd]
+        H5[UserPromptSubmit]
+        H6[SubagentStop]
+    end
+
+    subgraph "Payload Types"
+        P1[PreToolUsePayload]
+        P2[PostToolUsePayload]
+        P3[SessionStartPayload]
+        P4[SessionEndPayload]
+        P5[UserPromptSubmitPayload]
+        P6[SubagentStopPayload]
+        P7[SearchHookPayload]
+        P8[EmbeddingHookPayload]
+        P9[ComparisonHookPayload]
+        P10[StorageHookPayload]
+    end
+
+    subgraph "Core Types"
+        T1[TeleologicalArray]
+        T2[EmbedderOutput]
+        T3[SearchMatrix]
+        T4[PurposeVector]
+    end
+
+    H1 --> P1
+    H2 --> P2
+    H3 --> P3
+    H4 --> P4
+    H5 --> P5
+    H6 --> P6
+
+    P1 -->|"queryArray"| T1
+    P2 -->|"generatedArray"| T1
+    P3 -->|"contextArrays"| T1
+    P4 -->|"sessionArrays"| T1
+    P5 -->|"promptArray"| T1
+    P6 -->|"subagentArrays"| T1
+
+    P7 -->|"strategy"| T3
+    P8 -->|"embedderTimings"| T2
+    P9 -->|"embedderScores"| T2
+    P10 -->|"array"| T1
+
+    P4 -->|"purposeDrift"| T4
+    P6 -->|"subagentPurpose"| T4
+
+    style T1 fill:#fff3e0
+    style T2 fill:#e8f5e9
+    style T3 fill:#e3f2fd
+    style T4 fill:#fce4ec
+```
+
 ### 2.2 Hook Payload Interfaces
 
 ```typescript
@@ -727,6 +788,122 @@ interface PurposeDriftInfo {
   direction: number[];  // 13D delta
   fromPurpose: number[];
   toPurpose: number[];
+}
+
+/// Search hook payload for search operations
+interface SearchHookPayload extends TeleologicalHookPayload {
+  /** Search query text */
+  query: string;
+
+  /** Generated query array */
+  queryArray: TeleologicalArraySummary;
+
+  /** Search strategy used */
+  strategy: SearchMatrixStrategy;
+
+  /** Entry-point discovery results (if applicable) */
+  entryPoints?: EntryPointDiscoveryResult[];
+
+  /** Number of results requested */
+  topK: number;
+
+  /** Minimum similarity threshold */
+  minSimilarity: number;
+
+  /** Results returned */
+  results?: SearchResultSummary[];
+
+  /** Search latency in milliseconds */
+  latencyMs?: number;
+}
+
+type SearchMatrixStrategy =
+  | 'identity'
+  | 'semantic_focused'
+  | 'temporal_focused'
+  | 'causal_focused'
+  | 'code_focused'
+  | 'hybrid_lexical'
+  | 'entry_point_discovery'
+  | 'custom';
+
+/// Summary of a search result for hook payloads
+interface SearchResultSummary {
+  arrayId: string;
+  similarity: number;
+  rank: number;
+  entryEmbedder?: Embedder;
+  purposeAlignment: number;
+}
+
+/// Comparison hook payload for array comparisons
+interface ComparisonHookPayload extends TeleologicalHookPayload {
+  /** First array being compared */
+  array1: TeleologicalArraySummary;
+
+  /** Second array being compared */
+  array2: TeleologicalArraySummary;
+
+  /** Comparison type used */
+  comparisonType: ComparisonType;
+
+  /** Per-embedder similarity scores */
+  embedderScores: number[];  // 13 values
+
+  /** Final aggregated similarity */
+  aggregatedSimilarity: number;
+
+  /** Whether correlations were analyzed */
+  correlationsAnalyzed: boolean;
+}
+
+type ComparisonType =
+  | 'single_embedder'
+  | 'embedder_group'
+  | 'weighted_full'
+  | 'matrix_strategy'
+  | 'entry_point_discovery';
+
+/// Embedding hook payload for embedding operations
+interface EmbeddingHookPayload extends TeleologicalHookPayload {
+  /** Content being embedded */
+  contentHash: string;
+
+  /** Content length in characters */
+  contentLength: number;
+
+  /** Generated array (if successful) */
+  generatedArray?: TeleologicalArraySummary;
+
+  /** Per-embedder timing in milliseconds */
+  embedderTimings?: number[];  // 13 values
+
+  /** Total embedding time in milliseconds */
+  totalTimeMs: number;
+
+  /** Whether any embedders failed */
+  hadFailures: boolean;
+
+  /** Failed embedder indices (if any) */
+  failedEmbedders?: number[];
+}
+
+/// Storage hook payload for store operations
+interface StorageHookPayload extends TeleologicalHookPayload {
+  /** Array being stored */
+  array: TeleologicalArraySummary;
+
+  /** Whether this was a duplicate (deduplicated) */
+  wasDuplicate: boolean;
+
+  /** Storage operation type */
+  operation: 'insert' | 'update' | 'delete';
+
+  /** Indices updated */
+  indicesUpdated: Embedder[];
+
+  /** Storage latency in milliseconds */
+  latencyMs: number;
 }
 ```
 
