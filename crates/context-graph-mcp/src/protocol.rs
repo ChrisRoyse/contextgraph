@@ -215,6 +215,13 @@ pub mod error_codes {
     /// Assessor component error
     pub const ASSESSOR_ERROR: i32 = -32094;
 
+    // Deprecated method error codes (JSON-RPC standard) - TASK-CORE-001
+    /// Deprecated method - functionality removed per ARCH-03 (autonomous-first)
+    /// Use auto_bootstrap_north_star for autonomous goal discovery instead.
+    /// Same as METHOD_NOT_FOUND per JSON-RPC spec - clients calling deprecated
+    /// manual North Star methods will receive this error code.
+    pub const DEPRECATED_METHOD: i32 = -32601;
+
     // Causal inference error codes (-32100 to -32109) - TASK-CAUSAL-001
     /// Causal inference engine not initialized
     pub const CAUSAL_NOT_INITIALIZED: i32 = -32100;
@@ -264,18 +271,20 @@ pub mod methods {
     pub const SYSTEM_HEALTH: &str = "system/health";
 
     // Purpose/goal operations (TASK-S003)
+    // NOTE: PURPOSE_NORTH_STAR_ALIGNMENT removed per TASK-CORE-001 (ARCH-03)
+    // Manual North Star creates single 1024D embeddings incompatible with 13-embedder arrays.
+    // Use auto_bootstrap_north_star tool for autonomous goal discovery instead.
     /// Query memories by 13D purpose vector similarity
     pub const PURPOSE_QUERY: &str = "purpose/query";
-    /// Check alignment to North Star goal with threshold classification
-    pub const PURPOSE_NORTH_STAR_ALIGNMENT: &str = "purpose/north_star_alignment";
     /// Navigate goal hierarchy (get_children, get_ancestors, get_subtree, get_aligned_memories)
     pub const GOAL_HIERARCHY_QUERY: &str = "goal/hierarchy_query";
     /// Find memories aligned to a specific goal
     pub const GOAL_ALIGNED_MEMORIES: &str = "goal/aligned_memories";
-    /// Detect alignment drift in memories
+    /// Detect alignment drift in memories (to be refactored in TASK-LOGIC-010 to use teleological arrays)
     pub const PURPOSE_DRIFT_CHECK: &str = "purpose/drift_check";
-    /// Update the North Star goal
-    pub const NORTH_STAR_UPDATE: &str = "purpose/north_star_update";
+    // NOTE: NORTH_STAR_UPDATE removed per TASK-CORE-001 (ARCH-03)
+    // Manual North Star update violates autonomous-first architecture.
+    // Goals emerge autonomously via auto_bootstrap_north_star tool.
 
     // Johari operations (TASK-S004)
     /// Get per-embedder Johari quadrant distribution

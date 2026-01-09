@@ -777,11 +777,10 @@ impl Handlers {
             methods::SEARCH_WEIGHT_PROFILES => self.handle_get_weight_profiles(request.id).await,
 
             // Purpose/goal operations (TASK-S003)
+            // NOTE: PURPOSE_NORTH_STAR_ALIGNMENT and NORTH_STAR_UPDATE removed per TASK-CORE-001 (ARCH-03)
+            // These methods now fall through to the default case returning METHOD_NOT_FOUND (-32601)
+            // Use auto_bootstrap_north_star tool for autonomous goal discovery instead.
             methods::PURPOSE_QUERY => self.handle_purpose_query(request.id, request.params).await,
-            methods::PURPOSE_NORTH_STAR_ALIGNMENT => {
-                self.handle_north_star_alignment(request.id, request.params)
-                    .await
-            }
             methods::GOAL_HIERARCHY_QUERY => {
                 self.handle_goal_hierarchy_query(request.id, request.params)
                     .await
@@ -792,10 +791,6 @@ impl Handlers {
             }
             methods::PURPOSE_DRIFT_CHECK => {
                 self.handle_purpose_drift_check(request.id, request.params)
-                    .await
-            }
-            methods::NORTH_STAR_UPDATE => {
-                self.handle_north_star_update(request.id, request.params)
                     .await
             }
 

@@ -656,9 +656,9 @@ async fn test_fsv_purpose_alignment_with_hierarchy() {
     println!("   - Fingerprint ID: {}\n", fingerprint_id);
 
     // =========================================================================
-    // STEP 3: NORTH STAR ALIGNMENT
+    // STEP 3: VERIFY DEPRECATED METHOD RETURNS METHOD_NOT_FOUND (TASK-CORE-001)
     // =========================================================================
-    println!("📝 STEP 3: purpose/north_star_alignment");
+    println!("📝 STEP 3: purpose/north_star_alignment (deprecated per ARCH-03)");
     let align_request = make_request("purpose/north_star_alignment", 2, json!({
         "fingerprint_id": fingerprint_id,
         "include_breakdown": true,
@@ -666,33 +666,22 @@ async fn test_fsv_purpose_alignment_with_hierarchy() {
     }));
     let align_response = ctx.handlers.dispatch(align_request).await;
 
-    assert!(align_response.error.is_none(), "Alignment MUST succeed: {:?}", align_response.error);
-    let align_result = align_response.result.unwrap();
+    // TASK-CORE-001: Verify METHOD_NOT_FOUND for deprecated method
+    assert!(align_response.error.is_some(), "Deprecated method MUST return error");
+    let align_error = align_response.error.unwrap();
+    assert_eq!(align_error.code, -32601, "MUST return METHOD_NOT_FOUND (-32601)");
+    println!("   - Error code: {} (METHOD_NOT_FOUND)", align_error.code);
+    println!("   - Error message: {}", align_error.message);
+    println!("   ✓ VERIFIED: Deprecated method returns METHOD_NOT_FOUND\n");
 
-    let alignment = &align_result["alignment"];
-    let composite_score = alignment["composite_score"].as_f64().unwrap();
-    let threshold = alignment["threshold"].as_str().unwrap();
-    let is_healthy = alignment["is_healthy"].as_bool().unwrap();
-
-    println!("   - Composite score: {:.4}", composite_score);
-    println!("   - Threshold: {}", threshold);
-    println!("   - Is healthy: {}", is_healthy);
-
-    // Verify level breakdown
-    let breakdown = &align_result["level_breakdown"];
-    println!("   Level breakdown:");
-    println!("     - north_star: {:.4}", breakdown["north_star"].as_f64().unwrap_or(0.0));
-    println!("     - strategic: {:.4}", breakdown["strategic"].as_f64().unwrap_or(0.0));
-    println!("     - tactical: {:.4}", breakdown["tactical"].as_f64().unwrap_or(0.0));
-    println!("     - immediate: {:.4}", breakdown["immediate"].as_f64().unwrap_or(0.0));
-
-    // VERIFY IN SOURCE OF TRUTH
+    // VERIFY FINGERPRINT IN SOURCE OF TRUTH (still exists, unchanged)
     let fp_id = Uuid::parse_str(&fingerprint_id).unwrap();
     let stored_fp = ctx.store.retrieve(fp_id).await.unwrap().unwrap();
-    println!("\n🔍 VERIFY IN SOURCE OF TRUTH:");
+    println!("🔍 VERIFY FINGERPRINT IN SOURCE OF TRUTH:");
+    println!("   - Fingerprint exists: {}", stored_fp.id);
     println!("   - Stored theta_to_north_star: {:.4}", stored_fp.theta_to_north_star);
     println!("   - Purpose vector coherence: {:.4}", stored_fp.purpose_vector.coherence);
-    println!("   ✓ VERIFIED: Alignment data stored correctly\n");
+    println!("   ✓ VERIFIED: Fingerprint data intact\n");
 
     // =========================================================================
     // STEP 4: DRIFT CHECK
@@ -758,8 +747,8 @@ async fn test_fsv_purpose_alignment_with_hierarchy() {
     println!("");
     println!("Operations Verified:");
     println!("  1. Goal hierarchy: 5 goals (1 NS + 2 S + 1 T + 1 I)");
-    println!("  2. North Star alignment: composite_score={:.4}", composite_score);
-    println!("  3. Level breakdown: verified 4 levels");
+    println!("  2. North Star alignment: Returns METHOD_NOT_FOUND (deprecated per TASK-CORE-001)");
+    println!("  3. Fingerprint stored and verified in Source of Truth");
     println!("  4. Drift check: {} fingerprints analyzed", summary["total_checked"]);
     println!("  5. Hierarchy navigation: get_all, get_children, get_ancestors");
     println!("======================================================================\n");
@@ -1159,19 +1148,21 @@ async fn test_fsv_cross_handler_integration() {
     println!("   - Created: {} (verified in store)", fingerprint_id);
 
     // =========================================================================
-    // STEP 2: PURPOSE ALIGNMENT
+    // STEP 2: VERIFY DEPRECATED METHOD RETURNS METHOD_NOT_FOUND (TASK-CORE-001)
     // =========================================================================
-    println!("\n📝 STEP 2: purpose/north_star_alignment");
+    println!("\n📝 STEP 2: purpose/north_star_alignment (deprecated per ARCH-03)");
     let align_request = make_request("purpose/north_star_alignment", 2, json!({
         "fingerprint_id": fingerprint_id,
         "include_breakdown": true
     }));
     let align_response = ctx.handlers.dispatch(align_request).await;
-    assert!(align_response.error.is_none(), "Alignment MUST succeed");
 
-    let alignment = &align_response.result.unwrap()["alignment"];
-    let composite = alignment["composite_score"].as_f64().unwrap();
-    println!("   - Composite score: {:.4}", composite);
+    // TASK-CORE-001: Verify METHOD_NOT_FOUND for deprecated method
+    assert!(align_response.error.is_some(), "Deprecated method MUST return error");
+    let align_error = align_response.error.unwrap();
+    assert_eq!(align_error.code, -32601, "MUST return METHOD_NOT_FOUND (-32601)");
+    println!("   - Error code: {} (METHOD_NOT_FOUND)", align_error.code);
+    println!("   ✓ VERIFIED: Deprecated method returns METHOD_NOT_FOUND");
 
     // =========================================================================
     // STEP 3: JOHARI DISTRIBUTION
@@ -1256,7 +1247,7 @@ async fn test_fsv_cross_handler_integration() {
     println!("======================================================================");
     println!("All handlers worked together:");
     println!("  1. memory/store: Created fingerprint (verified in store)");
-    println!("  2. purpose/north_star_alignment: composite_score={:.4}", composite);
+    println!("  2. purpose/north_star_alignment: Returns METHOD_NOT_FOUND (deprecated per TASK-CORE-001)");
     println!("  3. johari/get_distribution: 13 embedder quadrants");
     println!("  4. meta_utl/predict_storage: Prediction tracked");
     println!("  5. search/multi: Fingerprint found in results");
@@ -1404,24 +1395,23 @@ async fn test_edge_case_alignment_autonomous_operation() {
     let fingerprint_id = result.get("fingerprintId").expect("Must have fingerprintId");
     println!("Store SUCCESS: fingerprintId={}", fingerprint_id);
 
-    // Alignment with non-existent fingerprint - fails because it doesn't exist
-    println!("\nATTEMPTING: purpose/north_star_alignment (with non-existent fingerprint)");
+    // TASK-CORE-001: Verify deprecated method returns METHOD_NOT_FOUND
+    println!("\nVERIFYING: purpose/north_star_alignment returns METHOD_NOT_FOUND (deprecated)");
     let align_request = make_request("purpose/north_star_alignment", 2, json!({
         "fingerprint_id": "00000000-0000-0000-0000-000000000001"
     }));
     let response = ctx.handlers.dispatch(align_request).await;
 
-    // Should fail because fingerprint doesn't exist, NOT because North Star is missing
-    assert!(response.error.is_some(), "Alignment with non-existent fingerprint should fail");
+    // TASK-CORE-001: Must return METHOD_NOT_FOUND (-32601) for deprecated method
+    assert!(response.error.is_some(), "Deprecated method must return error");
     let error = response.error.unwrap();
     println!("Align ERROR: code={}, message={}", error.code, error.message);
-    // Should NOT be NORTH_STAR_NOT_CONFIGURED
-    assert_ne!(
-        error.code, error_codes::NORTH_STAR_NOT_CONFIGURED,
-        "Should NOT return NORTH_STAR_NOT_CONFIGURED - autonomous operation"
+    assert_eq!(
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601) for deprecated method"
     );
 
-    println!("✓ VERIFIED: System operates autonomously without North Star\n");
+    println!("✓ VERIFIED: Deprecated method returns METHOD_NOT_FOUND, system operates autonomously\n");
 }
 
 /// EDGE CASE 6: Fingerprint not found.

@@ -1,24 +1,15 @@
 //! North Star Integration Tests
 //!
-//! TASK-NORTHSTAR-TESTS: Comprehensive tests for North Star goal management.
+//! TASK-CORE-001: Updated tests after removing manual North Star methods per ARCH-03.
 //!
-//! These tests verify ACTUAL behavior using real data and real embeddings.
-//! NO MOCK DATA. NO BACKWARDS COMPATIBILITY. Tests use fail-fast semantics.
+//! ## Removed Methods (return METHOD_NOT_FOUND -32601):
+//! - `purpose/north_star_alignment` - Use auto_bootstrap_north_star instead
+//! - `purpose/north_star_update` - Use auto_bootstrap_north_star instead
 //!
-//! ## Test Coverage
-//!
-//! 1. Set North Star - creates goal with description
-//! 2. Set North Star twice - fails without replace flag
-//! 3. Get North Star - returns description and keywords
-//! 4. Get without North Star - fails fast
-//! 5. Update North Star - modifies existing
-//! 6. Update without existing - fails fast
-//! 7. Delete requires confirmation
-//! 8. Delete removes goal (get fails after)
-//! 9. Store memory fails without North Star (AP-007)
-//! 10. Store memory succeeds with North Star
-//! 11. Init from documents creates centroid
-//! 12. Get goal hierarchy returns tree structure
+//! ## Still Available Methods:
+//! - `goal/hierarchy_query` - Navigate goal hierarchy (North Star can be set programmatically)
+//! - `purpose/drift_check` - Check alignment drift (requires North Star in hierarchy)
+//! - `memory/store` - Store memories (works with or without North Star)
 //!
 //! ## Full State Verification (FSV)
 //!
@@ -205,28 +196,20 @@ fn create_handlers_with_full_hierarchy() -> (
 }
 
 // =============================================================================
-// TEST 1: Set North Star creates goal
+// TASK-CORE-001: Deprecated Method Tests
 // =============================================================================
 
-/// Test that purpose/north_star_update creates a new North Star goal.
+/// TASK-CORE-001: Verify purpose/north_star_update returns METHOD_NOT_FOUND.
 ///
-/// FSV: Verify goal exists in hierarchy with correct description and keywords.
+/// This method was removed per ARCH-03 (autonomous-first architecture).
+/// Manual North Star creates single 1024D embeddings incompatible with 13-embedder arrays.
 #[tokio::test]
-async fn test_set_north_star_creates_goal() {
-    // SETUP: Empty hierarchy
-    let (handlers, _store, hierarchy) = create_handlers_no_north_star();
+async fn test_north_star_update_returns_method_not_found() {
+    let (handlers, _store, _hierarchy) = create_handlers_no_north_star();
 
-    // FSV BEFORE: Verify no North Star exists
-    {
-        let h = hierarchy.read();
-        assert!(!h.has_north_star(), "FSV BEFORE: Must NOT have North Star");
-        assert_eq!(h.len(), 0, "FSV BEFORE: Hierarchy must be empty");
-    }
-
-    // ACTION: Set North Star via purpose/north_star_update
     let params = json!({
-        "description": "Create the most helpful AI assistant",
-        "keywords": ["helpful", "ai", "assistant"],
+        "description": "Test North Star",
+        "keywords": ["test"],
         "replace": false
     });
     let request = make_request(
@@ -236,106 +219,52 @@ async fn test_set_north_star_creates_goal() {
     );
     let response = handlers.dispatch(request).await;
 
-    // VERIFY: Response indicates success
+    // VERIFY: Returns METHOD_NOT_FOUND (-32601) per TASK-CORE-001
     assert!(
-        response.error.is_none(),
-        "North Star creation must succeed: {:?}",
-        response.error
+        response.error.is_some(),
+        "purpose/north_star_update must return error (deprecated)"
     );
-    let result = response.result.expect("Must have result");
+    let error = response.error.unwrap();
     assert_eq!(
-        result.get("status").and_then(|v| v.as_str()),
-        Some("created"),
-        "Status must be 'created'"
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601), got {}",
+        error.code
     );
-
-    // FSV AFTER: Verify North Star exists in Source of Truth
-    {
-        let h = hierarchy.read();
-        assert!(h.has_north_star(), "FSV AFTER: Must have North Star");
-        assert_eq!(h.len(), 1, "FSV AFTER: Hierarchy must have 1 goal");
-
-        let ns = h.north_star().expect("North Star must exist");
-        assert_eq!(
-            ns.description, "Create the most helpful AI assistant",
-            "FSV: Description must match"
-        );
-        assert!(ns.keywords.contains(&"helpful".to_string()), "FSV: Keywords must contain 'helpful'");
-        assert!(ns.keywords.contains(&"ai".to_string()), "FSV: Keywords must contain 'ai'");
-        assert!(ns.keywords.contains(&"assistant".to_string()), "FSV: Keywords must contain 'assistant'");
-        assert_eq!(ns.level, GoalLevel::NorthStar, "FSV: Level must be NorthStar");
-        assert_eq!(ns.embedding.len(), 1024, "FSV: Embedding must have 1024 dimensions");
-    }
 }
 
-// =============================================================================
-// TEST 2: Set North Star fails if already exists
-// =============================================================================
-
-/// Test that setting North Star twice without replace=true fails.
+/// TASK-CORE-001: Verify purpose/north_star_alignment returns METHOD_NOT_FOUND.
 ///
-/// FSV: Verify original North Star remains unchanged.
+/// This method was removed per ARCH-03 (autonomous-first architecture).
+/// Manual alignment uses single 1024D embeddings incompatible with 13-embedder arrays.
 #[tokio::test]
-async fn test_set_north_star_fails_if_already_exists() {
-    // SETUP: Handlers with existing North Star
-    let (handlers, _store, hierarchy) = create_handlers_with_north_star();
+async fn test_north_star_alignment_returns_method_not_found() {
+    let (handlers, _store, _hierarchy) = create_handlers_with_north_star();
 
-    // FSV BEFORE: Capture original North Star
-    let original_ns_id: String;
-    let original_description: String;
-    {
-        let h = hierarchy.read();
-        assert!(h.has_north_star(), "FSV BEFORE: Must have North Star");
-        let ns = h.north_star().expect("Must have NS");
-        original_ns_id = ns.id.as_str().to_string();
-        original_description = ns.description.clone();
-    }
-
-    // ACTION: Try to set new North Star without replace=true
     let params = json!({
-        "description": "A different North Star goal",
-        "replace": false  // Explicitly false
+        "fingerprint_id": "00000000-0000-0000-0000-000000000001"
     });
     let request = make_request(
-        "purpose/north_star_update",
+        "purpose/north_star_alignment",
         Some(JsonRpcId::Number(1)),
         Some(params),
     );
     let response = handlers.dispatch(request).await;
 
-    // VERIFY: Response indicates failure
+    // VERIFY: Returns METHOD_NOT_FOUND (-32601) per TASK-CORE-001
     assert!(
         response.error.is_some(),
-        "Must fail when North Star exists and replace=false"
+        "purpose/north_star_alignment must return error (deprecated)"
     );
     let error = response.error.unwrap();
     assert_eq!(
-        error.code, -32023,
-        "Must return GOAL_HIERARCHY_ERROR (-32023)"
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601), got {}",
+        error.code
     );
-    assert!(
-        error.message.contains("replace"),
-        "Error message must mention 'replace'"
-    );
-
-    // FSV AFTER: Verify original North Star unchanged
-    {
-        let h = hierarchy.read();
-        assert!(h.has_north_star(), "FSV AFTER: Must still have North Star");
-        let ns = h.north_star().expect("Must have NS");
-        assert_eq!(
-            ns.id.as_str(), original_ns_id,
-            "FSV AFTER: North Star ID must be unchanged"
-        );
-        assert_eq!(
-            ns.description, original_description,
-            "FSV AFTER: North Star description must be unchanged"
-        );
-    }
 }
 
 // =============================================================================
-// TEST 3: Get North Star returns data
+// Valid Tests: goal/hierarchy_query (Still Available)
 // =============================================================================
 
 /// Test that goal/hierarchy_query returns correct North Star data.
@@ -406,16 +335,9 @@ async fn test_get_north_star_returns_data() {
     assert!(is_ns, "FSV: is_north_star must be true");
 }
 
-// =============================================================================
-// TEST 4: Get North Star fails without North Star
-// =============================================================================
-
 /// Test that purpose/drift_check fails without North Star configured.
 ///
 /// This tests the fail-fast behavior required by AP-007.
-/// Note: We use drift_check instead of north_star_alignment because the alignment
-/// endpoint first validates the fingerprint exists (returning -32010) before checking
-/// the North Star. The drift_check endpoint performs the North Star check first.
 #[tokio::test]
 async fn test_get_north_star_fails_without_north_star() {
     // SETUP: Empty hierarchy
@@ -428,7 +350,6 @@ async fn test_get_north_star_fails_without_north_star() {
     }
 
     // ACTION: Try drift_check (requires North Star before fingerprint validation)
-    // This endpoint checks North Star first, so it will fail with NORTH_STAR_NOT_CONFIGURED
     let params = json!({
         "fingerprint_ids": ["00000000-0000-0000-0000-000000000001"]
     });
@@ -456,136 +377,7 @@ async fn test_get_north_star_fails_without_north_star() {
 }
 
 // =============================================================================
-// TEST 5: Update North Star modifies existing
-// =============================================================================
-
-/// Test that purpose/north_star_update with replace=true modifies existing.
-///
-/// FSV: Verify description changes in Source of Truth.
-#[tokio::test]
-async fn test_update_north_star_modifies_existing() {
-    // SETUP: Handlers with existing North Star
-    let (handlers, _store, hierarchy) = create_handlers_with_north_star();
-
-    // FSV BEFORE: Capture original description
-    let original_description: String;
-    {
-        let h = hierarchy.read();
-        let ns = h.north_star().expect("Must have NS");
-        original_description = ns.description.clone();
-    }
-
-    let new_description = "Updated: Build the most advanced AI system";
-
-    // ACTION: Update North Star with replace=true
-    let params = json!({
-        "description": new_description,
-        "keywords": ["advanced", "ai", "system"],
-        "replace": true
-    });
-    let request = make_request(
-        "purpose/north_star_update",
-        Some(JsonRpcId::Number(1)),
-        Some(params),
-    );
-    let response = handlers.dispatch(request).await;
-
-    // VERIFY: Response indicates replacement
-    assert!(
-        response.error.is_none(),
-        "Update with replace=true must succeed"
-    );
-    let result = response.result.expect("Must have result");
-    assert_eq!(
-        result.get("status").and_then(|v| v.as_str()),
-        Some("replaced"),
-        "Status must be 'replaced'"
-    );
-
-    // Verify previous_north_star is included
-    assert!(
-        result.get("previous_north_star").is_some(),
-        "Must include previous_north_star"
-    );
-
-    // FSV AFTER: Verify description changed in Source of Truth
-    {
-        let h = hierarchy.read();
-        assert!(h.has_north_star(), "FSV AFTER: Must still have North Star");
-        let ns = h.north_star().expect("Must have NS");
-        assert_ne!(
-            ns.description, original_description,
-            "FSV AFTER: Description must have changed"
-        );
-        assert_eq!(
-            ns.description, new_description,
-            "FSV AFTER: Description must match new value"
-        );
-    }
-}
-
-// =============================================================================
-// TEST 6: Update North Star fails without existing
-// =============================================================================
-
-/// Test that updating (with replace=true) succeeds even when no NS exists.
-///
-/// Note: The current implementation allows replace=true even with no existing NS.
-/// This test documents that behavior - it creates rather than fails.
-#[tokio::test]
-async fn test_update_north_star_creates_when_none_exists() {
-    // SETUP: Empty hierarchy
-    let (handlers, _store, hierarchy) = create_handlers_no_north_star();
-
-    // FSV BEFORE: Verify no North Star
-    {
-        let h = hierarchy.read();
-        assert!(!h.has_north_star(), "FSV BEFORE: Must NOT have North Star");
-    }
-
-    // ACTION: Try to update with replace=true when none exists
-    let params = json!({
-        "description": "New North Star from update",
-        "replace": true
-    });
-    let request = make_request(
-        "purpose/north_star_update",
-        Some(JsonRpcId::Number(1)),
-        Some(params),
-    );
-    let response = handlers.dispatch(request).await;
-
-    // VERIFY: Succeeds and creates (current behavior)
-    assert!(
-        response.error.is_none(),
-        "Update should succeed (creates when none exists)"
-    );
-    let result = response.result.expect("Must have result");
-
-    // When no previous NS exists, status is "created" not "replaced"
-    let status = result.get("status").and_then(|v| v.as_str());
-    assert!(
-        status == Some("created") || status == Some("replaced"),
-        "Status must be 'created' or 'replaced'"
-    );
-
-    // FSV AFTER: Verify North Star now exists
-    {
-        let h = hierarchy.read();
-        assert!(h.has_north_star(), "FSV AFTER: Must have North Star");
-    }
-}
-
-// =============================================================================
-// TEST 7-8: REMOVED - delete_north_star tool no longer exists
-// =============================================================================
-//
-// The delete_north_star tool was removed because it created single 1024D embeddings
-// that cannot be meaningfully compared to 13-embedder teleological arrays.
-// Use the autonomous system which works with proper teleological embeddings.
-
-// =============================================================================
-// TEST 9: Store memory SUCCEEDS without North Star (AUTONOMOUS OPERATION)
+// Valid Tests: memory/store (Works with or without North Star)
 // =============================================================================
 
 /// Test that memory/store succeeds autonomously without North Star configured.
@@ -593,10 +385,6 @@ async fn test_update_north_star_creates_when_none_exists() {
 /// AUTONOMOUS OPERATION: Per contextprd.md, the 13-embedding array IS the
 /// teleological vector. Purpose alignment is SECONDARY metadata that defaults
 /// to neutral [0.0; 13] when no North Star is configured.
-///
-/// This enables autonomous operation - memories can be stored immediately
-/// without manual configuration. Purpose vectors can be recomputed later
-/// when a goal is established.
 #[tokio::test]
 async fn test_store_memory_succeeds_without_north_star() {
     // SETUP: Empty hierarchy (no North Star configured)
@@ -641,10 +429,6 @@ async fn test_store_memory_succeeds_without_north_star() {
     let after_count = store.count().await.expect("count works");
     assert_eq!(after_count, 1, "FSV AFTER: Store must have 1 entry");
 }
-
-// =============================================================================
-// TEST 10: Store memory succeeds with North Star
-// =============================================================================
 
 /// Test that memory/store succeeds when North Star is configured.
 ///
@@ -705,80 +489,10 @@ async fn test_store_memory_succeeds_with_north_star() {
         fp.purpose_vector.alignments.len(), 13,
         "FSV: Purpose vector must have 13 elements"
     );
-    // Note: theta_to_north_star computed during store
 }
 
 // =============================================================================
-// TEST 11: REMOVED - init_north_star_from_documents tool no longer exists
-// =============================================================================
-//
-// The init_north_star_from_documents tool was removed because it created single
-// 1024D embeddings that cannot be meaningfully compared to 13-embedder teleological
-// arrays. Use purpose/north_star_update with pre-computed embeddings instead.
-
-/// Test creating North Star with custom embedding (simulating centroid from documents).
-///
-/// This tests the intended workflow: compute centroid externally, then use
-/// purpose/north_star_update with embedding parameter.
-#[tokio::test]
-async fn test_init_from_documents_via_embedding() {
-    // SETUP: Empty hierarchy
-    let (handlers, _store, hierarchy) = create_handlers_no_north_star();
-
-    // Simulate centroid computed from 3 documents
-    // In real usage, this would be computed by averaging document embeddings
-    let centroid_embedding: Vec<f64> = (0..1024)
-        .map(|i| {
-            // Simulate averaged embedding from multiple documents
-            let doc1 = (i as f64 / 1024.0).sin();
-            let doc2 = (i as f64 / 512.0).cos();
-            let doc3 = (i as f64 / 256.0).sin();
-            (doc1 + doc2 + doc3) / 3.0
-        })
-        .collect();
-
-    // ACTION: Set North Star with pre-computed embedding
-    let params = json!({
-        "description": "Knowledge derived from domain documents",
-        "keywords": ["domain", "knowledge", "documents"],
-        "embedding": centroid_embedding,
-        "replace": false
-    });
-    let request = make_request(
-        "purpose/north_star_update",
-        Some(JsonRpcId::Number(1)),
-        Some(params),
-    );
-    let response = handlers.dispatch(request).await;
-
-    // VERIFY: Succeeds
-    assert!(
-        response.error.is_none(),
-        "Must succeed with embedding: {:?}",
-        response.error
-    );
-
-    // FSV: Verify embedding stored correctly
-    {
-        let h = hierarchy.read();
-        assert!(h.has_north_star(), "FSV: Must have North Star");
-        let ns = h.north_star().expect("Must have NS");
-        assert_eq!(
-            ns.embedding.len(), 1024,
-            "FSV: Embedding must have 1024 dimensions"
-        );
-        // Verify embedding values are from our centroid (approximately)
-        let first_val = ns.embedding[0];
-        assert!(
-            first_val.abs() < 1.0,
-            "FSV: First embedding value {} should be in expected range",
-            first_val
-        );
-    }
-}
-
-// =============================================================================
-// TEST 12: Get goal hierarchy returns tree
+// Valid Tests: goal/hierarchy_query tree operations
 // =============================================================================
 
 /// Test that goal/hierarchy_query returns structured tree with all levels.
@@ -918,79 +632,6 @@ async fn test_get_goal_hierarchy_returns_tree() {
     assert!(
         ancestors.len() >= 3,
         "Must have at least 3 ancestors in path to North Star"
-    );
-}
-
-// =============================================================================
-// Additional Edge Case Tests
-// =============================================================================
-
-/// Test that purpose/north_star_update validates embedding dimensions.
-#[tokio::test]
-async fn test_north_star_update_validates_embedding_dimensions() {
-    // SETUP: Empty hierarchy
-    let (handlers, _store, _hierarchy) = create_handlers_no_north_star();
-
-    // ACTION: Try to create with wrong embedding size (512 instead of 1024)
-    let wrong_size_embedding: Vec<f64> = vec![0.5; 512];
-    let params = json!({
-        "description": "Test goal",
-        "embedding": wrong_size_embedding
-    });
-    let request = make_request(
-        "purpose/north_star_update",
-        Some(JsonRpcId::Number(1)),
-        Some(params),
-    );
-    let response = handlers.dispatch(request).await;
-
-    // VERIFY: Fails with INVALID_PARAMS
-    assert!(
-        response.error.is_some(),
-        "Must fail with wrong embedding dimensions"
-    );
-    let error = response.error.unwrap();
-    assert_eq!(
-        error.code, -32602,
-        "Must return INVALID_PARAMS (-32602)"
-    );
-    assert!(
-        error.message.contains("1024") || error.message.contains("dimensions"),
-        "Error message must mention dimension requirement"
-    );
-}
-
-/// Test that empty description is rejected.
-#[tokio::test]
-async fn test_north_star_update_rejects_empty_description() {
-    // SETUP: Empty hierarchy
-    let (handlers, _store, _hierarchy) = create_handlers_no_north_star();
-
-    // ACTION: Try to create with empty description
-    let params = json!({
-        "description": "",
-        "keywords": ["test"]
-    });
-    let request = make_request(
-        "purpose/north_star_update",
-        Some(JsonRpcId::Number(1)),
-        Some(params),
-    );
-    let response = handlers.dispatch(request).await;
-
-    // VERIFY: Fails with INVALID_PARAMS
-    assert!(
-        response.error.is_some(),
-        "Must fail with empty description"
-    );
-    let error = response.error.unwrap();
-    assert_eq!(
-        error.code, -32602,
-        "Must return INVALID_PARAMS (-32602)"
-    );
-    assert!(
-        error.message.contains("empty") || error.message.contains("description"),
-        "Error message must explain the issue"
     );
 }
 

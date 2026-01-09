@@ -184,13 +184,14 @@ async fn manual_fsv_purpose_handlers() {
     println!();
 
     // =========================================================================
-    // STEP 3: PURPOSE/NORTH_STAR_ALIGNMENT AND VERIFY COMPUTATION
+    // STEP 3: VERIFY DEPRECATED METHOD RETURNS METHOD_NOT_FOUND (TASK-CORE-001)
     // =========================================================================
     println!("┌─────────────────────────────────────────────────────────────────┐");
-    println!("│ STEP 3: ALIGNMENT COMPUTATION & CROSS-VERIFICATION             │");
+    println!("│ STEP 3: VERIFY DEPRECATED METHOD RETURNS METHOD_NOT_FOUND      │");
+    println!("│         (TASK-CORE-001 - ARCH-03 autonomous-first)             │");
     println!("└─────────────────────────────────────────────────────────────────┘");
 
-    println!("📝 Executing: purpose/north_star_alignment handler");
+    println!("📝 Executing: purpose/north_star_alignment (deprecated)");
     let alignment_request = make_request("purpose/north_star_alignment", 2, json!({
         "fingerprint_id": fingerprint_id_str,
         "include_breakdown": true,
@@ -198,42 +199,27 @@ async fn manual_fsv_purpose_handlers() {
     }));
 
     let alignment_response = handlers.dispatch(alignment_request).await;
-    let alignment_result = alignment_response.result.as_ref().expect("Must have result");
 
-    // Note: composite_score and threshold are nested inside "alignment" object
-    let alignment_obj = alignment_result.get("alignment").expect("Must have alignment object");
-    let composite_score = alignment_obj.get("composite_score")
-        .and_then(|v| v.as_f64())
-        .expect("Must have composite_score");
-    let threshold = alignment_obj.get("threshold")
-        .and_then(|v| v.as_str())
-        .expect("Must have threshold");
-    let level_breakdown = alignment_result.get("level_breakdown")
-        .expect("Must have level_breakdown");
+    // TASK-CORE-001: Verify METHOD_NOT_FOUND error for deprecated method
+    let alignment_error = alignment_response.error.as_ref().expect("Must have error");
+    println!("   ├─ Error code: {} (expected: -32601 METHOD_NOT_FOUND)", alignment_error.code);
+    println!("   └─ Error message: {}", alignment_error.message);
+    assert_eq!(alignment_error.code, -32601, "Must return METHOD_NOT_FOUND for deprecated method");
 
-    println!("   Handler returned:");
-    println!("   ├─ composite_score: {:.4}", composite_score);
-    println!("   ├─ threshold: {}", threshold);
-    println!("   └─ level_breakdown: {:?}", level_breakdown);
+    // CROSS-VERIFICATION: Verify fingerprint still exists and is unchanged
     println!();
-
-    // CROSS-VERIFICATION: Check fingerprint's stored alignment data
-    println!("🔍 CROSS-VERIFICATION - Comparing with Source of Truth:");
+    println!("🔍 CROSS-VERIFICATION - Fingerprint unchanged in Source of Truth:");
     let fp_from_store = store.retrieve(fingerprint_id).await
         .expect("retrieve should succeed")
         .expect("fingerprint must exist");
 
     let pv_mean: f32 = fp_from_store.purpose_vector.alignments.iter().sum::<f32>() / 13.0;
+    println!("   ├─ Fingerprint still exists: {}", fp_from_store.id);
     println!("   ├─ Fingerprint theta_to_north_star: {:.4}", fp_from_store.theta_to_north_star);
-    println!("   ├─ Purpose vector mean (computed): {:.4}", pv_mean);
-    println!("   └─ Handler composite_score: {:.4}", composite_score);
-
-    // Verify the computation is consistent (alignment was computed using store data)
-    assert!(composite_score > 0.0, "Composite score should be positive");
-    assert!(composite_score <= 1.0, "Composite score should be <= 1.0");
+    println!("   └─ Purpose vector mean: {:.4}", pv_mean);
 
     println!();
-    println!("   ✅ VERIFIED: Alignment computed from Source of Truth data");
+    println!("   ✅ VERIFIED: Deprecated method returns METHOD_NOT_FOUND (-32601)");
     println!();
 
     // =========================================================================

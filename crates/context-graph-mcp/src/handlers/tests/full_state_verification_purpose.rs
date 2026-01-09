@@ -177,19 +177,22 @@ fn create_full_test_hierarchy() -> GoalHierarchy {
 
 /// FULL STATE VERIFICATION: End-to-end purpose verification with direct inspection.
 ///
+/// TASK-CORE-001: Updated to remove deprecated north_star_alignment step per ARCH-03.
+///
 /// This test:
 /// 1. BEFORE STATE: Verify store is empty, hierarchy has 5 goals
 /// 2. STORE: Execute memory/store handler
 /// 3. VERIFY IN SOURCE OF TRUTH: Directly query store.retrieve(id)
-/// 4. ALIGNMENT: Execute purpose/north_star_alignment handler
-/// 5. VERIFY ALIGNMENT IN SOURCE OF TRUTH: Confirm fingerprint theta matches
-/// 6. DRIFT CHECK: Execute purpose/drift_check handler
-/// 7. AFTER STATE: Verify all data in Source of Truth
-/// 8. EVIDENCE: Print actual fingerprint and alignment data
+/// 4. DRIFT CHECK: Execute purpose/drift_check handler
+/// 5. AFTER STATE: Verify all data in Source of Truth
+/// 6. EVIDENCE: Print actual fingerprint data
+///
+/// NOTE: purpose/north_star_alignment removed per ARCH-03 (autonomous-first).
+/// Manual alignment used single 1024D embeddings incompatible with 13-embedder arrays.
 #[tokio::test]
 async fn test_full_state_verification_store_alignment_drift_cycle() {
     println!("\n======================================================================");
-    println!("FULL STATE VERIFICATION TEST 1: Store → Alignment → Drift Cycle");
+    println!("FULL STATE VERIFICATION TEST 1: Store → Verify → Drift Cycle");
     println!("======================================================================\n");
 
     let (handlers, store, hierarchy) = create_verifiable_handlers();
@@ -267,77 +270,15 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
         NUM_EMBEDDERS,
         "Must have 13-element purpose vector"
     );
+    let fp_theta = retrieved_fp.theta_to_north_star;
     println!("   ✓ VERIFIED: Fingerprint exists in Source of Truth with correct data\n");
 
-    // =========================================================================
-    // STEP 4: ALIGNMENT - Execute purpose/north_star_alignment
-    // =========================================================================
-    println!("🎯 EXECUTING: purpose/north_star_alignment");
-    let align_params = json!({
-        "fingerprint_id": fingerprint_id_str,
-        "include_breakdown": true,
-        "include_patterns": true
-    });
-    let align_request = make_request(
-        "purpose/north_star_alignment",
-        Some(JsonRpcId::Number(2)),
-        Some(align_params),
-    );
-    let align_response = handlers.dispatch(align_request).await;
-
-    assert!(align_response.error.is_none(), "Alignment handler must succeed");
-    let align_result = align_response.result.expect("Must have result");
-
-    let alignment = align_result.get("alignment").expect("Must have alignment");
-    let composite_score = alignment.get("composite_score").and_then(|v| v.as_f64());
-    let threshold = alignment.get("threshold").and_then(|v| v.as_str());
-    let is_healthy = alignment.get("is_healthy").and_then(|v| v.as_bool());
-
-    println!("   Handler returned:");
-    println!("   - composite_score: {:.4}", composite_score.unwrap_or(0.0));
-    println!("   - threshold: {}", threshold.unwrap_or("unknown"));
-    println!("   - is_healthy: {}", is_healthy.unwrap_or(false));
+    // NOTE: purpose/north_star_alignment REMOVED per TASK-CORE-001 (ARCH-03)
+    // Manual alignment used single 1024D embeddings incompatible with 13-embedder arrays.
+    // Use auto_bootstrap_north_star tool for autonomous goal discovery instead.
 
     // =========================================================================
-    // STEP 5: VERIFY ALIGNMENT IN SOURCE OF TRUTH
-    // =========================================================================
-    println!("\n🔍 CROSS-VERIFYING ALIGNMENT WITH SOURCE OF TRUTH:");
-
-    // The fingerprint's theta_to_north_star should be populated
-    let fp_theta = retrieved_fp.theta_to_north_star;
-    println!("   - Stored theta_to_north_star: {:.4}", fp_theta);
-    println!(
-        "   - Handler composite_score: {:.4}",
-        composite_score.unwrap_or(0.0)
-    );
-
-    // Verify level breakdown exists and is correct
-    let breakdown = align_result.get("level_breakdown");
-    assert!(breakdown.is_some(), "Must have level_breakdown");
-    let breakdown = breakdown.unwrap();
-
-    println!("   Level breakdown:");
-    println!(
-        "     - north_star: {:.4}",
-        breakdown.get("north_star").and_then(|v| v.as_f64()).unwrap_or(0.0)
-    );
-    println!(
-        "     - strategic: {:.4}",
-        breakdown.get("strategic").and_then(|v| v.as_f64()).unwrap_or(0.0)
-    );
-    println!(
-        "     - tactical: {:.4}",
-        breakdown.get("tactical").and_then(|v| v.as_f64()).unwrap_or(0.0)
-    );
-    println!(
-        "     - immediate: {:.4}",
-        breakdown.get("immediate").and_then(|v| v.as_f64()).unwrap_or(0.0)
-    );
-
-    println!("   ✓ VERIFIED: Alignment computation returned valid data\n");
-
-    // =========================================================================
-    // STEP 6: DRIFT CHECK - Execute purpose/drift_check
+    // STEP 4: DRIFT CHECK - Execute purpose/drift_check
     // =========================================================================
     println!("📉 EXECUTING: purpose/drift_check");
     let drift_params = json!({
@@ -379,7 +320,7 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
     println!("   ✓ VERIFIED: Drift check completed successfully\n");
 
     // =========================================================================
-    // STEP 7: AFTER STATE - Final verification
+    // STEP 5: AFTER STATE - Final verification
     // =========================================================================
     println!("📊 AFTER STATE:");
 
@@ -394,7 +335,7 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
     println!("   ✓ VERIFIED: All data intact in Source of Truth\n");
 
     // =========================================================================
-    // STEP 8: EVIDENCE OF SUCCESS - Print Summary
+    // STEP 6: EVIDENCE OF SUCCESS - Print Summary
     // =========================================================================
     println!("======================================================================");
     println!("EVIDENCE OF SUCCESS - Full State Verification Summary");
@@ -406,9 +347,9 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
     println!("Operations Verified:");
     println!("  1. memory/store: Created fingerprint {}", fingerprint_id);
     println!("  2. Direct store.retrieve() confirmed existence");
-    println!("  3. purpose/north_star_alignment: composite_score={:.4}", composite_score.unwrap_or(0.0));
-    println!("  4. Level breakdown verified (NS, S, T, I levels)");
-    println!("  5. purpose/drift_check: avg_drift={:.4}", avg_drift.unwrap_or(0.0));
+    println!("  3. purpose/drift_check: avg_drift={:.4}", avg_drift.unwrap_or(0.0));
+    println!("");
+    println!("NOTE: purpose/north_star_alignment removed per TASK-CORE-001 (ARCH-03)");
     println!("");
     println!("Physical Evidence:");
     println!("  - Fingerprint UUID: {}", fingerprint_id);
@@ -624,6 +565,8 @@ async fn test_edge_case_purpose_query_12_elements() {
 
 /// EDGE CASE: Store operation works autonomously without North Star.
 ///
+/// TASK-CORE-001: Updated to verify deprecated methods return METHOD_NOT_FOUND.
+///
 /// AUTONOMOUS OPERATION: Per contextprd.md, the 13-embedding array IS the
 /// teleological vector. Memory storage uses default purpose vector [0.0; 13]
 /// when no North Star is configured, enabling autonomous operation.
@@ -659,8 +602,8 @@ async fn test_edge_case_autonomous_operation_no_north_star() {
     let fingerprint_id = result.get("fingerprintId").expect("Must have fingerprintId");
     println!("   SUCCESS: fingerprintId={}", fingerprint_id);
 
-    // Alignment with non-existent fingerprint fails because it doesn't exist
-    println!("\n📝 ATTEMPTING: purpose/north_star_alignment (with non-existent fingerprint)");
+    // TASK-CORE-001: Verify deprecated method returns METHOD_NOT_FOUND
+    println!("\n📝 VERIFYING: purpose/north_star_alignment returns METHOD_NOT_FOUND");
     let align_params = json!({
         "fingerprint_id": "00000000-0000-0000-0000-000000000001"
     });
@@ -671,18 +614,17 @@ async fn test_edge_case_autonomous_operation_no_north_star() {
     );
     let response = handlers.dispatch(align_request).await;
 
-    // Should fail because fingerprint doesn't exist, NOT because North Star is missing
-    assert!(response.error.is_some(), "Alignment with non-existent fingerprint should fail");
+    // TASK-CORE-001: Must return METHOD_NOT_FOUND (-32601) for deprecated method
+    assert!(response.error.is_some(), "Deprecated method must return error");
     let align_error = response.error.unwrap();
-    println!("   Error code: {}", align_error.code);
+    println!("   Error code: {} (expected: -32601)", align_error.code);
     println!("   Error message: {}", align_error.message);
-    // Should NOT be NORTH_STAR_NOT_CONFIGURED
-    assert_ne!(
-        align_error.code, -32021,
-        "Should NOT return NORTH_STAR_NOT_CONFIGURED - autonomous operation"
+    assert_eq!(
+        align_error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601) for deprecated method"
     );
 
-    println!("\n✓ VERIFIED: System operates autonomously without North Star\n");
+    println!("\n✓ VERIFIED: System operates autonomously, deprecated method returns METHOD_NOT_FOUND\n");
 }
 
 // =============================================================================
@@ -737,14 +679,17 @@ async fn test_edge_case_goal_not_found() {
 }
 
 // =============================================================================
-// EDGE CASE 4: North Star Update with Existing North Star
+// EDGE CASE 4: North Star Update Returns METHOD_NOT_FOUND (TASK-CORE-001)
 // =============================================================================
 
-/// EDGE CASE: Updating North Star without replace=true should fail.
+/// EDGE CASE: purpose/north_star_update is deprecated and returns METHOD_NOT_FOUND.
+///
+/// TASK-CORE-001: Manual North Star update removed per ARCH-03 (autonomous-first).
+/// Goals emerge autonomously via auto_bootstrap_north_star tool.
 #[tokio::test]
-async fn test_edge_case_north_star_update_without_replace() {
+async fn test_edge_case_north_star_update_returns_method_not_found() {
     println!("\n======================================================================");
-    println!("EDGE CASE 4: North Star Update Without Replace");
+    println!("EDGE CASE 4: North Star Update Returns METHOD_NOT_FOUND (TASK-CORE-001)");
     println!("======================================================================\n");
 
     let (handlers, _store, hierarchy) = create_verifiable_handlers();
@@ -762,8 +707,8 @@ async fn test_edge_case_north_star_update_without_replace() {
         .expect("Must have NS");
     println!("   Existing North Star ID: {}", existing_ns_id);
 
-    // ACTION: Try to add new North Star without replace=true
-    println!("\n📝 ACTION: purpose/north_star_update (replace=false)");
+    // ACTION: Try to call deprecated method
+    println!("\n📝 ACTION: purpose/north_star_update (deprecated per TASK-CORE-001)");
     let update_params = json!({
         "description": "New competing North Star",
         "replace": false
@@ -775,18 +720,14 @@ async fn test_edge_case_north_star_update_without_replace() {
     );
     let response = handlers.dispatch(update_request).await;
 
-    // Verify error
-    assert!(response.error.is_some(), "Must fail without replace=true");
+    // TASK-CORE-001: Verify METHOD_NOT_FOUND error
+    assert!(response.error.is_some(), "Deprecated method must return error");
     let error = response.error.unwrap();
-    println!("   Error code: {} (expected: -32023)", error.code);
+    println!("   Error code: {} (expected: -32601)", error.code);
     println!("   Error message: {}", error.message);
     assert_eq!(
-        error.code, -32023,
-        "Must return GOAL_HIERARCHY_ERROR (-32023)"
-    );
-    assert!(
-        error.message.contains("replace"),
-        "Error must mention replace"
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601) for deprecated method"
     );
 
     // AFTER STATE - original North Star unchanged
@@ -800,7 +741,7 @@ async fn test_edge_case_north_star_update_without_replace() {
         "North Star must remain unchanged"
     );
 
-    println!("\n✓ VERIFIED: North Star update without replace correctly rejected\n");
+    println!("\n✓ VERIFIED: Deprecated method returns METHOD_NOT_FOUND, hierarchy unchanged\n");
 }
 
 // =============================================================================

@@ -1,17 +1,20 @@
 //! Purpose Handler Tests
 //!
-//! TASK-S003: Tests for purpose/query, purpose/north_star_alignment, goal/hierarchy_query,
-//! goal/aligned_memories, purpose/drift_check, and purpose/north_star_update handlers.
+//! TASK-S003: Tests for purpose/query, goal/hierarchy_query,
+//! goal/aligned_memories, and purpose/drift_check handlers.
+//!
+//! TASK-CORE-001: Removed tests for deprecated methods per ARCH-03:
+//! - purpose/north_star_alignment - Returns METHOD_NOT_FOUND (-32601)
+//! - purpose/north_star_update - Returns METHOD_NOT_FOUND (-32601)
 //!
 //! Uses STUBS (InMemoryTeleologicalStore, StubMultiArrayProvider) with real GoalHierarchy.
 //!
 //! Tests verify:
 //! - purpose/query with 13D purpose vector similarity
-//! - purpose/north_star_alignment with threshold classification
 //! - goal/hierarchy_query operations (get_all, get_goal, get_children, get_ancestors, get_subtree)
 //! - goal/aligned_memories for finding memories aligned to specific goals
 //! - purpose/drift_check for detecting alignment drift
-//! - purpose/north_star_update for setting/replacing North Star goal
+//! - Deprecated methods return METHOD_NOT_FOUND
 //! - Error handling for invalid parameters
 
 use serde_json::json;
@@ -198,10 +201,13 @@ async fn test_purpose_query_min_alignment_filter() {
 }
 
 // =============================================================================
-// purpose/north_star_alignment Tests
+// purpose/north_star_alignment Tests - TASK-CORE-001: DEPRECATED
 // =============================================================================
+// NOTE: purpose/north_star_alignment was removed per ARCH-03 (autonomous-first).
+// All calls now return METHOD_NOT_FOUND (-32601).
+// Use auto_bootstrap_north_star tool for autonomous goal discovery instead.
 
-/// Test purpose/north_star_alignment with valid fingerprint.
+/// TASK-CORE-001: Test purpose/north_star_alignment returns METHOD_NOT_FOUND.
 #[tokio::test]
 async fn test_north_star_alignment_valid_fingerprint() {
     let handlers = create_test_handlers();
@@ -222,7 +228,7 @@ async fn test_north_star_alignment_valid_fingerprint() {
         .unwrap()
         .to_string();
 
-    // Check alignment
+    // Check alignment - should return METHOD_NOT_FOUND (deprecated)
     let align_params = json!({
         "fingerprint_id": fingerprint_id,
         "include_breakdown": true,
@@ -235,63 +241,20 @@ async fn test_north_star_alignment_valid_fingerprint() {
     );
     let response = handlers.dispatch(align_request).await;
 
+    // TASK-CORE-001: Deprecated method returns METHOD_NOT_FOUND
     assert!(
-        response.error.is_none(),
-        "purpose/north_star_alignment should succeed"
+        response.error.is_some(),
+        "purpose/north_star_alignment must return error (deprecated per TASK-CORE-001)"
     );
-    let result = response.result.expect("Should have result");
-
-    // Verify response structure
+    let error = response.error.unwrap();
     assert_eq!(
-        result.get("fingerprint_id").and_then(|v| v.as_str()),
-        Some(fingerprint_id.as_str()),
-        "Should return fingerprint_id"
-    );
-
-    let alignment = result.get("alignment").expect("Should have alignment");
-    assert!(
-        alignment.get("composite_score").is_some(),
-        "Should have composite_score"
-    );
-    assert!(
-        alignment.get("threshold").is_some(),
-        "Should have threshold classification"
-    );
-    assert!(
-        alignment.get("is_healthy").is_some(),
-        "Should have is_healthy"
-    );
-    assert!(
-        alignment.get("needs_attention").is_some(),
-        "Should have needs_attention"
-    );
-    assert!(alignment.get("severity").is_some(), "Should have severity");
-
-    // Verify level breakdown
-    let breakdown = result.get("level_breakdown").expect("Should have level_breakdown");
-    assert!(breakdown.get("north_star").is_some(), "Should have north_star level");
-    assert!(breakdown.get("strategic").is_some(), "Should have strategic level");
-    assert!(breakdown.get("tactical").is_some(), "Should have tactical level");
-    assert!(breakdown.get("immediate").is_some(), "Should have immediate level");
-
-    // Verify flags
-    let flags = result.get("flags").expect("Should have flags");
-    assert!(
-        flags.get("tactical_without_strategic").is_some(),
-        "Should have tactical_without_strategic flag"
-    );
-    assert!(
-        flags.get("needs_intervention").is_some(),
-        "Should have needs_intervention flag"
-    );
-
-    assert!(
-        result.get("computation_time_ms").is_some(),
-        "Should report computation_time_ms"
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601), got {}",
+        error.code
     );
 }
 
-/// Test purpose/north_star_alignment fails with missing fingerprint_id.
+/// TASK-CORE-001: Test purpose/north_star_alignment returns METHOD_NOT_FOUND for missing params.
 #[tokio::test]
 async fn test_north_star_alignment_missing_id_fails() {
     let handlers = create_test_handlers();
@@ -306,19 +269,20 @@ async fn test_north_star_alignment_missing_id_fails() {
     );
     let response = handlers.dispatch(align_request).await;
 
+    // TASK-CORE-001: Deprecated method returns METHOD_NOT_FOUND (not INVALID_PARAMS)
     assert!(
         response.error.is_some(),
-        "purpose/north_star_alignment must fail without fingerprint_id"
+        "purpose/north_star_alignment must return error (deprecated per TASK-CORE-001)"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
-    assert!(
-        error.message.contains("fingerprint_id"),
-        "Error should mention missing fingerprint_id"
+    assert_eq!(
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601), got {}",
+        error.code
     );
 }
 
-/// Test purpose/north_star_alignment fails with invalid UUID.
+/// TASK-CORE-001: Test purpose/north_star_alignment returns METHOD_NOT_FOUND for invalid UUID.
 #[tokio::test]
 async fn test_north_star_alignment_invalid_uuid_fails() {
     let handlers = create_test_handlers();
@@ -333,15 +297,20 @@ async fn test_north_star_alignment_invalid_uuid_fails() {
     );
     let response = handlers.dispatch(align_request).await;
 
+    // TASK-CORE-001: Deprecated method returns METHOD_NOT_FOUND (not INVALID_PARAMS)
     assert!(
         response.error.is_some(),
-        "purpose/north_star_alignment must fail with invalid UUID"
+        "purpose/north_star_alignment must return error (deprecated per TASK-CORE-001)"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601), got {}",
+        error.code
+    );
 }
 
-/// Test purpose/north_star_alignment fails with non-existent fingerprint.
+/// TASK-CORE-001: Test purpose/north_star_alignment returns METHOD_NOT_FOUND for non-existent ID.
 #[tokio::test]
 async fn test_north_star_alignment_not_found_fails() {
     let handlers = create_test_handlers();
@@ -356,24 +325,26 @@ async fn test_north_star_alignment_not_found_fails() {
     );
     let response = handlers.dispatch(align_request).await;
 
+    // TASK-CORE-001: Deprecated method returns METHOD_NOT_FOUND (not FINGERPRINT_NOT_FOUND)
     assert!(
         response.error.is_some(),
-        "purpose/north_star_alignment must fail with non-existent fingerprint"
+        "purpose/north_star_alignment must return error (deprecated per TASK-CORE-001)"
     );
     let error = response.error.unwrap();
     assert_eq!(
-        error.code, -32010,
-        "Should return FINGERPRINT_NOT_FOUND error code"
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601), got {}",
+        error.code
     );
 }
 
-/// Test autonomous operation: store succeeds without North Star, alignment needs fingerprint.
+/// Test autonomous operation: store succeeds without North Star.
 ///
 /// AUTONOMOUS OPERATION: Per contextprd.md, memory storage works without North Star
 /// by using a default purpose vector [0.0; 13]. The 13-embedding array IS the
 /// teleological vector - purpose alignment is secondary metadata.
 ///
-/// Alignment operations still require the stored fingerprint to exist.
+/// TASK-CORE-001: purpose/north_star_alignment is deprecated, returns METHOD_NOT_FOUND.
 #[tokio::test]
 async fn test_north_star_alignment_autonomous_operation() {
     let handlers = create_test_handlers_no_north_star();
@@ -395,7 +366,7 @@ async fn test_north_star_alignment_autonomous_operation() {
     let result = store_response.result.expect("Should have result");
     assert!(result.get("fingerprintId").is_some(), "Must return fingerprintId");
 
-    // Alignment with non-existent fingerprint should fail with NOT_FOUND (not missing config)
+    // TASK-CORE-001: purpose/north_star_alignment is deprecated
     let align_params = json!({
         "fingerprint_id": "00000000-0000-0000-0000-000000000001"
     });
@@ -406,10 +377,16 @@ async fn test_north_star_alignment_autonomous_operation() {
     );
     let response = handlers.dispatch(align_request).await;
 
-    // Should fail because fingerprint doesn't exist, not because North Star is missing
+    // Should fail with METHOD_NOT_FOUND (deprecated per TASK-CORE-001)
     assert!(
         response.error.is_some(),
-        "purpose/north_star_alignment must fail with non-existent fingerprint"
+        "purpose/north_star_alignment must return error (deprecated per TASK-CORE-001)"
+    );
+    let error = response.error.unwrap();
+    assert_eq!(
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601), got {}",
+        error.code
     );
 }
 
@@ -980,12 +957,16 @@ async fn test_drift_check_not_found_fingerprints() {
 }
 
 // =============================================================================
-// purpose/north_star_update Tests
+// purpose/north_star_update Tests (DEPRECATED - TASK-CORE-001)
 // =============================================================================
+// NOTE: purpose/north_star_update is REMOVED per ARCH-03 (autonomous-first).
+// All tests now verify METHOD_NOT_FOUND (-32601) is returned.
+// Use auto_bootstrap_north_star for autonomous goal discovery instead.
 
-/// Test purpose/north_star_update creates new North Star.
+/// TASK-CORE-001: Test purpose/north_star_update returns METHOD_NOT_FOUND.
+/// Previously tested creating new North Star, now verifies deprecation.
 #[tokio::test]
-async fn test_north_star_update_create() {
+async fn test_north_star_update_create_returns_method_not_found() {
     let handlers = create_test_handlers_no_north_star();
 
     let update_params = json!({
@@ -999,34 +980,21 @@ async fn test_north_star_update_create() {
     );
     let response = handlers.dispatch(update_request).await;
 
+    // TASK-CORE-001: Must return METHOD_NOT_FOUND for deprecated method
     assert!(
-        response.error.is_none(),
-        "purpose/north_star_update should succeed"
+        response.error.is_some(),
+        "purpose/north_star_update must return error (deprecated per ARCH-03)"
     );
-    let result = response.result.expect("Should have result");
-
+    let error = response.error.unwrap();
     assert_eq!(
-        result.get("status").and_then(|v| v.as_str()),
-        Some("created"),
-        "Should report created status"
-    );
-
-    let goal = result.get("goal").expect("Should have goal");
-    assert_eq!(
-        goal.get("level").and_then(|v| v.as_str()),
-        Some("NorthStar"),
-        "Should be NorthStar level"
-    );
-    assert_eq!(
-        goal.get("is_north_star").and_then(|v| v.as_bool()),
-        Some(true),
-        "Should be marked as North Star"
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601) for deprecated method"
     );
 }
 
-/// Test purpose/north_star_update fails with existing North Star and replace=false.
+/// TASK-CORE-001: Test purpose/north_star_update with replace=false returns METHOD_NOT_FOUND.
 #[tokio::test]
-async fn test_north_star_update_exists_no_replace_fails() {
+async fn test_north_star_update_exists_no_replace_returns_method_not_found() {
     let handlers = create_test_handlers();
 
     let update_params = json!({
@@ -1040,24 +1008,21 @@ async fn test_north_star_update_exists_no_replace_fails() {
     );
     let response = handlers.dispatch(update_request).await;
 
+    // TASK-CORE-001: Must return METHOD_NOT_FOUND for deprecated method
     assert!(
         response.error.is_some(),
-        "purpose/north_star_update must fail when North Star exists and replace=false"
+        "purpose/north_star_update must return error (deprecated per ARCH-03)"
     );
     let error = response.error.unwrap();
     assert_eq!(
-        error.code, -32023,
-        "Should return GOAL_HIERARCHY_ERROR error code"
-    );
-    assert!(
-        error.message.contains("replace"),
-        "Error should mention replace=true"
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601) for deprecated method"
     );
 }
 
-/// Test purpose/north_star_update replaces existing North Star.
+/// TASK-CORE-001: Test purpose/north_star_update with replace=true returns METHOD_NOT_FOUND.
 #[tokio::test]
-async fn test_north_star_update_replace() {
+async fn test_north_star_update_replace_returns_method_not_found() {
     let handlers = create_test_handlers();
 
     let update_params = json!({
@@ -1072,28 +1037,22 @@ async fn test_north_star_update_replace() {
     );
     let response = handlers.dispatch(update_request).await;
 
+    // TASK-CORE-001: Must return METHOD_NOT_FOUND for deprecated method
     assert!(
-        response.error.is_none(),
-        "purpose/north_star_update with replace=true should succeed"
+        response.error.is_some(),
+        "purpose/north_star_update must return error (deprecated per ARCH-03)"
     );
-    let result = response.result.expect("Should have result");
-
+    let error = response.error.unwrap();
     assert_eq!(
-        result.get("status").and_then(|v| v.as_str()),
-        Some("replaced"),
-        "Should report replaced status"
-    );
-
-    // Verify previous North Star is reported
-    assert!(
-        result.get("previous_north_star").is_some(),
-        "Should report previous_north_star"
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601) for deprecated method"
     );
 }
 
-/// Test purpose/north_star_update fails with missing description.
+/// TASK-CORE-001: Test purpose/north_star_update without description returns METHOD_NOT_FOUND.
+/// Note: METHOD_NOT_FOUND takes precedence over INVALID_PARAMS since method is removed.
 #[tokio::test]
-async fn test_north_star_update_missing_description_fails() {
+async fn test_north_star_update_missing_description_returns_method_not_found() {
     let handlers = create_test_handlers_no_north_star();
 
     let update_params = json!({
@@ -1106,21 +1065,21 @@ async fn test_north_star_update_missing_description_fails() {
     );
     let response = handlers.dispatch(update_request).await;
 
+    // TASK-CORE-001: Must return METHOD_NOT_FOUND for deprecated method
     assert!(
         response.error.is_some(),
-        "purpose/north_star_update must fail without description"
+        "purpose/north_star_update must return error (deprecated per ARCH-03)"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
-    assert!(
-        error.message.contains("description"),
-        "Error should mention missing description"
+    assert_eq!(
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601) for deprecated method"
     );
 }
 
-/// Test purpose/north_star_update fails with empty description.
+/// TASK-CORE-001: Test purpose/north_star_update with empty description returns METHOD_NOT_FOUND.
 #[tokio::test]
-async fn test_north_star_update_empty_description_fails() {
+async fn test_north_star_update_empty_description_returns_method_not_found() {
     let handlers = create_test_handlers_no_north_star();
 
     let update_params = json!({
@@ -1133,20 +1092,25 @@ async fn test_north_star_update_empty_description_fails() {
     );
     let response = handlers.dispatch(update_request).await;
 
+    // TASK-CORE-001: Must return METHOD_NOT_FOUND for deprecated method
     assert!(
         response.error.is_some(),
-        "purpose/north_star_update must fail with empty description"
+        "purpose/north_star_update must return error (deprecated per ARCH-03)"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601) for deprecated method"
+    );
 }
 
-/// Test purpose/north_star_update fails with wrong embedding dimensions.
+/// TASK-CORE-001: Test purpose/north_star_update with embedding returns METHOD_NOT_FOUND.
+/// Note: METHOD_NOT_FOUND takes precedence over INVALID_PARAMS since method is removed.
 #[tokio::test]
-async fn test_north_star_update_wrong_embedding_dims_fails() {
+async fn test_north_star_update_with_embedding_returns_method_not_found() {
     let handlers = create_test_handlers_no_north_star();
 
-    // 768 dimensions instead of 1024
+    // 768 dimensions instead of 1024 - doesn't matter since method is removed
     let wrong_embedding: Vec<f64> = vec![0.5; 768];
 
     let update_params = json!({
@@ -1160,15 +1124,15 @@ async fn test_north_star_update_wrong_embedding_dims_fails() {
     );
     let response = handlers.dispatch(update_request).await;
 
+    // TASK-CORE-001: Must return METHOD_NOT_FOUND for deprecated method
     assert!(
         response.error.is_some(),
-        "purpose/north_star_update must fail with wrong embedding dimensions"
+        "purpose/north_star_update must return error (deprecated per ARCH-03)"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
-    assert!(
-        error.message.contains("1024"),
-        "Error should mention 1024 dimensions"
+    assert_eq!(
+        error.code, -32601,
+        "Must return METHOD_NOT_FOUND (-32601) for deprecated method"
     );
 }
 
@@ -1178,15 +1142,17 @@ async fn test_north_star_update_wrong_embedding_dims_fails() {
 
 /// FULL STATE VERIFICATION: Complete purpose workflow test.
 ///
+/// TASK-CORE-001: Updated to remove deprecated north_star_alignment step.
+///
 /// Tests the full purpose lifecycle with real data:
 /// 1. Create handlers with test hierarchy
 /// 2. Verify hierarchy exists via goal/hierarchy_query get_all
 /// 3. Store content and verify storage
 /// 4. Query via purpose/query with 13D vector
-/// 5. Check alignment via purpose/north_star_alignment
-/// 6. Find aligned memories via goal/aligned_memories
-/// 7. Check drift via purpose/drift_check
+/// 5. Find aligned memories via goal/aligned_memories
+/// 6. Check drift via purpose/drift_check
 ///
+/// NOTE: purpose/north_star_alignment removed per ARCH-03.
 /// Uses real GoalHierarchy with STUB storage (InMemoryTeleologicalStore).
 #[tokio::test]
 async fn test_full_state_verification_purpose_workflow() {
@@ -1299,44 +1265,12 @@ async fn test_full_state_verification_purpose_workflow() {
         purpose_results.len()
     );
 
-    // =========================================================================
-    // STEP 4: Check alignment via purpose/north_star_alignment
-    // =========================================================================
-    let align_params = json!({
-        "fingerprint_id": &stored_ids[0],
-        "include_breakdown": true,
-        "include_patterns": true
-    });
-    let align_request = make_request(
-        "purpose/north_star_alignment",
-        Some(JsonRpcId::Number(30)),
-        Some(align_params),
-    );
-    let align_response = handlers.dispatch(align_request).await;
-
-    assert!(
-        align_response.error.is_none(),
-        "purpose/north_star_alignment must succeed"
-    );
-    let align_result = align_response.result.expect("Must have result");
-
-    let alignment = align_result.get("alignment").expect("Must have alignment");
-    let composite_score = alignment
-        .get("composite_score")
-        .and_then(|v| v.as_f64())
-        .expect("Must have composite_score");
-    let threshold = alignment
-        .get("threshold")
-        .and_then(|v| v.as_str())
-        .expect("Must have threshold");
-
-    println!(
-        "[FSV] STEP 4 VERIFIED: Alignment composite_score={:.4}, threshold={}",
-        composite_score, threshold
-    );
+    // NOTE: STEP 4 (purpose/north_star_alignment) REMOVED per TASK-CORE-001 (ARCH-03)
+    // Manual North Star alignment creates single 1024D embeddings incompatible with 13-embedder arrays.
+    // Use auto_bootstrap_north_star tool for autonomous goal discovery instead.
 
     // =========================================================================
-    // STEP 5: Find aligned memories via goal/aligned_memories
+    // STEP 4: Find aligned memories via goal/aligned_memories
     // =========================================================================
     let aligned_params = json!({
         "goal_id": "s1_retrieval",
@@ -1361,12 +1295,12 @@ async fn test_full_state_verification_purpose_workflow() {
         .expect("Must have count");
 
     println!(
-        "[FSV] STEP 5 VERIFIED: goal/aligned_memories found {} memories",
+        "[FSV] STEP 4 VERIFIED: goal/aligned_memories found {} memories",
         aligned_count
     );
 
     // =========================================================================
-    // STEP 6: Check drift via purpose/drift_check
+    // STEP 5: Check drift via purpose/drift_check
     // =========================================================================
     let drift_params = json!({
         "fingerprint_ids": &stored_ids,
@@ -1398,7 +1332,7 @@ async fn test_full_state_verification_purpose_workflow() {
     assert_eq!(total_checked, 3, "Must check all 3 fingerprints");
 
     println!(
-        "[FSV] STEP 6 VERIFIED: drift_check checked {} fingerprints, {} drifted",
+        "[FSV] STEP 5 VERIFIED: drift_check checked {} fingerprints, {} drifted",
         total_checked, drifted_count
     );
 

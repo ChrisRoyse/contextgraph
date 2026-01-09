@@ -485,12 +485,12 @@ impl Handlers {
                 error!(
                     "store_memory: Goal hierarchy missing North Star goal. \
                      Cannot compute purpose vector. \
-                     CONFIGURATION ERROR: Use purpose/north_star_update to configure goal hierarchy."
+                     CONFIGURATION ERROR: Use auto_bootstrap_north_star tool for autonomous goal discovery."
                 );
                 return self.tool_error_with_pulse(
                     id,
                     "Goal hierarchy not configured. Cannot compute purpose vector. \
-                     Use purpose/north_star_update endpoint to set North Star goal.",
+                     Use auto_bootstrap_north_star tool for autonomous goal discovery.",
                 );
             }
 

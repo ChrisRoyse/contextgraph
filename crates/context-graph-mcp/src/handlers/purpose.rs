@@ -1,15 +1,18 @@
 //! Purpose and goal alignment handlers.
 //!
 //! TASK-S003: Implements MCP handlers for purpose/goal operations.
+//! TASK-CORE-001: Removed manual North Star methods per ARCH-03 (autonomous-first).
 //!
 //! # Purpose Methods
 //!
 //! - `purpose/query`: Query memories by 13D purpose vector similarity
-//! - `purpose/north_star_alignment`: Check alignment to North Star goal
 //! - `goal/hierarchy_query`: Navigate goal hierarchy
 //! - `goal/aligned_memories`: Find memories aligned to a specific goal
 //! - `purpose/drift_check`: Detect alignment drift in memories
-//! - `purpose/north_star_update`: Update the North Star goal
+//!
+//! NOTE: Manual North Star methods removed per ARCH-03:
+//! - `purpose/north_star_alignment` - REMOVED: Use auto_bootstrap_north_star
+//! - `purpose/north_star_update` - REMOVED: Use auto_bootstrap_north_star
 //!
 //! # Error Handling
 //!
@@ -19,7 +22,7 @@
 use serde_json::json;
 use tracing::{debug, error, instrument};
 
-use context_graph_core::alignment::{AlignmentConfig, AlignmentResult};
+use context_graph_core::alignment::AlignmentConfig;
 use context_graph_core::purpose::{GoalHierarchy, GoalId, GoalLevel, GoalNode};
 use context_graph_core::traits::TeleologicalSearchOptions;
 use context_graph_core::types::fingerprint::{AlignmentThreshold, PurposeVector, NUM_EMBEDDERS};
@@ -215,206 +218,10 @@ impl Handlers {
         }
     }
 
-    /// Handle purpose/north_star_alignment request.
-    ///
-    /// Check alignment of a fingerprint to the North Star goal.
-    ///
-    /// # Request Parameters
-    /// - `fingerprint_id` (required): UUID of fingerprint to check
-    /// - `include_breakdown` (optional): Include per-level breakdown, default true
-    /// - `include_patterns` (optional): Include detected patterns, default true
-    ///
-    /// # Response
-    /// - `alignment`: Composite alignment score
-    /// - `threshold`: Classification (Optimal, Acceptable, Warning, Critical)
-    /// - `level_breakdown`: Per-level alignment scores
-    /// - `patterns`: Detected misalignment patterns
-    ///
-    /// # Error Codes
-    /// - FINGERPRINT_NOT_FOUND (-32010): UUID not found
-    /// - NORTH_STAR_NOT_CONFIGURED (-32021): No North Star goal
-    /// - ALIGNMENT_COMPUTATION_ERROR (-32022): Computation failed
-    #[instrument(skip(self, params), fields(method = "purpose/north_star_alignment"))]
-    pub(super) async fn handle_north_star_alignment(
-        &self,
-        id: Option<JsonRpcId>,
-        params: Option<serde_json::Value>,
-    ) -> JsonRpcResponse {
-        let params = match params {
-            Some(p) => p,
-            None => {
-                error!("purpose/north_star_alignment: Missing parameters");
-                return JsonRpcResponse::error(
-                    id,
-                    error_codes::INVALID_PARAMS,
-                    "Missing parameters - fingerprint_id required",
-                );
-            }
-        };
-
-        // Extract fingerprint_id (required)
-        let fingerprint_id = match params.get("fingerprint_id").and_then(|v| v.as_str()) {
-            Some(id_str) => match uuid::Uuid::parse_str(id_str) {
-                Ok(uuid) => uuid,
-                Err(e) => {
-                    error!(error = %e, "purpose/north_star_alignment: Invalid UUID format");
-                    return JsonRpcResponse::error(
-                        id,
-                        error_codes::INVALID_PARAMS,
-                        format!("Invalid fingerprint_id format: {}", e),
-                    );
-                }
-            },
-            None => {
-                error!("purpose/north_star_alignment: Missing 'fingerprint_id' parameter");
-                return JsonRpcResponse::error(
-                    id,
-                    error_codes::INVALID_PARAMS,
-                    "Missing required 'fingerprint_id' parameter",
-                );
-            }
-        };
-
-        let include_breakdown = params
-            .get("include_breakdown")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-
-        let include_patterns = params
-            .get("include_patterns")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(true);
-
-        // Get the fingerprint
-        let fingerprint = match self.teleological_store.retrieve(fingerprint_id).await {
-            Ok(Some(fp)) => fp,
-            Ok(None) => {
-                error!(
-                    fingerprint_id = %fingerprint_id,
-                    "purpose/north_star_alignment: Fingerprint not found"
-                );
-                return JsonRpcResponse::error(
-                    id,
-                    error_codes::FINGERPRINT_NOT_FOUND,
-                    format!("Fingerprint not found: {}", fingerprint_id),
-                );
-            }
-            Err(e) => {
-                error!(error = %e, "purpose/north_star_alignment: Storage error");
-                return JsonRpcResponse::error(
-                    id,
-                    error_codes::STORAGE_ERROR,
-                    format!("Failed to retrieve fingerprint: {}", e),
-                );
-            }
-        };
-
-        // Check that North Star is configured
-        let hierarchy = self.goal_hierarchy.read();
-        if !hierarchy.has_north_star() {
-            error!("purpose/north_star_alignment: No North Star goal configured");
-            return JsonRpcResponse::error(
-                id,
-                error_codes::NORTH_STAR_NOT_CONFIGURED,
-                "No North Star goal configured. Use purpose/north_star_update to set one.",
-            );
-        }
-
-        // Build alignment config
-        let config = AlignmentConfig::with_hierarchy(hierarchy.clone())
-            .with_pattern_detection(include_patterns)
-            .with_embedder_breakdown(include_breakdown);
-
-        // Compute alignment
-        let compute_start = std::time::Instant::now();
-        let result: AlignmentResult = match self
-            .alignment_calculator
-            .compute_alignment(&fingerprint, &config)
-            .await
-        {
-            Ok(r) => r,
-            Err(e) => {
-                error!(error = %e, "purpose/north_star_alignment: Alignment computation failed");
-                return JsonRpcResponse::error(
-                    id,
-                    error_codes::ALIGNMENT_COMPUTATION_ERROR,
-                    format!("Alignment computation failed: {}", e),
-                );
-            }
-        };
-        let compute_time_ms = compute_start.elapsed().as_millis();
-
-        // Build response
-        let mut response = json!({
-            "fingerprint_id": fingerprint_id.to_string(),
-            "alignment": {
-                "composite_score": result.score.composite_score,
-                "threshold": format!("{:?}", result.score.threshold),
-                "is_healthy": result.is_healthy(),
-                "needs_attention": result.needs_attention(),
-                "severity": result.severity()
-            },
-            "computation_time_ms": compute_time_ms,
-            "computation_time_us": result.computation_time_us
-        });
-
-        if include_breakdown {
-            response["level_breakdown"] = json!({
-                "north_star": result.score.north_star_alignment,
-                "strategic": result.score.strategic_alignment,
-                "tactical": result.score.tactical_alignment,
-                "immediate": result.score.immediate_alignment
-            });
-
-            response["goal_scores"] = json!(result.score.goal_scores.iter().map(|gs| {
-                json!({
-                    "goal_id": gs.goal_id.as_str(),
-                    "level": format!("{:?}", gs.level),
-                    "alignment": gs.alignment,
-                    "weighted_contribution": gs.weighted_contribution,
-                    "threshold": format!("{:?}", gs.threshold),
-                    "is_misaligned": gs.is_misaligned(),
-                    "is_critical": gs.is_critical()
-                })
-            }).collect::<Vec<_>>());
-
-            response["misalignment_summary"] = json!({
-                "total_goals": result.score.goal_count(),
-                "misaligned_count": result.score.misaligned_count,
-                "critical_count": result.score.critical_count
-            });
-        }
-
-        if include_patterns && !result.patterns.is_empty() {
-            response["patterns"] = json!(result.patterns.iter().map(|p| {
-                json!({
-                    "type": format!("{:?}", p.pattern_type),
-                    "description": p.description,
-                    "suggestion": p.suggestion,
-                    "severity": p.severity,
-                    "affected_goals": p.affected_goals.iter().map(|g| g.as_str()).collect::<Vec<_>>()
-                })
-            }).collect::<Vec<_>>());
-        }
-
-        response["flags"] = json!({
-            "tactical_without_strategic": result.flags.tactical_without_strategic,
-            "divergent_hierarchy": result.flags.divergent_hierarchy,
-            "below_threshold": result.flags.below_threshold,
-            "inconsistent_alignment": result.flags.inconsistent_alignment,
-            "needs_intervention": result.flags.needs_intervention()
-        });
-
-        debug!(
-            fingerprint_id = %fingerprint_id,
-            composite_score = result.score.composite_score,
-            threshold = ?result.score.threshold,
-            compute_time_ms = compute_time_ms,
-            "purpose/north_star_alignment: Completed"
-        );
-
-        JsonRpcResponse::success(id, response)
-    }
+    // NOTE: handle_north_star_alignment REMOVED per TASK-CORE-001 (ARCH-03)
+    // Manual North Star alignment creates single 1024D embeddings incompatible with 13-embedder arrays.
+    // Calls to purpose/north_star_alignment now return METHOD_NOT_FOUND (-32601).
+    // Use auto_bootstrap_north_star tool for autonomous goal discovery instead.
 
     /// Handle goal/hierarchy_query request.
     ///
@@ -917,7 +724,7 @@ impl Handlers {
             return JsonRpcResponse::error(
                 id,
                 error_codes::NORTH_STAR_NOT_CONFIGURED,
-                "No North Star goal configured. Use purpose/north_star_update to set one.",
+                "No North Star goal configured. Use auto_bootstrap_north_star tool for autonomous goal discovery.",
             );
         }
 
@@ -1034,203 +841,10 @@ impl Handlers {
         )
     }
 
-    /// Handle purpose/north_star_update request.
-    ///
-    /// Update or set the North Star goal.
-    ///
-    /// # Request Parameters
-    /// - `description` (required): Human-readable goal description
-    /// - `embedding` (optional): 1024D semantic embedding for the goal
-    /// - `keywords` (optional): Array of keywords for SPLADE matching
-    /// - `replace` (optional): If true, replace existing North Star; default false
-    ///
-    /// # Response
-    /// - `goal`: The created/updated North Star goal
-    /// - `previous_north_star`: The previous North Star (if replaced)
-    ///
-    /// # Error Codes
-    /// - INVALID_PARAMS (-32602): Invalid parameters
-    /// - GOAL_HIERARCHY_ERROR (-32023): Hierarchy operation failed
-    #[instrument(skip(self, params), fields(method = "purpose/north_star_update"))]
-    pub(super) async fn handle_north_star_update(
-        &self,
-        id: Option<JsonRpcId>,
-        params: Option<serde_json::Value>,
-    ) -> JsonRpcResponse {
-        let params = match params {
-            Some(p) => p,
-            None => {
-                error!("purpose/north_star_update: Missing parameters");
-                return JsonRpcResponse::error(
-                    id,
-                    error_codes::INVALID_PARAMS,
-                    "Missing parameters - description required",
-                );
-            }
-        };
-
-        // Extract description (required)
-        let description = match params.get("description").and_then(|v| v.as_str()) {
-            Some(d) if !d.is_empty() => d.to_string(),
-            Some(_) => {
-                error!("purpose/north_star_update: Empty description");
-                return JsonRpcResponse::error(
-                    id,
-                    error_codes::INVALID_PARAMS,
-                    "North Star description cannot be empty",
-                );
-            }
-            None => {
-                error!("purpose/north_star_update: Missing 'description' parameter");
-                return JsonRpcResponse::error(
-                    id,
-                    error_codes::INVALID_PARAMS,
-                    "Missing required 'description' parameter",
-                );
-            }
-        };
-
-        // Extract optional embedding (1024D)
-        let embedding: Vec<f32> = match params.get("embedding").and_then(|v| v.as_array()) {
-            Some(arr) => {
-                if arr.len() != 1024 {
-                    error!(
-                        count = arr.len(),
-                        "purpose/north_star_update: Embedding must have 1024 dimensions"
-                    );
-                    return JsonRpcResponse::error(
-                        id,
-                        error_codes::INVALID_PARAMS,
-                        format!("Embedding must have 1024 dimensions, got {}", arr.len()),
-                    );
-                }
-                arr.iter()
-                    .map(|v| v.as_f64().unwrap_or(0.0) as f32)
-                    .collect()
-            }
-            None => {
-                // Generate embedding from description using multi-array provider
-                match self.multi_array_provider.embed_all(&description).await {
-                    Ok(output) => output.fingerprint.e1_semantic.to_vec(),
-                    Err(e) => {
-                        error!(error = %e, "purpose/north_star_update: Failed to generate embedding");
-                        return JsonRpcResponse::error(
-                            id,
-                            error_codes::EMBEDDING_ERROR,
-                            format!("Failed to generate embedding for description: {}", e),
-                        );
-                    }
-                }
-            }
-        };
-
-        // Extract optional keywords
-        let keywords: Vec<String> = params
-            .get("keywords")
-            .and_then(|v| v.as_array())
-            .map(|arr| {
-                arr.iter()
-                    .filter_map(|v| v.as_str().map(String::from))
-                    .collect()
-            })
-            .unwrap_or_default();
-
-        let replace_existing = params
-            .get("replace")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
-
-        // Create goal ID from description (slug-ified)
-        let goal_id = description
-            .to_lowercase()
-            .replace(' ', "_")
-            .chars()
-            .filter(|c| c.is_alphanumeric() || *c == '_')
-            .take(32)
-            .collect::<String>();
-
-        let goal_id = if goal_id.is_empty() {
-            "north_star".to_string()
-        } else {
-            goal_id
-        };
-
-        // Create the North Star goal
-        let north_star = GoalNode::north_star(goal_id.clone(), description.clone(), embedding, keywords.clone());
-
-        // Update hierarchy
-        let mut hierarchy = self.goal_hierarchy.write();
-        let previous_north_star = hierarchy.north_star().map(|g| self.goal_to_json(g));
-
-        if hierarchy.has_north_star() && !replace_existing {
-            error!("purpose/north_star_update: North Star already exists and replace=false");
-            return JsonRpcResponse::error(
-                id,
-                error_codes::GOAL_HIERARCHY_ERROR,
-                "North Star already exists. Set replace=true to replace it.",
-            );
-        }
-
-        // If replacing, create a new hierarchy with all children migrated
-        if hierarchy.has_north_star() && replace_existing {
-            let mut new_hierarchy = GoalHierarchy::new();
-
-            // Add new North Star
-            if let Err(e) = new_hierarchy.add_goal(north_star.clone()) {
-                error!(error = ?e, "purpose/north_star_update: Failed to add new North Star");
-                return JsonRpcResponse::error(
-                    id,
-                    error_codes::GOAL_HIERARCHY_ERROR,
-                    format!("Failed to add new North Star: {:?}", e),
-                );
-            }
-
-            // Migrate all non-North Star goals with parent pointing to old North Star
-            let old_ns_id = hierarchy.north_star().map(|g| g.id.clone());
-            for goal in hierarchy.iter() {
-                if goal.level != GoalLevel::NorthStar {
-                    let mut migrated = goal.clone();
-                    // Update parent if it was pointing to old North Star
-                    if let Some(ref old_id) = old_ns_id {
-                        if migrated.parent.as_ref() == Some(old_id) {
-                            migrated.parent = Some(GoalId::new(&goal_id));
-                        }
-                    }
-                    // Ignore errors for migration - some goals may not have valid parents
-                    let _ = new_hierarchy.add_goal(migrated);
-                }
-            }
-
-            *hierarchy = new_hierarchy;
-        } else {
-            // Just add new North Star
-            if let Err(e) = hierarchy.add_goal(north_star.clone()) {
-                error!(error = ?e, "purpose/north_star_update: Failed to add North Star");
-                return JsonRpcResponse::error(
-                    id,
-                    error_codes::GOAL_HIERARCHY_ERROR,
-                    format!("Failed to add North Star: {:?}", e),
-                );
-            }
-        }
-
-        debug!(
-            goal_id = %goal_id,
-            replaced = previous_north_star.is_some(),
-            "purpose/north_star_update: Completed"
-        );
-
-        let mut response = json!({
-            "goal": self.goal_to_json(&north_star),
-            "status": if previous_north_star.is_some() { "replaced" } else { "created" }
-        });
-
-        if let Some(prev) = previous_north_star {
-            response["previous_north_star"] = prev;
-        }
-
-        JsonRpcResponse::success(id, response)
-    }
+    // NOTE: handle_north_star_update REMOVED per TASK-CORE-001 (ARCH-03)
+    // Manual North Star update violates autonomous-first architecture.
+    // Calls to purpose/north_star_update now return METHOD_NOT_FOUND (-32601).
+    // Goals emerge autonomously via auto_bootstrap_north_star tool.
 
     // Helper methods
 
@@ -1274,7 +888,6 @@ impl Handlers {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::protocol::JsonRpcRequest;
 
     #[test]
     fn test_goal_to_json_structure() {
