@@ -273,7 +273,7 @@ graph TD
 | TASK-CORE-006 | :white_circle: todo | - | - | - |
 | TASK-CORE-007 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES (12 HNSW indexes, 104 tests pass) |
 | TASK-CORE-008 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES (EmbedderIndexRegistry integrated) |
-| TASK-CORE-009 | :white_circle: todo | - | - | - |
+| TASK-CORE-009 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES (project_embedding removed, 2759 tests pass) |
 | TASK-CORE-010 | :white_circle: todo | - | - | - |
 | TASK-CORE-011 | :white_circle: todo | - | - | - |
 | TASK-CORE-012 | :white_circle: todo | - | - | - |
@@ -334,7 +334,7 @@ graph TD
 | TASK-PERF-003 | :white_circle: todo | - | - | - |
 | TASK-PERF-004 | :white_circle: todo | - | - | - |
 
-**Progress: 7/52 tasks completed (13%): CORE-001, CORE-002, CORE-003, CORE-004, CORE-005, CORE-007, CORE-008**
+**Progress: 8/52 tasks completed (15%): CORE-001, CORE-002, CORE-003, CORE-004, CORE-005, CORE-007, CORE-008, CORE-009**
 
 ---
 

@@ -452,30 +452,6 @@ impl DefaultAlignmentCalculator {
         (cosine + 1.0) / 2.0
     }
 
-    /// Project goal embedding to target dimension using linear interpolation.
-    ///
-    /// This allows a 1024D goal embedding to be compared against any dimension.
-    fn project_embedding(source: &[f32], target_dim: usize) -> Vec<f32> {
-        if source.is_empty() || target_dim == 0 {
-            return vec![0.0; target_dim];
-        }
-
-        if source.len() == target_dim {
-            return source.to_vec();
-        }
-
-        let mut result = Vec::with_capacity(target_dim);
-        let ratio = source.len() as f32 / target_dim as f32;
-
-        for i in 0..target_dim {
-            let src_idx = (i as f32 * ratio) as usize;
-            let src_idx = src_idx.min(source.len() - 1);
-            result.push(source[src_idx]);
-        }
-
-        result
-    }
-
     /// Compute sparse vector alignment using cosine similarity between sparse vectors.
     ///
     /// ARCH-02: Apples-to-apples comparison between sparse vectors in the same embedding space.
@@ -1405,26 +1381,6 @@ mod tests {
 
         assert!(weights.validate().is_ok());
         println!("[VERIFIED] TeleologicalWeights::semantic_focused() weights E1 at 0.40");
-    }
-
-    #[test]
-    fn test_project_embedding_dimensions() {
-        let source = vec![1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0]; // 8D
-
-        // Project to smaller dimension
-        let projected_4d = DefaultAlignmentCalculator::project_embedding(&source, 4);
-        assert_eq!(projected_4d.len(), 4);
-
-        // Project to same dimension
-        let projected_8d = DefaultAlignmentCalculator::project_embedding(&source, 8);
-        assert_eq!(projected_8d.len(), 8);
-        assert_eq!(projected_8d, source);
-
-        // Project to larger dimension
-        let projected_16d = DefaultAlignmentCalculator::project_embedding(&source, 16);
-        assert_eq!(projected_16d.len(), 16);
-
-        println!("[VERIFIED] project_embedding handles different dimensions correctly");
     }
 
     #[test]
