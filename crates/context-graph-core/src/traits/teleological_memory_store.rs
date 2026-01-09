@@ -552,6 +552,51 @@ pub trait TeleologicalMemoryStoreExt: TeleologicalMemoryStore {
         Ok(self.retrieve(id).await?.is_some())
     }
 
+    /// Validate a fingerprint before storage.
+    ///
+    /// Performs comprehensive validation of the TeleologicalFingerprint:
+    /// - Validates all 13 embedder dimensions in the SemanticFingerprint
+    /// - Validates sparse vector vocabulary bounds (E6, E13)
+    /// - Validates ColBERT token dimensions (E12)
+    ///
+    /// # FAIL FAST
+    ///
+    /// Returns immediately on first validation failure with a detailed error
+    /// message. No partial validation or fallback values.
+    ///
+    /// # Arguments
+    ///
+    /// * `fingerprint` - The fingerprint to validate
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - Fingerprint is valid for storage
+    /// * `Err(CoreError::ValidationError)` - Validation failed with details
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use context_graph_core::traits::TeleologicalMemoryStoreExt;
+    ///
+    /// let store = get_store();
+    /// let fingerprint = build_fingerprint();
+    ///
+    /// // Validate before storing - FAIL FAST on invalid data
+    /// store.validate_for_storage(&fingerprint)?;
+    /// let id = store.store(fingerprint).await?;
+    /// ```
+    fn validate_for_storage(
+        &self,
+        fingerprint: &TeleologicalFingerprint,
+    ) -> CoreResult<()> {
+        fingerprint.semantic.validate().map_err(|msg| {
+            crate::error::CoreError::ValidationError {
+                field: "semantic".to_string(),
+                message: msg,
+            }
+        })
+    }
+
     /// Get fingerprints with optimal alignment (θ ≥ alignment::OPTIMAL).
     ///
     /// Constitution: `teleological.thresholds.optimal`

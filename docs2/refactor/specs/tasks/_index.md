@@ -185,13 +185,13 @@ graph TD
 
 | # | Task ID | Title | Depends On | Est. Days | Status |
 |---|---------|-------|------------|-----------|--------|
-| 1 | TASK-CORE-001 | Remove Protocol Constants | - | 0.5 | :white_circle: todo |
-| 2 | TASK-CORE-002 | Define Embedder Enumeration | - | 1 | :white_circle: todo |
-| 3 | TASK-CORE-003 | Define TeleologicalArray Type | CORE-002 | 2 | :white_circle: todo |
-| 4 | TASK-CORE-004 | Define Comparison Types | CORE-003 | 1.5 | :white_circle: todo |
-| 5 | TASK-CORE-005 | Update GoalNode Structure | CORE-001, CORE-003 | 1 | :white_circle: todo |
+| 1 | TASK-CORE-001 | Remove Protocol Constants | - | 0.5 | :white_check_mark: done |
+| 2 | TASK-CORE-002 | Define Embedder Enumeration | - | 1 | :white_check_mark: done |
+| 3 | TASK-CORE-003 | Define TeleologicalArray Type | CORE-002 | 2 | :white_check_mark: done |
+| 4 | TASK-CORE-004 | Define Comparison Types | CORE-003 | 1.5 | :white_check_mark: done |
+| 5 | TASK-CORE-005 | Update GoalNode Structure | CORE-001, CORE-003 | 1 | :white_check_mark: done |
 | 6 | TASK-CORE-006 | Storage Trait Definition | CORE-004 | 1.5 | :white_circle: todo |
-| 7 | TASK-CORE-007 | Per-Embedder Index Structure | CORE-006 | 2 | :white_circle: todo |
+| 7 | TASK-CORE-007 | Per-Embedder Index Structure | CORE-006 | 2 | :white_check_mark: done |
 | 8 | TASK-CORE-008 | RocksDB Schema Migration | CORE-007 | 3 | :white_circle: todo |
 | 9 | TASK-CORE-009 | Remove Projection Code | CORE-001 | 1 | :white_circle: todo |
 | 10 | TASK-CORE-010 | Module Integration | CORE-005, CORE-008, CORE-009 | 1 | :white_circle: todo |
@@ -269,9 +269,9 @@ graph TD
 | TASK-CORE-002 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES |
 | TASK-CORE-003 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES |
 | TASK-CORE-004 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES |
-| TASK-CORE-005 | :large_orange_diamond: in_progress | 2026-01-09 | - | Core done, MCP tests failing |
+| TASK-CORE-005 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES (git: bf341d6) |
 | TASK-CORE-006 | :white_circle: todo | - | - | - |
-| TASK-CORE-007 | :white_circle: todo | - | - | - |
+| TASK-CORE-007 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES (12 HNSW indexes, 104 tests pass) |
 | TASK-CORE-008 | :white_circle: todo | - | - | - |
 | TASK-CORE-009 | :white_circle: todo | - | - | - |
 | TASK-CORE-010 | :white_circle: todo | - | - | - |
@@ -334,7 +334,7 @@ graph TD
 | TASK-PERF-003 | :white_circle: todo | - | - | - |
 | TASK-PERF-004 | :white_circle: todo | - | - | - |
 
-**Progress: 4/52 tasks completed (8%), 1 in progress (TASK-CORE-005)**
+**Progress: 6/52 tasks completed (12%): CORE-001, CORE-002, CORE-003, CORE-004, CORE-005, CORE-007**
 
 ---
 

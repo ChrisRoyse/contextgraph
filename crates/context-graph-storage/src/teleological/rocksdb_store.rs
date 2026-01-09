@@ -40,6 +40,7 @@ use context_graph_core::error::{CoreError, CoreResult};
 use context_graph_core::index::{
     HnswMultiSpaceIndex, MultiSpaceIndexManager, EmbedderIndex,
 };
+use context_graph_core::teleological::ComparisonValidationError;
 use context_graph_core::traits::{
     TeleologicalMemoryStore, TeleologicalSearchOptions, TeleologicalSearchResult,
     TeleologicalStorageBackend,
@@ -121,6 +122,13 @@ pub enum TeleologicalStoreError {
     /// Internal error (should never happen).
     #[error("Internal error: {0}")]
     Internal(String),
+
+    /// Comparison validation error (from TASK-CORE-004).
+    ///
+    /// This error occurs when fingerprint comparison types fail validation,
+    /// such as weights not summing to 1.0 or synergy matrix symmetry violations.
+    #[error("Comparison validation failed: {0}")]
+    ComparisonValidation(#[from] ComparisonValidationError),
 }
 
 impl TeleologicalStoreError {
