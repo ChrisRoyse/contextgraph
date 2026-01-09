@@ -9,8 +9,8 @@ fn test_semantic_fingerprint_validate() {
     assert!(fp.validate().is_ok());
 
     let mut fp2 = SemanticFingerprint::zeroed();
-    fp2.e6_sparse = SparseVector::new(vec![100, 200, 30521], vec![0.1, 0.2, 0.3])
-        .expect("valid sparse vector");
+    fp2.e6_sparse =
+        SparseVector::new(vec![100, 200, 30521], vec![0.1, 0.2, 0.3]).expect("valid sparse vector");
     assert!(fp2.validate().is_ok());
 
     let mut fp3 = SemanticFingerprint::zeroed();
@@ -18,8 +18,8 @@ fn test_semantic_fingerprint_validate() {
     assert!(fp3.validate().is_ok());
 
     let mut fp4 = SemanticFingerprint::zeroed();
-    fp4.e13_splade = SparseVector::new(vec![100, 200, 30521], vec![0.1, 0.2, 0.3])
-        .expect("valid sparse vector");
+    fp4.e13_splade =
+        SparseVector::new(vec![100, 200, 30521], vec![0.1, 0.2, 0.3]).expect("valid sparse vector");
     assert!(fp4.validate().is_ok());
 }
 

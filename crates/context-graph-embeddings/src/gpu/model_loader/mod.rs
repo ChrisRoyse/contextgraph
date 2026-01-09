@@ -50,6 +50,5 @@ pub use config::BertConfig;
 pub use error::ModelLoadError;
 pub use loader::GpuModelLoader;
 pub use weights::{
-    AttentionWeights, BertWeights, EmbeddingWeights, EncoderLayerWeights, FfnWeights,
-    PoolerWeights,
+    AttentionWeights, BertWeights, EmbeddingWeights, EncoderLayerWeights, FfnWeights, PoolerWeights,
 };

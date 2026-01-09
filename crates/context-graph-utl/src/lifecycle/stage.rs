@@ -524,9 +524,11 @@ mod tests {
         assert!(LifecycleStage::Growth < LifecycleStage::Maturity);
         assert!(LifecycleStage::Infancy < LifecycleStage::Maturity);
 
-        let mut stages = [LifecycleStage::Maturity,
+        let mut stages = [
+            LifecycleStage::Maturity,
             LifecycleStage::Infancy,
-            LifecycleStage::Growth];
+            LifecycleStage::Growth,
+        ];
         stages.sort();
         assert_eq!(stages[0], LifecycleStage::Infancy);
         assert_eq!(stages[1], LifecycleStage::Growth);

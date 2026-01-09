@@ -3,8 +3,8 @@
 //! Contains all methods for creating, manipulating, and validating
 //! points in the Poincare ball model.
 
-use crate::config::HyperbolicConfig;
 use super::types::PoincarePoint;
+use crate::config::HyperbolicConfig;
 
 impl PoincarePoint {
     /// Creates the origin point (all zeros).

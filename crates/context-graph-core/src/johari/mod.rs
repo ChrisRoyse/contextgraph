@@ -151,7 +151,12 @@ mod integration_tests {
         println!("  [STATE BEFORE] E1: {:?}", JohariQuadrant::Hidden);
 
         let result = manager
-            .transition(id, 0, JohariQuadrant::Open, TransitionTrigger::ExplicitShare)
+            .transition(
+                id,
+                0,
+                JohariQuadrant::Open,
+                TransitionTrigger::ExplicitShare,
+            )
             .await
             .unwrap();
 
@@ -222,9 +227,21 @@ mod integration_tests {
         let id = store.store(fp).await.unwrap();
 
         let transitions = vec![
-            (0, JohariQuadrant::Open, TransitionTrigger::DreamConsolidation),
-            (1, JohariQuadrant::Hidden, TransitionTrigger::DreamConsolidation),
-            (2, JohariQuadrant::Blind, TransitionTrigger::ExternalObservation),
+            (
+                0,
+                JohariQuadrant::Open,
+                TransitionTrigger::DreamConsolidation,
+            ),
+            (
+                1,
+                JohariQuadrant::Hidden,
+                TransitionTrigger::DreamConsolidation,
+            ),
+            (
+                2,
+                JohariQuadrant::Blind,
+                TransitionTrigger::ExternalObservation,
+            ),
         ];
 
         println!("  [STATE BEFORE]");

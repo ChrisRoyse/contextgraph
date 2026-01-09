@@ -24,8 +24,8 @@
 //! - [`types`]: Core PoincarePoint struct definition
 //! - [`ops`]: All operations (construction, norm, projection, validation)
 
-mod types;
 mod ops;
+mod types;
 
 #[cfg(test)]
 mod tests;

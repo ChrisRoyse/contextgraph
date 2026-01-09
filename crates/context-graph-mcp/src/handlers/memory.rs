@@ -24,11 +24,10 @@ use tracing::{debug, error};
 
 use context_graph_core::purpose::PurposeVectorComputer;
 use context_graph_core::traits::TeleologicalSearchOptions;
-use context_graph_core::types::{CognitivePulse, SuggestedAction};
 use context_graph_core::types::fingerprint::{
-    JohariFingerprint, TeleologicalFingerprint,
-    NUM_EMBEDDERS,
+    JohariFingerprint, TeleologicalFingerprint, NUM_EMBEDDERS,
 };
+use context_graph_core::types::{CognitivePulse, SuggestedAction};
 
 use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
 
@@ -140,7 +139,8 @@ impl Handlers {
             } else {
                 // Compute purpose vector using PurposeVectorComputer
                 // This computes alignment for each of 13 embedding spaces
-                let config = context_graph_core::purpose::PurposeComputeConfig::with_hierarchy(hierarchy);
+                let config =
+                    context_graph_core::purpose::PurposeComputeConfig::with_hierarchy(hierarchy);
 
                 match context_graph_core::purpose::DefaultPurposeComputer::new()
                     .compute_purpose(&embedding_output.fingerprint, &config)
@@ -189,7 +189,8 @@ impl Handlers {
                 debug_assert_eq!(stored_id, fingerprint_id, "Store should return same ID");
                 let store_latency_ms = store_start.elapsed().as_millis();
 
-                let pulse = CognitivePulse::new(0.6, 0.75, 0.0, 1.0, SuggestedAction::Continue, None);
+                let pulse =
+                    CognitivePulse::new(0.6, 0.75, 0.0, 1.0, SuggestedAction::Continue, None);
                 JsonRpcResponse::success(
                     id,
                     json!({
@@ -369,7 +370,11 @@ impl Handlers {
 
         // top_k has a sensible default (pagination parameter)
         const DEFAULT_TOP_K: usize = 10;
-        let top_k = params.get("topK").and_then(|v| v.as_u64()).map(|v| v as usize).unwrap_or(DEFAULT_TOP_K);
+        let top_k = params
+            .get("topK")
+            .and_then(|v| v.as_u64())
+            .map(|v| v as usize)
+            .unwrap_or(DEFAULT_TOP_K);
 
         // FAIL-FAST: minSimilarity MUST be explicitly provided.
         // Per constitution AP-007: No silent fallbacks that mask user intent.
@@ -427,14 +432,18 @@ impl Handlers {
         };
 
         // Build search options
-        let mut options = TeleologicalSearchOptions::quick(top_k)
-            .with_min_similarity(min_similarity);
+        let mut options =
+            TeleologicalSearchOptions::quick(top_k).with_min_similarity(min_similarity);
         if let Some(align) = min_alignment {
             options = options.with_min_alignment(align);
         }
 
         // Execute semantic search
-        match self.teleological_store.search_semantic(&query_embedding, options).await {
+        match self
+            .teleological_store
+            .search_semantic(&query_embedding, options)
+            .await
+        {
             Ok(results) => {
                 let query_latency_ms = search_start.elapsed().as_millis();
 
@@ -452,7 +461,8 @@ impl Handlers {
                     })
                     .collect();
 
-                let pulse = CognitivePulse::new(0.4, 0.8, 0.0, 1.0, SuggestedAction::Continue, None);
+                let pulse =
+                    CognitivePulse::new(0.4, 0.8, 0.0, 1.0, SuggestedAction::Continue, None);
                 JsonRpcResponse::success(
                     id,
                     json!({

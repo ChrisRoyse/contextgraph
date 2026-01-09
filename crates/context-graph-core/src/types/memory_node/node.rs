@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{
-    EmbeddingVector, NodeId, NodeMetadata, ValidationError,
-    DEFAULT_EMBEDDING_DIM, MAX_CONTENT_SIZE,
+    EmbeddingVector, NodeId, NodeMetadata, ValidationError, DEFAULT_EMBEDDING_DIM, MAX_CONTENT_SIZE,
 };
 use crate::types::JohariQuadrant;
 

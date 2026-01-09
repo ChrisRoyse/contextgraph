@@ -320,8 +320,7 @@ fn test_apex_near_boundary() {
 #[test]
 fn test_aperture_at_max() {
     let apex = PoincarePoint::origin();
-    let cone =
-        EntailmentCone::with_aperture(apex, std::f32::consts::FRAC_PI_2, 0).expect("valid");
+    let cone = EntailmentCone::with_aperture(apex, std::f32::consts::FRAC_PI_2, 0).expect("valid");
     assert!(cone.is_valid());
     assert_eq!(cone.aperture, std::f32::consts::FRAC_PI_2);
 }

@@ -335,10 +335,7 @@ impl ConsciousnessState {
 
     /// Check if this is a healthy state (not Dormant or Hypersync).
     pub fn is_healthy(&self) -> bool {
-        matches!(
-            self,
-            Self::Fragmented | Self::Emerging | Self::Conscious
-        )
+        matches!(self, Self::Fragmented | Self::Emerging | Self::Conscious)
     }
 }
 
@@ -722,9 +719,7 @@ mod tests {
     #[test]
     fn test_perfect_sync_order_parameter() {
         // All oscillators at same phase = perfect sync (r = 1)
-        let oscillators: Vec<_> = (0..8)
-            .map(|_| KuramotoOscillator::new(0.0, 40.0))
-            .collect();
+        let oscillators: Vec<_> = (0..8).map(|_| KuramotoOscillator::new(0.0, 40.0)).collect();
         let net = KuramotoNetwork::with_oscillators(oscillators, 2.0);
         let r = net.order_parameter();
         assert!((r - 1.0).abs() < 1e-6, "Expected r ≈ 1.0, got {}", r);
@@ -779,9 +774,7 @@ mod tests {
     #[test]
     fn test_mean_phase() {
         // All oscillators at phase 0 -> mean phase should be 0
-        let oscillators: Vec<_> = (0..4)
-            .map(|_| KuramotoOscillator::new(0.0, 10.0))
-            .collect();
+        let oscillators: Vec<_> = (0..4).map(|_| KuramotoOscillator::new(0.0, 10.0)).collect();
         let net = KuramotoNetwork::with_oscillators(oscillators, 2.0);
         let psi = net.mean_phase();
         assert!(psi.abs() < 1e-6, "Expected mean phase ≈ 0, got {}", psi);
@@ -919,10 +912,7 @@ mod tests {
             "Consciousness should be in [0,1], got {}",
             consciousness
         );
-        println!(
-            "[VERIFIED] Consciousness C ∈ [0, 1]: C = {}",
-            consciousness
-        );
+        println!("[VERIFIED] Consciousness C ∈ [0, 1]: C = {}", consciousness);
     }
 
     #[tokio::test]
@@ -930,7 +920,10 @@ mod tests {
         let layer = CoherenceLayer::new();
 
         // Create input with L4 Learning context
-        let mut input = LayerInput::new("learning-ctx".to_string(), "learning context test".to_string());
+        let mut input = LayerInput::new(
+            "learning-ctx".to_string(),
+            "learning context test".to_string(),
+        );
         input.context.layer_results.push(LayerResult::success(
             LayerId::Learning,
             serde_json::json!({
@@ -950,10 +943,7 @@ mod tests {
             "Learning signal should be extracted from L4"
         );
 
-        println!(
-            "[VERIFIED] Learning signal extracted: {}",
-            learning_signal
-        );
+        println!("[VERIFIED] Learning signal extracted: {}", learning_signal);
     }
 
     #[tokio::test]
@@ -1037,10 +1027,8 @@ mod tests {
         let mut max_us: u64 = 0;
 
         for i in 0..iterations {
-            let mut input = LayerInput::new(
-                format!("bench-{}", i),
-                format!("Benchmark content {}", i),
-            );
+            let mut input =
+                LayerInput::new(format!("bench-{}", i), format!("Benchmark content {}", i));
             input.context.pulse.entropy = (i as f32 / iterations as f32).clamp(0.0, 1.0);
             input.context.pulse.coherence = 0.5;
 
@@ -1074,10 +1062,7 @@ mod tests {
             max_us
         );
 
-        println!(
-            "[VERIFIED] Average latency {} us < 10000 us budget",
-            avg_us
-        );
+        println!("[VERIFIED] Average latency {} us < 10000 us budget", avg_us);
     }
 
     #[test]
@@ -1107,10 +1092,7 @@ mod tests {
             avg_ns
         );
 
-        println!(
-            "[VERIFIED] Kuramoto step+order_param avg {} ns",
-            avg_ns
-        );
+        println!("[VERIFIED] Kuramoto step+order_param avg {} ns", avg_ns);
     }
 
     // ============================================================
@@ -1122,7 +1104,10 @@ mod tests {
         let layer = CoherenceLayer::new();
 
         // Simulate full L1 -> L2 -> L3 -> L4 -> L5 pipeline context
-        let mut input = LayerInput::new("pipeline-test".to_string(), "Full pipeline test".to_string());
+        let mut input = LayerInput::new(
+            "pipeline-test".to_string(),
+            "Full pipeline test".to_string(),
+        );
 
         // L1 Sensing result
         input.context.layer_results.push(LayerResult::success(

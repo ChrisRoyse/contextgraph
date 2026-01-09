@@ -74,7 +74,10 @@ fn test_edge_crud_store_and_get_roundtrip() {
     assert_eq!(edge.weight, retrieved.weight);
     assert_eq!(edge.confidence, retrieved.confidence);
     assert_eq!(edge.domain, retrieved.domain);
-    assert_eq!(edge.neurotransmitter_weights, retrieved.neurotransmitter_weights);
+    assert_eq!(
+        edge.neurotransmitter_weights,
+        retrieved.neurotransmitter_weights
+    );
     assert_eq!(edge.is_amortized_shortcut, retrieved.is_amortized_shortcut);
     assert_eq!(edge.steering_reward, retrieved.steering_reward);
     assert_eq!(edge.traversal_count, retrieved.traversal_count);
@@ -157,7 +160,9 @@ fn test_edge_crud_delete_edge() {
     let edge = create_test_edge();
 
     db.store_edge(&edge).expect("store failed");
-    assert!(db.get_edge(&edge.source_id, &edge.target_id, edge.edge_type).is_ok());
+    assert!(db
+        .get_edge(&edge.source_id, &edge.target_id, edge.edge_type)
+        .is_ok());
 
     db.delete_edge(&edge.source_id, &edge.target_id, edge.edge_type)
         .expect("delete failed");

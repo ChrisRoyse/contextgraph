@@ -3,9 +3,7 @@
 //! Delegates to existing methods while providing trait abstraction.
 
 use context_graph_core::marblestone::EdgeType;
-use context_graph_core::types::{
-    EmbeddingVector, GraphEdge, JohariQuadrant, MemoryNode, NodeId,
-};
+use context_graph_core::types::{EmbeddingVector, GraphEdge, JohariQuadrant, MemoryNode, NodeId};
 
 use crate::column_families::cf_names;
 use crate::memex::{Memex, StorageHealth};
@@ -61,11 +59,7 @@ impl Memex for RocksDbMemex {
         self.get_nodes_by_quadrant(quadrant, limit, 0)
     }
 
-    fn query_by_tag(
-        &self,
-        tag: &str,
-        limit: Option<usize>,
-    ) -> Result<Vec<NodeId>, StorageError> {
+    fn query_by_tag(&self, tag: &str, limit: Option<usize>) -> Result<Vec<NodeId>, StorageError> {
         // Delegate to index_ops with offset=0
         self.get_nodes_by_tag(tag, limit, 0)
     }
@@ -296,7 +290,9 @@ mod tests {
 
         println!("=== MEMEX GET_EDGES_FROM TEST ===");
 
-        let edges = memex.get_edges_from(&source.id).expect("get_edges_from via Memex");
+        let edges = memex
+            .get_edges_from(&source.id)
+            .expect("get_edges_from via Memex");
 
         println!("RESULT: Found {} outgoing edges", edges.len());
         assert_eq!(edges.len(), 2);
@@ -325,7 +321,9 @@ mod tests {
 
         println!("=== MEMEX GET_EDGES_TO TEST ===");
 
-        let edges = memex.get_edges_to(&target.id).expect("get_edges_to via Memex");
+        let edges = memex
+            .get_edges_to(&target.id)
+            .expect("get_edges_to via Memex");
 
         println!("RESULT: Found {} incoming edges", edges.len());
         assert_eq!(edges.len(), 2);

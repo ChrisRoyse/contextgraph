@@ -21,11 +21,11 @@ mod modulation;
 mod traversal;
 
 #[cfg(test)]
-mod tests_struct;
-#[cfg(test)]
 mod tests_constructor;
 #[cfg(test)]
 mod tests_modulation;
+#[cfg(test)]
+mod tests_struct;
 #[cfg(test)]
 mod tests_traversal;
 

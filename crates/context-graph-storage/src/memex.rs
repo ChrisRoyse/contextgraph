@@ -39,9 +39,7 @@
 //! ```
 
 use context_graph_core::marblestone::EdgeType;
-use context_graph_core::types::{
-    EmbeddingVector, GraphEdge, JohariQuadrant, MemoryNode, NodeId,
-};
+use context_graph_core::types::{EmbeddingVector, GraphEdge, JohariQuadrant, MemoryNode, NodeId};
 
 use crate::rocksdb_backend::StorageError;
 
@@ -457,11 +455,7 @@ pub trait Memex: Send + Sync {
     /// * `StorageError::ReadFailed` - RocksDB read operation failed
     ///
     /// `Constraint: latency < 10ms for limit <= 100`
-    fn query_by_tag(
-        &self,
-        tag: &str,
-        limit: Option<usize>,
-    ) -> Result<Vec<NodeId>, StorageError>;
+    fn query_by_tag(&self, tag: &str, limit: Option<usize>) -> Result<Vec<NodeId>, StorageError>;
 
     // =========================================================================
     // Embedding Operations
@@ -555,8 +549,10 @@ mod tests {
         let health = StorageHealth::default();
 
         println!("BEFORE: Creating default StorageHealth");
-        println!("AFTER: is_healthy={}, node_count={}, edge_count={}, storage_bytes={}",
-            health.is_healthy, health.node_count, health.edge_count, health.storage_bytes);
+        println!(
+            "AFTER: is_healthy={}, node_count={}, edge_count={}, storage_bytes={}",
+            health.is_healthy, health.node_count, health.edge_count, health.storage_bytes
+        );
 
         assert!(health.is_healthy);
         assert_eq!(health.node_count, 0);

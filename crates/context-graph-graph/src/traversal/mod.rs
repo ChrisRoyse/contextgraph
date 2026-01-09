@@ -85,14 +85,12 @@ pub use bfs::{
 
 // Re-export DFS public API (M04-T17 ✓)
 pub use dfs::{
-    dfs_domain_neighborhood, dfs_neighborhood, dfs_traverse,
-    DfsIterator, DfsParams, DfsResult,
+    dfs_domain_neighborhood, dfs_neighborhood, dfs_traverse, DfsIterator, DfsParams, DfsResult,
 };
 
 // Re-export A* public API (M04-T17a ✓)
 pub use astar::{
-    astar_search, astar_bidirectional, astar_path, astar_domain_path,
-    AstarParams, AstarResult,
+    astar_bidirectional, astar_domain_path, astar_path, astar_search, AstarParams, AstarResult,
 };
 
 // M04-T17 COMPLETE: DFS implemented in dfs.rs (iterative, NOT recursive)

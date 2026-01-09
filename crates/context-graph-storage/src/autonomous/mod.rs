@@ -55,6 +55,19 @@ mod tests;
 
 // Re-export column family types
 pub use column_families::{
+    // CF option builders
+    adaptive_threshold_state_cf_options,
+    autonomous_config_cf_options,
+    autonomous_lineage_cf_options,
+    consolidation_history_cf_options,
+    drift_history_cf_options,
+    // Descriptor getter
+    get_autonomous_cf_descriptors,
+    goal_activity_metrics_cf_options,
+    memory_curation_cf_options,
+    // CF arrays and counts
+    AUTONOMOUS_CFS,
+    AUTONOMOUS_CF_COUNT,
     // CF name constants
     CF_ADAPTIVE_THRESHOLD_STATE,
     CF_AUTONOMOUS_CONFIG,
@@ -63,56 +76,43 @@ pub use column_families::{
     CF_DRIFT_HISTORY,
     CF_GOAL_ACTIVITY_METRICS,
     CF_MEMORY_CURATION,
-    // CF arrays and counts
-    AUTONOMOUS_CFS,
-    AUTONOMOUS_CF_COUNT,
-    // CF option builders
-    adaptive_threshold_state_cf_options,
-    autonomous_config_cf_options,
-    autonomous_lineage_cf_options,
-    consolidation_history_cf_options,
-    drift_history_cf_options,
-    goal_activity_metrics_cf_options,
-    memory_curation_cf_options,
-    // Descriptor getter
-    get_autonomous_cf_descriptors,
 };
 
 // Re-export schema types
 pub use schema::{
-    // Singleton key constants
-    ADAPTIVE_THRESHOLD_STATE_KEY,
-    AUTONOMOUS_CONFIG_KEY,
-    // Drift history keys
-    drift_history_key,
-    drift_history_timestamp_prefix,
-    parse_drift_history_key,
-    // Goal activity metrics keys
-    goal_activity_metrics_key,
-    parse_goal_activity_metrics_key,
     // Autonomous lineage keys
     autonomous_lineage_key,
     autonomous_lineage_timestamp_prefix,
-    parse_autonomous_lineage_key,
     // Consolidation history keys
     consolidation_history_key,
     consolidation_history_timestamp_prefix,
-    parse_consolidation_history_key,
+    // Drift history keys
+    drift_history_key,
+    drift_history_timestamp_prefix,
+    // Goal activity metrics keys
+    goal_activity_metrics_key,
     // Memory curation keys
     memory_curation_key,
+    parse_autonomous_lineage_key,
+    parse_consolidation_history_key,
+    parse_drift_history_key,
+    parse_goal_activity_metrics_key,
     parse_memory_curation_key,
+    // Singleton key constants
+    ADAPTIVE_THRESHOLD_STATE_KEY,
+    AUTONOMOUS_CONFIG_KEY,
 };
 
 // Re-export RocksDB store types
 pub use rocksdb_store::{
-    // Main store
-    RocksDbAutonomousStore,
     // Configuration
     AutonomousStoreConfig,
     // Error types
     AutonomousStoreError,
     AutonomousStoreResult,
+    ConsolidationRecord,
     // Storage-local types (not in context-graph-core)
     LineageEvent,
-    ConsolidationRecord,
+    // Main store
+    RocksDbAutonomousStore,
 };

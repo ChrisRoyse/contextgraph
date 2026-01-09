@@ -4,9 +4,7 @@
 
 use context_graph_graph::storage::NodeId;
 
-use crate::common::fixtures::{
-    generate_entailment_cone, HierarchicalTestData,
-};
+use crate::common::fixtures::{generate_entailment_cone, HierarchicalTestData};
 use crate::common::helpers::{create_test_storage, verify_entailment_cone};
 
 /// Test entailment cone containment with hierarchical data.
@@ -31,13 +29,10 @@ fn test_entailment_cone_containment() {
             &hierarchy.root.cone.apex.coords,
             hierarchy.root.cone.aperture,
             &child.cone.apex.coords,
-            -1.0,  // curvature
+            -1.0, // curvature
         );
 
-        println!(
-            "    Child {} cone membership score: {:.3}",
-            child.id, score
-        );
+        println!("    Child {} cone membership score: {:.3}", child.id, score);
     }
 
     // Test that grandchildren apexes are inside their parent's cone
@@ -49,7 +44,7 @@ fn test_entailment_cone_containment() {
                 &child.cone.apex.coords,
                 child.cone.aperture,
                 &gc.cone.apex.coords,
-                -1.0,  // curvature
+                -1.0, // curvature
             );
 
             println!(
@@ -75,7 +70,9 @@ fn test_entailment_cone_storage() {
         .collect();
 
     for (i, cone) in cones.iter().enumerate() {
-        storage.put_cone(i as NodeId, cone).expect("Put cone failed");
+        storage
+            .put_cone(i as NodeId, cone)
+            .expect("Put cone failed");
     }
 
     // Verify count

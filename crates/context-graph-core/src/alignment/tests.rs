@@ -206,7 +206,10 @@ async fn test_full_alignment_computation_with_real_data() {
         fingerprint.purpose_vector.alignments[0]
     );
     println!("  - hierarchy.len(): {}", hierarchy.len());
-    println!("  - hierarchy.has_north_star(): {}", hierarchy.has_north_star());
+    println!(
+        "  - hierarchy.has_north_star(): {}",
+        hierarchy.has_north_star()
+    );
 
     // COMPUTE
     let calculator = DefaultAlignmentCalculator::new();
@@ -243,7 +246,10 @@ async fn test_full_alignment_computation_with_real_data() {
         "  - result.score.immediate_alignment: {:.3}",
         result.score.immediate_alignment
     );
-    println!("  - result.score.goal_count(): {}", result.score.goal_count());
+    println!(
+        "  - result.score.goal_count(): {}",
+        result.score.goal_count()
+    );
     println!(
         "  - result.score.misaligned_count: {}",
         result.score.misaligned_count
@@ -487,7 +493,9 @@ async fn test_batch_processing_with_real_data() {
     let calculator = DefaultAlignmentCalculator::new();
     let fingerprints: Vec<&TeleologicalFingerprint> = vec![&fp1, &fp2, &fp3];
 
-    let results = calculator.compute_alignment_batch(&fingerprints, &config).await;
+    let results = calculator
+        .compute_alignment_batch(&fingerprints, &config)
+        .await;
 
     println!("\nAFTER STATE:");
     for (i, result) in results.iter().enumerate() {
@@ -846,7 +854,10 @@ fn test_goal_alignment_score_composite_computation() {
 
     println!("\nBEFORE STATE:");
     for s in &scores {
-        println!("  - {:?} {}: alignment={:.2}", s.level, s.goal_id, s.alignment);
+        println!(
+            "  - {:?} {}: alignment={:.2}",
+            s.level, s.goal_id, s.alignment
+        );
     }
 
     let result = GoalAlignmentScore::compute(scores, weights);
@@ -943,7 +954,10 @@ fn test_error_types_are_descriptive() {
     for e in &errors {
         println!(
             "  - {}: {}",
-            std::any::type_name_of_val(e).split("::").last().unwrap_or("?"),
+            std::any::type_name_of_val(e)
+                .split("::")
+                .last()
+                .unwrap_or("?"),
             e
         );
     }

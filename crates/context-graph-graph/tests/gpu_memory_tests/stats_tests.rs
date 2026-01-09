@@ -42,8 +42,8 @@ fn test_stats_tracking() {
 fn test_memory_stats_usage_percent() {
     println!("\n=== TEST: Memory Stats Usage Percent ===");
 
-    let manager = GpuMemoryManager::new(GpuMemoryConfig::with_budget(1000))
-        .expect("Manager creation failed");
+    let manager =
+        GpuMemoryManager::new(GpuMemoryConfig::with_budget(1000)).expect("Manager creation failed");
 
     let _h = manager
         .allocate(500, MemoryCategory::WorkingMemory)
@@ -62,16 +62,24 @@ fn test_memory_stats_usage_percent() {
 fn test_memory_stats_category_budget() {
     println!("\n=== TEST: Memory Stats Category Budget ===");
 
-    let manager = GpuMemoryManager::new(GpuMemoryConfig::default())
-        .expect("Manager creation failed");
+    let manager =
+        GpuMemoryManager::new(GpuMemoryConfig::default()).expect("Manager creation failed");
 
     let stats = manager.stats();
 
     // Verify all categories have budgets
-    assert!(stats.category_budget.contains_key(&MemoryCategory::FaissIndex));
-    assert!(stats.category_budget.contains_key(&MemoryCategory::HyperbolicCoords));
-    assert!(stats.category_budget.contains_key(&MemoryCategory::EntailmentCones));
-    assert!(stats.category_budget.contains_key(&MemoryCategory::WorkingMemory));
+    assert!(stats
+        .category_budget
+        .contains_key(&MemoryCategory::FaissIndex));
+    assert!(stats
+        .category_budget
+        .contains_key(&MemoryCategory::HyperbolicCoords));
+    assert!(stats
+        .category_budget
+        .contains_key(&MemoryCategory::EntailmentCones));
+    assert!(stats
+        .category_budget
+        .contains_key(&MemoryCategory::WorkingMemory));
     assert!(stats.category_budget.contains_key(&MemoryCategory::Other));
 
     // Verify default budgets

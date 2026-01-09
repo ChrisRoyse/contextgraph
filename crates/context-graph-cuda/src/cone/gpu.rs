@@ -9,10 +9,10 @@
 
 use std::ffi::c_void;
 
-use crate::error::{CudaError, CudaResult};
 use super::config::ConeCudaConfig;
 use super::ffi;
 use super::types::ConeKernelInfo;
+use crate::error::{CudaError, CudaResult};
 
 // ============================================================================
 // Kernel Info
@@ -235,13 +235,7 @@ pub unsafe fn cone_check_single_gpu(
 
     let stream_ptr = stream.unwrap_or(std::ptr::null_mut());
 
-    let result = ffi::cone_check_single(
-        d_cone,
-        d_point,
-        d_score,
-        config.curvature,
-        stream_ptr,
-    );
+    let result = ffi::cone_check_single(d_cone, d_point, d_score, config.curvature, stream_ptr);
 
     if result != 0 {
         return Err(CudaError::KernelError(format!(

@@ -195,51 +195,58 @@ async fn test_pulse_values_in_valid_ranges() {
     let pulse = result.get("_cognitive_pulse").expect("Must have pulse");
 
     // Validate entropy in [0.0, 1.0]
-    let entropy = pulse.get("entropy")
+    let entropy = pulse
+        .get("entropy")
         .and_then(|v| v.as_f64())
         .expect("entropy should be a number");
     assert!(
         (0.0..=1.0).contains(&entropy),
-        "entropy {} should be in [0.0, 1.0]", entropy
+        "entropy {} should be in [0.0, 1.0]",
+        entropy
     );
 
     // Validate coherence in [0.0, 1.0]
-    let coherence = pulse.get("coherence")
+    let coherence = pulse
+        .get("coherence")
         .and_then(|v| v.as_f64())
         .expect("coherence should be a number");
     assert!(
         (0.0..=1.0).contains(&coherence),
-        "coherence {} should be in [0.0, 1.0]", coherence
+        "coherence {} should be in [0.0, 1.0]",
+        coherence
     );
 
     // Validate learning_score in [0.0, 1.0]
-    let learning_score = pulse.get("learning_score")
+    let learning_score = pulse
+        .get("learning_score")
         .and_then(|v| v.as_f64())
         .expect("learning_score should be a number");
     assert!(
         (0.0..=1.0).contains(&learning_score),
-        "learning_score {} should be in [0.0, 1.0]", learning_score
+        "learning_score {} should be in [0.0, 1.0]",
+        learning_score
     );
 
     // Validate quadrant is one of the valid values
     // Note: JohariQuadrant uses #[serde(rename_all = "snake_case")] so values are lowercase
-    let quadrant = pulse.get("quadrant")
+    let quadrant = pulse
+        .get("quadrant")
         .and_then(|v| v.as_str())
         .expect("quadrant should be a string");
     let valid_quadrants = ["open", "blind", "hidden", "unknown"];
     assert!(
         valid_quadrants.contains(&quadrant),
-        "quadrant '{}' should be one of {:?}", quadrant, valid_quadrants
+        "quadrant '{}' should be one of {:?}",
+        quadrant,
+        valid_quadrants
     );
 
     // Validate suggested_action is not empty
-    let action = pulse.get("suggested_action")
+    let action = pulse
+        .get("suggested_action")
         .and_then(|v| v.as_str())
         .expect("suggested_action should be a string");
-    assert!(
-        !action.is_empty(),
-        "suggested_action should not be empty"
-    );
+    assert!(!action.is_empty(), "suggested_action should not be empty");
 }
 
 // =========================================================================
@@ -337,10 +344,13 @@ async fn test_error_responses_include_pulse() {
     );
 
     let response = handlers.dispatch(request).await;
-    let result = response.result.expect("Should return tool error (not JSON-RPC error)");
+    let result = response
+        .result
+        .expect("Should return tool error (not JSON-RPC error)");
 
     // Verify isError is true
-    let is_error = result.get("isError")
+    let is_error = result
+        .get("isError")
         .and_then(|v| v.as_bool())
         .expect("isError should be a boolean");
     assert!(is_error, "Response should indicate error");
@@ -381,14 +391,28 @@ async fn test_pulse_serialization_roundtrip() {
     let parsed: serde_json::Value = serde_json::from_str(&json_str).expect("Should parse");
 
     // Verify _cognitive_pulse survived round-trip
-    let pulse = parsed.get("_cognitive_pulse").expect("Should have pulse after round-trip");
+    let pulse = parsed
+        .get("_cognitive_pulse")
+        .expect("Should have pulse after round-trip");
 
     // Check all fields
     assert!(pulse.get("entropy").is_some(), "entropy lost in round-trip");
-    assert!(pulse.get("coherence").is_some(), "coherence lost in round-trip");
-    assert!(pulse.get("learning_score").is_some(), "learning_score lost in round-trip");
-    assert!(pulse.get("quadrant").is_some(), "quadrant lost in round-trip");
-    assert!(pulse.get("suggested_action").is_some(), "suggested_action lost in round-trip");
+    assert!(
+        pulse.get("coherence").is_some(),
+        "coherence lost in round-trip"
+    );
+    assert!(
+        pulse.get("learning_score").is_some(),
+        "learning_score lost in round-trip"
+    );
+    assert!(
+        pulse.get("quadrant").is_some(),
+        "quadrant lost in round-trip"
+    );
+    assert!(
+        pulse.get("suggested_action").is_some(),
+        "suggested_action lost in round-trip"
+    );
 }
 
 // =========================================================================
@@ -399,22 +423,27 @@ async fn test_pulse_serialization_roundtrip() {
 fn verify_pulse_fields(pulse: &serde_json::Value, tool_name: &str) {
     assert!(
         pulse.get("entropy").is_some(),
-        "Tool '{}' _cognitive_pulse missing 'entropy'", tool_name
+        "Tool '{}' _cognitive_pulse missing 'entropy'",
+        tool_name
     );
     assert!(
         pulse.get("coherence").is_some(),
-        "Tool '{}' _cognitive_pulse missing 'coherence'", tool_name
+        "Tool '{}' _cognitive_pulse missing 'coherence'",
+        tool_name
     );
     assert!(
         pulse.get("learning_score").is_some(),
-        "Tool '{}' _cognitive_pulse missing 'learning_score'", tool_name
+        "Tool '{}' _cognitive_pulse missing 'learning_score'",
+        tool_name
     );
     assert!(
         pulse.get("quadrant").is_some(),
-        "Tool '{}' _cognitive_pulse missing 'quadrant'", tool_name
+        "Tool '{}' _cognitive_pulse missing 'quadrant'",
+        tool_name
     );
     assert!(
         pulse.get("suggested_action").is_some(),
-        "Tool '{}' _cognitive_pulse missing 'suggested_action'", tool_name
+        "Tool '{}' _cognitive_pulse missing 'suggested_action'",
+        tool_name
     );
 }

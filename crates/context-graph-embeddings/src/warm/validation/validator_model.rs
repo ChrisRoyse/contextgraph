@@ -63,8 +63,13 @@ impl WarmValidator {
 
         // Stage 3: Validate inference
         let inference_valid = config.reference_output.as_ref().is_none_or(|reference| {
-            self.compare_output_for_model(&config.model_id, output, reference, self.default_tolerance())
-                .is_ok()
+            self.compare_output_for_model(
+                &config.model_id,
+                output,
+                reference,
+                self.default_tolerance(),
+            )
+            .is_ok()
         });
 
         let inference_time_ms = start.elapsed().as_millis() as u64;
@@ -113,7 +118,11 @@ impl WarmValidator {
                 actual_output: Some("NaN".to_string()),
             }
         } else if let Some((idx, val)) = output.iter().enumerate().find(|(_, v)| v.is_infinite()) {
-            let sign = if val.is_sign_positive() { "+Inf" } else { "-Inf" };
+            let sign = if val.is_sign_positive() {
+                "+Inf"
+            } else {
+                "-Inf"
+            };
             WarmError::ModelValidationFailed {
                 model_id: config.model_id.clone(),
                 reason: format!("Infinite value found at output index {idx}"),
@@ -130,7 +139,11 @@ impl WarmValidator {
         }
     }
 
-    fn find_inference_error(config: &TestInferenceConfig, output: &[f32], tolerance: f32) -> WarmError {
+    fn find_inference_error(
+        config: &TestInferenceConfig,
+        output: &[f32],
+        tolerance: f32,
+    ) -> WarmError {
         let reference = config.reference_output.as_ref().unwrap();
         let (idx, (actual_val, ref_val)) = output
             .iter()

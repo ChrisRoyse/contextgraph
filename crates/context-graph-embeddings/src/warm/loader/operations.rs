@@ -131,8 +131,14 @@ pub fn load_single_model(
 
     // Convert [u8; 32] to u64 for handle (first 8 bytes as checksum identifier)
     let checksum = u64::from_le_bytes([
-        checksum_bytes[0], checksum_bytes[1], checksum_bytes[2], checksum_bytes[3],
-        checksum_bytes[4], checksum_bytes[5], checksum_bytes[6], checksum_bytes[7],
+        checksum_bytes[0],
+        checksum_bytes[1],
+        checksum_bytes[2],
+        checksum_bytes[3],
+        checksum_bytes[4],
+        checksum_bytes[5],
+        checksum_bytes[6],
+        checksum_bytes[7],
     ]);
 
     // Verify file size matches expected
@@ -162,7 +168,14 @@ pub fn load_single_model(
     }
 
     // Run validation (validates VRAM allocation is real and properly sized)
-    validate_model(model_id, vram_ptr, expected_bytes, expected_dimension, config, validator)?;
+    validate_model(
+        model_id,
+        vram_ptr,
+        expected_bytes,
+        expected_dimension,
+        config,
+        validator,
+    )?;
 
     // Create model handle
     let handle = ModelHandle::new(vram_ptr, expected_bytes, config.cuda_device_id, checksum);
@@ -246,7 +259,14 @@ fn load_custom_model(
     }
 
     // Run validation (validates VRAM allocation is real and properly sized)
-    validate_model(model_id, vram_ptr, expected_bytes, expected_dimension, config, validator)?;
+    validate_model(
+        model_id,
+        vram_ptr,
+        expected_bytes,
+        expected_dimension,
+        config,
+        validator,
+    )?;
 
     // Generate a deterministic checksum for custom models based on model_id
     // This ensures consistent checksums across runs without needing weight files
@@ -255,8 +275,14 @@ fn load_custom_model(
     hasher.update(b"custom_model_v1");
     let hash_result = hasher.finalize();
     let checksum = u64::from_le_bytes([
-        hash_result[0], hash_result[1], hash_result[2], hash_result[3],
-        hash_result[4], hash_result[5], hash_result[6], hash_result[7],
+        hash_result[0],
+        hash_result[1],
+        hash_result[2],
+        hash_result[3],
+        hash_result[4],
+        hash_result[5],
+        hash_result[6],
+        hash_result[7],
     ]);
 
     // Create model handle
@@ -492,11 +518,7 @@ pub fn load_weights(
 /// # Returns
 /// * `Ok(())` - Checksums match
 /// * `Err(WarmError::WeightChecksumMismatch)` - Checksums differ
-pub fn verify_checksum(
-    actual: &[u8; 32],
-    expected: &[u8; 32],
-    model_id: &str,
-) -> WarmResult<()> {
+pub fn verify_checksum(actual: &[u8; 32], expected: &[u8; 32], model_id: &str) -> WarmResult<()> {
     if actual != expected {
         let actual_hex = hex::encode(actual);
         let expected_hex = hex::encode(expected);

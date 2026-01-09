@@ -13,8 +13,8 @@
 #![allow(dead_code)]
 
 use context_graph_graph::{
+    storage::{EntailmentCone, NodeId, PoincarePoint},
     Domain, NeurotransmitterWeights,
-    storage::{PoincarePoint, EntailmentCone, NodeId},
 };
 
 /// Maximum norm for Poincare ball (per constitution max_norm=0.99999)
@@ -96,8 +96,7 @@ pub fn generate_entailment_cone(
     let apex = generate_poincare_point(seed, max_apex_norm);
 
     let aperture = aperture_range.0
-        + deterministic_float(seed.wrapping_add(1000))
-            * (aperture_range.1 - aperture_range.0);
+        + deterministic_float(seed.wrapping_add(1000)) * (aperture_range.1 - aperture_range.0);
 
     let depth = (deterministic_float(seed.wrapping_add(2000)) * 10.0) as u32;
     let aperture_factor = 0.5 + deterministic_float(seed.wrapping_add(3000)) * 1.5;
@@ -117,7 +116,11 @@ pub fn generate_entailment_cone(
 /// * `start_seed` - Starting seed
 /// * `count` - Number of points to generate
 /// * `max_norm` - Maximum norm for all points
-pub fn generate_poincare_points(start_seed: u32, count: usize, max_norm: f32) -> Vec<PoincarePoint> {
+pub fn generate_poincare_points(
+    start_seed: u32,
+    count: usize,
+    max_norm: f32,
+) -> Vec<PoincarePoint> {
     (0..count)
         .map(|i| generate_poincare_point(start_seed.wrapping_add(i as u32), max_norm))
         .collect()
@@ -383,7 +386,8 @@ pub fn generate_contradiction_pairs(seed: u32, count: usize) -> Vec<Contradictio
 
         // Make embeddings similar (not contradicting)
         for j in 0..1536 {
-            node_b.embedding[j] = node_a.embedding[j] + (deterministic_float(pair_seed + j as u32) - 0.5) * 0.1;
+            node_b.embedding[j] =
+                node_a.embedding[j] + (deterministic_float(pair_seed + j as u32) - 0.5) * 0.1;
         }
 
         pairs.push(ContradictionPair {
@@ -428,7 +432,12 @@ mod tests {
             let norm_sq: f32 = point.coords.iter().map(|x| x * x).sum();
             let norm = norm_sq.sqrt();
 
-            assert!(norm <= 0.9 + 1e-5, "Norm {} exceeds max 0.9 for seed {}", norm, seed);
+            assert!(
+                norm <= 0.9 + 1e-5,
+                "Norm {} exceeds max 0.9 for seed {}",
+                norm,
+                seed
+            );
             assert!(norm >= 0.0, "Norm {} is negative for seed {}", norm, seed);
         }
     }
@@ -438,7 +447,10 @@ mod tests {
         let point1 = generate_poincare_point(42, 0.9);
         let point2 = generate_poincare_point(42, 0.9);
 
-        assert_eq!(point1.coords, point2.coords, "Same seed should produce identical points");
+        assert_eq!(
+            point1.coords, point2.coords,
+            "Same seed should produce identical points"
+        );
     }
 
     #[test]

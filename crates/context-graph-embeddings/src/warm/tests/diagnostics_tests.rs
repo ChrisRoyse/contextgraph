@@ -1,9 +1,9 @@
 //! Tests for WarmDiagnostics JSON reporting.
 
+use super::helpers::{test_config, GB, MB};
 use crate::warm::error::WarmError;
 use crate::warm::memory_pool::WarmMemoryPools;
 use crate::warm::registry::WarmModelRegistry;
-use super::helpers::{test_config, GB, MB};
 
 #[test]
 fn test_diagnostic_error_info_collection() {
@@ -18,10 +18,7 @@ fn test_diagnostic_error_info_collection() {
             available_bytes: 24 * GB,
             required_gb: 32.0,
             available_gb: 24.0,
-            model_breakdown: vec![
-                ("E1".to_string(), 800 * MB),
-                ("E2".to_string(), 600 * MB),
-            ],
+            model_breakdown: vec![("E1".to_string(), 800 * MB), ("E2".to_string(), 600 * MB)],
         },
     ];
 
@@ -86,7 +83,9 @@ fn test_diagnostic_failure_report() {
     registry.register_model("E2", 600 * MB, 768).unwrap();
 
     registry.start_loading("E1").unwrap();
-    registry.mark_failed("E1", 102, "Checksum mismatch").unwrap();
+    registry
+        .mark_failed("E1", 102, "Checksum mismatch")
+        .unwrap();
 
     registry.start_loading("E2").unwrap();
     registry.mark_failed("E2", 104, "VRAM exhausted").unwrap();

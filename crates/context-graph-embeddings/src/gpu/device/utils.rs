@@ -176,7 +176,7 @@ fn query_gpu_info_real(device_ordinal: u32) -> GpuInfo {
         let major_result = cuDeviceGetAttribute(
             &mut cc_major,
             CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
-            device_handle
+            device_handle,
         );
         if major_result == CUDA_SUCCESS {
             compute_major = cc_major as u32;
@@ -193,7 +193,7 @@ fn query_gpu_info_real(device_ordinal: u32) -> GpuInfo {
         let minor_result = cuDeviceGetAttribute(
             &mut cc_minor,
             CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
-            device_handle
+            device_handle,
         );
         if minor_result == CUDA_SUCCESS {
             compute_minor = cc_minor as u32;

@@ -24,7 +24,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
-use super::comparison_error::{ComparisonValidationError, ComparisonValidationResult, WeightValues};
+use super::comparison_error::{
+    ComparisonValidationError, ComparisonValidationResult, WeightValues,
+};
 use super::groups::{GroupAlignments, GroupType, NUM_GROUPS};
 use super::synergy_matrix::{SynergyMatrix, CROSS_CORRELATION_COUNT};
 use super::types::NUM_EMBEDDERS;
@@ -51,8 +53,7 @@ pub enum SearchStrategy {
 }
 
 /// Which components of the teleological vector to compare.
-#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum ComparisonScope {
     /// Compare all components: purpose + correlations + groups
     #[default]
@@ -70,7 +71,6 @@ pub enum ComparisonScope {
     /// Compare a single embedder's correlation pattern (all 12 pairs it's in)
     SingleEmbedderPattern(usize),
 }
-
 
 /// Weights for different comparison components in Full scope.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -189,8 +189,8 @@ impl ComponentWeights {
         }
 
         // Check sum
-        let sum = self.purpose_vector + self.cross_correlations
-                + self.group_alignments + self.confidence;
+        let sum =
+            self.purpose_vector + self.cross_correlations + self.group_alignments + self.confidence;
 
         if (sum - 1.0).abs() > Self::WEIGHT_SUM_TOLERANCE {
             return Err(ComparisonValidationError::WeightsNotNormalized {
@@ -219,7 +219,8 @@ impl ComponentWeights {
 
     /// Normalize weights to sum to 1.0
     pub fn normalize(&mut self) {
-        let sum = self.purpose_vector + self.cross_correlations + self.group_alignments + self.confidence;
+        let sum =
+            self.purpose_vector + self.cross_correlations + self.group_alignments + self.confidence;
         if sum > f32::EPSILON {
             self.purpose_vector /= sum;
             self.cross_correlations /= sum;
@@ -409,7 +410,9 @@ impl TeleologicalMatrixSearch {
         breakdown.purpose_vector = self.compute_purpose_similarity(a, b);
 
         // Per-embedder purpose similarity
-        for ((out, &av), &bv) in breakdown.per_embedder_purpose.iter_mut()
+        for ((out, &av), &bv) in breakdown
+            .per_embedder_purpose
+            .iter_mut()
             .zip(a.purpose_vector.alignments.iter())
             .zip(b.purpose_vector.alignments.iter())
         {
@@ -425,8 +428,11 @@ impl TeleologicalMatrixSearch {
         breakdown.cross_correlations = self.compute_correlation_similarity(a, b);
 
         // Find top contributing pairs
-        let mut pairs_with_sim: Vec<((usize, usize), f32)> = Vec::with_capacity(CROSS_CORRELATION_COUNT);
-        for (flat_idx, (&av, &bv)) in a.cross_correlations.iter()
+        let mut pairs_with_sim: Vec<((usize, usize), f32)> =
+            Vec::with_capacity(CROSS_CORRELATION_COUNT);
+        for (flat_idx, (&av, &bv)) in a
+            .cross_correlations
+            .iter()
             .zip(b.cross_correlations.iter())
             .enumerate()
         {
@@ -476,9 +482,15 @@ impl TeleologicalMatrixSearch {
             }
             ComparisonScope::PurposeVectorOnly => self.compute_purpose_similarity(a, b),
             ComparisonScope::CrossCorrelationsOnly => self.compute_correlation_similarity(a, b),
-            ComparisonScope::GroupAlignmentsOnly => a.group_alignments.similarity(&b.group_alignments),
-            ComparisonScope::SpecificPairs(pairs) => self.compute_specific_pairs_similarity(a, b, pairs),
-            ComparisonScope::SpecificGroups(groups) => self.compute_specific_groups_similarity(a, b, groups),
+            ComparisonScope::GroupAlignmentsOnly => {
+                a.group_alignments.similarity(&b.group_alignments)
+            }
+            ComparisonScope::SpecificPairs(pairs) => {
+                self.compute_specific_pairs_similarity(a, b, pairs)
+            }
+            ComparisonScope::SpecificGroups(groups) => {
+                self.compute_specific_groups_similarity(a, b, groups)
+            }
             ComparisonScope::SingleEmbedderPattern(embedder_idx) => {
                 self.compute_single_embedder_pattern_similarity(a, b, *embedder_idx)
             }
@@ -490,7 +502,12 @@ impl TeleologicalMatrixSearch {
         let mut sum_sq = 0.0f32;
 
         // Purpose vector distance
-        for (&av, &bv) in a.purpose_vector.alignments.iter().zip(b.purpose_vector.alignments.iter()) {
+        for (&av, &bv) in a
+            .purpose_vector
+            .alignments
+            .iter()
+            .zip(b.purpose_vector.alignments.iter())
+        {
             let diff = av - bv;
             sum_sq += diff * diff;
         }
@@ -525,7 +542,9 @@ impl TeleologicalMatrixSearch {
         let mut weighted_norm_a = 0.0f32;
         let mut weighted_norm_b = 0.0f32;
 
-        for (flat_idx, (&av, &bv)) in a.cross_correlations.iter()
+        for (flat_idx, (&av, &bv)) in a
+            .cross_correlations
+            .iter()
             .zip(b.cross_correlations.iter())
             .enumerate()
         {
@@ -570,7 +589,11 @@ impl TeleologicalMatrixSearch {
 
             for (k, &idx_k) in indices.iter().enumerate() {
                 for &idx_l in indices.iter().skip(k + 1) {
-                    let (lo, hi) = if idx_k < idx_l { (idx_k, idx_l) } else { (idx_l, idx_k) };
+                    let (lo, hi) = if idx_k < idx_l {
+                        (idx_k, idx_l)
+                    } else {
+                        (idx_l, idx_k)
+                    };
 
                     let av = a.get_correlation(lo, hi);
                     let bv = b.get_correlation(lo, hi);
@@ -668,7 +691,11 @@ impl TeleologicalMatrixSearch {
     }
 
     /// Compute cross-correlation cosine similarity.
-    fn compute_correlation_similarity(&self, a: &TeleologicalVector, b: &TeleologicalVector) -> f32 {
+    fn compute_correlation_similarity(
+        &self,
+        a: &TeleologicalVector,
+        b: &TeleologicalVector,
+    ) -> f32 {
         let mut dot = 0.0f32;
         let mut norm_a = 0.0f32;
         let mut norm_b = 0.0f32;
@@ -898,7 +925,10 @@ impl TeleologicalMatrixSearch {
         // Average purpose vectors
         let mut avg_alignments = [0.0f32; NUM_EMBEDDERS];
         for v in vectors {
-            for (avg, &val) in avg_alignments.iter_mut().zip(v.purpose_vector.alignments.iter()) {
+            for (avg, &val) in avg_alignments
+                .iter_mut()
+                .zip(v.purpose_vector.alignments.iter())
+            {
                 *avg += val;
             }
         }
@@ -1112,8 +1142,12 @@ mod tests {
             *corr = corr_val;
         }
         tv.group_alignments = GroupAlignments::new(
-            purpose_val, purpose_val, purpose_val,
-            purpose_val, purpose_val, purpose_val,
+            purpose_val,
+            purpose_val,
+            purpose_val,
+            purpose_val,
+            purpose_val,
+            purpose_val,
         );
         tv.confidence = 1.0; // Use 1.0 for test consistency
         tv
@@ -1236,7 +1270,10 @@ mod tests {
         let tv2 = make_test_vector(0.7, 0.6);
 
         let sim = search.similarity(&tv1, &tv2);
-        assert!(sim > 0.9, "Synergy-weighted similarity should be high for same vectors");
+        assert!(
+            sim > 0.9,
+            "Synergy-weighted similarity should be high for same vectors"
+        );
 
         println!("[PASS] Synergy-weighted search works");
     }
@@ -1315,8 +1352,11 @@ mod tests {
 
         assert_eq!(results.len(), 3);
         assert_eq!(results[0].0, 0); // Identical is most similar
-        // Results are sorted by similarity descending
-        assert!(results[0].1 >= results[1].1, "First result should have highest similarity");
+                                     // Results are sorted by similarity descending
+        assert!(
+            results[0].1 >= results[1].1,
+            "First result should have highest similarity"
+        );
 
         println!("[PASS] Collection search returns sorted results");
     }
@@ -1378,10 +1418,10 @@ mod tests {
     fn test_find_clusters() {
         let search = TeleologicalMatrixSearch::new();
         let vectors = vec![
-            make_test_vector(0.9, 0.8),    // Very similar to each other
-            make_test_vector(0.9, 0.8),    // Same as above (identical cluster)
-            make_varied_test_vector(100),  // Different pattern
-            make_varied_test_vector(500),  // Yet another different pattern
+            make_test_vector(0.9, 0.8),   // Very similar to each other
+            make_test_vector(0.9, 0.8),   // Same as above (identical cluster)
+            make_varied_test_vector(100), // Different pattern
+            make_varied_test_vector(500), // Yet another different pattern
         ];
 
         // With a very high threshold, very similar vectors should cluster together
@@ -1396,10 +1436,7 @@ mod tests {
     #[test]
     fn test_compute_centroid() {
         let search = TeleologicalMatrixSearch::new();
-        let vectors = vec![
-            make_test_vector(0.8, 0.6),
-            make_test_vector(0.6, 0.4),
-        ];
+        let vectors = vec![make_test_vector(0.8, 0.6), make_test_vector(0.6, 0.4)];
 
         let centroid = search.compute_centroid(&vectors);
 
@@ -1437,7 +1474,10 @@ mod tests {
         let tv2 = make_test_vector(0.7, 0.5);
 
         let sim = search.similarity(&tv1, &tv2);
-        assert!(sim > 0.0, "Adaptive strategy should produce valid similarity");
+        assert!(
+            sim > 0.0,
+            "Adaptive strategy should produce valid similarity"
+        );
 
         println!("[PASS] Adaptive strategy works");
     }
@@ -1447,7 +1487,10 @@ mod tests {
         use crate::teleological::comparison_error::ComparisonValidationError;
 
         let mut weights = ComponentWeights::default();
-        assert!(weights.validate().is_ok(), "Default weights should sum to 1.0");
+        assert!(
+            weights.validate().is_ok(),
+            "Default weights should sum to 1.0"
+        );
         assert!(weights.is_valid(), "Default weights should be valid");
 
         weights.purpose_vector = 0.5;
@@ -1464,7 +1507,10 @@ mod tests {
         }
 
         weights.normalize();
-        assert!(weights.validate().is_ok(), "Normalized weights should sum to 1.0");
+        assert!(
+            weights.validate().is_ok(),
+            "Normalized weights should sum to 1.0"
+        );
         assert!(weights.is_valid(), "Normalized weights should be valid");
 
         // Test out-of-range weight
@@ -1475,7 +1521,9 @@ mod tests {
         let range_err = bad_weights.validate();
         assert!(range_err.is_err(), "Negative weight should fail validation");
         match range_err {
-            Err(ComparisonValidationError::WeightOutOfRange { field_name, value, .. }) => {
+            Err(ComparisonValidationError::WeightOutOfRange {
+                field_name, value, ..
+            }) => {
                 assert_eq!(field_name, "confidence");
                 assert!((value - (-0.5)).abs() < f32::EPSILON);
                 println!("  Got expected range error for {}: {}", field_name, value);

@@ -67,7 +67,12 @@ impl SearchResult {
             k,
             num_queries
         );
-        Self { ids, distances, k, num_queries }
+        Self {
+            ids,
+            distances,
+            k,
+            num_queries,
+        }
     }
 
     /// Get the number of queries in this result.
@@ -125,7 +130,11 @@ impl SearchResultItem {
         // For normalized vectors: d^2 = 2(1 - cos(theta))
         // Therefore: similarity = 1 - d^2/2
         let similarity = 1.0 - (distance / 2.0);
-        Self { id, distance, similarity }
+        Self {
+            id,
+            distance,
+            similarity,
+        }
     }
 
     /// Create from ID and cosine similarity.
@@ -140,6 +149,10 @@ impl SearchResultItem {
     pub fn from_similarity(id: i64, similarity: f32) -> Self {
         // d^2 = 2(1 - cos(theta))
         let distance = 2.0 * (1.0 - similarity);
-        Self { id, distance, similarity }
+        Self {
+            id,
+            distance,
+            similarity,
+        }
     }
 }

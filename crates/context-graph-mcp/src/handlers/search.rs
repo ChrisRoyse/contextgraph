@@ -105,17 +105,19 @@ impl Handlers {
         let weights: [f32; NUM_EMBEDDERS] = if query_type == "custom" {
             // Custom weights required
             match params.get("weights").and_then(|v| v.as_array()) {
-                Some(arr) => match parse_weights_from_json(arr) {
-                    Ok(w) => w,
-                    Err(e) => {
-                        error!(error = %e, "search/multi: Weight validation failed");
-                        return JsonRpcResponse::error(
+                Some(arr) => {
+                    match parse_weights_from_json(arr) {
+                        Ok(w) => w,
+                        Err(e) => {
+                            error!(error = %e, "search/multi: Weight validation failed");
+                            return JsonRpcResponse::error(
                             id,
                             error_codes::INVALID_PARAMS,
                             format!("Weight validation failed: {}. Expected 13 weights summing to 1.0", e),
                         );
+                        }
                     }
-                },
+                }
                 None => {
                     error!("search/multi: 'weights' required when query_type='custom'");
                     return JsonRpcResponse::error(
@@ -155,10 +157,7 @@ impl Handlers {
             .get("aggregation")
             .and_then(|v| v.as_str())
             .unwrap_or("rrf");
-        let rrf_k = params
-            .get("rrf_k")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(60.0) as f32;
+        let rrf_k = params.get("rrf_k").and_then(|v| v.as_f64()).unwrap_or(60.0) as f32;
 
         let _aggregation = match aggregation_name {
             "rrf" => AggregationStrategy::RRF { k: rrf_k },
@@ -272,8 +271,8 @@ impl Handlers {
             Vec::new() // Empty = all embedders
         };
 
-        let mut options = TeleologicalSearchOptions::quick(top_k)
-            .with_min_similarity(min_similarity);
+        let mut options =
+            TeleologicalSearchOptions::quick(top_k).with_min_similarity(min_similarity);
 
         if let Some(align) = min_alignment {
             options = options.with_min_alignment(align);
@@ -441,7 +440,10 @@ impl Handlers {
         let space_index = match params.get("space_index").and_then(|v| v.as_u64()) {
             Some(idx) if idx <= 12 => idx as usize,
             Some(idx) => {
-                error!(space_index = idx, "search/single_space: Invalid space index");
+                error!(
+                    space_index = idx,
+                    "search/single_space: Invalid space index"
+                );
                 return JsonRpcResponse::error(
                     id,
                     error_codes::INVALID_PARAMS,
@@ -523,7 +525,8 @@ impl Handlers {
                     error_codes::INVALID_PARAMS,
                     "Missing required parameter 'minSimilarity'. \
                      You must explicitly specify the minimum similarity threshold. \
-                     Use 0.0 to include all results (no filter).".to_string(),
+                     Use 0.0 to include all results (no filter)."
+                        .to_string(),
                 );
             }
         };
@@ -543,8 +546,8 @@ impl Handlers {
         };
 
         // Build search options targeting single space
-        let mut options = TeleologicalSearchOptions::quick(top_k)
-            .with_min_similarity(min_similarity);
+        let mut options =
+            TeleologicalSearchOptions::quick(top_k).with_min_similarity(min_similarity);
         options.embedder_indices = vec![space_index];
 
         // Execute search
@@ -592,7 +595,10 @@ impl Handlers {
                 JsonRpcResponse::error(
                     id,
                     error_codes::SEMANTIC_SEARCH_ERROR,
-                    format!("Single space search failed for space {}: {}", space_index, e),
+                    format!(
+                        "Single space search failed for space {}: {}",
+                        space_index, e
+                    ),
                 )
             }
         }
@@ -622,7 +628,9 @@ impl Handlers {
         let params = params.unwrap_or(json!({}));
 
         // Parse purpose vector (optional - default to zero vector)
-        let purpose_vector = if let Some(arr) = params.get("purpose_vector").and_then(|v| v.as_array()) {
+        let purpose_vector = if let Some(arr) =
+            params.get("purpose_vector").and_then(|v| v.as_array())
+        {
             if arr.len() != NUM_EMBEDDERS {
                 error!(
                     count = arr.len(),
@@ -679,7 +687,8 @@ impl Handlers {
 
             // Compute coherence (inverse of standard deviation)
             let mean: f32 = alignments.iter().sum::<f32>() / NUM_EMBEDDERS as f32;
-            let variance: f32 = alignments.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / NUM_EMBEDDERS as f32;
+            let variance: f32 =
+                alignments.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / NUM_EMBEDDERS as f32;
             let coherence = 1.0 / (1.0 + variance.sqrt());
 
             PurposeVector {
@@ -839,7 +848,10 @@ impl Handlers {
                             return Err(JsonRpcResponse::error(
                                 None,
                                 error_codes::INVALID_PARAMS,
-                                format!("Invalid space index {} in active_spaces. Valid: 0-12", idx),
+                                format!(
+                                    "Invalid space index {} in active_spaces. Valid: 0-12",
+                                    idx
+                                ),
                             ));
                         }
                         mask |= 1 << idx;
@@ -879,10 +891,16 @@ impl Handlers {
 /// Get description for a weight profile.
 fn get_profile_description(name: &str) -> &'static str {
     match name {
-        "semantic_search" => "General semantic similarity search. Emphasizes E1 (semantic) and E7 (code).",
-        "causal_reasoning" => "Cause-effect relationship analysis. Heavily weights E5 (causal) and E8 (graph).",
+        "semantic_search" => {
+            "General semantic similarity search. Emphasizes E1 (semantic) and E7 (code)."
+        }
+        "causal_reasoning" => {
+            "Cause-effect relationship analysis. Heavily weights E5 (causal) and E8 (graph)."
+        }
         "code_search" => "Source code similarity search. Focuses on E7 (code) and E4 (positional).",
-        "temporal_navigation" => "Time-based exploration. Weights temporal embeddings E2, E3, E4 equally.",
+        "temporal_navigation" => {
+            "Time-based exploration. Weights temporal embeddings E2, E3, E4 equally."
+        }
         "fact_checking" => "Entity-focused verification. Emphasizes E11 (entity) and E6 (sparse).",
         "balanced" => "Equal weights across all 13 embedding spaces.",
         _ => "Custom weight profile.",

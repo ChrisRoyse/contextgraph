@@ -34,6 +34,8 @@ mod neuromod;
 // NOTE: mod north_star REMOVED - Manual North Star tools created single 1024D embeddings
 // that cannot be meaningfully compared to 13-embedder teleological arrays.
 // Use purpose/ endpoints which work with the autonomous teleological system.
+pub mod gwt_providers;
+pub mod gwt_traits;
 mod purpose;
 mod search;
 mod steering;
@@ -41,8 +43,6 @@ mod system;
 mod teleological;
 mod tools;
 mod utl;
-pub mod gwt_traits;
-pub mod gwt_providers;
 
 #[cfg(test)]
 mod tests;
@@ -57,14 +57,14 @@ pub use self::core::MetaUtlTracker;
 // Note: These are public API re-exports - unused within this crate but available to consumers
 #[allow(unused_imports)]
 pub use self::gwt_traits::{
-    GwtSystemProvider, KuramotoProvider, MetaCognitiveProvider,
-    SelfEgoProvider, WorkspaceProvider, NUM_OSCILLATORS,
+    GwtSystemProvider, KuramotoProvider, MetaCognitiveProvider, SelfEgoProvider, WorkspaceProvider,
+    NUM_OSCILLATORS,
 };
 
 // Re-export GWT provider implementations for wiring (TASK-GWT-001)
 // Note: These are public API re-exports - unused within this crate but available to consumers
 #[allow(unused_imports)]
 pub use self::gwt_providers::{
-    GwtSystemProviderImpl, KuramotoProviderImpl, MetaCognitiveProviderImpl,
-    SelfEgoProviderImpl, WorkspaceProviderImpl,
+    GwtSystemProviderImpl, KuramotoProviderImpl, MetaCognitiveProviderImpl, SelfEgoProviderImpl,
+    WorkspaceProviderImpl,
 };

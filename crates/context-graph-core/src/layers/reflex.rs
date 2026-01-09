@@ -89,7 +89,12 @@ pub struct CachedResponse {
 
 impl CachedResponse {
     /// Create a new cached response.
-    pub fn new(id: String, pattern: Vec<f32>, response_data: serde_json::Value, confidence: f32) -> Self {
+    pub fn new(
+        id: String,
+        pattern: Vec<f32>,
+        response_data: serde_json::Value,
+        confidence: f32,
+    ) -> Self {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap_or_default()
@@ -264,7 +269,8 @@ impl ModernHopfieldCache {
 
         // Record retrieval time
         let elapsed_us = start.elapsed().as_micros() as u64;
-        self.total_retrieval_us.fetch_add(elapsed_us, Ordering::Relaxed);
+        self.total_retrieval_us
+            .fetch_add(elapsed_us, Ordering::Relaxed);
         self.retrieval_count.fetch_add(1, Ordering::Relaxed);
 
         // Check if we have a confident hit using raw similarity threshold
@@ -286,9 +292,10 @@ impl ModernHopfieldCache {
     ///
     /// If the cache is at capacity, removes the least recently accessed entry.
     pub fn store(&self, pattern: &[f32], response: CachedResponse) -> CoreResult<()> {
-        let mut entries = self.entries.write().map_err(|e| {
-            CoreError::Internal(format!("Failed to acquire write lock: {}", e))
-        })?;
+        let mut entries = self
+            .entries
+            .write()
+            .map_err(|e| CoreError::Internal(format!("Failed to acquire write lock: {}", e)))?;
 
         // If at capacity, remove least recently accessed
         if entries.len() >= self.capacity {
@@ -317,9 +324,10 @@ impl ModernHopfieldCache {
 
     /// Clear all cached entries.
     pub fn clear(&self) -> CoreResult<()> {
-        let mut entries = self.entries.write().map_err(|e| {
-            CoreError::Internal(format!("Failed to acquire write lock: {}", e))
-        })?;
+        let mut entries = self
+            .entries
+            .write()
+            .map_err(|e| CoreError::Internal(format!("Failed to acquire write lock: {}", e)))?;
         entries.clear();
         Ok(())
     }
@@ -937,7 +945,11 @@ mod tests {
 
         // Just verify it completes - CI machines have variable performance
         // In production, this should be <50us average on dedicated hardware
-        assert!(avg_us < 500, "Cache lookup average {} us extremely slow (expected <500us)", avg_us);
+        assert!(
+            avg_us < 500,
+            "Cache lookup average {} us extremely slow (expected <500us)",
+            avg_us
+        );
     }
 
     // ============================================================
@@ -975,7 +987,7 @@ mod tests {
     fn test_zero_vector_normalize() {
         let mut v = vec![0.0; 10];
         normalize_vector(&mut v); // Should not panic
-        // Zero vector stays zero (no division by zero)
+                                  // Zero vector stays zero (no division by zero)
         assert!(v.iter().all(|&x| x.abs() < 1e-9));
     }
 

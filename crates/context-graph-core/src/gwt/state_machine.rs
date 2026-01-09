@@ -11,8 +11,8 @@
 //! - **CONSCIOUS**: r ≥ 0.8, unified perception
 //! - **HYPERSYNC**: r > 0.95, pathological overdrive (warning state)
 
-use chrono::{DateTime, Utc, Duration};
 use crate::error::CoreResult;
+use chrono::{DateTime, Duration, Utc};
 
 /// Consciousness state
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -222,7 +222,10 @@ mod tests {
 
     #[test]
     fn test_consciousness_state_from_level() {
-        assert_eq!(ConsciousnessState::from_level(0.1), ConsciousnessState::Dormant);
+        assert_eq!(
+            ConsciousnessState::from_level(0.1),
+            ConsciousnessState::Dormant
+        );
         assert_eq!(
             ConsciousnessState::from_level(0.4),
             ConsciousnessState::Fragmented

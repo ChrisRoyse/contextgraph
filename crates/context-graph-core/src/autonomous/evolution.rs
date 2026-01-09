@@ -98,8 +98,12 @@ impl GoalActivityMetrics {
 pub enum GoalState {
     #[default]
     Active,
-    Sunset { since: DateTime<Utc> },
-    Archived { since: DateTime<Utc> },
+    Sunset {
+        since: DateTime<Utc>,
+    },
+    Archived {
+        since: DateTime<Utc>,
+    },
 }
 
 /// Reasons for goal obsolescence
@@ -434,7 +438,9 @@ mod tests {
             metrics.new_aligned_memories_30d
         );
         assert_eq!(deserialized.retrievals_14d, metrics.retrievals_14d);
-        assert!((deserialized.avg_child_alignment - metrics.avg_child_alignment).abs() < f32::EPSILON);
+        assert!(
+            (deserialized.avg_child_alignment - metrics.avg_child_alignment).abs() < f32::EPSILON
+        );
         assert!((deserialized.weight_trend - metrics.weight_trend).abs() < f32::EPSILON);
     }
 
@@ -509,7 +515,8 @@ mod tests {
 
         for reason in reasons {
             let json = serde_json::to_string(&reason).expect("serialize");
-            let deserialized: ObsolescenceReason = serde_json::from_str(&json).expect("deserialize");
+            let deserialized: ObsolescenceReason =
+                serde_json::from_str(&json).expect("deserialize");
             assert_eq!(deserialized, reason);
         }
     }
@@ -543,7 +550,8 @@ mod tests {
 
         for action in actions {
             let json = serde_json::to_string(&action).expect("serialize");
-            let deserialized: ObsolescenceAction = serde_json::from_str(&json).expect("deserialize");
+            let deserialized: ObsolescenceAction =
+                serde_json::from_str(&json).expect("deserialize");
             assert_eq!(deserialized, action);
         }
     }

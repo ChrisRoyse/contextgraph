@@ -24,14 +24,21 @@ async fn test_edge_case_empty_input_sensing() {
     let layer = StubSensingLayer::new();
     let input = LayerInput::new("test".to_string(), "".to_string());
 
-    println!("BEFORE STATE: input.content = \"{}\" (len={})", input.content, input.content.len());
+    println!(
+        "BEFORE STATE: input.content = \"{}\" (len={})",
+        input.content,
+        input.content.len()
+    );
 
     let result = layer.process(input).await;
 
     println!("AFTER STATE: result.is_err() = {}", result.is_err());
 
     // SOURCE OF TRUTH VERIFICATION: AP-007 - No mock data in production
-    assert!(result.is_err(), "Empty input should still fail (NotImplemented)");
+    assert!(
+        result.is_err(),
+        "Empty input should still fail (NotImplemented)"
+    );
     assert!(matches!(result, Err(CoreError::NotImplemented(_))));
 
     println!("VERIFICATION: Empty input correctly triggers NotImplemented error");
@@ -74,14 +81,20 @@ async fn test_edge_case_large_input() {
     let layer = StubSensingLayer::new();
     let input = LayerInput::new("test".to_string(), large_content.clone());
 
-    println!("BEFORE STATE: input.content.len() = {} bytes", input.content.len());
+    println!(
+        "BEFORE STATE: input.content.len() = {} bytes",
+        input.content.len()
+    );
 
     let result = layer.process(input).await;
 
     println!("AFTER STATE: result.is_err() = {}", result.is_err());
 
     // SOURCE OF TRUTH VERIFICATION: AP-007 - No mock data regardless of input size
-    assert!(result.is_err(), "Large input should still fail (NotImplemented)");
+    assert!(
+        result.is_err(),
+        "Large input should still fail (NotImplemented)"
+    );
     assert!(matches!(result, Err(CoreError::NotImplemented(_))));
 
     println!("VERIFICATION: Large input correctly triggers NotImplemented error");
@@ -115,7 +128,8 @@ async fn test_edge_case_various_inputs() {
             assert!(
                 result.is_err(),
                 "{} should fail for input len {}",
-                name, test_content.len()
+                name,
+                test_content.len()
             );
         }
         println!("{}: All inputs correctly trigger NotImplemented", name);

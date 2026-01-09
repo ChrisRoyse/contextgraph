@@ -144,7 +144,9 @@ fn test_edge_crud_multiple_edge_types_same_nodes() {
     }
 
     for edge_type in EdgeType::all() {
-        let edge = db.get_edge(&source, &target, edge_type).expect("get failed");
+        let edge = db
+            .get_edge(&source, &target, edge_type)
+            .expect("get failed");
         assert_eq!(edge.edge_type, edge_type);
     }
 
@@ -227,8 +229,11 @@ fn test_edge_crud_performance_sanity() {
 
     // Warm up
     db.store_edge(&edge).unwrap();
-    let _ = db.get_edge(&edge.source_id, &edge.target_id, edge.edge_type).unwrap();
-    db.delete_edge(&edge.source_id, &edge.target_id, edge.edge_type).unwrap();
+    let _ = db
+        .get_edge(&edge.source_id, &edge.target_id, edge.edge_type)
+        .unwrap();
+    db.delete_edge(&edge.source_id, &edge.target_id, edge.edge_type)
+        .unwrap();
 
     let edge2 = create_test_edge();
     let start = std::time::Instant::now();
@@ -236,7 +241,9 @@ fn test_edge_crud_performance_sanity() {
     let store_time = start.elapsed();
 
     let start = std::time::Instant::now();
-    let _ = db.get_edge(&edge2.source_id, &edge2.target_id, edge2.edge_type).unwrap();
+    let _ = db
+        .get_edge(&edge2.source_id, &edge2.target_id, edge2.edge_type)
+        .unwrap();
     let get_time = start.elapsed();
 
     println!("  store_edge: {:?}", store_time);

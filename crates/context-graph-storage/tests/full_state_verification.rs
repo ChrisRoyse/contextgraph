@@ -23,19 +23,18 @@
 
 use std::collections::HashSet;
 
+use chrono::Utc;
 use context_graph_core::traits::TeleologicalMemoryStore;
 use context_graph_core::types::fingerprint::{
-    JohariFingerprint, PurposeVector, SemanticFingerprint, SparseVector,
-    TeleologicalFingerprint, NUM_EMBEDDERS,
+    JohariFingerprint, PurposeVector, SemanticFingerprint, SparseVector, TeleologicalFingerprint,
+    NUM_EMBEDDERS,
 };
 use context_graph_storage::teleological::{
     deserialize_e1_matryoshka_128, deserialize_purpose_vector,
     deserialize_teleological_fingerprint, e1_matryoshka_128_key, fingerprint_key,
-    purpose_vector_key, RocksDbTeleologicalStore,
-    CF_E1_MATRYOSHKA_128,
-    CF_FINGERPRINTS, CF_PURPOSE_VECTORS, QUANTIZED_EMBEDDER_CFS, TELEOLOGICAL_CFS,
+    purpose_vector_key, RocksDbTeleologicalStore, CF_E1_MATRYOSHKA_128, CF_FINGERPRINTS,
+    CF_PURPOSE_VECTORS, QUANTIZED_EMBEDDER_CFS, TELEOLOGICAL_CFS,
 };
-use chrono::Utc;
 use rand::Rng;
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -197,12 +196,17 @@ async fn test_physical_write_read_verification() {
 
     println!("[1] WRITE OPERATION");
     println!("    ID: {}", id);
-    println!("    Fingerprint size: ~{}KB estimated",
-        fingerprint.semantic.e1_semantic.len() * 4 / 1024 +
-        fingerprint.semantic.e9_hdc.len() * 4 / 1024);
+    println!(
+        "    Fingerprint size: ~{}KB estimated",
+        fingerprint.semantic.e1_semantic.len() * 4 / 1024
+            + fingerprint.semantic.e9_hdc.len() * 4 / 1024
+    );
 
     // Store the fingerprint using async trait
-    store.store(fingerprint.clone()).await.expect("Failed to store fingerprint");
+    store
+        .store(fingerprint.clone())
+        .await
+        .expect("Failed to store fingerprint");
     println!("    Store operation: SUCCESS");
 
     // SEPARATE READ OPERATION - Source of Truth verification
@@ -210,7 +214,8 @@ async fn test_physical_write_read_verification() {
 
     // Get raw bytes from RocksDB using the physical key
     let key = fingerprint_key(&id);
-    let raw_value = store.get_raw_bytes(CF_FINGERPRINTS, &key)
+    let raw_value = store
+        .get_raw_bytes(CF_FINGERPRINTS, &key)
         .expect("Failed to read raw bytes");
 
     assert!(raw_value.is_some(), "FAIL: No data found in RocksDB!");
@@ -218,20 +223,33 @@ async fn test_physical_write_read_verification() {
 
     println!("    Key (hex): {}", hex_string(&key));
     println!("    Value size: {} bytes", bytes.len());
-    println!("    First 64 bytes (hex): {}", hex_string(&bytes[..64.min(bytes.len())]));
+    println!(
+        "    First 64 bytes (hex): {}",
+        hex_string(&bytes[..64.min(bytes.len())])
+    );
 
     // Deserialize and verify
     let retrieved = deserialize_teleological_fingerprint(&bytes);
 
     println!("\n[3] DATA INTEGRITY VERIFICATION");
     println!("    ID match: {}", retrieved.id == id);
-    println!("    E1 semantic dim: {} (expected 1024)", retrieved.semantic.e1_semantic.len());
-    println!("    E9 HDC dim: {} (expected 1024)", retrieved.semantic.e9_hdc.len());
-    println!("    Purpose alignments dim: {} (expected 13)", retrieved.purpose_vector.alignments.len());
+    println!(
+        "    E1 semantic dim: {} (expected 1024)",
+        retrieved.semantic.e1_semantic.len()
+    );
+    println!(
+        "    E9 HDC dim: {} (expected 1024)",
+        retrieved.semantic.e9_hdc.len()
+    );
+    println!(
+        "    Purpose alignments dim: {} (expected 13)",
+        retrieved.purpose_vector.alignments.len()
+    );
 
     // Verify exact vector match
     let e1_match = fingerprint.semantic.e1_semantic == retrieved.semantic.e1_semantic;
-    let purpose_match = fingerprint.purpose_vector.alignments == retrieved.purpose_vector.alignments;
+    let purpose_match =
+        fingerprint.purpose_vector.alignments == retrieved.purpose_vector.alignments;
 
     println!("    E1 vector exact match: {}", e1_match);
     println!("    Purpose alignments exact match: {}", purpose_match);
@@ -261,16 +279,23 @@ async fn test_purpose_vector_cf_verification() {
     let fingerprint = generate_real_teleological_fingerprint(id);
 
     // Store fingerprint (should populate multiple CFs)
-    store.store(fingerprint.clone()).await.expect("Failed to store");
+    store
+        .store(fingerprint.clone())
+        .await
+        .expect("Failed to store");
 
     println!("[1] Stored fingerprint with ID: {}", id);
 
     // SEPARATE read from purpose_vectors CF
     let purpose_key = purpose_vector_key(&id);
-    let raw_purpose = store.get_raw_bytes(CF_PURPOSE_VECTORS, &purpose_key)
+    let raw_purpose = store
+        .get_raw_bytes(CF_PURPOSE_VECTORS, &purpose_key)
         .expect("Failed to read purpose vector");
 
-    assert!(raw_purpose.is_some(), "Purpose vector not found in dedicated CF!");
+    assert!(
+        raw_purpose.is_some(),
+        "Purpose vector not found in dedicated CF!"
+    );
     let purpose_bytes = raw_purpose.unwrap();
 
     println!("[2] Purpose Vector CF Verification");
@@ -287,7 +312,9 @@ async fn test_purpose_vector_cf_verification() {
     println!("[3] Deserialized purpose alignments:");
     for (i, &val) in retrieved_alignments.iter().enumerate() {
         print!("    E{}: {:.4}", i + 1, val);
-        if (i + 1) % 4 == 0 { println!(); }
+        if (i + 1) % 4 == 0 {
+            println!();
+        }
     }
     println!();
 
@@ -326,7 +353,8 @@ async fn test_e1_matryoshka_truncation_verification() {
 
     // SEPARATE read from E1 Matryoshka CF
     let matryoshka_key = e1_matryoshka_128_key(&id);
-    let raw_matryoshka = store.get_raw_bytes(CF_E1_MATRYOSHKA_128, &matryoshka_key)
+    let raw_matryoshka = store
+        .get_raw_bytes(CF_E1_MATRYOSHKA_128, &matryoshka_key)
         .expect("Failed to read E1 Matryoshka");
 
     assert!(raw_matryoshka.is_some(), "E1 Matryoshka not found!");
@@ -346,7 +374,10 @@ async fn test_e1_matryoshka_truncation_verification() {
 
     // Verify truncation is correct (first 128 elements should match)
     let truncation_correct = original_e1[..128] == truncated[..];
-    println!("[4] Truncation matches first 128 dims: {}", truncation_correct);
+    println!(
+        "[4] Truncation matches first 128 dims: {}",
+        truncation_correct
+    );
 
     assert!(truncation_correct, "E1 truncation mismatch!");
 
@@ -372,20 +403,30 @@ async fn test_edge_case_minimal_fingerprint() {
     let mut fingerprint = generate_real_teleological_fingerprint(id);
 
     // Test with minimal sparse vectors (1 element each)
-    fingerprint.semantic.e6_sparse = SparseVector::new(vec![0], vec![1.0])
-        .expect("Failed to create minimal sparse");
-    fingerprint.semantic.e13_splade = SparseVector::new(vec![0], vec![1.0])
-        .expect("Failed to create minimal sparse");
+    fingerprint.semantic.e6_sparse =
+        SparseVector::new(vec![0], vec![1.0]).expect("Failed to create minimal sparse");
+    fingerprint.semantic.e13_splade =
+        SparseVector::new(vec![0], vec![1.0]).expect("Failed to create minimal sparse");
 
     println!("[1] Minimal sparse vectors:");
-    println!("    E6 sparse nnz: {}", fingerprint.semantic.e6_sparse.nnz());
-    println!("    E13 SPLADE nnz: {}", fingerprint.semantic.e13_splade.nnz());
+    println!(
+        "    E6 sparse nnz: {}",
+        fingerprint.semantic.e6_sparse.nnz()
+    );
+    println!(
+        "    E13 SPLADE nnz: {}",
+        fingerprint.semantic.e13_splade.nnz()
+    );
 
-    store.store(fingerprint).await.expect("Failed to store minimal fingerprint");
+    store
+        .store(fingerprint)
+        .await
+        .expect("Failed to store minimal fingerprint");
 
     // Verify physical storage
     let key = fingerprint_key(&id);
-    let raw = store.get_raw_bytes(CF_FINGERPRINTS, &key)
+    let raw = store
+        .get_raw_bytes(CF_FINGERPRINTS, &key)
         .expect("Failed to read");
 
     assert!(raw.is_some(), "Minimal fingerprint not stored!");
@@ -397,7 +438,10 @@ async fn test_edge_case_minimal_fingerprint() {
 
     println!("[3] Retrieved sparse vectors:");
     println!("    E6 sparse nnz: {}", retrieved.semantic.e6_sparse.nnz());
-    println!("    E13 SPLADE nnz: {}", retrieved.semantic.e13_splade.nnz());
+    println!(
+        "    E13 SPLADE nnz: {}",
+        retrieved.semantic.e13_splade.nnz()
+    );
 
     assert_eq!(retrieved.semantic.e6_sparse.nnz(), 1);
     assert_eq!(retrieved.semantic.e13_splade.nnz(), 1);
@@ -432,25 +476,42 @@ async fn test_edge_case_maximum_size_fingerprint() {
     fingerprint.semantic.e12_late_interaction = vec![generate_real_unit_vector(128); 100];
 
     println!("[1] Maximum size components (within 150KB limit):");
-    println!("    E6 sparse nnz: {}", fingerprint.semantic.e6_sparse.nnz());
-    println!("    E13 SPLADE nnz: {}", fingerprint.semantic.e13_splade.nnz());
-    println!("    E12 tokens: {}", fingerprint.semantic.e12_late_interaction.len());
+    println!(
+        "    E6 sparse nnz: {}",
+        fingerprint.semantic.e6_sparse.nnz()
+    );
+    println!(
+        "    E13 SPLADE nnz: {}",
+        fingerprint.semantic.e13_splade.nnz()
+    );
+    println!(
+        "    E12 tokens: {}",
+        fingerprint.semantic.e12_late_interaction.len()
+    );
 
     let start = std::time::Instant::now();
-    store.store(fingerprint.clone()).await.expect("Failed to store max fingerprint");
+    store
+        .store(fingerprint.clone())
+        .await
+        .expect("Failed to store max fingerprint");
     let store_time = start.elapsed();
 
     println!("[2] Store time: {:?}", store_time);
 
     // Physical verification
     let key = fingerprint_key(&id);
-    let raw = store.get_raw_bytes(CF_FINGERPRINTS, &key)
+    let raw = store
+        .get_raw_bytes(CF_FINGERPRINTS, &key)
         .expect("Failed to read");
 
     assert!(raw.is_some(), "Max fingerprint not stored!");
     let bytes = raw.unwrap();
 
-    println!("[3] Stored size: {} bytes ({:.2} KB)", bytes.len(), bytes.len() as f64 / 1024.0);
+    println!(
+        "[3] Stored size: {} bytes ({:.2} KB)",
+        bytes.len(),
+        bytes.len() as f64 / 1024.0
+    );
 
     let start = std::time::Instant::now();
     let retrieved = deserialize_teleological_fingerprint(&bytes);
@@ -459,8 +520,14 @@ async fn test_edge_case_maximum_size_fingerprint() {
     println!("[4] Deserialize time: {:?}", deser_time);
     println!("[5] Retrieved components:");
     println!("    E6 sparse nnz: {}", retrieved.semantic.e6_sparse.nnz());
-    println!("    E13 SPLADE nnz: {}", retrieved.semantic.e13_splade.nnz());
-    println!("    E12 tokens: {}", retrieved.semantic.e12_late_interaction.len());
+    println!(
+        "    E13 SPLADE nnz: {}",
+        retrieved.semantic.e13_splade.nnz()
+    );
+    println!(
+        "    E12 tokens: {}",
+        retrieved.semantic.e12_late_interaction.len()
+    );
 
     assert_eq!(retrieved.semantic.e6_sparse.nnz(), 2000);
     assert_eq!(retrieved.semantic.e13_splade.nnz(), 1500);
@@ -487,7 +554,10 @@ async fn test_edge_case_concurrent_access() {
     let num_tasks = 8;
     let writes_per_task = 10;
 
-    println!("[1] Spawning {} tasks, {} writes each", num_tasks, writes_per_task);
+    println!(
+        "[1] Spawning {} tasks, {} writes each",
+        num_tasks, writes_per_task
+    );
 
     let mut handles = Vec::new();
 
@@ -498,9 +568,10 @@ async fn test_edge_case_concurrent_access() {
             for i in 0..writes_per_task {
                 let id = Uuid::new_v4();
                 let fingerprint = generate_real_teleological_fingerprint(id);
-                store.store(fingerprint).await.unwrap_or_else(|e| {
-                    panic!("Task {} write {} failed: {:?}", task_id, i, e)
-                });
+                store
+                    .store(fingerprint)
+                    .await
+                    .unwrap_or_else(|e| panic!("Task {} write {} failed: {:?}", task_id, i, e));
                 ids.push(id);
             }
             ids
@@ -519,7 +590,8 @@ async fn test_edge_case_concurrent_access() {
     let mut verified = 0;
     for id in &all_ids {
         let key = fingerprint_key(id);
-        let raw = store.get_raw_bytes(CF_FINGERPRINTS, &key)
+        let raw = store
+            .get_raw_bytes(CF_FINGERPRINTS, &key)
             .expect("Read failed");
         assert!(raw.is_some(), "Missing fingerprint: {}", id);
         verified += 1;
@@ -549,35 +621,54 @@ async fn test_update_delete_physical_verification() {
 
     // Initial store
     let original_alignments = fingerprint.purpose_vector.alignments;
-    store.store(fingerprint.clone()).await.expect("Initial store failed");
+    store
+        .store(fingerprint.clone())
+        .await
+        .expect("Initial store failed");
 
     println!("[1] Initial store:");
     println!("    Alignments[0]: {:.6}", original_alignments[0]);
 
     // Verify initial state
     let key = fingerprint_key(&id);
-    let raw1 = store.get_raw_bytes(CF_FINGERPRINTS, &key)
-        .expect("Read failed").expect("Not found");
+    let raw1 = store
+        .get_raw_bytes(CF_FINGERPRINTS, &key)
+        .expect("Read failed")
+        .expect("Not found");
     let retrieved1 = deserialize_teleological_fingerprint(&raw1);
 
     println!("[2] Physical verification of initial state:");
-    println!("    Alignments[0]: {:.6}", retrieved1.purpose_vector.alignments[0]);
+    println!(
+        "    Alignments[0]: {:.6}",
+        retrieved1.purpose_vector.alignments[0]
+    );
     assert!((retrieved1.purpose_vector.alignments[0] - original_alignments[0]).abs() < 0.0001);
 
     // UPDATE: Change purpose vector
     fingerprint.purpose_vector.alignments[0] = 0.999;
-    store.update(fingerprint.clone()).await.expect("Update failed");
+    store
+        .update(fingerprint.clone())
+        .await
+        .expect("Update failed");
 
     println!("[3] Update applied:");
-    println!("    New alignments[0]: {:.6}", fingerprint.purpose_vector.alignments[0]);
+    println!(
+        "    New alignments[0]: {:.6}",
+        fingerprint.purpose_vector.alignments[0]
+    );
 
     // Physical verification after update
-    let raw2 = store.get_raw_bytes(CF_FINGERPRINTS, &key)
-        .expect("Read failed").expect("Not found after update");
+    let raw2 = store
+        .get_raw_bytes(CF_FINGERPRINTS, &key)
+        .expect("Read failed")
+        .expect("Not found after update");
     let retrieved2 = deserialize_teleological_fingerprint(&raw2);
 
     println!("[4] Physical verification after update:");
-    println!("    Alignments[0]: {:.6}", retrieved2.purpose_vector.alignments[0]);
+    println!(
+        "    Alignments[0]: {:.6}",
+        retrieved2.purpose_vector.alignments[0]
+    );
 
     assert!((retrieved2.purpose_vector.alignments[0] - 0.999).abs() < 0.001);
 
@@ -586,7 +677,8 @@ async fn test_update_delete_physical_verification() {
     println!("[5] Delete executed");
 
     // Physical verification after delete
-    let raw3 = store.get_raw_bytes(CF_FINGERPRINTS, &key)
+    let raw3 = store
+        .get_raw_bytes(CF_FINGERPRINTS, &key)
         .expect("Read failed");
 
     println!("[6] Physical verification after delete:");
@@ -596,7 +688,8 @@ async fn test_update_delete_physical_verification() {
 
     // Verify purpose vector CF also deleted
     let purpose_key = purpose_vector_key(&id);
-    let raw_purpose = store.get_raw_bytes(CF_PURPOSE_VECTORS, &purpose_key)
+    let raw_purpose = store
+        .get_raw_bytes(CF_PURPOSE_VECTORS, &purpose_key)
         .expect("Read failed");
 
     println!("[7] Purpose vector CF after delete:");
@@ -655,7 +748,9 @@ async fn test_all_17_column_families_populated() {
 
         let status = if cf_populated { "✓" } else { "✗" };
         println!("    {} {}", status, cf_name);
-        if cf_populated { populated_count += 1; }
+        if cf_populated {
+            populated_count += 1;
+        }
     }
 
     // Check quantized embedder CFs (13)
@@ -663,8 +758,7 @@ async fn test_all_17_column_families_populated() {
     for (i, cf_name) in QUANTIZED_EMBEDDER_CFS.iter().enumerate() {
         // Each embedder CF stores quantized data keyed by id
         let key = id.as_bytes().to_vec();
-        let cf_populated = store.get_raw_bytes(cf_name, &key)
-            .ok().flatten().is_some();
+        let cf_populated = store.get_raw_bytes(cf_name, &key).ok().flatten().is_some();
 
         let status = if cf_populated { "✓" } else { "○" }; // ○ for optional
         let embedder_name = match i {
@@ -684,7 +778,9 @@ async fn test_all_17_column_families_populated() {
             _ => "Unknown",
         };
         println!("    {} {} ({})", status, cf_name, embedder_name);
-        if cf_populated { populated_count += 1; }
+        if cf_populated {
+            populated_count += 1;
+        }
     }
 
     println!("\n[4] Summary:");
@@ -716,8 +812,7 @@ async fn test_persistence_across_reopen() {
 
     // First session: store data
     {
-        let store = RocksDbTeleologicalStore::open(&path)
-            .expect("Failed to open store");
+        let store = RocksDbTeleologicalStore::open(&path).expect("Failed to open store");
         // Note: EmbedderIndexRegistry is initialized in constructor
 
         store.store(fingerprint).await.expect("Store failed");
@@ -730,15 +825,15 @@ async fn test_persistence_across_reopen() {
 
     // Second session: reopen and verify
     {
-        let store = RocksDbTeleologicalStore::open(&path)
-            .expect("Failed to reopen store");
+        let store = RocksDbTeleologicalStore::open(&path).expect("Failed to reopen store");
         // Note: EmbedderIndexRegistry is initialized in constructor
 
         println!("[3] Second session: database reopened");
 
         // Physical verification
         let key = fingerprint_key(&id);
-        let raw = store.get_raw_bytes(CF_FINGERPRINTS, &key)
+        let raw = store
+            .get_raw_bytes(CF_FINGERPRINTS, &key)
             .expect("Read failed");
 
         assert!(raw.is_some(), "Data lost after reopen!");
@@ -748,7 +843,10 @@ async fn test_persistence_across_reopen() {
 
         println!("[4] Physical verification after reopen:");
         println!("    ID match: {}", retrieved.id == id);
-        println!("    Alignments match: {}", retrieved.purpose_vector.alignments == original_alignments);
+        println!(
+            "    Alignments match: {}",
+            retrieved.purpose_vector.alignments == original_alignments
+        );
 
         assert_eq!(retrieved.id, id);
         assert_eq!(retrieved.purpose_vector.alignments, original_alignments);
@@ -763,7 +861,8 @@ async fn test_persistence_across_reopen() {
 // =============================================================================
 
 fn hex_string(bytes: &[u8]) -> String {
-    bytes.iter()
+    bytes
+        .iter()
         .take(64) // Limit to 64 bytes for display
         .map(|b| format!("{:02x}", b))
         .collect::<Vec<_>>()

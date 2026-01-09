@@ -111,22 +111,40 @@ fn test_preflight_checks_gpu_requirements() {
         if let Some(info) = loader.gpu_info() {
             eprintln!("GPU Info from loader:");
             eprintln!("  Name: {}", info.name);
-            eprintln!("  Compute Capability: {}.{}", info.compute_capability.0, info.compute_capability.1);
-            eprintln!("  Total Memory: {} bytes ({:.2} GiB)", info.total_memory_bytes, info.total_memory_bytes as f64 / (1024.0 * 1024.0 * 1024.0));
+            eprintln!(
+                "  Compute Capability: {}.{}",
+                info.compute_capability.0, info.compute_capability.1
+            );
+            eprintln!(
+                "  Total Memory: {} bytes ({:.2} GiB)",
+                info.total_memory_bytes,
+                info.total_memory_bytes as f64 / (1024.0 * 1024.0 * 1024.0)
+            );
             eprintln!("  Driver Version: {}", info.driver_version);
         }
     }
 
-    assert!(result.is_ok(), "Preflight checks failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "Preflight checks failed: {:?}",
+        result.err()
+    );
 
     // Verify GPU info is populated
     let gpu_info = loader.gpu_info();
-    assert!(gpu_info.is_some(), "GPU info should be populated after preflight");
+    assert!(
+        gpu_info.is_some(),
+        "GPU info should be populated after preflight"
+    );
     let info = gpu_info.unwrap();
-    assert!(info.meets_compute_requirement(REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR),
-            "GPU must meet compute capability requirements ({}.{} required, got {}.{})",
-            REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR,
-            info.compute_capability.0, info.compute_capability.1);
+    assert!(
+        info.meets_compute_requirement(REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR),
+        "GPU must meet compute capability requirements ({}.{} required, got {}.{})",
+        REQUIRED_COMPUTE_MAJOR,
+        REQUIRED_COMPUTE_MINOR,
+        info.compute_capability.0,
+        info.compute_capability.1
+    );
 }
 
 // ============================================================================
@@ -174,7 +192,10 @@ fn test_fail_fast_on_allocation_error() {
             // CUDA not available - allocator is None after init
             // This is expected behavior when cuda feature is disabled
         }
-        other => panic!("Expected VramAllocationFailed or CudaInitFailed, got: {:?}", other),
+        other => panic!(
+            "Expected VramAllocationFailed or CudaInitFailed, got: {:?}",
+            other
+        ),
     }
 }
 
@@ -319,12 +340,9 @@ fn test_load_weights_real_file() {
     // Write SafeTensors format
     let shape: Vec<usize> = vec![2, 2];
     let mut tensors: HashMap<String, safetensors::tensor::TensorView<'_>> = HashMap::new();
-    let tensor_view = safetensors::tensor::TensorView::new(
-        safetensors::Dtype::F32,
-        shape,
-        &tensor_bytes,
-    )
-    .expect("Failed to create tensor view");
+    let tensor_view =
+        safetensors::tensor::TensorView::new(safetensors::Dtype::F32, shape, &tensor_bytes)
+            .expect("Failed to create tensor view");
     tensors.insert("weights".to_string(), tensor_view);
 
     let st = safetensors::serialize(&tensors, &None::<HashMap<String, String>>)
@@ -373,7 +391,10 @@ fn test_load_weights_invalid_format() {
     let result = load_weights(&invalid_path, "invalid_test");
 
     assert!(result.is_err());
-    assert!(matches!(result.unwrap_err(), WarmError::WeightFileCorrupted { .. }));
+    assert!(matches!(
+        result.unwrap_err(),
+        WarmError::WeightFileCorrupted { .. }
+    ));
 }
 
 #[test]

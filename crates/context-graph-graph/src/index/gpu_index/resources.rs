@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use crate::error::{GraphError, GraphResult};
 use super::super::faiss_ffi::GpuResources as FfiGpuResources;
+use crate::error::{GraphError, GraphResult};
 
 /// GPU resources handle with RAII cleanup.
 ///

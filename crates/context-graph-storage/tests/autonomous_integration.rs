@@ -10,14 +10,14 @@
 //! 4. Per-goal and per-memory data operates correctly
 //! 5. Data survives close/reopen cycles (persistence verification)
 
+use chrono::Utc;
 use context_graph_core::autonomous::{
-    AdaptiveThresholdState, AutonomousConfig, DriftDataPoint, GoalActivityMetrics,
-    GoalId, MemoryCurationState,
+    AdaptiveThresholdState, AutonomousConfig, DriftDataPoint, GoalActivityMetrics, GoalId,
+    MemoryCurationState,
 };
 use context_graph_storage::autonomous::{
     ConsolidationRecord, LineageEvent, RocksDbAutonomousStore,
 };
-use chrono::Utc;
 use tempfile::TempDir;
 use uuid::Uuid;
 
@@ -94,9 +94,7 @@ fn test_drift_history_crud_real_db() {
             new_memories_count: (i as u32 + 1) * 10,
             timestamp: Utc::now(),
         };
-        store
-            .store_drift_point(&drift_point)
-            .expect("store failed");
+        store.store_drift_point(&drift_point).expect("store failed");
     }
 
     // Retrieve all drift history
@@ -116,9 +114,7 @@ fn test_goal_activity_metrics_crud_real_db() {
     let goal_uuid = goal_id.0;
 
     // Initially empty
-    let initial = store
-        .get_goal_metrics(goal_uuid)
-        .expect("get failed");
+    let initial = store.get_goal_metrics(goal_uuid).expect("get failed");
     assert!(initial.is_none(), "Metrics should not exist initially");
 
     // Write metrics
@@ -130,7 +126,9 @@ fn test_goal_activity_metrics_crud_real_db() {
         weight_trend: 0.02,
         last_activity: Utc::now(),
     };
-    store.store_goal_metrics(goal_uuid, &metrics).expect("store failed");
+    store
+        .store_goal_metrics(goal_uuid, &metrics)
+        .expect("store failed");
 
     // Verify written
     let retrieved = store
@@ -138,8 +136,14 @@ fn test_goal_activity_metrics_crud_real_db() {
         .expect("get failed")
         .expect("Metrics should exist after store");
 
-    assert_eq!(retrieved.new_aligned_memories_30d, 42, "Memories count mismatch");
-    assert!((retrieved.avg_child_alignment - 0.85).abs() < 0.001, "Alignment mismatch");
+    assert_eq!(
+        retrieved.new_aligned_memories_30d, 42,
+        "Memories count mismatch"
+    );
+    assert!(
+        (retrieved.avg_child_alignment - 0.85).abs() < 0.001,
+        "Alignment mismatch"
+    );
 
     println!("[PASS] GoalActivityMetrics CRUD with real RocksDB");
 }
@@ -179,7 +183,7 @@ fn test_memory_curation_state_crud_real_db() {
         .expect("State should exist after update");
 
     match retrieved {
-        MemoryCurationState::Dormant { since: _ } => {},
+        MemoryCurationState::Dormant { since: _ } => {}
         _ => panic!("Expected Dormant state, got {:?}", retrieved),
     }
 
@@ -234,7 +238,9 @@ fn test_persistence_across_close_reopen() {
             weight_trend: 0.01,
             last_activity: Utc::now(),
         };
-        store.store_goal_metrics(goal_uuid, &metrics).expect("store metrics failed");
+        store
+            .store_goal_metrics(goal_uuid, &metrics)
+            .expect("store metrics failed");
 
         // Write memory curation
         let curation = MemoryCurationState::Active;
@@ -332,12 +338,14 @@ fn test_consolidation_records_real_db() {
     // Write consolidation records
     for i in 0..3 {
         let record = ConsolidationRecord::success(
-            vec![],  // source memories
-            context_graph_core::autonomous::MemoryId::new(),  // target memory
-            0.92 + (i as f32 * 0.01),  // similarity
-            0.03 + (i as f32 * 0.01),  // theta_diff
+            vec![],                                          // source memories
+            context_graph_core::autonomous::MemoryId::new(), // target memory
+            0.92 + (i as f32 * 0.01),                        // similarity
+            0.03 + (i as f32 * 0.01),                        // theta_diff
         );
-        store.store_consolidation_record(&record).expect("store failed");
+        store
+            .store_consolidation_record(&record)
+            .expect("store failed");
     }
 
     // Retrieve all consolidation history
@@ -432,7 +440,10 @@ fn test_update_overwrites_previous_value() {
         .get_goal_metrics(goal_uuid)
         .expect("get failed")
         .unwrap();
-    assert_eq!(retrieved.new_aligned_memories_30d, 10, "Initial memories count wrong");
+    assert_eq!(
+        retrieved.new_aligned_memories_30d, 10,
+        "Initial memories count wrong"
+    );
 
     // Update
     let updated_metrics = GoalActivityMetrics {
@@ -477,7 +488,9 @@ fn test_list_all_goal_metrics() {
             weight_trend: 0.01,
             last_activity: Utc::now(),
         };
-        store.store_goal_metrics(goal_id.0, &metrics).expect("store failed");
+        store
+            .store_goal_metrics(goal_id.0, &metrics)
+            .expect("store failed");
     }
 
     // List all metrics
@@ -502,7 +515,9 @@ fn test_list_all_curation_states() {
         } else {
             MemoryCurationState::Archived { since: Utc::now() }
         };
-        store.store_curation_state(memory_uuid, &state).expect("store failed");
+        store
+            .store_curation_state(memory_uuid, &state)
+            .expect("store failed");
     }
 
     // List all states

@@ -133,7 +133,10 @@ impl SemanticModel {
                 message: format!("Failed to acquire write lock: {}", e),
             })?;
 
-        *state = ModelState::Loaded { weights: Box::new(weights), tokenizer: Box::new(tokenizer) };
+        *state = ModelState::Loaded {
+            weights: Box::new(weights),
+            tokenizer: Box::new(tokenizer),
+        };
         self.loaded.store(true, Ordering::SeqCst);
         Ok(())
     }

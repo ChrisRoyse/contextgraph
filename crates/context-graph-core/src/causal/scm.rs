@@ -163,7 +163,8 @@ impl CausalGraph {
     /// Remove an edge between source and target.
     pub fn remove_edge(&mut self, source: Uuid, target: Uuid) -> bool {
         let initial_len = self.edges.len();
-        self.edges.retain(|e| !(e.source == source && e.target == target));
+        self.edges
+            .retain(|e| !(e.source == source && e.target == target));
 
         if self.edges.len() != initial_len {
             self.rebuild_indices();
@@ -191,25 +192,17 @@ impl CausalGraph {
 
     /// Get direct effect nodes (nodes directly caused by source).
     pub fn get_direct_effects(&self, source: Uuid) -> Vec<Uuid> {
-        self.get_effects(source)
-            .iter()
-            .map(|e| e.target)
-            .collect()
+        self.get_effects(source).iter().map(|e| e.target).collect()
     }
 
     /// Get direct cause nodes (nodes that directly cause target).
     pub fn get_direct_causes(&self, target: Uuid) -> Vec<Uuid> {
-        self.get_causes(target)
-            .iter()
-            .map(|e| e.source)
-            .collect()
+        self.get_causes(target).iter().map(|e| e.source).collect()
     }
 
     /// Check if there's a direct causal relationship from source to target.
     pub fn has_direct_cause(&self, source: Uuid, target: Uuid) -> bool {
-        self.get_effects(source)
-            .iter()
-            .any(|e| e.target == target)
+        self.get_effects(source).iter().any(|e| e.target == target)
     }
 
     /// Get all nodes.
@@ -234,10 +227,7 @@ impl CausalGraph {
 
     /// Get nodes by domain.
     pub fn nodes_by_domain(&self, domain: &str) -> Vec<&CausalNode> {
-        self.nodes
-            .values()
-            .filter(|n| n.domain == domain)
-            .collect()
+        self.nodes.values().filter(|n| n.domain == domain).collect()
     }
 
     /// Get all unique domains.
@@ -300,14 +290,8 @@ impl CausalGraph {
         self.causes_index.clear();
 
         for (idx, edge) in self.edges.iter().enumerate() {
-            self.effects_index
-                .entry(edge.source)
-                .or_default()
-                .push(idx);
-            self.causes_index
-                .entry(edge.target)
-                .or_default()
-                .push(idx);
+            self.effects_index.entry(edge.source).or_default().push(idx);
+            self.causes_index.entry(edge.target).or_default().push(idx);
         }
     }
 }

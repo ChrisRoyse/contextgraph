@@ -29,7 +29,10 @@ impl Handlers {
                 }),
             ),
             Err(e) => {
-                error!("system/status FAILED - TeleologicalStore.count() error: {}", e);
+                error!(
+                    "system/status FAILED - TeleologicalStore.count() error: {}",
+                    e
+                );
                 JsonRpcResponse::success(
                     id,
                     json!({

@@ -140,11 +140,7 @@ impl TeleologicalRetrievalResult {
 
     /// Get timing summary as human-readable string.
     pub fn timing_summary(&self) -> String {
-        format!(
-            "Total: {:?} | {}",
-            self.total_time,
-            self.timing.summary()
-        )
+        format!("Total: {:?} | {}", self.total_time, self.timing.summary())
     }
 }
 
@@ -215,8 +211,8 @@ impl ScoredMemory {
         space_count: usize,
     ) -> Self {
         // Critical threshold from constitution.yaml teleological.thresholds.critical
-        let is_misaligned = purpose_alignment < alignment::CRITICAL
-            || goal_alignment < alignment::CRITICAL;
+        let is_misaligned =
+            purpose_alignment < alignment::CRITICAL || goal_alignment < alignment::CRITICAL;
 
         Self {
             memory_id,
@@ -414,15 +410,7 @@ mod tests {
     #[test]
     fn test_scored_memory_creation() {
         let id = Uuid::new_v4();
-        let memory = ScoredMemory::new(
-            id,
-            0.85,
-            0.90,
-            0.80,
-            0.75,
-            JohariQuadrant::Open,
-            8,
-        );
+        let memory = ScoredMemory::new(id, 0.85, 0.90, 0.80, 0.75, JohariQuadrant::Open, 8);
 
         assert_eq!(memory.memory_id, id);
         assert!((memory.score - 0.85).abs() < f32::EPSILON);
@@ -445,7 +433,7 @@ mod tests {
             id,
             0.85,
             0.90,
-            0.50,  // Below 0.55
+            0.50, // Below 0.55
             0.60,
             JohariQuadrant::Open,
             8,
@@ -457,26 +445,21 @@ mod tests {
             0.85,
             0.90,
             0.60,
-            0.40,  // Below 0.55
+            0.40, // Below 0.55
             JohariQuadrant::Open,
             8,
         );
         assert!(misaligned2.is_misaligned);
 
         // Above threshold
-        let aligned = ScoredMemory::new(
-            id,
-            0.85,
-            0.90,
-            0.60,
-            0.60,
-            JohariQuadrant::Open,
-            8,
-        );
+        let aligned = ScoredMemory::new(id, 0.85, 0.90, 0.60, 0.60, JohariQuadrant::Open, 8);
         assert!(!aligned.is_misaligned);
 
         println!("BEFORE: purpose_alignment=0.50, goal_alignment=0.40");
-        println!("AFTER: is_misaligned={}, is_misaligned2={}", misaligned.is_misaligned, misaligned2.is_misaligned);
+        println!(
+            "AFTER: is_misaligned={}, is_misaligned2={}",
+            misaligned.is_misaligned, misaligned2.is_misaligned
+        );
         println!("[VERIFIED] Misalignment detection uses CRITICAL_THRESHOLD=0.55");
     }
 
@@ -507,9 +490,7 @@ mod tests {
     #[test]
     fn test_teleological_result_creation() {
         let id = Uuid::new_v4();
-        let memory = ScoredMemory::new(
-            id, 0.85, 0.90, 0.80, 0.75, JohariQuadrant::Open, 8,
-        );
+        let memory = ScoredMemory::new(id, 0.85, 0.90, 0.80, 0.75, JohariQuadrant::Open, 8);
 
         let timing = PipelineStageTiming::new(
             std::time::Duration::from_millis(4),
@@ -541,14 +522,24 @@ mod tests {
     #[test]
     fn test_result_filtering() {
         let results = vec![
+            ScoredMemory::new(Uuid::new_v4(), 0.9, 0.9, 0.9, 0.80, JohariQuadrant::Open, 8),
             ScoredMemory::new(
-                Uuid::new_v4(), 0.9, 0.9, 0.9, 0.80, JohariQuadrant::Open, 8,
+                Uuid::new_v4(),
+                0.8,
+                0.8,
+                0.8,
+                0.65,
+                JohariQuadrant::Blind,
+                6,
             ),
             ScoredMemory::new(
-                Uuid::new_v4(), 0.8, 0.8, 0.8, 0.65, JohariQuadrant::Blind, 6,
-            ),
-            ScoredMemory::new(
-                Uuid::new_v4(), 0.7, 0.7, 0.5, 0.40, JohariQuadrant::Hidden, 4,
+                Uuid::new_v4(),
+                0.7,
+                0.7,
+                0.5,
+                0.40,
+                JohariQuadrant::Hidden,
+                4,
             ),
         ];
 
@@ -566,7 +557,8 @@ mod tests {
         assert_eq!(above_70.len(), 1);
 
         // Filter by quadrant
-        let blind_hidden = result.results_in_quadrants(&[JohariQuadrant::Blind, JohariQuadrant::Hidden]);
+        let blind_hidden =
+            result.results_in_quadrants(&[JohariQuadrant::Blind, JohariQuadrant::Hidden]);
         assert_eq!(blind_hidden.len(), 2);
 
         // Misaligned count
@@ -605,7 +597,7 @@ mod tests {
     #[test]
     fn test_latency_target_exceeded() {
         let timing = PipelineStageTiming::new(
-            std::time::Duration::from_millis(6),  // Exceeds 5ms
+            std::time::Duration::from_millis(6), // Exceeds 5ms
             std::time::Duration::from_millis(8),
             std::time::Duration::from_millis(18),
             std::time::Duration::from_millis(9),
@@ -616,7 +608,7 @@ mod tests {
         let result = TeleologicalRetrievalResult::new(
             Vec::new(),
             timing,
-            std::time::Duration::from_millis(65),  // Exceeds 60ms
+            std::time::Duration::from_millis(65), // Exceeds 60ms
             13,
             0,
         );

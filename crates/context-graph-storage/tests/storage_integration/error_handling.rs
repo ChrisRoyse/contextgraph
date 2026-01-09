@@ -32,10 +32,7 @@ fn test_validation_error_wrong_dimension() {
     node.embedding = vec![0.1; 100]; // Wrong dimension (should be 1536)
 
     println!("=== VALIDATION ERROR TEST (wrong dim) ===");
-    println!(
-        "TRIGGER: Store with embedding dim={}",
-        node.embedding.len()
-    );
+    println!("TRIGGER: Store with embedding dim={}", node.embedding.len());
 
     let result = db.store_node(&node);
     println!(
@@ -75,7 +72,10 @@ fn edge_case_infinity_importance() {
 
     let result = db.store_node(&node);
     println!("AFTER: error={}", result.is_err());
-    assert!(result.is_err(), "Infinity importance should fail validation");
+    assert!(
+        result.is_err(),
+        "Infinity importance should fail validation"
+    );
     println!("RESULT: PASSED");
 }
 

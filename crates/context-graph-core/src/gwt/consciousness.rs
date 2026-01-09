@@ -240,11 +240,12 @@ mod tests {
         let calc = ConsciousnessCalculator::new();
         let purpose_vec = [1.0; 13];
 
-        let metrics = calc
-            .compute_metrics(0.1, 0.9, &purpose_vec)
-            .unwrap();
+        let metrics = calc.compute_metrics(0.1, 0.9, &purpose_vec).unwrap();
         // Integration is the bottleneck
-        matches!(metrics.component_analysis.limiting_factor, LimitingFactor::Integration);
+        matches!(
+            metrics.component_analysis.limiting_factor,
+            LimitingFactor::Integration
+        );
         assert!(!metrics.component_analysis.integration_sufficient);
     }
 }

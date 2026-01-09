@@ -231,8 +231,14 @@ fn test_cuda_unavailable_emb_e001() {
     // Verify error message contains required constitution references
     let msg = err.to_string();
     assert!(msg.contains("EMB-E001"), "Missing error code in message");
-    assert!(msg.contains("RTX 5090"), "Missing RTX 5090 constitution reference");
-    assert!(msg.contains("CUDA 13.1"), "Missing CUDA 13.1 constitution reference");
+    assert!(
+        msg.contains("RTX 5090"),
+        "Missing RTX 5090 constitution reference"
+    );
+    assert!(
+        msg.contains("CUDA 13.1"),
+        "Missing CUDA 13.1 constitution reference"
+    );
     assert!(msg.contains("Remediation"), "Missing remediation guidance");
 
     println!("BEFORE: Creating CUDA unavailable error");
@@ -256,7 +262,10 @@ fn test_insufficient_vram_emb_e002() {
     assert!(msg.contains("EMB-E002"));
     assert!(msg.contains("32.0 GB"));
     assert!(msg.contains("8.0 GB"));
-    assert!(msg.contains("RTX 5090 (32GB)"), "Missing RTX 5090 32GB reference");
+    assert!(
+        msg.contains("RTX 5090 (32GB)"),
+        "Missing RTX 5090 32GB reference"
+    );
 
     println!("BEFORE: VRAM check with 8GB available, 32GB required");
     println!("AFTER: {}", msg);
@@ -277,7 +286,10 @@ fn test_weight_file_missing_emb_e003() {
     assert!(msg.contains("EMB-E003"));
     assert!(msg.contains("Semantic"));
     assert!(msg.contains("weights.safetensors"));
-    assert!(msg.contains("HuggingFace"), "Missing HuggingFace remediation");
+    assert!(
+        msg.contains("HuggingFace"),
+        "Missing HuggingFace remediation"
+    );
 }
 
 #[test]
@@ -294,7 +306,10 @@ fn test_weight_checksum_mismatch_emb_e004() {
 
     let msg = err.to_string();
     assert!(msg.contains("EMB-E004"));
-    assert!(msg.contains("SHA256"), "Missing SHA256 constitution reference");
+    assert!(
+        msg.contains("SHA256"),
+        "Missing SHA256 constitution reference"
+    );
     assert!(msg.contains("abc123def456"));
     assert!(msg.contains("xyz789uvw012"));
 }
@@ -467,7 +482,9 @@ fn test_all_12_spec_codes_are_unique() {
             expected: 0,
             actual: 0,
         },
-        EmbeddingError::ProjectionMatrixMissing { path: PathBuf::new() },
+        EmbeddingError::ProjectionMatrixMissing {
+            path: PathBuf::new(),
+        },
         EmbeddingError::OomDuringBatch {
             batch_size: 0,
             model_id: TEST_MODEL,
@@ -484,7 +501,9 @@ fn test_all_12_spec_codes_are_unique() {
             id: "".into(),
             reason: "".into(),
         },
-        EmbeddingError::CodebookMissing { model_id: TEST_MODEL },
+        EmbeddingError::CodebookMissing {
+            model_id: TEST_MODEL,
+        },
         EmbeddingError::RecallLossExceeded {
             model_id: TEST_MODEL,
             measured: 0.0,
@@ -515,47 +534,84 @@ fn test_all_12_spec_codes_are_unique() {
 #[test]
 fn test_only_input_too_large_is_recoverable_among_spec_errors() {
     let non_recoverable_errors: Vec<(&str, EmbeddingError)> = vec![
-        ("EMB-E001", EmbeddingError::CudaUnavailable { message: "".into() }),
-        ("EMB-E002", EmbeddingError::InsufficientVram {
-            required_bytes: 0,
-            available_bytes: 0,
-            required_gb: 0.0,
-            available_gb: 0.0,
-        }),
-        ("EMB-E003", EmbeddingError::WeightFileMissing {
-            model_id: TEST_MODEL,
-            path: PathBuf::new(),
-        }),
-        ("EMB-E004", EmbeddingError::WeightChecksumMismatch {
-            model_id: TEST_MODEL,
-            expected: "".into(),
-            actual: "".into(),
-        }),
-        ("EMB-E005", EmbeddingError::ModelDimensionMismatch {
-            model_id: TEST_MODEL,
-            expected: 0,
-            actual: 0,
-        }),
-        ("EMB-E006", EmbeddingError::ProjectionMatrixMissing { path: PathBuf::new() }),
-        ("EMB-E007", EmbeddingError::OomDuringBatch {
-            batch_size: 0,
-            model_id: TEST_MODEL,
-        }),
-        ("EMB-E008", EmbeddingError::InferenceValidationFailed {
-            model_id: TEST_MODEL,
-            reason: "".into(),
-        }),
+        (
+            "EMB-E001",
+            EmbeddingError::CudaUnavailable { message: "".into() },
+        ),
+        (
+            "EMB-E002",
+            EmbeddingError::InsufficientVram {
+                required_bytes: 0,
+                available_bytes: 0,
+                required_gb: 0.0,
+                available_gb: 0.0,
+            },
+        ),
+        (
+            "EMB-E003",
+            EmbeddingError::WeightFileMissing {
+                model_id: TEST_MODEL,
+                path: PathBuf::new(),
+            },
+        ),
+        (
+            "EMB-E004",
+            EmbeddingError::WeightChecksumMismatch {
+                model_id: TEST_MODEL,
+                expected: "".into(),
+                actual: "".into(),
+            },
+        ),
+        (
+            "EMB-E005",
+            EmbeddingError::ModelDimensionMismatch {
+                model_id: TEST_MODEL,
+                expected: 0,
+                actual: 0,
+            },
+        ),
+        (
+            "EMB-E006",
+            EmbeddingError::ProjectionMatrixMissing {
+                path: PathBuf::new(),
+            },
+        ),
+        (
+            "EMB-E007",
+            EmbeddingError::OomDuringBatch {
+                batch_size: 0,
+                model_id: TEST_MODEL,
+            },
+        ),
+        (
+            "EMB-E008",
+            EmbeddingError::InferenceValidationFailed {
+                model_id: TEST_MODEL,
+                reason: "".into(),
+            },
+        ),
         // EMB-E009 is EXCLUDED - it IS recoverable
-        ("EMB-E010", EmbeddingError::StorageCorruption {
-            id: "".into(),
-            reason: "".into(),
-        }),
-        ("EMB-E011", EmbeddingError::CodebookMissing { model_id: TEST_MODEL }),
-        ("EMB-E012", EmbeddingError::RecallLossExceeded {
-            model_id: TEST_MODEL,
-            measured: 0.0,
-            max_allowed: 0.0,
-        }),
+        (
+            "EMB-E010",
+            EmbeddingError::StorageCorruption {
+                id: "".into(),
+                reason: "".into(),
+            },
+        ),
+        (
+            "EMB-E011",
+            EmbeddingError::CodebookMissing {
+                model_id: TEST_MODEL,
+            },
+        ),
+        (
+            "EMB-E012",
+            EmbeddingError::RecallLossExceeded {
+                model_id: TEST_MODEL,
+                measured: 0.0,
+                max_allowed: 0.0,
+            },
+        ),
     ];
 
     for (code, err) in non_recoverable_errors {
@@ -580,12 +636,21 @@ fn test_only_input_too_large_is_recoverable_among_spec_errors() {
 #[test]
 fn test_legacy_variant_has_no_spec_code() {
     let legacy_errors: Vec<EmbeddingError> = vec![
-        EmbeddingError::ModelNotFound { model_id: TEST_MODEL },
+        EmbeddingError::ModelNotFound {
+            model_id: TEST_MODEL,
+        },
         EmbeddingError::EmptyInput,
-        EmbeddingError::InvalidDimension { expected: 1024, actual: 768 },
-        EmbeddingError::GpuError { message: "legacy".to_string() },
+        EmbeddingError::InvalidDimension {
+            expected: 1024,
+            actual: 768,
+        },
+        EmbeddingError::GpuError {
+            message: "legacy".to_string(),
+        },
         EmbeddingError::Timeout { timeout_ms: 1000 },
-        EmbeddingError::ConfigError { message: "test".to_string() },
+        EmbeddingError::ConfigError {
+            message: "test".to_string(),
+        },
     ];
 
     for err in legacy_errors {
@@ -601,7 +666,10 @@ fn test_legacy_variant_has_no_spec_code() {
 #[test]
 fn test_legacy_input_too_long_is_also_recoverable() {
     // Legacy InputTooLong should also be recoverable for backward compatibility
-    let err = EmbeddingError::InputTooLong { actual: 1000, max: 512 };
+    let err = EmbeddingError::InputTooLong {
+        actual: 1000,
+        max: 512,
+    };
     assert!(
         err.is_recoverable(),
         "Legacy InputTooLong should be recoverable for backward compatibility"
@@ -635,7 +703,9 @@ fn test_severity_classification_matches_spec() {
             expected: 0,
             actual: 0,
         },
-        EmbeddingError::ProjectionMatrixMissing { path: PathBuf::new() },
+        EmbeddingError::ProjectionMatrixMissing {
+            path: PathBuf::new(),
+        },
         EmbeddingError::InferenceValidationFailed {
             model_id: TEST_MODEL,
             reason: "".into(),
@@ -661,7 +731,9 @@ fn test_severity_classification_matches_spec() {
             id: "".into(),
             reason: "".into(),
         },
-        EmbeddingError::CodebookMissing { model_id: TEST_MODEL },
+        EmbeddingError::CodebookMissing {
+            model_id: TEST_MODEL,
+        },
     ];
 
     for err in high_errors {

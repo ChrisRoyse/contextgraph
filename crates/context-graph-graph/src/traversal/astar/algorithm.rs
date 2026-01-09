@@ -60,14 +60,16 @@ pub fn astar_search(
     // Get hyperbolic embedding for goal (required for heuristic)
     // NO FALLBACK - fail fast per AP-001
     let goal_point = to_hyperbolic_point(
-        storage.get_hyperbolic(goal)?
-            .ok_or(GraphError::MissingHyperbolicData(goal))?
+        storage
+            .get_hyperbolic(goal)?
+            .ok_or(GraphError::MissingHyperbolicData(goal))?,
     );
 
     // Get start point
     let start_point = to_hyperbolic_point(
-        storage.get_hyperbolic(start)?
-            .ok_or(GraphError::MissingHyperbolicData(start))?
+        storage
+            .get_hyperbolic(start)?
+            .ok_or(GraphError::MissingHyperbolicData(start))?,
     );
 
     // Initial heuristic
@@ -122,10 +124,7 @@ pub fn astar_search(
 
         // Check exploration limit
         if nodes_explored >= params.max_nodes {
-            log::debug!(
-                "A* exploration limit reached: {} nodes",
-                nodes_explored
-            );
+            log::debug!("A* exploration limit reached: {} nodes", nodes_explored);
             return Ok(AstarResult::no_path(nodes_explored));
         }
 
@@ -175,8 +174,9 @@ pub fn astar_search(
             // Calculate heuristic for neighbor
             // Get hyperbolic embedding (NO FALLBACK)
             let neighbor_point = to_hyperbolic_point(
-                storage.get_hyperbolic(neighbor_id)?
-                    .ok_or(GraphError::MissingHyperbolicData(neighbor_id))?
+                storage
+                    .get_hyperbolic(neighbor_id)?
+                    .ok_or(GraphError::MissingHyperbolicData(neighbor_id))?,
             );
 
             let h = params.heuristic_scale * ball.distance(&neighbor_point, &goal_point);

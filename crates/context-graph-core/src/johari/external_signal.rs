@@ -198,10 +198,13 @@ mod tests {
 
     #[test]
     fn test_external_signal_with_description() {
-        let signal = ExternalSignal::new("dream_layer", 4, 0.5)
-            .with_description("Causal pattern detected");
+        let signal =
+            ExternalSignal::new("dream_layer", 4, 0.5).with_description("Causal pattern detected");
 
-        assert_eq!(signal.description, Some("Causal pattern detected".to_string()));
+        assert_eq!(
+            signal.description,
+            Some("Causal pattern detected".to_string())
+        );
 
         println!("[VERIFIED] test_external_signal_with_description: Description added correctly");
     }
@@ -256,16 +259,14 @@ mod tests {
 
     #[test]
     fn test_blind_spot_candidate_invalid_quadrant() {
-        let candidate = BlindSpotCandidate::new(
-            5,
-            JohariQuadrant::Open,
-            0.75,
-            vec!["test".to_string()],
-        );
+        let candidate =
+            BlindSpotCandidate::new(5, JohariQuadrant::Open, 0.75, vec!["test".to_string()]);
 
         // Open quadrant is not a valid source for blind spot discovery
         assert!(!candidate.is_valid_candidate());
 
-        println!("[VERIFIED] test_blind_spot_candidate_invalid_quadrant: Validates quadrant correctly");
+        println!(
+            "[VERIFIED] test_blind_spot_candidate_invalid_quadrant: Validates quadrant correctly"
+        );
     }
 }

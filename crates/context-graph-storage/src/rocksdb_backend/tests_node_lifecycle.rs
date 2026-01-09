@@ -33,7 +33,9 @@ fn test_delete_node_soft_delete() {
     db.store_node(&node).expect("store failed");
     db.delete_node(&id, true).expect("soft delete failed");
 
-    let retrieved = db.get_node(&id).expect("get should succeed after soft delete");
+    let retrieved = db
+        .get_node(&id)
+        .expect("get should succeed after soft delete");
     assert!(retrieved.metadata.deleted);
     assert!(retrieved.metadata.deleted_at.is_some());
 }

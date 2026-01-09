@@ -55,7 +55,8 @@ impl Ord for AstarNode {
             (false, true) => Ordering::Greater,
             (false, false) => {
                 // Reverse for min-heap
-                other.f_score
+                other
+                    .f_score
                     .partial_cmp(&self.f_score)
                     .unwrap_or(Ordering::Equal)
             }

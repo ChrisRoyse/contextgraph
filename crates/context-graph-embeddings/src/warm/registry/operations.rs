@@ -30,11 +30,12 @@ impl WarmModelRegistry {
     ///
     /// `Pending` -> `Loading { progress_percent: 0, bytes_loaded: 0 }`
     pub fn start_loading(&mut self, model_id: &str) -> WarmResult<()> {
-        let entry = self.entries.get_mut(model_id).ok_or_else(|| {
-            WarmError::ModelNotRegistered {
-                model_id: model_id.to_string(),
-            }
-        })?;
+        let entry =
+            self.entries
+                .get_mut(model_id)
+                .ok_or_else(|| WarmError::ModelNotRegistered {
+                    model_id: model_id.to_string(),
+                })?;
 
         match &entry.state {
             WarmModelState::Pending => {
@@ -78,11 +79,12 @@ impl WarmModelRegistry {
         progress_percent: u8,
         bytes_loaded: usize,
     ) -> WarmResult<()> {
-        let entry = self.entries.get_mut(model_id).ok_or_else(|| {
-            WarmError::ModelNotRegistered {
-                model_id: model_id.to_string(),
-            }
-        })?;
+        let entry =
+            self.entries
+                .get_mut(model_id)
+                .ok_or_else(|| WarmError::ModelNotRegistered {
+                    model_id: model_id.to_string(),
+                })?;
 
         match &entry.state {
             WarmModelState::Loading { .. } => {
@@ -121,11 +123,12 @@ impl WarmModelRegistry {
     ///
     /// `Loading { ... }` -> `Validating`
     pub fn mark_validating(&mut self, model_id: &str) -> WarmResult<()> {
-        let entry = self.entries.get_mut(model_id).ok_or_else(|| {
-            WarmError::ModelNotRegistered {
-                model_id: model_id.to_string(),
-            }
-        })?;
+        let entry =
+            self.entries
+                .get_mut(model_id)
+                .ok_or_else(|| WarmError::ModelNotRegistered {
+                    model_id: model_id.to_string(),
+                })?;
 
         match &entry.state {
             WarmModelState::Loading { .. } => {
@@ -162,11 +165,12 @@ impl WarmModelRegistry {
     ///
     /// `Validating` -> `Warm` (with handle set)
     pub fn mark_warm(&mut self, model_id: &str, handle: ModelHandle) -> WarmResult<()> {
-        let entry = self.entries.get_mut(model_id).ok_or_else(|| {
-            WarmError::ModelNotRegistered {
-                model_id: model_id.to_string(),
-            }
-        })?;
+        let entry =
+            self.entries
+                .get_mut(model_id)
+                .ok_or_else(|| WarmError::ModelNotRegistered {
+                    model_id: model_id.to_string(),
+                })?;
 
         match &entry.state {
             WarmModelState::Validating => {
@@ -211,11 +215,12 @@ impl WarmModelRegistry {
         error_code: u16,
         error_message: impl Into<String>,
     ) -> WarmResult<()> {
-        let entry = self.entries.get_mut(model_id).ok_or_else(|| {
-            WarmError::ModelNotRegistered {
-                model_id: model_id.to_string(),
-            }
-        })?;
+        let entry =
+            self.entries
+                .get_mut(model_id)
+                .ok_or_else(|| WarmError::ModelNotRegistered {
+                    model_id: model_id.to_string(),
+                })?;
 
         match &entry.state {
             WarmModelState::Loading { .. } | WarmModelState::Validating => {

@@ -3,7 +3,7 @@
 //! Implements the rotary position embedding used in Qwen2 and similar
 //! models for encoding position information into attention.
 
-use candle_core::{Device, Tensor, DType};
+use candle_core::{DType, Device, Tensor};
 
 use crate::error::{EmbeddingError, EmbeddingResult};
 
@@ -51,11 +51,12 @@ impl RopeCache {
                 }
             })?;
 
-        let freqs = positions_tensor
-            .matmul(&inv_freq_tensor)
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("RoPE frequency computation failed: {}", e),
-            })?;
+        let freqs =
+            positions_tensor
+                .matmul(&inv_freq_tensor)
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("RoPE frequency computation failed: {}", e),
+                })?;
 
         // Compute cos and sin
         let cos = freqs.cos().map_err(|e| EmbeddingError::GpuError {
@@ -165,12 +166,16 @@ fn apply_rope_single(x: &Tensor, cos: &Tensor, sin: &Tensor) -> EmbeddingResult<
         })?;
 
     // Apply rotation: [x1, x2] * cos + [-x2, x1] * sin
-    let x1_cos = x1.broadcast_mul(&cos).map_err(|e| EmbeddingError::GpuError {
-        message: format!("RoPE x1*cos failed: {}", e),
-    })?;
-    let x2_cos = x2.broadcast_mul(&cos).map_err(|e| EmbeddingError::GpuError {
-        message: format!("RoPE x2*cos failed: {}", e),
-    })?;
+    let x1_cos = x1
+        .broadcast_mul(&cos)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("RoPE x1*cos failed: {}", e),
+        })?;
+    let x2_cos = x2
+        .broadcast_mul(&cos)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("RoPE x2*cos failed: {}", e),
+        })?;
 
     let neg_x2 = x2.neg().map_err(|e| EmbeddingError::GpuError {
         message: format!("RoPE -x2 failed: {}", e),
@@ -180,15 +185,19 @@ fn apply_rope_single(x: &Tensor, cos: &Tensor, sin: &Tensor) -> EmbeddingResult<
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("RoPE -x2*sin failed: {}", e),
         })?;
-    let x1_sin = x1.broadcast_mul(&sin).map_err(|e| EmbeddingError::GpuError {
-        message: format!("RoPE x1*sin failed: {}", e),
-    })?;
+    let x1_sin = x1
+        .broadcast_mul(&sin)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("RoPE x1*sin failed: {}", e),
+        })?;
 
     // o1 = x1 * cos - x2 * sin
     // o2 = x2 * cos + x1 * sin
-    let o1 = x1_cos.add(&neg_x2_sin).map_err(|e| EmbeddingError::GpuError {
-        message: format!("RoPE o1 add failed: {}", e),
-    })?;
+    let o1 = x1_cos
+        .add(&neg_x2_sin)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("RoPE o1 add failed: {}", e),
+        })?;
     let o2 = x2_cos.add(&x1_sin).map_err(|e| EmbeddingError::GpuError {
         message: format!("RoPE o2 add failed: {}", e),
     })?;

@@ -19,15 +19,18 @@ use context_graph_core::alignment::GoalAlignmentCalculator;
 use context_graph_core::atc::AdaptiveThresholdCalibration;
 use context_graph_core::dream::{AmortizedLearner, DreamController, DreamScheduler};
 use context_graph_core::johari::{DynDefaultJohariManager, JohariTransitionManager, NUM_EMBEDDERS};
-use context_graph_core::monitoring::{LayerStatusProvider, StubLayerStatusProvider, StubSystemMonitor, SystemMonitor};
+use context_graph_core::monitoring::{
+    LayerStatusProvider, StubLayerStatusProvider, StubSystemMonitor, SystemMonitor,
+};
 use context_graph_core::neuromod::NeuromodulationManager;
 use context_graph_core::purpose::GoalHierarchy;
-use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor};
+use context_graph_core::traits::{
+    MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor,
+};
 
 // TASK-GWT-001: Import GWT provider traits
 use super::gwt_traits::{
-    GwtSystemProvider, KuramotoProvider, MetaCognitiveProvider,
-    SelfEgoProvider, WorkspaceProvider,
+    GwtSystemProvider, KuramotoProvider, MetaCognitiveProvider, SelfEgoProvider, WorkspaceProvider,
 };
 
 /// Prediction type for tracking
@@ -148,7 +151,11 @@ impl MetaUtlTracker {
             .sum();
         let recent_avg = recent_sum / 10.0;
 
-        let older_end = if count >= 20 { count - 10 } else { count - (count / 2) };
+        let older_end = if count >= 20 {
+            count - 10
+        } else {
+            count - (count / 2)
+        };
         let older_start = older_end.saturating_sub(10);
         let older_sum: f32 = self.embedder_accuracy[embedder_index][older_start..older_end]
             .iter()
@@ -174,15 +181,17 @@ impl MetaUtlTracker {
         let mut accuracies = [0.0f32; NUM_EMBEDDERS];
         let mut total_accuracy = 0.0f32;
 
-        for i in 0..NUM_EMBEDDERS {
-            accuracies[i] = self.get_embedder_accuracy(i).unwrap_or(1.0 / NUM_EMBEDDERS as f32);
-            total_accuracy += accuracies[i];
+        for (i, acc) in accuracies.iter_mut().enumerate() {
+            *acc = self
+                .get_embedder_accuracy(i)
+                .unwrap_or(1.0 / NUM_EMBEDDERS as f32);
+            total_accuracy += *acc;
         }
 
         // Normalize to get weights
         if total_accuracy > 0.0 {
-            for i in 0..NUM_EMBEDDERS {
-                self.current_weights[i] = accuracies[i] / total_accuracy;
+            for (weight, &acc) in self.current_weights.iter_mut().zip(accuracies.iter()) {
+                *weight = acc / total_accuracy;
             }
         }
 
@@ -245,7 +254,6 @@ pub struct Handlers {
     pub(super) layer_status_provider: Arc<dyn LayerStatusProvider>,
 
     // ========== GWT/Kuramoto Fields (TASK-GWT-001) ==========
-
     /// Kuramoto oscillator network for 13-embedding phase synchronization.
     /// TASK-GWT-001: Required for gwt/* handlers and consciousness computation.
     /// Uses RwLock because step() mutates internal state.
@@ -268,14 +276,12 @@ pub struct Handlers {
     pub(super) self_ego: Option<Arc<tokio::sync::RwLock<dyn SelfEgoProvider>>>,
 
     // ========== ADAPTIVE THRESHOLD CALIBRATION (TASK-ATC-001) ==========
-
     /// Adaptive Threshold Calibration system for self-learning thresholds.
     /// TASK-ATC-001: Required for get_threshold_status, get_calibration_metrics, trigger_recalibration.
     /// Uses RwLock because calibration operations mutate internal state.
     pub(super) atc: Option<Arc<RwLock<context_graph_core::atc::AdaptiveThresholdCalibration>>>,
 
     // ========== DREAM CONSOLIDATION (TASK-DREAM-MCP) ==========
-
     /// Dream controller for managing dream consolidation cycles.
     /// TASK-DREAM-MCP: Required for trigger_dream, get_dream_status, abort_dream.
     /// Uses RwLock because dream cycle operations mutate internal state.
@@ -292,11 +298,11 @@ pub struct Handlers {
     pub(super) amortized_learner: Option<Arc<RwLock<context_graph_core::dream::AmortizedLearner>>>,
 
     // ========== NEUROMODULATION (TASK-NEUROMOD-MCP) ==========
-
     /// Neuromodulation manager for controlling system behavior modulation.
     /// TASK-NEUROMOD-MCP: Required for get_neuromodulation_state, adjust_neuromodulator.
     /// Uses RwLock because modulator adjustments mutate internal state.
-    pub(super) neuromod_manager: Option<Arc<RwLock<context_graph_core::neuromod::NeuromodulationManager>>>,
+    pub(super) neuromod_manager:
+        Option<Arc<RwLock<context_graph_core::neuromod::NeuromodulationManager>>>,
 }
 
 impl Handlers {
@@ -330,7 +336,8 @@ impl Handlers {
 
         // TASK-EMB-024: Default to stub monitors (will fail with explicit errors)
         let system_monitor: Arc<dyn SystemMonitor> = Arc::new(StubSystemMonitor::new());
-        let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider::new());
+        let layer_status_provider: Arc<dyn LayerStatusProvider> =
+            Arc::new(StubLayerStatusProvider::new());
 
         Self {
             teleological_store,
@@ -391,7 +398,8 @@ impl Handlers {
 
         // TASK-EMB-024: Default to stub monitors (will fail with explicit errors)
         let system_monitor: Arc<dyn SystemMonitor> = Arc::new(StubSystemMonitor::new());
-        let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider::new());
+        let layer_status_provider: Arc<dyn LayerStatusProvider> =
+            Arc::new(StubLayerStatusProvider::new());
 
         Self {
             teleological_store,
@@ -449,7 +457,8 @@ impl Handlers {
 
         // TASK-EMB-024: Default to stub monitors (will fail with explicit errors)
         let system_monitor: Arc<dyn SystemMonitor> = Arc::new(StubSystemMonitor::new());
-        let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider::new());
+        let layer_status_provider: Arc<dyn LayerStatusProvider> =
+            Arc::new(StubLayerStatusProvider::new());
 
         Self {
             teleological_store,
@@ -499,7 +508,8 @@ impl Handlers {
     ) -> Self {
         // TASK-EMB-024: Default to stub monitors (will fail with explicit errors)
         let system_monitor: Arc<dyn SystemMonitor> = Arc::new(StubSystemMonitor::new());
-        let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider::new());
+        let layer_status_provider: Arc<dyn LayerStatusProvider> =
+            Arc::new(StubLayerStatusProvider::new());
 
         Self {
             teleological_store,
@@ -684,8 +694,7 @@ impl Handlers {
         // Create real GWT provider implementations
         let kuramoto_network: Arc<RwLock<dyn KuramotoProvider>> =
             Arc::new(RwLock::new(KuramotoProviderImpl::new()));
-        let gwt_system: Arc<dyn GwtSystemProvider> =
-            Arc::new(GwtSystemProviderImpl::new());
+        let gwt_system: Arc<dyn GwtSystemProvider> = Arc::new(GwtSystemProviderImpl::new());
         let workspace_provider: Arc<tokio::sync::RwLock<dyn WorkspaceProvider>> =
             Arc::new(tokio::sync::RwLock::new(WorkspaceProviderImpl::new()));
         let meta_cognitive: Arc<tokio::sync::RwLock<dyn MetaCognitiveProvider>> =

@@ -12,9 +12,9 @@
 //! 5. Broadcast: active_memory visible to all subsystems (100ms window)
 //! 6. Inhibit: losing candidates receive dopamine reduction
 
-use uuid::Uuid;
-use chrono::{DateTime, Utc, Duration};
 use crate::error::{CoreError, CoreResult};
+use chrono::{DateTime, Duration, Utc};
+use uuid::Uuid;
 
 /// A memory candidate competing for workspace entry
 #[derive(Debug, Clone)]
@@ -141,7 +141,8 @@ impl GlobalWorkspace {
         }
 
         // Sort by score (descending)
-        self.candidates.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
+        self.candidates
+            .sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap());
 
         let winner = self.candidates[0].clone();
         let winner_id = winner.id;
@@ -151,12 +152,17 @@ impl GlobalWorkspace {
         self.last_broadcast = Some(Utc::now());
 
         // Store in history (keep last 100)
-        self.winner_history.push((winner_id, Utc::now(), winner.score));
+        self.winner_history
+            .push((winner_id, Utc::now(), winner.score));
         if self.winner_history.len() > 100 {
             self.winner_history.remove(0);
         }
 
-        tracing::debug!("Workspace selected memory: {:?} with score {:.3}", winner_id, winner.score);
+        tracing::debug!(
+            "Workspace selected memory: {:?} with score {:.3}",
+            winner_id,
+            winner.score
+        );
 
         Ok(Some(winner_id))
     }
@@ -190,7 +196,11 @@ impl GlobalWorkspace {
 
     /// Check for workspace conflict (multiple memories with r > 0.8)
     pub fn has_conflict(&self) -> bool {
-        self.candidates.iter().filter(|c| c.order_parameter > 0.8).count() > 1
+        self.candidates
+            .iter()
+            .filter(|c| c.order_parameter > 0.8)
+            .count()
+            > 1
     }
 
     /// Get conflict details if present
@@ -333,8 +343,8 @@ mod tests {
         let id2 = Uuid::new_v4();
 
         let candidates = vec![
-            (id1, 0.7, 0.9, 0.88),  // Below coherence threshold
-            (id2, 0.85, 0.8, 0.8),  // Above threshold (winner)
+            (id1, 0.7, 0.9, 0.88), // Below coherence threshold
+            (id2, 0.85, 0.8, 0.8), // Above threshold (winner)
         ];
 
         let winner = workspace.select_winning_memory(candidates).await.unwrap();
@@ -348,10 +358,7 @@ mod tests {
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
 
-        let candidates = vec![
-            (id1, 0.5, 0.9, 0.88),
-            (id2, 0.6, 0.8, 0.8),
-        ];
+        let candidates = vec![(id1, 0.5, 0.9, 0.88), (id2, 0.6, 0.8, 0.8)];
 
         let winner = workspace.select_winning_memory(candidates).await.unwrap();
         assert_eq!(winner, None);

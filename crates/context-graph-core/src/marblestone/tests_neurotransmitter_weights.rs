@@ -71,7 +71,11 @@ fn test_nt_for_domain_general() {
 fn test_nt_all_domains_produce_valid_weights() {
     for domain in Domain::all() {
         let weights = NeurotransmitterWeights::for_domain(domain);
-        assert!(weights.validate(), "Domain {:?} produced invalid weights", domain);
+        assert!(
+            weights.validate(),
+            "Domain {:?} produced invalid weights",
+            domain
+        );
     }
 }
 
@@ -79,21 +83,33 @@ fn test_nt_all_domains_produce_valid_weights() {
 fn test_nt_compute_effective_weight_general_base_1() {
     let weights = NeurotransmitterWeights::for_domain(Domain::General);
     let effective = weights.compute_effective_weight(1.0);
-    assert!((effective - 0.276).abs() < 0.001, "Expected ~0.276, got {}", effective);
+    assert!(
+        (effective - 0.276).abs() < 0.001,
+        "Expected ~0.276, got {}",
+        effective
+    );
 }
 
 #[test]
 fn test_nt_compute_effective_weight_creative_amplifies() {
     let weights = NeurotransmitterWeights::for_domain(Domain::Creative);
     let effective = weights.compute_effective_weight(1.0);
-    assert!((effective - 0.728).abs() < 0.001, "Expected ~0.728, got {}", effective);
+    assert!(
+        (effective - 0.728).abs() < 0.001,
+        "Expected ~0.728, got {}",
+        effective
+    );
 }
 
 #[test]
 fn test_nt_compute_effective_weight_legal_dampens() {
     let weights = NeurotransmitterWeights::for_domain(Domain::Legal);
     let effective = weights.compute_effective_weight(1.0);
-    assert!((effective - 0.0).abs() < 0.001, "Expected ~0.0, got {}", effective);
+    assert!(
+        (effective - 0.0).abs() < 0.001,
+        "Expected ~0.0, got {}",
+        effective
+    );
 }
 
 #[test]
@@ -128,7 +144,11 @@ fn test_nt_compute_effective_weight_always_in_range() {
                     assert!(
                         (0.0..=1.0).contains(&effective),
                         "Out of range: exc={}, inh={}, mod={}, base={} -> {}",
-                        exc, inh, modul, base, effective
+                        exc,
+                        inh,
+                        modul,
+                        base,
+                        effective
                     );
                 }
             }
@@ -195,20 +215,29 @@ fn test_nt_validate_nan_modulatory() {
 #[test]
 fn test_nt_validate_infinity() {
     let weights = NeurotransmitterWeights::new(f32::INFINITY, 0.5, 0.5);
-    assert!(!weights.validate(), "Infinity must fail validation per AP-009");
+    assert!(
+        !weights.validate(),
+        "Infinity must fail validation per AP-009"
+    );
 }
 
 #[test]
 fn test_nt_validate_neg_infinity() {
     let weights = NeurotransmitterWeights::new(f32::NEG_INFINITY, 0.5, 0.5);
-    assert!(!weights.validate(), "Neg infinity must fail validation per AP-009");
+    assert!(
+        !weights.validate(),
+        "Neg infinity must fail validation per AP-009"
+    );
 }
 
 #[test]
 fn test_nt_default_is_general() {
     let default_weights = NeurotransmitterWeights::default();
     let general_weights = NeurotransmitterWeights::for_domain(Domain::General);
-    assert_eq!(default_weights, general_weights, "Default must equal General profile");
+    assert_eq!(
+        default_weights, general_weights,
+        "Default must equal General profile"
+    );
 }
 
 #[test]

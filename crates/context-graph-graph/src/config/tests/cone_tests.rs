@@ -236,8 +236,18 @@ fn test_cone_config_serialization_roundtrip() {
 #[test]
 fn test_cone_config_json_has_all_fields() {
     let json = serde_json::to_string_pretty(&ConeConfig::default()).unwrap();
-    for field in ["min_aperture", "max_aperture", "base_aperture", "aperture_decay", "membership_threshold"] {
-        assert!(json.contains(&format!("\"{}\":", field)), "JSON must contain {}", field);
+    for field in [
+        "min_aperture",
+        "max_aperture",
+        "base_aperture",
+        "aperture_decay",
+        "membership_threshold",
+    ] {
+        assert!(
+            json.contains(&format!("\"{}\":", field)),
+            "JSON must contain {}",
+            field
+        );
     }
 }
 

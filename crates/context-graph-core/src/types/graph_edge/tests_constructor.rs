@@ -196,14 +196,7 @@ fn test_with_weight_clamps_confidence_low() {
 fn test_with_weight_preserves_source_target() {
     let source = Uuid::new_v4();
     let target = Uuid::new_v4();
-    let edge = GraphEdge::with_weight(
-        source,
-        target,
-        EdgeType::Causal,
-        Domain::Code,
-        0.9,
-        0.85,
-    );
+    let edge = GraphEdge::with_weight(source, target, EdgeType::Causal, Domain::Code, 0.9, 0.85);
     assert_eq!(edge.source_id, source);
     assert_eq!(edge.target_id, target);
     assert_eq!(edge.edge_type, EdgeType::Causal);

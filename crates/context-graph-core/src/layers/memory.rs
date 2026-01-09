@@ -261,9 +261,10 @@ impl AssociativeMemory {
 
         let memory = StoredMemory::new(pattern, content);
 
-        let mut memories = self.memories.write().map_err(|e| {
-            CoreError::Internal(format!("Failed to acquire write lock: {}", e))
-        })?;
+        let mut memories = self
+            .memories
+            .write()
+            .map_err(|e| CoreError::Internal(format!("Failed to acquire write lock: {}", e)))?;
 
         memories.insert(id, memory);
 
@@ -289,9 +290,10 @@ impl AssociativeMemory {
     pub fn retrieve(&self, query: &[f32], max_k: usize) -> CoreResult<Vec<(Uuid, f32)>> {
         let start = Instant::now();
 
-        let memories = self.memories.read().map_err(|e| {
-            CoreError::Internal(format!("Failed to acquire read lock: {}", e))
-        })?;
+        let memories = self
+            .memories
+            .read()
+            .map_err(|e| CoreError::Internal(format!("Failed to acquire read lock: {}", e)))?;
 
         if memories.is_empty() {
             return Ok(Vec::new());
@@ -315,7 +317,8 @@ impl AssociativeMemory {
 
         // Record metrics
         let elapsed_us = start.elapsed().as_micros() as u64;
-        self.total_retrieval_us.fetch_add(elapsed_us, Ordering::Relaxed);
+        self.total_retrieval_us
+            .fetch_add(elapsed_us, Ordering::Relaxed);
         self.retrieval_count.fetch_add(1, Ordering::Relaxed);
 
         Ok(scored)
@@ -323,18 +326,20 @@ impl AssociativeMemory {
 
     /// Get a specific memory by ID.
     pub fn get(&self, id: Uuid) -> CoreResult<Option<StoredMemory>> {
-        let memories = self.memories.read().map_err(|e| {
-            CoreError::Internal(format!("Failed to acquire read lock: {}", e))
-        })?;
+        let memories = self
+            .memories
+            .read()
+            .map_err(|e| CoreError::Internal(format!("Failed to acquire read lock: {}", e)))?;
 
         Ok(memories.get(&id).cloned())
     }
 
     /// Update last access time for a memory (for decay calculation).
     pub fn touch(&self, id: Uuid) -> CoreResult<()> {
-        let mut memories = self.memories.write().map_err(|e| {
-            CoreError::Internal(format!("Failed to acquire write lock: {}", e))
-        })?;
+        let mut memories = self
+            .memories
+            .write()
+            .map_err(|e| CoreError::Internal(format!("Failed to acquire write lock: {}", e)))?;
 
         if let Some(mem) = memories.get_mut(&id) {
             mem.last_accessed = SystemTime::now()
@@ -349,9 +354,10 @@ impl AssociativeMemory {
 
     /// Remove a memory by ID.
     pub fn remove(&self, id: Uuid) -> CoreResult<bool> {
-        let mut memories = self.memories.write().map_err(|e| {
-            CoreError::Internal(format!("Failed to acquire write lock: {}", e))
-        })?;
+        let mut memories = self
+            .memories
+            .write()
+            .map_err(|e| CoreError::Internal(format!("Failed to acquire write lock: {}", e)))?;
 
         Ok(memories.remove(&id).is_some())
     }
@@ -368,9 +374,10 @@ impl AssociativeMemory {
 
     /// Clear all memories.
     pub fn clear(&self) -> CoreResult<()> {
-        let mut memories = self.memories.write().map_err(|e| {
-            CoreError::Internal(format!("Failed to acquire write lock: {}", e))
-        })?;
+        let mut memories = self
+            .memories
+            .write()
+            .map_err(|e| CoreError::Internal(format!("Failed to acquire write lock: {}", e)))?;
         memories.clear();
         Ok(())
     }
@@ -403,9 +410,10 @@ impl AssociativeMemory {
     /// - Content preserved from higher importance memory
     /// - Importance becomes max of both
     pub fn consolidate(&self, similarity_threshold: f32) -> CoreResult<usize> {
-        let mut memories = self.memories.write().map_err(|e| {
-            CoreError::Internal(format!("Failed to acquire write lock: {}", e))
-        })?;
+        let mut memories = self
+            .memories
+            .write()
+            .map_err(|e| CoreError::Internal(format!("Failed to acquire write lock: {}", e)))?;
 
         let ids: Vec<Uuid> = memories.keys().cloned().collect();
         let mut merged_count = 0;
@@ -620,7 +628,11 @@ impl MemoryLayer {
         }
 
         // Sort by final score (descending)
-        scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scored.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         Ok(scored)
     }
@@ -702,7 +714,9 @@ impl NervousLayer for MemoryLayer {
         let query = self.get_query_vector(&input)?;
 
         // Retrieve from associative memory
-        let retrieved = self.associative_memory.retrieve(&query, self.max_retrieve)?;
+        let retrieved = self
+            .associative_memory
+            .retrieve(&query, self.max_retrieve)?;
 
         // Apply decay scoring
         let scored = self.apply_decay_scoring(retrieved)?;
@@ -716,7 +730,8 @@ impl NervousLayer for MemoryLayer {
         let duration_us = duration.as_micros() as u64;
 
         // Record metrics
-        self.total_processing_us.fetch_add(duration_us, Ordering::Relaxed);
+        self.total_processing_us
+            .fetch_add(duration_us, Ordering::Relaxed);
         self.invocation_count.fetch_add(1, Ordering::Relaxed);
 
         // Check latency budget
@@ -757,7 +772,8 @@ impl NervousLayer for MemoryLayer {
         let mut pulse = input.context.pulse.clone();
         if !scored.is_empty() {
             // Found relevant memories - increase coherence
-            let avg_score: f32 = scored.iter().map(|sm| sm.score).sum::<f32>() / scored.len() as f32;
+            let avg_score: f32 =
+                scored.iter().map(|sm| sm.score).sum::<f32>() / scored.len() as f32;
             pulse.coherence = (pulse.coherence + avg_score * 0.2).clamp(0.0, 1.0);
         }
 
@@ -914,7 +930,8 @@ mod tests {
             normalize_vector(&mut pattern);
             patterns.push(pattern.clone());
 
-            let content = MemoryContent::new(format!("Memory {}", i), serde_json::json!({"idx": i}));
+            let content =
+                MemoryContent::new(format!("Memory {}", i), serde_json::json!({"idx": i}));
             mem.store(&pattern, content).unwrap();
         }
 
@@ -1001,10 +1018,10 @@ mod tests {
         pattern2[1] = 0.01;
         normalize_vector(&mut pattern2);
 
-        let content1 = MemoryContent::new("Memory 1".to_string(), serde_json::json!({}))
-            .with_importance(0.8);
-        let content2 = MemoryContent::new("Memory 2".to_string(), serde_json::json!({}))
-            .with_importance(0.6);
+        let content1 =
+            MemoryContent::new("Memory 1".to_string(), serde_json::json!({})).with_importance(0.8);
+        let content2 =
+            MemoryContent::new("Memory 2".to_string(), serde_json::json!({})).with_importance(0.6);
 
         mem.store(&pattern1, content1).unwrap();
         mem.store(&pattern2, content2).unwrap();
@@ -1045,8 +1062,11 @@ mod tests {
 
         // Store a memory
         let pattern = random_vector(MEMORY_PATTERN_DIM);
-        let content = MemoryContent::new("Stored content".to_string(), serde_json::json!({"test": true}))
-            .with_importance(0.9);
+        let content = MemoryContent::new(
+            "Stored content".to_string(),
+            serde_json::json!({"test": true}),
+        )
+        .with_importance(0.9);
 
         let _id = layer.store_memory(&pattern, content).unwrap();
         assert_eq!(layer.memory_count(), 1);
@@ -1113,8 +1133,7 @@ mod tests {
 
     #[test]
     fn test_decay_factor_calculation() {
-        let mem = AssociativeMemory::new()
-            .with_decay_half_life_hours(1); // 1 hour half-life for testing
+        let mem = AssociativeMemory::new().with_decay_half_life_hours(1); // 1 hour half-life for testing
 
         let pattern = random_vector(MEMORY_PATTERN_DIM);
         let content = MemoryContent::new("Test".to_string(), serde_json::json!({}));
@@ -1124,7 +1143,11 @@ mod tests {
 
         // Fresh memory should have decay factor close to 1.0
         let decay = mem.decay_factor(&stored);
-        assert!(decay > 0.99, "Fresh memory decay should be ~1.0, got {}", decay);
+        assert!(
+            decay > 0.99,
+            "Fresh memory decay should be ~1.0, got {}",
+            decay
+        );
 
         println!("[VERIFIED] Fresh memory has decay factor ~1.0");
     }
@@ -1144,8 +1167,9 @@ mod tests {
             pattern[(i + 1) % MEMORY_PATTERN_DIM] = 0.5;
             normalize_vector(&mut pattern);
 
-            let content = MemoryContent::new(format!("Memory {}", i), serde_json::json!({"idx": i}))
-                .with_importance(0.5 + (i as f32 / 200.0));
+            let content =
+                MemoryContent::new(format!("Memory {}", i), serde_json::json!({"idx": i}))
+                    .with_importance(0.5 + (i as f32 / 200.0));
 
             layer.store_memory(&pattern, content).unwrap();
         }
@@ -1156,7 +1180,8 @@ mod tests {
         let mut max_us: u64 = 0;
 
         for i in 0..iterations {
-            let mut input = LayerInput::new(format!("bench-{}", i), format!("Benchmark query {}", i));
+            let mut input =
+                LayerInput::new(format!("bench-{}", i), format!("Benchmark query {}", i));
 
             // Create query embedding
             let mut query = vec![0.0f32; MEMORY_PATTERN_DIM];
@@ -1319,6 +1344,9 @@ mod tests {
         // Should NOT be passthrough
         assert!(output.result.data.get("cache_hit_passthrough").is_none());
 
-        println!("[VERIFIED] L2 cache miss triggers full retrieval: {} memories", count);
+        println!(
+            "[VERIFIED] L2 cache miss triggers full retrieval: {} memories",
+            count
+        );
     }
 }

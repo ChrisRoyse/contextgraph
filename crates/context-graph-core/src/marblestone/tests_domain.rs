@@ -12,39 +12,65 @@ fn test_default_is_general() {
 fn test_description_non_empty_for_all_variants() {
     for domain in Domain::all() {
         let desc = domain.description();
-        assert!(!desc.is_empty(), "Description for {:?} must not be empty", domain);
-        assert!(desc.len() > 10, "Description for {:?} should be meaningful", domain);
+        assert!(
+            !desc.is_empty(),
+            "Description for {:?} must not be empty",
+            domain
+        );
+        assert!(
+            desc.len() > 10,
+            "Description for {:?} should be meaningful",
+            domain
+        );
     }
 }
 
 #[test]
 fn test_code_description_mentions_precision() {
-    assert!(Domain::Code.description().to_lowercase().contains("precision"));
+    assert!(Domain::Code
+        .description()
+        .to_lowercase()
+        .contains("precision"));
 }
 
 #[test]
 fn test_legal_description_mentions_reasoning() {
-    assert!(Domain::Legal.description().to_lowercase().contains("reasoning"));
+    assert!(Domain::Legal
+        .description()
+        .to_lowercase()
+        .contains("reasoning"));
 }
 
 #[test]
 fn test_medical_description_mentions_causal() {
-    assert!(Domain::Medical.description().to_lowercase().contains("causal"));
+    assert!(Domain::Medical
+        .description()
+        .to_lowercase()
+        .contains("causal"));
 }
 
 #[test]
 fn test_creative_description_mentions_exploration() {
-    assert!(Domain::Creative.description().to_lowercase().contains("exploration"));
+    assert!(Domain::Creative
+        .description()
+        .to_lowercase()
+        .contains("exploration"));
 }
 
 #[test]
 fn test_research_description_mentions_balanced() {
-    assert!(Domain::Research.description().to_lowercase().contains("balanced"));
+    assert!(Domain::Research
+        .description()
+        .to_lowercase()
+        .contains("balanced"));
 }
 
 #[test]
 fn test_general_description_mentions_default() {
-    assert!(Domain::General.description().to_lowercase().contains("default"));
+    assert!(Domain::General
+        .description()
+        .to_lowercase()
+        .contains("default"));
 }
 
 #[test]
@@ -109,7 +135,12 @@ fn test_display_general() {
 fn test_display_all_lowercase() {
     for domain in Domain::all() {
         let s = domain.to_string();
-        assert_eq!(s, s.to_lowercase(), "Display for {:?} must be lowercase", domain);
+        assert_eq!(
+            s,
+            s.to_lowercase(),
+            "Display for {:?} must be lowercase",
+            domain
+        );
     }
 }
 

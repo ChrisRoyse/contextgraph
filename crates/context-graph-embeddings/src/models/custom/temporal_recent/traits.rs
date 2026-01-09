@@ -201,16 +201,12 @@ mod tests {
         let ts1 = ref_time - Duration::hours(1);
         let ts2 = ref_time - Duration::hours(24);
 
-        let input1 = ModelInput::text_with_instruction(
-            "content",
-            format!("timestamp:{}", ts1.to_rfc3339()),
-        )
-        .expect("Failed to create");
-        let input2 = ModelInput::text_with_instruction(
-            "content",
-            format!("timestamp:{}", ts2.to_rfc3339()),
-        )
-        .expect("Failed to create");
+        let input1 =
+            ModelInput::text_with_instruction("content", format!("timestamp:{}", ts1.to_rfc3339()))
+                .expect("Failed to create");
+        let input2 =
+            ModelInput::text_with_instruction("content", format!("timestamp:{}", ts2.to_rfc3339()))
+                .expect("Failed to create");
 
         let embedding1 = model.embed(&input1).await.expect("First embed");
         let embedding2 = model.embed(&input2).await.expect("Second embed");

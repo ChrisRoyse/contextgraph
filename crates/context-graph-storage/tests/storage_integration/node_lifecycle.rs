@@ -41,7 +41,10 @@ fn test_node_lifecycle_create_read_update_delete() {
         after_update.importance
     );
     assert!(
-        after_update.metadata.tags.contains(&"updated-tag".to_string()),
+        after_update
+            .metadata
+            .tags
+            .contains(&"updated-tag".to_string()),
         "tags should contain 'updated-tag'"
     );
 
@@ -49,7 +52,10 @@ fn test_node_lifecycle_create_read_update_delete() {
     db.delete_node(&node_id, true).expect("soft delete");
     let soft_deleted = db.get_node(&node_id).expect("get soft deleted");
     println!("VERIFY: deleted flag={}", soft_deleted.metadata.deleted);
-    assert!(soft_deleted.metadata.deleted, "node should be marked deleted");
+    assert!(
+        soft_deleted.metadata.deleted,
+        "node should be marked deleted"
+    );
 
     // HARD DELETE
     db.delete_node(&node_id, false).expect("hard delete");

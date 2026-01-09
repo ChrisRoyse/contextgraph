@@ -108,18 +108,20 @@ fn verify_non_trivial_embedding(embedding: &[f32], context: &str) {
     assert!(
         zero_ratio < MAX_ZERO_RATIO,
         "{}: Embedding is {:.1}% zeros ({}/{}). Model may be returning default vectors.",
-        context, zero_ratio * 100.0, zero_count, dim
+        context,
+        zero_ratio * 100.0,
+        zero_count,
+        dim
     );
 
     // Check for variance (not constant)
     let mean: f32 = embedding.iter().sum::<f32>() / dim as f32;
-    let variance: f32 = embedding.iter()
-        .map(|x| (x - mean).powi(2))
-        .sum::<f32>() / dim as f32;
+    let variance: f32 = embedding.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / dim as f32;
     assert!(
         variance > 1e-10,
         "{}: Embedding variance {} is too small. Model may be returning constant vectors.",
-        context, variance
+        context,
+        variance
     );
 
     // Check no NaN or Inf
@@ -243,19 +245,27 @@ async fn test_qodo_embed_produces_1536d_embeddings() -> EmbeddingResult<()> {
     println!("Inference time: {:.2?}", inference_time);
     println!("L2 norm: {:.4}", l2_norm(&vector));
     println!("First 10 values: {:?}", &vector[..10.min(vector.len())]);
-    println!("Last 10 values: {:?}", &vector[vector.len().saturating_sub(10)..]);
+    println!(
+        "Last 10 values: {:?}",
+        &vector[vector.len().saturating_sub(10)..]
+    );
 
     // Verify dimension
     assert_eq!(
-        vector.len(), EXPECTED_DIMENSION,
+        vector.len(),
+        EXPECTED_DIMENSION,
         "Expected {}D embedding, got {}D",
-        EXPECTED_DIMENSION, vector.len()
+        EXPECTED_DIMENSION,
+        vector.len()
     );
 
     // Verify non-trivial
     verify_non_trivial_embedding(&vector, "Hello world");
 
-    println!("\n[PASS] Model produces {}D non-trivial embeddings", vector.len());
+    println!(
+        "\n[PASS] Model produces {}D non-trivial embeddings",
+        vector.len()
+    );
     Ok(())
 }
 
@@ -316,7 +326,10 @@ async fn test_qodo_embed_different_inputs_different_outputs() -> EmbeddingResult
         similarity
     );
 
-    println!("\n[PASS] Different code produces different embeddings (similarity={:.4})", similarity);
+    println!(
+        "\n[PASS] Different code produces different embeddings (similarity={:.4})",
+        similarity
+    );
     Ok(())
 }
 
@@ -379,13 +392,18 @@ async fn test_qodo_embed_batch_inference() -> EmbeddingResult<()> {
             assert!(
                 sim < 0.99,
                 "Samples {} and {} too similar ({:.4}). Model may be malfunctioning.",
-                i + 1, j + 1, sim
+                i + 1,
+                j + 1,
+                sim
             );
         }
     }
 
-    println!("\n[PASS] Batch inference produces {} distinct {}D embeddings",
-             embeddings.len(), EXPECTED_DIMENSION);
+    println!(
+        "\n[PASS] Batch inference produces {} distinct {}D embeddings",
+        embeddings.len(),
+        EXPECTED_DIMENSION
+    );
     Ok(())
 }
 
@@ -433,7 +451,10 @@ async fn test_qodo_embed_semantic_similarity() -> EmbeddingResult<()> {
         similarity
     );
 
-    println!("\n[PASS] Semantically similar code has high similarity ({:.4})", similarity);
+    println!(
+        "\n[PASS] Semantically similar code has high similarity ({:.4})",
+        similarity
+    );
     Ok(())
 }
 
@@ -481,7 +502,10 @@ async fn test_qodo_embed_dissimilar_code() -> EmbeddingResult<()> {
         similarity
     );
 
-    println!("\n[PASS] Dissimilar code has lower similarity ({:.4})", similarity);
+    println!(
+        "\n[PASS] Dissimilar code has lower similarity ({:.4})",
+        similarity
+    );
     Ok(())
 }
 
@@ -599,12 +623,20 @@ async fn test_qodo_embed_comprehensive_verification() -> EmbeddingResult<()> {
     let embedding = model.embed(&input).await?;
     let vector = embedding.vector;
     println!("       Input: {} ({} chars)", code, code.len());
-    println!("       Output: {}D vector, norm={:.4}", vector.len(), l2_norm(&vector));
+    println!(
+        "       Output: {}D vector, norm={:.4}",
+        vector.len(),
+        l2_norm(&vector)
+    );
 
     // 4. Verify embedding properties
     println!("[4/6] Verifying embedding properties...");
     verify_non_trivial_embedding(&vector, "Test embedding");
-    println!("       Dimension: {} (expected {})", vector.len(), EXPECTED_DIMENSION);
+    println!(
+        "       Dimension: {} (expected {})",
+        vector.len(),
+        EXPECTED_DIMENSION
+    );
     println!("       Non-zero: YES");
     println!("       No NaN/Inf: YES");
     println!("       Has variance: YES");
@@ -614,7 +646,10 @@ async fn test_qodo_embed_comprehensive_verification() -> EmbeddingResult<()> {
     let input2 = ModelInput::code("class Foo { int x; }", "java")?;
     let embedding2 = model.embed(&input2).await?;
     let similarity = cosine_similarity(&vector, &embedding2.vector);
-    println!("       Similarity between different code: {:.4}", similarity);
+    println!(
+        "       Similarity between different code: {:.4}",
+        similarity
+    );
     assert!(similarity < 0.99, "Embeddings too similar!");
 
     // 6. Summary

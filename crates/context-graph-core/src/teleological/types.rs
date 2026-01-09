@@ -21,10 +21,7 @@ impl ProfileId {
     /// Panics if the id is empty (FAIL FAST).
     pub fn new(id: impl Into<String>) -> Self {
         let id_str = id.into();
-        assert!(
-            !id_str.is_empty(),
-            "FAIL FAST: ProfileId cannot be empty"
-        );
+        assert!(!id_str.is_empty(), "FAIL FAST: ProfileId cannot be empty");
         Self(id_str)
     }
 
@@ -344,7 +341,10 @@ mod tests {
         assert_eq!(original, 13 * 13 * 1024);
         assert!(ratio > 1.0); // Should compress
 
-        println!("[PASS] Compression: {} -> {} (ratio {:.2}x)", original, compressed, ratio);
+        println!(
+            "[PASS] Compression: {} -> {} (ratio {:.2}x)",
+            original, compressed, ratio
+        );
     }
 
     #[test]

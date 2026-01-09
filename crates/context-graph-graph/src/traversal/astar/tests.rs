@@ -21,18 +21,59 @@ fn uuid(id: i64) -> Uuid {
 /// Create a test graph with hyperbolic embeddings.
 fn setup_test_graph() -> (GraphStorage, i64, i64, tempfile::TempDir) {
     let dir = tempdir().expect("Failed to create temp dir");
-    let storage = GraphStorage::open_default(dir.path())
-        .expect("Failed to open storage");
+    let storage = GraphStorage::open_default(dir.path()).expect("Failed to open storage");
 
     // Create simple path: 1 -> 2 -> 3 -> 4
     let edges = vec![
-        GraphEdge::new(1, uuid(1), uuid(2), EdgeType::Semantic, 0.8, Domain::General),
-        GraphEdge::new(2, uuid(2), uuid(3), EdgeType::Semantic, 0.7, Domain::General),
-        GraphEdge::new(3, uuid(3), uuid(4), EdgeType::Semantic, 0.9, Domain::General),
+        GraphEdge::new(
+            1,
+            uuid(1),
+            uuid(2),
+            EdgeType::Semantic,
+            0.8,
+            Domain::General,
+        ),
+        GraphEdge::new(
+            2,
+            uuid(2),
+            uuid(3),
+            EdgeType::Semantic,
+            0.7,
+            Domain::General,
+        ),
+        GraphEdge::new(
+            3,
+            uuid(3),
+            uuid(4),
+            EdgeType::Semantic,
+            0.9,
+            Domain::General,
+        ),
         // Alternative longer path: 1 -> 5 -> 6 -> 4
-        GraphEdge::new(4, uuid(1), uuid(5), EdgeType::Semantic, 0.6, Domain::General),
-        GraphEdge::new(5, uuid(5), uuid(6), EdgeType::Semantic, 0.5, Domain::General),
-        GraphEdge::new(6, uuid(6), uuid(4), EdgeType::Semantic, 0.4, Domain::General),
+        GraphEdge::new(
+            4,
+            uuid(1),
+            uuid(5),
+            EdgeType::Semantic,
+            0.6,
+            Domain::General,
+        ),
+        GraphEdge::new(
+            5,
+            uuid(5),
+            uuid(6),
+            EdgeType::Semantic,
+            0.5,
+            Domain::General,
+        ),
+        GraphEdge::new(
+            6,
+            uuid(6),
+            uuid(4),
+            EdgeType::Semantic,
+            0.4,
+            Domain::General,
+        ),
     ];
     storage.put_edges(&edges).expect("put_edges failed");
 
@@ -44,7 +85,9 @@ fn setup_test_graph() -> (GraphStorage, i64, i64, tempfile::TempDir) {
         // Place nodes along first dimension, scaled to stay in ball
         coords[0] = (id as f32) * 0.1;
         let point = StoragePoint { coords };
-        storage.put_hyperbolic(id, &point).expect("put_hyperbolic failed");
+        storage
+            .put_hyperbolic(id, &point)
+            .expect("put_hyperbolic failed");
     }
 
     (storage, 1, 4, dir)
@@ -54,12 +97,15 @@ fn setup_test_graph() -> (GraphStorage, i64, i64, tempfile::TempDir) {
 fn test_astar_basic_path() {
     let (storage, start, goal, _dir) = setup_test_graph();
 
-    let result = astar_search(&storage, start, goal, AstarParams::default())
-        .expect("A* failed");
+    let result = astar_search(&storage, start, goal, AstarParams::default()).expect("A* failed");
 
     assert!(result.path_found, "Path should be found");
     assert_eq!(result.path[0], start, "Path should start at start node");
-    assert_eq!(*result.path.last().unwrap(), goal, "Path should end at goal");
+    assert_eq!(
+        *result.path.last().unwrap(),
+        goal,
+        "Path should end at goal"
+    );
     assert!(result.path.len() >= 2, "Path should have at least 2 nodes");
     assert!(result.total_cost > 0.0, "Cost should be positive");
     assert!(result.total_cost.is_finite(), "Cost should be finite");
@@ -69,8 +115,7 @@ fn test_astar_basic_path() {
 fn test_astar_same_node() {
     let (storage, start, _, _dir) = setup_test_graph();
 
-    let result = astar_search(&storage, start, start, AstarParams::default())
-        .expect("A* failed");
+    let result = astar_search(&storage, start, start, AstarParams::default()).expect("A* failed");
 
     assert!(result.path_found);
     assert_eq!(result.path, vec![start]);
@@ -80,21 +125,24 @@ fn test_astar_same_node() {
 #[test]
 fn test_astar_no_path() {
     let dir = tempdir().expect("Failed to create temp dir");
-    let storage = GraphStorage::open_default(dir.path())
-        .expect("Failed to open storage");
+    let storage = GraphStorage::open_default(dir.path()).expect("Failed to open storage");
 
     // Create disconnected nodes
     for id in 1..=2 {
         let mut coords = [0.0f32; 64];
         coords[0] = (id as f32) * 0.1;
         let point = StoragePoint { coords };
-        storage.put_hyperbolic(id, &point).expect("put_hyperbolic failed");
+        storage
+            .put_hyperbolic(id, &point)
+            .expect("put_hyperbolic failed");
     }
 
-    let result = astar_search(&storage, 1, 2, AstarParams::default())
-        .expect("A* failed");
+    let result = astar_search(&storage, 1, 2, AstarParams::default()).expect("A* failed");
 
-    assert!(!result.path_found, "No path should be found for disconnected nodes");
+    assert!(
+        !result.path_found,
+        "No path should be found for disconnected nodes"
+    );
     assert!(result.path.is_empty());
     assert!(result.total_cost.is_infinite());
 }
@@ -104,20 +152,26 @@ fn test_astar_missing_hyperbolic_data() {
     use crate::error::GraphError;
 
     let dir = tempdir().expect("Failed to create temp dir");
-    let storage = GraphStorage::open_default(dir.path())
-        .expect("Failed to open storage");
+    let storage = GraphStorage::open_default(dir.path()).expect("Failed to open storage");
 
     // Create edge but no hyperbolic embedding
-    let edges = vec![
-        GraphEdge::new(1, uuid(1), uuid(2), EdgeType::Semantic, 0.8, Domain::General),
-    ];
+    let edges = vec![GraphEdge::new(
+        1,
+        uuid(1),
+        uuid(2),
+        EdgeType::Semantic,
+        0.8,
+        Domain::General,
+    )];
     storage.put_edges(&edges).expect("put_edges failed");
 
     // Only set hyperbolic for node 1, not node 2
     let mut coords = [0.0f32; 64];
     coords[0] = 0.1;
     let point = StoragePoint { coords };
-    storage.put_hyperbolic(1, &point).expect("put_hyperbolic failed");
+    storage
+        .put_hyperbolic(1, &point)
+        .expect("put_hyperbolic failed");
 
     // Should fail with MissingHyperbolicData for goal
     let result = astar_search(&storage, 1, 2, AstarParams::default());
@@ -136,8 +190,7 @@ fn test_astar_domain_modulation() {
 
     // With Code domain (different from edges which are General)
     let params = AstarParams::default().domain(Domain::Code);
-    let result = astar_search(&storage, start, goal, params)
-        .expect("A* failed");
+    let result = astar_search(&storage, start, goal, params).expect("A* failed");
 
     // Should still find a path, weights just modulated differently
     assert!(result.path_found);
@@ -153,8 +206,7 @@ fn test_astar_weight_filter() {
     // Modulation formula: w_eff = weight * (1.0 + net_activation + domain_bonus) * steering_factor
     // Max possible: 0.8 * 2.2 = 1.76, so 2.0 is impossible to achieve.
     let params = AstarParams::default().min_weight(2.0);
-    let result = astar_search(&storage, start, goal, params)
-        .expect("A* failed");
+    let result = astar_search(&storage, start, goal, params).expect("A* failed");
 
     assert!(!result.path_found, "No path with impossible weight filter");
 }
@@ -165,8 +217,7 @@ fn test_astar_edge_type_filter() {
 
     // Only Hierarchical edges (none in graph)
     let params = AstarParams::default().edge_types(vec![EdgeType::Hierarchical]);
-    let result = astar_search(&storage, start, goal, params)
-        .expect("A* failed");
+    let result = astar_search(&storage, start, goal, params).expect("A* failed");
 
     assert!(!result.path_found, "No path with edge type filter");
 }
@@ -177,8 +228,7 @@ fn test_astar_max_nodes_limit() {
 
     // Very small limit
     let params = AstarParams::default().max_nodes(1);
-    let result = astar_search(&storage, start, goal, params)
-        .expect("A* failed");
+    let result = astar_search(&storage, start, goal, params).expect("A* failed");
 
     // May or may not find path depending on exploration order
     assert!(result.nodes_explored <= 1);
@@ -200,8 +250,7 @@ fn test_astar_bidirectional() {
 fn test_astar_path_convenience() {
     let (storage, start, goal, _dir) = setup_test_graph();
 
-    let path = astar_path(&storage, start, goal)
-        .expect("astar_path failed");
+    let path = astar_path(&storage, start, goal).expect("astar_path failed");
 
     assert!(path.is_some());
     let path = path.unwrap();
@@ -226,8 +275,7 @@ fn test_astar_domain_path() {
 fn test_astar_prefers_shorter_path() {
     let (storage, start, goal, _dir) = setup_test_graph();
 
-    let result = astar_search(&storage, start, goal, AstarParams::default())
-        .expect("A* failed");
+    let result = astar_search(&storage, start, goal, AstarParams::default()).expect("A* failed");
 
     // The direct path 1->2->3->4 has 3 edges
     // The longer path 1->5->6->4 has 3 edges but lower weights

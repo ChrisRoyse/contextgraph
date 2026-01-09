@@ -64,7 +64,10 @@ fn test_node_metadata_mark_consolidated() {
     // Timestamp should be recent
     let now = chrono::Utc::now();
     let diff = now - meta.consolidated_at.unwrap();
-    assert!(diff.num_seconds() < 1, "Consolidated timestamp should be recent");
+    assert!(
+        diff.num_seconds() < 1,
+        "Consolidated timestamp should be recent"
+    );
 }
 
 #[test]
@@ -117,7 +120,10 @@ fn test_node_metadata_soft_delete_restore_cycle() {
     assert!(meta.deleted);
     let deleted_at_2 = meta.deleted_at;
     assert!(deleted_at_2.is_some());
-    assert!(deleted_at_2 != deleted_at_1, "New deletion should have fresh timestamp");
+    assert!(
+        deleted_at_2 != deleted_at_1,
+        "New deletion should have fresh timestamp"
+    );
 }
 
 #[test]

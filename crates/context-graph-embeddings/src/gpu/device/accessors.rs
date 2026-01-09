@@ -6,8 +6,8 @@
 
 use candle_core::{DType, Device};
 
-use crate::gpu::GpuInfo;
 use super::core::{GPU_AVAILABLE, GPU_DEVICE, GPU_INFO};
+use crate::gpu::GpuInfo;
 
 /// Get the active GPU device.
 ///

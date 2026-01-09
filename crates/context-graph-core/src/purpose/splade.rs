@@ -170,11 +170,7 @@ mod tests {
     #[test]
     fn test_splade_alignment_top_terms() {
         let aligned = SpladeAlignment::new(
-            vec![
-                ("c".into(), 0.3),
-                ("a".into(), 0.9),
-                ("b".into(), 0.6),
-            ],
+            vec![("c".into(), 0.3), ("a".into(), 0.9), ("b".into(), 0.6)],
             0.5,
             0.6,
         );
@@ -208,11 +204,7 @@ mod tests {
 
     #[test]
     fn test_splade_alignment_helper_methods() {
-        let aligned = SpladeAlignment::new(
-            vec![("a".into(), 0.4), ("b".into(), 0.6)],
-            0.5,
-            0.5,
-        );
+        let aligned = SpladeAlignment::new(vec![("a".into(), 0.4), ("b".into(), 0.6)], 0.5, 0.5);
 
         assert_eq!(aligned.aligned_count(), 2);
         assert!(aligned.has_aligned_terms());
@@ -245,11 +237,7 @@ mod tests {
 
     #[test]
     fn test_splade_alignment_serialization() {
-        let aligned = SpladeAlignment::new(
-            vec![("test".into(), 0.5)],
-            0.6,
-            0.7,
-        );
+        let aligned = SpladeAlignment::new(vec![("test".into(), 0.5)], 0.6, 0.7);
 
         let json = serde_json::to_string(&aligned).unwrap();
         let restored: SpladeAlignment = serde_json::from_str(&json).unwrap();

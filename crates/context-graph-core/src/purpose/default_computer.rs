@@ -191,7 +191,8 @@ impl DefaultPurposeComputer {
             match m_idx.cmp(&g_idx) {
                 std::cmp::Ordering::Equal => {
                     // Matching index - record alignment
-                    let combined_weight = memory_splade.values[memory_idx] * goal_splade.values[goal_idx];
+                    let combined_weight =
+                        memory_splade.values[memory_idx] * goal_splade.values[goal_idx];
                     aligned_terms.push((format!("vocab_{}", m_idx), combined_weight));
                     memory_idx += 1;
                     goal_idx += 1;
@@ -270,7 +271,10 @@ impl DefaultPurposeComputer {
                 trace!(space_idx, similarity, "Sparse alignment computed");
                 similarity
             }
-            (EmbeddingSlice::TokenLevel(memory_tokens), EmbeddingSlice::TokenLevel(goal_tokens)) => {
+            (
+                EmbeddingSlice::TokenLevel(memory_tokens),
+                EmbeddingSlice::TokenLevel(goal_tokens),
+            ) => {
                 // Token-level vs Token-level (E12)
                 let similarity = Self::maxsim_similarity(memory_tokens, goal_tokens);
                 trace!(space_idx, similarity, "Token-level alignment computed");
@@ -278,10 +282,7 @@ impl DefaultPurposeComputer {
             }
             _ => {
                 // Type mismatch - this shouldn't happen with valid fingerprints
-                trace!(
-                    space_idx,
-                    "Embedding type mismatch between memory and goal"
-                );
+                trace!(space_idx, "Embedding type mismatch between memory and goal");
                 0.0
             }
         }
@@ -343,15 +344,11 @@ impl DefaultPurposeComputer {
             let child_sum: f32 = children
                 .iter()
                 .zip(child_alignments.iter())
-                .map(|(child, alignments)| {
-                    alignments[space_idx] * child.level.propagation_weight()
-                })
+                .map(|(child, alignments)| alignments[space_idx] * child.level.propagation_weight())
                 .sum();
 
-            let total_child_weight: f32 = children
-                .iter()
-                .map(|c| c.level.propagation_weight())
-                .sum();
+            let total_child_weight: f32 =
+                children.iter().map(|c| c.level.propagation_weight()).sum();
 
             let child_component = if total_child_weight > 0.0 {
                 child_weight * (child_sum / total_child_weight)
@@ -460,8 +457,8 @@ impl PurposeVectorComputer for DefaultPurposeComputer {
 
 #[cfg(test)]
 mod tests {
+    use super::super::goals::{GoalDiscoveryMetadata, GoalLevel};
     use super::*;
-    use super::super::goals::{GoalLevel, GoalDiscoveryMetadata};
 
     // Helper function to create a valid zeroed fingerprint for testing
     fn test_fingerprint() -> SemanticFingerprint {

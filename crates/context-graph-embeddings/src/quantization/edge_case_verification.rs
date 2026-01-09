@@ -68,7 +68,7 @@ mod edge_case_tests {
 
         // BEFORE STATE
         let large_dim: usize = 10_000_000; // 10 million dimensions
-        let data_size: usize = 1_000_000;   // 1 MB of data
+        let data_size: usize = 1_000_000; // 1 MB of data
 
         println!("BEFORE STATE:");
         println!("  - About to create QuantizedEmbedding with:");
@@ -103,7 +103,10 @@ mod edge_case_tests {
         assert_eq!(size, data_size, "size_bytes should equal data.len()");
         println!("  - size_bytes() == {}: PASSED", data_size);
 
-        assert!((ratio - expected_ratio).abs() < 0.001, "ratio should match expected");
+        assert!(
+            (ratio - expected_ratio).abs() < 0.001,
+            "ratio should match expected"
+        );
         println!("  - compression_ratio() ~= {}: PASSED", expected_ratio);
 
         assert!(ratio == 40.0, "40MB original / 1MB compressed = 40x");
@@ -129,9 +132,21 @@ mod edge_case_tests {
         // Constitution mapping reference:
         let expected_mappings = [
             (ModelId::Semantic, QuantizationMethod::PQ8, "E1"),
-            (ModelId::TemporalRecent, QuantizationMethod::Float8E4M3, "E2"),
-            (ModelId::TemporalPeriodic, QuantizationMethod::Float8E4M3, "E3"),
-            (ModelId::TemporalPositional, QuantizationMethod::Float8E4M3, "E4"),
+            (
+                ModelId::TemporalRecent,
+                QuantizationMethod::Float8E4M3,
+                "E2",
+            ),
+            (
+                ModelId::TemporalPeriodic,
+                QuantizationMethod::Float8E4M3,
+                "E3",
+            ),
+            (
+                ModelId::TemporalPositional,
+                QuantizationMethod::Float8E4M3,
+                "E4",
+            ),
             (ModelId::Causal, QuantizationMethod::PQ8, "E5"),
             (ModelId::Sparse, QuantizationMethod::SparseNative, "E6"),
             (ModelId::Code, QuantizationMethod::PQ8, "E7"),
@@ -139,7 +154,11 @@ mod edge_case_tests {
             (ModelId::Hdc, QuantizationMethod::Binary, "E9"),
             (ModelId::Multimodal, QuantizationMethod::PQ8, "E10"),
             (ModelId::Entity, QuantizationMethod::Float8E4M3, "E11"),
-            (ModelId::LateInteraction, QuantizationMethod::TokenPruning, "E12"),
+            (
+                ModelId::LateInteraction,
+                QuantizationMethod::TokenPruning,
+                "E12",
+            ),
             (ModelId::Splade, QuantizationMethod::SparseNative, "E13"),
         ];
 
@@ -148,8 +167,15 @@ mod edge_case_tests {
 
         for (model_id, expected_method, embedder_name) in &expected_mappings {
             let actual_method = QuantizationMethod::for_model_id(*model_id);
-            let status = if actual_method == *expected_method { "PASSED" } else { "FAILED" };
-            println!("  {} ({:?}) -> {:?} [{}]", embedder_name, model_id, actual_method, status);
+            let status = if actual_method == *expected_method {
+                "PASSED"
+            } else {
+                "FAILED"
+            };
+            println!(
+                "  {} ({:?}) -> {:?} [{}]",
+                embedder_name, model_id, actual_method, status
+            );
             assert_eq!(actual_method, *expected_method);
         }
 
@@ -177,7 +203,10 @@ mod edge_case_tests {
         }
 
         println!("  - PQ8: {} (expected 4: E1, E5, E7, E10)", pq8_count);
-        println!("  - Float8E4M3: {} (expected 5: E2, E3, E4, E8, E11)", float8_count);
+        println!(
+            "  - Float8E4M3: {} (expected 5: E2, E3, E4, E8, E11)",
+            float8_count
+        );
         println!("  - Binary: {} (expected 1: E9)", binary_count);
         println!("  - SparseNative: {} (expected 2: E6, E13)", sparse_count);
         println!("  - TokenPruning: {} (expected 1: E12)", token_count);
@@ -201,15 +230,36 @@ mod edge_case_tests {
         println!("\n=== EDGE CASE 4: Serde Roundtrip All Metadata Variants ===");
 
         let test_cases = vec![
-            ("PQ8", QuantizationMetadata::PQ8 { codebook_id: 42, num_subvectors: 8 }),
-            ("Float8", QuantizationMetadata::Float8 { scale: 0.5, bias: -1.0 }),
+            (
+                "PQ8",
+                QuantizationMetadata::PQ8 {
+                    codebook_id: 42,
+                    num_subvectors: 8,
+                },
+            ),
+            (
+                "Float8",
+                QuantizationMetadata::Float8 {
+                    scale: 0.5,
+                    bias: -1.0,
+                },
+            ),
             ("Binary", QuantizationMetadata::Binary { threshold: 0.0 }),
-            ("Sparse", QuantizationMetadata::Sparse { vocab_size: 30522, nnz: 100 }),
-            ("TokenPruning", QuantizationMetadata::TokenPruning {
-                original_tokens: 512,
-                kept_tokens: 256,
-                threshold: 0.5
-            }),
+            (
+                "Sparse",
+                QuantizationMetadata::Sparse {
+                    vocab_size: 30522,
+                    nnz: 100,
+                },
+            ),
+            (
+                "TokenPruning",
+                QuantizationMetadata::TokenPruning {
+                    original_tokens: 512,
+                    kept_tokens: 256,
+                    threshold: 0.5,
+                },
+            ),
         ];
 
         for (name, metadata) in test_cases {
@@ -219,7 +269,8 @@ mod edge_case_tests {
             let json = serde_json::to_string(&metadata).expect("serialize failed");
             println!("  JSON: {}", json);
 
-            let restored: QuantizationMetadata = serde_json::from_str(&json).expect("deserialize failed");
+            let restored: QuantizationMetadata =
+                serde_json::from_str(&json).expect("deserialize failed");
             println!("  AFTER: {:?}", restored);
 
             // Can't directly compare enums, so serialize both and compare JSON

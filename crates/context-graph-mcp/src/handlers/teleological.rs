@@ -10,13 +10,15 @@
 use super::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 use context_graph_core::teleological::{
-    ComponentWeights, ComparisonScope, GroupType, MatrixSearchConfig, ProfileId,
-    SearchStrategy, TeleologicalVector, TeleologicalMatrixSearch,
     services::{FusionEngine, ProfileManager},
     types::NUM_EMBEDDERS,
+    ComparisonScope, ComponentWeights, GroupType, MatrixSearchConfig, ProfileId, SearchStrategy,
+    TeleologicalMatrixSearch, TeleologicalVector,
 };
 // FeedbackEvent and FeedbackType need full path - not re-exported from services
-use context_graph_core::teleological::services::feedback_learner::{FeedbackEvent, FeedbackType, FeedbackLearner};
+use context_graph_core::teleological::services::feedback_learner::{
+    FeedbackEvent, FeedbackLearner, FeedbackType,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info};
@@ -249,7 +251,12 @@ fn parse_strategy(s: &str) -> SearchStrategy {
     }
 }
 
-fn parse_scope(s: &str, specific_pairs: Option<Vec<(usize, usize)>>, specific_groups: Option<Vec<String>>, embedder_index: Option<usize>) -> ComparisonScope {
+fn parse_scope(
+    s: &str,
+    specific_pairs: Option<Vec<(usize, usize)>>,
+    specific_groups: Option<Vec<String>>,
+    embedder_index: Option<usize>,
+) -> ComparisonScope {
     match s.to_lowercase().as_str() {
         "full" => ComparisonScope::Full,
         "purpose_vector_only" | "purpose" => ComparisonScope::PurposeVectorOnly,
@@ -345,20 +352,14 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!("Failed to parse search_teleological params: {}", e);
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 
         // Convert query and candidates
         let query = params.query.to_core();
-        let candidates: Vec<TeleologicalVector> = params
-            .candidates
-            .iter()
-            .map(|c| c.to_core())
-            .collect();
+        let candidates: Vec<TeleologicalVector> =
+            params.candidates.iter().map(|c| c.to_core()).collect();
 
         if candidates.is_empty() {
             return self.tool_error_with_pulse(id, "No candidates provided for search");
@@ -372,10 +373,7 @@ impl Handlers {
             params.specific_groups,
             params.embedder_index,
         );
-        let weights = params
-            .weights
-            .map(|w| w.to_core())
-            .unwrap_or_default();
+        let weights = params.weights.map(|w| w.to_core()).unwrap_or_default();
 
         let config = MatrixSearchConfig {
             strategy,
@@ -468,10 +466,7 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!("Failed to parse compute_teleological_vector params: {}", e);
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 
@@ -485,10 +480,8 @@ impl Handlers {
             Ok(r) => r,
             Err(e) => {
                 error!("Failed to compute embeddings: {}", e);
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Embedding computation failed: {}", e),
-                );
+                return self
+                    .tool_error_with_pulse(id, &format!("Embedding computation failed: {}", e));
             }
         };
         let embed_duration = start.elapsed();
@@ -539,8 +532,7 @@ impl Handlers {
 
         info!(
             "compute_teleological_vector completed in {:?} (tucker={})",
-            embed_duration,
-            params.compute_tucker
+            embed_duration, params.compute_tucker
         );
 
         self.tool_result_with_pulse(
@@ -583,10 +575,7 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!("Failed to parse fuse_embeddings params: {}", e);
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 
@@ -603,9 +592,9 @@ impl Handlers {
         }
 
         // Compute or use provided alignments
-        let alignments = params.alignments.unwrap_or_else(|| {
-            compute_alignments_from_embeddings(&params.embeddings)
-        });
+        let alignments = params
+            .alignments
+            .unwrap_or_else(|| compute_alignments_from_embeddings(&params.embeddings));
 
         // Create fusion engine
         let fusion_engine = FusionEngine::new();
@@ -657,10 +646,7 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!("Failed to parse update_synergy_matrix params: {}", e);
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 
@@ -668,10 +654,7 @@ impl Handlers {
         let vector_id = match Uuid::parse_str(&params.vector_id) {
             Ok(u) => u,
             Err(e) => {
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid vector_id: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid vector_id: {}", e));
             }
         };
 
@@ -765,10 +748,7 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!("Failed to parse manage_teleological_profile params: {}", e);
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 

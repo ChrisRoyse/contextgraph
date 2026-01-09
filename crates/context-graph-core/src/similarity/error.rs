@@ -203,9 +203,7 @@ impl SimilarityError {
     pub fn is_recoverable(&self) -> bool {
         matches!(
             self,
-            Self::InsufficientSpaces { .. }
-                | Self::MissingLateInteraction
-                | Self::InvalidConfig(_)
+            Self::InsufficientSpaces { .. } | Self::MissingLateInteraction | Self::InvalidConfig(_)
         )
     }
 
@@ -213,8 +211,7 @@ impl SimilarityError {
     pub fn is_data_corruption(&self) -> bool {
         matches!(
             self,
-            Self::DimensionMismatch { .. }
-                | Self::InvalidNumericValue { .. }
+            Self::DimensionMismatch { .. } | Self::InvalidNumericValue { .. }
         )
     }
 }
@@ -280,7 +277,10 @@ mod tests {
 
         if let SimilarityError::BatchError { index, source } = outer {
             assert_eq!(index, 42);
-            assert!(matches!(*source, SimilarityError::ZeroNormVector { embedder: 5 }));
+            assert!(matches!(
+                *source,
+                SimilarityError::ZeroNormVector { embedder: 5 }
+            ));
         } else {
             panic!("Expected BatchError");
         }

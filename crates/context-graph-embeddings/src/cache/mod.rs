@@ -25,8 +25,8 @@ use moka::sync::Cache;
 
 use crate::config::CacheConfig;
 use crate::error::EmbeddingResult;
-use crate::types::MultiArrayEmbedding;
 use crate::types::dimensions::{MODEL_COUNT, TOTAL_DIMENSION};
+use crate::types::MultiArrayEmbedding;
 
 // ============================================================================
 // CACHE KEY
@@ -835,6 +835,9 @@ mod tests {
         }
 
         // Cache should have entries
-        assert!(cache.len() > 0, "Cache should have entries after concurrent access");
+        assert!(
+            cache.len() > 0,
+            "Cache should have entries after concurrent access"
+        );
     }
 }

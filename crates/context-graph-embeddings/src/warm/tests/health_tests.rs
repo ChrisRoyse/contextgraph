@@ -1,8 +1,8 @@
 //! Tests for WarmHealthChecker status monitoring.
 
+use super::helpers::{test_handle, MB};
 use crate::warm::registry::WarmModelRegistry;
 use crate::warm::state::WarmModelState;
-use super::helpers::{test_handle, MB};
 
 #[test]
 fn test_health_status_from_registry_all_warm() {
@@ -99,7 +99,9 @@ fn test_health_check_warm_count_progression() {
         let model_id = format!("E{}", i);
         registry.start_loading(&model_id).unwrap();
         registry.mark_validating(&model_id).unwrap();
-        registry.mark_warm(&model_id, test_handle(100 * MB)).unwrap();
+        registry
+            .mark_warm(&model_id, test_handle(100 * MB))
+            .unwrap();
 
         assert_eq!(registry.warm_count(), i);
     }

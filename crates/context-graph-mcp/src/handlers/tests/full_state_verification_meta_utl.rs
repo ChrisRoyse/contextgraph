@@ -116,7 +116,10 @@ async fn test_fsv_learning_trajectory_all_embedders() {
         let tracker_guard = tracker.read();
         println!("  prediction_count: {}", tracker_guard.prediction_count);
         println!("  validation_count: {}", tracker_guard.validation_count);
-        println!("  current_weights sum: {:.6}", tracker_guard.current_weights.iter().sum::<f32>());
+        println!(
+            "  current_weights sum: {:.6}",
+            tracker_guard.current_weights.iter().sum::<f32>()
+        );
     }
 
     // STEP 2: EXECUTE
@@ -131,12 +134,20 @@ async fn test_fsv_learning_trajectory_all_embedders() {
 
     // STEP 3: VERIFY RESPONSE
     println!("\nVERIFY RESPONSE:");
-    assert!(response.error.is_none(), "Handler should succeed: {:?}", response.error);
+    assert!(
+        response.error.is_none(),
+        "Handler should succeed: {:?}",
+        response.error
+    );
     let result = response.result.unwrap();
 
     let trajectories = result["trajectories"].as_array().unwrap();
     println!("  trajectories count: {}", trajectories.len());
-    assert_eq!(trajectories.len(), NUM_EMBEDDERS, "Should return all 13 embedders");
+    assert_eq!(
+        trajectories.len(),
+        NUM_EMBEDDERS,
+        "Should return all 13 embedders"
+    );
 
     // Verify each trajectory has expected fields
     for (i, traj) in trajectories.iter().enumerate() {
@@ -148,8 +159,14 @@ async fn test_fsv_learning_trajectory_all_embedders() {
 
     let summary = &result["system_summary"];
     println!("  overall_accuracy: {}", summary["overall_accuracy"]);
-    println!("  best_performing_space: {}", summary["best_performing_space"]);
-    println!("  worst_performing_space: {}", summary["worst_performing_space"]);
+    println!(
+        "  best_performing_space: {}",
+        summary["best_performing_space"]
+    );
+    println!(
+        "  worst_performing_space: {}",
+        summary["worst_performing_space"]
+    );
 
     // STEP 4: VERIFY IN SOURCE OF TRUTH
     println!("\nVERIFY IN SOURCE OF TRUTH:");
@@ -157,7 +174,10 @@ async fn test_fsv_learning_trajectory_all_embedders() {
         let tracker_guard = tracker.read();
         let weights_sum: f32 = tracker_guard.current_weights.iter().sum();
         println!("  MetaUtlTracker weights sum: {:.6}", weights_sum);
-        assert!((weights_sum - 1.0).abs() < 0.001, "Weights should sum to ~1.0");
+        assert!(
+            (weights_sum - 1.0).abs() < 0.001,
+            "Weights should sum to ~1.0"
+        );
     }
 
     // STEP 5: EVIDENCE
@@ -198,7 +218,8 @@ async fn test_fsv_learning_trajectory_specific_embedders() {
     assert_eq!(trajectories.len(), 3, "Should return exactly 3 embedders");
 
     // Verify correct indices returned
-    let indices: Vec<u64> = trajectories.iter()
+    let indices: Vec<u64> = trajectories
+        .iter()
         .map(|t| t["embedder_index"].as_u64().unwrap())
         .collect();
     assert_eq!(indices, vec![0, 5, 12], "Should return embedders 0, 5, 12");
@@ -299,7 +320,10 @@ async fn test_fsv_predict_storage_and_validate() {
     println!("\nBEFORE STATE:");
     {
         let tracker_guard = tracker.read();
-        println!("  pending_predictions: {}", tracker_guard.pending_predictions.len());
+        println!(
+            "  pending_predictions: {}",
+            tracker_guard.pending_predictions.len()
+        );
         println!("  validation_count: {}", tracker_guard.validation_count);
     }
 
@@ -313,24 +337,36 @@ async fn test_fsv_predict_storage_and_validate() {
     );
 
     let predict_response = handlers.dispatch(predict_request).await;
-    assert!(predict_response.error.is_none(), "predict_storage should succeed: {:?}", predict_response.error);
+    assert!(
+        predict_response.error.is_none(),
+        "predict_storage should succeed: {:?}",
+        predict_response.error
+    );
     let predict_result = predict_response.result.unwrap();
 
     let prediction_id_str = predict_result["prediction_id"].as_str().unwrap();
     let prediction_id = Uuid::parse_str(prediction_id_str).unwrap();
     println!("\nPREDICTION MADE:");
     println!("  prediction_id: {}", prediction_id);
-    println!("  coherence_delta: {}", predict_result["predictions"]["coherence_delta"]);
+    println!(
+        "  coherence_delta: {}",
+        predict_result["predictions"]["coherence_delta"]
+    );
     println!("  confidence: {}", predict_result["confidence"]);
 
     // STEP 3: VERIFY IN SOURCE OF TRUTH
     println!("\nVERIFY IN SOURCE OF TRUTH (after predict):");
     {
         let tracker_guard = tracker.read();
-        let exists = tracker_guard.pending_predictions.contains_key(&prediction_id);
+        let exists = tracker_guard
+            .pending_predictions
+            .contains_key(&prediction_id);
         println!("  Prediction {} in tracker: {}", prediction_id, exists);
         assert!(exists, "Prediction MUST be in Source of Truth");
-        println!("  pending_predictions count: {}", tracker_guard.pending_predictions.len());
+        println!(
+            "  pending_predictions count: {}",
+            tracker_guard.pending_predictions.len()
+        );
     }
 
     // STEP 4: VALIDATE THE PREDICTION
@@ -348,25 +384,49 @@ async fn test_fsv_predict_storage_and_validate() {
     let validation_count_before = tracker.read().validation_count;
 
     let validate_response = handlers.dispatch(validate_request).await;
-    assert!(validate_response.error.is_none(), "validate_prediction should succeed: {:?}", validate_response.error);
+    assert!(
+        validate_response.error.is_none(),
+        "validate_prediction should succeed: {:?}",
+        validate_response.error
+    );
     let validate_result = validate_response.result.unwrap();
 
     println!("\nVALIDATION RESULT:");
-    println!("  prediction_type: {}", validate_result["validation"]["prediction_type"]);
-    println!("  prediction_error: {}", validate_result["validation"]["prediction_error"]);
-    println!("  accuracy_score: {}", validate_result["validation"]["accuracy_score"]);
+    println!(
+        "  prediction_type: {}",
+        validate_result["validation"]["prediction_type"]
+    );
+    println!(
+        "  prediction_error: {}",
+        validate_result["validation"]["prediction_error"]
+    );
+    println!(
+        "  accuracy_score: {}",
+        validate_result["validation"]["accuracy_score"]
+    );
 
     // STEP 5: VERIFY SOURCE OF TRUTH (after validate)
     println!("\nVERIFY IN SOURCE OF TRUTH (after validate):");
     {
         let tracker_guard = tracker.read();
-        let still_exists = tracker_guard.pending_predictions.contains_key(&prediction_id);
-        println!("  Prediction {} removed from tracker: {}", prediction_id, !still_exists);
+        let still_exists = tracker_guard
+            .pending_predictions
+            .contains_key(&prediction_id);
+        println!(
+            "  Prediction {} removed from tracker: {}",
+            prediction_id, !still_exists
+        );
         assert!(!still_exists, "Prediction MUST be removed after validation");
 
         println!("  validation_count before: {}", validation_count_before);
-        println!("  validation_count after: {}", tracker_guard.validation_count);
-        assert!(tracker_guard.validation_count > validation_count_before, "validation_count should increase");
+        println!(
+            "  validation_count after: {}",
+            tracker_guard.validation_count
+        );
+        assert!(
+            tracker_guard.validation_count > validation_count_before,
+            "validation_count should increase"
+        );
     }
 
     println!("\n======================================================================");
@@ -394,7 +454,10 @@ async fn test_fsv_predict_retrieval() {
     println!("\nBEFORE STATE:");
     {
         let tracker_guard = tracker.read();
-        println!("  pending_predictions: {}", tracker_guard.pending_predictions.len());
+        println!(
+            "  pending_predictions: {}",
+            tracker_guard.pending_predictions.len()
+        );
     }
 
     // STEP 2: EXECUTE
@@ -409,7 +472,11 @@ async fn test_fsv_predict_retrieval() {
     let response = handlers.dispatch(request).await;
 
     // STEP 3: VERIFY RESPONSE
-    assert!(response.error.is_none(), "Handler should succeed: {:?}", response.error);
+    assert!(
+        response.error.is_none(),
+        "Handler should succeed: {:?}",
+        response.error
+    );
     let result = response.result.unwrap();
 
     let prediction_id_str = result["prediction_id"].as_str().unwrap();
@@ -417,19 +484,33 @@ async fn test_fsv_predict_retrieval() {
 
     println!("\nPREDICTION MADE:");
     println!("  prediction_id: {}", prediction_id);
-    println!("  expected_relevance: {}", result["predictions"]["expected_relevance"]);
-    println!("  expected_alignment: {}", result["predictions"]["expected_alignment"]);
+    println!(
+        "  expected_relevance: {}",
+        result["predictions"]["expected_relevance"]
+    );
+    println!(
+        "  expected_alignment: {}",
+        result["predictions"]["expected_alignment"]
+    );
 
     // Verify per_space_contribution has 13 elements
-    let contributions = result["predictions"]["per_space_contribution"].as_array().unwrap();
-    assert_eq!(contributions.len(), NUM_EMBEDDERS, "Should have 13 contributions");
+    let contributions = result["predictions"]["per_space_contribution"]
+        .as_array()
+        .unwrap();
+    assert_eq!(
+        contributions.len(),
+        NUM_EMBEDDERS,
+        "Should have 13 contributions"
+    );
     println!("  per_space_contribution length: {}", contributions.len());
 
     // STEP 4: VERIFY IN SOURCE OF TRUTH
     println!("\nVERIFY IN SOURCE OF TRUTH:");
     {
         let tracker_guard = tracker.read();
-        let exists = tracker_guard.pending_predictions.contains_key(&prediction_id);
+        let exists = tracker_guard
+            .pending_predictions
+            .contains_key(&prediction_id);
         println!("  Prediction {} in tracker: {}", prediction_id, exists);
         assert!(exists, "Prediction MUST be in Source of Truth");
     }
@@ -454,7 +535,7 @@ async fn test_fsv_optimized_weights_after_training() {
             tracker_guard.record_validation();
             // Record varying accuracy per embedder
             for i in 0..NUM_EMBEDDERS {
-                let accuracy = 0.7 + (i as f32 * 0.02);  // 0.70 to 0.94
+                let accuracy = 0.7 + (i as f32 * 0.02); // 0.70 to 0.94
                 tracker_guard.record_accuracy(i, accuracy);
             }
             // Weight update triggers at validation 100
@@ -471,7 +552,10 @@ async fn test_fsv_optimized_weights_after_training() {
     {
         let tracker_guard = tracker.read();
         println!("  validation_count: {}", tracker_guard.validation_count);
-        println!("  last_weight_update: {:?}", tracker_guard.last_weight_update.is_some());
+        println!(
+            "  last_weight_update: {:?}",
+            tracker_guard.last_weight_update.is_some()
+        );
     }
 
     // STEP 2: EXECUTE
@@ -479,7 +563,11 @@ async fn test_fsv_optimized_weights_after_training() {
     let response = handlers.dispatch(request).await;
 
     // STEP 3: VERIFY RESPONSE
-    assert!(response.error.is_none(), "Handler should succeed with 100 validations: {:?}", response.error);
+    assert!(
+        response.error.is_none(),
+        "Handler should succeed with 100 validations: {:?}",
+        response.error
+    );
     let result = response.result.unwrap();
 
     let weights = result["weights"].as_array().unwrap();
@@ -492,7 +580,10 @@ async fn test_fsv_optimized_weights_after_training() {
     println!("  training_samples: {}", result["training_samples"]);
     println!("  confidence: {}", result["confidence"]);
 
-    assert!((weights_sum - 1.0).abs() < 0.001, "Weights should sum to ~1.0");
+    assert!(
+        (weights_sum - 1.0).abs() < 0.001,
+        "Weights should sum to ~1.0"
+    );
 
     // STEP 4: VERIFY IN SOURCE OF TRUTH
     println!("\nVERIFY IN SOURCE OF TRUTH:");
@@ -500,7 +591,10 @@ async fn test_fsv_optimized_weights_after_training() {
         let tracker_guard = tracker.read();
         let sot_sum: f32 = tracker_guard.current_weights.iter().sum();
         println!("  Source of Truth weights sum: {:.6}", sot_sum);
-        assert!((sot_sum - 1.0).abs() < 0.001, "SoT weights should sum to ~1.0");
+        assert!(
+            (sot_sum - 1.0).abs() < 0.001,
+            "SoT weights should sum to ~1.0"
+        );
     }
 
     println!("\n======================================================================");
@@ -548,7 +642,10 @@ async fn test_edge_case_embedder_index_13() {
     println!("\nAFTER STATE:");
     {
         let tracker_guard = tracker.read();
-        println!("  validation_count (unchanged): {}", tracker_guard.validation_count);
+        println!(
+            "  validation_count (unchanged): {}",
+            tracker_guard.validation_count
+        );
     }
 
     println!("\n======================================================================");
@@ -589,7 +686,10 @@ async fn test_edge_case_validate_unknown_prediction() {
     let response = handlers.dispatch(request).await;
 
     // VERIFY: Should return META_UTL_PREDICTION_NOT_FOUND
-    assert!(response.error.is_some(), "Should return error for unknown prediction");
+    assert!(
+        response.error.is_some(),
+        "Should return error for unknown prediction"
+    );
     let error = response.error.unwrap();
     assert_eq!(error.code, error_codes::META_UTL_PREDICTION_NOT_FOUND);
     println!("ERROR RETURNED:");
@@ -601,7 +701,10 @@ async fn test_edge_case_validate_unknown_prediction() {
     {
         let tracker_guard = tracker.read();
         assert_eq!(tracker_guard.pending_predictions.len(), predictions_before);
-        println!("  pending_predictions (unchanged): {}", tracker_guard.pending_predictions.len());
+        println!(
+            "  pending_predictions (unchanged): {}",
+            tracker_guard.pending_predictions.len()
+        );
     }
 
     println!("\n======================================================================");
@@ -622,7 +725,10 @@ async fn test_edge_case_optimized_weights_no_training() {
     {
         let tracker_guard = tracker.read();
         println!("  validation_count: {}", tracker_guard.validation_count);
-        println!("  last_weight_update: {:?}", tracker_guard.last_weight_update);
+        println!(
+            "  last_weight_update: {:?}",
+            tracker_guard.last_weight_update
+        );
         assert_eq!(tracker_guard.validation_count, 0);
     }
 
@@ -631,7 +737,10 @@ async fn test_edge_case_optimized_weights_no_training() {
     let response = handlers.dispatch(request).await;
 
     // VERIFY: Should return META_UTL_INSUFFICIENT_DATA
-    assert!(response.error.is_some(), "Should return error for 0 validations");
+    assert!(
+        response.error.is_some(),
+        "Should return error for 0 validations"
+    );
     let error = response.error.unwrap();
     assert_eq!(error.code, error_codes::META_UTL_INSUFFICIENT_DATA);
     println!("ERROR RETURNED:");
@@ -676,7 +785,10 @@ async fn test_edge_case_predict_storage_fingerprint_not_found() {
     {
         let tracker_guard = tracker.read();
         println!("  validation_count: {}", tracker_guard.validation_count);
-        println!("  pending_predictions: {}", tracker_guard.pending_predictions.len());
+        println!(
+            "  pending_predictions: {}",
+            tracker_guard.pending_predictions.len()
+        );
     }
 
     // ACTION: Request prediction for non-existent fingerprint
@@ -691,7 +803,10 @@ async fn test_edge_case_predict_storage_fingerprint_not_found() {
     let response = handlers.dispatch(request).await;
 
     // VERIFY: Should return FINGERPRINT_NOT_FOUND
-    assert!(response.error.is_some(), "Should return error for unknown fingerprint");
+    assert!(
+        response.error.is_some(),
+        "Should return error for unknown fingerprint"
+    );
     let error = response.error.unwrap();
     assert_eq!(error.code, error_codes::FINGERPRINT_NOT_FOUND);
     println!("ERROR RETURNED:");
@@ -702,7 +817,10 @@ async fn test_edge_case_predict_storage_fingerprint_not_found() {
     println!("\nAFTER STATE:");
     {
         let tracker_guard = tracker.read();
-        println!("  pending_predictions (unchanged): {}", tracker_guard.pending_predictions.len());
+        println!(
+            "  pending_predictions (unchanged): {}",
+            tracker_guard.pending_predictions.len()
+        );
         assert_eq!(tracker_guard.pending_predictions.len(), 0);
     }
 
@@ -739,7 +857,10 @@ async fn test_edge_case_validate_missing_outcome_field() {
 
     let predict_response = handlers.dispatch(predict_request).await;
     assert!(predict_response.error.is_none());
-    let prediction_id = predict_response.result.unwrap()["prediction_id"].as_str().unwrap().to_string();
+    let prediction_id = predict_response.result.unwrap()["prediction_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     println!("SETUP: Created prediction {}", prediction_id);
 
     // ACTION: Validate with missing field
@@ -757,7 +878,10 @@ async fn test_edge_case_validate_missing_outcome_field() {
     let response = handlers.dispatch(request).await;
 
     // VERIFY: Should return META_UTL_INVALID_OUTCOME
-    assert!(response.error.is_some(), "Should return error for missing field");
+    assert!(
+        response.error.is_some(),
+        "Should return error for missing field"
+    );
     let error = response.error.unwrap();
     assert_eq!(error.code, error_codes::META_UTL_INVALID_OUTCOME);
     println!("ERROR RETURNED:");

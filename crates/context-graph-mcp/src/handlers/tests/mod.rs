@@ -46,8 +46,8 @@ mod full_state_verification;
 mod full_state_verification_gwt;
 mod full_state_verification_johari;
 mod full_state_verification_meta_utl;
-mod full_state_verification_search;
 mod full_state_verification_purpose;
+mod full_state_verification_search;
 mod initialize;
 mod integration_e2e;
 mod manual_fsv_purpose;
@@ -60,8 +60,8 @@ mod purpose;
 mod search;
 mod task_emb_024_verification;
 mod teleological;
-mod tools_list;
 mod tools_call;
+mod tools_list;
 mod utl;
 
 use std::sync::Arc;
@@ -70,9 +70,13 @@ use tempfile::TempDir;
 
 use context_graph_core::alignment::{DefaultAlignmentCalculator, GoalAlignmentCalculator};
 use context_graph_core::purpose::{GoalDiscoveryMetadata, GoalHierarchy, GoalLevel, GoalNode};
+use context_graph_core::stubs::{
+    InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor,
+};
+use context_graph_core::traits::{
+    MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor,
+};
 use context_graph_core::types::fingerprint::SemanticFingerprint;
-use context_graph_core::stubs::{InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor};
-use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor};
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 
 // TASK-P3-01: Import real embedding provider for FSV tests (feature-gated)
@@ -132,13 +136,16 @@ async fn get_warm_loaded_provider() -> Arc<dyn MultiArrayEmbeddingProvider> {
             );
             tracing::info!("WARM LOAD: This loads 13 models ONCE, shared across all tests");
 
-            let provider = ProductionMultiArrayProvider::new(models_dir.clone(), GpuConfig::default())
-                .await
-                .unwrap_or_else(|_| panic!(
-                    "WARM LOAD FAILED: Could not create ProductionMultiArrayProvider. \
+            let provider =
+                ProductionMultiArrayProvider::new(models_dir.clone(), GpuConfig::default())
+                    .await
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "WARM LOAD FAILED: Could not create ProductionMultiArrayProvider. \
                      Ensure models exist at {:?} and RTX 5090 GPU is available with CUDA.",
-                    models_dir
-                ));
+                            models_dir
+                        )
+                    });
 
             tracing::info!("WARM LOAD: All 13 embedding models loaded into VRAM successfully");
             Arc::new(provider) as Arc<dyn MultiArrayEmbeddingProvider>
@@ -210,22 +217,40 @@ pub(crate) fn extract_mcp_tool_data(result: &serde_json::Value) -> serde_json::V
 /// TASK-S003: Uses DefaultAlignmentCalculator and test GoalHierarchy.
 /// NO legacy MemoryStore support.
 pub(crate) fn create_test_handlers() -> Handlers {
-    let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(InMemoryTeleologicalStore::new());
+    let teleological_store: Arc<dyn TeleologicalMemoryStore> =
+        Arc::new(InMemoryTeleologicalStore::new());
     let utl_processor: Arc<dyn UtlProcessor> = Arc::new(StubUtlProcessor::new());
-    let multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(StubMultiArrayProvider::new());
-    let alignment_calculator: Arc<dyn GoalAlignmentCalculator> = Arc::new(DefaultAlignmentCalculator::new());
+    let multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider> =
+        Arc::new(StubMultiArrayProvider::new());
+    let alignment_calculator: Arc<dyn GoalAlignmentCalculator> =
+        Arc::new(DefaultAlignmentCalculator::new());
     let goal_hierarchy = create_test_hierarchy();
-    Handlers::new(teleological_store, utl_processor, multi_array_provider, alignment_calculator, goal_hierarchy)
+    Handlers::new(
+        teleological_store,
+        utl_processor,
+        multi_array_provider,
+        alignment_calculator,
+        goal_hierarchy,
+    )
 }
 
 /// Create test handlers WITHOUT a North Star goal (for testing error cases).
 pub(crate) fn create_test_handlers_no_north_star() -> Handlers {
-    let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(InMemoryTeleologicalStore::new());
+    let teleological_store: Arc<dyn TeleologicalMemoryStore> =
+        Arc::new(InMemoryTeleologicalStore::new());
     let utl_processor: Arc<dyn UtlProcessor> = Arc::new(StubUtlProcessor::new());
-    let multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(StubMultiArrayProvider::new());
-    let alignment_calculator: Arc<dyn GoalAlignmentCalculator> = Arc::new(DefaultAlignmentCalculator::new());
+    let multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider> =
+        Arc::new(StubMultiArrayProvider::new());
+    let alignment_calculator: Arc<dyn GoalAlignmentCalculator> =
+        Arc::new(DefaultAlignmentCalculator::new());
     let goal_hierarchy = GoalHierarchy::new(); // Empty hierarchy
-    Handlers::new(teleological_store, utl_processor, multi_array_provider, alignment_calculator, goal_hierarchy)
+    Handlers::new(
+        teleological_store,
+        utl_processor,
+        multi_array_provider,
+        alignment_calculator,
+        goal_hierarchy,
+    )
 }
 
 // ============================================================================
@@ -383,7 +408,9 @@ pub(crate) fn create_test_hierarchy() -> GoalHierarchy {
     )
     .expect("Failed to create North Star goal");
     let ns_id = ns_goal.id;
-    hierarchy.add_goal(ns_goal).expect("Failed to add North Star");
+    hierarchy
+        .add_goal(ns_goal)
+        .expect("Failed to add North Star");
 
     // Strategic goal 1 - child of North Star
     let s1_goal = GoalNode::child_goal(
@@ -395,7 +422,9 @@ pub(crate) fn create_test_hierarchy() -> GoalHierarchy {
     )
     .expect("Failed to create strategic goal 1");
     let s1_id = s1_goal.id;
-    hierarchy.add_goal(s1_goal).expect("Failed to add strategic goal 1");
+    hierarchy
+        .add_goal(s1_goal)
+        .expect("Failed to add strategic goal 1");
 
     // Strategic goal 2 - child of North Star
     let s2_goal = GoalNode::child_goal(
@@ -406,7 +435,9 @@ pub(crate) fn create_test_hierarchy() -> GoalHierarchy {
         discovery.clone(),
     )
     .expect("Failed to create strategic goal 2");
-    hierarchy.add_goal(s2_goal).expect("Failed to add strategic goal 2");
+    hierarchy
+        .add_goal(s2_goal)
+        .expect("Failed to add strategic goal 2");
 
     // Tactical goal - child of Strategic goal 1
     let t1_goal = GoalNode::child_goal(
@@ -418,7 +449,9 @@ pub(crate) fn create_test_hierarchy() -> GoalHierarchy {
     )
     .expect("Failed to create tactical goal");
     let t1_id = t1_goal.id;
-    hierarchy.add_goal(t1_goal).expect("Failed to add tactical goal");
+    hierarchy
+        .add_goal(t1_goal)
+        .expect("Failed to add tactical goal");
 
     // Immediate goal - child of Tactical goal
     let i1_goal = GoalNode::child_goal(
@@ -429,7 +462,9 @@ pub(crate) fn create_test_hierarchy() -> GoalHierarchy {
         discovery,
     )
     .expect("Failed to create immediate goal");
-    hierarchy.add_goal(i1_goal).expect("Failed to add immediate goal");
+    hierarchy
+        .add_goal(i1_goal)
+        .expect("Failed to add immediate goal");
 
     hierarchy
 }
@@ -461,11 +496,8 @@ pub(crate) fn create_test_hierarchy() -> GoalHierarchy {
 ///     assert_eq!(count, 1, "Must have stored 1 fingerprint");
 /// }
 /// ```
-pub(crate) async fn create_test_handlers_with_rocksdb_store_access() -> (
-    Handlers,
-    Arc<dyn TeleologicalMemoryStore>,
-    TempDir,
-) {
+pub(crate) async fn create_test_handlers_with_rocksdb_store_access(
+) -> (Handlers, Arc<dyn TeleologicalMemoryStore>, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for RocksDB test");
     let db_path = tempdir.path().join("test_rocksdb_fsv");
 
@@ -599,13 +631,12 @@ pub(crate) async fn create_test_handlers_with_real_embeddings() -> (Handlers, Te
 /// - TempDir that MUST be kept alive for the duration of the test
 #[cfg(feature = "cuda")]
 #[allow(dead_code)]
-pub(crate) async fn create_test_handlers_with_real_embeddings_store_access() -> (
-    Handlers,
-    Arc<dyn TeleologicalMemoryStore>,
-    TempDir,
-) {
+pub(crate) async fn create_test_handlers_with_real_embeddings_store_access(
+) -> (Handlers, Arc<dyn TeleologicalMemoryStore>, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for FSV test");
-    let db_path = tempdir.path().join("test_rocksdb_fsv_real_embeddings_store");
+    let db_path = tempdir
+        .path()
+        .join("test_rocksdb_fsv_real_embeddings_store");
 
     // Open RocksDB store
     let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
@@ -691,12 +722,11 @@ use context_graph_core::{LayerStatusProvider, SystemMonitor};
 
 use crate::handlers::core::MetaUtlTracker;
 use crate::handlers::gwt_providers::{
-    GwtSystemProviderImpl, KuramotoProviderImpl, MetaCognitiveProviderImpl,
-    SelfEgoProviderImpl, WorkspaceProviderImpl,
+    GwtSystemProviderImpl, KuramotoProviderImpl, MetaCognitiveProviderImpl, SelfEgoProviderImpl,
+    WorkspaceProviderImpl,
 };
 use crate::handlers::gwt_traits::{
-    GwtSystemProvider, KuramotoProvider, MetaCognitiveProvider,
-    SelfEgoProvider, WorkspaceProvider,
+    GwtSystemProvider, KuramotoProvider, MetaCognitiveProvider, SelfEgoProvider, WorkspaceProvider,
 };
 
 /// Create test handlers with WARM GWT state (synchronized Kuramoto, non-zero purpose vector).
@@ -741,15 +771,13 @@ pub(crate) fn create_test_handlers_with_warm_gwt() -> Handlers {
         Arc::new(DynDefaultJohariManager::new(store));
     let meta_utl_tracker = Arc::new(ParkingRwLock::new(MetaUtlTracker::new()));
     let system_monitor: Arc<dyn SystemMonitor> = Arc::new(StubSystemMonitor);
-    let layer_status_provider: Arc<dyn LayerStatusProvider> =
-        Arc::new(StubLayerStatusProvider);
+    let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
 
     // WARM STATE: Create synchronized Kuramoto network (r ≈ 1.0)
     let kuramoto_network: Arc<ParkingRwLock<dyn KuramotoProvider>> =
         Arc::new(ParkingRwLock::new(KuramotoProviderImpl::synchronized()));
 
-    let gwt_system: Arc<dyn GwtSystemProvider> =
-        Arc::new(GwtSystemProviderImpl::new());
+    let gwt_system: Arc<dyn GwtSystemProvider> = Arc::new(GwtSystemProviderImpl::new());
     let workspace_provider: Arc<TokioRwLock<dyn WorkspaceProvider>> =
         Arc::new(TokioRwLock::new(WorkspaceProviderImpl::new()));
     let meta_cognitive: Arc<TokioRwLock<dyn MetaCognitiveProvider>> =
@@ -772,8 +800,9 @@ pub(crate) fn create_test_handlers_with_warm_gwt() -> Handlers {
         0.69, // E12: Late-interaction
         0.52, // E13: SPLADE auxiliary
     ];
-    let self_ego: Arc<TokioRwLock<dyn SelfEgoProvider>> =
-        Arc::new(TokioRwLock::new(SelfEgoProviderImpl::with_purpose_vector(warm_purpose_vector)));
+    let self_ego: Arc<TokioRwLock<dyn SelfEgoProvider>> = Arc::new(TokioRwLock::new(
+        SelfEgoProviderImpl::with_purpose_vector(warm_purpose_vector),
+    ));
 
     Handlers::with_gwt(
         teleological_store,
@@ -805,8 +834,8 @@ pub(crate) async fn create_test_handlers_with_warm_gwt_rocksdb() -> (Handlers, T
     let tempdir = TempDir::new().expect("Failed to create temp directory");
     let db_path = tempdir.path().join("test_warm_gwt_rocksdb");
 
-    let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
-        .expect("Failed to open RocksDbTeleologicalStore");
+    let rocksdb_store =
+        RocksDbTeleologicalStore::open(&db_path).expect("Failed to open RocksDbTeleologicalStore");
     // Note: EmbedderIndexRegistry is initialized in constructor
 
     // Create in-memory store for Johari manager (separate from RocksDB)
@@ -823,15 +852,13 @@ pub(crate) async fn create_test_handlers_with_warm_gwt_rocksdb() -> (Handlers, T
         Arc::new(DynDefaultJohariManager::new(johari_store));
     let meta_utl_tracker = Arc::new(ParkingRwLock::new(MetaUtlTracker::new()));
     let system_monitor: Arc<dyn SystemMonitor> = Arc::new(StubSystemMonitor);
-    let layer_status_provider: Arc<dyn LayerStatusProvider> =
-        Arc::new(StubLayerStatusProvider);
+    let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
 
     // WARM STATE: Synchronized Kuramoto network
     let kuramoto_network: Arc<ParkingRwLock<dyn KuramotoProvider>> =
         Arc::new(ParkingRwLock::new(KuramotoProviderImpl::synchronized()));
 
-    let gwt_system: Arc<dyn GwtSystemProvider> =
-        Arc::new(GwtSystemProviderImpl::new());
+    let gwt_system: Arc<dyn GwtSystemProvider> = Arc::new(GwtSystemProviderImpl::new());
     let workspace_provider: Arc<TokioRwLock<dyn WorkspaceProvider>> =
         Arc::new(TokioRwLock::new(WorkspaceProviderImpl::new()));
     let meta_cognitive: Arc<TokioRwLock<dyn MetaCognitiveProvider>> =
@@ -841,8 +868,9 @@ pub(crate) async fn create_test_handlers_with_warm_gwt_rocksdb() -> (Handlers, T
     let warm_purpose_vector: [f32; 13] = [
         0.85, 0.72, 0.68, 0.65, 0.78, 0.55, 0.82, 0.71, 0.63, 0.59, 0.76, 0.69, 0.52,
     ];
-    let self_ego: Arc<TokioRwLock<dyn SelfEgoProvider>> =
-        Arc::new(TokioRwLock::new(SelfEgoProviderImpl::with_purpose_vector(warm_purpose_vector)));
+    let self_ego: Arc<TokioRwLock<dyn SelfEgoProvider>> = Arc::new(TokioRwLock::new(
+        SelfEgoProviderImpl::with_purpose_vector(warm_purpose_vector),
+    ));
 
     let handlers = Handlers::with_gwt(
         teleological_store,

@@ -1,6 +1,5 @@
 //! Statistics and edge case tests for ModelRegistry.
 
-
 use std::sync::Arc;
 
 use crate::error::EmbeddingError;

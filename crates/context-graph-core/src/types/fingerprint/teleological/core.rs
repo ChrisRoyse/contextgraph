@@ -92,11 +92,8 @@ impl TeleologicalFingerprint {
     /// # Arguments
     /// * `trigger` - What caused this evolution event
     pub fn record_snapshot(&mut self, trigger: EvolutionTrigger) {
-        let snapshot = PurposeSnapshot::new(
-            self.purpose_vector.clone(),
-            self.johari.clone(),
-            trigger,
-        );
+        let snapshot =
+            PurposeSnapshot::new(self.purpose_vector.clone(), self.johari.clone(), trigger);
 
         self.purpose_evolution.push(snapshot);
 

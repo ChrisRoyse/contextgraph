@@ -67,7 +67,7 @@ async fn main() -> Result<()> {
 
     let config = if let Some(path) = config_path {
         info!("Loading configuration from: {:?}", path);
-        Config::from_file(&path)?  // validate() is called inside from_file()
+        Config::from_file(&path)? // validate() is called inside from_file()
     } else {
         info!("Using default configuration");
         let config = Config::default();

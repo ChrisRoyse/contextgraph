@@ -38,7 +38,7 @@ impl MultiArrayEmbedding {
             let bytes: &[u8] = unsafe {
                 std::slice::from_raw_parts(
                     embedding.vector.as_ptr() as *const u8,
-                    std::mem::size_of_val(embedding.vector.as_slice())
+                    std::mem::size_of_val(embedding.vector.as_slice()),
                 )
             };
             all_bytes.extend_from_slice(bytes);
@@ -90,8 +90,6 @@ impl MultiArrayEmbedding {
     pub fn iter(&self) -> impl Iterator<Item = (ModelId, &ModelEmbedding)> {
         ModelId::all()
             .iter()
-            .filter_map(|&model_id| {
-                self.get(model_id).map(|emb| (model_id, emb))
-            })
+            .filter_map(|&model_id| self.get(model_id).map(|emb| (model_id, emb)))
     }
 }

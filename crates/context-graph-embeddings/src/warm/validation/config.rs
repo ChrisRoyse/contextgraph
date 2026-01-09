@@ -51,9 +51,7 @@ impl TestInferenceConfig {
         Self {
             model_id: model_id.to_string(),
             expected_dimension,
-            test_input: TestInput::Text(
-                "The quick brown fox jumps over the lazy dog.".to_string(),
-            ),
+            test_input: TestInput::Text("The quick brown fox jumps over the lazy dog.".to_string()),
             reference_output: None,
             max_inference_ms: 1000, // 1 second timeout for embedding
         }

@@ -31,19 +31,19 @@
 //! - AP-001: Never unwrap() - returns MissingHyperbolicData if embeddings missing
 //! - AP-009: NaN/Infinity clamped to valid range
 
-mod types;
-mod node;
-mod helpers;
 mod algorithm;
 mod bidirectional;
+mod helpers;
+mod node;
+mod types;
 
 #[cfg(test)]
 mod tests;
 
 // Re-export public API
-pub use types::{AstarParams, AstarResult, NodeId};
 pub use algorithm::astar_search;
 pub use bidirectional::astar_bidirectional;
+pub use types::{AstarParams, AstarResult, NodeId};
 
 // Re-export edge types for convenience
 pub use crate::storage::edges::{Domain, EdgeType};
@@ -70,9 +70,7 @@ pub fn astar_domain_path(
     domain: Domain,
     min_weight: f32,
 ) -> crate::error::GraphResult<Option<Vec<NodeId>>> {
-    let params = AstarParams::default()
-        .domain(domain)
-        .min_weight(min_weight);
+    let params = AstarParams::default().domain(domain).min_weight(min_weight);
     let result = astar_search(storage, start, goal, params)?;
     if result.path_found {
         Ok(Some(result.path))

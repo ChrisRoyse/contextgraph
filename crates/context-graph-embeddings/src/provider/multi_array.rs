@@ -57,8 +57,8 @@ use context_graph_core::traits::{
     TokenEmbedder,
 };
 use context_graph_core::types::fingerprint::{
-    SemanticFingerprint, SparseVector, NUM_EMBEDDERS, E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM,
-    E7_DIM, E8_DIM, E9_DIM, E10_DIM, E11_DIM, E12_TOKEN_DIM,
+    SemanticFingerprint, SparseVector, E10_DIM, E11_DIM, E12_TOKEN_DIM, E1_DIM, E2_DIM, E3_DIM,
+    E4_DIM, E5_DIM, E7_DIM, E8_DIM, E9_DIM, NUM_EMBEDDERS,
 };
 
 use crate::config::GpuConfig;
@@ -114,11 +114,9 @@ impl SingleEmbedder for DenseEmbedderAdapter {
             )));
         }
 
-        let input = ModelInput::text(content).map_err(|e| {
-            CoreError::ValidationError {
-                field: "content".to_string(),
-                message: e.to_string(),
-            }
+        let input = ModelInput::text(content).map_err(|e| CoreError::ValidationError {
+            field: "content".to_string(),
+            message: e.to_string(),
         })?;
 
         let embedding = model.embed(&input).await.map_err(|e| {
@@ -180,11 +178,9 @@ impl SparseEmbedder for SparseEmbedderAdapter {
             )));
         }
 
-        let input = ModelInput::text(content).map_err(|e| {
-            CoreError::ValidationError {
-                field: "content".to_string(),
-                message: e.to_string(),
-            }
+        let input = ModelInput::text(content).map_err(|e| CoreError::ValidationError {
+            field: "content".to_string(),
+            message: e.to_string(),
         })?;
 
         let embedding = model.embed(&input).await.map_err(|e| {
@@ -207,9 +203,8 @@ impl SparseEmbedder for SparseEmbedderAdapter {
             }
         }
 
-        SparseVector::new(indices, values).map_err(|e| {
-            CoreError::Internal(format!("Failed to create sparse vector: {}", e))
-        })
+        SparseVector::new(indices, values)
+            .map_err(|e| CoreError::Internal(format!("Failed to create sparse vector: {}", e)))
     }
 
     fn is_ready(&self) -> bool {
@@ -265,11 +260,9 @@ impl TokenEmbedder for TokenEmbedderAdapter {
             )));
         }
 
-        let input = ModelInput::text(content).map_err(|e| {
-            CoreError::ValidationError {
-                field: "content".to_string(),
-                message: e.to_string(),
-            }
+        let input = ModelInput::text(content).map_err(|e| CoreError::ValidationError {
+            field: "content".to_string(),
+            message: e.to_string(),
         })?;
 
         let embedding = model.embed(&input).await.map_err(|e| {
@@ -434,14 +427,26 @@ impl ProductionMultiArrayProvider {
         tracing::info!("All 13 embedding models loaded successfully");
 
         // Wrap models in appropriate adapters
-        let e1_semantic: Arc<dyn SingleEmbedder> =
-            Arc::new(DenseEmbedderAdapter::new(e1_model, ModelId::Semantic, E1_DIM));
-        let e2_temporal_recent: Arc<dyn SingleEmbedder> =
-            Arc::new(DenseEmbedderAdapter::new(e2_model, ModelId::TemporalRecent, E2_DIM));
-        let e3_temporal_periodic: Arc<dyn SingleEmbedder> =
-            Arc::new(DenseEmbedderAdapter::new(e3_model, ModelId::TemporalPeriodic, E3_DIM));
-        let e4_temporal_positional: Arc<dyn SingleEmbedder> =
-            Arc::new(DenseEmbedderAdapter::new(e4_model, ModelId::TemporalPositional, E4_DIM));
+        let e1_semantic: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
+            e1_model,
+            ModelId::Semantic,
+            E1_DIM,
+        ));
+        let e2_temporal_recent: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
+            e2_model,
+            ModelId::TemporalRecent,
+            E2_DIM,
+        ));
+        let e3_temporal_periodic: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
+            e3_model,
+            ModelId::TemporalPeriodic,
+            E3_DIM,
+        ));
+        let e4_temporal_positional: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
+            e4_model,
+            ModelId::TemporalPositional,
+            E4_DIM,
+        ));
         let e5_causal: Arc<dyn SingleEmbedder> =
             Arc::new(DenseEmbedderAdapter::new(e5_model, ModelId::Causal, E5_DIM));
         let e6_sparse: Arc<dyn SparseEmbedder> =
@@ -452,12 +457,20 @@ impl ProductionMultiArrayProvider {
             Arc::new(DenseEmbedderAdapter::new(e8_model, ModelId::Graph, E8_DIM));
         let e9_hdc: Arc<dyn SingleEmbedder> =
             Arc::new(DenseEmbedderAdapter::new(e9_model, ModelId::Hdc, E9_DIM));
-        let e10_multimodal: Arc<dyn SingleEmbedder> =
-            Arc::new(DenseEmbedderAdapter::new(e10_model, ModelId::Multimodal, E10_DIM));
-        let e11_entity: Arc<dyn SingleEmbedder> =
-            Arc::new(DenseEmbedderAdapter::new(e11_model, ModelId::Entity, E11_DIM));
-        let e12_late_interaction: Arc<dyn TokenEmbedder> =
-            Arc::new(TokenEmbedderAdapter::new(e12_model, ModelId::LateInteraction));
+        let e10_multimodal: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
+            e10_model,
+            ModelId::Multimodal,
+            E10_DIM,
+        ));
+        let e11_entity: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
+            e11_model,
+            ModelId::Entity,
+            E11_DIM,
+        ));
+        let e12_late_interaction: Arc<dyn TokenEmbedder> = Arc::new(TokenEmbedderAdapter::new(
+            e12_model,
+            ModelId::LateInteraction,
+        ));
         let e13_splade: Arc<dyn SparseEmbedder> =
             Arc::new(SparseEmbedderAdapter::new(e13_model, ModelId::Splade));
 

@@ -20,7 +20,8 @@ impl TeleologicalFingerprint {
         }
 
         let current = self.theta_to_north_star;
-        let previous = self.purpose_evolution[self.purpose_evolution.len() - 2].aggregate_alignment();
+        let previous =
+            self.purpose_evolution[self.purpose_evolution.len() - 2].aggregate_alignment();
 
         current - previous
     }

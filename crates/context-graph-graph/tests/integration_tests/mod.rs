@@ -31,13 +31,13 @@
 //! 9. `canonical_formula_tests` - M04-T27 canonical formula consistency
 //! 10. `batch_formula_tests` - M04-T27 batch formula comparison
 
-pub mod storage_tests;
-pub mod hyperbolic_tests;
-pub mod cone_tests;
-pub mod traversal_tests;
-pub mod search_tests;
-pub mod workflow_tests;
-pub mod edge_case_tests;
-pub mod nfr_tests;
-pub mod canonical_formula_tests;
 pub mod batch_formula_tests;
+pub mod canonical_formula_tests;
+pub mod cone_tests;
+pub mod edge_case_tests;
+pub mod hyperbolic_tests;
+pub mod nfr_tests;
+pub mod search_tests;
+pub mod storage_tests;
+pub mod traversal_tests;
+pub mod workflow_tests;

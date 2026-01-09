@@ -32,10 +32,9 @@
 #![cfg(feature = "cuda")]
 
 use context_graph_embeddings::warm::{
-    ModelHandle, WarmConfig, WarmCudaAllocator, WarmEmbeddingPipeline,
-    WarmHealthChecker, WarmHealthStatus, WarmLoader, WarmModelState,
-    EMBEDDING_MODEL_IDS, MINIMUM_VRAM_BYTES, REQUIRED_COMPUTE_MAJOR,
-    REQUIRED_COMPUTE_MINOR, TOTAL_MODEL_COUNT,
+    ModelHandle, WarmConfig, WarmCudaAllocator, WarmEmbeddingPipeline, WarmHealthChecker,
+    WarmHealthStatus, WarmLoader, WarmModelState, EMBEDDING_MODEL_IDS, MINIMUM_VRAM_BYTES,
+    REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR, TOTAL_MODEL_COUNT,
 };
 
 /// One gigabyte in bytes
@@ -60,9 +59,11 @@ fn test_warmloader_creation() {
     println!("\n=== WARMLOADER CREATION TEST ===\n");
 
     let config = WarmConfig::default();
-    println!("Config: VRAM budget = {} GB, headroom = {} GB",
-             config.vram_budget_bytes / GB,
-             config.vram_headroom_bytes / GB);
+    println!(
+        "Config: VRAM budget = {} GB, headroom = {} GB",
+        config.vram_budget_bytes / GB,
+        config.vram_headroom_bytes / GB
+    );
 
     let result = WarmLoader::new(config);
 
@@ -75,9 +76,11 @@ fn test_warmloader_creation() {
             let guard = registry.read().expect("Failed to lock registry");
 
             assert_eq!(
-                guard.model_count(), TOTAL_MODEL_COUNT,
+                guard.model_count(),
+                TOTAL_MODEL_COUNT,
                 "[FAIL] Registry should have {} models, got {}",
-                TOTAL_MODEL_COUNT, guard.model_count()
+                TOTAL_MODEL_COUNT,
+                guard.model_count()
             );
             println!("[PASS] Registry contains {} models", guard.model_count());
 
@@ -109,14 +112,17 @@ fn test_warmloader_creation() {
             assert_eq!(summary.total_models, TOTAL_MODEL_COUNT);
             assert_eq!(summary.models_warm, 0);
             assert_eq!(summary.models_failed, 0);
-            println!("[PASS] Loading summary: {} total, 0 warm, 0 failed",
-                     summary.total_models);
+            println!(
+                "[PASS] Loading summary: {} total, 0 warm, 0 failed",
+                summary.total_models
+            );
         }
         Err(e) => {
             panic!(
                 "[FAIL] Failed to create WarmLoader: {:?}\n\
                  Exit code: {}",
-                e, e.exit_code()
+                e,
+                e.exit_code()
             );
         }
     }
@@ -169,7 +175,10 @@ fn test_pipeline_creation_without_warming() {
             let registry = pipeline.registry();
             let guard = registry.read().expect("Failed to lock registry");
             assert_eq!(guard.model_count(), TOTAL_MODEL_COUNT);
-            println!("[PASS] Registry accessible with {} models", guard.model_count());
+            println!(
+                "[PASS] Registry accessible with {} models",
+                guard.model_count()
+            );
         }
         Err(e) => {
             panic!("[FAIL] Failed to create pipeline: {:?}", e);
@@ -192,14 +201,14 @@ fn test_health_checker_initialization() {
     println!("\n=== HEALTH CHECKER INITIALIZATION TEST ===\n");
 
     let config = WarmConfig::default();
-    let pipeline = WarmEmbeddingPipeline::new(config)
-        .expect("Failed to create pipeline");
+    let pipeline = WarmEmbeddingPipeline::new(config).expect("Failed to create pipeline");
 
     let health = pipeline.health();
 
     // Initial status should be Loading (models pending)
     assert_eq!(
-        health.status, WarmHealthStatus::Loading,
+        health.status,
+        WarmHealthStatus::Loading,
         "[FAIL] Initial status should be Loading, got {:?}",
         health.status
     );
@@ -211,8 +220,10 @@ fn test_health_checker_initialization() {
     assert_eq!(health.models_pending, TOTAL_MODEL_COUNT);
     assert_eq!(health.models_loading, 0);
     assert_eq!(health.models_failed, 0);
-    println!("[PASS] Model counts: total={}, warm=0, pending={}, loading=0, failed=0",
-             health.models_total, health.models_pending);
+    println!(
+        "[PASS] Model counts: total={}, warm=0, pending={}, loading=0, failed=0",
+        health.models_total, health.models_pending
+    );
 
     // Verify no error messages
     assert!(
@@ -276,8 +287,7 @@ fn test_diagnostics_report_generation() {
     println!("\n=== DIAGNOSTICS REPORT GENERATION TEST ===\n");
 
     let config = WarmConfig::default();
-    let pipeline = WarmEmbeddingPipeline::new(config)
-        .expect("Failed to create pipeline");
+    let pipeline = WarmEmbeddingPipeline::new(config).expect("Failed to create pipeline");
 
     let report = pipeline.diagnostics();
 
@@ -294,11 +304,16 @@ fn test_diagnostics_report_generation() {
 
     // Verify model list is complete
     assert_eq!(
-        report.models.len(), TOTAL_MODEL_COUNT,
+        report.models.len(),
+        TOTAL_MODEL_COUNT,
         "[FAIL] Report should contain {} models, got {}",
-        TOTAL_MODEL_COUNT, report.models.len()
+        TOTAL_MODEL_COUNT,
+        report.models.len()
     );
-    println!("[PASS] Report contains {} model entries", report.models.len());
+    println!(
+        "[PASS] Report contains {} model entries",
+        report.models.len()
+    );
 
     // Verify model diagnostic fields
     for model in &report.models {
@@ -308,14 +323,21 @@ fn test_diagnostics_report_generation() {
         assert!(
             model.state.contains("Pending") || model.state.contains("Loading"),
             "[FAIL] Model {} should be Pending, got {}",
-            model.model_id, model.state
+            model.model_id,
+            model.state
         );
     }
     println!("[PASS] All model diagnostics have valid state");
 
     // Verify memory diagnostics
-    println!("Memory pool capacity: {} bytes", report.memory.model_pool_capacity_bytes);
-    println!("Memory pool used: {} bytes", report.memory.model_pool_used_bytes);
+    println!(
+        "Memory pool capacity: {} bytes",
+        report.memory.model_pool_capacity_bytes
+    );
+    println!(
+        "Memory pool used: {} bytes",
+        report.memory.model_pool_used_bytes
+    );
 
     // Verify initial state counts
     assert_eq!(report.warm_count(), 0);
@@ -333,8 +355,7 @@ fn test_diagnostics_status_line() {
     println!("\n=== DIAGNOSTICS STATUS LINE TEST ===\n");
 
     let config = WarmConfig::default();
-    let pipeline = WarmEmbeddingPipeline::new(config)
-        .expect("Failed to create pipeline");
+    let pipeline = WarmEmbeddingPipeline::new(config).expect("Failed to create pipeline");
 
     let status_line = pipeline.status_line();
 
@@ -382,14 +403,21 @@ fn test_gpu_detection_preflight() {
     let allocator = WarmCudaAllocator::new(0)
         .expect("[FAIL] CUDA allocator creation failed - RTX 5090 required");
 
-    let gpu_info = allocator.get_gpu_info()
+    let gpu_info = allocator
+        .get_gpu_info()
         .expect("[FAIL] Failed to get GPU info");
 
     println!("GPU Detected:");
     println!("  Name: {}", gpu_info.name);
-    println!("  Compute Capability: {}", gpu_info.compute_capability_string());
-    println!("  VRAM: {:.2} GB ({} bytes)",
-             gpu_info.total_memory_gb(), gpu_info.total_memory_bytes);
+    println!(
+        "  Compute Capability: {}",
+        gpu_info.compute_capability_string()
+    );
+    println!(
+        "  VRAM: {:.2} GB ({} bytes)",
+        gpu_info.total_memory_gb(),
+        gpu_info.total_memory_bytes
+    );
     println!("  Driver: {}", gpu_info.driver_version);
 
     // CRITICAL: Verify NOT simulated
@@ -407,19 +435,21 @@ fn test_gpu_detection_preflight() {
     println!("[PASS] GPU is NOT simulated (real hardware)");
 
     // Verify compute capability
-    let meets_cc = gpu_info.meets_compute_requirement(
-        REQUIRED_COMPUTE_MAJOR,
-        REQUIRED_COMPUTE_MINOR
-    );
+    let meets_cc =
+        gpu_info.meets_compute_requirement(REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR);
     assert!(
         meets_cc,
         "[FAIL] Compute capability {}.{} below required {}.{}\n\
          Exit code: 107",
-        gpu_info.compute_capability.0, gpu_info.compute_capability.1,
+        gpu_info.compute_capability.0,
+        gpu_info.compute_capability.1,
+        REQUIRED_COMPUTE_MAJOR,
+        REQUIRED_COMPUTE_MINOR
+    );
+    println!(
+        "[PASS] Compute capability >= {}.{}",
         REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR
     );
-    println!("[PASS] Compute capability >= {}.{}",
-             REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR);
 
     // Verify VRAM
     assert!(
@@ -452,8 +482,7 @@ fn test_state_transitions_via_registry() {
     println!("\n=== STATE TRANSITIONS VIA REGISTRY TEST ===\n");
 
     let config = WarmConfig::default();
-    let loader = WarmLoader::new(config)
-        .expect("Failed to create loader");
+    let loader = WarmLoader::new(config).expect("Failed to create loader");
 
     // Create a test handle for simulating VRAM allocation
     let create_handle = |model_num: u32| -> ModelHandle {
@@ -474,30 +503,40 @@ fn test_state_transitions_via_registry() {
 
         for (i, model_id) in EMBEDDING_MODEL_IDS.iter().enumerate() {
             // Pending -> Loading
-            registry.start_loading(model_id)
+            registry
+                .start_loading(model_id)
                 .unwrap_or_else(|_| panic!("Failed to start loading {}", model_id));
 
             // Update progress
-            registry.update_progress(model_id, 50, 250 * MB)
+            registry
+                .update_progress(model_id, 50, 250 * MB)
                 .unwrap_or_else(|_| panic!("Failed to update progress for {}", model_id));
 
             // Loading -> Validating
-            registry.mark_validating(model_id)
+            registry
+                .mark_validating(model_id)
                 .unwrap_or_else(|_| panic!("Failed to mark validating {}", model_id));
 
             // Validating -> Warm
             let handle = create_handle(i as u32);
-            registry.mark_warm(model_id, handle)
+            registry
+                .mark_warm(model_id, handle)
                 .unwrap_or_else(|_| panic!("Failed to mark warm {}", model_id));
         }
     }
 
-    println!("[PASS] All {} models transitioned to Warm state", TOTAL_MODEL_COUNT);
+    println!(
+        "[PASS] All {} models transitioned to Warm state",
+        TOTAL_MODEL_COUNT
+    );
 
     // Verify registry reflects warm state
     {
         let registry = loader.registry().read().expect("Failed to lock registry");
-        assert!(registry.all_warm(), "[FAIL] Registry should report all_warm()");
+        assert!(
+            registry.all_warm(),
+            "[FAIL] Registry should report all_warm()"
+        );
         println!("[PASS] Registry.all_warm() returns true");
     }
 
@@ -511,8 +550,10 @@ fn test_state_transitions_via_registry() {
     assert_eq!(health.models_failed, 0);
     assert_eq!(health.models_loading, 0);
     assert_eq!(health.models_pending, 0);
-    println!("[PASS] Health status: Healthy, {} models warm",
-             health.models_warm);
+    println!(
+        "[PASS] Health status: Healthy, {} models warm",
+        health.models_warm
+    );
 
     // Verify loader reflects all_warm
     assert!(loader.all_warm(), "[FAIL] Loader should report all_warm()");
@@ -529,23 +570,29 @@ fn test_health_check_after_failure() {
     println!("\n=== HEALTH CHECK AFTER FAILURE TEST ===\n");
 
     let config = WarmConfig::default();
-    let pipeline = WarmEmbeddingPipeline::new(config)
-        .expect("Failed to create pipeline");
+    let pipeline = WarmEmbeddingPipeline::new(config).expect("Failed to create pipeline");
 
     // Simulate some models warm, one failed
     {
-        let mut registry = pipeline.registry().write().expect("Failed to lock registry");
+        let mut registry = pipeline
+            .registry()
+            .write()
+            .expect("Failed to lock registry");
 
         // Warm first model
         let model_id = EMBEDDING_MODEL_IDS[0];
         registry.start_loading(model_id).unwrap();
         registry.mark_validating(model_id).unwrap();
-        registry.mark_warm(model_id, ModelHandle::new(0x1000, 100*MB, 0, 0x1234)).unwrap();
+        registry
+            .mark_warm(model_id, ModelHandle::new(0x1000, 100 * MB, 0, 0x1234))
+            .unwrap();
 
         // Fail second model
         let failed_model = EMBEDDING_MODEL_IDS[1];
         registry.start_loading(failed_model).unwrap();
-        registry.mark_failed(failed_model, 108, "CUDA allocation failed: out of memory").unwrap();
+        registry
+            .mark_failed(failed_model, 108, "CUDA allocation failed: out of memory")
+            .unwrap();
     }
 
     // Check health
@@ -553,7 +600,8 @@ fn test_health_check_after_failure() {
 
     // Status should be Unhealthy due to failure
     assert_eq!(
-        health.status, WarmHealthStatus::Unhealthy,
+        health.status,
+        WarmHealthStatus::Unhealthy,
         "[FAIL] Status should be Unhealthy, got {:?}",
         health.status
     );
@@ -562,7 +610,10 @@ fn test_health_check_after_failure() {
     // Verify counts
     assert_eq!(health.models_warm, 1);
     assert_eq!(health.models_failed, 1);
-    println!("[PASS] Models: {} warm, {} failed", health.models_warm, health.models_failed);
+    println!(
+        "[PASS] Models: {} warm, {} failed",
+        health.models_warm, health.models_failed
+    );
 
     // Verify error messages
     assert!(
@@ -601,13 +652,24 @@ fn test_registry_model_access() {
         );
 
         let entry = entry.unwrap();
-        assert!(entry.expected_bytes > 0, "[FAIL] Expected bytes should be > 0");
-        assert!(entry.expected_dimension > 0, "[FAIL] Expected dimension should be > 0");
-        println!("Model {}: {} bytes, {} dims",
-                 model_id, entry.expected_bytes, entry.expected_dimension);
+        assert!(
+            entry.expected_bytes > 0,
+            "[FAIL] Expected bytes should be > 0"
+        );
+        assert!(
+            entry.expected_dimension > 0,
+            "[FAIL] Expected dimension should be > 0"
+        );
+        println!(
+            "Model {}: {} bytes, {} dims",
+            model_id, entry.expected_bytes, entry.expected_dimension
+        );
     }
 
-    println!("[PASS] All {} models accessible with valid metadata", TOTAL_MODEL_COUNT);
+    println!(
+        "[PASS] All {} models accessible with valid metadata",
+        TOTAL_MODEL_COUNT
+    );
 }
 
 // ============================================================================
@@ -627,7 +689,8 @@ fn test_loading_order() {
     let loading_order = guard.loading_order();
 
     assert_eq!(
-        loading_order.len(), TOTAL_MODEL_COUNT,
+        loading_order.len(),
+        TOTAL_MODEL_COUNT,
         "[FAIL] Loading order should contain {} models",
         TOTAL_MODEL_COUNT
     );
@@ -660,8 +723,7 @@ fn test_loading_order() {
 fn test_vram_allocation_integration() {
     println!("\n=== VRAM ALLOCATION INTEGRATION TEST ===\n");
 
-    let mut allocator = WarmCudaAllocator::new(0)
-        .expect("Failed to create CUDA allocator");
+    let mut allocator = WarmCudaAllocator::new(0).expect("Failed to create CUDA allocator");
 
     // Query initial VRAM state
     let initial_allocated = allocator.total_allocated();
@@ -669,17 +731,25 @@ fn test_vram_allocation_integration() {
 
     // Allocate a test chunk (simulating model loading)
     let test_size = 100 * MB;
-    let allocation = allocator.allocate_protected_with_verification(test_size, "integration_test")
+    let allocation = allocator
+        .allocate_protected_with_verification(test_size, "integration_test")
         .expect("Failed to allocate VRAM");
 
-    println!("[PASS] Allocated {} bytes at 0x{:016x}",
-             allocation.size_bytes, allocation.ptr);
+    println!(
+        "[PASS] Allocated {} bytes at 0x{:016x}",
+        allocation.size_bytes, allocation.ptr
+    );
 
     // Verify allocation is valid
     assert!(allocation.is_valid(), "[FAIL] Allocation should be valid");
-    assert!(allocation.is_protected, "[FAIL] Allocation should be protected");
-    assert!(!WarmCudaAllocator::is_fake_pointer(allocation.ptr),
-            "[FAIL] Allocation should NOT be fake");
+    assert!(
+        allocation.is_protected,
+        "[FAIL] Allocation should be protected"
+    );
+    assert!(
+        !WarmCudaAllocator::is_fake_pointer(allocation.ptr),
+        "[FAIL] Allocation should NOT be fake"
+    );
 
     println!("[PASS] Allocation is valid, protected, and NOT fake");
 
@@ -689,10 +759,15 @@ fn test_vram_allocation_integration() {
         after_allocated >= initial_allocated + test_size,
         "[FAIL] Allocation tracking should increase"
     );
-    println!("[PASS] Allocation tracking correct: {} bytes total", after_allocated);
+    println!(
+        "[PASS] Allocation tracking correct: {} bytes total",
+        after_allocated
+    );
 
     // Free the allocation
-    allocator.free_protected(&allocation).expect("Failed to free allocation");
+    allocator
+        .free_protected(&allocation)
+        .expect("Failed to free allocation");
     println!("[PASS] Allocation freed successfully");
 }
 
@@ -714,15 +789,19 @@ fn test_warmloader_integration_summary() {
     let config = WarmConfig::default();
     let loader_result = WarmLoader::new(config.clone());
     let loader_ok = loader_result.is_ok();
-    println!("  [{}] WarmLoader creation",
-             if loader_ok { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] WarmLoader creation",
+        if loader_ok { "PASS" } else { "FAIL" }
+    );
     assert!(loader_ok);
 
     // 2. Pipeline creation
     let pipeline_result = WarmEmbeddingPipeline::new(config.clone());
     let pipeline_ok = pipeline_result.is_ok();
-    println!("  [{}] WarmEmbeddingPipeline creation",
-             if pipeline_ok { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] WarmEmbeddingPipeline creation",
+        if pipeline_ok { "PASS" } else { "FAIL" }
+    );
     assert!(pipeline_ok);
 
     let pipeline = pipeline_result.unwrap();
@@ -730,23 +809,29 @@ fn test_warmloader_integration_summary() {
     // 3. Health checker
     let health = pipeline.health();
     let health_ok = health.models_total == TOTAL_MODEL_COUNT;
-    println!("  [{}] Health checker initialization ({} models)",
-             if health_ok { "PASS" } else { "FAIL" },
-             health.models_total);
+    println!(
+        "  [{}] Health checker initialization ({} models)",
+        if health_ok { "PASS" } else { "FAIL" },
+        health.models_total
+    );
     assert!(health_ok);
 
     // 4. Diagnostics
     let report = pipeline.diagnostics();
     let diag_ok = !report.timestamp.is_empty() && report.models.len() == TOTAL_MODEL_COUNT;
-    println!("  [{}] Diagnostics report generation",
-             if diag_ok { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] Diagnostics report generation",
+        if diag_ok { "PASS" } else { "FAIL" }
+    );
     assert!(diag_ok);
 
     // 5. GPU detection
     let gpu_result = WarmCudaAllocator::new(0);
     let gpu_ok = gpu_result.is_ok();
-    println!("  [{}] GPU detection (CUDA allocator)",
-             if gpu_ok { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] GPU detection (CUDA allocator)",
+        if gpu_ok { "PASS" } else { "FAIL" }
+    );
     assert!(gpu_ok);
 
     let allocator = gpu_result.unwrap();
@@ -754,8 +839,10 @@ fn test_warmloader_integration_summary() {
 
     // 6. GPU requirements
     let gpu_meets = gpu_info.meets_rtx_5090_requirements();
-    println!("  [{}] GPU meets RTX 5090 requirements",
-             if gpu_meets { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] GPU meets RTX 5090 requirements",
+        if gpu_meets { "PASS" } else { "FAIL" }
+    );
     assert!(gpu_meets);
 
     // 7. Not simulated
@@ -763,22 +850,29 @@ fn test_warmloader_integration_summary() {
     let not_simulated = !name_lower.contains("simulated")
         && !name_lower.contains("stub")
         && !name_lower.contains("fake");
-    println!("  [{}] GPU is NOT simulated",
-             if not_simulated { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] GPU is NOT simulated",
+        if not_simulated { "PASS" } else { "FAIL" }
+    );
     assert!(not_simulated);
 
     // 8. Registry state
     let registry = pipeline.registry();
     let guard = registry.read().expect("Failed to lock registry");
     let registry_ok = guard.model_count() == TOTAL_MODEL_COUNT;
-    println!("  [{}] Registry contains all {} models",
-             if registry_ok { "PASS" } else { "FAIL" },
-             TOTAL_MODEL_COUNT);
+    println!(
+        "  [{}] Registry contains all {} models",
+        if registry_ok { "PASS" } else { "FAIL" },
+        TOTAL_MODEL_COUNT
+    );
     assert!(registry_ok);
 
     println!("\nGPU Information:");
     println!("  Name:               {}", gpu_info.name);
-    println!("  Compute Capability: {}", gpu_info.compute_capability_string());
+    println!(
+        "  Compute Capability: {}",
+        gpu_info.compute_capability_string()
+    );
     println!("  VRAM:               {:.2} GB", gpu_info.total_memory_gb());
     println!("  Driver:             {}", gpu_info.driver_version);
 

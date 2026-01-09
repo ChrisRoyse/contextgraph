@@ -23,8 +23,8 @@
 #![cfg(feature = "cuda")]
 
 use context_graph_embeddings::warm::{
-    VramAllocation, WarmCudaAllocator,
-    MINIMUM_VRAM_BYTES, REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR,
+    VramAllocation, WarmCudaAllocator, MINIMUM_VRAM_BYTES, REQUIRED_COMPUTE_MAJOR,
+    REQUIRED_COMPUTE_MINOR,
 };
 
 /// One gigabyte in bytes
@@ -60,23 +60,30 @@ fn test_cuda_allocator_creation() {
         Ok(allocator) => {
             println!("[PASS] WarmCudaAllocator created successfully for device 0");
             println!("       Device ID: {}", allocator.device_id());
-            println!("       Total allocated: {} bytes", allocator.total_allocated());
+            println!(
+                "       Total allocated: {} bytes",
+                allocator.total_allocated()
+            );
 
             // Verify GPU info is available
-            let gpu_info = allocator.get_gpu_info()
+            let gpu_info = allocator
+                .get_gpu_info()
                 .expect("GPU info should be available after allocator creation");
 
             println!("       GPU Name: {}", gpu_info.name);
-            println!("       Compute Capability: {}", gpu_info.compute_capability_string());
+            println!(
+                "       Compute Capability: {}",
+                gpu_info.compute_capability_string()
+            );
             println!("       Total VRAM: {:.2} GB", gpu_info.total_memory_gb());
             println!("       Driver Version: {}", gpu_info.driver_version);
 
             // CRITICAL: Verify NOT a simulated GPU
             let name_lower = gpu_info.name.to_lowercase();
             assert!(
-                !name_lower.contains("simulated") &&
-                !name_lower.contains("stub") &&
-                !name_lower.contains("fake"),
+                !name_lower.contains("simulated")
+                    && !name_lower.contains("stub")
+                    && !name_lower.contains("fake"),
                 "[FAIL] Detected simulated/stub GPU: '{}'. Real GPU required!",
                 gpu_info.name
             );
@@ -110,34 +117,37 @@ fn test_cuda_allocator_creation() {
 fn test_gpu_info_compute_capability() {
     println!("\n=== GPU COMPUTE CAPABILITY TEST ===\n");
 
-    let allocator = WarmCudaAllocator::new(0)
-        .expect("Failed to create allocator - is RTX 5090 installed?");
+    let allocator =
+        WarmCudaAllocator::new(0).expect("Failed to create allocator - is RTX 5090 installed?");
 
-    let gpu_info = allocator.get_gpu_info()
+    let gpu_info = allocator
+        .get_gpu_info()
         .expect("GPU info should be available");
 
     let (major, minor) = gpu_info.compute_capability;
 
     println!("GPU: {}", gpu_info.name);
     println!("Compute Capability: {}.{}", major, minor);
-    println!("Required: {}.{}", REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR);
+    println!(
+        "Required: {}.{}",
+        REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR
+    );
 
     // Verify compute capability meets requirements
-    let meets_requirement = gpu_info.meets_compute_requirement(
-        REQUIRED_COMPUTE_MAJOR,
-        REQUIRED_COMPUTE_MINOR
-    );
+    let meets_requirement =
+        gpu_info.meets_compute_requirement(REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR);
 
     assert!(
         meets_requirement,
         "[FAIL] GPU compute capability {}.{} does not meet required {}.{}\n\
          RTX 5090 (Blackwell, CC 12.0) is REQUIRED. No fallbacks.",
-        major, minor,
-        REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR
+        major, minor, REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR
     );
 
-    println!("[PASS] Compute capability {}.{} meets requirement {}.{}",
-             major, minor, REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR);
+    println!(
+        "[PASS] Compute capability {}.{} meets requirement {}.{}",
+        major, minor, REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR
+    );
 
     // Additional verification: RTX 5090 should be exactly 12.0
     if major == 12 && minor == 0 {
@@ -152,10 +162,11 @@ fn test_gpu_info_compute_capability() {
 fn test_gpu_info_vram_capacity() {
     println!("\n=== GPU VRAM CAPACITY TEST ===\n");
 
-    let allocator = WarmCudaAllocator::new(0)
-        .expect("Failed to create allocator - is RTX 5090 installed?");
+    let allocator =
+        WarmCudaAllocator::new(0).expect("Failed to create allocator - is RTX 5090 installed?");
 
-    let gpu_info = allocator.get_gpu_info()
+    let gpu_info = allocator
+        .get_gpu_info()
         .expect("GPU info should be available");
 
     let total_vram = gpu_info.total_memory_bytes;
@@ -163,8 +174,11 @@ fn test_gpu_info_vram_capacity() {
 
     println!("GPU: {}", gpu_info.name);
     println!("Total VRAM: {} bytes ({:.2} GB)", total_vram, total_vram_gb);
-    println!("Minimum Required: {} bytes ({:.2} GB)",
-             MINIMUM_VRAM_BYTES, MINIMUM_VRAM_BYTES as f64 / GB as f64);
+    println!(
+        "Minimum Required: {} bytes ({:.2} GB)",
+        MINIMUM_VRAM_BYTES,
+        MINIMUM_VRAM_BYTES as f64 / GB as f64
+    );
 
     // Verify VRAM meets minimum requirements
     assert!(
@@ -175,8 +189,11 @@ fn test_gpu_info_vram_capacity() {
         MINIMUM_VRAM_BYTES as f64 / GB as f64
     );
 
-    println!("[PASS] VRAM {:.2} GB meets minimum requirement {:.2} GB",
-             total_vram_gb, MINIMUM_VRAM_BYTES as f64 / GB as f64);
+    println!(
+        "[PASS] VRAM {:.2} GB meets minimum requirement {:.2} GB",
+        total_vram_gb,
+        MINIMUM_VRAM_BYTES as f64 / GB as f64
+    );
 
     // Verify VRAM is approximately 32GB (with tolerance for driver overhead)
     let lower_bound = RTX_5090_VRAM_BYTES - VRAM_TOLERANCE_BYTES;
@@ -202,24 +219,28 @@ fn test_gpu_info_vram_capacity() {
 fn test_vram_allocation_is_real() {
     println!("\n=== VRAM ALLOCATION REALITY TEST ===\n");
 
-    let mut allocator = WarmCudaAllocator::new(0)
-        .expect("Failed to create allocator - is RTX 5090 installed?");
+    let mut allocator =
+        WarmCudaAllocator::new(0).expect("Failed to create allocator - is RTX 5090 installed?");
 
     // Allocate 100MB of protected VRAM
     let allocation_size = 100 * MB;
-    println!("Attempting to allocate {} bytes ({} MB) of protected VRAM...",
-             allocation_size, allocation_size / MB);
-
-    let result = allocator.allocate_protected_with_verification(
+    println!(
+        "Attempting to allocate {} bytes ({} MB) of protected VRAM...",
         allocation_size,
-        "test_allocation"
+        allocation_size / MB
     );
+
+    let result = allocator.allocate_protected_with_verification(allocation_size, "test_allocation");
 
     match result {
         Ok(allocation) => {
             println!("[PASS] Allocation succeeded");
             println!("       Pointer: 0x{:016x}", allocation.ptr);
-            println!("       Size: {} bytes ({:.2} MB)", allocation.size_bytes, allocation.size_mb());
+            println!(
+                "       Size: {} bytes ({:.2} MB)",
+                allocation.size_bytes,
+                allocation.size_mb()
+            );
             println!("       Device ID: {}", allocation.device_id);
             println!("       Is Protected: {}", allocation.is_protected);
 
@@ -239,7 +260,10 @@ fn test_vram_allocation_is_real() {
             println!("[PASS] Pointer is NOT fake (Constitution AP-007 verified)");
 
             // Verify allocation is protected (non-evictable)
-            assert!(allocation.is_protected, "[FAIL] Allocation should be protected (non-evictable)");
+            assert!(
+                allocation.is_protected,
+                "[FAIL] Allocation should be protected (non-evictable)"
+            );
             println!("[PASS] Allocation is protected (non-evictable via cudaMalloc)");
 
             // Verify allocator tracking is updated
@@ -247,12 +271,17 @@ fn test_vram_allocation_is_real() {
             assert!(
                 total_allocated >= allocation_size,
                 "[FAIL] Allocator tracking mismatch: expected >= {}, got {}",
-                allocation_size, total_allocated
+                allocation_size,
+                total_allocated
             );
-            println!("[PASS] Allocator tracking updated: {} bytes total", total_allocated);
+            println!(
+                "[PASS] Allocator tracking updated: {} bytes total",
+                total_allocated
+            );
 
             // Clean up
-            allocator.free_protected(&allocation)
+            allocator
+                .free_protected(&allocation)
                 .expect("Failed to free allocation");
             println!("[PASS] Allocation freed successfully");
         }
@@ -275,22 +304,27 @@ fn test_vram_allocation_is_real() {
 fn test_large_vram_allocation() {
     println!("\n=== LARGE VRAM ALLOCATION TEST (1GB) ===\n");
 
-    let mut allocator = WarmCudaAllocator::new(0)
-        .expect("Failed to create allocator - is RTX 5090 installed?");
+    let mut allocator =
+        WarmCudaAllocator::new(0).expect("Failed to create allocator - is RTX 5090 installed?");
 
     // Query available VRAM before allocation
-    let vram_before = allocator.query_available_vram()
+    let vram_before = allocator
+        .query_available_vram()
         .expect("Failed to query available VRAM");
-    println!("Available VRAM before allocation: {:.2} GB", vram_before as f64 / GB as f64);
+    println!(
+        "Available VRAM before allocation: {:.2} GB",
+        vram_before as f64 / GB as f64
+    );
 
     // Allocate 1GB of protected VRAM
     let allocation_size = GB;
-    println!("Attempting to allocate {} bytes (1 GB) of protected VRAM...", allocation_size);
-
-    let result = allocator.allocate_protected_with_verification(
-        allocation_size,
-        "large_test_allocation"
+    println!(
+        "Attempting to allocate {} bytes (1 GB) of protected VRAM...",
+        allocation_size
     );
+
+    let result =
+        allocator.allocate_protected_with_verification(allocation_size, "large_test_allocation");
 
     match result {
         Ok(allocation) => {
@@ -299,33 +333,51 @@ fn test_large_vram_allocation() {
             println!("       Size: {:.2} GB", allocation.size_gb());
 
             // Verify the allocation is real
-            assert!(allocation.is_valid(), "[FAIL] Large allocation pointer is NULL");
-            assert!(!WarmCudaAllocator::is_fake_pointer(allocation.ptr),
-                    "[FAIL] Large allocation is FAKE (0x{:016x})", allocation.ptr);
+            assert!(
+                allocation.is_valid(),
+                "[FAIL] Large allocation pointer is NULL"
+            );
+            assert!(
+                !WarmCudaAllocator::is_fake_pointer(allocation.ptr),
+                "[FAIL] Large allocation is FAKE (0x{:016x})",
+                allocation.ptr
+            );
             println!("[PASS] Large allocation is REAL and VALID");
 
             // Query VRAM after allocation - should show reduction
-            let vram_after = allocator.query_available_vram()
+            let vram_after = allocator
+                .query_available_vram()
                 .expect("Failed to query available VRAM");
-            println!("Available VRAM after allocation: {:.2} GB", vram_after as f64 / GB as f64);
+            println!(
+                "Available VRAM after allocation: {:.2} GB",
+                vram_after as f64 / GB as f64
+            );
 
             // Note: Due to our simplified tracking, we verify via allocator's internal tracking
             let total_allocated = allocator.total_allocated();
             assert!(
                 total_allocated >= allocation_size,
                 "[FAIL] Allocator should track at least {} bytes, got {}",
-                allocation_size, total_allocated
+                allocation_size,
+                total_allocated
             );
-            println!("[PASS] Allocator correctly tracks {} bytes allocated", total_allocated);
+            println!(
+                "[PASS] Allocator correctly tracks {} bytes allocated",
+                total_allocated
+            );
 
             // Free the allocation
-            allocator.free_protected(&allocation)
+            allocator
+                .free_protected(&allocation)
                 .expect("Failed to free large allocation");
             println!("[PASS] Large allocation freed successfully");
 
             // Verify tracking is updated after free
             let total_after_free = allocator.total_allocated();
-            println!("[INFO] Total allocated after free: {} bytes", total_after_free);
+            println!(
+                "[INFO] Total allocated after free: {} bytes",
+                total_after_free
+            );
         }
         Err(e) => {
             panic!(
@@ -349,29 +401,34 @@ fn test_large_vram_allocation() {
 fn test_compute_capability_check() {
     println!("\n=== COMPUTE CAPABILITY CHECK TEST ===\n");
 
-    let allocator = WarmCudaAllocator::new(0)
-        .expect("Failed to create allocator - is RTX 5090 installed?");
+    let allocator =
+        WarmCudaAllocator::new(0).expect("Failed to create allocator - is RTX 5090 installed?");
 
     // Check that RTX 5090 passes the requirement check
     let result = allocator.check_compute_capability(REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR);
 
     match result {
         Ok(()) => {
-            println!("[PASS] GPU passes compute capability check for {}.{}",
-                     REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR);
+            println!(
+                "[PASS] GPU passes compute capability check for {}.{}",
+                REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR
+            );
         }
         Err(e) => {
             panic!(
                 "[FAIL] GPU failed compute capability check: {:?}\n\
                  RTX 5090 (CC 12.0) is REQUIRED.\n\
                  Exit code: {}",
-                e, e.exit_code()
+                e,
+                e.exit_code()
             );
         }
     }
 
     // Verify that a higher requirement would correctly pass/fail
-    let gpu_info = allocator.get_gpu_info().expect("GPU info should be available");
+    let gpu_info = allocator
+        .get_gpu_info()
+        .expect("GPU info should be available");
 
     // Check against CC 8.0 (should pass for any modern GPU)
     assert!(
@@ -397,14 +454,18 @@ fn test_compute_capability_check() {
 fn test_rtx_5090_requirements() {
     println!("\n=== RTX 5090 FULL REQUIREMENTS TEST ===\n");
 
-    let allocator = WarmCudaAllocator::new(0)
-        .expect("Failed to create allocator - is RTX 5090 installed?");
+    let allocator =
+        WarmCudaAllocator::new(0).expect("Failed to create allocator - is RTX 5090 installed?");
 
-    let gpu_info = allocator.get_gpu_info()
+    let gpu_info = allocator
+        .get_gpu_info()
         .expect("GPU info should be available");
 
     println!("GPU: {}", gpu_info.name);
-    println!("Compute Capability: {}", gpu_info.compute_capability_string());
+    println!(
+        "Compute Capability: {}",
+        gpu_info.compute_capability_string()
+    );
     println!("VRAM: {:.2} GB", gpu_info.total_memory_gb());
 
     let meets_requirements = gpu_info.meets_rtx_5090_requirements();
@@ -416,19 +477,25 @@ fn test_rtx_5090_requirements() {
          - Required VRAM: {:.2} GB\n\
          - Actual CC: {}\n\
          - Actual VRAM: {:.2} GB",
-        REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR,
+        REQUIRED_COMPUTE_MAJOR,
+        REQUIRED_COMPUTE_MINOR,
         MINIMUM_VRAM_BYTES as f64 / GB as f64,
         gpu_info.compute_capability_string(),
         gpu_info.total_memory_gb()
     );
 
     println!("[PASS] GPU meets ALL RTX 5090 requirements:");
-    println!("       - Compute Capability: {} >= {}.{}",
-             gpu_info.compute_capability_string(),
-             REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR);
-    println!("       - VRAM: {:.2} GB >= {:.2} GB",
-             gpu_info.total_memory_gb(),
-             MINIMUM_VRAM_BYTES as f64 / GB as f64);
+    println!(
+        "       - Compute Capability: {} >= {}.{}",
+        gpu_info.compute_capability_string(),
+        REQUIRED_COMPUTE_MAJOR,
+        REQUIRED_COMPUTE_MINOR
+    );
+    println!(
+        "       - VRAM: {:.2} GB >= {:.2} GB",
+        gpu_info.total_memory_gb(),
+        MINIMUM_VRAM_BYTES as f64 / GB as f64
+    );
 }
 
 // ============================================================================
@@ -450,10 +517,10 @@ fn test_fake_pointer_detection() {
     // Real pointer patterns (typical CUDA device pointers)
     // Note: Real CUDA pointers vary by system but are typically NOT in 0x7fxx range
     let real_pointers = [
-        0x0000_0001_0000_0000_u64,  // Typical low device pointer
+        0x0000_0001_0000_0000_u64, // Typical low device pointer
         0x0000_0002_0000_0000_u64,
-        0x0000_7000_0000_0000_u64,  // Below fake range
-        0x0000_8000_0000_0000_u64,  // Above fake range
+        0x0000_7000_0000_0000_u64, // Below fake range
+        0x0000_8000_0000_0000_u64, // Above fake range
     ];
 
     println!("Testing fake pointer detection...\n");
@@ -470,7 +537,11 @@ fn test_fake_pointer_detection() {
     for ptr in real_pointers.iter() {
         let is_fake = WarmCudaAllocator::is_fake_pointer(*ptr);
         println!("  0x{:016x}: is_fake = {}", ptr, is_fake);
-        assert!(!is_fake, "Pointer 0x{:016x} should NOT be detected as fake", ptr);
+        assert!(
+            !is_fake,
+            "Pointer 0x{:016x} should NOT be detected as fake",
+            ptr
+        );
     }
     println!("[PASS] All real pointers correctly identified\n");
 
@@ -478,7 +549,10 @@ fn test_fake_pointer_detection() {
     let is_null_fake = WarmCudaAllocator::is_fake_pointer(0);
     println!("NULL pointer (0x0): is_fake = {}", is_null_fake);
     // NULL is not fake - it's just invalid
-    assert!(!is_null_fake, "NULL pointer should not be detected as fake pattern");
+    assert!(
+        !is_null_fake,
+        "NULL pointer should not be detected as fake pattern"
+    );
     println!("[PASS] NULL pointer correctly handled (not fake, just invalid)");
 }
 
@@ -491,8 +565,8 @@ fn test_fake_pointer_detection() {
 fn test_multiple_allocations() {
     println!("\n=== MULTIPLE ALLOCATIONS TEST ===\n");
 
-    let mut allocator = WarmCudaAllocator::new(0)
-        .expect("Failed to create allocator - is RTX 5090 installed?");
+    let mut allocator =
+        WarmCudaAllocator::new(0).expect("Failed to create allocator - is RTX 5090 installed?");
 
     // Allocate multiple chunks
     let allocation_sizes = [100 * MB, 200 * MB, 150 * MB];
@@ -507,8 +581,10 @@ fn test_multiple_allocations() {
 
         match result {
             Ok(allocation) => {
-                println!("Allocation {}: {} bytes at 0x{:016x}",
-                         i, size, allocation.ptr);
+                println!(
+                    "Allocation {}: {} bytes at 0x{:016x}",
+                    i, size, allocation.ptr
+                );
 
                 // Verify each allocation is real
                 assert!(allocation.is_valid());
@@ -543,14 +619,19 @@ fn test_multiple_allocations() {
     assert!(
         history.len() >= allocations.len(),
         "[FAIL] Allocation history should have at least {} entries, got {}",
-        allocations.len(), history.len()
+        allocations.len(),
+        history.len()
     );
-    println!("[PASS] Allocation history contains {} entries", history.len());
+    println!(
+        "[PASS] Allocation history contains {} entries",
+        history.len()
+    );
 
     // Free all allocations
     println!("\nFreeing all allocations...");
     for (i, allocation) in allocations.iter().enumerate() {
-        allocator.free_protected(allocation)
+        allocator
+            .free_protected(allocation)
             .unwrap_or_else(|_| panic!("Failed to free allocation {}", i));
         println!("Freed allocation {}", i);
     }
@@ -574,8 +655,8 @@ fn test_multiple_allocations() {
 fn test_allocation_history() {
     println!("\n=== ALLOCATION HISTORY TEST ===\n");
 
-    let mut allocator = WarmCudaAllocator::new(0)
-        .expect("Failed to create allocator - is RTX 5090 installed?");
+    let mut allocator =
+        WarmCudaAllocator::new(0).expect("Failed to create allocator - is RTX 5090 installed?");
 
     // Initially history should be empty
     let initial_history = allocator.allocation_history();
@@ -583,7 +664,8 @@ fn test_allocation_history() {
     println!("Initial history length: {}", initial_len);
 
     // Allocate something
-    let allocation = allocator.allocate_protected_with_verification(50 * MB, "history_test")
+    let allocation = allocator
+        .allocate_protected_with_verification(50 * MB, "history_test")
         .expect("Allocation should succeed");
 
     // History should have grown
@@ -592,11 +674,16 @@ fn test_allocation_history() {
         after_alloc_history.len() > initial_len,
         "[FAIL] History should grow after allocation"
     );
-    println!("[PASS] History grew after allocation: {} -> {} entries",
-             initial_len, after_alloc_history.len());
+    println!(
+        "[PASS] History grew after allocation: {} -> {} entries",
+        initial_len,
+        after_alloc_history.len()
+    );
 
     // Check last history entry contains ALLOC
-    let last_entry = after_alloc_history.last().expect("History should not be empty");
+    let last_entry = after_alloc_history
+        .last()
+        .expect("History should not be empty");
     assert!(
         last_entry.contains("ALLOC"),
         "[FAIL] Last history entry should contain 'ALLOC': {}",
@@ -605,11 +692,15 @@ fn test_allocation_history() {
     println!("[PASS] Last entry is ALLOC: {}", last_entry);
 
     // Free the allocation
-    allocator.free_protected(&allocation).expect("Free should succeed");
+    allocator
+        .free_protected(&allocation)
+        .expect("Free should succeed");
 
     // History should have grown again with FREE
     let after_free_history = allocator.allocation_history();
-    let free_entry = after_free_history.last().expect("History should not be empty");
+    let free_entry = after_free_history
+        .last()
+        .expect("History should not be empty");
     assert!(
         free_entry.contains("FREE"),
         "[FAIL] Last history entry should contain 'FREE': {}",
@@ -627,25 +718,34 @@ fn test_allocation_history() {
 fn test_verify_all_allocations_real() {
     println!("\n=== VERIFY ALL ALLOCATIONS REAL TEST ===\n");
 
-    let mut allocator = WarmCudaAllocator::new(0)
-        .expect("Failed to create allocator - is RTX 5090 installed?");
+    let mut allocator =
+        WarmCudaAllocator::new(0).expect("Failed to create allocator - is RTX 5090 installed?");
 
     // With no allocations, should pass
     let result = allocator.verify_all_allocations_real();
-    assert!(result.is_ok(), "[FAIL] Verification should pass with no allocations");
+    assert!(
+        result.is_ok(),
+        "[FAIL] Verification should pass with no allocations"
+    );
     println!("[PASS] Verification passes with no allocations");
 
     // Allocate something
-    let allocation = allocator.allocate_protected_with_verification(50 * MB, "verify_test")
+    let allocation = allocator
+        .allocate_protected_with_verification(50 * MB, "verify_test")
         .expect("Allocation should succeed");
 
     // Verification should still pass (all allocations are real)
     let result = allocator.verify_all_allocations_real();
-    assert!(result.is_ok(), "[FAIL] Verification should pass with real allocations");
+    assert!(
+        result.is_ok(),
+        "[FAIL] Verification should pass with real allocations"
+    );
     println!("[PASS] Verification passes with real allocations");
 
     // Clean up
-    allocator.free_protected(&allocation).expect("Free should succeed");
+    allocator
+        .free_protected(&allocation)
+        .expect("Free should succeed");
     println!("[PASS] Cleanup complete");
 }
 
@@ -664,15 +764,22 @@ fn test_cuda_runtime_summary() {
     let allocator = WarmCudaAllocator::new(0)
         .expect("[CRITICAL] Failed to initialize CUDA - RTX 5090 required!");
 
-    let gpu_info = allocator.get_gpu_info()
+    let gpu_info = allocator
+        .get_gpu_info()
         .expect("[CRITICAL] Failed to get GPU info!");
 
     println!("GPU Information:");
     println!("  Name:               {}", gpu_info.name);
     println!("  Device ID:          {}", gpu_info.device_id);
-    println!("  Compute Capability: {}", gpu_info.compute_capability_string());
-    println!("  VRAM Total:         {:.2} GB ({} bytes)",
-             gpu_info.total_memory_gb(), gpu_info.total_memory_bytes);
+    println!(
+        "  Compute Capability: {}",
+        gpu_info.compute_capability_string()
+    );
+    println!(
+        "  VRAM Total:         {:.2} GB ({} bytes)",
+        gpu_info.total_memory_gb(),
+        gpu_info.total_memory_bytes
+    );
     println!("  Driver Version:     {}", gpu_info.driver_version);
     println!();
 
@@ -683,27 +790,38 @@ fn test_cuda_runtime_summary() {
     let is_simulated = gpu_info.name.to_lowercase().contains("simulated")
         || gpu_info.name.to_lowercase().contains("stub")
         || gpu_info.name.to_lowercase().contains("fake");
-    println!("  [{}] Real GPU (not simulated)", if !is_simulated { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] Real GPU (not simulated)",
+        if !is_simulated { "PASS" } else { "FAIL" }
+    );
     assert!(!is_simulated, "Simulated GPU detected!");
 
     // 2. Compute capability
-    let meets_cc = gpu_info.meets_compute_requirement(REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR);
-    println!("  [{}] Compute Capability >= {}.{}",
-             if meets_cc { "PASS" } else { "FAIL" },
-             REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR);
+    let meets_cc =
+        gpu_info.meets_compute_requirement(REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR);
+    println!(
+        "  [{}] Compute Capability >= {}.{}",
+        if meets_cc { "PASS" } else { "FAIL" },
+        REQUIRED_COMPUTE_MAJOR,
+        REQUIRED_COMPUTE_MINOR
+    );
     assert!(meets_cc, "Insufficient compute capability!");
 
     // 3. VRAM
     let meets_vram = gpu_info.total_memory_bytes >= MINIMUM_VRAM_BYTES;
-    println!("  [{}] VRAM >= {:.2} GB",
-             if meets_vram { "PASS" } else { "FAIL" },
-             MINIMUM_VRAM_BYTES as f64 / GB as f64);
+    println!(
+        "  [{}] VRAM >= {:.2} GB",
+        if meets_vram { "PASS" } else { "FAIL" },
+        MINIMUM_VRAM_BYTES as f64 / GB as f64
+    );
     assert!(meets_vram, "Insufficient VRAM!");
 
     // 4. Meets RTX 5090 requirements
     let meets_5090 = gpu_info.meets_rtx_5090_requirements();
-    println!("  [{}] Meets RTX 5090 requirements",
-             if meets_5090 { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] Meets RTX 5090 requirements",
+        if meets_5090 { "PASS" } else { "FAIL" }
+    );
     assert!(meets_5090, "Does not meet RTX 5090 requirements!");
 
     println!();

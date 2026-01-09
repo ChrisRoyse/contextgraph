@@ -9,12 +9,12 @@
 //! 6. Serialization roundtrips (bincode)
 //! 7. Edge cases for sparse and token-level embeddings
 
+use crate::teleological::Embedder;
 use crate::types::fingerprint::semantic::fingerprint::{EmbeddingRef, ValidationError};
 use crate::types::fingerprint::semantic::{
-    SemanticFingerprint, TeleologicalArray, E1_DIM, E12_TOKEN_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM,
-    E7_DIM, E8_DIM, E9_DIM, E10_DIM, E11_DIM,
+    SemanticFingerprint, TeleologicalArray, E10_DIM, E11_DIM, E12_TOKEN_DIM, E1_DIM, E2_DIM,
+    E3_DIM, E4_DIM, E5_DIM, E7_DIM, E8_DIM, E9_DIM,
 };
-use crate::teleological::Embedder;
 use crate::types::fingerprint::SparseVector;
 
 /// Test: EmbeddingRef correctly categorizes all 13 embeddings.
@@ -136,8 +136,8 @@ fn test_storage_bytes() {
 
     // Calculate expected size:
     // Dense: 10 embeddings
-    let dense_floats = E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E7_DIM + E8_DIM + E9_DIM
-        + E10_DIM + E11_DIM;
+    let dense_floats =
+        E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E7_DIM + E8_DIM + E9_DIM + E10_DIM + E11_DIM;
     let expected_dense_bytes = dense_floats * std::mem::size_of::<f32>();
 
     // Sparse: empty = 0 bytes each
@@ -167,8 +167,8 @@ fn test_storage_bytes_with_sparse() {
     let bytes = fp.storage_bytes();
 
     // Calculate expected size:
-    let dense_floats = E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E7_DIM + E8_DIM + E9_DIM
-        + E10_DIM + E11_DIM;
+    let dense_floats =
+        E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E7_DIM + E8_DIM + E9_DIM + E10_DIM + E11_DIM;
     let dense_bytes = dense_floats * std::mem::size_of::<f32>();
     let e6_bytes = 3 * (std::mem::size_of::<u16>() + std::mem::size_of::<f32>());
     let e13_bytes = 4 * (std::mem::size_of::<u16>() + std::mem::size_of::<f32>());
@@ -188,7 +188,11 @@ fn test_storage_bytes_with_sparse() {
 fn test_validate_strict_valid() {
     let fp = SemanticFingerprint::zeroed();
     let result = fp.validate_strict();
-    assert!(result.is_ok(), "zeroed fingerprint should validate: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "zeroed fingerprint should validate: {:?}",
+        result
+    );
     println!("[PASS] validate_strict() passes for valid fingerprint");
 }
 
@@ -210,7 +214,10 @@ fn test_validate_strict_wrong_e1_dimension() {
             assert_eq!(embedder, Embedder::Semantic);
             assert_eq!(expected, E1_DIM);
             assert_eq!(actual, 512);
-            println!("[PASS] DimensionMismatch error for E1: expected {}, got {}", expected, actual);
+            println!(
+                "[PASS] DimensionMismatch error for E1: expected {}, got {}",
+                expected, actual
+            );
         }
         other => panic!("Expected DimensionMismatch, got {:?}", other),
     }
@@ -227,7 +234,10 @@ fn test_validate_strict_wrong_token_dimension() {
     ];
 
     let result = fp.validate_strict();
-    assert!(result.is_err(), "should fail validation for wrong token dim");
+    assert!(
+        result.is_err(),
+        "should fail validation for wrong token dim"
+    );
 
     match result.unwrap_err() {
         ValidationError::TokenDimensionMismatch {
@@ -260,10 +270,16 @@ fn test_validate_strict_sparse_out_of_bounds() {
     };
 
     let result = fp.validate_strict();
-    assert!(result.is_err(), "should fail validation for out-of-bounds sparse index");
+    assert!(
+        result.is_err(),
+        "should fail validation for out-of-bounds sparse index"
+    );
 
     match result.unwrap_err() {
-        ValidationError::SparseVectorError { embedder, source: _ } => {
+        ValidationError::SparseVectorError {
+            embedder,
+            source: _,
+        } => {
             assert_eq!(embedder, Embedder::Sparse);
             println!("[PASS] SparseVectorError for E6");
         }
@@ -292,7 +308,10 @@ fn test_bincode_serialization_roundtrip() {
     assert_eq!(fp.e1_semantic, deserialized.e1_semantic);
     assert_eq!(fp.e2_temporal_recent, deserialized.e2_temporal_recent);
     assert_eq!(fp.e3_temporal_periodic, deserialized.e3_temporal_periodic);
-    assert_eq!(fp.e4_temporal_positional, deserialized.e4_temporal_positional);
+    assert_eq!(
+        fp.e4_temporal_positional,
+        deserialized.e4_temporal_positional
+    );
     assert_eq!(fp.e5_causal, deserialized.e5_causal);
     assert_eq!(fp.e6_sparse, deserialized.e6_sparse);
     assert_eq!(fp.e7_code, deserialized.e7_code);
@@ -312,10 +331,7 @@ fn test_bincode_serialization_roundtrip() {
 fn test_bincode_serialization_with_data() {
     let mut fp = SemanticFingerprint::zeroed();
     fp.e6_sparse = SparseVector::new(vec![10, 100, 500], vec![0.5, 0.3, 0.8]).unwrap();
-    fp.e12_late_interaction = vec![
-        vec![1.0; E12_TOKEN_DIM],
-        vec![2.0; E12_TOKEN_DIM],
-    ];
+    fp.e12_late_interaction = vec![vec![1.0; E12_TOKEN_DIM], vec![2.0; E12_TOKEN_DIM]];
     fp.e13_splade = SparseVector::new(vec![1, 2], vec![0.1, 0.2]).unwrap();
 
     let serialized = bincode::serialize(&fp).expect("serialize failed");
@@ -351,7 +367,11 @@ fn test_validation_error_display() {
         actual: 64,
     };
     let msg2 = format!("{}", err2);
-    assert!(msg2.contains("Token 5") || msg2.contains("token 5"), "msg2 was: {}", msg2);
+    assert!(
+        msg2.contains("Token 5") || msg2.contains("token 5"),
+        "msg2 was: {}",
+        msg2
+    );
     assert!(msg2.contains("128"), "msg2 was: {}", msg2);
     println!("[PASS] TokenDimensionMismatch Display: {}", msg2);
 }
@@ -439,7 +459,10 @@ fn test_embedder_dims_match_get_type() {
             (EmbedderDims::Sparse { .. }, EmbeddingRef::Sparse(_)) => {}
             (EmbedderDims::TokenLevel { .. }, EmbeddingRef::TokenLevel(_)) => {}
             (dims, ref_type) => {
-                panic!("{:?}: dims {:?} doesn't match ref_type {:?}", embedder, dims, ref_type);
+                panic!(
+                    "{:?}: dims {:?} doesn't match ref_type {:?}",
+                    embedder, dims, ref_type
+                );
             }
         }
     }
@@ -461,7 +484,10 @@ fn test_validate_strict_sparse_unsorted() {
     assert!(result.is_err(), "should fail for unsorted indices");
 
     match result.unwrap_err() {
-        ValidationError::SparseVectorError { embedder, source: _ } => {
+        ValidationError::SparseVectorError {
+            embedder,
+            source: _,
+        } => {
             assert_eq!(embedder, Embedder::Sparse);
             println!("[PASS] SparseVectorError for unsorted indices");
         }
@@ -483,7 +509,10 @@ fn test_validate_strict_sparse_duplicate() {
     assert!(result.is_err(), "should fail for duplicate indices");
 
     match result.unwrap_err() {
-        ValidationError::SparseVectorError { embedder, source: _ } => {
+        ValidationError::SparseVectorError {
+            embedder,
+            source: _,
+        } => {
             assert_eq!(embedder, Embedder::KeywordSplade);
             println!("[PASS] SparseVectorError for duplicate indices");
         }
@@ -505,7 +534,10 @@ fn test_validate_strict_sparse_length_mismatch() {
     assert!(result.is_err(), "should fail for length mismatch");
 
     match result.unwrap_err() {
-        ValidationError::SparseVectorError { embedder, source: _ } => {
+        ValidationError::SparseVectorError {
+            embedder,
+            source: _,
+        } => {
             assert_eq!(embedder, Embedder::Sparse);
             println!("[PASS] SparseVectorError for length mismatch");
         }

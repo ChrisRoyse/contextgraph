@@ -1,7 +1,7 @@
 //! Data types for cone operations.
 
-use crate::error::{CudaError, CudaResult};
 use super::constants::CONE_DATA_DIM;
+use crate::error::{CudaError, CudaResult};
 
 /// Cone data packed for GPU transfer.
 ///

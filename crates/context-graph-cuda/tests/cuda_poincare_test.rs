@@ -25,8 +25,8 @@
 //! ```
 
 use context_graph_cuda::poincare::{
-    poincare_distance_batch_cpu, poincare_distance_cpu, is_poincare_gpu_available,
-    PoincareCudaConfig, POINCARE_DIM, DEFAULT_CURVATURE,
+    is_poincare_gpu_available, poincare_distance_batch_cpu, poincare_distance_cpu,
+    PoincareCudaConfig, DEFAULT_CURVATURE, POINCARE_DIM,
 };
 use context_graph_cuda::CudaError;
 
@@ -39,7 +39,10 @@ fn test_integration_config_defaults_are_valid() {
     let config = PoincareCudaConfig::default();
     assert!(config.validate().is_ok(), "Default config should be valid");
     assert_eq!(config.dim, 64, "Default dimension should be 64");
-    assert!((config.curvature - (-1.0)).abs() < 1e-6, "Default curvature should be -1.0");
+    assert!(
+        (config.curvature - (-1.0)).abs() < 1e-6,
+        "Default curvature should be -1.0"
+    );
 }
 
 #[test]
@@ -218,7 +221,11 @@ fn test_integration_cpu_distance_known_values() {
     let mut far_point = [0.0f32; 64];
     far_point[0] = 0.9;
     let dist_far = poincare_distance_cpu(&origin, &far_point, -1.0);
-    assert!(dist_far > 4.0, "Distance at r=0.9 should be large: {}", dist_far);
+    assert!(
+        dist_far > 4.0,
+        "Distance at r=0.9 should be large: {}",
+        dist_far
+    );
     assert!(dist_far.is_finite(), "Distance at r=0.9 should be finite");
 }
 
@@ -232,7 +239,10 @@ fn test_integration_edge_case_zero_vectors() {
     let zero = [0.0f32; 64];
     let dist = poincare_distance_cpu(&zero, &zero, -1.0);
 
-    assert!(dist.abs() < 1e-6, "Distance from origin to origin should be 0");
+    assert!(
+        dist.abs() < 1e-6,
+        "Distance from origin to origin should be 0"
+    );
     assert!(dist.is_finite(), "Distance should be finite");
     assert!(!dist.is_nan(), "Distance should not be NaN");
 }
@@ -251,12 +261,20 @@ fn test_integration_edge_case_boundary_points() {
     let origin = [0.0f32; 64];
     let dist_from_origin = poincare_distance_cpu(&origin, &boundary_point, -1.0);
 
-    assert!(dist_from_origin > 3.0, "Distance near boundary should be large: {}", dist_from_origin);
+    assert!(
+        dist_from_origin > 3.0,
+        "Distance near boundary should be large: {}",
+        dist_from_origin
+    );
     assert!(dist_from_origin.is_finite(), "Distance should be finite");
 
     // Distance from boundary point to itself should be 0
     let dist_to_self = poincare_distance_cpu(&boundary_point, &boundary_point, -1.0);
-    assert!(dist_to_self.abs() < 1e-4, "Distance to self should be ~0: {}", dist_to_self);
+    assert!(
+        dist_to_self.abs() < 1e-4,
+        "Distance to self should be ~0: {}",
+        dist_to_self
+    );
 }
 
 #[test]
@@ -270,7 +288,11 @@ fn test_integration_edge_case_opposite_points() {
     let dist = poincare_distance_cpu(&x, &y, -1.0);
 
     // Opposite points should have a large distance
-    assert!(dist > 3.0, "Opposite points should have large distance: {}", dist);
+    assert!(
+        dist > 3.0,
+        "Opposite points should have large distance: {}",
+        dist
+    );
     assert!(dist.is_finite(), "Distance should be finite");
 
     // Test symmetry for opposite points
@@ -286,12 +308,16 @@ fn test_integration_edge_case_very_close_points() {
     // Points that are close to each other (but beyond epsilon threshold)
     let x = [0.1f32; 64];
     let mut y = [0.1f32; 64];
-    y[0] += 1e-4;  // Small but above POINCARE_EPS (1e-7)
+    y[0] += 1e-4; // Small but above POINCARE_EPS (1e-7)
 
     let dist = poincare_distance_cpu(&x, &y, -1.0);
 
     assert!(dist >= 0.0, "Distance should be non-negative");
-    assert!(dist < 0.01, "Close points should have small distance: {}", dist);
+    assert!(
+        dist < 0.01,
+        "Close points should have small distance: {}",
+        dist
+    );
     assert!(dist.is_finite(), "Distance should be finite");
 }
 
@@ -307,8 +333,14 @@ fn test_integration_edge_case_different_curvatures() {
     let dist_c2 = poincare_distance_cpu(&x, &y, -2.0);
 
     // Different curvatures should give different distances
-    assert!((dist_c1 - dist_c05).abs() > 0.1, "Curvature -1.0 vs -0.5 should differ");
-    assert!((dist_c1 - dist_c2).abs() > 0.1, "Curvature -1.0 vs -2.0 should differ");
+    assert!(
+        (dist_c1 - dist_c05).abs() > 0.1,
+        "Curvature -1.0 vs -0.5 should differ"
+    );
+    assert!(
+        (dist_c1 - dist_c2).abs() > 0.1,
+        "Curvature -1.0 vs -2.0 should differ"
+    );
 
     // All distances should be finite and positive
     assert!(dist_c1.is_finite() && dist_c1 > 0.0);
@@ -333,9 +365,8 @@ fn test_integration_batch_cpu_consistency() {
         .flat_map(|i| generate_test_point((i + 100) as u32, 0.8).to_vec())
         .collect();
 
-    let batch_distances = poincare_distance_batch_cpu(
-        &queries, &database, n_queries, n_database, -1.0
-    );
+    let batch_distances =
+        poincare_distance_batch_cpu(&queries, &database, n_queries, n_database, -1.0);
 
     assert_eq!(batch_distances.len(), n_queries * n_database);
 
@@ -351,7 +382,10 @@ fn test_integration_batch_cpu_consistency() {
             assert!(
                 (single - batch).abs() < 1e-5,
                 "Mismatch at [{}, {}]: single={}, batch={}",
-                i, j, single, batch
+                i,
+                j,
+                single,
+                batch
             );
         }
     }
@@ -379,7 +413,8 @@ fn test_integration_batch_cpu_1k_x_1k() {
         assert!(
             d.is_finite() && d >= 0.0,
             "Invalid distance at index {}: {}",
-            idx, d
+            idx,
+            d
         );
     }
 
@@ -406,7 +441,10 @@ fn test_integration_gpu_availability_check() {
 
     // If CUDA feature is not enabled, should always return false
     #[cfg(not(feature = "cuda"))]
-    assert!(!available, "Without cuda feature, GPU should not be available");
+    assert!(
+        !available,
+        "Without cuda feature, GPU should not be available"
+    );
 }
 
 // ============================================================================
@@ -416,5 +454,8 @@ fn test_integration_gpu_availability_check() {
 #[test]
 fn test_integration_constants() {
     assert_eq!(POINCARE_DIM, 64, "POINCARE_DIM should be 64");
-    assert!((DEFAULT_CURVATURE - (-1.0)).abs() < 1e-10, "DEFAULT_CURVATURE should be -1.0");
+    assert!(
+        (DEFAULT_CURVATURE - (-1.0)).abs() < 1e-10,
+        "DEFAULT_CURVATURE should be -1.0"
+    );
 }

@@ -22,8 +22,8 @@
 //! - `persist()`: <1s for 100K vectors
 
 use async_trait::async_trait;
-use hnsw_rs::prelude::*;
 use hnsw_rs::hnsw::Hnsw;
+use hnsw_rs::prelude::*;
 // Note: Deserialize, Serialize not currently needed but retained for future persistence
 use std::collections::HashMap;
 use std::fs::File;
@@ -47,7 +47,12 @@ use super::status::IndexStatus;
 // ============================================================================
 
 /// Type alias for HNSW persistence data to reduce type complexity.
-type HnswPersistenceData = (HnswConfig, DistanceMetric, usize, Vec<(Uuid, usize, Vec<f32>)>);
+type HnswPersistenceData = (
+    HnswConfig,
+    DistanceMetric,
+    usize,
+    Vec<(Uuid, usize, Vec<f32>)>,
+);
 
 /// Real HNSW index using hnsw_rs library.
 ///
@@ -437,10 +442,7 @@ impl RealHnswIndex {
                     };
                     Some((uuid, similarity))
                 } else {
-                    warn!(
-                        "HNSW search returned unknown data_id={}, skipping",
-                        data_id
-                    );
+                    warn!("HNSW search returned unknown data_id={}, skipping", data_id);
                     None
                 }
             })
@@ -503,15 +505,21 @@ impl RealHnswIndex {
     /// Get the number of points in the underlying HNSW graph.
     pub fn hnsw_point_count(&self) -> usize {
         match self.active_metric {
-            DistanceMetric::Cosine | DistanceMetric::AsymmetricCosine => {
-                self.inner_cosine.as_ref().map(|h| h.get_nb_point()).unwrap_or(0)
-            }
-            DistanceMetric::Euclidean => {
-                self.inner_l2.as_ref().map(|h| h.get_nb_point()).unwrap_or(0)
-            }
-            DistanceMetric::DotProduct => {
-                self.inner_dot.as_ref().map(|h| h.get_nb_point()).unwrap_or(0)
-            }
+            DistanceMetric::Cosine | DistanceMetric::AsymmetricCosine => self
+                .inner_cosine
+                .as_ref()
+                .map(|h| h.get_nb_point())
+                .unwrap_or(0),
+            DistanceMetric::Euclidean => self
+                .inner_l2
+                .as_ref()
+                .map(|h| h.get_nb_point())
+                .unwrap_or(0),
+            DistanceMetric::DotProduct => self
+                .inner_dot
+                .as_ref()
+                .map(|h| h.get_nb_point())
+                .unwrap_or(0),
             DistanceMetric::MaxSim => 0,
         }
     }
@@ -530,10 +538,13 @@ impl RealHnswIndex {
     /// * `Err(IndexError)` - IO or serialization error
     pub fn persist(&self, path: &Path) -> IndexResult<()> {
         // Create persistence data: (UUID, data_id, vector) tuples
-        let data: Vec<(Uuid, usize, Vec<f32>)> = self.uuid_to_data_id
+        let data: Vec<(Uuid, usize, Vec<f32>)> = self
+            .uuid_to_data_id
             .iter()
             .filter_map(|(&uuid, &data_id)| {
-                self.stored_vectors.get(&uuid).map(|v| (uuid, data_id, v.clone()))
+                self.stored_vectors
+                    .get(&uuid)
+                    .map(|v| (uuid, data_id, v.clone()))
             })
             .collect();
 
@@ -584,9 +595,10 @@ impl RealHnswIndex {
 
         // Check for legacy SimpleHnswIndex format markers
         // These magic bytes were used by the deprecated SimpleHnswIndex serialization
-        if data.starts_with(b"SIMPLE_HNSW") ||
-           data.starts_with(b"\x00SIMPLE") ||
-           (data.len() > 8 && &data[0..8] == b"SIMP_IDX") {
+        if data.starts_with(b"SIMPLE_HNSW")
+            || data.starts_with(b"\x00SIMPLE")
+            || (data.len() > 8 && &data[0..8] == b"SIMP_IDX")
+        {
             error!(
                 "FATAL: Legacy SimpleHnswIndex format detected at {:?}. \
                  This format was deprecated and is no longer supported.",
@@ -597,7 +609,7 @@ impl RealHnswIndex {
                 "Legacy SimpleHnswIndex format detected. \
                  This format was deprecated and is no longer supported. \
                  Data must be reindexed using RealHnswIndex. \
-                 See: docs2/codestate/sherlockplans/agent5-backwards-compat-removal.md"
+                 See: docs2/codestate/sherlockplans/agent5-backwards-compat-removal.md",
             ));
         }
 
@@ -696,7 +708,9 @@ impl HnswMultiSpaceIndex {
     /// Create HNSW config for a given embedder.
     fn config_for_embedder(embedder: EmbedderIndex) -> Option<HnswConfig> {
         let dim = embedder.dimension()?;
-        let metric = embedder.recommended_metric().unwrap_or(DistanceMetric::Cosine);
+        let metric = embedder
+            .recommended_metric()
+            .unwrap_or(DistanceMetric::Cosine);
 
         // Use special config for Matryoshka
         if embedder == EmbedderIndex::E1Matryoshka128 {
@@ -713,7 +727,8 @@ impl HnswMultiSpaceIndex {
         // Check HNSW index (there is NO legacy fallback anymore)
         if let Some(index) = self.hnsw_indexes.get(&embedder) {
             let mut status = IndexStatus::new_empty(embedder);
-            let bytes_per_element = self.configs
+            let bytes_per_element = self
+                .configs
                 .get(&embedder)
                 .map(|c| c.estimated_memory_per_vector())
                 .unwrap_or(4096); // Default estimate
@@ -798,7 +813,9 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
             if vector.len() != expected_dim {
                 error!(
                     "FATAL: Dimension mismatch for {:?}: expected {}, got {}",
-                    embedder, expected_dim, vector.len()
+                    embedder,
+                    expected_dim,
+                    vector.len()
                 );
                 return Err(IndexError::DimensionMismatch {
                     embedder,
@@ -809,14 +826,16 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
 
             // Add to real HNSW index
             index.add(memory_id, vector).map_err(|e| match e {
-                IndexError::DimensionMismatch { expected, actual, .. } => {
-                    IndexError::DimensionMismatch {
-                        embedder,
-                        expected,
-                        actual,
-                    }
+                IndexError::DimensionMismatch {
+                    expected, actual, ..
+                } => IndexError::DimensionMismatch {
+                    embedder,
+                    expected,
+                    actual,
+                },
+                IndexError::ZeroNormVector { memory_id } => {
+                    IndexError::ZeroNormVector { memory_id }
                 }
-                IndexError::ZeroNormVector { memory_id } => IndexError::ZeroNormVector { memory_id },
                 other => other,
             })?;
 
@@ -843,8 +862,12 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
         }
 
         // E1 Semantic
-        self.add_vector(EmbedderIndex::E1Semantic, memory_id, &fingerprint.e1_semantic)
-            .await?;
+        self.add_vector(
+            EmbedderIndex::E1Semantic,
+            memory_id,
+            &fingerprint.e1_semantic,
+        )
+        .await?;
 
         // E1 Matryoshka 128D - truncate E1 to first 128 dimensions
         let matryoshka: Vec<f32> = fingerprint.e1_semantic.iter().take(128).copied().collect();
@@ -946,7 +969,9 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
         if query.len() != expected_dim {
             error!(
                 "FATAL: Query dimension mismatch for {:?}: expected {}, got {}",
-                embedder, expected_dim, query.len()
+                embedder,
+                expected_dim,
+                query.len()
             );
             return Err(IndexError::DimensionMismatch {
                 embedder,
@@ -958,13 +983,13 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
         // Search HNSW index (there is NO legacy fallback anymore)
         if let Some(index) = self.hnsw_indexes.get(&embedder) {
             return index.search(query, k).map_err(|e| match e {
-                IndexError::DimensionMismatch { expected, actual, .. } => {
-                    IndexError::DimensionMismatch {
-                        embedder,
-                        expected,
-                        actual,
-                    }
-                }
+                IndexError::DimensionMismatch {
+                    expected, actual, ..
+                } => IndexError::DimensionMismatch {
+                    embedder,
+                    expected,
+                    actual,
+                },
                 other => other,
             });
         }
@@ -1102,10 +1127,7 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
         // Load metadata first
         let meta_path = path.join("index_meta.json");
         if !meta_path.exists() {
-            error!(
-                "FATAL: Index metadata not found at {:?}",
-                meta_path
-            );
+            error!("FATAL: Index metadata not found at {:?}", meta_path);
             return Err(IndexError::CorruptedIndex {
                 path: meta_path.display().to_string(),
             });
@@ -1114,12 +1136,13 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
         info!("Loading HnswMultiSpaceIndex from {:?}", path);
 
         // Read metadata to determine index version
-        let meta_file = File::open(&meta_path)
-            .map_err(|e| IndexError::io("opening metadata file", e))?;
+        let meta_file =
+            File::open(&meta_path).map_err(|e| IndexError::io("opening metadata file", e))?;
         let meta: serde_json::Value = serde_json::from_reader(meta_file)
             .map_err(|e| IndexError::serialization("parsing metadata", e))?;
 
-        let version = meta.get("version")
+        let version = meta
+            .get("version")
             .and_then(|v| v.as_str())
             .unwrap_or("1.0.0");
 
@@ -1190,7 +1213,7 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
                          Delete legacy files and reindex data using RealHnswIndex. \
                          See: docs2/codestate/sherlockplans/agent5-backwards-compat-removal.md",
                         embedder
-                    )
+                    ),
                 ));
             }
         }
@@ -1199,7 +1222,10 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
         let splade_path = path.join("splade.bin");
         if splade_path.exists() {
             self.splade_index = SpladeInvertedIndex::load(&splade_path)?;
-            info!("Loaded SPLADE index with {} entries", self.splade_index.len());
+            info!(
+                "Loaded SPLADE index with {} entries",
+                self.splade_index.len()
+            );
         }
 
         self.initialized = true;
@@ -1216,8 +1242,8 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::status::IndexHealth;
+    use super::*;
 
     // Helper to create a random normalized vector
     fn random_vector(dim: usize) -> Vec<f32> {
@@ -1347,7 +1373,11 @@ mod tests {
         println!("[BEFORE REMOVE] index.len() = {}", index.len());
 
         let removed = index.remove(id);
-        println!("[AFTER REMOVE] index.len() = {}, removed = {}", index.len(), removed);
+        println!(
+            "[AFTER REMOVE] index.len() = {}, removed = {}",
+            index.len(),
+            removed
+        );
 
         assert!(removed);
         assert_eq!(index.len(), 0);
@@ -1402,9 +1432,7 @@ mod tests {
         let v = random_vector(100);
 
         println!("[BEFORE] Adding to E6Sparse (invalid for HNSW)");
-        let result = manager
-            .add_vector(EmbedderIndex::E6Sparse, id, &v)
-            .await;
+        let result = manager.add_vector(EmbedderIndex::E6Sparse, id, &v).await;
         println!("[AFTER] result.is_err() = {}", result.is_err());
 
         assert!(matches!(result, Err(IndexError::InvalidEmbedder { .. })));
@@ -1509,7 +1537,8 @@ mod tests {
         manager.add_purpose_vector(id, &purpose_vec).await.unwrap();
 
         let results = manager.search_purpose(&purpose_vec, 10).await.unwrap();
-        println!("[AFTER] Found {} results, top similarity = {}",
+        println!(
+            "[AFTER] Found {} results, top similarity = {}",
             results.len(),
             results.first().map(|r| r.1).unwrap_or(0.0)
         );
@@ -1591,7 +1620,11 @@ mod tests {
         let mut loaded_manager = HnswMultiSpaceIndex::new();
         loaded_manager.load(&temp_dir).await.unwrap();
 
-        let after_count: usize = loaded_manager.status().iter().map(|s| s.element_count).sum();
+        let after_count: usize = loaded_manager
+            .status()
+            .iter()
+            .map(|s| s.element_count)
+            .sum();
         println!("[AFTER LOAD] Total elements = {}", after_count);
 
         assert_eq!(before_count, after_count);
@@ -1609,9 +1642,7 @@ mod tests {
         let v = random_vector(1024);
 
         println!("[BEFORE] Attempting add without initialization");
-        let result = manager
-            .search(EmbedderIndex::E1Semantic, &v, 10)
-            .await;
+        let result = manager.search(EmbedderIndex::E1Semantic, &v, 10).await;
         println!("[AFTER] result.is_err() = {}", result.is_err());
 
         assert!(matches!(result, Err(IndexError::NotInitialized { .. })));
@@ -1667,14 +1698,13 @@ mod tests {
         use std::io::Write;
 
         // Create a temp file with legacy SIMPLE_HNSW format marker
-        let temp_path = std::env::temp_dir().join(format!(
-            "legacy_simple_hnsw_test_{}.bin",
-            Uuid::new_v4()
-        ));
+        let temp_path =
+            std::env::temp_dir().join(format!("legacy_simple_hnsw_test_{}.bin", Uuid::new_v4()));
 
         {
             let mut file = std::fs::File::create(&temp_path).unwrap();
-            file.write_all(b"SIMPLE_HNSW_LEGACY_DATA_HERE_INVALID_FORMAT").unwrap();
+            file.write_all(b"SIMPLE_HNSW_LEGACY_DATA_HERE_INVALID_FORMAT")
+                .unwrap();
             file.flush().unwrap();
         }
 
@@ -1693,7 +1723,8 @@ mod tests {
 
         assert!(
             err_str.contains("LEGACY FORMAT REJECTED") || err_str.contains("legacy"),
-            "Error should mention legacy format: {}", err_str
+            "Error should mention legacy format: {}",
+            err_str
         );
 
         println!("[VERIFIED] Legacy SIMPLE_HNSW format rejected");
@@ -1704,14 +1735,13 @@ mod tests {
         use std::io::Write;
 
         // Create a temp file with legacy SIMP_IDX format marker
-        let temp_path = std::env::temp_dir().join(format!(
-            "legacy_simp_idx_test_{}.bin",
-            Uuid::new_v4()
-        ));
+        let temp_path =
+            std::env::temp_dir().join(format!("legacy_simp_idx_test_{}.bin", Uuid::new_v4()));
 
         {
             let mut file = std::fs::File::create(&temp_path).unwrap();
-            file.write_all(b"SIMP_IDX_LEGACY_DATA_HERE_INVALID_FORMAT").unwrap();
+            file.write_all(b"SIMP_IDX_LEGACY_DATA_HERE_INVALID_FORMAT")
+                .unwrap();
             file.flush().unwrap();
         }
 
@@ -1730,7 +1760,8 @@ mod tests {
 
         assert!(
             err_str.contains("LEGACY FORMAT REJECTED") || err_str.contains("legacy"),
-            "Error should mention legacy format: {}", err_str
+            "Error should mention legacy format: {}",
+            err_str
         );
 
         println!("[VERIFIED] Legacy SIMP_IDX format rejected");
@@ -1741,14 +1772,13 @@ mod tests {
         use std::io::Write;
 
         // Create a temp file with legacy \x00SIMPLE format marker
-        let temp_path = std::env::temp_dir().join(format!(
-            "legacy_null_simple_test_{}.bin",
-            Uuid::new_v4()
-        ));
+        let temp_path =
+            std::env::temp_dir().join(format!("legacy_null_simple_test_{}.bin", Uuid::new_v4()));
 
         {
             let mut file = std::fs::File::create(&temp_path).unwrap();
-            file.write_all(b"\x00SIMPLE_LEGACY_DATA_HERE_INVALID_FORMAT").unwrap();
+            file.write_all(b"\x00SIMPLE_LEGACY_DATA_HERE_INVALID_FORMAT")
+                .unwrap();
             file.flush().unwrap();
         }
 
@@ -1767,7 +1797,8 @@ mod tests {
 
         assert!(
             err_str.contains("LEGACY FORMAT REJECTED") || err_str.contains("legacy"),
-            "Error should mention legacy format: {}", err_str
+            "Error should mention legacy format: {}",
+            err_str
         );
 
         println!("[VERIFIED] Legacy null-prefixed SIMPLE format rejected");
@@ -1778,10 +1809,8 @@ mod tests {
         use std::io::Write;
 
         // Create temp directory with legacy .hnsw.bin file
-        let temp_dir = std::env::temp_dir().join(format!(
-            "legacy_multispace_test_{}",
-            Uuid::new_v4()
-        ));
+        let temp_dir =
+            std::env::temp_dir().join(format!("legacy_multispace_test_{}", Uuid::new_v4()));
         std::fs::create_dir_all(&temp_dir).unwrap();
 
         // Create valid metadata
@@ -1810,7 +1839,10 @@ mod tests {
         // Cleanup
         std::fs::remove_dir_all(&temp_dir).ok();
 
-        assert!(result.is_err(), "Should reject directory containing legacy files");
+        assert!(
+            result.is_err(),
+            "Should reject directory containing legacy files"
+        );
 
         let err = result.unwrap_err();
         let err_str = err.to_string();
@@ -1818,7 +1850,8 @@ mod tests {
 
         assert!(
             err_str.contains("LEGACY FORMAT REJECTED") || err_str.contains("legacy"),
-            "Error should mention legacy format: {}", err_str
+            "Error should mention legacy format: {}",
+            err_str
         );
 
         println!("[VERIFIED] Multi-space load rejects legacy files");

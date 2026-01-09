@@ -19,15 +19,15 @@
 //! - **COMPREHENSIVE**: Cover all major code paths and edge cases
 //! - **FAIL-FAST**: Verify error handling works correctly
 
-mod helpers;
 mod config_tests;
-mod error_tests;
-mod state_tests;
-mod registry_tests;
-mod memory_pool_tests;
-mod validation_tests;
-mod handle_tests;
-mod loader_tests;
-mod health_tests;
 mod diagnostics_tests;
+mod error_tests;
+mod handle_tests;
+mod health_tests;
+mod helpers;
 mod integration_tests;
+mod loader_tests;
+mod memory_pool_tests;
+mod registry_tests;
+mod state_tests;
+mod validation_tests;

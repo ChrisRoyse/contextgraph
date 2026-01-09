@@ -24,7 +24,9 @@ pub enum IndexError {
     /// Dimension mismatch between vector and index configuration.
     ///
     /// Triggered when `add_vector()` receives a vector with wrong dimension.
-    #[error("INDEX ERROR: Dimension mismatch for {embedder:?} - expected {expected}, got {actual}")]
+    #[error(
+        "INDEX ERROR: Dimension mismatch for {embedder:?} - expected {expected}, got {actual}"
+    )]
     DimensionMismatch {
         /// The embedder being targeted
         embedder: EmbedderIndex,

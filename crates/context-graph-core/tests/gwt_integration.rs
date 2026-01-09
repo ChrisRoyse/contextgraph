@@ -10,9 +10,9 @@
 //! 7. Workspace events and conflicts
 //! 8. Full system integration
 
-use context_graph_core::gwt::*;
 use context_graph_core::gwt::consciousness::LimitingFactor;
 use context_graph_core::gwt::ego_node::IdentityStatus;
+use context_graph_core::gwt::*;
 use uuid::Uuid;
 
 #[tokio::test]
@@ -82,8 +82,8 @@ async fn test_workspace_coherence_filtering() {
     let id2 = Uuid::new_v4(); // Above threshold
 
     let candidates = vec![
-        (id1, 0.5, 0.9, 0.88),  // r < 0.8 (filtered out)
-        (id2, 0.85, 0.8, 0.8),  // r >= 0.8 (selected)
+        (id1, 0.5, 0.9, 0.88), // r < 0.8 (filtered out)
+        (id2, 0.85, 0.8, 0.8), // r >= 0.8 (selected)
     ];
 
     let winner = workspace.select_winning_memory(candidates).await.unwrap();
@@ -99,10 +99,7 @@ async fn test_workspace_conflict_detection() {
     let id1 = Uuid::new_v4();
     let id2 = Uuid::new_v4();
 
-    let candidates = vec![
-        (id1, 0.85, 0.9, 0.88),
-        (id2, 0.82, 0.85, 0.85),
-    ];
+    let candidates = vec![(id1, 0.85, 0.9, 0.88), (id2, 0.82, 0.85, 0.85)];
 
     workspace.select_winning_memory(candidates).await.unwrap();
 
@@ -136,12 +133,18 @@ async fn test_ego_node_self_awareness_cycle() {
 
     // Action perfectly aligned
     let aligned_action = [1.0; 13];
-    let result = loop_mgr.cycle(&mut ego, &aligned_action, 0.85).await.unwrap();
+    let result = loop_mgr
+        .cycle(&mut ego, &aligned_action, 0.85)
+        .await
+        .unwrap();
     assert!(!result.needs_reflection);
 
     // Action misaligned
     let misaligned_action = [0.0; 13];
-    let result = loop_mgr.cycle(&mut ego, &misaligned_action, 0.85).await.unwrap();
+    let result = loop_mgr
+        .cycle(&mut ego, &misaligned_action, 0.85)
+        .await
+        .unwrap();
     assert!(result.needs_reflection);
 }
 
@@ -193,8 +196,14 @@ async fn test_meta_cognitive_feedback_loop() {
     }
 
     // Verify that dream was triggered and acetylcholine increased
-    assert!(dream_triggered, "Dream should trigger after 5 low meta-scores");
-    assert!(loop_mgr.acetylcholine() > initial_ach, "Acetylcholine should increase when dream triggers");
+    assert!(
+        dream_triggered,
+        "Dream should trigger after 5 low meta-scores"
+    );
+    assert!(
+        loop_mgr.acetylcholine() > initial_ach,
+        "Acetylcholine should increase when dream triggers"
+    );
 }
 
 #[tokio::test]
@@ -203,8 +212,14 @@ async fn test_gwt_system_integration() {
     let gwt = GwtSystem::new().await.expect("Failed to create GWT system");
 
     // Update consciousness with realistic parameters
-    let consciousness = gwt.update_consciousness(0.85, 0.88, &[1.0; 13]).await.unwrap();
-    assert!(consciousness > 0.6, "Consciousness should be high with good input");
+    let consciousness = gwt
+        .update_consciousness(0.85, 0.88, &[1.0; 13])
+        .await
+        .unwrap();
+    assert!(
+        consciousness > 0.6,
+        "Consciousness should be high with good input"
+    );
 
     // Verify state machine updated
     let state_mgr = gwt.state_machine.read().await;
@@ -226,7 +241,9 @@ async fn test_full_consciousness_workflow() {
 
     // 3. Consciousness equation computes awareness level
     let calc = ConsciousnessCalculator::new();
-    let consciousness = calc.compute_consciousness(kuramoto_r, 0.88, &[1.0; 13]).unwrap();
+    let consciousness = calc
+        .compute_consciousness(kuramoto_r, 0.88, &[1.0; 13])
+        .unwrap();
 
     // 4. State machine updates based on consciousness
     state_mgr.update(consciousness).await.unwrap();
@@ -252,10 +269,7 @@ async fn test_workspace_empty_condition() {
     let id2 = Uuid::new_v4();
 
     // Both below coherence threshold
-    let candidates = vec![
-        (id1, 0.5, 0.9, 0.88),
-        (id2, 0.6, 0.8, 0.8),
-    ];
+    let candidates = vec![(id1, 0.5, 0.9, 0.88), (id2, 0.6, 0.8, 0.8)];
 
     let winner = workspace.select_winning_memory(candidates).await.unwrap();
     assert_eq!(winner, None);

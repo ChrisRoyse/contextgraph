@@ -7,9 +7,9 @@
 //!
 //! Enables goal-aligned retrieval: "find memories similar to X that serve the same purpose"
 
-mod types;
-mod core;
 mod alignment;
+mod core;
+mod types;
 
 #[cfg(test)]
 mod test_helpers;

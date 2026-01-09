@@ -143,9 +143,11 @@ fn bench_cosine_distance_scaling(c: &mut Criterion) {
         let b = generate_embedding(*dim, 123);
 
         group.throughput(Throughput::Elements(*dim as u64));
-        group.bench_with_input(BenchmarkId::from_parameter(dim), &(a, b), |b_iter, (a, b)| {
-            b_iter.iter(|| compute_cosine_distance(black_box(a), black_box(b)))
-        });
+        group.bench_with_input(
+            BenchmarkId::from_parameter(dim),
+            &(a, b),
+            |b_iter, (a, b)| b_iter.iter(|| compute_cosine_distance(black_box(a), black_box(b))),
+        );
     }
 
     group.finish();
@@ -171,9 +173,7 @@ fn bench_surprise_context_scaling(c: &mut Criterion) {
         group.bench_with_input(
             BenchmarkId::from_parameter(context_size),
             &history,
-            |b, hist| {
-                b.iter(|| calculator.compute_surprise(black_box(&current), black_box(hist)))
-            },
+            |b, hist| b.iter(|| calculator.compute_surprise(black_box(&current), black_box(hist))),
         );
     }
 
@@ -231,11 +231,13 @@ fn bench_surprise_orthogonal_vectors(c: &mut Criterion) {
     let calculator = SurpriseCalculator::new(&config);
 
     // Orthogonal vectors - maximum surprise
-    let embedding: Vec<f32> = (0..1536)
-        .map(|i| if i < 768 { 1.0 } else { 0.0 })
-        .collect();
+    let embedding: Vec<f32> = (0..1536).map(|i| if i < 768 { 1.0 } else { 0.0 }).collect();
     let history: Vec<Vec<f32>> = (0..20)
-        .map(|_| (0..1536).map(|i| if i >= 768 { 1.0 } else { 0.0 }).collect())
+        .map(|_| {
+            (0..1536)
+                .map(|i| if i >= 768 { 1.0 } else { 0.0 })
+                .collect()
+        })
         .collect();
 
     c.bench_function("compute_surprise_orthogonal", |b| {

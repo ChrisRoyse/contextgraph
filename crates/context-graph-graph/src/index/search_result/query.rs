@@ -119,9 +119,7 @@ impl SearchResult {
     /// Iterates through all queries, yielding valid results with query index.
     pub fn all_results(&self) -> impl Iterator<Item = (usize, i64, f32)> + '_ {
         (0..self.num_queries)
-            .flat_map(move |q| {
-                self.query_results(q).map(move |(id, dist)| (q, id, dist))
-            })
+            .flat_map(move |q| self.query_results(q).map(move |(id, dist)| (q, id, dist)))
     }
 
     /// Convert to SearchResultItems for a single query.

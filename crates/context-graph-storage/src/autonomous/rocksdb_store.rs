@@ -32,20 +32,20 @@ use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use context_graph_core::autonomous::{
-    AdaptiveThresholdState, AutonomousConfig, DriftDataPoint, GoalActivityMetrics,
-    GoalId, MemoryCurationState, MemoryId,
+    AdaptiveThresholdState, AutonomousConfig, DriftDataPoint, GoalActivityMetrics, GoalId,
+    MemoryCurationState, MemoryId,
 };
 
 use super::column_families::{
-    get_autonomous_cf_descriptors, AUTONOMOUS_CFS,
-    CF_ADAPTIVE_THRESHOLD_STATE, CF_AUTONOMOUS_CONFIG, CF_AUTONOMOUS_LINEAGE,
-    CF_CONSOLIDATION_HISTORY, CF_DRIFT_HISTORY, CF_GOAL_ACTIVITY_METRICS, CF_MEMORY_CURATION,
+    get_autonomous_cf_descriptors, AUTONOMOUS_CFS, CF_ADAPTIVE_THRESHOLD_STATE,
+    CF_AUTONOMOUS_CONFIG, CF_AUTONOMOUS_LINEAGE, CF_CONSOLIDATION_HISTORY, CF_DRIFT_HISTORY,
+    CF_GOAL_ACTIVITY_METRICS, CF_MEMORY_CURATION,
 };
 use super::schema::{
     autonomous_lineage_key, autonomous_lineage_timestamp_prefix, consolidation_history_key,
     consolidation_history_timestamp_prefix, drift_history_key, drift_history_timestamp_prefix,
-    goal_activity_metrics_key, memory_curation_key, parse_drift_history_key,
-    parse_autonomous_lineage_key, parse_consolidation_history_key, parse_goal_activity_metrics_key,
+    goal_activity_metrics_key, memory_curation_key, parse_autonomous_lineage_key,
+    parse_consolidation_history_key, parse_drift_history_key, parse_goal_activity_metrics_key,
     parse_memory_curation_key, ADAPTIVE_THRESHOLD_STATE_KEY, AUTONOMOUS_CONFIG_KEY,
 };
 
@@ -223,7 +223,10 @@ pub enum AutonomousStoreError {
 
     /// Serialization error.
     #[error("Serialization error for {type_name}: {message}")]
-    Serialization { type_name: &'static str, message: String },
+    Serialization {
+        type_name: &'static str,
+        message: String,
+    },
 
     /// Deserialization error.
     #[error("Deserialization error for key '{key}' in CF '{cf}': {message}")]
@@ -432,12 +435,11 @@ impl RocksDbAutonomousStore {
     /// Serialize a value with version prefix.
     fn serialize_with_version<T: Serialize>(value: &T) -> AutonomousStoreResult<Vec<u8>> {
         let mut result = vec![AUTONOMOUS_STORAGE_VERSION];
-        let encoded = bincode::serialize(value).map_err(|e| {
-            AutonomousStoreError::Serialization {
+        let encoded =
+            bincode::serialize(value).map_err(|e| AutonomousStoreError::Serialization {
                 type_name: std::any::type_name::<T>(),
                 message: e.to_string(),
-            }
-        })?;
+            })?;
         result.extend(encoded);
         Ok(result)
     }
@@ -554,14 +556,22 @@ impl RocksDbAutonomousStore {
     /// # Errors
     ///
     /// Returns error if serialization or RocksDB write fails.
-    pub fn store_threshold_state(&self, state: &AdaptiveThresholdState) -> AutonomousStoreResult<()> {
+    pub fn store_threshold_state(
+        &self,
+        state: &AdaptiveThresholdState,
+    ) -> AutonomousStoreResult<()> {
         let cf = self.get_cf(CF_ADAPTIVE_THRESHOLD_STATE)?;
         let data = Self::serialize_with_version(state)?;
 
         self.db
             .put_cf(cf, ADAPTIVE_THRESHOLD_STATE_KEY, &data)
             .map_err(|e| {
-                AutonomousStoreError::rocksdb_op("put", CF_ADAPTIVE_THRESHOLD_STATE, Some("state"), e)
+                AutonomousStoreError::rocksdb_op(
+                    "put",
+                    CF_ADAPTIVE_THRESHOLD_STATE,
+                    Some("state"),
+                    e,
+                )
             })?;
 
         debug!("Stored AdaptiveThresholdState ({} bytes)", data.len());
@@ -645,8 +655,10 @@ impl RocksDbAutonomousStore {
         let iter = if start_key.is_empty() {
             self.db.iterator_cf(cf, rocksdb::IteratorMode::Start)
         } else {
-            self.db
-                .iterator_cf(cf, rocksdb::IteratorMode::From(&start_key, rocksdb::Direction::Forward))
+            self.db.iterator_cf(
+                cf,
+                rocksdb::IteratorMode::From(&start_key, rocksdb::Direction::Forward),
+            )
         };
 
         for item in iter {
@@ -663,8 +675,11 @@ impl RocksDbAutonomousStore {
                 }
             }
 
-            let point: DriftDataPoint =
-                Self::deserialize_with_version(&value, CF_DRIFT_HISTORY, &format!("ts:{}", timestamp_ms))?;
+            let point: DriftDataPoint = Self::deserialize_with_version(
+                &value,
+                CF_DRIFT_HISTORY,
+                &format!("ts:{}", timestamp_ms),
+            )?;
             results.push(point);
         }
 
@@ -704,7 +719,11 @@ impl RocksDbAutonomousStore {
             )
         })?;
 
-        debug!("Stored GoalActivityMetrics for {} ({} bytes)", goal_id, data.len());
+        debug!(
+            "Stored GoalActivityMetrics for {} ({} bytes)",
+            goal_id,
+            data.len()
+        );
         Ok(())
     }
 
@@ -803,7 +822,9 @@ impl RocksDbAutonomousStore {
 
         debug!(
             "Stored LineageEvent {} ({}) - {} bytes",
-            event.id, event.event_type, data.len()
+            event.id,
+            event.event_type,
+            data.len()
         );
         Ok(())
     }
@@ -817,7 +838,10 @@ impl RocksDbAutonomousStore {
     /// # Returns
     ///
     /// Vector of LineageEvents sorted by timestamp (oldest first).
-    pub fn get_lineage_history(&self, since: Option<u64>) -> AutonomousStoreResult<Vec<LineageEvent>> {
+    pub fn get_lineage_history(
+        &self,
+        since: Option<u64>,
+    ) -> AutonomousStoreResult<Vec<LineageEvent>> {
         let cf = self.get_cf(CF_AUTONOMOUS_LINEAGE)?;
         let mut results = Vec::new();
 
@@ -829,8 +853,10 @@ impl RocksDbAutonomousStore {
         let iter = if start_key.is_empty() {
             self.db.iterator_cf(cf, rocksdb::IteratorMode::Start)
         } else {
-            self.db
-                .iterator_cf(cf, rocksdb::IteratorMode::From(&start_key, rocksdb::Direction::Forward))
+            self.db.iterator_cf(
+                cf,
+                rocksdb::IteratorMode::From(&start_key, rocksdb::Direction::Forward),
+            )
         };
 
         for item in iter {
@@ -847,8 +873,11 @@ impl RocksDbAutonomousStore {
                 }
             }
 
-            let event: LineageEvent =
-                Self::deserialize_with_version(&value, CF_AUTONOMOUS_LINEAGE, &event_id.to_string())?;
+            let event: LineageEvent = Self::deserialize_with_version(
+                &value,
+                CF_AUTONOMOUS_LINEAGE,
+                &event_id.to_string(),
+            )?;
             results.push(event);
         }
 
@@ -869,7 +898,10 @@ impl RocksDbAutonomousStore {
     /// # Errors
     ///
     /// Returns error if serialization or RocksDB write fails.
-    pub fn store_consolidation_record(&self, record: &ConsolidationRecord) -> AutonomousStoreResult<()> {
+    pub fn store_consolidation_record(
+        &self,
+        record: &ConsolidationRecord,
+    ) -> AutonomousStoreResult<()> {
         let cf = self.get_cf(CF_CONSOLIDATION_HISTORY)?;
         let key = consolidation_history_key(record.timestamp_ms(), &record.id);
         let data = Self::serialize_with_version(record)?;
@@ -885,7 +917,9 @@ impl RocksDbAutonomousStore {
 
         debug!(
             "Stored ConsolidationRecord {} (success={}) - {} bytes",
-            record.id, record.success, data.len()
+            record.id,
+            record.success,
+            data.len()
         );
         Ok(())
     }
@@ -914,8 +948,10 @@ impl RocksDbAutonomousStore {
         let iter = if start_key.is_empty() {
             self.db.iterator_cf(cf, rocksdb::IteratorMode::Start)
         } else {
-            self.db
-                .iterator_cf(cf, rocksdb::IteratorMode::From(&start_key, rocksdb::Direction::Forward))
+            self.db.iterator_cf(
+                cf,
+                rocksdb::IteratorMode::From(&start_key, rocksdb::Direction::Forward),
+            )
         };
 
         for item in iter {
@@ -968,7 +1004,12 @@ impl RocksDbAutonomousStore {
         let data = Self::serialize_with_version(state)?;
 
         self.db.put_cf(cf, key, &data).map_err(|e| {
-            AutonomousStoreError::rocksdb_op("put", CF_MEMORY_CURATION, Some(&memory_id.to_string()), e)
+            AutonomousStoreError::rocksdb_op(
+                "put",
+                CF_MEMORY_CURATION,
+                Some(&memory_id.to_string()),
+                e,
+            )
         })?;
 
         debug!(
@@ -999,8 +1040,11 @@ impl RocksDbAutonomousStore {
 
         match self.db.get_cf(cf, key) {
             Ok(Some(data)) => {
-                let state =
-                    Self::deserialize_with_version(&data, CF_MEMORY_CURATION, &memory_id.to_string())?;
+                let state = Self::deserialize_with_version(
+                    &data,
+                    CF_MEMORY_CURATION,
+                    &memory_id.to_string(),
+                )?;
                 Ok(Some(state))
             }
             Ok(None) => Ok(None),
@@ -1051,14 +1095,14 @@ impl RocksDbAutonomousStore {
 
         for cf_name in AUTONOMOUS_CFS {
             let cf = self.get_cf(cf_name)?;
-            self.db.flush_cf(cf).map_err(|e| {
-                AutonomousStoreError::RocksDbOperation {
+            self.db
+                .flush_cf(cf)
+                .map_err(|e| AutonomousStoreError::RocksDbOperation {
                     operation: "flush",
                     cf: cf_name,
                     key: None,
                     source: e,
-                }
-            })?;
+                })?;
         }
 
         info!("Flushed all autonomous column families");
@@ -1192,10 +1236,7 @@ mod tests {
 
         // Store some events
         for i in 0..3 {
-            let event = LineageEvent::new(
-                format!("test_event_{}", i),
-                format!("Test event {}", i),
-            );
+            let event = LineageEvent::new(format!("test_event_{}", i), format!("Test event {}", i));
             store.store_lineage_event(&event).unwrap();
         }
 
@@ -1249,7 +1290,9 @@ mod tests {
 
         // Update to different state
         let dormant_state = MemoryCurationState::Dormant { since: Utc::now() };
-        store.store_curation_state(memory_id.0, &dormant_state).unwrap();
+        store
+            .store_curation_state(memory_id.0, &dormant_state)
+            .unwrap();
 
         let retrieved = store.get_curation_state(memory_id.0).unwrap();
         assert!(retrieved.is_some());
@@ -1289,7 +1332,9 @@ mod tests {
         let (_tmp, store) = create_test_store();
 
         // Store some data
-        store.store_autonomous_config(&AutonomousConfig::default()).unwrap();
+        store
+            .store_autonomous_config(&AutonomousConfig::default())
+            .unwrap();
 
         // Flush and compact should succeed
         assert!(store.flush().is_ok());
@@ -1321,13 +1366,8 @@ mod tests {
         assert!(success.success);
         assert!(success.error_message.is_none());
 
-        let failure = ConsolidationRecord::failure(
-            sources,
-            target,
-            0.90,
-            0.05,
-            "Test error message",
-        );
+        let failure =
+            ConsolidationRecord::failure(sources, target, 0.90, 0.05, "Test error message");
         assert!(!failure.success);
         assert!(failure.error_message.is_some());
     }

@@ -146,9 +146,15 @@ mod tests {
         };
         let msg = error.to_string();
 
-        assert!(msg.contains("expected 1536"), "Should show expected dimension");
+        assert!(
+            msg.contains("expected 1536"),
+            "Should show expected dimension"
+        );
         assert!(msg.contains("got 768"), "Should show actual dimension");
-        assert!(msg.contains("Invalid embedding dimension"), "Should have correct prefix");
+        assert!(
+            msg.contains("Invalid embedding dimension"),
+            "Should have correct prefix"
+        );
     }
 
     #[test]
@@ -184,8 +190,14 @@ mod tests {
         let error = ValidationError::EmbeddingNotNormalized { magnitude: 0.85 };
         let msg = error.to_string();
 
-        assert!(msg.contains("0.850000"), "Should show magnitude with precision");
-        assert!(msg.contains("not normalized"), "Should indicate normalization issue");
+        assert!(
+            msg.contains("0.850000"),
+            "Should show magnitude with precision"
+        );
+        assert!(
+            msg.contains("not normalized"),
+            "Should indicate normalization issue"
+        );
         assert!(msg.contains("expected ~1.0"), "Should show expected value");
     }
 
@@ -213,9 +225,18 @@ mod tests {
 
     #[test]
     fn test_validation_error_partial_eq() {
-        let a = ValidationError::ContentTooLarge { size: 100, max_size: 50 };
-        let b = ValidationError::ContentTooLarge { size: 100, max_size: 50 };
-        let c = ValidationError::ContentTooLarge { size: 101, max_size: 50 };
+        let a = ValidationError::ContentTooLarge {
+            size: 100,
+            max_size: 50,
+        };
+        let b = ValidationError::ContentTooLarge {
+            size: 100,
+            max_size: 50,
+        };
+        let c = ValidationError::ContentTooLarge {
+            size: 101,
+            max_size: 50,
+        };
 
         assert_eq!(a, b, "Same values should be equal");
         assert_ne!(a, c, "Different values should not be equal");
@@ -229,7 +250,10 @@ mod tests {
         };
         let debug_str = format!("{:?}", error);
 
-        assert!(debug_str.contains("InvalidEmbeddingDimension"), "Debug should show variant");
+        assert!(
+            debug_str.contains("InvalidEmbeddingDimension"),
+            "Debug should show variant"
+        );
         assert!(debug_str.contains("1536"), "Debug should show expected");
         assert!(debug_str.contains("512"), "Debug should show actual");
     }
@@ -245,7 +269,10 @@ mod tests {
         let msg = error.to_string();
 
         assert!(msg.contains("-1.5"), "Should handle negative values");
-        assert!(msg.contains("[-1, 1]"), "Should show negative range correctly");
+        assert!(
+            msg.contains("[-1, 1]"),
+            "Should show negative range correctly"
+        );
     }
 
     #[test]
@@ -262,7 +289,10 @@ mod tests {
         let error = ValidationError::invalid_dimension(768);
         assert!(matches!(
             error,
-            ValidationError::InvalidEmbeddingDimension { expected: 1536, actual: 768 }
+            ValidationError::InvalidEmbeddingDimension {
+                expected: 1536,
+                actual: 768
+            }
         ));
     }
 }

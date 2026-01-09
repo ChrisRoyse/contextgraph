@@ -3,9 +3,7 @@
 use std::time::Instant;
 
 use super::{SessionContext, UtlProcessor};
-use crate::{
-    JohariQuadrant, LifecycleStage, SuggestedAction, UtlConfig,
-};
+use crate::{JohariQuadrant, LifecycleStage, SuggestedAction, UtlConfig};
 
 /// Map Johari quadrant to suggested action (test helper).
 fn suggested_action_for_quadrant(quadrant: JohariQuadrant) -> SuggestedAction {
@@ -42,10 +40,7 @@ fn test_compute_learning_basic() {
 
     let content = "This is a test message for UTL computation.";
     let embedding = test_embedding(128, 0.1);
-    let context = vec![
-        test_embedding(128, 0.15),
-        test_embedding(128, 0.12),
-    ];
+    let context = vec![test_embedding(128, 0.15), test_embedding(128, 0.12)];
 
     let signal = processor.compute_learning(content, &embedding, &context);
     assert!(signal.is_ok());
@@ -102,11 +97,7 @@ fn test_lambda_weights_change_with_stage() {
 
     // Progress to Growth
     for i in 0..50 {
-        let _ = processor.compute_learning(
-            &format!("msg {}", i),
-            &test_embedding(128, 0.1),
-            &[],
-        );
+        let _ = processor.compute_learning(&format!("msg {}", i), &test_embedding(128, 0.1), &[]);
     }
 
     // Growth weights: lambda_s = 0.5, lambda_c = 0.5

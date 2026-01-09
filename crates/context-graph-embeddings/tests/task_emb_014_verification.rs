@@ -28,9 +28,9 @@ fn edge_case_1_fake_pointer_pattern_deleted() {
 
     // Physical verification: Read the actual source file
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let source_code = std::fs::read_to_string(
-        format!("{}/src/warm/loader/operations.rs", manifest_dir)
-    ).expect("Failed to read operations.rs");
+    let source_code =
+        std::fs::read_to_string(format!("{}/src/warm/loader/operations.rs", manifest_dir))
+            .expect("Failed to read operations.rs");
 
     // Check that fake pattern is NOT in executable code (only in comments)
     let fake_pattern = "0x7f80_0000_0000";
@@ -46,10 +46,15 @@ fn edge_case_1_fake_pointer_pattern_deleted() {
     let mut found_in_code = false;
     for (line_num, line) in &lines_with_pattern {
         let is_comment = line.trim().starts_with("//") || line.trim().starts_with("///");
-        println!("  Line {}: {} [{}]",
+        println!(
+            "  Line {}: {} [{}]",
             line_num + 1,
             line.trim(),
-            if is_comment { "COMMENT - OK" } else { "CODE - FAIL!" }
+            if is_comment {
+                "COMMENT - OK"
+            } else {
+                "CODE - FAIL!"
+            }
         );
 
         if !is_comment {
@@ -60,10 +65,19 @@ fn edge_case_1_fake_pointer_pattern_deleted() {
     // Verify allocate_protected is present
     let has_real_allocation = source_code.contains("cuda_allocator.allocate_protected(size_bytes)");
     println!();
-    println!("  Real CUDA allocation call present: {}", has_real_allocation);
+    println!(
+        "  Real CUDA allocation call present: {}",
+        has_real_allocation
+    );
 
-    assert!(!found_in_code, "FAIL: Fake pointer pattern found in executable code!");
-    assert!(has_real_allocation, "FAIL: allocate_protected() call not found!");
+    assert!(
+        !found_in_code,
+        "FAIL: Fake pointer pattern found in executable code!"
+    );
+    assert!(
+        has_real_allocation,
+        "FAIL: allocate_protected() call not found!"
+    );
 
     println!();
     println!("RESULT: PASS - Fake pointers DELETED, real CUDA allocation PRESENT");
@@ -78,9 +92,9 @@ fn edge_case_2_function_signatures_updated() {
     println!("\n=== EDGE CASE 2: Function Signatures Updated ===\n");
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let source_code = std::fs::read_to_string(
-        format!("{}/src/warm/loader/operations.rs", manifest_dir)
-    ).expect("Failed to read operations.rs");
+    let source_code =
+        std::fs::read_to_string(format!("{}/src/warm/loader/operations.rs", manifest_dir))
+            .expect("Failed to read operations.rs");
 
     println!("BEFORE (OLD SIGNATURES - now deleted):");
     println!("  pub fn allocate_model_vram(model_id, size_bytes, memory_pools)");
@@ -88,17 +102,23 @@ fn edge_case_2_function_signatures_updated() {
     println!();
 
     // Find the allocate_model_vram function signature
-    let allocate_fn_start = source_code.find("pub fn allocate_model_vram(")
+    let allocate_fn_start = source_code
+        .find("pub fn allocate_model_vram(")
         .expect("allocate_model_vram function not found");
     let allocate_fn_section = &source_code[allocate_fn_start..allocate_fn_start + 300];
-    let allocate_sig_end = allocate_fn_section.find(") -> ").expect("allocate_model_vram signature incomplete");
+    let allocate_sig_end = allocate_fn_section
+        .find(") -> ")
+        .expect("allocate_model_vram signature incomplete");
     let allocate_sig = &allocate_fn_section[..allocate_sig_end + 1];
 
     // Find the load_single_model function signature
-    let load_fn_start = source_code.find("pub fn load_single_model(")
+    let load_fn_start = source_code
+        .find("pub fn load_single_model(")
         .expect("load_single_model function not found");
     let load_fn_section = &source_code[load_fn_start..load_fn_start + 300];
-    let load_sig_end = load_fn_section.find(") -> ").expect("load_single_model signature incomplete");
+    let load_sig_end = load_fn_section
+        .find(") -> ")
+        .expect("load_single_model signature incomplete");
     let load_sig = &load_fn_section[..load_sig_end + 1];
 
     println!("AFTER (NEW SIGNATURES - verified in source):");
@@ -119,11 +139,23 @@ fn edge_case_2_function_signatures_updated() {
     let load_has_cuda = load_sig.contains("cuda_allocator: &mut WarmCudaAllocator");
 
     println!("PHYSICAL VERIFICATION:");
-    println!("  allocate_model_vram has cuda_allocator param: {}", allocate_has_cuda);
-    println!("  load_single_model has cuda_allocator param: {}", load_has_cuda);
+    println!(
+        "  allocate_model_vram has cuda_allocator param: {}",
+        allocate_has_cuda
+    );
+    println!(
+        "  load_single_model has cuda_allocator param: {}",
+        load_has_cuda
+    );
 
-    assert!(allocate_has_cuda, "FAIL: allocate_model_vram missing cuda_allocator parameter");
-    assert!(load_has_cuda, "FAIL: load_single_model missing cuda_allocator parameter");
+    assert!(
+        allocate_has_cuda,
+        "FAIL: allocate_model_vram missing cuda_allocator parameter"
+    );
+    assert!(
+        load_has_cuda,
+        "FAIL: load_single_model missing cuda_allocator parameter"
+    );
 
     println!();
     println!("RESULT: PASS - Both functions have cuda_allocator parameter");
@@ -138,9 +170,9 @@ fn edge_case_3_engine_passes_allocator() {
     println!("\n=== EDGE CASE 3: Engine Passes Allocator ===\n");
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let engine_code = std::fs::read_to_string(
-        format!("{}/src/warm/loader/engine.rs", manifest_dir)
-    ).expect("Failed to read engine.rs");
+    let engine_code =
+        std::fs::read_to_string(format!("{}/src/warm/loader/engine.rs", manifest_dir))
+            .expect("Failed to read engine.rs");
 
     println!("VERIFICATION POINTS:");
     println!();
@@ -151,17 +183,25 @@ fn edge_case_3_engine_passes_allocator() {
 
     // Check 2: load_single_model is called with cuda_allocator
     // Find the actual call in the for loop
-    let call_section_start = engine_code.find("for model_id in self.loading_order.clone()").unwrap();
+    let call_section_start = engine_code
+        .find("for model_id in self.loading_order.clone()")
+        .unwrap();
     let call_section = &engine_code[call_section_start..call_section_start + 500];
 
     let passes_allocator = call_section.contains("cuda_allocator,");
-    println!("  2. load_single_model called with cuda_allocator: {}", passes_allocator);
+    println!(
+        "  2. load_single_model called with cuda_allocator: {}",
+        passes_allocator
+    );
 
     // Print the actual call
     if let Some(call_start) = call_section.find("load_single_model(") {
         let call_end = call_section[call_start..].find(")").unwrap() + 1;
         let call = &call_section[call_start..call_start + call_end];
-        println!("     Call found: {}", call.replace('\n', " ").replace("  ", " ").trim());
+        println!(
+            "     Call found: {}",
+            call.replace('\n', " ").replace("  ", " ").trim()
+        );
     }
 
     // Check 3: Fail-fast when allocator is None
@@ -171,9 +211,12 @@ fn edge_case_3_engine_passes_allocator() {
     // Check 4: No fallback implementation (only check for actual fallback code, not comments)
     // Look for patterns like "else { simulate" or "|| fallback" that indicate fallback code
     let has_fallback_code = engine_code.contains("else {")
-        && (engine_code.contains("simulate_") || engine_code.contains("fallback_") || engine_code.contains("stub_"));
+        && (engine_code.contains("simulate_")
+            || engine_code.contains("fallback_")
+            || engine_code.contains("stub_"));
     // Also check for fake pointer patterns in actual code
-    let has_fake_pointer = engine_code.lines()
+    let has_fake_pointer = engine_code
+        .lines()
         .filter(|line| !line.trim().starts_with("//"))
         .any(|line| line.contains("0x7f80_0000_0000"));
     println!("  4. No fallback implementation: {}", !has_fallback_code);
@@ -182,10 +225,19 @@ fn edge_case_3_engine_passes_allocator() {
     println!();
 
     assert!(has_field, "FAIL: cuda_allocator field missing");
-    assert!(passes_allocator, "FAIL: cuda_allocator not passed to load_single_model");
+    assert!(
+        passes_allocator,
+        "FAIL: cuda_allocator not passed to load_single_model"
+    );
     assert!(has_failfast, "FAIL: Fail-fast behavior missing");
-    assert!(!has_fallback_code, "FAIL: Fallback implementation found - violates Constitution AP-007");
-    assert!(!has_fake_pointer, "FAIL: Fake pointer pattern found in code");
+    assert!(
+        !has_fallback_code,
+        "FAIL: Fallback implementation found - violates Constitution AP-007"
+    );
+    assert!(
+        !has_fake_pointer,
+        "FAIL: Fake pointer pattern found in code"
+    );
 
     println!("RESULT: PASS - Engine correctly passes allocator through call chain with fail-fast");
 }
@@ -199,9 +251,9 @@ fn edge_case_4_import_verification() {
     println!("\n=== EDGE CASE 4: Import Statement Verification ===\n");
 
     let manifest_dir = env!("CARGO_MANIFEST_DIR");
-    let source_code = std::fs::read_to_string(
-        format!("{}/src/warm/loader/operations.rs", manifest_dir)
-    ).expect("Failed to read operations.rs");
+    let source_code =
+        std::fs::read_to_string(format!("{}/src/warm/loader/operations.rs", manifest_dir))
+            .expect("Failed to read operations.rs");
 
     println!("VERIFICATION:");
 

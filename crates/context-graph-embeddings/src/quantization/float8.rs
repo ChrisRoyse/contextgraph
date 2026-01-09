@@ -40,7 +40,9 @@ pub enum Float8QuantizationError {
 impl fmt::Display for Float8QuantizationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyEmbedding => write!(f, "Empty embedding: cannot quantize zero-length vector"),
+            Self::EmptyEmbedding => {
+                write!(f, "Empty embedding: cannot quantize zero-length vector")
+            }
             Self::ContainsNaN { index } => {
                 write!(f, "Invalid input: NaN value at index {}", index)
             }
@@ -48,11 +50,7 @@ impl fmt::Display for Float8QuantizationError {
                 write!(f, "Invalid input: Infinity value at index {}", index)
             }
             Self::InvalidMetadata { expected, got } => {
-                write!(
-                    f,
-                    "Invalid metadata: expected {}, got {}",
-                    expected, got
-                )
+                write!(f, "Invalid metadata: expected {}, got {}", expected, got)
             }
             Self::DimensionMismatch { expected, got } => {
                 write!(
@@ -115,7 +113,10 @@ impl Float8E4M3Encoder {
     /// - `EmptyEmbedding` if input is empty
     /// - `ContainsNaN` if input has NaN values
     /// - `ContainsInfinity` if input has infinite values
-    pub fn quantize(&self, embedding: &[f32]) -> Result<QuantizedEmbedding, Float8QuantizationError> {
+    pub fn quantize(
+        &self,
+        embedding: &[f32],
+    ) -> Result<QuantizedEmbedding, Float8QuantizationError> {
         // Validate input
         if embedding.is_empty() {
             return Err(Float8QuantizationError::EmptyEmbedding);
@@ -283,7 +284,7 @@ impl Float8E4M3Encoder {
         let e4m3_exp = (exp - 127 + 7).clamp(0, 15) as u8;
 
         // Combine into E4M3 byte
-        
+
         ((sign as u8) << 7) | (e4m3_exp << 3) | (mantissa as u8)
     }
 
@@ -404,7 +405,10 @@ mod tests {
         let encoder = Float8E4M3Encoder::new();
         let result = encoder.quantize(&[]);
 
-        assert!(matches!(result, Err(Float8QuantizationError::EmptyEmbedding)));
+        assert!(matches!(
+            result,
+            Err(Float8QuantizationError::EmptyEmbedding)
+        ));
     }
 
     #[test]
@@ -523,7 +527,7 @@ mod tests {
 
         let bad_quantized = QuantizedEmbedding {
             method: QuantizationMethod::Float8E4M3,
-            original_dim: 100, // Says 100
+            original_dim: 100,    // Says 100
             data: vec![0xFF; 50], // But only 50 bytes
             metadata: QuantizationMetadata::Float8 {
                 scale: 1.0,

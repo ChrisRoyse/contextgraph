@@ -77,7 +77,8 @@ impl TemperatureCalibration {
             return 0.0;
         }
 
-        let sum: f32 = self.samples
+        let sum: f32 = self
+            .samples
             .iter()
             .map(|s| {
                 let pred = s.confidence;
@@ -124,7 +125,8 @@ impl TemperatureCalibration {
             return 0.0;
         }
 
-        let sum: f32 = self.samples
+        let sum: f32 = self
+            .samples
             .iter()
             .map(|s| {
                 let scaled = self.scale_confidence(s.confidence, temperature);
@@ -228,9 +230,7 @@ impl TemperatureScaler {
 
     /// Get temperature for an embedder
     pub fn get_temperature(&self, embedder: Embedder) -> Option<f32> {
-        self.calibrations
-            .get(&embedder)
-            .map(|cal| cal.temperature)
+        self.calibrations.get(&embedder).map(|cal| cal.temperature)
     }
 
     /// Get embedders that need recalibration (loss > 0.05)

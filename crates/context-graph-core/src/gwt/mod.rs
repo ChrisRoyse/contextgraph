@@ -43,18 +43,18 @@
 //!    - workspace_empty: Epistemic action trigger
 
 pub mod consciousness;
+pub mod ego_node;
 pub mod meta_cognitive;
 pub mod state_machine;
 pub mod workspace;
-pub mod ego_node;
 
 pub use consciousness::{ConsciousnessCalculator, ConsciousnessMetrics};
+pub use ego_node::{IdentityContinuity, SelfAwarenessLoop, SelfEgoNode};
 pub use meta_cognitive::{MetaCognitiveLoop, MetaCognitiveState};
-pub use state_machine::{ConsciousnessState, StateTransition, StateMachineManager};
+pub use state_machine::{ConsciousnessState, StateMachineManager, StateTransition};
 pub use workspace::{
     GlobalWorkspace, WorkspaceCandidate, WorkspaceEvent, WorkspaceEventBroadcaster,
 };
-pub use ego_node::{SelfEgoNode, SelfAwarenessLoop, IdentityContinuity};
 
 use std::sync::Arc;
 use tokio::sync::RwLock;
@@ -103,9 +103,11 @@ impl GwtSystem {
         purpose_vector: &[f32; 13],
     ) -> crate::CoreResult<f32> {
         // Calculate consciousness level
-        let consciousness = self
-            .consciousness_calc
-            .compute_consciousness(kuramoto_r, meta_accuracy, purpose_vector)?;
+        let consciousness = self.consciousness_calc.compute_consciousness(
+            kuramoto_r,
+            meta_accuracy,
+            purpose_vector,
+        )?;
 
         // Update state machine with new consciousness level
         let mut state_mgr = self.state_machine.write().await;

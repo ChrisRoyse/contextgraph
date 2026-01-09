@@ -18,22 +18,34 @@ fn test_edge_type_description_non_empty() {
 
 #[test]
 fn test_edge_type_semantic_description() {
-    assert!(EdgeType::Semantic.description().to_lowercase().contains("similar"));
+    assert!(EdgeType::Semantic
+        .description()
+        .to_lowercase()
+        .contains("similar"));
 }
 
 #[test]
 fn test_edge_type_temporal_description() {
-    assert!(EdgeType::Temporal.description().to_lowercase().contains("time"));
+    assert!(EdgeType::Temporal
+        .description()
+        .to_lowercase()
+        .contains("time"));
 }
 
 #[test]
 fn test_edge_type_causal_description() {
-    assert!(EdgeType::Causal.description().to_lowercase().contains("cause"));
+    assert!(EdgeType::Causal
+        .description()
+        .to_lowercase()
+        .contains("cause"));
 }
 
 #[test]
 fn test_edge_type_hierarchical_description() {
-    assert!(EdgeType::Hierarchical.description().to_lowercase().contains("parent"));
+    assert!(EdgeType::Hierarchical
+        .description()
+        .to_lowercase()
+        .contains("parent"));
 }
 
 #[test]
@@ -125,7 +137,12 @@ fn test_edge_type_display_hierarchical() {
 fn test_edge_type_display_all_lowercase() {
     for edge_type in EdgeType::all() {
         let s = edge_type.to_string();
-        assert_eq!(s, s.to_lowercase(), "Display for {:?} not lowercase", edge_type);
+        assert_eq!(
+            s,
+            s.to_lowercase(),
+            "Display for {:?} not lowercase",
+            edge_type
+        );
     }
 }
 
@@ -154,7 +171,10 @@ fn test_edge_type_serde_deserialize() {
 #[test]
 fn test_edge_type_serde_invalid_variant_fails() {
     let result: Result<EdgeType, _> = serde_json::from_str(r#""invalid""#);
-    assert!(result.is_err(), "Invalid variant should fail deserialization");
+    assert!(
+        result.is_err(),
+        "Invalid variant should fail deserialization"
+    );
 }
 
 #[test]
@@ -206,7 +226,10 @@ fn test_edge_type_all_unique() {
 
 #[test]
 fn test_edge_type_contradicts_description() {
-    assert!(EdgeType::Contradicts.description().to_lowercase().contains("contradict"));
+    assert!(EdgeType::Contradicts
+        .description()
+        .to_lowercase()
+        .contains("contradict"));
 }
 
 #[test]

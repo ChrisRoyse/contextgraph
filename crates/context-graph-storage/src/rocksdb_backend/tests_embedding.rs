@@ -222,9 +222,7 @@ fn test_batch_get_embeddings_some_missing() {
     assert!(result[1].is_none(), "id2 should be None (not stored)");
     assert!(result[2].is_some(), "id3 should be found");
 
-    println!(
-        "AFTER: result[0]=Some, result[1]=None, result[2]=Some - order preserved"
-    );
+    println!("AFTER: result[0]=Some, result[1]=None, result[2]=Some - order preserved");
     println!("RESULT: PASS");
 }
 
@@ -453,12 +451,7 @@ fn test_embedding_consistent_with_store_node() {
 
     assert_eq!(retrieved.len(), embedding.len());
     for (i, (orig, rest)) in embedding.iter().zip(retrieved.iter()).enumerate() {
-        assert_eq!(
-            orig.to_bits(),
-            rest.to_bits(),
-            "Value at {} differs",
-            i
-        );
+        assert_eq!(orig.to_bits(), rest.to_bits(), "Value at {} differs", i);
     }
 
     println!("RESULT: PASS - store_node and get_embedding are consistent");
@@ -592,7 +585,8 @@ fn test_embedding_persistence_across_operations() {
 
     // Perform unrelated operations
     let other_id = Uuid::new_v4();
-    db.store_embedding(&other_id, &vec![0.1_f32; DEFAULT_EMBEDDING_DIM]).unwrap();
+    db.store_embedding(&other_id, &vec![0.1_f32; DEFAULT_EMBEDDING_DIM])
+        .unwrap();
     db.delete_embedding(&other_id).unwrap();
 
     // Verify original embedding still exists and is correct

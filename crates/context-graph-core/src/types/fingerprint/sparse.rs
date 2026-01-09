@@ -383,11 +383,7 @@ mod tests {
         let b = SparseVector::new(vec![2, 3, 5], vec![4.0, 5.0, 6.0]).unwrap();
         // Intersection at indices 3 and 5: 2.0*5.0 + 3.0*6.0 = 10.0 + 18.0 = 28.0
         let dot = a.dot(&b);
-        assert!(
-            (dot - 28.0).abs() < 1e-6,
-            "Expected 28.0, got {}",
-            dot
-        );
+        assert!((dot - 28.0).abs() < 1e-6, "Expected 28.0, got {}", dot);
     }
 
     #[test]

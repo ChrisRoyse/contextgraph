@@ -573,12 +573,18 @@ mod tests {
         // Values > 1.0 should be clamped
         let result = computer.compute_update(2.0, 1.5).unwrap();
         assert_eq!(result.surprise, 1.0, "Surprise should be clamped to 1.0");
-        assert_eq!(result.coherence_w, 1.0, "Coherence should be clamped to 1.0");
+        assert_eq!(
+            result.coherence_w, 1.0,
+            "Coherence should be clamped to 1.0"
+        );
 
         // Values < 0.0 should be clamped
         let result = computer.compute_update(-0.5, -0.3).unwrap();
         assert_eq!(result.surprise, 0.0, "Surprise should be clamped to 0.0");
-        assert_eq!(result.coherence_w, 0.0, "Coherence should be clamped to 0.0");
+        assert_eq!(
+            result.coherence_w, 0.0,
+            "Coherence should be clamped to 0.0"
+        );
 
         println!("[VERIFIED] Input values clamped to [0, 1]");
     }
@@ -662,12 +668,12 @@ mod tests {
         assert!(result.result.success);
 
         let delta = result.result.data["weight_delta"].as_f64().unwrap();
-        assert!(delta > 0.0, "Should have positive delta with high surprise/coherence");
-
-        println!(
-            "[VERIFIED] LearningLayer uses L1/L3 context: δ = {}",
-            delta
+        assert!(
+            delta > 0.0,
+            "Should have positive delta with high surprise/coherence"
         );
+
+        println!("[VERIFIED] LearningLayer uses L1/L3 context: δ = {}", delta);
     }
 
     #[tokio::test]
@@ -710,15 +716,14 @@ mod tests {
             .with_learning_rate(1.0)
             .with_consolidation_threshold(0.01);
 
-        let mut input = LayerInput::new("test-789".to_string(), "trigger consolidation".to_string());
+        let mut input =
+            LayerInput::new("test-789".to_string(), "trigger consolidation".to_string());
         input.context.pulse.entropy = 0.9; // High surprise
         input.context.pulse.coherence = 0.9; // High coherence
 
         let result = layer.process(input).await.unwrap();
 
-        let should_consolidate = result.result.data["should_consolidate"]
-            .as_bool()
-            .unwrap();
+        let should_consolidate = result.result.data["should_consolidate"].as_bool().unwrap();
         assert!(
             should_consolidate,
             "Should trigger consolidation with high delta"
@@ -741,10 +746,8 @@ mod tests {
         let mut max_us: u64 = 0;
 
         for i in 0..iterations {
-            let mut input = LayerInput::new(
-                format!("bench-{}", i),
-                format!("Benchmark content {}", i),
-            );
+            let mut input =
+                LayerInput::new(format!("bench-{}", i), format!("Benchmark content {}", i));
             input.context.pulse.entropy = (i as f32 / iterations as f32).clamp(0.0, 1.0);
             input.context.pulse.coherence = 0.5 + (i as f32 / iterations as f32 * 0.5);
 
@@ -817,7 +820,10 @@ mod tests {
         let layer = LearningLayer::new();
 
         // Simulate full L1 -> L2 -> L3 -> L4 pipeline context
-        let mut input = LayerInput::new("pipeline-test".to_string(), "Full pipeline test".to_string());
+        let mut input = LayerInput::new(
+            "pipeline-test".to_string(),
+            "Full pipeline test".to_string(),
+        );
 
         // L1 Sensing result
         input.context.layer_results.push(LayerResult::success(

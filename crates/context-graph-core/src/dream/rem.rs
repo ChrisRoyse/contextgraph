@@ -249,10 +249,7 @@ impl RemPhase {
         let scaled: Vec<f32> = scores.iter().map(|&s| s / self.temperature).collect();
 
         // Find max for numerical stability
-        let max = scaled
-            .iter()
-            .copied()
-            .fold(f32::NEG_INFINITY, f32::max);
+        let max = scaled.iter().copied().fold(f32::NEG_INFINITY, f32::max);
 
         // Compute exp(x - max)
         let exp_scores: Vec<f32> = scaled.iter().map(|&s| (s - max).exp()).collect();

@@ -100,9 +100,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  Base Weight: {:.3}", edge1.weight);
     println!("  Confidence: {:.3}", edge1.confidence);
     println!("Code Domain NT Weights:");
-    println!("  Excitatory: {:.3}", edge1.neurotransmitter_weights.excitatory);
-    println!("  Inhibitory: {:.3}", edge1.neurotransmitter_weights.inhibitory);
-    println!("  Modulatory: {:.3}", edge1.neurotransmitter_weights.modulatory);
+    println!(
+        "  Excitatory: {:.3}",
+        edge1.neurotransmitter_weights.excitatory
+    );
+    println!(
+        "  Inhibitory: {:.3}",
+        edge1.neurotransmitter_weights.inhibitory
+    );
+    println!(
+        "  Modulatory: {:.3}",
+        edge1.neurotransmitter_weights.modulatory
+    );
     println!();
 
     // ========================================
@@ -116,10 +125,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     println!("Modulated Weight Calculation:");
     println!("  Base weight: {:.3}", edge1.weight);
-    println!("  NT Weights: E={:.3}, I={:.3}, M={:.3}", nt.excitatory, nt.inhibitory, nt.modulatory);
+    println!(
+        "  NT Weights: E={:.3}, I={:.3}, M={:.3}",
+        nt.excitatory, nt.inhibitory, nt.modulatory
+    );
     println!("  Steering reward: {:.3}", edge1.steering_reward);
     println!("  Modulated weight: {:.3}", modulated);
-    assert!((0.0..=1.0).contains(&modulated), "Modulated weight should be in [0, 1]");
+    assert!(
+        (0.0..=1.0).contains(&modulated),
+        "Modulated weight should be in [0, 1]"
+    );
     println!("  ✓ Modulation calculation verified\n");
 
     // ========================================
@@ -145,7 +160,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Values are clamped to [-1, 1]
     edge.apply_steering_reward(2.0);
     println!("After +2.0 (clamped): {:.3}", edge.steering_reward);
-    assert!(edge.steering_reward <= 1.0, "Steering reward should clamp to 1.0");
+    assert!(
+        edge.steering_reward <= 1.0,
+        "Steering reward should clamp to 1.0"
+    );
     println!("  ✓ Steering reward clamping verified\n");
 
     // ========================================
@@ -162,10 +180,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     for etype in edge_types {
         let default_weight = etype.default_weight();
-        println!(
-            "  {:?}: default_weight={:.2}",
-            etype, default_weight
-        );
+        println!("  {:?}: default_weight={:.2}", etype, default_weight);
     }
     println!();
 
@@ -229,11 +244,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut shortcut = GraphEdge::new(node1.id, node3.id, EdgeType::Causal, Domain::Code);
     println!("Before shortcut marking:");
-    println!("  is_amortized_shortcut: {}", shortcut.is_amortized_shortcut);
+    println!(
+        "  is_amortized_shortcut: {}",
+        shortcut.is_amortized_shortcut
+    );
     println!("  traversal_count: {}", shortcut.traversal_count);
     println!("  confidence: {:.2}", shortcut.confidence);
     println!("  steering_reward: {:.2}", shortcut.steering_reward);
-    println!("  is_reliable_shortcut: {}", shortcut.is_reliable_shortcut());
+    println!(
+        "  is_reliable_shortcut: {}",
+        shortcut.is_reliable_shortcut()
+    );
 
     // Simulate multiple traversals (Marblestone amortized learning)
     for i in 0..6 {
@@ -249,11 +270,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Mark as shortcut (happens when 3+ hop path traversed >=5x)
     shortcut.mark_as_shortcut();
     println!("\nAfter shortcut marking:");
-    println!("  is_amortized_shortcut: {}", shortcut.is_amortized_shortcut);
+    println!(
+        "  is_amortized_shortcut: {}",
+        shortcut.is_amortized_shortcut
+    );
     println!("  traversal_count: {}", shortcut.traversal_count);
     println!("  confidence: {:.2}", shortcut.confidence);
     println!("  steering_reward: {:.2}", shortcut.steering_reward);
-    println!("  is_reliable_shortcut: {}", shortcut.is_reliable_shortcut());
+    println!(
+        "  is_reliable_shortcut: {}",
+        shortcut.is_reliable_shortcut()
+    );
 
     // is_reliable_shortcut requires: is_amortized_shortcut && traversal >= 3 && reward > 0.3 && confidence >= 0.7
     assert!(shortcut.is_amortized_shortcut);
@@ -268,7 +295,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let new_edge = GraphEdge::new(node2.id, node3.id, EdgeType::Temporal, Domain::Code);
     let age_seconds = new_edge.age_seconds();
     println!("New edge age: {} seconds", age_seconds);
-    assert!(age_seconds < 5, "Fresh edge should be less than 5 seconds old");
+    assert!(
+        age_seconds < 5,
+        "Fresh edge should be less than 5 seconds old"
+    );
     println!("  ✓ Edge age tracking working\n");
 
     // ========================================

@@ -237,21 +237,16 @@ impl SimilarityExplanation {
         }
 
         // Build key factors
-        high_contributors.sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
+        high_contributors
+            .sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
         low_contributors.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal));
 
         for (idx, s, _) in high_contributors.iter().take(3) {
-            key_factors.push(format!(
-                "+ Strong {} match ({:.2})",
-                SPACE_NAMES[*idx], s
-            ));
+            key_factors.push(format!("+ Strong {} match ({:.2})", SPACE_NAMES[*idx], s));
         }
 
         for (idx, s, _) in low_contributors.iter().take(2) {
-            key_factors.push(format!(
-                "- Weak {} match ({:.2})",
-                SPACE_NAMES[*idx], s
-            ));
+            key_factors.push(format!("- Weak {} match ({:.2})", SPACE_NAMES[*idx], s));
         }
 
         let summary = format!(
@@ -340,7 +335,11 @@ impl SimilarityExplanation {
         self.space_details
             .iter()
             .filter_map(|d| d.as_ref())
-            .max_by(|a, b| a.contribution.partial_cmp(&b.contribution).unwrap_or(std::cmp::Ordering::Equal))
+            .max_by(|a, b| {
+                a.contribution
+                    .partial_cmp(&b.contribution)
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
     }
 }
 
@@ -356,15 +355,42 @@ mod tests {
 
     #[test]
     fn test_score_interpretation_thresholds() {
-        assert_eq!(ScoreInterpretation::from_score(0.95), ScoreInterpretation::VeryHigh);
-        assert_eq!(ScoreInterpretation::from_score(0.90), ScoreInterpretation::VeryHigh);
-        assert_eq!(ScoreInterpretation::from_score(0.85), ScoreInterpretation::High);
-        assert_eq!(ScoreInterpretation::from_score(0.70), ScoreInterpretation::High);
-        assert_eq!(ScoreInterpretation::from_score(0.55), ScoreInterpretation::Moderate);
-        assert_eq!(ScoreInterpretation::from_score(0.50), ScoreInterpretation::Moderate);
-        assert_eq!(ScoreInterpretation::from_score(0.35), ScoreInterpretation::Low);
-        assert_eq!(ScoreInterpretation::from_score(0.30), ScoreInterpretation::Low);
-        assert_eq!(ScoreInterpretation::from_score(0.20), ScoreInterpretation::VeryLow);
+        assert_eq!(
+            ScoreInterpretation::from_score(0.95),
+            ScoreInterpretation::VeryHigh
+        );
+        assert_eq!(
+            ScoreInterpretation::from_score(0.90),
+            ScoreInterpretation::VeryHigh
+        );
+        assert_eq!(
+            ScoreInterpretation::from_score(0.85),
+            ScoreInterpretation::High
+        );
+        assert_eq!(
+            ScoreInterpretation::from_score(0.70),
+            ScoreInterpretation::High
+        );
+        assert_eq!(
+            ScoreInterpretation::from_score(0.55),
+            ScoreInterpretation::Moderate
+        );
+        assert_eq!(
+            ScoreInterpretation::from_score(0.50),
+            ScoreInterpretation::Moderate
+        );
+        assert_eq!(
+            ScoreInterpretation::from_score(0.35),
+            ScoreInterpretation::Low
+        );
+        assert_eq!(
+            ScoreInterpretation::from_score(0.30),
+            ScoreInterpretation::Low
+        );
+        assert_eq!(
+            ScoreInterpretation::from_score(0.20),
+            ScoreInterpretation::VeryLow
+        );
 
         println!("[PASS] Score interpretation thresholds are correct");
     }
@@ -377,7 +403,9 @@ mod tests {
         assert!(explanation.summary.contains("0.75"));
         assert!(explanation.summary.contains("10/13"));
         assert_eq!(explanation.score_interpretation, ScoreInterpretation::High);
-        assert!(explanation.confidence_explanation.contains("High confidence"));
+        assert!(explanation
+            .confidence_explanation
+            .contains("High confidence"));
 
         println!("[PASS] Basic explanation: {}", explanation.summary);
     }
@@ -390,7 +418,9 @@ mod tests {
         space_scores[6] = Some(0.2); // E7 Code - low
         space_scores[10] = Some(0.7); // E11 Entity - moderate
 
-        let weights = [0.15, 0.08, 0.08, 0.08, 0.12, 0.05, 0.10, 0.08, 0.08, 0.05, 0.10, 0.02, 0.01];
+        let weights = [
+            0.15, 0.08, 0.08, 0.08, 0.12, 0.05, 0.10, 0.08, 0.08, 0.05, 0.10, 0.02, 0.01,
+        ];
 
         let explanation = SimilarityExplanation::detailed(0.72, 0.65, &space_scores, &weights);
 
@@ -444,7 +474,9 @@ mod tests {
 
         let explanation = SimilarityExplanation::detailed(0.6, 0.5, &space_scores, &weights);
 
-        let dominant = explanation.dominant_space().expect("Should have dominant space");
+        let dominant = explanation
+            .dominant_space()
+            .expect("Should have dominant space");
         assert_eq!(dominant.space_idx, 0); // E1 should dominate due to weight
 
         println!(
@@ -459,7 +491,9 @@ mod tests {
         space_scores[0] = Some(0.2); // E1 low
         space_scores[6] = Some(0.1); // E7 Code very low
 
-        let weights = [0.15, 0.08, 0.08, 0.08, 0.12, 0.05, 0.10, 0.08, 0.08, 0.05, 0.10, 0.02, 0.01];
+        let weights = [
+            0.15, 0.08, 0.08, 0.08, 0.12, 0.05, 0.10, 0.08, 0.08, 0.05, 0.10, 0.02, 0.01,
+        ];
 
         let explanation = SimilarityExplanation::detailed(0.15, 0.3, &space_scores, &weights);
 

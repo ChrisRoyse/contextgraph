@@ -139,9 +139,7 @@ impl AlignmentConfig {
     /// - Hierarchy has no North Star
     pub fn validate(&self) -> Result<(), String> {
         // Validate weights
-        self.level_weights
-            .validate()
-            .map_err(|e| e.to_string())?;
+        self.level_weights.validate().map_err(|e| e.to_string())?;
 
         // Validate hierarchy if enabled
         if self.validate_hierarchy {
@@ -231,7 +229,10 @@ mod tests {
         assert!(config.validate_hierarchy);
 
         println!("[VERIFIED] AlignmentConfig::default has correct values");
-        println!("  - timeout_ms: {} (constitution.yaml: <5ms)", config.timeout_ms);
+        println!(
+            "  - timeout_ms: {} (constitution.yaml: <5ms)",
+            config.timeout_ms
+        );
     }
 
     #[test]
@@ -266,12 +267,10 @@ mod tests {
 
     #[test]
     fn test_config_min_alignment_clamping() {
-        let config = AlignmentConfig::default()
-            .with_min_alignment(2.0);
+        let config = AlignmentConfig::default().with_min_alignment(2.0);
         assert_eq!(config.min_alignment, 1.0);
 
-        let config = AlignmentConfig::default()
-            .with_min_alignment(-0.5);
+        let config = AlignmentConfig::default().with_min_alignment(-0.5);
         assert_eq!(config.min_alignment, 0.0);
 
         println!("[VERIFIED] min_alignment is clamped to [0.0, 1.0]");

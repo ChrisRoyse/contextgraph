@@ -12,7 +12,7 @@ use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 use crate::types::fingerprint::{JohariFingerprint, SemanticFingerprint};
-use crate::types::{JohariQuadrant, TransitionTrigger, JohariTransition};
+use crate::types::{JohariQuadrant, JohariTransition, TransitionTrigger};
 
 use super::error::JohariError;
 use super::external_signal::{BlindSpotCandidate, ExternalSignal};
@@ -140,10 +140,7 @@ pub enum QuadrantPattern {
     Exact([JohariQuadrant; NUM_EMBEDDERS]),
 
     /// Mixed with constraints.
-    Mixed {
-        min_open: usize,
-        max_unknown: usize,
-    },
+    Mixed { min_open: usize, max_unknown: usize },
 }
 
 impl QuadrantPattern {
@@ -350,7 +347,9 @@ mod tests {
         assert_eq!(ctx.delta_c, [0.7; NUM_EMBEDDERS]);
         assert!(ctx.disclosure_intent.iter().all(|&d| d));
 
-        println!("[VERIFIED] test_classification_context_from_utl: Context creation works correctly");
+        println!(
+            "[VERIFIED] test_classification_context_from_utl: Context creation works correctly"
+        );
     }
 
     #[test]
@@ -372,7 +371,9 @@ mod tests {
         assert!(!ctx.disclosure_intent[5]);
         assert!(!ctx.disclosure_intent[10]);
 
-        println!("[VERIFIED] test_classification_context_disclosure: Disclosure settings work correctly");
+        println!(
+            "[VERIFIED] test_classification_context_disclosure: Disclosure settings work correctly"
+        );
     }
 
     #[test]

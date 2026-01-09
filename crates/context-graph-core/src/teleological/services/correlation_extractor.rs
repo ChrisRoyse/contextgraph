@@ -10,8 +10,7 @@
 //! signal is MORE meaningful than either alone."
 
 use crate::teleological::{
-    SynergyMatrix, CROSS_CORRELATION_COUNT, SYNERGY_DIM,
-    types::EMBEDDING_DIM,
+    types::EMBEDDING_DIM, SynergyMatrix, CROSS_CORRELATION_COUNT, SYNERGY_DIM,
 };
 
 /// Configuration for correlation extraction.
@@ -89,18 +88,25 @@ impl CorrelationExtractor {
     /// # Panics
     ///
     /// Panics if embeddings count != 13 or dimensions don't match (FAIL FAST).
-    pub fn extract(&self, embeddings: &[Vec<f32>], synergy_matrix: Option<&SynergyMatrix>) -> CorrelationResult {
+    pub fn extract(
+        &self,
+        embeddings: &[Vec<f32>],
+        synergy_matrix: Option<&SynergyMatrix>,
+    ) -> CorrelationResult {
         assert!(
             embeddings.len() == SYNERGY_DIM,
             "FAIL FAST: Expected {} embeddings, got {}",
-            SYNERGY_DIM, embeddings.len()
+            SYNERGY_DIM,
+            embeddings.len()
         );
 
         for (i, emb) in embeddings.iter().enumerate() {
             assert!(
                 emb.len() == EMBEDDING_DIM,
                 "FAIL FAST: Embedding {} has dimension {}, expected {}",
-                i, emb.len(), EMBEDDING_DIM
+                i,
+                emb.len(),
+                EMBEDDING_DIM
             );
         }
 
@@ -156,12 +162,18 @@ impl CorrelationExtractor {
     /// Extract correlations from pre-normalized embeddings.
     ///
     /// Skips normalization step for efficiency when embeddings are already normalized.
-    pub fn extract_prenormalized(&self, embeddings: &[&[f32]; SYNERGY_DIM], synergy_matrix: Option<&SynergyMatrix>) -> CorrelationResult {
+    pub fn extract_prenormalized(
+        &self,
+        embeddings: &[&[f32]; SYNERGY_DIM],
+        synergy_matrix: Option<&SynergyMatrix>,
+    ) -> CorrelationResult {
         for (i, emb) in embeddings.iter().enumerate() {
             assert!(
                 emb.len() == EMBEDDING_DIM,
                 "FAIL FAST: Embedding {} has dimension {}, expected {}",
-                i, emb.len(), EMBEDDING_DIM
+                i,
+                emb.len(),
+                EMBEDDING_DIM
             );
         }
 
@@ -236,8 +248,14 @@ impl CorrelationExtractor {
     }
 
     /// Compute statistics from correlations.
-    fn compute_stats(&self, correlations: &[f32; CROSS_CORRELATION_COUNT]) -> (f32, f32, Option<(usize, usize, f32)>) {
-        let zero_count = correlations.iter().filter(|&&c| c.abs() < f32::EPSILON).count();
+    fn compute_stats(
+        &self,
+        correlations: &[f32; CROSS_CORRELATION_COUNT],
+    ) -> (f32, f32, Option<(usize, usize, f32)>) {
+        let zero_count = correlations
+            .iter()
+            .filter(|&&c| c.abs() < f32::EPSILON)
+            .count();
         let sparsity = zero_count as f32 / CROSS_CORRELATION_COUNT as f32;
 
         let sum: f32 = correlations.iter().map(|c| c.abs()).sum();
@@ -318,7 +336,11 @@ mod tests {
         let result = extractor.extract(&embeddings, None);
 
         // Should have some non-zero correlations
-        let nonzero_count = result.correlations.iter().filter(|&&c| c.abs() > 0.01).count();
+        let nonzero_count = result
+            .correlations
+            .iter()
+            .filter(|&&c| c.abs() > 0.01)
+            .count();
         assert!(nonzero_count > 0);
 
         // Should identify strongest pair
@@ -357,7 +379,11 @@ mod tests {
 
         // With varied embeddings and high threshold (0.5), some correlations
         // should be zeroed out, resulting in non-zero sparsity
-        assert!(result.sparsity > 0.0, "Expected sparsity > 0.0 with varied embeddings and high threshold, got {}", result.sparsity);
+        assert!(
+            result.sparsity > 0.0,
+            "Expected sparsity > 0.0 with varied embeddings and high threshold, got {}",
+            result.sparsity
+        );
 
         println!("[PASS] Sparsity calculated correctly: {}", result.sparsity);
     }
@@ -400,7 +426,10 @@ mod tests {
         let normalized = CorrelationExtractor::normalize(&v);
 
         let norm: f32 = normalized.iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!((norm - 1.0).abs() < 0.001, "Normalized vector should have unit norm");
+        assert!(
+            (norm - 1.0).abs() < 0.001,
+            "Normalized vector should have unit norm"
+        );
 
         println!("[PASS] normalize produces unit vectors");
     }
@@ -420,7 +449,8 @@ mod tests {
         for &corr in &result.correlations {
             assert!(
                 (-1.0..=1.0).contains(&corr),
-                "Correlation {} out of range [-1, 1]", corr
+                "Correlation {} out of range [-1, 1]",
+                corr
             );
         }
 

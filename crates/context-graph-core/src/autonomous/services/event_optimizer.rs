@@ -268,7 +268,8 @@ impl OptimizationEventRecord {
     /// Calculate the improvement achieved by this optimization
     pub fn improvement(&self) -> f32 {
         if self.success {
-            self.metrics_before.calculate_improvement(&self.metrics_after)
+            self.metrics_before
+                .calculate_improvement(&self.metrics_after)
         } else {
             0.0
         }
@@ -476,7 +477,9 @@ impl EventOptimizer {
             } else {
                 f32::MAX
             };
-            ratio_b.partial_cmp(&ratio_a).unwrap_or(std::cmp::Ordering::Equal)
+            ratio_b
+                .partial_cmp(&ratio_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Additional prioritization based on current metrics
@@ -617,7 +620,9 @@ mod tests {
 
     #[test]
     fn test_trigger_memory_pressure() {
-        let trigger = OptimizationTrigger::MemoryPressure { usage_percent: 90.0 };
+        let trigger = OptimizationTrigger::MemoryPressure {
+            usage_percent: 90.0,
+        };
         assert_eq!(trigger.trigger_type_name(), "memory_pressure");
         assert!(!trigger.is_critical());
         assert_eq!(trigger.base_priority(), 8);
@@ -626,7 +631,9 @@ mod tests {
 
     #[test]
     fn test_trigger_critical_memory_pressure() {
-        let trigger = OptimizationTrigger::MemoryPressure { usage_percent: 96.0 };
+        let trigger = OptimizationTrigger::MemoryPressure {
+            usage_percent: 96.0,
+        };
         assert!(trigger.is_critical());
         assert_eq!(trigger.base_priority(), 10);
         println!("[PASS] test_trigger_critical_memory_pressure");
@@ -660,7 +667,9 @@ mod tests {
                 metric: "test".to_string(),
                 value: 0.4,
             },
-            OptimizationTrigger::MemoryPressure { usage_percent: 88.0 },
+            OptimizationTrigger::MemoryPressure {
+                usage_percent: 88.0,
+            },
             OptimizationTrigger::ScheduledMaintenance,
             OptimizationTrigger::UserTriggered {
                 reason: "test".to_string(),
@@ -713,9 +722,13 @@ mod tests {
     #[test]
     fn test_action_description() {
         assert!(!OptimizationAction::ReindexMemories.description().is_empty());
-        assert!(!OptimizationAction::RecomputeAlignments.description().is_empty());
+        assert!(!OptimizationAction::RecomputeAlignments
+            .description()
+            .is_empty());
         assert!(!OptimizationAction::PruneStaleData.description().is_empty());
-        assert!(!OptimizationAction::RebalanceWeights.description().is_empty());
+        assert!(!OptimizationAction::RebalanceWeights
+            .description()
+            .is_empty());
         assert!(!OptimizationAction::CompactStorage.description().is_empty());
         println!("[PASS] test_action_description");
     }
@@ -732,7 +745,9 @@ mod tests {
 
     #[test]
     fn test_action_recommended_for_memory_pressure() {
-        let trigger = OptimizationTrigger::MemoryPressure { usage_percent: 96.0 };
+        let trigger = OptimizationTrigger::MemoryPressure {
+            usage_percent: 96.0,
+        };
         let actions = OptimizationAction::recommended_for_trigger(&trigger);
         assert!(actions.contains(&OptimizationAction::PruneStaleData));
         assert!(actions.contains(&OptimizationAction::CompactStorage));
@@ -945,7 +960,9 @@ mod tests {
     #[test]
     fn test_event_optimizer_plan_optimization() {
         let optimizer = EventOptimizer::new();
-        let trigger = OptimizationTrigger::MemoryPressure { usage_percent: 90.0 };
+        let trigger = OptimizationTrigger::MemoryPressure {
+            usage_percent: 90.0,
+        };
 
         let plan = optimizer.plan_optimization(&trigger);
 
@@ -1194,7 +1211,10 @@ mod tests {
 
         assert_eq!(deserialized.event_type, record.event_type);
         assert_eq!(deserialized.success, record.success);
-        assert_eq!(deserialized.actions_executed.len(), record.actions_executed.len());
+        assert_eq!(
+            deserialized.actions_executed.len(),
+            record.actions_executed.len()
+        );
         println!("[PASS] test_optimization_event_record_serialization");
     }
 
@@ -1234,7 +1254,9 @@ mod tests {
         // Execute multiple optimization cycles
         let triggers = [
             OptimizationTrigger::HighDrift { severity: 0.15 },
-            OptimizationTrigger::MemoryPressure { usage_percent: 92.0 },
+            OptimizationTrigger::MemoryPressure {
+                usage_percent: 92.0,
+            },
             OptimizationTrigger::LowPerformance {
                 metric: "search_speed".to_string(),
                 value: 0.35,

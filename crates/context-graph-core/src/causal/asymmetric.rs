@@ -60,7 +60,7 @@ impl CausalDirection {
     /// Convert from InferenceDirection.
     pub fn from_inference_direction(dir: InferenceDirection) -> Self {
         match dir {
-            InferenceDirection::Forward => Self::Cause,   // Forward = we're the cause
+            InferenceDirection::Forward => Self::Cause, // Forward = we're the cause
             InferenceDirection::Backward => Self::Effect, // Backward = we're looking for causes
             InferenceDirection::Bidirectional => Self::Unknown,
             InferenceDirection::Bridge => Self::Unknown,
@@ -323,14 +323,16 @@ mod tests {
 
     #[test]
     fn test_direction_mod_cause_to_effect() {
-        let modifier = CausalDirection::direction_modifier(CausalDirection::Cause, CausalDirection::Effect);
+        let modifier =
+            CausalDirection::direction_modifier(CausalDirection::Cause, CausalDirection::Effect);
         assert_eq!(modifier, 1.2);
         println!("[VERIFIED] cause→effect direction_mod = 1.2");
     }
 
     #[test]
     fn test_direction_mod_effect_to_cause() {
-        let modifier = CausalDirection::direction_modifier(CausalDirection::Effect, CausalDirection::Cause);
+        let modifier =
+            CausalDirection::direction_modifier(CausalDirection::Effect, CausalDirection::Cause);
         assert_eq!(modifier, 0.8);
         println!("[VERIFIED] effect→cause direction_mod = 0.8");
     }
@@ -485,7 +487,10 @@ mod tests {
         // sim = 0.8 * 1.2 * 0.94 = 0.9024
         let expected = base * 1.2 * (0.7 + 0.3 * 0.8);
         assert!((sim - expected).abs() < 0.01);
-        println!("[VERIFIED] cause→effect with high overlap: {} (expected {})", sim, expected);
+        println!(
+            "[VERIFIED] cause→effect with high overlap: {} (expected {})",
+            sim, expected
+        );
     }
 
     #[test]
@@ -507,7 +512,10 @@ mod tests {
         // sim = 0.8 * 0.8 * 0.94 = 0.6016
         let expected = base * 0.8 * (0.7 + 0.3 * 0.8);
         assert!((sim - expected).abs() < 0.01);
-        println!("[VERIFIED] effect→cause with high overlap: {} (expected {})", sim, expected);
+        println!(
+            "[VERIFIED] effect→cause with high overlap: {} (expected {})",
+            sim, expected
+        );
     }
 
     #[test]
@@ -527,7 +535,10 @@ mod tests {
         // sim = 0.8 * 1.2 * 0.85 = 0.816
         let expected = base * 1.2 * 0.85;
         assert!((sim - expected).abs() < 0.01);
-        println!("[VERIFIED] cause→effect no context: {} (expected {})", sim, expected);
+        println!(
+            "[VERIFIED] cause→effect no context: {} (expected {})",
+            sim, expected
+        );
     }
 
     #[test]
@@ -607,7 +618,10 @@ mod tests {
         println!("[VERIFIED] Constitution formula implemented correctly");
         println!("  base_cos = {}", base);
         println!("  direction_mod = {} (cause→effect)", direction_mod);
-        println!("  intervention_overlap = {} (neutral default)", intervention_overlap);
+        println!(
+            "  intervention_overlap = {} (neutral default)",
+            intervention_overlap
+        );
         println!("  result = {} (expected {})", actual, expected);
     }
 
@@ -635,7 +649,10 @@ mod tests {
         let ratio = cause_to_effect / effect_to_cause;
         assert!((ratio - 1.5).abs() < 0.01);
 
-        println!("[VERIFIED] Asymmetry: cause→effect ({}) > effect→cause ({})", cause_to_effect, effect_to_cause);
+        println!(
+            "[VERIFIED] Asymmetry: cause→effect ({}) > effect→cause ({})",
+            cause_to_effect, effect_to_cause
+        );
         println!("  Ratio: {} (expected 1.5)", ratio);
     }
 }

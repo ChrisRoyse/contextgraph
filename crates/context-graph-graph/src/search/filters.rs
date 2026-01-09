@@ -155,7 +155,7 @@ impl SearchFilters {
         if let Some(max) = self.max_results {
             if max == 0 {
                 return Err(GraphError::InvalidConfig(
-                    "max_results cannot be 0".to_string()
+                    "max_results cannot be 0".to_string(),
                 ));
             }
         }
@@ -271,8 +271,14 @@ mod tests {
     #[test]
     fn test_search_filters_validate_similarity_bounds() {
         // Valid boundaries
-        assert!(SearchFilters::new().with_min_similarity(0.0).validate().is_ok());
-        assert!(SearchFilters::new().with_min_similarity(1.0).validate().is_ok());
+        assert!(SearchFilters::new()
+            .with_min_similarity(0.0)
+            .validate()
+            .is_ok());
+        assert!(SearchFilters::new()
+            .with_min_similarity(1.0)
+            .validate()
+            .is_ok());
 
         // Invalid: below 0
         let result = SearchFilters::new().with_min_similarity(-0.1).validate();
@@ -313,9 +319,9 @@ mod tests {
             .with_max_distance(2.0);
 
         assert!(!filters.passes_distance_filter(0.3)); // Too close
-        assert!(filters.passes_distance_filter(0.5));  // Boundary
-        assert!(filters.passes_distance_filter(1.0));  // In range
-        assert!(filters.passes_distance_filter(2.0));  // Boundary
+        assert!(filters.passes_distance_filter(0.5)); // Boundary
+        assert!(filters.passes_distance_filter(1.0)); // In range
+        assert!(filters.passes_distance_filter(2.0)); // Boundary
         assert!(!filters.passes_distance_filter(2.5)); // Too far
     }
 
@@ -324,14 +330,13 @@ mod tests {
         let filters = SearchFilters::new().with_min_similarity(0.7);
 
         assert!(!filters.passes_similarity_filter(0.5)); // Too low
-        assert!(filters.passes_similarity_filter(0.7));  // Boundary
-        assert!(filters.passes_similarity_filter(0.9));  // High enough
+        assert!(filters.passes_similarity_filter(0.7)); // Boundary
+        assert!(filters.passes_similarity_filter(0.9)); // High enough
     }
 
     #[test]
     fn test_is_excluded() {
-        let filters = SearchFilters::new()
-            .with_exclude_ids(vec![1, 2, 3]);
+        let filters = SearchFilters::new().with_exclude_ids(vec![1, 2, 3]);
 
         assert!(filters.is_excluded(1));
         assert!(filters.is_excluded(2));

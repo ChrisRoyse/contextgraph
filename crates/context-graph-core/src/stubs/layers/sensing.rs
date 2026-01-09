@@ -38,7 +38,8 @@ impl NervousLayer for StubSensingLayer {
         // FAIL FAST - No mock data in production (AP-007)
         Err(CoreError::NotImplemented(
             "L1 SensingLayer requires real implementation. \
-             See: docs2/codestate/sherlockplans/agent4-bio-nervous-research.md".into()
+             See: docs2/codestate/sherlockplans/agent4-bio-nervous-research.md"
+                .into(),
         ))
     }
 
@@ -80,7 +81,10 @@ mod tests {
     #[tokio::test]
     async fn test_sensing_layer_health_check_returns_false() {
         let layer = StubSensingLayer::new();
-        assert!(!layer.health_check().await.unwrap(), "Stub should report unhealthy");
+        assert!(
+            !layer.health_check().await.unwrap(),
+            "Stub should report unhealthy"
+        );
     }
 
     #[test]

@@ -190,13 +190,12 @@ impl EntityModel {
             })?;
 
         // Sum embeddings
-        let combined =
-            ((word_embeds + position_embeds).map_err(|e| EmbeddingError::GpuError {
-                message: format!("EntityModel embedding add 1 failed: {}", e),
-            })? + token_type_embeds)
-                .map_err(|e| EmbeddingError::GpuError {
-                    message: format!("EntityModel embedding add 2 failed: {}", e),
-                })?;
+        let combined = ((word_embeds + position_embeds).map_err(|e| EmbeddingError::GpuError {
+            message: format!("EntityModel embedding add 1 failed: {}", e),
+        })? + token_type_embeds)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("EntityModel embedding add 2 failed: {}", e),
+            })?;
 
         Ok(combined)
     }
@@ -214,14 +213,13 @@ impl EntityModel {
             })?;
 
         // Convert mask: 1.0 -> 0.0, 0.0 -> -10000.0
-        let inverted =
-            ((extended * (-1.0)).map_err(|e| EmbeddingError::GpuError {
-                message: format!("EntityModel attention mask mul failed: {}", e),
-            })? + 1.0)
-                .map_err(|e| EmbeddingError::GpuError {
-                    message: format!("EntityModel attention mask add failed: {}", e),
-                })?
-                * (-10000.0f64);
+        let inverted = ((extended * (-1.0)).map_err(|e| EmbeddingError::GpuError {
+            message: format!("EntityModel attention mask mul failed: {}", e),
+        })? + 1.0)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("EntityModel attention mask add failed: {}", e),
+            })?
+            * (-10000.0f64);
 
         inverted.map_err(|e| EmbeddingError::GpuError {
             message: format!("EntityModel attention mask scale failed: {}", e),

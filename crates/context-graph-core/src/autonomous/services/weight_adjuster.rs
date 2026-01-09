@@ -236,7 +236,9 @@ impl WeightAdjuster {
                 report.adjustments_applied += 1;
             } else {
                 let reason = self.validation_failure_reason(adjustment);
-                report.skipped_goals.push((adjustment.goal_id.clone(), reason));
+                report
+                    .skipped_goals
+                    .push((adjustment.goal_id.clone(), reason));
                 report.adjustments_skipped += 1;
             }
         }
@@ -272,7 +274,8 @@ impl WeightAdjuster {
     /// Uses exponential moving average: v[t] = momentum * v[t-1] + (1 - momentum) * gradient
     pub fn compute_momentum(&mut self, goal_id: &GoalId, gradient: f32) -> f32 {
         let prev_velocity = self.velocities.get(goal_id).copied().unwrap_or(0.0);
-        let new_velocity = self.config.momentum * prev_velocity + (1.0 - self.config.momentum) * gradient;
+        let new_velocity =
+            self.config.momentum * prev_velocity + (1.0 - self.config.momentum) * gradient;
         self.velocities.insert(goal_id.clone(), new_velocity);
         new_velocity
     }
@@ -281,7 +284,8 @@ impl WeightAdjuster {
     pub fn validate_adjustment(&self, adjustment: &WeightAdjustment) -> bool {
         // Check new weight is within bounds
         if adjustment.new_weight < self.config.min_weight
-            || adjustment.new_weight > self.config.max_weight {
+            || adjustment.new_weight > self.config.max_weight
+        {
             return false;
         }
 
@@ -1010,9 +1014,15 @@ mod tests {
 
     #[test]
     fn test_adjustment_reason_equality() {
-        let r1 = AdjustmentReason::PerformanceBased { performance_delta: 0.5 };
-        let r2 = AdjustmentReason::PerformanceBased { performance_delta: 0.5 };
-        let r3 = AdjustmentReason::PerformanceBased { performance_delta: 0.3 };
+        let r1 = AdjustmentReason::PerformanceBased {
+            performance_delta: 0.5,
+        };
+        let r2 = AdjustmentReason::PerformanceBased {
+            performance_delta: 0.5,
+        };
+        let r3 = AdjustmentReason::PerformanceBased {
+            performance_delta: 0.3,
+        };
 
         assert_eq!(r1, r2);
         assert_ne!(r1, r3);
@@ -1031,11 +1041,15 @@ mod tests {
 
     #[test]
     fn test_adjustment_reason_description() {
-        let r1 = AdjustmentReason::PerformanceBased { performance_delta: 0.15 };
+        let r1 = AdjustmentReason::PerformanceBased {
+            performance_delta: 0.15,
+        };
         assert!(r1.description().contains("Performance-based"));
         assert!(r1.description().contains("0.15"));
 
-        let r2 = AdjustmentReason::DriftCorrection { drift_magnitude: 0.25 };
+        let r2 = AdjustmentReason::DriftCorrection {
+            drift_magnitude: 0.25,
+        };
         assert!(r2.description().contains("Drift correction"));
         assert!(r2.description().contains("0.25"));
 
@@ -1043,7 +1057,9 @@ mod tests {
         assert!(r3.description().contains("User feedback"));
         assert!(r3.description().contains("0.8"));
 
-        let r4 = AdjustmentReason::EvolutionBased { evolution_score: 0.6 };
+        let r4 = AdjustmentReason::EvolutionBased {
+            evolution_score: 0.6,
+        };
         assert!(r4.description().contains("Evolution-based"));
         assert!(r4.description().contains("0.6"));
 

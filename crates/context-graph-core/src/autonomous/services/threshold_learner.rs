@@ -197,10 +197,8 @@ impl ThresholdLearner {
         // Level 1: Update EWMA for global threshold tracking
         let observed_success_rate = stats.success_rate();
         let new_optimal = self.update_ewma(self.state.optimal, observed_success_rate);
-        self.state.optimal = new_optimal.clamp(
-            self.config.optimal_bounds.0,
-            self.config.optimal_bounds.1,
-        );
+        self.state.optimal =
+            new_optimal.clamp(self.config.optimal_bounds.0, self.config.optimal_bounds.1);
 
         // Update per-bucket thresholds based on success rates
         for (bucket, &rate) in stats.bucket_success_rates.iter() {
@@ -214,16 +212,13 @@ impl ThresholdLearner {
                 AlignmentBucket::Acceptable => {
                     // Adjust acceptable threshold based on its success rate
                     let adjustment = (rate - 0.7) * self.config.learning_rate;
-                    self.state.acceptable =
-                        (self.state.acceptable + adjustment).clamp(0.65, 0.80);
+                    self.state.acceptable = (self.state.acceptable + adjustment).clamp(0.65, 0.80);
                 }
                 AlignmentBucket::Warning => {
                     // Warning bucket should have moderate success
                     let adjustment = (rate - 0.5) * self.config.learning_rate;
-                    self.state.warning = (self.state.warning + adjustment).clamp(
-                        self.config.warning_bounds.0,
-                        self.config.warning_bounds.1,
-                    );
+                    self.state.warning = (self.state.warning + adjustment)
+                        .clamp(self.config.warning_bounds.0, self.config.warning_bounds.1);
                 }
                 AlignmentBucket::Critical => {
                     // Critical bucket should have low success - if high, raise warning threshold
@@ -297,7 +292,11 @@ impl ThresholdLearner {
             return Vec::new();
         }
 
-        let temp = if temperature <= 0.0 { 0.01 } else { temperature };
+        let temp = if temperature <= 0.0 {
+            0.01
+        } else {
+            temperature
+        };
 
         // Scale logits by temperature
         let scaled: Vec<f32> = logits.iter().map(|&l| l / temp).collect();
@@ -381,8 +380,7 @@ impl ThresholdLearner {
         }
 
         // Check time since last recalibration
-        let elapsed = Utc::now()
-            .signed_duration_since(self.last_recalibration_check);
+        let elapsed = Utc::now().signed_duration_since(self.last_recalibration_check);
         if elapsed < Duration::seconds(RECALIBRATION_CHECK_INTERVAL_SECS) {
             return false;
         }
@@ -564,12 +562,16 @@ mod tests {
         let scaled_low = learner.temperature_scale(&logits, 0.5);
 
         // High temp should produce more uniform distribution
-        let variance_high: f32 = scaled_high.iter()
-            .map(|p| (p - 1.0/3.0).powi(2))
-            .sum::<f32>() / 3.0;
-        let variance_low: f32 = scaled_low.iter()
-            .map(|p| (p - 1.0/3.0).powi(2))
-            .sum::<f32>() / 3.0;
+        let variance_high: f32 = scaled_high
+            .iter()
+            .map(|p| (p - 1.0 / 3.0).powi(2))
+            .sum::<f32>()
+            / 3.0;
+        let variance_low: f32 = scaled_low
+            .iter()
+            .map(|p| (p - 1.0 / 3.0).powi(2))
+            .sum::<f32>()
+            / 3.0;
 
         assert!(variance_high < variance_low);
 
@@ -605,8 +607,11 @@ mod tests {
         // Sample multiple times to check range
         for _ in 0..100 {
             let sample = learner.thompson_sample(0);
-            assert!((0.5..=0.95).contains(&sample),
-                   "Sample {} out of expected range [0.5, 0.95]", sample);
+            assert!(
+                (0.5..=0.95).contains(&sample),
+                "Sample {} out of expected range [0.5, 0.95]",
+                sample
+            );
         }
 
         println!("[PASS] test_thompson_sample_range: Samples within expected range");
@@ -645,7 +650,9 @@ mod tests {
         // Beta should increase (failure)
         assert!(learner.embedder_states[0].thompson.beta > initial_beta);
 
-        println!("[PASS] test_thompson_sample_updates_with_feedback: Thompson params update correctly");
+        println!(
+            "[PASS] test_thompson_sample_updates_with_feedback: Thompson params update correctly"
+        );
     }
 
     #[test]
@@ -654,15 +661,22 @@ mod tests {
 
         // Strong evidence should move posterior toward likelihood
         let posterior = learner.bayesian_update(0.5, 0.9);
-        assert!(posterior > 0.5, "Posterior {} should be > 0.5 with strong likelihood", posterior);
+        assert!(
+            posterior > 0.5,
+            "Posterior {} should be > 0.5 with strong likelihood",
+            posterior
+        );
 
         // Weak evidence with high prior - posterior should be influenced by both
         // With Bayes rule: P(H|E) = P(E|H)*P(H) / P(E)
         // When prior=0.8, likelihood=0.5, the posterior remains relatively high
         let posterior2 = learner.bayesian_update(0.8, 0.5);
         // Posterior should be between prior and likelihood, or close to 0.5 (neutral likelihood)
-        assert!((0.4..=0.85).contains(&posterior2),
-               "Posterior {} should be in reasonable range with neutral likelihood", posterior2);
+        assert!(
+            (0.4..=0.85).contains(&posterior2),
+            "Posterior {} should be in reasonable range with neutral likelihood",
+            posterior2
+        );
 
         println!("[PASS] test_bayesian_update_basic: Bayes rule applied correctly");
     }
@@ -835,7 +849,8 @@ mod tests {
             .collect();
 
         // Thresholds should have evolved (at least some difference)
-        let total_change: f32 = initial_thresholds.iter()
+        let total_change: f32 = initial_thresholds
+            .iter()
             .zip(final_thresholds.iter())
             .map(|(i, f)| (i - f).abs())
             .sum();
@@ -944,10 +959,19 @@ mod tests {
         assert!(thompson.samples >= 40);
 
         println!("[PASS] test_4_level_atc_integration: All 4 ATC levels work together");
-        println!("       Level 1 (EWMA): {} -> {}", threshold_after_good, threshold_after_mixed);
+        println!(
+            "       Level 1 (EWMA): {} -> {}",
+            threshold_after_good, threshold_after_mixed
+        );
         println!("       Level 2 (Temp): {}", temp);
-        println!("       Level 3 (Thompson): alpha={}, beta={}", thompson.alpha, thompson.beta);
-        println!("       Level 4 (Bayesian history): {} observations", learner.bayesian_history.len());
+        println!(
+            "       Level 3 (Thompson): alpha={}, beta={}",
+            thompson.alpha, thompson.beta
+        );
+        println!(
+            "       Level 4 (Bayesian history): {} observations",
+            learner.bayesian_history.len()
+        );
     }
 
     #[test]
@@ -956,10 +980,22 @@ mod tests {
         let learner = ThresholdLearner::new();
 
         // Check default priors match constitution
-        assert!((learner.state.optimal - 0.75).abs() < 0.01, "θ_opt prior should be ~0.75");
-        assert!((learner.state.acceptable - 0.70).abs() < 0.01, "θ_acc prior should be ~0.70");
-        assert!((learner.state.warning - 0.55).abs() < 0.01, "θ_warn prior should be ~0.55");
-        assert!((learner.state.critical - 0.40).abs() < 0.01, "θ_crit prior should be ~0.40");
+        assert!(
+            (learner.state.optimal - 0.75).abs() < 0.01,
+            "θ_opt prior should be ~0.75"
+        );
+        assert!(
+            (learner.state.acceptable - 0.70).abs() < 0.01,
+            "θ_acc prior should be ~0.70"
+        );
+        assert!(
+            (learner.state.warning - 0.55).abs() < 0.01,
+            "θ_warn prior should be ~0.55"
+        );
+        assert!(
+            (learner.state.critical - 0.40).abs() < 0.01,
+            "θ_crit prior should be ~0.40"
+        );
 
         // Check config bounds match constitution
         let config = learner.get_config();
@@ -1007,14 +1043,26 @@ mod tests {
         }
 
         // After learning, verify thresholds are still valid (positive and bounded)
-        assert!(learner.state.optimal > 0.0 && learner.state.optimal <= 1.0,
-               "Optimal ({}) should be in (0, 1]", learner.state.optimal);
-        assert!(learner.state.acceptable > 0.0 && learner.state.acceptable <= 1.0,
-               "Acceptable ({}) should be in (0, 1]", learner.state.acceptable);
-        assert!(learner.state.warning >= 0.0 && learner.state.warning <= 1.0,
-               "Warning ({}) should be in [0, 1]", learner.state.warning);
-        assert!(learner.state.critical >= 0.0 && learner.state.critical <= 1.0,
-               "Critical ({}) should be in [0, 1]", learner.state.critical);
+        assert!(
+            learner.state.optimal > 0.0 && learner.state.optimal <= 1.0,
+            "Optimal ({}) should be in (0, 1]",
+            learner.state.optimal
+        );
+        assert!(
+            learner.state.acceptable > 0.0 && learner.state.acceptable <= 1.0,
+            "Acceptable ({}) should be in (0, 1]",
+            learner.state.acceptable
+        );
+        assert!(
+            learner.state.warning >= 0.0 && learner.state.warning <= 1.0,
+            "Warning ({}) should be in [0, 1]",
+            learner.state.warning
+        );
+        assert!(
+            learner.state.critical >= 0.0 && learner.state.critical <= 1.0,
+            "Critical ({}) should be in [0, 1]",
+            learner.state.critical
+        );
 
         println!("[PASS] test_threshold_validity_after_learning: Threshold bounds maintained");
     }
@@ -1032,16 +1080,22 @@ mod tests {
         let config = learner.get_config();
 
         // Optimal should be within bounds
-        assert!(learner.state.optimal >= config.optimal_bounds.0 &&
-                learner.state.optimal <= config.optimal_bounds.1,
-               "Optimal ({}) should be within bounds {:?}",
-               learner.state.optimal, config.optimal_bounds);
+        assert!(
+            learner.state.optimal >= config.optimal_bounds.0
+                && learner.state.optimal <= config.optimal_bounds.1,
+            "Optimal ({}) should be within bounds {:?}",
+            learner.state.optimal,
+            config.optimal_bounds
+        );
 
         // Warning should be within bounds
-        assert!(learner.state.warning >= config.warning_bounds.0 &&
-                learner.state.warning <= config.warning_bounds.1,
-               "Warning ({}) should be within bounds {:?}",
-               learner.state.warning, config.warning_bounds);
+        assert!(
+            learner.state.warning >= config.warning_bounds.0
+                && learner.state.warning <= config.warning_bounds.1,
+            "Warning ({}) should be within bounds {:?}",
+            learner.state.warning,
+            config.warning_bounds
+        );
 
         println!("[PASS] test_threshold_bounds_respected: Thresholds stay within bounds");
     }

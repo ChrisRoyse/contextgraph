@@ -163,11 +163,7 @@ impl ProjectionMatrix {
             }
         })?;
 
-        tracing::info!(
-            "Read {} bytes from {:?}",
-            file_bytes.len(),
-            weight_path
-        );
+        tracing::info!("Read {} bytes from {:?}", file_bytes.len(), weight_path);
 
         // Step 2: Compute REAL SHA256 checksum (no fake/placeholder values)
         let mut hasher = Sha256::new();
@@ -348,17 +344,14 @@ impl ProjectionMatrix {
         }
 
         // Step 4: Create tensor on device [1, 30522]
-        let sparse_tensor = Tensor::from_vec(
-            dense_input,
-            (1, SPARSE_VOCAB_SIZE),
-            &self.device,
-        ).map_err(|e| {
-            tracing::error!("[EMB-E001] Failed to create input tensor: {}", e);
-            ProjectionError::GpuError {
-                operation: "Tensor::from_vec (input)".to_string(),
-                details: e.to_string(),
-            }
-        })?;
+        let sparse_tensor = Tensor::from_vec(dense_input, (1, SPARSE_VOCAB_SIZE), &self.device)
+            .map_err(|e| {
+                tracing::error!("[EMB-E001] Failed to create input tensor: {}", e);
+                ProjectionError::GpuError {
+                    operation: "Tensor::from_vec (input)".to_string(),
+                    details: e.to_string(),
+                }
+            })?;
 
         // Step 5: Matrix multiply: [1, 30522] @ [30522, 1536] = [1, 1536]
         let dense_output = sparse_tensor.matmul(&self.weights).map_err(|e| {
@@ -386,19 +379,23 @@ impl ProjectionMatrix {
             }
         })?;
 
-        let norm_scalar: f32 = sum_squared.sqrt().map_err(|e| {
-            tracing::error!("[EMB-E001] Tensor sqrt failed: {}", e);
-            ProjectionError::GpuError {
-                operation: "Tensor::sqrt".to_string(),
-                details: e.to_string(),
-            }
-        })?.to_scalar().map_err(|e| {
-            tracing::error!("[EMB-E001] to_scalar failed: {}", e);
-            ProjectionError::GpuError {
-                operation: "to_scalar".to_string(),
-                details: e.to_string(),
-            }
-        })?;
+        let norm_scalar: f32 = sum_squared
+            .sqrt()
+            .map_err(|e| {
+                tracing::error!("[EMB-E001] Tensor sqrt failed: {}", e);
+                ProjectionError::GpuError {
+                    operation: "Tensor::sqrt".to_string(),
+                    details: e.to_string(),
+                }
+            })?
+            .to_scalar()
+            .map_err(|e| {
+                tracing::error!("[EMB-E001] to_scalar failed: {}", e);
+                ProjectionError::GpuError {
+                    operation: "to_scalar".to_string(),
+                    details: e.to_string(),
+                }
+            })?;
 
         // Avoid division by zero
         let normalized = if norm_scalar > 1e-10 {
@@ -479,7 +476,9 @@ impl ProjectionMatrix {
             if sparse.dimension != SPARSE_VOCAB_SIZE {
                 tracing::error!(
                     "[EMB-E005] Batch item {} dimension mismatch: expected {}, got {}",
-                    i, SPARSE_VOCAB_SIZE, sparse.dimension
+                    i,
+                    SPARSE_VOCAB_SIZE,
+                    sparse.dimension
                 );
                 return Err(ProjectionError::DimensionMismatch {
                     path: std::path::PathBuf::from(format!("<batch[{}]>", i)),
@@ -497,7 +496,8 @@ impl ProjectionMatrix {
                 if col_idx >= SPARSE_VOCAB_SIZE {
                     tracing::error!(
                         "[EMB-E005] Batch item {} index {} out of bounds",
-                        row_idx, col_idx
+                        row_idx,
+                        col_idx
                     );
                     return Err(ProjectionError::DimensionMismatch {
                         path: std::path::PathBuf::from(format!("<batch[{}]>", row_idx)),
@@ -510,17 +510,16 @@ impl ProjectionMatrix {
         }
 
         // Create batch tensor on device [batch_size, 30522]
-        let batch_tensor = Tensor::from_vec(
-            dense_batch,
-            (batch_size, SPARSE_VOCAB_SIZE),
-            &self.device,
-        ).map_err(|e| {
-            tracing::error!("[EMB-E001] Failed to create batch tensor: {}", e);
-            ProjectionError::GpuError {
-                operation: "Tensor::from_vec (batch)".to_string(),
-                details: e.to_string(),
-            }
-        })?;
+        let batch_tensor =
+            Tensor::from_vec(dense_batch, (batch_size, SPARSE_VOCAB_SIZE), &self.device).map_err(
+                |e| {
+                    tracing::error!("[EMB-E001] Failed to create batch tensor: {}", e);
+                    ProjectionError::GpuError {
+                        operation: "Tensor::from_vec (batch)".to_string(),
+                        details: e.to_string(),
+                    }
+                },
+            )?;
 
         // Matrix multiply: [batch_size, 30522] @ [30522, 1536] = [batch_size, 1536]
         let output_tensor = batch_tensor.matmul(&self.weights).map_err(|e| {
@@ -603,7 +602,8 @@ impl ProjectionMatrix {
         if results.len() != batch_size {
             tracing::error!(
                 "[EMB-E005] Batch output count mismatch: expected {}, got {}",
-                batch_size, results.len()
+                batch_size,
+                results.len()
             );
             return Err(ProjectionError::DimensionMismatch {
                 path: std::path::PathBuf::from("<batch_output>"),
@@ -614,7 +614,8 @@ impl ProjectionMatrix {
 
         tracing::debug!(
             "Projected batch of {} sparse vectors to {}D each",
-            batch_size, SPARSE_PROJECTED_DIMENSION
+            batch_size,
+            SPARSE_PROJECTED_DIMENSION
         );
 
         Ok(results)
@@ -649,17 +650,21 @@ pub enum ProjectionError {
     ///
     /// # Remediation
     /// Download from: https://huggingface.co/contextgraph/sparse-projection
-    #[error("[EMB-E006] PROJECTION_MATRIX_MISSING: Weight file not found at {path}
+    #[error(
+        "[EMB-E006] PROJECTION_MATRIX_MISSING: Weight file not found at {path}
   Expected: models/sparse_projection.safetensors
-  Remediation: Download projection weights or train custom matrix")]
+  Remediation: Download projection weights or train custom matrix"
+    )]
     MatrixMissing { path: PathBuf },
 
     /// Weight file checksum does not match expected value.
-    #[error("[EMB-E004] WEIGHT_CHECKSUM_MISMATCH: Corrupted weight file
+    #[error(
+        "[EMB-E004] WEIGHT_CHECKSUM_MISMATCH: Corrupted weight file
   Expected checksum: {expected}
   Actual checksum: {actual}
   File: {path}
-  Remediation: Re-download weight file from trusted source")]
+  Remediation: Re-download weight file from trusted source"
+    )]
     #[allow(dead_code)]
     ChecksumMismatch {
         path: PathBuf,
@@ -668,11 +673,13 @@ pub enum ProjectionError {
     },
 
     /// Weight matrix has wrong shape.
-    #[error("[EMB-E005] DIMENSION_MISMATCH: Projection matrix has wrong shape
+    #[error(
+        "[EMB-E005] DIMENSION_MISMATCH: Projection matrix has wrong shape
   Expected: [30522, 1536]
   Actual: [{actual_rows}, {actual_cols}]
   File: {path}
-  Remediation: Ensure weight file matches BERT vocab (30522) to projection dim (1536)")]
+  Remediation: Ensure weight file matches BERT vocab (30522) to projection dim (1536)"
+    )]
     DimensionMismatch {
         path: PathBuf,
         actual_rows: usize,
@@ -680,15 +687,19 @@ pub enum ProjectionError {
     },
 
     /// GPU operation failed during projection.
-    #[error("[EMB-E001] CUDA_ERROR: GPU operation failed
+    #[error(
+        "[EMB-E001] CUDA_ERROR: GPU operation failed
   Operation: {operation}
   Details: {details}
-  Remediation: Check GPU availability with nvidia-smi, verify driver version >= 545")]
+  Remediation: Check GPU availability with nvidia-smi, verify driver version >= 545"
+    )]
     GpuError { operation: String, details: String },
 
     /// Projection weights not loaded (must call load() first).
-    #[error("[EMB-E008] NOT_INITIALIZED: Projection weights not loaded
-  Remediation: Call ProjectionMatrix::load() before calling project()")]
+    #[error(
+        "[EMB-E008] NOT_INITIALIZED: Projection weights not loaded
+  Remediation: Call ProjectionMatrix::load() before calling project()"
+    )]
     #[allow(dead_code)]
     NotInitialized,
 }
@@ -749,7 +760,10 @@ mod tests {
         let msg = format!("{}", err);
         assert!(msg.contains("EMB-E006"), "Must contain error code EMB-E006");
         assert!(msg.contains("Remediation"), "Must contain remediation");
-        assert!(msg.contains("PROJECTION_MATRIX_MISSING"), "Must contain error name");
+        assert!(
+            msg.contains("PROJECTION_MATRIX_MISSING"),
+            "Must contain error name"
+        );
     }
 
     #[test]
@@ -764,7 +778,10 @@ mod tests {
         let msg = format!("{}", err);
         assert!(msg.contains("EMB-E004"), "Must contain error code EMB-E004");
         assert!(msg.contains("Remediation"), "Must contain remediation");
-        assert!(msg.contains(&long_checksum), "Must contain full expected checksum");
+        assert!(
+            msg.contains(&long_checksum),
+            "Must contain full expected checksum"
+        );
     }
 
     #[test]
@@ -831,7 +848,10 @@ mod tests {
         // Verify Debug trait is implemented
         let err = ProjectionError::NotInitialized;
         let debug_str = format!("{:?}", err);
-        assert!(debug_str.contains("NotInitialized"), "Debug must show variant name");
+        assert!(
+            debug_str.contains("NotInitialized"),
+            "Debug must show variant name"
+        );
     }
 
     #[test]
@@ -841,25 +861,38 @@ mod tests {
         println!("========================================\n");
 
         // Error 1: MatrixMissing
-        let err1 = ProjectionError::MatrixMissing { path: PathBuf::from("/models/sparse_projection.safetensors") };
+        let err1 = ProjectionError::MatrixMissing {
+            path: PathBuf::from("/models/sparse_projection.safetensors"),
+        };
         println!("### ERROR 1: MatrixMissing ###");
         println!("{}", err1);
         println!("---\n");
 
         // Error 2: ChecksumMismatch
-        let err2 = ProjectionError::ChecksumMismatch { path: PathBuf::from("/models/weights.bin"), expected: "abc123".to_string(), actual: "xyz789".to_string() };
+        let err2 = ProjectionError::ChecksumMismatch {
+            path: PathBuf::from("/models/weights.bin"),
+            expected: "abc123".to_string(),
+            actual: "xyz789".to_string(),
+        };
         println!("### ERROR 2: ChecksumMismatch ###");
         println!("{}", err2);
         println!("---\n");
 
         // Error 3: DimensionMismatch
-        let err3 = ProjectionError::DimensionMismatch { path: PathBuf::from("/models/matrix.bin"), actual_rows: 1000, actual_cols: 768 };
+        let err3 = ProjectionError::DimensionMismatch {
+            path: PathBuf::from("/models/matrix.bin"),
+            actual_rows: 1000,
+            actual_cols: 768,
+        };
         println!("### ERROR 3: DimensionMismatch ###");
         println!("{}", err3);
         println!("---\n");
 
         // Error 4: GpuError
-        let err4 = ProjectionError::GpuError { operation: "sparse_projection".to_string(), details: "CUDA OOM".to_string() };
+        let err4 = ProjectionError::GpuError {
+            operation: "sparse_projection".to_string(),
+            details: "CUDA OOM".to_string(),
+        };
         println!("### ERROR 4: GpuError ###");
         println!("{}", err4);
         println!("---\n");
@@ -954,7 +987,8 @@ mod tests {
         .expect("Failed to create tensor view");
         tensors.insert(PROJECTION_TENSOR_NAME.to_string(), tensor_view);
 
-        let safetensors_bytes = safetensors::serialize(&tensors, &None).expect("Failed to serialize");
+        let safetensors_bytes =
+            safetensors::serialize(&tensors, &None).expect("Failed to serialize");
 
         // Write to file
         let weight_file = temp_dir.join(PROJECTION_WEIGHT_FILE);
@@ -1015,7 +1049,6 @@ mod tests {
     /// - With CUDA: Test creates valid file and may succeed (which is also correct)
     #[test]
     fn test_load_no_cuda_returns_gpu_error() {
-
         println!("\n========================================");
         println!("EDGE CASE 3: No CUDA Device");
         println!("========================================\n");
@@ -1193,7 +1226,10 @@ mod tests {
         println!("=== EDGE CASE 3: Out-of-Bounds Index ===");
         println!("BEFORE: invalid_idx = {}", invalid_idx);
         println!("BEFORE: SPARSE_VOCAB_SIZE = {}", SPARSE_VOCAB_SIZE);
-        println!("BEFORE: invalid_idx >= SPARSE_VOCAB_SIZE = {}", invalid_idx >= SPARSE_VOCAB_SIZE);
+        println!(
+            "BEFORE: invalid_idx >= SPARSE_VOCAB_SIZE = {}",
+            invalid_idx >= SPARSE_VOCAB_SIZE
+        );
 
         assert!(invalid_idx >= SPARSE_VOCAB_SIZE, "30522 must be >= 30522");
 
@@ -1211,8 +1247,10 @@ mod tests {
         }
 
         fn _assert_project_batch() {
-            let _: fn(&ProjectionMatrix, &[SparseVector]) -> Result<Vec<Vec<f32>>, ProjectionError> =
-                ProjectionMatrix::project_batch;
+            let _: fn(
+                &ProjectionMatrix,
+                &[SparseVector],
+            ) -> Result<Vec<Vec<f32>>, ProjectionError> = ProjectionMatrix::project_batch;
         }
 
         println!("VERIFIED: project(&self, &SparseVector) -> Result<Vec<f32>, ProjectionError>");
@@ -1229,11 +1267,12 @@ mod tests {
             "/src/models/pretrained/sparse/projection.rs"
         );
 
-        let source = std::fs::read_to_string(source_path)
-            .expect("Failed to read source file");
+        let source = std::fs::read_to_string(source_path).expect("Failed to read source file");
 
         // Extract only impl ProjectionMatrix block, excluding test module
-        let impl_start = source.find("impl ProjectionMatrix {").expect("impl block not found");
+        let impl_start = source
+            .find("impl ProjectionMatrix {")
+            .expect("impl block not found");
         let test_mod_start = source.find("#[cfg(test)]").unwrap_or(source.len());
         let impl_section = &source[impl_start..test_mod_start];
 
@@ -1242,7 +1281,9 @@ mod tests {
             .lines()
             .filter(|line| {
                 let trimmed = line.trim();
-                !trimmed.starts_with("//") && !trimmed.starts_with("///") && !trimmed.starts_with("*")
+                !trimmed.starts_with("//")
+                    && !trimmed.starts_with("///")
+                    && !trimmed.starts_with("*")
             })
             .collect();
         let code_only = code_lines.join("\n");
@@ -1252,13 +1293,22 @@ mod tests {
         let mod_sparse = format!("{}{}", "% SPARSE", "_PROJECTED_DIMENSION");
 
         println!("CHECKING: No '% 1536' in implementation code (excluding comments)");
-        assert!(!code_only.contains(&mod_1536), "Found forbidden: % 1536 in implementation code");
+        assert!(
+            !code_only.contains(&mod_1536),
+            "Found forbidden: % 1536 in implementation code"
+        );
 
         println!("CHECKING: No '% SPARSE_PROJECTED_DIMENSION' in implementation code");
-        assert!(!code_only.contains(&mod_sparse), "Found forbidden modulo pattern in implementation code");
+        assert!(
+            !code_only.contains(&mod_sparse),
+            "Found forbidden modulo pattern in implementation code"
+        );
 
         println!("CHECKING: L2 normalization exists (sqrt)");
-        assert!(impl_section.contains("sqrt"), "Missing sqrt for L2 normalization");
+        assert!(
+            impl_section.contains("sqrt"),
+            "Missing sqrt for L2 normalization"
+        );
 
         println!("CHECKING: matmul operation exists");
         assert!(impl_section.contains("matmul"), "Missing matmul operation");

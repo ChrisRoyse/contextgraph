@@ -185,10 +185,8 @@ impl WarmConfig {
         }
 
         if let Ok(val) = std::env::var("WARM_ENABLE_TEST_INFERENCE") {
-            config.enable_test_inference = matches!(
-                val.to_lowercase().as_str(),
-                "true" | "1" | "yes" | "on"
-            );
+            config.enable_test_inference =
+                matches!(val.to_lowercase().as_str(), "true" | "1" | "yes" | "on");
         }
 
         if let Ok(val) = std::env::var("WARM_MAX_LOAD_TIME_MS") {
@@ -205,7 +203,8 @@ impl WarmConfig {
     /// For RTX 5090 with 32GB VRAM, default is 32GB total.
     #[must_use]
     pub fn total_vram_required(&self) -> usize {
-        self.vram_budget_bytes.saturating_add(self.vram_headroom_bytes)
+        self.vram_budget_bytes
+            .saturating_add(self.vram_headroom_bytes)
     }
 
     /// Validate configuration consistency.
@@ -307,7 +306,11 @@ mod tests {
         ] {
             std::env::set_var("WARM_ENABLE_TEST_INFERENCE", val);
             let config = WarmConfig::from_env();
-            assert_eq!(config.enable_test_inference, expected, "for value '{}'", val);
+            assert_eq!(
+                config.enable_test_inference, expected,
+                "for value '{}'",
+                val
+            );
         }
         std::env::remove_var("WARM_ENABLE_TEST_INFERENCE");
     }

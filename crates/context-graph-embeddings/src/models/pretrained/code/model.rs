@@ -133,8 +133,8 @@ impl CodeModel {
 
         // Load tokenizer from model directory (tokenizer.json for full compatibility)
         let tokenizer_path = self.model_path.join("tokenizer.json");
-        let tokenizer = Tokenizer::from_file(&tokenizer_path).map_err(|e| {
-            EmbeddingError::ModelLoadError {
+        let tokenizer =
+            Tokenizer::from_file(&tokenizer_path).map_err(|e| EmbeddingError::ModelLoadError {
                 model_id: ModelId::Code,
                 source: Box::new(std::io::Error::new(
                     std::io::ErrorKind::NotFound,
@@ -144,8 +144,7 @@ impl CodeModel {
                         e
                     ),
                 )),
-            }
-        })?;
+            })?;
 
         // Load weights from sharded safetensors
         let weights = QwenWeights::from_path(&self.model_path, device)?;

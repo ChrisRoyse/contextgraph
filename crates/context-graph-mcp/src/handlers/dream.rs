@@ -75,10 +75,7 @@ impl Handlers {
         };
 
         // Parse force parameter
-        let force = args
-            .get("force")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let force = args.get("force").and_then(|v| v.as_bool()).unwrap_or(false);
 
         // Get current activity level from scheduler
         let activity_level = {

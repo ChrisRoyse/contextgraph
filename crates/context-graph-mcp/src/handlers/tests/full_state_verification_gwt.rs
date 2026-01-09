@@ -27,8 +27,12 @@ use context_graph_core::alignment::{DefaultAlignmentCalculator, GoalAlignmentCal
 use context_graph_core::johari::{DynDefaultJohariManager, JohariTransitionManager};
 use context_graph_core::monitoring::{StubLayerStatusProvider, StubSystemMonitor};
 use context_graph_core::purpose::{GoalHierarchy, GoalLevel, GoalNode};
-use context_graph_core::stubs::{InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor};
-use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor};
+use context_graph_core::stubs::{
+    InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor,
+};
+use context_graph_core::traits::{
+    MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor,
+};
 use context_graph_core::{LayerStatusProvider, SystemMonitor};
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 
@@ -59,8 +63,7 @@ fn create_handlers_with_gwt() -> Handlers {
         Arc::new(DynDefaultJohariManager::new(store));
     let meta_utl_tracker = Arc::new(ParkingRwLock::new(MetaUtlTracker::new()));
     let system_monitor: Arc<dyn SystemMonitor> = Arc::new(StubSystemMonitor);
-    let layer_status_provider: Arc<dyn LayerStatusProvider> =
-        Arc::new(StubLayerStatusProvider);
+    let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
 
     Handlers::with_default_gwt(
         teleological_store,
@@ -80,8 +83,8 @@ async fn create_handlers_with_rocksdb_and_gwt() -> (Handlers, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory");
     let db_path = tempdir.path().join("test_gwt_rocksdb");
 
-    let rocksdb_store = RocksDbTeleologicalStore::open(&db_path)
-        .expect("Failed to open RocksDbTeleologicalStore");
+    let rocksdb_store =
+        RocksDbTeleologicalStore::open(&db_path).expect("Failed to open RocksDbTeleologicalStore");
     // Note: EmbedderIndexRegistry is initialized in constructor
 
     // Create in-memory store for Johari manager (separate from RocksDB store)
@@ -98,8 +101,7 @@ async fn create_handlers_with_rocksdb_and_gwt() -> (Handlers, TempDir) {
         Arc::new(DynDefaultJohariManager::new(johari_store));
     let meta_utl_tracker = Arc::new(ParkingRwLock::new(MetaUtlTracker::new()));
     let system_monitor: Arc<dyn SystemMonitor> = Arc::new(StubSystemMonitor);
-    let layer_status_provider: Arc<dyn LayerStatusProvider> =
-        Arc::new(StubLayerStatusProvider);
+    let layer_status_provider: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
 
     let handlers = Handlers::with_default_gwt(
         teleological_store,
@@ -132,7 +134,9 @@ fn create_test_hierarchy() -> GoalHierarchy {
     )
     .expect("Failed to create North Star");
     let ns_id = ns_goal.id;
-    hierarchy.add_goal(ns_goal).expect("Failed to add North Star");
+    hierarchy
+        .add_goal(ns_goal)
+        .expect("Failed to add North Star");
 
     let s1_goal = GoalNode::child_goal(
         "Achieve consciousness".into(),
@@ -142,7 +146,9 @@ fn create_test_hierarchy() -> GoalHierarchy {
         discovery,
     )
     .expect("Failed to create strategic goal");
-    hierarchy.add_goal(s1_goal).expect("Failed to add strategic goal");
+    hierarchy
+        .add_goal(s1_goal)
+        .expect("Failed to add strategic goal");
 
     hierarchy
 }
@@ -193,8 +199,7 @@ async fn test_get_kuramoto_sync_returns_real_oscillator_data() {
     );
 
     // VERIFY: Extract and validate tool content
-    let content = extract_tool_content(&response_json)
-        .expect("Tool response must have content");
+    let content = extract_tool_content(&response_json).expect("Tool response must have content");
 
     // FSV-1: Order parameter r must be in [0, 1]
     let r = content["r"].as_f64().expect("r must be f64");
@@ -251,12 +256,22 @@ async fn test_get_kuramoto_sync_returns_real_oscillator_data() {
 
     // FSV-7: Coupling strength K must be positive
     let coupling = content["coupling"].as_f64().expect("coupling must be f64");
-    assert!(coupling > 0.0, "Coupling strength K={} must be positive", coupling);
+    assert!(
+        coupling > 0.0,
+        "Coupling strength K={} must be positive",
+        coupling
+    );
 
     // FSV-8: State must be one of valid states (constitution.yaml lines 394-408)
     // All 5 states per constitution: DORMANT, FRAGMENTED, EMERGING, CONSCIOUS, HYPERSYNC
     let state = content["state"].as_str().expect("state must be string");
-    let valid_states = ["DORMANT", "FRAGMENTED", "EMERGING", "CONSCIOUS", "HYPERSYNC"];
+    let valid_states = [
+        "DORMANT",
+        "FRAGMENTED",
+        "EMERGING",
+        "CONSCIOUS",
+        "HYPERSYNC",
+    ];
     assert!(
         valid_states.contains(&state),
         "State '{}' must be one of {:?}",
@@ -265,7 +280,9 @@ async fn test_get_kuramoto_sync_returns_real_oscillator_data() {
     );
 
     // FSV-9: Synchronization must equal r
-    let sync = content["synchronization"].as_f64().expect("sync must be f64");
+    let sync = content["synchronization"]
+        .as_f64()
+        .expect("sync must be f64");
     assert!(
         (sync - r).abs() < 1e-10,
         "synchronization={} must equal r={}",
@@ -343,26 +360,37 @@ async fn test_get_consciousness_state_returns_real_gwt_data() {
     );
 
     // VERIFY: Extract and validate tool content
-    let content = extract_tool_content(&response_json)
-        .expect("Tool response must have content");
+    let content = extract_tool_content(&response_json).expect("Tool response must have content");
 
     // FSV-1: Consciousness C must be in [0, 1]
     let c = content["C"].as_f64().expect("C must be f64");
-    assert!((0.0..=1.0).contains(&c), "Consciousness C={} must be in [0, 1]", c);
+    assert!(
+        (0.0..=1.0).contains(&c),
+        "Consciousness C={} must be in [0, 1]",
+        c
+    );
 
     // FSV-2: Order parameter r must be in [0, 1]
     let r = content["r"].as_f64().expect("r must be f64");
-    assert!((0.0..=1.0).contains(&r), "Order parameter r={} must be in [0, 1]", r);
+    assert!(
+        (0.0..=1.0).contains(&r),
+        "Order parameter r={} must be in [0, 1]",
+        r
+    );
 
     // FSV-3: Integration, reflection, differentiation must be in [0, 1]
-    let integration = content["integration"].as_f64().expect("integration must be f64");
+    let integration = content["integration"]
+        .as_f64()
+        .expect("integration must be f64");
     assert!(
         (0.0..=1.0).contains(&integration),
         "Integration={} must be in [0, 1]",
         integration
     );
 
-    let reflection = content["reflection"].as_f64().expect("reflection must be f64");
+    let reflection = content["reflection"]
+        .as_f64()
+        .expect("reflection must be f64");
     assert!(
         (0.0..=1.0).contains(&reflection),
         "Reflection={} must be in [0, 1]",
@@ -381,7 +409,13 @@ async fn test_get_consciousness_state_returns_real_gwt_data() {
     // FSV-4: State must be valid consciousness state (constitution.yaml lines 394-408)
     // All 5 states: DORMANT, FRAGMENTED, EMERGING, CONSCIOUS, HYPERSYNC
     let state = content["state"].as_str().expect("state must be string");
-    let valid_states = ["DORMANT", "FRAGMENTED", "EMERGING", "CONSCIOUS", "HYPERSYNC"];
+    let valid_states = [
+        "DORMANT",
+        "FRAGMENTED",
+        "EMERGING",
+        "CONSCIOUS",
+        "HYPERSYNC",
+    ];
     assert!(
         valid_states.contains(&state),
         "State '{}' must be one of {:?}",
@@ -390,15 +424,14 @@ async fn test_get_consciousness_state_returns_real_gwt_data() {
     );
 
     // FSV-5: GWT state must be present
-    let gwt_state = content["gwt_state"].as_str().expect("gwt_state must be string");
+    let gwt_state = content["gwt_state"]
+        .as_str()
+        .expect("gwt_state must be string");
     assert!(!gwt_state.is_empty(), "GWT state must not be empty");
 
     // FSV-6: Workspace object must be present
     let workspace = &content["workspace"];
-    assert!(
-        workspace.is_object(),
-        "workspace must be an object"
-    );
+    assert!(workspace.is_object(), "workspace must be an object");
     assert!(
         workspace.get("is_broadcasting").is_some(),
         "workspace must have is_broadcasting"
@@ -500,8 +533,7 @@ async fn test_get_workspace_status_returns_real_workspace_data() {
     );
 
     // VERIFY: Extract and validate tool content
-    let content = extract_tool_content(&response_json)
-        .expect("Tool response must have content");
+    let content = extract_tool_content(&response_json).expect("Tool response must have content");
 
     // FSV-1: is_broadcasting must be boolean - as_bool() already validates type
     let is_broadcasting = content["is_broadcasting"]
@@ -579,8 +611,7 @@ async fn test_get_ego_state_returns_real_identity_data() {
     );
 
     // VERIFY: Extract and validate tool content
-    let content = extract_tool_content(&response_json)
-        .expect("Tool response must have content");
+    let content = extract_tool_content(&response_json).expect("Tool response must have content");
 
     // FSV-1: purpose_vector must have 13 dimensions
     let purpose_vector = content["purpose_vector"]
@@ -686,11 +717,14 @@ async fn test_gwt_cross_validation_kuramoto_and_consciousness() {
     let consciousness_json = serde_json::to_value(&consciousness_response).expect("serialize");
 
     let kuramoto_content = extract_tool_content(&kuramoto_json).expect("kuramoto content");
-    let consciousness_content = extract_tool_content(&consciousness_json).expect("consciousness content");
+    let consciousness_content =
+        extract_tool_content(&consciousness_json).expect("consciousness content");
 
     // CROSS-VALIDATION-1: Order parameter r must match between tools
     let kuramoto_r = kuramoto_content["r"].as_f64().expect("kuramoto r");
-    let consciousness_r = consciousness_content["r"].as_f64().expect("consciousness r");
+    let consciousness_r = consciousness_content["r"]
+        .as_f64()
+        .expect("consciousness r");
 
     assert!(
         (kuramoto_r - consciousness_r).abs() < 1e-10,
@@ -703,7 +737,9 @@ async fn test_gwt_cross_validation_kuramoto_and_consciousness() {
     // Both tools now use ConsciousnessState::from_level() so states should match exactly
     // All 5 states per constitution.yaml lines 394-408: DORMANT, FRAGMENTED, EMERGING, CONSCIOUS, HYPERSYNC
     let kuramoto_state = kuramoto_content["state"].as_str().expect("kuramoto state");
-    let consciousness_state = consciousness_content["state"].as_str().expect("consciousness state");
+    let consciousness_state = consciousness_content["state"]
+        .as_str()
+        .expect("consciousness state");
 
     assert_eq!(
         kuramoto_state, consciousness_state,
@@ -712,7 +748,9 @@ async fn test_gwt_cross_validation_kuramoto_and_consciousness() {
     );
 
     // CROSS-VALIDATION-3: Integration factor should correlate with r
-    let integration = consciousness_content["integration"].as_f64().expect("integration");
+    let integration = consciousness_content["integration"]
+        .as_f64()
+        .expect("integration");
     // Integration is derived from Kuramoto r, so they should be related
     // (exact relationship depends on implementation, but both should be in [0,1])
     assert!(
@@ -743,7 +781,8 @@ async fn test_gwt_cross_validation_ego_and_consciousness() {
     let consciousness_json = serde_json::to_value(&consciousness_response).expect("serialize");
 
     let ego_content = extract_tool_content(&ego_json).expect("ego content");
-    let consciousness_content = extract_tool_content(&consciousness_json).expect("consciousness content");
+    let consciousness_content =
+        extract_tool_content(&consciousness_json).expect("consciousness content");
 
     // CROSS-VALIDATION-1: Purpose vectors must match
     let ego_pv = ego_content["purpose_vector"]
@@ -772,7 +811,9 @@ async fn test_gwt_cross_validation_ego_and_consciousness() {
     }
 
     // CROSS-VALIDATION-2: Identity coherence must match
-    let ego_coherence = ego_content["identity_coherence"].as_f64().expect("ego coherence");
+    let ego_coherence = ego_content["identity_coherence"]
+        .as_f64()
+        .expect("ego coherence");
     let consciousness_coherence = consciousness_content["identity"]["coherence"]
         .as_f64()
         .expect("consciousness coherence");
@@ -826,13 +867,9 @@ async fn test_gwt_with_real_rocksdb_storage() {
             json.get("error")
         );
 
-        let content = extract_tool_content(&json)
-            .unwrap_or_else(|| panic!("{} content must exist", name));
-        assert!(
-            !content.is_null(),
-            "{} content must not be null",
-            name
-        );
+        let content =
+            extract_tool_content(&json).unwrap_or_else(|| panic!("{} content must exist", name));
+        assert!(!content.is_null(), "{} content must not be null", name);
     }
 
     println!("✓ FSV PASSED: All GWT tools work with REAL RocksDB storage");
@@ -864,7 +901,10 @@ async fn test_trigger_workspace_broadcast_performs_wta_selection() {
         // Check it's a valid error (memory not found, not a crash)
         let err = json.get("error").unwrap();
         let msg = err.get("message").and_then(|m| m.as_str()).unwrap_or("");
-        println!("✓ FSV PASSED: trigger_workspace_broadcast returned valid error: {}", msg);
+        println!(
+            "✓ FSV PASSED: trigger_workspace_broadcast returned valid error: {}",
+            msg
+        );
         // Common expected errors: memory not found, workspace busy, etc.
         assert!(
             !msg.contains("panic") && !msg.contains("unwrap"),
@@ -923,7 +963,11 @@ async fn test_adjust_coupling_modifies_kuramoto_k() {
         .expect("initial coupling must be f64");
 
     // STEP 2: Adjust coupling to a new value
-    let new_k_target = if initial_k < 5.0 { initial_k + 1.0 } else { initial_k - 1.0 };
+    let new_k_target = if initial_k < 5.0 {
+        initial_k + 1.0
+    } else {
+        initial_k - 1.0
+    };
     let adjust_args = json!({ "new_K": new_k_target });
     let adjust_request = make_tool_call_request(tool_names::ADJUST_COUPLING, Some(adjust_args));
     let adjust_response = handlers.dispatch(adjust_request).await;
@@ -979,7 +1023,9 @@ async fn test_adjust_coupling_modifies_kuramoto_k() {
     let verify_response = handlers.dispatch(verify_request).await;
     let verify_json = serde_json::to_value(&verify_response).expect("serialize");
     let verify_content = extract_tool_content(&verify_json).expect("verify content");
-    let verify_k = verify_content["coupling"].as_f64().expect("verify coupling must be f64");
+    let verify_k = verify_content["coupling"]
+        .as_f64()
+        .expect("verify coupling must be f64");
 
     assert!(
         (verify_k - new_k).abs() < 1e-6,
@@ -1018,26 +1064,21 @@ async fn test_get_threshold_status_returns_real_atc_data() {
 
     // Parse response
     let response_json = serde_json::to_value(&response).expect("serialize");
-    assert!(response.error.is_none(), "get_threshold_status should not error");
+    assert!(
+        response.error.is_none(),
+        "get_threshold_status should not error"
+    );
 
-    let content = extract_tool_content(&response_json)
-        .expect("get_threshold_status must return content");
+    let content =
+        extract_tool_content(&response_json).expect("get_threshold_status must return content");
 
     // FSV-1: Must have domain (defaults to "General")
-    let domain = content["domain"]
-        .as_str()
-        .expect("domain must be string");
-    assert!(
-        !domain.is_empty(),
-        "domain must not be empty"
-    );
+    let domain = content["domain"].as_str().expect("domain must be string");
+    assert!(!domain.is_empty(), "domain must not be empty");
 
     // FSV-2: Must have thresholds object with domain_thresholds
     let thresholds = &content["thresholds"];
-    assert!(
-        thresholds.is_object(),
-        "thresholds must be an object"
-    );
+    assert!(thresholds.is_object(), "thresholds must be an object");
 
     // FSV-3: Must have calibration object with ECE, MCE, Brier
     let calibration = &content["calibration"];
@@ -1068,10 +1109,7 @@ async fn test_get_threshold_status_returns_real_atc_data() {
     let status = calibration["status"]
         .as_str()
         .expect("status must be string");
-    assert!(
-        !status.is_empty(),
-        "calibration status must not be empty"
-    );
+    assert!(!status.is_empty(), "calibration status must not be empty");
 
     // FSV-5: Must have sample_count
     let sample_count = calibration["sample_count"]
@@ -1123,10 +1161,13 @@ async fn test_get_calibration_metrics_returns_real_data() {
 
     // Parse response
     let response_json = serde_json::to_value(&response).expect("serialize");
-    assert!(response.error.is_none(), "get_calibration_metrics should not error");
+    assert!(
+        response.error.is_none(),
+        "get_calibration_metrics should not error"
+    );
 
-    let content = extract_tool_content(&response_json)
-        .expect("get_calibration_metrics must return content");
+    let content =
+        extract_tool_content(&response_json).expect("get_calibration_metrics must return content");
 
     // FSV-1: Must have metrics object
     let metrics = &content["metrics"];
@@ -1157,13 +1198,8 @@ async fn test_get_calibration_metrics_returns_real_data() {
     );
 
     // FSV-5: Must have status at top level
-    let status = content["status"]
-        .as_str()
-        .expect("status must be string");
-    assert!(
-        !status.is_empty(),
-        "status must not be empty"
-    );
+    let status = content["status"].as_str().expect("status must be string");
+    assert!(!status.is_empty(), "status must not be empty");
 
     // FSV-6: Must have sample_count in metrics
     let sample_count = metrics["sample_count"]
@@ -1171,9 +1207,15 @@ async fn test_get_calibration_metrics_returns_real_data() {
         .expect("sample_count must be u64");
 
     // FSV-7: Must have targets embedded in metrics
-    let ece_target = metrics["ece_target"].as_f64().expect("ece_target must be f64");
-    let mce_target = metrics["mce_target"].as_f64().expect("mce_target must be f64");
-    let brier_target = metrics["brier_target"].as_f64().expect("brier_target must be f64");
+    let ece_target = metrics["ece_target"]
+        .as_f64()
+        .expect("ece_target must be f64");
+    let mce_target = metrics["mce_target"]
+        .as_f64()
+        .expect("mce_target must be f64");
+    let brier_target = metrics["brier_target"]
+        .as_f64()
+        .expect("brier_target must be f64");
 
     // FSV-8: Check if we're meeting calibration targets
     let meets_ece = ece <= ece_target;
@@ -1182,7 +1224,10 @@ async fn test_get_calibration_metrics_returns_real_data() {
 
     // FSV-9: Must have recommendations object
     let recommendations = &content["recommendations"];
-    assert!(recommendations.is_object(), "recommendations must be an object");
+    assert!(
+        recommendations.is_object(),
+        "recommendations must be an object"
+    );
     assert!(
         recommendations.get("level2_recalibration_needed").is_some(),
         "must have level2_recalibration_needed"
@@ -1230,18 +1275,14 @@ async fn test_trigger_recalibration_performs_real_calibration() {
             .unwrap_or_else(|| panic!("trigger_recalibration level {} must return content", level));
 
         // FSV-1: Must have success flag
-        let success = content["success"]
-            .as_bool()
-            .expect("success must be bool");
+        let success = content["success"].as_bool().expect("success must be bool");
         assert!(success, "recalibration should succeed");
 
         // FSV-2: Must have recalibration object with level details
         let recalibration = &content["recalibration"];
         assert!(recalibration.is_object(), "recalibration must be an object");
 
-        let returned_level = recalibration["level"]
-            .as_u64()
-            .expect("level must be u64");
+        let returned_level = recalibration["level"].as_u64().expect("level must be u64");
         assert_eq!(
             returned_level, level,
             "returned level must match requested level"
@@ -1250,17 +1291,21 @@ async fn test_trigger_recalibration_performs_real_calibration() {
         let level_name = recalibration["level_name"]
             .as_str()
             .expect("level_name must be string");
-        assert!(
-            !level_name.is_empty(),
-            "level_name must not be empty"
-        );
+        assert!(!level_name.is_empty(), "level_name must not be empty");
 
         let action = recalibration["action"]
             .as_str()
             .expect("action must be string");
         // Action should be one of: "reported", "recalibrated", "initialized", "triggered", "skipped"
         assert!(
-            ["reported", "recalibrated", "initialized", "triggered", "skipped"].contains(&action),
+            [
+                "reported",
+                "recalibrated",
+                "initialized",
+                "triggered",
+                "skipped"
+            ]
+            .contains(&action),
             "action should be valid: {}",
             action
         );
@@ -1277,10 +1322,7 @@ async fn test_trigger_recalibration_performs_real_calibration() {
         );
 
         let metrics_after = &content["metrics_after"];
-        assert!(
-            metrics_after.is_object(),
-            "metrics_after must be an object"
-        );
+        assert!(metrics_after.is_object(), "metrics_after must be an object");
         assert!(
             metrics_after.get("ece").is_some(),
             "metrics_after must have ece"
@@ -1324,8 +1366,7 @@ async fn test_trigger_dream_initiates_real_consolidation() {
         response.error
     );
 
-    let content = extract_tool_content(&response_json)
-        .expect("trigger_dream must return content");
+    let content = extract_tool_content(&response_json).expect("trigger_dream must return content");
 
     // FSV-1: Must have triggered flag
     let triggered = content["triggered"]
@@ -1334,9 +1375,7 @@ async fn test_trigger_dream_initiates_real_consolidation() {
     // May or may not trigger depending on activity level
 
     // FSV-2: Must have reason string
-    let reason = content["reason"]
-        .as_str()
-        .expect("reason must be string");
+    let reason = content["reason"].as_str().expect("reason must be string");
     assert!(!reason.is_empty(), "reason must not be empty");
 
     // FSV-3: Must have current_state
@@ -1405,13 +1444,11 @@ async fn test_get_dream_status_returns_real_state() {
         response.error
     );
 
-    let content = extract_tool_content(&response_json)
-        .expect("get_dream_status must return content");
+    let content =
+        extract_tool_content(&response_json).expect("get_dream_status must return content");
 
     // FSV-1: Must have state string
-    let state = content["state"]
-        .as_str()
-        .expect("state must be string");
+    let state = content["state"].as_str().expect("state must be string");
     // State should be one of: Awake, EnteringDream, Nrem, Rem, Waking
     assert!(!state.is_empty(), "state must not be empty");
 
@@ -1466,7 +1503,10 @@ async fn test_get_dream_status_returns_real_state() {
 
     println!(
         "✓ FSV PASSED: get_dream_status - state='{}', is_dreaming={}, gpu={:.1}%, activity={:.3}",
-        state, is_dreaming, gpu_usage * 100.0, scheduler_activity
+        state,
+        is_dreaming,
+        gpu_usage * 100.0,
+        scheduler_activity
     );
     println!(
         "  Constitution compliance: gpu_under_30_percent={}, max_wake_latency={}ms",
@@ -1503,9 +1543,7 @@ async fn test_abort_dream_stops_cycle_properly() {
     let content = extract_tool_content(&response_json).expect("abort_dream must return content");
 
     // FSV-1: Must have aborted field (should be false when not dreaming)
-    let aborted = content["aborted"]
-        .as_bool()
-        .expect("aborted must be bool");
+    let aborted = content["aborted"].as_bool().expect("aborted must be bool");
     assert!(
         !aborted,
         "aborted should be false when not currently dreaming"
@@ -1539,9 +1577,7 @@ async fn test_abort_dream_stops_cycle_properly() {
     );
 
     // FSV-5: Must have reason field
-    let reason = content["reason"]
-        .as_str()
-        .expect("reason must be string");
+    let reason = content["reason"].as_str().expect("reason must be string");
     assert!(
         reason.contains("Not currently dreaming"),
         "reason should indicate not dreaming: {}",
@@ -1718,9 +1754,18 @@ async fn test_get_amortized_shortcuts_returns_real_candidates() {
     if !shortcuts.is_empty() {
         let first = &shortcuts[0];
 
-        assert!(first["source"].is_string(), "shortcut.source must be string");
-        assert!(first["target"].is_string(), "shortcut.target must be string");
-        assert!(first["hop_count"].is_u64(), "shortcut.hop_count must be u64");
+        assert!(
+            first["source"].is_string(),
+            "shortcut.source must be string"
+        );
+        assert!(
+            first["target"].is_string(),
+            "shortcut.target must be string"
+        );
+        assert!(
+            first["hop_count"].is_u64(),
+            "shortcut.hop_count must be u64"
+        );
         assert!(
             first["traversal_count"].is_u64(),
             "shortcut.traversal_count must be u64"
@@ -1782,20 +1827,29 @@ async fn test_get_neuromodulation_state_returns_real_modulator_levels() {
         .as_f64()
         .expect("dopamine.level must be f64");
     let da_range = &dopamine["range"];
-    let da_min = da_range["min"].as_f64().expect("dopamine.range.min must be f64");
-    let _da_baseline = da_range["baseline"].as_f64().expect("dopamine.range.baseline must be f64");
-    let da_max = da_range["max"].as_f64().expect("dopamine.range.max must be f64");
+    let da_min = da_range["min"]
+        .as_f64()
+        .expect("dopamine.range.min must be f64");
+    let _da_baseline = da_range["baseline"]
+        .as_f64()
+        .expect("dopamine.range.baseline must be f64");
+    let da_max = da_range["max"]
+        .as_f64()
+        .expect("dopamine.range.max must be f64");
 
     // Constitution mandates DA range [1, 5]
     assert!(
         da_min >= 1.0 && da_max <= 5.0,
         "DA range must be within [1, 5], got [{}, {}]",
-        da_min, da_max
+        da_min,
+        da_max
     );
     assert!(
         da_level >= da_min && da_level <= da_max,
         "DA level {} must be within range [{}, {}]",
-        da_level, da_min, da_max
+        da_level,
+        da_min,
+        da_max
     );
     assert_eq!(
         dopamine["parameter"].as_str(),
@@ -1811,19 +1865,26 @@ async fn test_get_neuromodulation_state_returns_real_modulator_levels() {
         .as_f64()
         .expect("serotonin.level must be f64");
     let sht_range = &serotonin["range"];
-    let sht_min = sht_range["min"].as_f64().expect("serotonin.range.min must be f64");
-    let sht_max = sht_range["max"].as_f64().expect("serotonin.range.max must be f64");
+    let sht_min = sht_range["min"]
+        .as_f64()
+        .expect("serotonin.range.min must be f64");
+    let sht_max = sht_range["max"]
+        .as_f64()
+        .expect("serotonin.range.max must be f64");
 
     // Constitution mandates 5HT range [0, 1]
     assert!(
         sht_min >= 0.0 && sht_max <= 1.0,
         "5HT range must be within [0, 1], got [{}, {}]",
-        sht_min, sht_max
+        sht_min,
+        sht_max
     );
     assert!(
         sht_level >= sht_min && sht_level <= sht_max,
         "5HT level {} must be within range [{}, {}]",
-        sht_level, sht_min, sht_max
+        sht_level,
+        sht_min,
+        sht_max
     );
 
     // 5HT must have space_weights array (13 embedder weights)
@@ -1844,19 +1905,26 @@ async fn test_get_neuromodulation_state_returns_real_modulator_levels() {
         .as_f64()
         .expect("noradrenaline.level must be f64");
     let ne_range = &noradrenaline["range"];
-    let ne_min = ne_range["min"].as_f64().expect("noradrenaline.range.min must be f64");
-    let ne_max = ne_range["max"].as_f64().expect("noradrenaline.range.max must be f64");
+    let ne_min = ne_range["min"]
+        .as_f64()
+        .expect("noradrenaline.range.min must be f64");
+    let ne_max = ne_range["max"]
+        .as_f64()
+        .expect("noradrenaline.range.max must be f64");
 
     // Constitution mandates NE range [0.5, 2]
     assert!(
         ne_min >= 0.5 && ne_max <= 2.0,
         "NE range must be within [0.5, 2], got [{}, {}]",
-        ne_min, ne_max
+        ne_min,
+        ne_max
     );
     assert!(
         ne_level >= ne_min && ne_level <= ne_max,
         "NE level {} must be within range [{}, {}]",
-        ne_level, ne_min, ne_max
+        ne_level,
+        ne_min,
+        ne_max
     );
     assert_eq!(
         noradrenaline["parameter"].as_str(),
@@ -1872,8 +1940,12 @@ async fn test_get_neuromodulation_state_returns_real_modulator_levels() {
         .as_f64()
         .expect("acetylcholine.level must be f64");
     let ach_range = &acetylcholine["range"];
-    let ach_min = ach_range["min"].as_f64().expect("acetylcholine.range.min must be f64");
-    let ach_max = ach_range["max"].as_f64().expect("acetylcholine.range.max must be f64");
+    let ach_min = ach_range["min"]
+        .as_f64()
+        .expect("acetylcholine.range.min must be f64");
+    let ach_max = ach_range["max"]
+        .as_f64()
+        .expect("acetylcholine.range.max must be f64");
 
     // Constitution mandates ACh range [0.001, 0.002] (with f32 precision tolerance)
     // f32 0.001 = 0.0010000000474974513, f32 0.002 = 0.0020000000949949026
@@ -1881,12 +1953,15 @@ async fn test_get_neuromodulation_state_returns_real_modulator_levels() {
     assert!(
         ach_min >= (0.001 - epsilon) && ach_max <= (0.002 + epsilon),
         "ACh range must be within [0.001, 0.002] (±epsilon), got [{}, {}]",
-        ach_min, ach_max
+        ach_min,
+        ach_max
     );
     assert!(
         ach_level >= (ach_min - epsilon) && ach_level <= (ach_max + epsilon),
         "ACh level {} must be within range [{}, {}]",
-        ach_level, ach_min, ach_max
+        ach_level,
+        ach_min,
+        ach_max
     );
     assert_eq!(
         acetylcholine["read_only"].as_bool(),
@@ -1920,11 +1995,12 @@ async fn test_get_neuromodulation_state_returns_real_modulator_levels() {
 
     // FSV-6: Must have constitution_reference
     let constitution = &content["constitution_reference"];
-    assert!(constitution.is_object(), "constitution_reference must be an object");
-
-    println!(
-        "✓ FSV PASSED: get_neuromodulation_state - All 4 modulators verified"
+    assert!(
+        constitution.is_object(),
+        "constitution_reference must be an object"
     );
+
+    println!("✓ FSV PASSED: get_neuromodulation_state - All 4 modulators verified");
     println!(
         "  DA={:.3} [{}, {}], 5HT={:.3} [{}, {}]",
         da_level, da_min, da_max, sht_level, sht_min, sht_max
@@ -1957,8 +2033,8 @@ async fn test_adjust_neuromodulator_modifies_real_levels() {
     let initial_request = make_tool_call_request(tool_names::GET_NEUROMODULATION_STATE, None);
     let initial_response = handlers.dispatch(initial_request).await;
     let initial_json = serde_json::to_value(&initial_response).expect("serialize");
-    let initial_content = extract_tool_content(&initial_json)
-        .expect("get_neuromodulation_state must return content");
+    let initial_content =
+        extract_tool_content(&initial_json).expect("get_neuromodulation_state must return content");
 
     let initial_da = initial_content["dopamine"]["level"]
         .as_f64()
@@ -1983,8 +2059,8 @@ async fn test_adjust_neuromodulator_modifies_real_levels() {
         adjust_json.get("error")
     );
 
-    let adjust_content = extract_tool_content(&adjust_json)
-        .expect("adjust_neuromodulator must return content");
+    let adjust_content =
+        extract_tool_content(&adjust_json).expect("adjust_neuromodulator must return content");
 
     // FSV-1: Must have modulator name
     assert_eq!(
@@ -2000,7 +2076,8 @@ async fn test_adjust_neuromodulator_modifies_real_levels() {
     assert!(
         (old_level - initial_da).abs() < 0.0001,
         "old_level {} should match initial {}",
-        old_level, initial_da
+        old_level,
+        initial_da
     );
 
     // FSV-3: Must have new_level
@@ -2026,7 +2103,9 @@ async fn test_adjust_neuromodulator_modifies_real_levels() {
     assert!(
         ((new_level - old_level) - delta_applied).abs() < 0.0001,
         "new_level {} - old_level {} should equal delta_applied {}",
-        new_level, old_level, delta_applied
+        new_level,
+        old_level,
+        delta_applied
     );
 
     // FSV-5: Must have range object
@@ -2039,7 +2118,9 @@ async fn test_adjust_neuromodulator_modifies_real_levels() {
     assert!(
         new_level >= range_min && new_level <= range_max,
         "new_level {} must be within [{}, {}]",
-        new_level, range_min, range_max
+        new_level,
+        range_min,
+        range_max
     );
 
     // FSV-6: Must have clamped flag
@@ -2056,8 +2137,8 @@ async fn test_adjust_neuromodulator_modifies_real_levels() {
     let verify_request = make_tool_call_request(tool_names::GET_NEUROMODULATION_STATE, None);
     let verify_response = handlers.dispatch(verify_request).await;
     let verify_json = serde_json::to_value(&verify_response).expect("serialize");
-    let verify_content = extract_tool_content(&verify_json)
-        .expect("get_neuromodulation_state must return content");
+    let verify_content =
+        extract_tool_content(&verify_json).expect("get_neuromodulation_state must return content");
 
     let verify_da = verify_content["dopamine"]["level"]
         .as_f64()
@@ -2066,7 +2147,8 @@ async fn test_adjust_neuromodulator_modifies_real_levels() {
     assert!(
         (verify_da - new_level).abs() < 0.0001,
         "Verified dopamine {} should match new_level {}",
-        verify_da, new_level
+        verify_da,
+        new_level
     );
 
     println!(
@@ -2091,9 +2173,7 @@ async fn test_adjust_neuromodulator_modifies_real_levels() {
         "Adjusting ACh must return error (read-only)"
     );
 
-    let error_msg = ach_json["error"]["message"]
-        .as_str()
-        .unwrap_or("");
+    let error_msg = ach_json["error"]["message"].as_str().unwrap_or("");
     assert!(
         error_msg.to_lowercase().contains("read-only")
             || error_msg.to_lowercase().contains("read only")
@@ -2175,8 +2255,8 @@ async fn test_rocksdb_column_families_and_gwt_integration() {
         "get_kuramoto_sync must work with RocksDB backend"
     );
     let kuramoto_json = serde_json::to_value(&kuramoto_response).expect("serialize");
-    let kuramoto_content = extract_tool_content(&kuramoto_json)
-        .expect("get_kuramoto_sync must return content");
+    let kuramoto_content =
+        extract_tool_content(&kuramoto_json).expect("get_kuramoto_sync must return content");
 
     // Verify we get real Kuramoto data
     let r = kuramoto_content["r"]
@@ -2194,8 +2274,8 @@ async fn test_rocksdb_column_families_and_gwt_integration() {
         "get_workspace_status must work with RocksDB backend"
     );
     let workspace_json = serde_json::to_value(&workspace_response).expect("serialize");
-    let workspace_content = extract_tool_content(&workspace_json)
-        .expect("get_workspace_status must return content");
+    let workspace_content =
+        extract_tool_content(&workspace_json).expect("get_workspace_status must return content");
 
     let is_broadcasting = workspace_content["is_broadcasting"]
         .as_bool()
@@ -2237,12 +2317,10 @@ async fn test_rocksdb_column_families_and_gwt_integration() {
         }
     } else {
         // If store succeeded, verify the response structure
-        let store_content = extract_tool_content(&store_json)
-            .expect("store_memory must return content");
+        let store_content =
+            extract_tool_content(&store_json).expect("store_memory must return content");
 
-        let memory_id = store_content
-            .get("memory_id")
-            .and_then(|v| v.as_str());
+        let memory_id = store_content.get("memory_id").and_then(|v| v.as_str());
 
         if let Some(id) = memory_id {
             println!("✓ FSV: store_memory succeeded with memory_id={}", id);
@@ -2260,8 +2338,8 @@ async fn test_rocksdb_column_families_and_gwt_integration() {
         "get_neuromodulation_state must work with RocksDB backend"
     );
     let neuro_json = serde_json::to_value(&neuro_response).expect("serialize");
-    let neuro_content = extract_tool_content(&neuro_json)
-        .expect("get_neuromodulation_state must return content");
+    let neuro_content =
+        extract_tool_content(&neuro_json).expect("get_neuromodulation_state must return content");
 
     let da_level = neuro_content["dopamine"]["level"]
         .as_f64()
@@ -2360,9 +2438,9 @@ async fn test_warm_gwt_returns_non_zero_values() {
     );
 
     // All values should be non-zero (warm state)
-    let all_non_zero = purpose_vector.iter().all(|v| {
-        v.as_f64().map(|f| f > 0.0).unwrap_or(false)
-    });
+    let all_non_zero = purpose_vector
+        .iter()
+        .all(|v| v.as_f64().map(|f| f > 0.0).unwrap_or(false));
     assert!(
         all_non_zero,
         "Warm GWT purpose_vector should have ALL non-zero values: {:?}",
@@ -2400,9 +2478,7 @@ async fn test_warm_gwt_returns_non_zero_values() {
     let consciousness_result = consciousness_json["result"].clone();
     let consciousness_content = extract_mcp_tool_data(&consciousness_result);
 
-    let c_value = consciousness_content["C"]
-        .as_f64()
-        .unwrap_or(0.0);
+    let c_value = consciousness_content["C"].as_f64().unwrap_or(0.0);
 
     // With r ≈ 1, C should be non-zero (C = I × R × D where R = r from Kuramoto)
     // Even if I and D are at initial values, we expect some consciousness
@@ -2470,9 +2546,9 @@ async fn test_warm_gwt_rocksdb_returns_non_zero_values() {
         .as_array()
         .expect("purpose_vector must be array");
 
-    let all_non_zero = purpose_vector.iter().all(|v| {
-        v.as_f64().map(|f| f > 0.0).unwrap_or(false)
-    });
+    let all_non_zero = purpose_vector
+        .iter()
+        .all(|v| v.as_f64().map(|f| f > 0.0).unwrap_or(false));
     assert!(
         all_non_zero,
         "Warm GWT RocksDB purpose_vector must have ALL non-zero values"

@@ -17,13 +17,15 @@ use tracing::{debug, error, info, warn};
 use context_graph_core::alignment::{DefaultAlignmentCalculator, GoalAlignmentCalculator};
 use context_graph_core::config::Config;
 use context_graph_core::purpose::GoalHierarchy;
-use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor};
+use context_graph_core::traits::{
+    MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor,
+};
 
 use context_graph_embeddings::{GpuConfig, ProductionMultiArrayProvider};
 
 // REAL implementations - NO STUBS
-use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use crate::adapters::UtlProcessorAdapter;
+use context_graph_storage::teleological::RocksDbTeleologicalStore;
 
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
@@ -107,23 +109,28 @@ impl McpServer {
         // GPU Requirements: NVIDIA CUDA GPU with 8GB+ VRAM
         // Model Directory: ./models relative to binary (configurable via env)
         let models_dir = Self::resolve_models_path(&config);
-        info!("Loading ProductionMultiArrayProvider with models from {:?}...", models_dir);
+        info!(
+            "Loading ProductionMultiArrayProvider with models from {:?}...",
+            models_dir
+        );
 
         let multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(
             ProductionMultiArrayProvider::new(models_dir.clone(), GpuConfig::default())
                 .await
                 .map_err(|e| {
-                    error!("FATAL: Failed to create ProductionMultiArrayProvider: {}", e);
+                    error!(
+                        "FATAL: Failed to create ProductionMultiArrayProvider: {}",
+                        e
+                    );
                     anyhow::anyhow!(
                         "Failed to create ProductionMultiArrayProvider: {}. \
                          Ensure models exist at {:?} and CUDA GPU is available.",
-                        e, models_dir
+                        e,
+                        models_dir
                     )
-                })?
+                })?,
         );
-        info!(
-            "Created ProductionMultiArrayProvider (13 embedders, GPU-accelerated, <30ms target)"
-        );
+        info!("Created ProductionMultiArrayProvider (13 embedders, GPU-accelerated, <30ms target)");
 
         // TASK-S003: Create alignment calculator and goal hierarchy
         let alignment_calculator: Arc<dyn GoalAlignmentCalculator> =
@@ -134,12 +141,13 @@ impl McpServer {
         // ==========================================================================
         // 4. Create Johari manager, Meta-UTL tracker, and monitoring providers
         // ==========================================================================
+        use crate::handlers::MetaUtlTracker;
         use context_graph_core::johari::DynDefaultJohariManager;
         use context_graph_core::monitoring::{StubLayerStatusProvider, StubSystemMonitor};
-        use crate::handlers::MetaUtlTracker;
 
-        let johari_manager: Arc<dyn context_graph_core::johari::JohariTransitionManager> =
-            Arc::new(DynDefaultJohariManager::new(Arc::clone(&teleological_store)));
+        let johari_manager: Arc<dyn context_graph_core::johari::JohariTransitionManager> = Arc::new(
+            DynDefaultJohariManager::new(Arc::clone(&teleological_store)),
+        );
         info!("Created DynDefaultJohariManager for Johari quadrant management");
 
         let meta_utl_tracker = Arc::new(parking_lot::RwLock::new(MetaUtlTracker::new()));
@@ -282,7 +290,10 @@ impl McpServer {
         // Check environment variable first
         if let Ok(env_path) = std::env::var("CONTEXT_GRAPH_STORAGE_PATH") {
             let path = PathBuf::from(env_path);
-            info!("Using storage path from CONTEXT_GRAPH_STORAGE_PATH: {:?}", path);
+            info!(
+                "Using storage path from CONTEXT_GRAPH_STORAGE_PATH: {:?}",
+                path
+            );
             Self::ensure_directory_exists(&path);
             return path;
         }
@@ -307,7 +318,10 @@ impl McpServer {
                 std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
             })
             .join("contextgraph_data");
-        info!("Using default storage path (relative to executable): {:?}", default_path);
+        info!(
+            "Using default storage path (relative to executable): {:?}",
+            default_path
+        );
         Self::ensure_directory_exists(&default_path);
         default_path
     }
@@ -328,7 +342,10 @@ impl McpServer {
         // Check environment variable first
         if let Ok(env_path) = std::env::var("CONTEXT_GRAPH_MODELS_PATH") {
             let path = PathBuf::from(env_path);
-            info!("Using models path from CONTEXT_GRAPH_MODELS_PATH: {:?}", path);
+            info!(
+                "Using models path from CONTEXT_GRAPH_MODELS_PATH: {:?}",
+                path
+            );
             return path;
         }
 
@@ -343,7 +360,10 @@ impl McpServer {
                 std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
             })
             .join("models");
-        info!("Using default models path (relative to executable): {:?}", default_path);
+        info!(
+            "Using default models path (relative to executable): {:?}",
+            default_path
+        );
         default_path
     }
 

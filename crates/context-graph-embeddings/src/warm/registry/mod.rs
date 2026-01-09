@@ -120,4 +120,3 @@ mod tests_transitions;
 // Re-export all public items for backwards compatibility
 pub use self::core::WarmModelRegistry;
 pub use self::types::{SharedWarmRegistry, WarmModelEntry, EMBEDDING_MODEL_IDS, TOTAL_MODEL_COUNT};
-

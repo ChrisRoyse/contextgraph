@@ -8,12 +8,12 @@
 //!
 //! Constitution Reference: constitution.yaml Section 5, contextprd.md Section 5
 
-mod helpers;
-mod formula_tests;
-mod lifecycle_tests;
-mod johari_tests;
-mod validation_tests;
-mod emotional_tests;
 mod edge_case_tests;
-mod state_tests;
+mod emotional_tests;
+mod formula_tests;
+mod helpers;
+mod johari_tests;
+mod lifecycle_tests;
 mod performance_tests;
+mod state_tests;
+mod validation_tests;

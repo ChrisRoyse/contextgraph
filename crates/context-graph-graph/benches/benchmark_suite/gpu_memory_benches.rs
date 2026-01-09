@@ -43,10 +43,8 @@ pub fn bench_gpu_memory_manager(c: &mut Criterion) {
             |b, &sz| {
                 b.iter(|| {
                     // Handle is freed on drop when it goes out of scope
-                    let _handle = manager.allocate(
-                        black_box(sz),
-                        black_box(MemoryCategory::FaissIndex),
-                    );
+                    let _handle =
+                        manager.allocate(black_box(sz), black_box(MemoryCategory::FaissIndex));
                 })
             },
         );

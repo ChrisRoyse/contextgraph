@@ -854,7 +854,10 @@ mod tests {
         let low_coherence = make_cluster(10, 0.3, 0.5);
         let conf2 = discovery.compute_confidence(&low_coherence);
 
-        assert!(conf1 > conf2, "Higher coherence should yield higher confidence");
+        assert!(
+            conf1 > conf2,
+            "Higher coherence should yield higher confidence"
+        );
 
         // Larger cluster (same coherence and alignment)
         let larger = make_cluster(50, 0.7, 0.5);
@@ -862,7 +865,10 @@ mod tests {
         let conf3 = discovery.compute_confidence(&larger);
         let conf4 = discovery.compute_confidence(&smaller);
 
-        assert!(conf3 > conf4, "Larger cluster should yield higher confidence");
+        assert!(
+            conf3 > conf4,
+            "Larger cluster should yield higher confidence"
+        );
 
         println!("[PASS] test_compute_confidence_components");
     }
@@ -1275,7 +1281,7 @@ mod tests {
         let clusters = vec![
             make_labeled_cluster(20, 0.9, 0.8, "Primary Focus Area"),
             make_labeled_cluster(15, 0.8, 0.7, "Secondary Focus"),
-            make_labeled_cluster(3, 0.9, 0.9, "Too Small"),      // Filtered
+            make_labeled_cluster(3, 0.9, 0.9, "Too Small"), // Filtered
             make_labeled_cluster(10, 0.3, 0.8, "Low Coherence"), // Filtered
             make_labeled_cluster(8, 0.7, 0.6, "Moderate Focus"),
         ];

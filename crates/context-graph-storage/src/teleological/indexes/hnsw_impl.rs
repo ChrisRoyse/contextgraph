@@ -13,9 +13,9 @@ use std::sync::RwLock;
 use uuid::Uuid;
 
 use super::embedder_index::{validate_vector, EmbedderIndexOps, IndexResult};
+use super::get_hnsw_config;
 use super::hnsw_config::{EmbedderIndex, HnswConfig};
 use super::metrics::compute_distance;
-use super::get_hnsw_config;
 
 /// HNSW index for a single embedder.
 ///
@@ -242,8 +242,8 @@ impl EmbedderIndexOps for HnswEmbedderIndex {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::embedder_index::IndexError;
+    use super::*;
 
     #[test]
     fn test_hnsw_index_e1_semantic() {
@@ -275,11 +275,18 @@ mod tests {
 
         println!("BEFORE: Searching for same vector");
         let results = index.search(&vector, 1, None).unwrap();
-        println!("AFTER: results.len()={}, distance={}", results.len(), results[0].1);
+        println!(
+            "AFTER: results.len()={}, distance={}",
+            results.len(),
+            results[0].1
+        );
 
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, id);
-        assert!(results[0].1 < 0.001, "Same vector should have near-zero distance");
+        assert!(
+            results[0].1 < 0.001,
+            "Same vector should have near-zero distance"
+        );
 
         println!("RESULT: PASS");
     }
@@ -321,7 +328,10 @@ mod tests {
             } => {
                 assert_eq!(expected, 1024);
                 assert_eq!(actual, 512);
-                println!("ERROR: DimensionMismatch {{ expected: {}, actual: {} }}", expected, actual);
+                println!(
+                    "ERROR: DimensionMismatch {{ expected: {}, actual: {} }}",
+                    expected, actual
+                );
             }
             _ => panic!("Wrong error type"),
         }
@@ -411,7 +421,11 @@ mod tests {
             .collect();
 
         let count = index.insert_batch(&items).unwrap();
-        println!("AFTER: inserted {} vectors, index.len()={}", count, index.len());
+        println!(
+            "AFTER: inserted {} vectors, index.len()={}",
+            count,
+            index.len()
+        );
 
         assert_eq!(count, 100);
         assert_eq!(index.len(), 100);
@@ -490,7 +504,10 @@ mod tests {
         let query = vec![1.0; 384];
         let results = index.search(&query, 10, None).unwrap();
         let ids: Vec<_> = results.iter().map(|(id, _)| *id).collect();
-        assert!(!ids.contains(&id1), "Removed ID should not appear in search results");
+        assert!(
+            !ids.contains(&id1),
+            "Removed ID should not appear in search results"
+        );
 
         println!("RESULT: PASS");
     }
@@ -592,7 +609,10 @@ mod tests {
         assert_eq!(results.len(), 2);
 
         // First result should be closer
-        assert!(results[0].1 < results[1].1, "Results should be sorted by distance");
+        assert!(
+            results[0].1 < results[1].1,
+            "Results should be sorted by distance"
+        );
         assert_eq!(results[0].0, id_close, "Closest vector should be first");
 
         println!("RESULT: PASS");

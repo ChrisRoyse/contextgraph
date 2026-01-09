@@ -169,11 +169,17 @@ fn compute_embeddings(
             0,
         )
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("LateInteractionModel position embedding lookup failed: {}", e),
+            message: format!(
+                "LateInteractionModel position embedding lookup failed: {}",
+                e
+            ),
         })?
         .reshape((1, seq_len, config.hidden_size))
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("LateInteractionModel position embedding reshape failed: {}", e),
+            message: format!(
+                "LateInteractionModel position embedding reshape failed: {}",
+                e
+            ),
         })?;
 
     let token_type_embeds = weights
@@ -188,11 +194,17 @@ fn compute_embeddings(
             0,
         )
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("LateInteractionModel token_type embedding lookup failed: {}", e),
+            message: format!(
+                "LateInteractionModel token_type embedding lookup failed: {}",
+                e
+            ),
         })?
         .reshape((1, seq_len, config.hidden_size))
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("LateInteractionModel token_type embedding reshape failed: {}", e),
+            message: format!(
+                "LateInteractionModel token_type embedding reshape failed: {}",
+                e
+            ),
         })?;
 
     // Sum embeddings

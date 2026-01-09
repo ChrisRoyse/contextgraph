@@ -2,7 +2,7 @@
 //!
 //! Tests for semantic search components and contradiction detection.
 
-use crate::common::fixtures::{generate_test_nodes, generate_contradiction_pairs};
+use crate::common::fixtures::{generate_contradiction_pairs, generate_test_nodes};
 use crate::common::helpers::create_test_storage;
 
 /// Test semantic search components.
@@ -16,7 +16,9 @@ fn test_semantic_search_components() {
     let nodes = generate_test_nodes(42, 100, 1536);
 
     for node in &nodes {
-        storage.put_hyperbolic(node.id, &node.point).expect("Put failed");
+        storage
+            .put_hyperbolic(node.id, &node.point)
+            .expect("Put failed");
     }
 
     // Group nodes by domain
@@ -69,18 +71,36 @@ fn test_contradiction_detection() {
     }
 
     println!("    Expected contradictions: {}", expected_contradictions);
-    println!("    Expected non-contradictions: {}", expected_non_contradictions);
+    println!(
+        "    Expected non-contradictions: {}",
+        expected_non_contradictions
+    );
 
     // Test embedding similarity calculation
     for (i, pair) in pairs.iter().take(5).enumerate() {
         // Compute cosine similarity
-        let dot: f32 = pair.node_a.embedding.iter()
+        let dot: f32 = pair
+            .node_a
+            .embedding
+            .iter()
             .zip(pair.node_b.embedding.iter())
             .map(|(a, b)| a * b)
             .sum();
 
-        let norm_a: f32 = pair.node_a.embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
-        let norm_b: f32 = pair.node_b.embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+        let norm_a: f32 = pair
+            .node_a
+            .embedding
+            .iter()
+            .map(|x| x * x)
+            .sum::<f32>()
+            .sqrt();
+        let norm_b: f32 = pair
+            .node_b
+            .embedding
+            .iter()
+            .map(|x| x * x)
+            .sum::<f32>()
+            .sqrt();
 
         let similarity = if norm_a > 0.0 && norm_b > 0.0 {
             dot / (norm_a * norm_b)

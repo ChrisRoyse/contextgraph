@@ -12,8 +12,8 @@
 //! - drift_score > 2.0: Trigger Level 2 recalibration
 //! - drift_score > 3.0: Trigger Level 3 exploration
 
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 
 /// Threshold observation from a single query
 #[derive(Debug, Clone, Copy)]
@@ -216,12 +216,21 @@ mod tests {
         // Need bigger drift: 2σ = 0.1 drift
         state.ewma_value = 0.85;
         assert!(state.should_trigger_level2(), "Should trigger at 2σ drift");
-        assert!(!state.should_trigger_level3(), "Should not trigger Level 3 at 2σ");
+        assert!(
+            !state.should_trigger_level3(),
+            "Should not trigger Level 3 at 2σ"
+        );
 
         // Trigger Level 3 at 3.1σ drift
         state.ewma_value = 0.905;
-        assert!(state.should_trigger_level2(), "Should trigger at 3.1σ drift");
-        assert!(state.should_trigger_level3(), "Should trigger Level 3 at 3.1σ");
+        assert!(
+            state.should_trigger_level2(),
+            "Should trigger at 3.1σ drift"
+        );
+        assert!(
+            state.should_trigger_level3(),
+            "Should trigger Level 3 at 3.1σ"
+        );
     }
 
     #[test]

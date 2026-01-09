@@ -5,7 +5,7 @@ use crate::types::fingerprint::purpose::NUM_EMBEDDERS;
 use crate::types::JohariQuadrant;
 
 // Real entropy/coherence values from UTL theory
-const REAL_ENTROPY_LOW: f32 = 0.3;  // Below threshold
+const REAL_ENTROPY_LOW: f32 = 0.3; // Below threshold
 const REAL_ENTROPY_HIGH: f32 = 0.7; // Above threshold
 const REAL_COHERENCE_LOW: f32 = 0.3;
 const REAL_COHERENCE_HIGH: f32 = 0.7;
@@ -76,7 +76,10 @@ fn test_set_quadrant_normalizes() {
 
     jf.set_quadrant(0, 1.0, 2.0, 3.0, 4.0, 0.8);
 
-    println!("AFTER set_quadrant([1,2,3,4]): quadrants[0] = {:?}", jf.quadrants[0]);
+    println!(
+        "AFTER set_quadrant([1,2,3,4]): quadrants[0] = {:?}",
+        jf.quadrants[0]
+    );
 
     let sum: f32 = jf.quadrants[0].iter().sum();
     assert!((sum - 1.0).abs() < 0.001, "Sum should be 1.0, got {}", sum);

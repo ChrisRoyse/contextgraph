@@ -1,9 +1,9 @@
 //! Tests for WarmLoader orchestration logic (integration with Registry + Pools).
 
+use super::helpers::{test_handle, GB, MB};
 use crate::warm::error::WarmError;
 use crate::warm::memory_pool::WarmMemoryPools;
 use crate::warm::registry::{WarmModelRegistry, EMBEDDING_MODEL_IDS, TOTAL_MODEL_COUNT};
-use super::helpers::{test_handle, GB, MB};
 
 #[test]
 fn test_loader_orchestration_simulation() {
@@ -73,10 +73,15 @@ fn test_loader_fail_fast_on_vram_exhaustion() {
     let size = registry.get_entry(model_id).unwrap().expected_bytes;
 
     let result = pools.allocate_model(model_id, size, 0x2000);
-    assert!(matches!(result, Err(WarmError::VramAllocationFailed { .. })));
+    assert!(matches!(
+        result,
+        Err(WarmError::VramAllocationFailed { .. })
+    ));
 
     // Mark as failed in registry
-    registry.mark_failed(model_id, 104, "VRAM exhausted").unwrap();
+    registry
+        .mark_failed(model_id, 104, "VRAM exhausted")
+        .unwrap();
 
     assert!(registry.any_failed());
     assert!(!registry.all_warm());

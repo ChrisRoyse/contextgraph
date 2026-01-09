@@ -55,7 +55,10 @@ pub fn gpu_available() -> bool {
 
     *GPU_AVAILABLE.get_or_init(|| {
         // Allow tests to skip GPU via environment variable
-        if std::env::var("SKIP_GPU_TESTS").map(|v| v == "1").unwrap_or(false) {
+        if std::env::var("SKIP_GPU_TESTS")
+            .map(|v| v == "1")
+            .unwrap_or(false)
+        {
             return false;
         }
 
@@ -98,8 +101,8 @@ fn check_gpu_via_subprocess() -> bool {
 /// Returns false if the FAISS test crashes or fails.
 #[cfg(feature = "faiss-gpu")]
 fn check_cuda_works() -> bool {
-    use std::process::Command;
     use std::path::Path;
+    use std::process::Command;
 
     // Check for pre-compiled FAISS GPU test binary (specific to our build)
     // This tests that FAISS can actually call CUDA functions without crashing

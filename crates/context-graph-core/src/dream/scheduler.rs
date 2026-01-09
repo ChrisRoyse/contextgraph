@@ -100,7 +100,10 @@ pub enum TriggerReason {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum WaitReason {
     /// Not enough time has passed with low activity
-    InsufficientIdleTime { current: Duration, required: Duration },
+    InsufficientIdleTime {
+        current: Duration,
+        required: Duration,
+    },
     /// Activity level is too high
     HighActivity { current: f32, threshold: f32 },
 }

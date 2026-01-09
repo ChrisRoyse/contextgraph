@@ -74,14 +74,22 @@ fn test_health_check_initial_not_initialized() {
 #[test]
 fn test_health_check_loading_state() {
     let mut registry_inner = WarmModelRegistry::new();
-    registry_inner.register_model("E1_Semantic", 500 * 1024 * 1024, 768).unwrap();
-    registry_inner.register_model("E2_TemporalRecent", 400 * 1024 * 1024, 768).unwrap();
-    registry_inner.register_model("E3_TemporalPeriodic", 400 * 1024 * 1024, 768).unwrap();
+    registry_inner
+        .register_model("E1_Semantic", 500 * 1024 * 1024, 768)
+        .unwrap();
+    registry_inner
+        .register_model("E2_TemporalRecent", 400 * 1024 * 1024, 768)
+        .unwrap();
+    registry_inner
+        .register_model("E3_TemporalPeriodic", 400 * 1024 * 1024, 768)
+        .unwrap();
 
     registry_inner.start_loading("E1_Semantic").unwrap();
     registry_inner.start_loading("E2_TemporalRecent").unwrap();
     registry_inner.mark_validating("E2_TemporalRecent").unwrap();
-    registry_inner.mark_warm("E2_TemporalRecent", test_handle()).unwrap();
+    registry_inner
+        .mark_warm("E2_TemporalRecent", test_handle())
+        .unwrap();
 
     let registry: SharedWarmRegistry = Arc::new(RwLock::new(registry_inner));
     let pools = WarmMemoryPools::new(test_config());
@@ -102,7 +110,9 @@ fn test_health_check_healthy_state() {
     let mut registry_inner = WarmModelRegistry::new();
     let models = ["E1_Semantic", "E2_TemporalRecent", "E3_TemporalPeriodic"];
     for model_id in models {
-        registry_inner.register_model(model_id, 500 * 1024 * 1024, 768).unwrap();
+        registry_inner
+            .register_model(model_id, 500 * 1024 * 1024, 768)
+            .unwrap();
         registry_inner.start_loading(model_id).unwrap();
         registry_inner.mark_validating(model_id).unwrap();
         registry_inner.mark_warm(model_id, test_handle()).unwrap();
@@ -127,15 +137,23 @@ fn test_health_check_healthy_state() {
 #[test]
 fn test_health_check_unhealthy_state() {
     let mut registry_inner = WarmModelRegistry::new();
-    registry_inner.register_model("E1_Semantic", 500 * 1024 * 1024, 768).unwrap();
-    registry_inner.register_model("E2_TemporalRecent", 400 * 1024 * 1024, 768).unwrap();
+    registry_inner
+        .register_model("E1_Semantic", 500 * 1024 * 1024, 768)
+        .unwrap();
+    registry_inner
+        .register_model("E2_TemporalRecent", 400 * 1024 * 1024, 768)
+        .unwrap();
 
     registry_inner.start_loading("E1_Semantic").unwrap();
     registry_inner.mark_validating("E1_Semantic").unwrap();
-    registry_inner.mark_warm("E1_Semantic", test_handle()).unwrap();
+    registry_inner
+        .mark_warm("E1_Semantic", test_handle())
+        .unwrap();
 
     registry_inner.start_loading("E2_TemporalRecent").unwrap();
-    registry_inner.mark_failed("E2_TemporalRecent", 102, "CUDA allocation failed").unwrap();
+    registry_inner
+        .mark_failed("E2_TemporalRecent", 102, "CUDA allocation failed")
+        .unwrap();
 
     let registry: SharedWarmRegistry = Arc::new(RwLock::new(registry_inner));
     let pools = WarmMemoryPools::new(test_config());
@@ -190,14 +208,24 @@ fn test_uptime_tracking() {
 #[test]
 fn test_error_messages_populated() {
     let mut registry_inner = WarmModelRegistry::new();
-    registry_inner.register_model("E1_Semantic", 500 * 1024 * 1024, 768).unwrap();
-    registry_inner.register_model("E2_TemporalRecent", 400 * 1024 * 1024, 768).unwrap();
-    registry_inner.register_model("E3_TemporalPeriodic", 400 * 1024 * 1024, 768).unwrap();
+    registry_inner
+        .register_model("E1_Semantic", 500 * 1024 * 1024, 768)
+        .unwrap();
+    registry_inner
+        .register_model("E2_TemporalRecent", 400 * 1024 * 1024, 768)
+        .unwrap();
+    registry_inner
+        .register_model("E3_TemporalPeriodic", 400 * 1024 * 1024, 768)
+        .unwrap();
 
     registry_inner.start_loading("E1_Semantic").unwrap();
-    registry_inner.mark_failed("E1_Semantic", 104, "Insufficient VRAM").unwrap();
+    registry_inner
+        .mark_failed("E1_Semantic", 104, "Insufficient VRAM")
+        .unwrap();
     registry_inner.start_loading("E2_TemporalRecent").unwrap();
-    registry_inner.mark_failed("E2_TemporalRecent", 103, "NaN in weights").unwrap();
+    registry_inner
+        .mark_failed("E2_TemporalRecent", 103, "NaN in weights")
+        .unwrap();
 
     let registry: SharedWarmRegistry = Arc::new(RwLock::new(registry_inner));
     let pools = WarmMemoryPools::new(test_config());

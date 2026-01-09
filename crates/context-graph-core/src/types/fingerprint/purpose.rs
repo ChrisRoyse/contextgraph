@@ -243,11 +243,8 @@ impl PurposeVector {
     /// Compute coherence from alignments using inverse standard deviation.
     fn compute_coherence(alignments: &[f32; NUM_EMBEDDERS]) -> f32 {
         let mean: f32 = alignments.iter().sum::<f32>() / NUM_EMBEDDERS as f32;
-        let variance: f32 = alignments
-            .iter()
-            .map(|&x| (x - mean).powi(2))
-            .sum::<f32>()
-            / NUM_EMBEDDERS as f32;
+        let variance: f32 =
+            alignments.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / NUM_EMBEDDERS as f32;
         let std_dev = variance.sqrt();
 
         // Inverse stddev normalized to [0, 1]
@@ -272,11 +269,23 @@ mod tests {
     #[test]
     fn test_alignment_threshold_classify_optimal() {
         // Boundary: exactly 0.75
-        assert_eq!(AlignmentThreshold::classify(0.75), AlignmentThreshold::Optimal);
+        assert_eq!(
+            AlignmentThreshold::classify(0.75),
+            AlignmentThreshold::Optimal
+        );
         // Above boundary
-        assert_eq!(AlignmentThreshold::classify(0.80), AlignmentThreshold::Optimal);
-        assert_eq!(AlignmentThreshold::classify(0.99), AlignmentThreshold::Optimal);
-        assert_eq!(AlignmentThreshold::classify(1.0), AlignmentThreshold::Optimal);
+        assert_eq!(
+            AlignmentThreshold::classify(0.80),
+            AlignmentThreshold::Optimal
+        );
+        assert_eq!(
+            AlignmentThreshold::classify(0.99),
+            AlignmentThreshold::Optimal
+        );
+        assert_eq!(
+            AlignmentThreshold::classify(1.0),
+            AlignmentThreshold::Optimal
+        );
 
         println!("[PASS] Optimal threshold: θ >= 0.75 correctly classified");
     }
@@ -284,11 +293,20 @@ mod tests {
     #[test]
     fn test_alignment_threshold_classify_acceptable() {
         // Boundary: exactly 0.70
-        assert_eq!(AlignmentThreshold::classify(0.70), AlignmentThreshold::Acceptable);
+        assert_eq!(
+            AlignmentThreshold::classify(0.70),
+            AlignmentThreshold::Acceptable
+        );
         // In range
-        assert_eq!(AlignmentThreshold::classify(0.72), AlignmentThreshold::Acceptable);
+        assert_eq!(
+            AlignmentThreshold::classify(0.72),
+            AlignmentThreshold::Acceptable
+        );
         // Just below upper boundary
-        assert_eq!(AlignmentThreshold::classify(0.749), AlignmentThreshold::Acceptable);
+        assert_eq!(
+            AlignmentThreshold::classify(0.749),
+            AlignmentThreshold::Acceptable
+        );
 
         println!("[PASS] Acceptable threshold: 0.70 <= θ < 0.75 correctly classified");
     }
@@ -296,11 +314,20 @@ mod tests {
     #[test]
     fn test_alignment_threshold_classify_warning() {
         // Boundary: exactly 0.55
-        assert_eq!(AlignmentThreshold::classify(0.55), AlignmentThreshold::Warning);
+        assert_eq!(
+            AlignmentThreshold::classify(0.55),
+            AlignmentThreshold::Warning
+        );
         // In range
-        assert_eq!(AlignmentThreshold::classify(0.60), AlignmentThreshold::Warning);
+        assert_eq!(
+            AlignmentThreshold::classify(0.60),
+            AlignmentThreshold::Warning
+        );
         // Just below upper boundary
-        assert_eq!(AlignmentThreshold::classify(0.699), AlignmentThreshold::Warning);
+        assert_eq!(
+            AlignmentThreshold::classify(0.699),
+            AlignmentThreshold::Warning
+        );
 
         println!("[PASS] Warning threshold: 0.55 <= θ < 0.70 correctly classified");
     }
@@ -308,11 +335,23 @@ mod tests {
     #[test]
     fn test_alignment_threshold_classify_critical() {
         // Below 0.55
-        assert_eq!(AlignmentThreshold::classify(0.54), AlignmentThreshold::Critical);
-        assert_eq!(AlignmentThreshold::classify(0.40), AlignmentThreshold::Critical);
-        assert_eq!(AlignmentThreshold::classify(0.0), AlignmentThreshold::Critical);
+        assert_eq!(
+            AlignmentThreshold::classify(0.54),
+            AlignmentThreshold::Critical
+        );
+        assert_eq!(
+            AlignmentThreshold::classify(0.40),
+            AlignmentThreshold::Critical
+        );
+        assert_eq!(
+            AlignmentThreshold::classify(0.0),
+            AlignmentThreshold::Critical
+        );
         // Negative values
-        assert_eq!(AlignmentThreshold::classify(-0.5), AlignmentThreshold::Critical);
+        assert_eq!(
+            AlignmentThreshold::classify(-0.5),
+            AlignmentThreshold::Critical
+        );
 
         println!("[PASS] Critical threshold: θ < 0.55 correctly classified");
     }
@@ -341,7 +380,9 @@ mod tests {
 
     #[test]
     fn test_purpose_vector_new() {
-        let alignments = [0.8, 0.7, 0.9, 0.6, 0.75, 0.65, 0.85, 0.72, 0.78, 0.68, 0.82, 0.71, 0.76];
+        let alignments = [
+            0.8, 0.7, 0.9, 0.6, 0.75, 0.65, 0.85, 0.72, 0.78, 0.68, 0.82, 0.71, 0.76,
+        ];
         let pv = PurposeVector::new(alignments);
 
         assert_eq!(pv.alignments, alignments);
@@ -350,10 +391,7 @@ mod tests {
         assert_eq!(pv.stability, 1.0); // Initial stability
 
         println!("[PASS] PurposeVector::new correctly initializes all fields");
-        println!(
-            "  - alignments: {:?}",
-            pv.alignments
-        );
+        println!("  - alignments: {:?}", pv.alignments);
         println!(
             "  - dominant_embedder: {} (value: {})",
             pv.dominant_embedder, alignments[pv.dominant_embedder as usize]
@@ -368,7 +406,9 @@ mod tests {
         assert!((uniform.aggregate_alignment() - 0.75).abs() < f32::EPSILON);
 
         // Known sum
-        let alignments = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.5, 0.5, 0.55];
+        let alignments = [
+            0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 0.5, 0.5, 0.55,
+        ];
         let expected_mean = alignments.iter().sum::<f32>() / NUM_EMBEDDERS as f32;
         let pv = PurposeVector::new(alignments);
         assert!((pv.aggregate_alignment() - expected_mean).abs() < f32::EPSILON);
@@ -427,8 +467,12 @@ mod tests {
     #[test]
     fn test_purpose_vector_similarity_orthogonal() {
         // Opposing alignment patterns (13 elements with alternating pattern)
-        let pv1 = PurposeVector::new([1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0]);
-        let pv2 = PurposeVector::new([0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0]);
+        let pv1 = PurposeVector::new([
+            1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0,
+        ]);
+        let pv2 = PurposeVector::new([
+            0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0, 1.0, 0.0,
+        ]);
         let similarity = pv1.similarity(&pv2);
         assert!(similarity.abs() < 1e-6); // Orthogonal = 0
 
@@ -457,7 +501,9 @@ mod tests {
     #[test]
     fn test_purpose_vector_coherence_varied() {
         // High variance = lower coherence (13 elements with alternating pattern)
-        let varied = PurposeVector::new([0.1, 0.9, 0.1, 0.9, 0.1, 0.9, 0.1, 0.9, 0.1, 0.9, 0.1, 0.9, 0.1]);
+        let varied = PurposeVector::new([
+            0.1, 0.9, 0.1, 0.9, 0.1, 0.9, 0.1, 0.9, 0.1, 0.9, 0.1, 0.9, 0.1,
+        ]);
         assert!(varied.coherence < 1.0);
         assert!(varied.coherence > 0.0);
 

@@ -41,7 +41,11 @@ pub fn self_attention_forward(
         })?;
 
     // Q, K, V projections
-    let dims = ProjectionDims { batch_size, seq_len, hidden_size };
+    let dims = ProjectionDims {
+        batch_size,
+        seq_len,
+        hidden_size,
+    };
     let query = compute_qkv_projection(
         &hidden_flat,
         &attention.query_weight,

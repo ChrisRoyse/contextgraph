@@ -240,7 +240,8 @@ impl SpladeInvertedIndex {
 
     /// Persist index to file.
     pub fn persist(&self, path: &Path) -> IndexResult<()> {
-        let file = File::create(path).map_err(|e| IndexError::io("creating SPLADE index file", e))?;
+        let file =
+            File::create(path).map_err(|e| IndexError::io("creating SPLADE index file", e))?;
         let writer = BufWriter::new(file);
         bincode::serialize_into(writer, self)
             .map_err(|e| IndexError::serialization("serializing SPLADE index", e))?;
@@ -249,8 +250,7 @@ impl SpladeInvertedIndex {
 
     /// Load index from file.
     pub fn load(path: &Path) -> IndexResult<Self> {
-        let file =
-            File::open(path).map_err(|e| IndexError::io("opening SPLADE index file", e))?;
+        let file = File::open(path).map_err(|e| IndexError::io("opening SPLADE index file", e))?;
         let reader = BufReader::new(file);
         bincode::deserialize_from(reader)
             .map_err(|e| IndexError::serialization("deserializing SPLADE index", e))
@@ -431,7 +431,11 @@ mod tests {
         assert_eq!(index.len(), 2);
 
         let removed = index.remove(id1);
-        println!("[AFTER REMOVE] index.len() = {}, removed={}", index.len(), removed);
+        println!(
+            "[AFTER REMOVE] index.len() = {}, removed={}",
+            index.len(),
+            removed
+        );
 
         assert!(removed);
         assert_eq!(index.len(), 1);
@@ -465,7 +469,9 @@ mod tests {
         println!("[BEFORE] memory_usage (empty) = {} bytes", usage_empty);
 
         for _ in 0..100 {
-            index.add(Uuid::new_v4(), &[(100, 0.5), (200, 0.3)]).unwrap();
+            index
+                .add(Uuid::new_v4(), &[(100, 0.5), (200, 0.3)])
+                .unwrap();
         }
 
         let usage_after = index.memory_usage();

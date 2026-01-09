@@ -1,9 +1,9 @@
 //! Unit tests for GraphEdge struct fields, types, and serialization.
 
 use super::*;
-use chrono::{DateTime, Utc};
 use crate::marblestone::{Domain, EdgeType, NeurotransmitterWeights};
 use crate::types::NodeId;
+use chrono::{DateTime, Utc};
 use uuid::Uuid;
 
 // Helper function

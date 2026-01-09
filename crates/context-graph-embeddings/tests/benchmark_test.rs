@@ -13,16 +13,15 @@
 //! Real GPU benchmarks require `#[bench]` and `cargo bench`.
 //! These tests verify correctness of benchmark-related calculations.
 
+use context_graph_embeddings::quantization::{
+    QuantizationMetadata, QuantizationMethod, QuantizedEmbedding,
+};
 use context_graph_embeddings::storage::{
     StoredQuantizedFingerprint, EXPECTED_QUANTIZED_SIZE_BYTES, MAX_QUANTIZED_SIZE_BYTES,
-    MIN_QUANTIZED_SIZE_BYTES, NUM_EMBEDDERS, STORAGE_VERSION, RRF_K,
-};
-use context_graph_embeddings::quantization::{
-    QuantizationMethod, QuantizedEmbedding, QuantizationMetadata,
+    MIN_QUANTIZED_SIZE_BYTES, NUM_EMBEDDERS, RRF_K, STORAGE_VERSION,
 };
 use context_graph_embeddings::types::dimensions::{
-    TOTAL_DIMENSION, MODEL_COUNT,
-    PROJECTED_DIMENSIONS, NATIVE_DIMENSIONS, OFFSETS,
+    MODEL_COUNT, NATIVE_DIMENSIONS, OFFSETS, PROJECTED_DIMENSIONS, TOTAL_DIMENSION,
 };
 use context_graph_embeddings::types::ModelId;
 use std::collections::HashMap;
@@ -37,24 +36,30 @@ use uuid::Uuid;
 #[test]
 fn test_expected_quantized_size() {
     assert_eq!(EXPECTED_QUANTIZED_SIZE_BYTES, 17_000);
-    eprintln!("[BENCHMARK] Expected quantized fingerprint size: {} bytes (~17KB)",
-              EXPECTED_QUANTIZED_SIZE_BYTES);
+    eprintln!(
+        "[BENCHMARK] Expected quantized fingerprint size: {} bytes (~17KB)",
+        EXPECTED_QUANTIZED_SIZE_BYTES
+    );
 }
 
 /// Test: Maximum allowed size is 25KB (50% overhead for sparse)
 #[test]
 fn test_max_quantized_size() {
     assert_eq!(MAX_QUANTIZED_SIZE_BYTES, 25_000);
-    eprintln!("[BENCHMARK] Maximum quantized fingerprint size: {} bytes (~25KB)",
-              MAX_QUANTIZED_SIZE_BYTES);
+    eprintln!(
+        "[BENCHMARK] Maximum quantized fingerprint size: {} bytes (~25KB)",
+        MAX_QUANTIZED_SIZE_BYTES
+    );
 }
 
 /// Test: Minimum valid size is 5KB (catches empty/corrupted)
 #[test]
 fn test_min_quantized_size() {
     assert_eq!(MIN_QUANTIZED_SIZE_BYTES, 5_000);
-    eprintln!("[BENCHMARK] Minimum valid fingerprint size: {} bytes (~5KB)",
-              MIN_QUANTIZED_SIZE_BYTES);
+    eprintln!(
+        "[BENCHMARK] Minimum valid fingerprint size: {} bytes (~5KB)",
+        MIN_QUANTIZED_SIZE_BYTES
+    );
 }
 
 /// Test: Storage version is 1
@@ -88,7 +93,10 @@ fn test_model_count_benchmark() {
 fn test_projected_dimensions_sum() {
     let sum: usize = PROJECTED_DIMENSIONS.iter().sum();
     assert_eq!(sum, TOTAL_DIMENSION);
-    eprintln!("[BENCHMARK] Projected dimensions sum: {} = TOTAL_DIMENSION", sum);
+    eprintln!(
+        "[BENCHMARK] Projected dimensions sum: {} = TOTAL_DIMENSION",
+        sum
+    );
 }
 
 /// Test: All dimension arrays have length 13
@@ -97,7 +105,10 @@ fn test_dimension_arrays_length() {
     assert_eq!(PROJECTED_DIMENSIONS.len(), MODEL_COUNT);
     assert_eq!(NATIVE_DIMENSIONS.len(), MODEL_COUNT);
     assert_eq!(OFFSETS.len(), MODEL_COUNT);
-    eprintln!("[BENCHMARK] All dimension arrays have {} elements", MODEL_COUNT);
+    eprintln!(
+        "[BENCHMARK] All dimension arrays have {} elements",
+        MODEL_COUNT
+    );
 }
 
 /// Test: Offsets are contiguous and non-overlapping
@@ -105,15 +116,21 @@ fn test_dimension_arrays_length() {
 fn test_offsets_contiguous() {
     for i in 1..MODEL_COUNT {
         let expected = OFFSETS[i - 1] + PROJECTED_DIMENSIONS[i - 1];
-        assert_eq!(OFFSETS[i], expected,
-                   "Offset[{}] should be {}, got {}", i, expected, OFFSETS[i]);
+        assert_eq!(
+            OFFSETS[i], expected,
+            "Offset[{}] should be {}, got {}",
+            i, expected, OFFSETS[i]
+        );
     }
 
     // Final offset + dimension should equal TOTAL
     let last_end = OFFSETS[MODEL_COUNT - 1] + PROJECTED_DIMENSIONS[MODEL_COUNT - 1];
     assert_eq!(last_end, TOTAL_DIMENSION);
 
-    eprintln!("[BENCHMARK] Offsets are contiguous and cover full {}D", TOTAL_DIMENSION);
+    eprintln!(
+        "[BENCHMARK] Offsets are contiguous and cover full {}D",
+        TOTAL_DIMENSION
+    );
 }
 
 // =============================================================================
@@ -141,9 +158,11 @@ fn test_quantization_method_assignments() {
 
     for (model_id, expected_method) in expected_methods {
         let actual = QuantizationMethod::for_model_id(model_id);
-        assert_eq!(actual, expected_method,
-                   "ModelId::{:?} should use {:?}, got {:?}",
-                   model_id, expected_method, actual);
+        assert_eq!(
+            actual, expected_method,
+            "ModelId::{:?} should use {:?}, got {:?}",
+            model_id, expected_method, actual
+        );
     }
 
     eprintln!("[BENCHMARK] All 13 quantization method assignments verified");
@@ -158,14 +177,22 @@ fn test_quantization_compression_ratios() {
 
     // Float8: 512D f32 -> 512 bytes (4:1 compression)
     let float8_ratio = (512 * 4) as f32 / 512.0;
-    assert!((float8_ratio - 4.0).abs() < 0.01, "Float8 should achieve 4:1 compression");
+    assert!(
+        (float8_ratio - 4.0).abs() < 0.01,
+        "Float8 should achieve 4:1 compression"
+    );
 
     // Binary: 10000D f32 -> 1250 bytes (32:1 compression)
     let binary_ratio = (10000 * 4) as f32 / 1250.0;
-    assert!(binary_ratio > 30.0, "Binary should achieve >30:1 compression");
+    assert!(
+        binary_ratio > 30.0,
+        "Binary should achieve >30:1 compression"
+    );
 
-    eprintln!("[BENCHMARK] Compression ratios: PQ8={:.0}:1, Float8={:.0}:1, Binary={:.0}:1",
-              pq8_ratio, float8_ratio, binary_ratio);
+    eprintln!(
+        "[BENCHMARK] Compression ratios: PQ8={:.0}:1, Float8={:.0}:1, Binary={:.0}:1",
+        pq8_ratio, float8_ratio, binary_ratio
+    );
 }
 
 // =============================================================================
@@ -182,12 +209,16 @@ fn test_memory_estimates_reasonable() {
     let _min_single_model_vram_mb = 100.0; // Each model should be at least 100MB
 
     // Check dimension-based estimate (rough: dim * 4 bytes * batch_overhead)
-    for i in 0..MODEL_COUNT {
-        let dim = PROJECTED_DIMENSIONS[i];
+    for (i, &dim) in PROJECTED_DIMENSIONS.iter().enumerate() {
         let estimated_mb = (dim * 4 * 1024) as f32 / (1024.0 * 1024.0); // 1024 batch
 
-        assert!(estimated_mb < max_single_model_vram_gb * 1024.0,
-                "Model {} estimated {}MB exceeds {}GB limit", i, estimated_mb, max_single_model_vram_gb);
+        assert!(
+            estimated_mb < max_single_model_vram_gb * 1024.0,
+            "Model {} estimated {}MB exceeds {}GB limit",
+            i,
+            estimated_mb,
+            max_single_model_vram_gb
+        );
     }
 
     eprintln!("[BENCHMARK] Per-embedder memory estimates within bounds");
@@ -208,8 +239,10 @@ fn test_total_vram_estimate() {
     let model_overhead = 500.0; // Conservative multiplier
     let total_estimate_gb = base_estimate_gb * model_overhead;
 
-    eprintln!("[BENCHMARK] Estimated total VRAM: {:.2}GB (dim-based * {})",
-              total_estimate_gb, model_overhead);
+    eprintln!(
+        "[BENCHMARK] Estimated total VRAM: {:.2}GB (dim-based * {})",
+        total_estimate_gb, model_overhead
+    );
 
     // Note: Actual estimate depends on real model sizes, not just dimensions
     // This test verifies the calculation approach is reasonable
@@ -226,17 +259,17 @@ fn create_benchmark_embeddings() -> HashMap<u8, QuantizedEmbedding> {
     // Sizes based on Constitution quantization methods
     let configs = vec![
         // (index, method, original_dim, quantized_data_size)
-        (0, QuantizationMethod::PQ8, 1024, 8),           // E1: PQ8
-        (1, QuantizationMethod::Float8E4M3, 512, 512),   // E2: Float8
-        (2, QuantizationMethod::Float8E4M3, 512, 512),   // E3: Float8
-        (3, QuantizationMethod::Float8E4M3, 512, 512),   // E4: Float8
-        (4, QuantizationMethod::PQ8, 768, 8),            // E5: PQ8
+        (0, QuantizationMethod::PQ8, 1024, 8), // E1: PQ8
+        (1, QuantizationMethod::Float8E4M3, 512, 512), // E2: Float8
+        (2, QuantizationMethod::Float8E4M3, 512, 512), // E3: Float8
+        (3, QuantizationMethod::Float8E4M3, 512, 512), // E4: Float8
+        (4, QuantizationMethod::PQ8, 768, 8),  // E5: PQ8
         (5, QuantizationMethod::SparseNative, 30522, 500), // E6: Sparse (~500 nnz * 2)
-        (6, QuantizationMethod::PQ8, 768, 8),            // E7: PQ8
+        (6, QuantizationMethod::PQ8, 768, 8),  // E7: PQ8
         (7, QuantizationMethod::Float8E4M3, 1536, 1536), // E8: Float8
-        (8, QuantizationMethod::Binary, 10000, 1250),    // E9: Binary (10K bits / 8)
-        (9, QuantizationMethod::PQ8, 768, 8),            // E10: PQ8
-        (10, QuantizationMethod::Float8E4M3, 384, 384),  // E11: Float8
+        (8, QuantizationMethod::Binary, 10000, 1250), // E9: Binary (10K bits / 8)
+        (9, QuantizationMethod::PQ8, 768, 8),  // E10: PQ8
+        (10, QuantizationMethod::Float8E4M3, 384, 384), // E11: Float8
         (11, QuantizationMethod::TokenPruning, 128, 256), // E12: TokenPruning
         (12, QuantizationMethod::SparseNative, 30522, 500), // E13: Sparse
     ];
@@ -246,33 +279,34 @@ fn create_benchmark_embeddings() -> HashMap<u8, QuantizedEmbedding> {
             .map(|j| ((idx as usize * 17 + j) % 256) as u8)
             .collect();
 
-        map.insert(idx, QuantizedEmbedding {
-            method,
-            original_dim: dim,
-            data,
-            metadata: match method {
-                QuantizationMethod::PQ8 => QuantizationMetadata::PQ8 {
-                    codebook_id: idx as u32,
-                    num_subvectors: 8,
-                },
-                QuantizationMethod::Float8E4M3 => QuantizationMetadata::Float8 {
-                    scale: 1.0,
-                    bias: 0.0,
-                },
-                QuantizationMethod::Binary => QuantizationMetadata::Binary {
-                    threshold: 0.0,
-                },
-                QuantizationMethod::SparseNative => QuantizationMetadata::Sparse {
-                    vocab_size: 30522,
-                    nnz: 250, // ~500 bytes / 2 per entry
-                },
-                QuantizationMethod::TokenPruning => QuantizationMetadata::TokenPruning {
-                    original_tokens: 128,
-                    kept_tokens: 64,
-                    threshold: 0.5,
+        map.insert(
+            idx,
+            QuantizedEmbedding {
+                method,
+                original_dim: dim,
+                data,
+                metadata: match method {
+                    QuantizationMethod::PQ8 => QuantizationMetadata::PQ8 {
+                        codebook_id: idx as u32,
+                        num_subvectors: 8,
+                    },
+                    QuantizationMethod::Float8E4M3 => QuantizationMetadata::Float8 {
+                        scale: 1.0,
+                        bias: 0.0,
+                    },
+                    QuantizationMethod::Binary => QuantizationMetadata::Binary { threshold: 0.0 },
+                    QuantizationMethod::SparseNative => QuantizationMetadata::Sparse {
+                        vocab_size: 30522,
+                        nnz: 250, // ~500 bytes / 2 per entry
+                    },
+                    QuantizationMethod::TokenPruning => QuantizationMetadata::TokenPruning {
+                        original_tokens: 128,
+                        kept_tokens: 64,
+                        threshold: 0.5,
+                    },
                 },
             },
-        });
+        );
     }
 
     map
@@ -292,14 +326,28 @@ fn test_fingerprint_estimated_size() {
 
     let size = fp.estimated_size_bytes();
 
-    assert!(size >= MIN_QUANTIZED_SIZE_BYTES,
-            "Size {} < min {}", size, MIN_QUANTIZED_SIZE_BYTES);
-    assert!(size <= MAX_QUANTIZED_SIZE_BYTES,
-            "Size {} > max {}", size, MAX_QUANTIZED_SIZE_BYTES);
+    assert!(
+        size >= MIN_QUANTIZED_SIZE_BYTES,
+        "Size {} < min {}",
+        size,
+        MIN_QUANTIZED_SIZE_BYTES
+    );
+    assert!(
+        size <= MAX_QUANTIZED_SIZE_BYTES,
+        "Size {} > max {}",
+        size,
+        MAX_QUANTIZED_SIZE_BYTES
+    );
 
     eprintln!("[BENCHMARK] Estimated fingerprint size: {} bytes", size);
-    eprintln!("            Target: ~{} bytes", EXPECTED_QUANTIZED_SIZE_BYTES);
-    eprintln!("            Range: {} - {} bytes", MIN_QUANTIZED_SIZE_BYTES, MAX_QUANTIZED_SIZE_BYTES);
+    eprintln!(
+        "            Target: ~{} bytes",
+        EXPECTED_QUANTIZED_SIZE_BYTES
+    );
+    eprintln!(
+        "            Range: {} - {} bytes",
+        MIN_QUANTIZED_SIZE_BYTES, MAX_QUANTIZED_SIZE_BYTES
+    );
 }
 
 /// Test: Fingerprint data sizes breakdown
@@ -315,17 +363,31 @@ fn test_fingerprint_size_breakdown() {
         if let Some(qe) = embeddings.get(&idx) {
             let size = qe.data.len();
             total_embedding_data += size;
-            breakdown.push_str(&format!("  E{}: {} bytes ({:?})\n", idx + 1, size, qe.method));
+            breakdown.push_str(&format!(
+                "  E{}: {} bytes ({:?})\n",
+                idx + 1,
+                size,
+                qe.method
+            ));
         }
     }
 
     eprintln!("[BENCHMARK] Embedding data breakdown:\n{}", breakdown);
-    eprintln!("            Total embedding data: {} bytes", total_embedding_data);
+    eprintln!(
+        "            Total embedding data: {} bytes",
+        total_embedding_data
+    );
 
     // Fixed fields overhead
     let fixed_overhead = 16 + 1 + 52 + 4 + 16 + 1 + 4 + 32 + 8 + 8 + 8 + 1; // UUID, version, etc.
-    eprintln!("            Fixed fields overhead: {} bytes", fixed_overhead);
-    eprintln!("            Total estimate: {} bytes", total_embedding_data + fixed_overhead + 13 * 40);
+    eprintln!(
+        "            Fixed fields overhead: {} bytes",
+        fixed_overhead
+    );
+    eprintln!(
+        "            Total estimate: {} bytes",
+        total_embedding_data + fixed_overhead + 13 * 40
+    );
 }
 
 // =============================================================================
@@ -356,11 +418,22 @@ fn test_fingerprint_creation_timing() {
     let elapsed = start.elapsed();
 
     let avg_ns = elapsed.as_nanos() / iterations as u128;
-    eprintln!("[BENCHMARK] Fingerprint creation: {} iterations in {:?}", iterations, elapsed);
-    eprintln!("            Average: {} ns/op ({:.2} us/op)", avg_ns, avg_ns as f64 / 1000.0);
+    eprintln!(
+        "[BENCHMARK] Fingerprint creation: {} iterations in {:?}",
+        iterations, elapsed
+    );
+    eprintln!(
+        "            Average: {} ns/op ({:.2} us/op)",
+        avg_ns,
+        avg_ns as f64 / 1000.0
+    );
 
     // Should be under 1ms per operation
-    assert!(avg_ns < 1_000_000, "Creation should be <1ms, was {} ns", avg_ns);
+    assert!(
+        avg_ns < 1_000_000,
+        "Creation should be <1ms, was {} ns",
+        avg_ns
+    );
 }
 
 /// Test: UUID generation timing
@@ -375,11 +448,18 @@ fn test_uuid_generation_timing() {
     let elapsed = start.elapsed();
 
     let avg_ns = elapsed.as_nanos() / iterations as u128;
-    eprintln!("[BENCHMARK] UUID generation: {} iterations in {:?}", iterations, elapsed);
+    eprintln!(
+        "[BENCHMARK] UUID generation: {} iterations in {:?}",
+        iterations, elapsed
+    );
     eprintln!("            Average: {} ns/op", avg_ns);
 
     // UUID generation should be very fast (<1us)
-    assert!(avg_ns < 1_000, "UUID generation should be <1us, was {} ns", avg_ns);
+    assert!(
+        avg_ns < 1_000,
+        "UUID generation should be <1us, was {} ns",
+        avg_ns
+    );
 }
 
 /// Test: RRF contribution calculation timing
@@ -402,12 +482,18 @@ fn test_rrf_calculation_timing() {
     let elapsed = start.elapsed();
 
     let avg_ns = elapsed.as_nanos() / iterations as u128;
-    eprintln!("[BENCHMARK] RRF calculation (13 contributions): {} iterations in {:?}",
-              iterations, elapsed);
+    eprintln!(
+        "[BENCHMARK] RRF calculation (13 contributions): {} iterations in {:?}",
+        iterations, elapsed
+    );
     eprintln!("            Average: {} ns/op", avg_ns);
 
     // RRF calculation should be very fast (<100ns)
-    assert!(avg_ns < 1_000, "RRF calculation should be <1us, was {} ns", avg_ns);
+    assert!(
+        avg_ns < 1_000,
+        "RRF calculation should be <1us, was {} ns",
+        avg_ns
+    );
 }
 
 // =============================================================================
@@ -421,15 +507,18 @@ fn test_edge_case_maximum_size_fingerprint() {
 
     // Increase sparse vector sizes to approach MAX
     for idx in [5u8, 12u8] {
-        embeddings.insert(idx, QuantizedEmbedding {
-            method: QuantizationMethod::SparseNative,
-            original_dim: 30522,
-            data: vec![0xAB; 5000], // Large sparse data
-            metadata: QuantizationMetadata::Sparse {
-                vocab_size: 30522,
-                nnz: 2500,
+        embeddings.insert(
+            idx,
+            QuantizedEmbedding {
+                method: QuantizationMethod::SparseNative,
+                original_dim: 30522,
+                data: vec![0xAB; 5000], // Large sparse data
+                metadata: QuantizationMetadata::Sparse {
+                    vocab_size: 30522,
+                    nnz: 2500,
+                },
             },
-        });
+        );
     }
 
     let fp = StoredQuantizedFingerprint::new(
@@ -441,11 +530,17 @@ fn test_edge_case_maximum_size_fingerprint() {
     );
 
     let size = fp.estimated_size_bytes();
-    assert!(size <= MAX_QUANTIZED_SIZE_BYTES,
-            "Large fingerprint {} should be <= max {}", size, MAX_QUANTIZED_SIZE_BYTES);
+    assert!(
+        size <= MAX_QUANTIZED_SIZE_BYTES,
+        "Large fingerprint {} should be <= max {}",
+        size,
+        MAX_QUANTIZED_SIZE_BYTES
+    );
 
-    eprintln!("[EDGE CASE 1] Large sparse fingerprint: {} bytes (max: {})",
-              size, MAX_QUANTIZED_SIZE_BYTES);
+    eprintln!(
+        "[EDGE CASE 1] Large sparse fingerprint: {} bytes (max: {})",
+        size, MAX_QUANTIZED_SIZE_BYTES
+    );
 }
 
 /// Edge Case 2: Minimum size fingerprint (all PQ8)
@@ -455,15 +550,18 @@ fn test_edge_case_minimum_size_fingerprint() {
 
     // All embedders use PQ8 (smallest)
     for idx in 0..13u8 {
-        embeddings.insert(idx, QuantizedEmbedding {
-            method: QuantizationMethod::PQ8,
-            original_dim: 768,
-            data: vec![0x00; 8], // Minimal PQ8 data
-            metadata: QuantizationMetadata::PQ8 {
-                codebook_id: idx as u32,
-                num_subvectors: 8,
+        embeddings.insert(
+            idx,
+            QuantizedEmbedding {
+                method: QuantizationMethod::PQ8,
+                original_dim: 768,
+                data: vec![0x00; 8], // Minimal PQ8 data
+                metadata: QuantizationMetadata::PQ8 {
+                    codebook_id: idx as u32,
+                    num_subvectors: 8,
+                },
             },
-        });
+        );
     }
 
     let fp = StoredQuantizedFingerprint::new(
@@ -477,16 +575,18 @@ fn test_edge_case_minimum_size_fingerprint() {
     let size = fp.estimated_size_bytes();
     // Note: Even with minimal embeddings, metadata adds overhead
     // So size might still be > MIN_QUANTIZED_SIZE_BYTES
-    eprintln!("[EDGE CASE 2] Minimal PQ8 fingerprint: {} bytes (min required: {})",
-              size, MIN_QUANTIZED_SIZE_BYTES);
+    eprintln!(
+        "[EDGE CASE 2] Minimal PQ8 fingerprint: {} bytes (min required: {})",
+        size, MIN_QUANTIZED_SIZE_BYTES
+    );
 }
 
 /// Edge Case 3: Concurrent fingerprint creation
 #[test]
 fn test_edge_case_concurrent_creation() {
-    use std::thread;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::thread;
 
     let count = Arc::new(AtomicUsize::new(0));
     let num_threads = 4;
@@ -518,8 +618,10 @@ fn test_edge_case_concurrent_creation() {
     let total = count.load(Ordering::Relaxed);
     assert_eq!(total, num_threads * iterations_per_thread);
 
-    eprintln!("[EDGE CASE 3] Concurrent creation: {} fingerprints across {} threads",
-              total, num_threads);
+    eprintln!(
+        "[EDGE CASE 3] Concurrent creation: {} fingerprints across {} threads",
+        total, num_threads
+    );
 }
 
 // =============================================================================
@@ -561,7 +663,10 @@ fn test_full_state_verification_summary() {
     eprintln!("  BENCHMARK TEST VERIFICATION");
     eprintln!("========================================");
     eprintln!("Storage Size Targets:");
-    eprintln!("  - Expected: {} bytes (~17KB)", EXPECTED_QUANTIZED_SIZE_BYTES);
+    eprintln!(
+        "  - Expected: {} bytes (~17KB)",
+        EXPECTED_QUANTIZED_SIZE_BYTES
+    );
     eprintln!("  - Maximum: {} bytes (~25KB)", MAX_QUANTIZED_SIZE_BYTES);
     eprintln!("  - Minimum: {} bytes (~5KB)", MIN_QUANTIZED_SIZE_BYTES);
     eprintln!();

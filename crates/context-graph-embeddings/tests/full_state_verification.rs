@@ -87,7 +87,7 @@ fn fsv_edge_case_2_max_dimension() {
     println!("  Input memory size: {} bytes", large_input.len() * 4);
     println!("  Pattern: alternating +1.0/-1.0");
     println!("  First 8 values: {:?}", &large_input[..8]);
-    println!("  Last 8 values: {:?}", &large_input[max_dim-8..]);
+    println!("  Last 8 values: {:?}", &large_input[max_dim - 8..]);
 
     // EXECUTE
     let result = router.quantize(ModelId::Hdc, &large_input);
@@ -101,7 +101,10 @@ fn fsv_edge_case_2_max_dimension() {
             println!("  Expected length: {} bytes (65536 / 8)", max_dim / 8);
             println!("  Method: {:?}", quantized.method);
             println!("  Original dim: {}", quantized.original_dim);
-            println!("  Compression ratio: {:.1}x", (max_dim * 4) as f64 / quantized.data.len() as f64);
+            println!(
+                "  Compression ratio: {:.1}x",
+                (max_dim * 4) as f64 / quantized.data.len() as f64
+            );
         }
         Err(e) => {
             println!("  Result: Err");
@@ -123,7 +126,10 @@ fn fsv_edge_case_2_max_dimension() {
     // Pattern: +1, -1, +1, -1, +1, -1, +1, -1 -> bits: 1,0,1,0,1,0,1,0 -> 0xAA
     println!("\n  Byte pattern verification:");
     println!("  First 16 bytes: {:02X?}", &quantized.data[..16]);
-    println!("  Last 16 bytes: {:02X?}", &quantized.data[quantized.data.len()-16..]);
+    println!(
+        "  Last 16 bytes: {:02X?}",
+        &quantized.data[quantized.data.len() - 16..]
+    );
 
     // Each byte should be 0xAA (10101010 in binary)
     let all_aa = quantized.data.iter().all(|&b| b == 0xAA);
@@ -136,7 +142,10 @@ fn fsv_edge_case_2_max_dimension() {
 
     assert!(all_aa, "Alternating pattern should produce all 0xAA bytes");
 
-    println!("\n✅ EDGE CASE 2 PASSED: Max dimension correctly quantized to {} bytes\n", expected_bytes);
+    println!(
+        "\n✅ EDGE CASE 2 PASSED: Max dimension correctly quantized to {} bytes\n",
+        expected_bytes
+    );
 }
 
 // =============================================================================
@@ -153,22 +162,27 @@ fn fsv_edge_case_3_nan_inf_values() {
 
     // Create input with special values
     let special_input = vec![
-        f32::NAN,           // NaN
-        f32::INFINITY,      // +Inf
-        f32::NEG_INFINITY,  // -Inf
-        0.0,                // Zero
-        1.0,                // Normal positive
-        -1.0,               // Normal negative
-        f32::MIN,           // Min f32
-        f32::MAX,           // Max f32
+        f32::NAN,          // NaN
+        f32::INFINITY,     // +Inf
+        f32::NEG_INFINITY, // -Inf
+        0.0,               // Zero
+        1.0,               // Normal positive
+        -1.0,              // Normal negative
+        f32::MIN,          // Min f32
+        f32::MAX,          // Max f32
     ];
 
     // STATE BEFORE
     println!("STATE BEFORE:");
     println!("  Input values:");
     for (i, v) in special_input.iter().enumerate() {
-        println!("    [{}] = {} (is_nan={}, is_infinite={})",
-                 i, v, v.is_nan(), v.is_infinite());
+        println!(
+            "    [{}] = {} (is_nan={}, is_infinite={})",
+            i,
+            v,
+            v.is_nan(),
+            v.is_infinite()
+        );
     }
 
     // EXECUTE
@@ -231,8 +245,7 @@ fn fsv_physical_byte_verification() {
     //          8 negative values -> should produce 0x00 (00000000)
     let known_pattern: Vec<f32> = vec![
         // Byte 0: all positive -> 0xFF
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
-        // Byte 1: all negative -> 0x00
+        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, // Byte 1: all negative -> 0x00
         -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0,
         // Byte 2: alternating -> 0xAA (10101010)
         1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0,
@@ -243,11 +256,18 @@ fn fsv_physical_byte_verification() {
     println!("INPUT PATTERN:");
     println!("  Byte 0 inputs (expect 0xFF): {:?}", &known_pattern[0..8]);
     println!("  Byte 1 inputs (expect 0x00): {:?}", &known_pattern[8..16]);
-    println!("  Byte 2 inputs (expect 0xAA): {:?}", &known_pattern[16..24]);
-    println!("  Byte 3 inputs (expect 0x55): {:?}", &known_pattern[24..32]);
+    println!(
+        "  Byte 2 inputs (expect 0xAA): {:?}",
+        &known_pattern[16..24]
+    );
+    println!(
+        "  Byte 3 inputs (expect 0x55): {:?}",
+        &known_pattern[24..32]
+    );
 
     // EXECUTE
-    let quantized = router.quantize(ModelId::Hdc, &known_pattern)
+    let quantized = router
+        .quantize(ModelId::Hdc, &known_pattern)
         .expect("Known pattern should quantize successfully");
 
     println!("\nOUTPUT BYTES:");
@@ -266,8 +286,10 @@ fn fsv_physical_byte_verification() {
 
     for (i, (&exp, &act)) in expected.iter().zip(actual.iter()).enumerate() {
         let matches = exp == act;
-        println!("  Byte {}: expected=0x{:02X}, actual=0x{:02X}, matches={}",
-                 i, exp, act, matches);
+        println!(
+            "  Byte {}: expected=0x{:02X}, actual=0x{:02X}, matches={}",
+            i, exp, act, matches
+        );
         assert_eq!(exp, act, "Byte {} mismatch", i);
     }
 
@@ -295,7 +317,10 @@ fn fsv_error_variant_verification() {
         Ok(quantized) => {
             println!("   ✓ PQ8 quantization succeeded");
             println!("   ✓ method: {:?}", quantized.method);
-            println!("   ✓ data size: {} bytes (32x compression)", quantized.data.len());
+            println!(
+                "   ✓ data size: {} bytes (32x compression)",
+                quantized.data.len()
+            );
             assert_eq!(quantized.method, QuantizationMethod::PQ8);
             assert_eq!(quantized.data.len(), 8); // 8 subvector indices
         }
@@ -309,7 +334,10 @@ fn fsv_error_variant_verification() {
         Ok(quantized) => {
             println!("   ✓ Float8E4M3 quantization succeeded");
             println!("   ✓ method: {:?}", quantized.method);
-            println!("   ✓ data size: {} bytes (4x compression)", quantized.data.len());
+            println!(
+                "   ✓ data size: {} bytes (4x compression)",
+                quantized.data.len()
+            );
             assert_eq!(quantized.method, QuantizationMethod::Float8E4M3);
             assert_eq!(quantized.data.len(), 512); // 1 byte per element
         }
@@ -333,7 +361,10 @@ fn fsv_error_variant_verification() {
     println!("\n4. Testing UnsupportedOperation (TokenPruning):");
     let token_result = router.quantize(ModelId::LateInteraction, &vec![1.0f32; 128]);
     match token_result {
-        Err(EmbeddingError::UnsupportedOperation { model_id, operation }) => {
+        Err(EmbeddingError::UnsupportedOperation {
+            model_id,
+            operation,
+        }) => {
             println!("   ✓ Error variant: UnsupportedOperation");
             println!("   ✓ model_id: {:?}", model_id);
             println!("   ✓ operation: {}", operation);
@@ -364,9 +395,13 @@ fn fsv_compression_ratio_verification() {
     let original_size = hdc_dim * std::mem::size_of::<f32>();
     println!("INPUT:");
     println!("  Dimension: {}", hdc_dim);
-    println!("  Original size: {} bytes ({} f32 * 4 bytes)", original_size, hdc_dim);
+    println!(
+        "  Original size: {} bytes ({} f32 * 4 bytes)",
+        original_size, hdc_dim
+    );
 
-    let quantized = router.quantize(ModelId::Hdc, &hdc_input)
+    let quantized = router
+        .quantize(ModelId::Hdc, &hdc_input)
         .expect("HDC quantization should succeed");
 
     let compressed_size = quantized.data.len();
@@ -375,12 +410,17 @@ fn fsv_compression_ratio_verification() {
     println!("\nOUTPUT:");
     println!("  Compressed size: {} bytes", compressed_size);
     println!("  Compression ratio: {:.2}x", compression_ratio);
-    println!("  Space saved: {} bytes ({:.1}%)",
-             original_size - compressed_size,
-             (1.0 - compressed_size as f64 / original_size as f64) * 100.0);
+    println!(
+        "  Space saved: {} bytes ({:.1}%)",
+        original_size - compressed_size,
+        (1.0 - compressed_size as f64 / original_size as f64) * 100.0
+    );
 
     println!("\nPHYSICAL VERIFICATION:");
-    println!("  Expected compressed size: {} bytes (10000 / 8)", hdc_dim / 8);
+    println!(
+        "  Expected compressed size: {} bytes (10000 / 8)",
+        hdc_dim / 8
+    );
     println!("  Actual compressed size: {} bytes", compressed_size);
     println!("  Expected ratio: 32.0x");
     println!("  Actual ratio: {:.2}x", compression_ratio);
@@ -417,10 +457,12 @@ fn fsv_all_model_ids_have_methods() {
     for model_id in all_models {
         let method = router.method_for(*model_id);
         let can_quantize = router.can_quantize(*model_id);
-        println!("  {:<20} | {:<15} | {}",
-                 format!("{:?}", model_id),
-                 format!("{:?}", method),
-                 can_quantize);
+        println!(
+            "  {:<20} | {:<15} | {}",
+            format!("{:?}", model_id),
+            format!("{:?}", method),
+            can_quantize
+        );
     }
 
     println!("\nPHYSICAL VERIFICATION:");
@@ -431,10 +473,22 @@ fn fsv_all_model_ids_have_methods() {
         // PQ8 - IMPLEMENTED
         (ModelId::Semantic, QuantizationMethod::PQ8, true),
         // Float8E4M3 - IMPLEMENTED
-        (ModelId::TemporalRecent, QuantizationMethod::Float8E4M3, true),
+        (
+            ModelId::TemporalRecent,
+            QuantizationMethod::Float8E4M3,
+            true,
+        ),
         // Float8E4M3 - IMPLEMENTED
-        (ModelId::TemporalPeriodic, QuantizationMethod::Float8E4M3, true),
-        (ModelId::TemporalPositional, QuantizationMethod::Float8E4M3, true),
+        (
+            ModelId::TemporalPeriodic,
+            QuantizationMethod::Float8E4M3,
+            true,
+        ),
+        (
+            ModelId::TemporalPositional,
+            QuantizationMethod::Float8E4M3,
+            true,
+        ),
         // PQ8 - IMPLEMENTED
         (ModelId::Causal, QuantizationMethod::PQ8, true),
         // SparseNative - Invalid path for dense quantization
@@ -450,7 +504,11 @@ fn fsv_all_model_ids_have_methods() {
         // Float8E4M3 - IMPLEMENTED
         (ModelId::Entity, QuantizationMethod::Float8E4M3, true),
         // TokenPruning - NOT IMPLEMENTED (out of scope)
-        (ModelId::LateInteraction, QuantizationMethod::TokenPruning, false),
+        (
+            ModelId::LateInteraction,
+            QuantizationMethod::TokenPruning,
+            false,
+        ),
         // SparseNative - Invalid path for dense quantization
         (ModelId::Splade, QuantizationMethod::SparseNative, false),
     ];
@@ -459,10 +517,16 @@ fn fsv_all_model_ids_have_methods() {
         let actual_method = router.method_for(model_id);
         let actual_can_quantize = router.can_quantize(model_id);
 
-        assert_eq!(actual_method, expected_method,
-                   "{:?} should have method {:?}", model_id, expected_method);
-        assert_eq!(actual_can_quantize, expected_can_quantize,
-                   "{:?} can_quantize should be {}", model_id, expected_can_quantize);
+        assert_eq!(
+            actual_method, expected_method,
+            "{:?} should have method {:?}",
+            model_id, expected_method
+        );
+        assert_eq!(
+            actual_can_quantize, expected_can_quantize,
+            "{:?} can_quantize should be {}",
+            model_id, expected_can_quantize
+        );
     }
 
     println!("  ✓ All 13 ModelIds have correct method assignments");

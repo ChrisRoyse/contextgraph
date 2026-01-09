@@ -1,7 +1,7 @@
 //! Tests for ModelHandle VRAM pointer tracking.
 
-use crate::warm::handle::ModelHandle;
 use super::helpers::{GB, MB};
+use crate::warm::handle::ModelHandle;
 
 #[test]
 fn test_handle_creation() {

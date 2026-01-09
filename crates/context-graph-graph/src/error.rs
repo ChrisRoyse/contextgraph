@@ -332,7 +332,7 @@ mod tests {
         // Edge case: unicode in error messages
         let err = GraphError::StorageOpen {
             path: "/данные/граф.db".to_string(), // Russian
-            cause: "权限被拒绝".to_string(),       // Chinese
+            cause: "权限被拒绝".to_string(),     // Chinese
         };
         println!("BEFORE: constructing with unicode");
         let msg = err.to_string();

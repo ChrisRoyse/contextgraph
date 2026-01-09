@@ -60,7 +60,8 @@ fn test_edge_delete() {
 
     // Verify edge exists
     assert!(
-        db.get_edge(&node1.id, &node2.id, EdgeType::Semantic).is_ok(),
+        db.get_edge(&node1.id, &node2.id, EdgeType::Semantic)
+            .is_ok(),
         "edge should exist"
     );
 

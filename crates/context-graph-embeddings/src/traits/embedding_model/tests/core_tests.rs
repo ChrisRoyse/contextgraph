@@ -278,8 +278,7 @@ fn test_all_input_types_can_be_supported() {
 fn test_supported_types_can_use_hashset() {
     let model = TestModel::new(ModelId::Multimodal, vec![InputType::Text, InputType::Image]);
 
-    let supported_set: HashSet<InputType> =
-        model.supported_input_types().iter().copied().collect();
+    let supported_set: HashSet<InputType> = model.supported_input_types().iter().copied().collect();
 
     assert!(supported_set.contains(&InputType::Text));
     assert!(supported_set.contains(&InputType::Image));

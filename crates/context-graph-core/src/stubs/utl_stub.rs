@@ -43,9 +43,9 @@ impl StubUtlProcessor {
     pub fn new() -> Self {
         Self {
             consolidation_threshold: 0.7,
-            default_edge_threshold: 0.7,  // θ_edge prior from constitution
-            default_max_edges: 10,         // max_edges from constitution
-            default_k: 5,                  // k for KNN
+            default_edge_threshold: 0.7, // θ_edge prior from constitution
+            default_max_edges: 10,       // max_edges from constitution
+            default_k: 5,                // k for KNN
         }
     }
 
@@ -309,8 +309,7 @@ impl UtlProcessor for StubUtlProcessor {
     /// Otherwise defaults to 1.0 (full alignment).
     async fn compute_alignment(&self, _input: &str, context: &UtlContext) -> CoreResult<f32> {
         // Check if we have vectors for real alignment computation
-        if let (Some(input_emb), Some(goal_vec)) =
-            (&context.input_embedding, &context.goal_vector)
+        if let (Some(input_emb), Some(goal_vec)) = (&context.input_embedding, &context.goal_vector)
         {
             // Real alignment: cosine similarity to goal/North Star vector
             let alignment = Self::cosine_similarity(input_emb, goal_vec);
@@ -813,10 +812,7 @@ mod tests {
             .compute_surprise("", &close_context)
             .await
             .unwrap();
-        let far_surprise = processor
-            .compute_surprise("", &far_context)
-            .await
-            .unwrap();
+        let far_surprise = processor.compute_surprise("", &far_context).await.unwrap();
 
         // Far input should have higher surprise
         // Close input distance = 0.0, z = (0.0 - 0.5) / 0.5 = -1.0, sigmoid(-1) ≈ 0.27
@@ -1017,10 +1013,7 @@ mod tests {
             ..Default::default()
         };
 
-        let metrics = processor
-            .compute_metrics("test", &context)
-            .await
-            .unwrap();
+        let metrics = processor.compute_metrics("test", &context).await.unwrap();
 
         // Verify all components are reasonable
         assert!(
@@ -1192,10 +1185,7 @@ mod tests {
 
         // Verify status indicates real computation mode
         assert_eq!(status["computation_mode"], "real");
-        assert!(status["formula"]
-            .as_str()
-            .unwrap()
-            .contains("sigmoid"));
+        assert!(status["formula"].as_str().unwrap().contains("sigmoid"));
         assert!(status["thresholds"]["edge_similarity"].as_f64().is_some());
         assert!(status["thresholds"]["knn_k"].as_u64().is_some());
     }

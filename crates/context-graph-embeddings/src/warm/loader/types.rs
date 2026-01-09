@@ -24,10 +24,10 @@
 //! - `checksum` must be a real SHA256 hash (never all zeros)
 //! - `tensors` must contain real GpuTensor instances backed by GPU memory
 
+use crate::gpu::GpuTensor;
+use candle_core::DType;
 use std::collections::HashMap;
 use std::time::{Duration, Instant};
-use candle_core::DType;
-use crate::gpu::GpuTensor;
 
 // =============================================================================
 // CRITICAL: NO SIMULATION - ALL DATA MUST BE REAL
@@ -113,11 +113,7 @@ impl TensorMetadata {
     /// let metadata = TensorMetadata::new(shapes, DType::F32, 589_824);
     /// ```
     #[must_use]
-    pub fn new(
-        shapes: HashMap<String, Vec<usize>>,
-        dtype: DType,
-        total_params: usize,
-    ) -> Self {
+    pub fn new(shapes: HashMap<String, Vec<usize>>, dtype: DType, total_params: usize) -> Self {
         // FAIL-FAST: Empty shapes means corrupted SafeTensors
         assert!(
             !shapes.is_empty(),
@@ -134,7 +130,11 @@ impl TensorMetadata {
              This indicates corrupted or empty weight file."
         );
 
-        Self { shapes, dtype, total_params }
+        Self {
+            shapes,
+            dtype,
+            total_params,
+        }
     }
 
     /// Calculate total parameters from shapes (for verification).
@@ -154,7 +154,8 @@ impl TensorMetadata {
     /// ```
     #[must_use]
     pub fn calculate_total_params(&self) -> usize {
-        self.shapes.values()
+        self.shapes
+            .values()
             .map(|shape| shape.iter().product::<usize>())
             .sum()
     }
@@ -573,7 +574,10 @@ impl LoadedModelWeights {
     /// Get checksum as hex string for display/logging.
     #[must_use]
     pub fn checksum_hex(&self) -> String {
-        self.file_checksum.iter().map(|b| format!("{:02x}", b)).collect()
+        self.file_checksum
+            .iter()
+            .map(|b| format!("{:02x}", b))
+            .collect()
     }
 }
 
@@ -676,12 +680,7 @@ impl VramAllocationTracking {
     /// );
     /// ```
     #[must_use]
-    pub fn new(
-        base_ptr: u64,
-        size_bytes: usize,
-        vram_before_mb: u64,
-        vram_after_mb: u64,
-    ) -> Self {
+    pub fn new(base_ptr: u64, size_bytes: usize, vram_before_mb: u64, vram_after_mb: u64) -> Self {
         assert!(
             base_ptr != 0,
             "CONSTITUTION VIOLATION AP-007: base_ptr is null. \
@@ -978,7 +977,10 @@ impl InferenceValidation {
     #[must_use]
     pub fn is_real(&self) -> bool {
         // Check 1: All zeros detection
-        let is_zeros = self.sample_output.iter().all(|&v| v.abs() < Self::ZERO_THRESHOLD);
+        let is_zeros = self
+            .sample_output
+            .iter()
+            .all(|&v| v.abs() < Self::ZERO_THRESHOLD);
         if is_zeros {
             return false;
         }
@@ -1009,15 +1011,12 @@ impl InferenceValidation {
         // Check all windows of 10 elements for suspiciously smooth differences
         self.sample_output.windows(10).all(|w| {
             // Calculate consecutive differences
-            let diffs: Vec<f32> = w.windows(2)
-                .map(|p| (p[1] - p[0]).abs())
-                .collect();
+            let diffs: Vec<f32> = w.windows(2).map(|p| (p[1] - p[0]).abs()).collect();
 
             // Calculate variance of differences
             let mean: f32 = diffs.iter().sum::<f32>() / diffs.len() as f32;
-            let variance: f32 = diffs.iter()
-                .map(|d| (d - mean).powi(2))
-                .sum::<f32>() / diffs.len() as f32;
+            let variance: f32 =
+                diffs.iter().map(|d| (d - mean).powi(2)).sum::<f32>() / diffs.len() as f32;
 
             // Suspiciously smooth if variance is too low
             variance < Self::SIN_WAVE_VARIANCE_THRESHOLD
@@ -1046,7 +1045,8 @@ impl InferenceValidation {
             panic!(
                 "[EMB-E011] FAKE_INFERENCE: Output pattern indicates simulation. \
                  Golden similarity: {:.4}, output_len: {}. Constitution AP-007 violation.",
-                self.golden_similarity, self.sample_output.len()
+                self.golden_similarity,
+                self.sample_output.len()
             );
         }
     }
@@ -1121,7 +1121,7 @@ mod tests {
     #[should_panic(expected = "CONSTITUTION VIOLATION AP-007: shapes is empty")]
     fn test_tensor_metadata_rejects_empty_shapes() {
         let _ = TensorMetadata::new(
-            HashMap::new(),  // EMPTY - MUST PANIC
+            HashMap::new(), // EMPTY - MUST PANIC
             DType::F32,
             100,
         );
@@ -1133,7 +1133,7 @@ mod tests {
         let _ = TensorMetadata::new(
             [("test".to_string(), vec![100, 768])].into_iter().collect(),
             DType::F32,
-            0,  // ZERO PARAMS - MUST PANIC
+            0, // ZERO PARAMS - MUST PANIC
         );
     }
 
@@ -1146,7 +1146,7 @@ mod tests {
     fn test_warm_load_result_rejects_null_pointer() {
         let metadata = create_test_metadata();
         let _ = WarmLoadResult::new(
-            0,  // NULL POINTER - MUST PANIC
+            0, // NULL POINTER - MUST PANIC
             [1u8; 32],
             1024,
             Duration::from_millis(100),
@@ -1160,7 +1160,7 @@ mod tests {
         let metadata = create_test_metadata();
         let _ = WarmLoadResult::new(
             0x7fff_0000_1000,
-            [0u8; 32],  // ZERO CHECKSUM - MUST PANIC
+            [0u8; 32], // ZERO CHECKSUM - MUST PANIC
             1024,
             Duration::from_millis(100),
             metadata,
@@ -1174,7 +1174,7 @@ mod tests {
         let _ = WarmLoadResult::new(
             0x7fff_0000_1000,
             [1u8; 32],
-            0,  // ZERO SIZE - MUST PANIC
+            0, // ZERO SIZE - MUST PANIC
             Duration::from_millis(100),
             metadata,
         );
@@ -1196,8 +1196,8 @@ mod tests {
         let tensors: HashMap<String, GpuTensor> = HashMap::new();
 
         let _ = LoadedModelWeights::new(
-            "".to_string(),  // EMPTY - MUST PANIC
-            tensors,         // Empty too, but model_id check comes first
+            "".to_string(), // EMPTY - MUST PANIC
+            tensors,        // Empty too, but model_id check comes first
             [1u8; 32],
             1024,
             0,
@@ -1209,7 +1209,7 @@ mod tests {
     fn test_loaded_model_weights_rejects_empty_tensors() {
         let _ = LoadedModelWeights::new(
             "E1_Semantic".to_string(),
-            HashMap::new(),  // EMPTY - MUST PANIC
+            HashMap::new(), // EMPTY - MUST PANIC
             [1u8; 32],
             1024,
             0,
@@ -1241,11 +1241,13 @@ mod tests {
     fn test_tensor_metadata_calculates_params() {
         let metadata = TensorMetadata::new(
             [
-                ("layer1".to_string(), vec![768, 768]),   // 589,824
-                ("layer2".to_string(), vec![768, 3072]),  // 2,359,296
-            ].into_iter().collect(),
+                ("layer1".to_string(), vec![768, 768]),  // 589,824
+                ("layer2".to_string(), vec![768, 3072]), // 2,359,296
+            ]
+            .into_iter()
+            .collect(),
             DType::F32,
-            2_949_120,  // Sum of above
+            2_949_120, // Sum of above
         );
 
         assert!(metadata.verify_params());
@@ -1256,10 +1258,12 @@ mod tests {
     fn test_tensor_metadata_calculates_params_mismatch() {
         let metadata = TensorMetadata::new(
             [
-                ("layer1".to_string(), vec![768, 768]),   // 589,824
-            ].into_iter().collect(),
+                ("layer1".to_string(), vec![768, 768]), // 589,824
+            ]
+            .into_iter()
+            .collect(),
             DType::F32,
-            1_000_000,  // Wrong value
+            1_000_000, // Wrong value
         );
 
         assert!(!metadata.verify_params());
@@ -1269,15 +1273,17 @@ mod tests {
     #[test]
     fn test_warm_load_result_accepts_valid_data() {
         let metadata = TensorMetadata::new(
-            [("embeddings.weight".to_string(), vec![30522, 768])].into_iter().collect(),
+            [("embeddings.weight".to_string(), vec![30522, 768])]
+                .into_iter()
+                .collect(),
             DType::F32,
-            23_440_896,  // 30522 * 768
+            23_440_896, // 30522 * 768
         );
 
         let result = WarmLoadResult::new(
-            0x7fff_0000_1000,  // Real-looking pointer
-            [0xAB; 32],        // Non-zero checksum
-            93_763_584,        // 23M params * 4 bytes
+            0x7fff_0000_1000, // Real-looking pointer
+            [0xAB; 32],       // Non-zero checksum
+            93_763_584,       // 23M params * 4 bytes
             Duration::from_millis(150),
             metadata,
         );
@@ -1311,10 +1317,9 @@ mod tests {
     #[test]
     fn test_checksum_hex_conversion() {
         let checksum = [
-            0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE,
-            0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0,
-            0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88,
-            0x99, 0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x00,
+            0xDE, 0xAD, 0xBE, 0xEF, 0xCA, 0xFE, 0xBA, 0xBE, 0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC,
+            0xDE, 0xF0, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xAA, 0xBB, 0xCC,
+            0xDD, 0xEE, 0xFF, 0x00,
         ];
 
         let metadata = TensorMetadata::new(
@@ -1409,7 +1414,7 @@ mod tests {
             base_ptr: 0x7fff_0000_1000, // Real-looking pointer
             size_bytes: 1024,           // 1KB allocated
             vram_before_mb: 1000,
-            vram_after_mb: 2000,        // Claims 1000MB delta for 1KB!
+            vram_after_mb: 2000, // Claims 1000MB delta for 1KB!
             vram_delta_mb: 1000,
         };
 
@@ -1427,7 +1432,7 @@ mod tests {
         // Use the known fake pointer value
         let alloc = VramAllocationTracking {
             base_ptr: VramAllocationTracking::FAKE_POINTER, // 0x7f80_0000_0000
-            size_bytes: 104_857_600,  // 100MB
+            size_bytes: 104_857_600,                        // 100MB
             vram_before_mb: 5000,
             vram_after_mb: 5100,
             vram_delta_mb: 100,
@@ -1443,13 +1448,16 @@ mod tests {
     fn test_vram_allocation_accepts_valid_delta() {
         // Create allocation with matching delta: 100MB allocation with 100MB delta
         let alloc = VramAllocationTracking::new(
-            0x7fff_0000_1000,           // Real pointer
-            104_857_600,                // 100MB
-            5000,                       // 5GB before
-            5100,                       // 5.1GB after (100MB delta)
+            0x7fff_0000_1000, // Real pointer
+            104_857_600,      // 100MB
+            5000,             // 5GB before
+            5100,             // 5.1GB after (100MB delta)
         );
 
-        assert!(alloc.is_real(), "Should accept valid VRAM allocation with matching delta");
+        assert!(
+            alloc.is_real(),
+            "Should accept valid VRAM allocation with matching delta"
+        );
         assert_eq!(alloc.vram_delta_mb, 100);
     }
 
@@ -1458,9 +1466,9 @@ mod tests {
         // Create allocation with small overhead (within 50MB tolerance)
         let alloc = VramAllocationTracking::new(
             0x7fff_0000_1000,
-            104_857_600,    // 100MB allocation
+            104_857_600, // 100MB allocation
             5000,
-            5130,           // 130MB delta (30MB overhead)
+            5130, // 130MB delta (30MB overhead)
         );
 
         // 100MB allocation with 130MB delta = 30MB difference, within 50MB tolerance
@@ -1475,9 +1483,9 @@ mod tests {
         // Create allocation with excessive overhead (>50MB tolerance)
         let alloc = VramAllocationTracking {
             base_ptr: 0x7fff_0000_1000,
-            size_bytes: 104_857_600,    // 100MB allocation
+            size_bytes: 104_857_600, // 100MB allocation
             vram_before_mb: 5000,
-            vram_after_mb: 5200,        // 200MB delta (100MB overhead)
+            vram_after_mb: 5200, // 200MB delta (100MB overhead)
             vram_delta_mb: 200,
         };
 
@@ -1490,12 +1498,7 @@ mod tests {
 
     #[test]
     fn test_vram_allocation_delta_display() {
-        let alloc = VramAllocationTracking::new(
-            0x7fff_0000_1000,
-            104_857_600,
-            5000,
-            5100,
-        );
+        let alloc = VramAllocationTracking::new(0x7fff_0000_1000, 104_857_600, 5000, 5100);
 
         let display = alloc.delta_display();
         assert_eq!(display, "100 MB (5000 -> 5100 MB)");
@@ -1505,9 +1508,9 @@ mod tests {
     fn test_vram_allocation_size_conversions() {
         let alloc = VramAllocationTracking::new(
             0x7fff_0000_1000,
-            1_073_741_824,  // 1GB
+            1_073_741_824, // 1GB
             5000,
-            6024,           // ~1GB delta
+            6024, // ~1GB delta
         );
 
         // Verify size_mb
@@ -1553,10 +1556,10 @@ mod tests {
     #[should_panic(expected = "[EMB-E010] SIMULATION_DETECTED")]
     fn test_vram_allocation_assert_real_panics_on_delta_mismatch() {
         let fake_alloc = VramAllocationTracking {
-            base_ptr: 0x7fff_0000_1000,  // Valid pointer
-            size_bytes: 1024,             // 1KB
+            base_ptr: 0x7fff_0000_1000, // Valid pointer
+            size_bytes: 1024,           // 1KB
             vram_before_mb: 1000,
-            vram_after_mb: 2000,          // 1000MB delta for 1KB!
+            vram_after_mb: 2000, // 1000MB delta for 1KB!
             vram_delta_mb: 1000,
         };
 
@@ -1574,9 +1577,7 @@ mod tests {
     #[test]
     fn test_inference_validation_detects_sin_wave() {
         // Generate sin wave output: (i * 0.001).sin()
-        let sin_wave_output: Vec<f32> = (0..768)
-            .map(|i| (i as f32 * 0.001).sin())
-            .collect();
+        let sin_wave_output: Vec<f32> = (0..768).map(|i| (i as f32 * 0.001).sin()).collect();
 
         let validation = InferenceValidation {
             sample_input: "test input".to_string(),
@@ -1584,13 +1585,10 @@ mod tests {
             output_norm: 1.0,
             latency: Duration::from_millis(10),
             matches_golden: true,
-            golden_similarity: 0.99,  // High similarity, but sin wave pattern
+            golden_similarity: 0.99, // High similarity, but sin wave pattern
         };
 
-        assert!(
-            !validation.is_real(),
-            "Should detect sin wave fake pattern"
-        );
+        assert!(!validation.is_real(), "Should detect sin wave fake pattern");
     }
 
     /// Edge Case 3: Low Golden Similarity
@@ -1627,7 +1625,7 @@ mod tests {
             output_norm: 0.0,
             latency: Duration::from_millis(10),
             matches_golden: false,
-            golden_similarity: 0.99,  // High similarity but zeros
+            golden_similarity: 0.99, // High similarity but zeros
         };
 
         assert!(
@@ -1735,7 +1733,10 @@ mod tests {
             0.99,
         );
 
-        assert!(validation.verify_norm(0.01), "Stored norm should match calculated");
+        assert!(
+            validation.verify_norm(0.01),
+            "Stored norm should match calculated"
+        );
 
         // Test with wrong stored norm
         let validation_wrong = InferenceValidation {
@@ -1743,7 +1744,10 @@ mod tests {
             ..validation.clone()
         };
 
-        assert!(!validation_wrong.verify_norm(0.01), "Wrong stored norm should not match");
+        assert!(
+            !validation_wrong.verify_norm(0.01),
+            "Wrong stored norm should not match"
+        );
     }
 
     #[test]
@@ -1881,14 +1885,14 @@ mod tests {
     fn test_vram_allocation_realistic_model_sizes() {
         // Test with realistic model sizes
         let sizes = [
-            (384 * 1024 * 1024, 384),     // 384MB - small model
-            (1024 * 1024 * 1024, 1024),   // 1GB - medium model
+            (384 * 1024 * 1024, 384),       // 384MB - small model
+            (1024 * 1024 * 1024, 1024),     // 1GB - medium model
             (4 * 1024 * 1024 * 1024, 4096), // 4GB - large model
         ];
 
         for (size_bytes, expected_delta_mb) in sizes {
             let alloc = VramAllocationTracking::new(
-                0x7fff_0000_1000 + size_bytes as u64,  // Vary pointer
+                0x7fff_0000_1000 + size_bytes as u64, // Vary pointer
                 size_bytes,
                 5000,
                 5000 + expected_delta_mb,

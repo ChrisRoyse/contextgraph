@@ -93,8 +93,13 @@ pub mod comparison_error;
 pub mod services;
 
 // Re-exports for convenience
+pub use comparison_error::{ComparisonValidationError, ComparisonValidationResult, WeightValues};
 pub use embedder::{Embedder, EmbedderDims, EmbedderGroup, EmbedderMask};
 pub use groups::{GroupAlignments, GroupType};
+pub use matrix_search::{
+    embedder_names, ComparisonScope, ComponentWeights, ComprehensiveComparison, MatrixSearchConfig,
+    SearchStrategy, SimilarityBreakdown, TeleologicalMatrixSearch,
+};
 pub use meaning::{
     CrossEmbeddingAnalysis, ExtractedMeaning, FusionMethod, MeaningExtractionConfig,
     NuanceDimension,
@@ -104,10 +109,3 @@ pub use resolution::{DomainAlignments, DomainType, MultiResolutionHierarchy, Res
 pub use synergy_matrix::{SynergyMatrix, CROSS_CORRELATION_COUNT, SYNERGY_DIM};
 pub use types::{ProfileId, TuckerCore, EMBEDDING_DIM, NUM_EMBEDDERS};
 pub use vector::TeleologicalVector;
-pub use matrix_search::{
-    ComparisonScope, ComponentWeights, ComprehensiveComparison, MatrixSearchConfig,
-    SearchStrategy, SimilarityBreakdown, TeleologicalMatrixSearch, embedder_names,
-};
-pub use comparison_error::{
-    ComparisonValidationError, ComparisonValidationResult, WeightValues,
-};

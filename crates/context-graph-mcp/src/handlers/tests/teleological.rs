@@ -4,8 +4,8 @@
 //! These tests verify the handler implementations work correctly with
 //! predetermined inputs and expected outputs.
 
-use crate::protocol::JsonRpcId;
 use super::{create_test_handlers, make_request};
+use crate::protocol::JsonRpcId;
 use serde_json::json;
 
 // =============================================================================
@@ -60,7 +60,10 @@ async fn test_search_teleological_basic() {
 
     let response = handlers.dispatch(request).await;
 
-    assert!(response.error.is_none(), "search_teleological should succeed");
+    assert!(
+        response.error.is_none(),
+        "search_teleological should succeed"
+    );
     let result = response.result.expect("Must have result");
 
     // Verify structure
@@ -72,7 +75,10 @@ async fn test_search_teleological_basic() {
     let text = content[0]["text"].as_str().expect("Must have text");
     let parsed: serde_json::Value = serde_json::from_str(text).expect("Must be valid JSON");
 
-    assert!(parsed["success"].as_bool().unwrap_or(false), "Should succeed");
+    assert!(
+        parsed["success"].as_bool().unwrap_or(false),
+        "Should succeed"
+    );
     assert_eq!(parsed["num_candidates"].as_u64(), Some(2));
 
     // Results should exist
@@ -86,7 +92,11 @@ async fn test_search_teleological_basic() {
 
     // Similarity should be close to 1.0 for identical vectors
     let similarity = first["similarity"].as_f64().expect("similarity");
-    assert!(similarity > 0.9, "Identical vectors should have high similarity: {}", similarity);
+    assert!(
+        similarity > 0.9,
+        "Identical vectors should have high similarity: {}",
+        similarity
+    );
 }
 
 #[tokio::test]
@@ -173,7 +183,12 @@ async fn test_search_teleological_different_strategies() {
         "confidence": 0.9
     });
 
-    let strategies = vec!["cosine", "euclidean", "synergy_weighted", "group_hierarchical"];
+    let strategies = vec![
+        "cosine",
+        "euclidean",
+        "synergy_weighted",
+        "group_hierarchical",
+    ];
 
     for strategy in strategies {
         let request = make_request(
@@ -243,7 +258,10 @@ async fn test_fuse_embeddings_basic() {
     let text = content[0]["text"].as_str().expect("Must have text");
     let parsed: serde_json::Value = serde_json::from_str(text).expect("Must be valid JSON");
 
-    assert!(parsed["success"].as_bool().unwrap_or(false), "Should succeed");
+    assert!(
+        parsed["success"].as_bool().unwrap_or(false),
+        "Should succeed"
+    );
 
     // Verify vector is returned
     assert!(parsed.get("vector").is_some(), "Must have vector");
@@ -257,22 +275,21 @@ async fn test_fuse_embeddings_basic() {
 
     // Verify confidence in valid range
     let confidence = parsed["confidence"].as_f64().expect("confidence");
-    assert!((0.0..=1.0).contains(&confidence), "Confidence should be [0,1]");
+    assert!(
+        (0.0..=1.0).contains(&confidence),
+        "Confidence should be [0,1]"
+    );
 }
 
 #[tokio::test]
 async fn test_fuse_embeddings_with_alignments() {
     let handlers = create_test_handlers();
 
-    let embeddings: Vec<Vec<f32>> = (0..13)
-        .map(|_| vec![0.5; 1024])
-        .collect();
+    let embeddings: Vec<Vec<f32>> = (0..13).map(|_| vec![0.5; 1024]).collect();
 
     // Custom alignments that sum to 1.0
     let alignments: [f32; 13] = [
-        0.15, 0.10, 0.08, 0.10, 0.05,
-        0.03, 0.08, 0.10, 0.05, 0.10,
-        0.05, 0.06, 0.05
+        0.15, 0.10, 0.08, 0.10, 0.05, 0.03, 0.08, 0.10, 0.05, 0.10, 0.05, 0.06, 0.05,
     ];
 
     let request = make_request(
@@ -288,7 +305,10 @@ async fn test_fuse_embeddings_with_alignments() {
     );
 
     let response = handlers.dispatch(request).await;
-    assert!(response.error.is_none(), "Should succeed with custom alignments");
+    assert!(
+        response.error.is_none(),
+        "Should succeed with custom alignments"
+    );
 
     let result = response.result.unwrap();
     let content = result["content"].as_array().unwrap();
@@ -303,9 +323,7 @@ async fn test_fuse_embeddings_wrong_count_fails() {
     let handlers = create_test_handlers();
 
     // Only 5 embeddings instead of 13
-    let embeddings: Vec<Vec<f32>> = (0..5)
-        .map(|_| vec![0.5; 1024])
-        .collect();
+    let embeddings: Vec<Vec<f32>> = (0..5).map(|_| vec![0.5; 1024]).collect();
 
     let request = make_request(
         "tools/call",
@@ -323,7 +341,10 @@ async fn test_fuse_embeddings_wrong_count_fails() {
     // Should fail with error
     let result = response.result.expect("Result");
     let _content = result["content"].as_array().expect("content");
-    let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     assert!(is_error, "Should return error for wrong embedding count");
 }
@@ -398,9 +419,7 @@ async fn test_update_synergy_matrix_with_contributions() {
 
     // Contributions that highlight specific embedders
     let contributions: [f32; 13] = [
-        0.3, 0.1, 0.05, 0.1, 0.05,
-        0.02, 0.08, 0.1, 0.05, 0.05,
-        0.05, 0.03, 0.02
+        0.3, 0.1, 0.05, 0.1, 0.05, 0.02, 0.08, 0.1, 0.05, 0.05, 0.05, 0.03, 0.02,
     ];
 
     let request = make_request(
@@ -439,7 +458,10 @@ async fn test_update_synergy_matrix_invalid_uuid_fails() {
     let response = handlers.dispatch(request).await;
 
     let result = response.result.expect("Result");
-    let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     assert!(is_error, "Should fail for invalid UUID");
 }
@@ -531,7 +553,10 @@ async fn test_manage_profile_update_nonexistent() {
 
     // Should succeed but report profile not found
     let result = response.result.unwrap();
-    let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     assert!(is_error, "Should error for nonexistent profile");
 }
 
@@ -553,7 +578,10 @@ async fn test_manage_profile_invalid_action() {
     let response = handlers.dispatch(request).await;
 
     let result = response.result.unwrap();
-    let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
     assert!(is_error, "Should error for invalid action");
 }
 

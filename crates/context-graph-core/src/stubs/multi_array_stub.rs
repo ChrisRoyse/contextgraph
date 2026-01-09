@@ -80,7 +80,10 @@ impl StubMultiArrayProvider {
     /// The provider is marked as initialized upon creation with all embedders healthy.
     #[inline]
     pub fn new() -> Self {
-        tracing::debug!("StubMultiArrayProvider: initializing with {} embedders", NUM_EMBEDDERS);
+        tracing::debug!(
+            "StubMultiArrayProvider: initializing with {} embedders",
+            NUM_EMBEDDERS
+        );
         Self {
             initialized: AtomicBool::new(true),
             fingerprint_count: AtomicU64::new(0),
@@ -236,9 +239,7 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
     async fn embed_all(&self, content: &str) -> CoreResult<MultiArrayEmbeddingOutput> {
         // Check readiness before processing
         if !self.is_ready() {
-            tracing::error!(
-                "StubMultiArrayProvider: embed_all called but provider is not ready"
-            );
+            tracing::error!("StubMultiArrayProvider: embed_all called but provider is not ready");
             return Err(crate::error::CoreError::Internal(
                 "StubMultiArrayProvider is not ready".into(),
             ));
@@ -310,19 +311,8 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
 
     fn model_ids(&self) -> [&str; NUM_EMBEDDERS] {
         [
-            "stub-e1",
-            "stub-e2",
-            "stub-e3",
-            "stub-e4",
-            "stub-e5",
-            "stub-e6",
-            "stub-e7",
-            "stub-e8",
-            "stub-e9",
-            "stub-e10",
-            "stub-e11",
-            "stub-e12",
-            "stub-e13",
+            "stub-e1", "stub-e2", "stub-e3", "stub-e4", "stub-e5", "stub-e6", "stub-e7", "stub-e8",
+            "stub-e9", "stub-e10", "stub-e11", "stub-e12", "stub-e13",
         ]
     }
 
@@ -340,18 +330,12 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
         // Check 1: Was the provider properly initialized?
         let is_initialized = self.initialized.load(Ordering::SeqCst);
         if !is_initialized {
-            tracing::warn!(
-                "StubMultiArrayProvider health check failed: not initialized"
-            );
+            tracing::warn!("StubMultiArrayProvider health check failed: not initialized");
             return false;
         }
 
         // Check 2: Are there any fatal errors?
-        let has_error = self
-            .last_error
-            .read()
-            .map(|e| e.is_some())
-            .unwrap_or(true); // If lock is poisoned, treat as error
+        let has_error = self.last_error.read().map(|e| e.is_some()).unwrap_or(true); // If lock is poisoned, treat as error
 
         if has_error {
             if let Ok(error) = self.last_error.read() {
@@ -369,9 +353,7 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
         let health_status = self.health_status();
         let any_healthy = health_status.iter().any(|&h| h);
         if !any_healthy {
-            tracing::warn!(
-                "StubMultiArrayProvider health check failed: all embedders unhealthy"
-            );
+            tracing::warn!("StubMultiArrayProvider health check failed: all embedders unhealthy");
             return false;
         }
 
@@ -387,16 +369,13 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
     ///
     /// Array of booleans indicating health status for each embedder (E1-E13).
     fn health_status(&self) -> [bool; NUM_EMBEDDERS] {
-        self.embedder_health
-            .read()
-            .map(|h| *h)
-            .unwrap_or_else(|_| {
-                // If lock is poisoned, log and return all unhealthy
-                tracing::error!(
-                    "StubMultiArrayProvider: embedder_health lock poisoned, returning all unhealthy"
-                );
-                [false; NUM_EMBEDDERS]
-            })
+        self.embedder_health.read().map(|h| *h).unwrap_or_else(|_| {
+            // If lock is poisoned, log and return all unhealthy
+            tracing::error!(
+                "StubMultiArrayProvider: embedder_health lock poisoned, returning all unhealthy"
+            );
+            [false; NUM_EMBEDDERS]
+        })
     }
 }
 
@@ -564,7 +543,8 @@ mod tests {
     #[tokio::test]
     async fn test_token_embeddings() {
         let provider = StubMultiArrayProvider::new();
-        let output = provider.embed_all("this is a longer test content for tokens")
+        let output = provider
+            .embed_all("this is a longer test content for tokens")
             .await
             .unwrap();
 

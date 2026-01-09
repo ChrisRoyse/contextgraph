@@ -158,10 +158,9 @@ impl RocksDbMemex {
 
         // Use regular iterator starting from prefix (not prefix_iterator which relies on
         // the 16-byte prefix extractor configured for UUID-based keys)
-        let iter = self.db.iterator_cf(
-            cf,
-            IteratorMode::From(&prefix, rocksdb::Direction::Forward),
-        );
+        let iter = self
+            .db
+            .iterator_cf(cf, IteratorMode::From(&prefix, rocksdb::Direction::Forward));
 
         let mut results = Vec::new();
         let mut skipped = 0;
@@ -238,10 +237,9 @@ impl RocksDbMemex {
 
         // Use regular iterator starting from prefix (not prefix_iterator which relies on
         // the 16-byte prefix extractor configured for UUID-based keys)
-        let iter = self.db.iterator_cf(
-            cf,
-            IteratorMode::From(&prefix, rocksdb::Direction::Forward),
-        );
+        let iter = self
+            .db
+            .iterator_cf(cf, IteratorMode::From(&prefix, rocksdb::Direction::Forward));
 
         let mut results = Vec::new();
         let mut skipped = 0;
@@ -335,9 +333,7 @@ impl RocksDbMemex {
             }
 
             // Extract timestamp from first 8 bytes
-            let ts_bytes: [u8; 8] = key[0..8]
-                .try_into()
-                .expect("slice is exactly 8 bytes");
+            let ts_bytes: [u8; 8] = key[0..8].try_into().expect("slice is exactly 8 bytes");
             let key_millis = u64::from_be_bytes(ts_bytes);
 
             // Stop if past end time

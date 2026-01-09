@@ -125,9 +125,13 @@ impl fmt::Display for ComparisonValidationError {
                     Values: purpose_vector={}, cross_correlations={}, \
                     group_alignments={}, confidence={}. \
                     Fix: call normalize() or adjust weights to sum to 1.0",
-                    actual_sum, expected_sum, tolerance,
-                    weights.purpose_vector, weights.cross_correlations,
-                    weights.group_alignments, weights.confidence
+                    actual_sum,
+                    expected_sum,
+                    tolerance,
+                    weights.purpose_vector,
+                    weights.cross_correlations,
+                    weights.group_alignments,
+                    weights.confidence
                 )
             }
 
@@ -341,14 +345,13 @@ mod tests {
 
     #[test]
     fn test_error_impl_std_error() {
-        let err: Box<dyn std::error::Error> = Box::new(
-            ComparisonValidationError::WeightOutOfRange {
+        let err: Box<dyn std::error::Error> =
+            Box::new(ComparisonValidationError::WeightOutOfRange {
                 field_name: "test",
                 value: 2.0,
                 min: 0.0,
                 max: 1.0,
-            },
-        );
+            });
         assert!(err.to_string().contains("test"));
         println!("[PASS] ComparisonValidationError implements std::error::Error");
     }

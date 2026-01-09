@@ -189,12 +189,7 @@ impl Assessor {
     ///
     /// # Returns
     /// Vector of recommendation strings
-    pub fn get_recommendations(
-        &self,
-        accuracy: f32,
-        efficiency: f32,
-        trend: f32,
-    ) -> Vec<String> {
+    pub fn get_recommendations(&self, accuracy: f32, efficiency: f32, trend: f32) -> Vec<String> {
         let mut recommendations = Vec::new();
 
         if accuracy < self.target_accuracy {
@@ -214,7 +209,9 @@ impl Assessor {
         }
 
         if trend < -0.05 {
-            recommendations.push("Performance is declining rapidly. Immediate attention required.".to_string());
+            recommendations.push(
+                "Performance is declining rapidly. Immediate attention required.".to_string(),
+            );
         } else if trend < -0.02 {
             recommendations.push("Performance is declining. Monitor closely.".to_string());
         }

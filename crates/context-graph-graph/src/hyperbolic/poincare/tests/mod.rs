@@ -14,9 +14,9 @@
 //! - [`edge_cases`]: Tests for boundary conditions and special values
 
 mod construction;
+mod edge_cases;
+mod equality_clone;
+mod memory_layout;
 mod norm;
 mod projection;
 mod validity;
-mod memory_layout;
-mod equality_clone;
-mod edge_cases;

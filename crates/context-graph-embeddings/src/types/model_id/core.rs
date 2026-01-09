@@ -154,12 +154,12 @@ impl ModelId {
             Self::Semantic => TokenizerFamily::BertWordpiece, // e5 uses BERT tokenizer
             Self::Causal => TokenizerFamily::RobertaBpe,      // Longformer uses RoBERTa
             Self::Sparse => TokenizerFamily::BertWordpiece,   // SPLADE uses BERT
-            Self::Code => TokenizerFamily::BertWordpiece,  // Qodo-Embed uses BERT tokenizer
+            Self::Code => TokenizerFamily::BertWordpiece,     // Qodo-Embed uses BERT tokenizer
             Self::Graph => TokenizerFamily::BertWordpiece,    // MiniLM uses BERT
             Self::Multimodal => TokenizerFamily::ClipBpe,     // CLIP has its own BPE
             Self::Entity => TokenizerFamily::BertWordpiece,   // all-MiniLM uses BERT
             Self::LateInteraction => TokenizerFamily::BertWordpiece, // ColBERT uses BERT
-            Self::Splade => TokenizerFamily::BertWordpiece,        // SPLADE v3 uses BERT
+            Self::Splade => TokenizerFamily::BertWordpiece,   // SPLADE v3 uses BERT
             Self::TemporalRecent
             | Self::TemporalPeriodic
             | Self::TemporalPositional

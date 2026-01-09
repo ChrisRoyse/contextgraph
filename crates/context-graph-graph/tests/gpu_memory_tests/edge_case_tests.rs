@@ -21,11 +21,7 @@ fn test_edge_case_zero_size_allocation() {
         .expect("Zero allocation should succeed");
 
     println!("AFTER: manager.used() = {}", manager.used());
-    assert_eq!(
-        manager.used(),
-        0,
-        "Zero allocation should not change usage"
-    );
+    assert_eq!(manager.used(), 0, "Zero allocation should not change usage");
     assert_eq!(h.size(), 0, "Handle size should be 0");
 
     drop(h);
@@ -39,8 +35,8 @@ fn test_edge_case_max_allocation() {
     println!("\n=== EDGE CASE: Maximum Allocation ===");
 
     let budget: usize = 1024 * 1024; // 1MB
-    let manager =
-        GpuMemoryManager::new(GpuMemoryConfig::with_budget(budget)).expect("Manager creation failed");
+    let manager = GpuMemoryManager::new(GpuMemoryConfig::with_budget(budget))
+        .expect("Manager creation failed");
 
     println!("BEFORE: Allocating exact budget size");
     let h = manager
@@ -68,8 +64,8 @@ fn test_edge_case_empty_inputs() {
     println!("\n=== EDGE CASE: Boundary Conditions ===");
 
     // Test config with minimal budget
-    let manager = GpuMemoryManager::new(GpuMemoryConfig::with_budget(1))
-        .expect("Should allow 1 byte budget");
+    let manager =
+        GpuMemoryManager::new(GpuMemoryConfig::with_budget(1)).expect("Should allow 1 byte budget");
 
     let h = manager
         .allocate(1, MemoryCategory::Other)

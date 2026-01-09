@@ -1,8 +1,8 @@
 //! Tests for WarmConfig defaults, environment loading, and validation.
 
+use super::helpers::{test_config, GB};
 use crate::warm::config::{QuantizationMode, WarmConfig};
 use crate::warm::error::WarmError;
-use super::helpers::{test_config, GB};
 
 use std::path::PathBuf;
 

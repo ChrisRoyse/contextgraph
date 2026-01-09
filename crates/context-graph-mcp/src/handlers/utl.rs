@@ -230,7 +230,6 @@ impl Handlers {
         let mut worst_space = 0usize;
         let mut worst_accuracy = 1.0f32;
         let mut spaces_above_target = 0usize;
-        
 
         for &idx in &embedder_indices {
             let current_weight = tracker.current_weights[idx];
@@ -360,7 +359,11 @@ impl Handlers {
 
         // TASK-EMB-024: Get REAL metrics from SystemMonitor - NO HARDCODED VALUES
         // FAIL FAST if SystemMonitor is not configured
-        let coherence_recovery_time_ms = match self.system_monitor.coherence_recovery_time_ms().await {
+        let coherence_recovery_time_ms = match self
+            .system_monitor
+            .coherence_recovery_time_ms()
+            .await
+        {
             Ok(v) => v,
             Err(e) => {
                 error!(error = %e, "meta_utl/health_metrics: coherence_recovery_time_ms FAILED");
@@ -933,17 +936,19 @@ impl Handlers {
                         );
                     }
                 };
-                let actual_alignment =
-                    match actual_outcome.get("alignment_delta").and_then(|v| v.as_f64()) {
-                        Some(a) => a as f32,
-                        None => {
-                            return JsonRpcResponse::error(
-                                id,
-                                error_codes::META_UTL_INVALID_OUTCOME,
-                                "Invalid outcome: missing field 'alignment_delta'",
-                            );
-                        }
-                    };
+                let actual_alignment = match actual_outcome
+                    .get("alignment_delta")
+                    .and_then(|v| v.as_f64())
+                {
+                    Some(a) => a as f32,
+                    None => {
+                        return JsonRpcResponse::error(
+                            id,
+                            error_codes::META_UTL_INVALID_OUTCOME,
+                            "Invalid outcome: missing field 'alignment_delta'",
+                        );
+                    }
+                };
 
                 let coherence_error = (predicted_coherence - actual_coherence).abs();
                 let alignment_error = (predicted_alignment - actual_alignment).abs();
@@ -981,10 +986,10 @@ impl Handlers {
         let mut tracker = self.meta_utl_tracker.write();
         // Copy weights first to avoid borrow conflict
         let weights = tracker.current_weights;
-        for i in 0..NUM_EMBEDDERS {
+        for (i, &weight) in weights.iter().enumerate() {
             // Weight accuracy by the embedder's contribution
-            let weighted_accuracy = accuracy_score * weights[i];
-            tracker.record_accuracy(i, weighted_accuracy + (1.0 - weights[i]));
+            let weighted_accuracy = accuracy_score * weight;
+            tracker.record_accuracy(i, weighted_accuracy + (1.0 - weight));
         }
 
         // Record validation (triggers weight update every 100 validations)

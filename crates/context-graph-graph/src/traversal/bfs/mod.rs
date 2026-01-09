@@ -14,8 +14,8 @@
 //! - edge_model.nt_weights.formula: Canonical modulation formula
 //! - AP-009: NaN/Infinity clamped to valid range
 
-mod types;
 mod traversal;
+mod types;
 
 #[cfg(test)]
 mod tests;
@@ -27,9 +27,4 @@ pub use types::{BfsParams, BfsResult, NodeId};
 pub use crate::storage::edges::{Domain, EdgeType};
 
 // Re-export all public functions
-pub use traversal::{
-    bfs_traverse,
-    bfs_shortest_path,
-    bfs_neighborhood,
-    bfs_domain_neighborhood,
-};
+pub use traversal::{bfs_domain_neighborhood, bfs_neighborhood, bfs_shortest_path, bfs_traverse};

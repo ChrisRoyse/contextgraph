@@ -18,9 +18,9 @@
 //! - `distances`: Same layout, L2 squared distances
 //! - `-1` sentinel indicates fewer than k matches found for that position
 
-mod types;
-mod query;
 mod metrics;
+mod query;
+mod types;
 
 #[cfg(test)]
 mod tests;

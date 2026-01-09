@@ -15,11 +15,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::error::EmbeddingError;
 use super::types::{
-    EmbedderQueryResult, MultiSpaceQueryResult, StoredQuantizedFingerprint,
-    RRF_K, NUM_EMBEDDERS,
+    EmbedderQueryResult, MultiSpaceQueryResult, StoredQuantizedFingerprint, NUM_EMBEDDERS, RRF_K,
 };
+use crate::error::EmbeddingError;
 
 // =============================================================================
 // TRAITS FOR DEPENDENCY INJECTION
@@ -31,7 +30,10 @@ use super::types::{
 /// - `RocksDbMemex` in `context-graph-storage::teleological::quantized`
 pub trait QuantizedFingerprintRetriever: Send + Sync {
     /// Get full fingerprint by ID.
-    fn get_fingerprint(&self, id: Uuid) -> Result<Option<StoredQuantizedFingerprint>, EmbeddingError>;
+    fn get_fingerprint(
+        &self,
+        id: Uuid,
+    ) -> Result<Option<StoredQuantizedFingerprint>, EmbeddingError>;
 
     /// Get only purpose vector (fast path for filtering).
     fn get_purpose_vector(&self, id: Uuid) -> Result<Option<[f32; 13]>, EmbeddingError>;
@@ -98,11 +100,11 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
     /// let hnsw = Arc::new(HnswMultiSpaceIndex::new());
     /// let engine = MultiSpaceSearchEngine::new(storage, hnsw);
     /// ```
-    pub fn new(
-        storage: Arc<S>,
-        hnsw_manager: Arc<dyn MultiSpaceIndexProvider>,
-    ) -> Self {
-        Self { storage, hnsw_manager }
+    pub fn new(storage: Arc<S>, hnsw_manager: Arc<dyn MultiSpaceIndexProvider>) -> Self {
+        Self {
+            storage,
+            hnsw_manager,
+        }
     }
 
     /// Search a single embedder's HNSW index.
@@ -132,7 +134,8 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
             panic!(
                 "SEARCH ERROR: Invalid embedder_idx={}. Valid range: 0-12. \
                  Query dimension={}. Caller must validate embedder index.",
-                embedder_idx, query.len()
+                embedder_idx,
+                query.len()
             );
         }
 
@@ -163,7 +166,10 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
         // Log success evidence
         eprintln!(
             "[SINGLE-SPACE SEARCH] embedder={}, query_dim={}, k={}, found={}",
-            embedder_idx, query.len(), k, results.len()
+            embedder_idx,
+            query.len(),
+            k,
+            results.len()
         );
 
         Ok(results)
@@ -234,10 +240,7 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
             let space_results = self.search_single_space(embedder_idx, query, k_per_space)?;
 
             for result in space_results {
-                all_results
-                    .entry(result.id)
-                    .or_default()
-                    .push(result);
+                all_results.entry(result.id).or_default().push(result);
             }
         }
 
@@ -295,7 +298,9 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
 
         eprintln!(
             "[MULTI-SPACE SEARCH] spaces_queried={}, unique_candidates={}, returned={}",
-            queries.len(), total_candidates, fused_results.len()
+            queries.len(),
+            total_candidates,
+            fused_results.len()
         );
 
         if let Some(top) = fused_results.first() {
@@ -393,7 +398,9 @@ mod tests {
 
     impl TestStorage {
         fn new() -> Self {
-            Self { purpose_vectors: HashMap::new() }
+            Self {
+                purpose_vectors: HashMap::new(),
+            }
         }
 
         fn add_purpose_vector(&mut self, id: Uuid, pv: [f32; 13]) {
@@ -402,7 +409,10 @@ mod tests {
     }
 
     impl QuantizedFingerprintRetriever for TestStorage {
-        fn get_fingerprint(&self, _id: Uuid) -> Result<Option<StoredQuantizedFingerprint>, EmbeddingError> {
+        fn get_fingerprint(
+            &self,
+            _id: Uuid,
+        ) -> Result<Option<StoredQuantizedFingerprint>, EmbeddingError> {
             // Not needed for search tests
             Ok(None)
         }
@@ -419,7 +429,9 @@ mod tests {
 
     impl TestHnswManager {
         fn new() -> Self {
-            Self { results: HashMap::new() }
+            Self {
+                results: HashMap::new(),
+            }
         }
 
         fn set_results(&mut self, embedder_idx: u8, results: Vec<(Uuid, f32)>) {
@@ -434,7 +446,8 @@ mod tests {
             _query: &[f32],
             k: usize,
         ) -> Result<Vec<(Uuid, f32)>, EmbeddingError> {
-            Ok(self.results
+            Ok(self
+                .results
                 .get(&embedder_idx)
                 .cloned()
                 .unwrap_or_default()
@@ -463,11 +476,7 @@ mod tests {
         let id3 = Uuid::new_v4();
 
         // Set up results with known similarities
-        hnsw.set_results(0, vec![
-            (id1, 0.95),
-            (id2, 0.80),
-            (id3, 0.65),
-        ]);
+        hnsw.set_results(0, vec![(id1, 0.95), (id2, 0.80), (id3, 0.65)]);
 
         let engine = MultiSpaceSearchEngine::new(storage, Arc::new(hnsw));
         let query = vec![0.0f32; 1024];
@@ -493,12 +502,15 @@ mod tests {
         let id1 = Uuid::new_v4();
 
         // Document appears at rank 0 in E1 and rank 2 in E2
-        hnsw.set_results(0, vec![(id1, 0.90)]);  // rank 0
-        hnsw.set_results(1, vec![
-            (Uuid::new_v4(), 0.95),
-            (Uuid::new_v4(), 0.85),
-            (id1, 0.75),  // rank 2
-        ]);
+        hnsw.set_results(0, vec![(id1, 0.90)]); // rank 0
+        hnsw.set_results(
+            1,
+            vec![
+                (Uuid::new_v4(), 0.95),
+                (Uuid::new_v4(), 0.85),
+                (id1, 0.75), // rank 2
+            ],
+        );
 
         let engine = MultiSpaceSearchEngine::new(storage, Arc::new(hnsw));
 
@@ -520,7 +532,8 @@ mod tests {
         assert!(
             (id1_result.rrf_score - expected_rrf).abs() < 0.001,
             "RRF score mismatch: got {}, expected {}",
-            id1_result.rrf_score, expected_rrf
+            id1_result.rrf_score,
+            expected_rrf
         );
 
         eprintln!(
@@ -538,8 +551,8 @@ mod tests {
         let id2 = Uuid::new_v4();
 
         // Both documents appear at same ranks but in different spaces
-        hnsw.set_results(0, vec![(id1, 0.90)]);  // id1 in E1
-        hnsw.set_results(1, vec![(id2, 0.90)]);  // id2 in E2
+        hnsw.set_results(0, vec![(id1, 0.90)]); // id1 in E1
+        hnsw.set_results(1, vec![(id2, 0.90)]); // id2 in E2
 
         let engine = MultiSpaceSearchEngine::new(storage, Arc::new(hnsw));
 
@@ -548,23 +561,37 @@ mod tests {
         queries.insert(1, vec![0.0f32; 512]);
 
         // Weight E1 heavily
-        let weights_favor_e1 = [10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
-        let results = engine.search_multi_space(&queries, Some(&weights_favor_e1), 10, 10).unwrap();
+        let weights_favor_e1 = [
+            10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        ];
+        let results = engine
+            .search_multi_space(&queries, Some(&weights_favor_e1), 10, 10)
+            .unwrap();
 
         // id1 should rank higher due to E1 weight
         let id1_idx = results.iter().position(|r| r.id == id1).unwrap();
         let id2_idx = results.iter().position(|r| r.id == id2).unwrap();
 
-        assert!(id1_idx < id2_idx, "id1 should rank higher with E1 weight=10");
+        assert!(
+            id1_idx < id2_idx,
+            "id1 should rank higher with E1 weight=10"
+        );
 
         // Now weight E2 heavily
-        let weights_favor_e2 = [1.0, 10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0];
-        let results = engine.search_multi_space(&queries, Some(&weights_favor_e2), 10, 10).unwrap();
+        let weights_favor_e2 = [
+            1.0, 10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+        ];
+        let results = engine
+            .search_multi_space(&queries, Some(&weights_favor_e2), 10, 10)
+            .unwrap();
 
         let id1_idx = results.iter().position(|r| r.id == id1).unwrap();
         let id2_idx = results.iter().position(|r| r.id == id2).unwrap();
 
-        assert!(id2_idx < id1_idx, "id2 should rank higher with E2 weight=10");
+        assert!(
+            id2_idx < id1_idx,
+            "id2 should rank higher with E2 weight=10"
+        );
 
         eprintln!("[VERIFIED] Purpose weights correctly affect ranking");
     }
@@ -580,9 +607,13 @@ mod tests {
         let mut hnsw = TestHnswManager::new();
 
         let ids: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
-        hnsw.set_results(0, ids.iter().enumerate()
-            .map(|(i, id)| (*id, 1.0 - i as f32 * 0.1))
-            .collect());
+        hnsw.set_results(
+            0,
+            ids.iter()
+                .enumerate()
+                .map(|(i, id)| (*id, 1.0 - i as f32 * 0.1))
+                .collect(),
+        );
 
         let engine = MultiSpaceSearchEngine::new(storage, Arc::new(hnsw));
 
@@ -596,7 +627,10 @@ mod tests {
             let expected = 1.0 / (60.0 + i as f32);
             assert!(
                 (result.rrf_score - expected).abs() < 0.0001,
-                "Rank {} RRF: expected {}, got {}", i, expected, result.rrf_score
+                "Rank {} RRF: expected {}, got {}",
+                i,
+                expected,
+                result.rrf_score
             );
         }
 
@@ -649,11 +683,7 @@ mod tests {
         let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
 
         // All same similarity, but different ranks
-        hnsw.set_results(0, vec![
-            (ids[0], 0.80),
-            (ids[1], 0.80),
-            (ids[2], 0.80),
-        ]);
+        hnsw.set_results(0, vec![(ids[0], 0.80), (ids[1], 0.80), (ids[2], 0.80)]);
 
         let engine = MultiSpaceSearchEngine::new(storage, Arc::new(hnsw));
 

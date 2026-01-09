@@ -204,8 +204,9 @@ impl NeuromodulationManager {
                 Ok(new_value)
             }
             ModulatorType::Acetylcholine => Err(CoreError::FeatureDisabled {
-                feature: "Direct ACh adjustment is disabled. ACh is managed by GWT MetaCognitiveLoop."
-                    .to_string(),
+                feature:
+                    "Direct ACh adjustment is disabled. ACh is managed by GWT MetaCognitiveLoop."
+                        .to_string(),
             }),
         }
     }
@@ -266,7 +267,8 @@ impl NeuromodulationManager {
 
     /// Handle threat detection with severity
     pub fn on_threat_detected_with_severity(&mut self, severity: f32) {
-        self.noradrenaline.on_threat_detected_with_severity(severity);
+        self.noradrenaline
+            .on_threat_detected_with_severity(severity);
     }
 
     /// Handle safety confirmation (calms noradrenaline)
@@ -461,8 +463,14 @@ mod tests {
     fn test_modulator_type_display() {
         assert_eq!(ModulatorType::Dopamine.to_string(), "Dopamine (DA)");
         assert_eq!(ModulatorType::Serotonin.to_string(), "Serotonin (5HT)");
-        assert_eq!(ModulatorType::Noradrenaline.to_string(), "Noradrenaline (NE)");
-        assert_eq!(ModulatorType::Acetylcholine.to_string(), "Acetylcholine (ACh)");
+        assert_eq!(
+            ModulatorType::Noradrenaline.to_string(),
+            "Noradrenaline (NE)"
+        );
+        assert_eq!(
+            ModulatorType::Acetylcholine.to_string(),
+            "Acetylcholine (ACh)"
+        );
     }
 
     #[test]

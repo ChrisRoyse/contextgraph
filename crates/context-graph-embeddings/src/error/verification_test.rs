@@ -18,54 +18,92 @@ mod full_state_verification {
 
         // Create REAL error instances - no mocks
         let errors: Vec<(&str, EmbeddingError)> = vec![
-            ("EMB-E001", EmbeddingError::CudaUnavailable { message: "VERIFICATION".into() }),
-            ("EMB-E002", EmbeddingError::InsufficientVram {
-                required_bytes: 32_000_000_000,
-                available_bytes: 8_000_000_000,
-                required_gb: 32.0,
-                available_gb: 8.0,
-            }),
-            ("EMB-E003", EmbeddingError::WeightFileMissing {
-                model_id: ModelId::Semantic,
-                path: PathBuf::from("/verify/path"),
-            }),
-            ("EMB-E004", EmbeddingError::WeightChecksumMismatch {
-                model_id: ModelId::Code,
-                expected: "expected_sha256".into(),
-                actual: "actual_sha256".into(),
-            }),
-            ("EMB-E005", EmbeddingError::ModelDimensionMismatch {
-                model_id: ModelId::Graph,
-                expected: 384,
-                actual: 768,
-            }),
-            ("EMB-E006", EmbeddingError::ProjectionMatrixMissing {
-                path: PathBuf::from("/verify/projection.bin"),
-            }),
-            ("EMB-E007", EmbeddingError::OomDuringBatch {
-                batch_size: 128,
-                model_id: ModelId::Multimodal,
-            }),
-            ("EMB-E008", EmbeddingError::InferenceValidationFailed {
-                model_id: ModelId::Entity,
-                reason: "NaN in output".into(),
-            }),
-            ("EMB-E009", EmbeddingError::InputTooLarge {
-                max_tokens: 512,
-                actual_tokens: 10000,
-            }),
-            ("EMB-E010", EmbeddingError::StorageCorruption {
-                id: "fp-verify-12345".into(),
-                reason: "CRC mismatch".into(),
-            }),
-            ("EMB-E011", EmbeddingError::CodebookMissing {
-                model_id: ModelId::Sparse,
-            }),
-            ("EMB-E012", EmbeddingError::RecallLossExceeded {
-                model_id: ModelId::Hdc,
-                measured: 0.75,
-                max_allowed: 0.05,
-            }),
+            (
+                "EMB-E001",
+                EmbeddingError::CudaUnavailable {
+                    message: "VERIFICATION".into(),
+                },
+            ),
+            (
+                "EMB-E002",
+                EmbeddingError::InsufficientVram {
+                    required_bytes: 32_000_000_000,
+                    available_bytes: 8_000_000_000,
+                    required_gb: 32.0,
+                    available_gb: 8.0,
+                },
+            ),
+            (
+                "EMB-E003",
+                EmbeddingError::WeightFileMissing {
+                    model_id: ModelId::Semantic,
+                    path: PathBuf::from("/verify/path"),
+                },
+            ),
+            (
+                "EMB-E004",
+                EmbeddingError::WeightChecksumMismatch {
+                    model_id: ModelId::Code,
+                    expected: "expected_sha256".into(),
+                    actual: "actual_sha256".into(),
+                },
+            ),
+            (
+                "EMB-E005",
+                EmbeddingError::ModelDimensionMismatch {
+                    model_id: ModelId::Graph,
+                    expected: 384,
+                    actual: 768,
+                },
+            ),
+            (
+                "EMB-E006",
+                EmbeddingError::ProjectionMatrixMissing {
+                    path: PathBuf::from("/verify/projection.bin"),
+                },
+            ),
+            (
+                "EMB-E007",
+                EmbeddingError::OomDuringBatch {
+                    batch_size: 128,
+                    model_id: ModelId::Multimodal,
+                },
+            ),
+            (
+                "EMB-E008",
+                EmbeddingError::InferenceValidationFailed {
+                    model_id: ModelId::Entity,
+                    reason: "NaN in output".into(),
+                },
+            ),
+            (
+                "EMB-E009",
+                EmbeddingError::InputTooLarge {
+                    max_tokens: 512,
+                    actual_tokens: 10000,
+                },
+            ),
+            (
+                "EMB-E010",
+                EmbeddingError::StorageCorruption {
+                    id: "fp-verify-12345".into(),
+                    reason: "CRC mismatch".into(),
+                },
+            ),
+            (
+                "EMB-E011",
+                EmbeddingError::CodebookMissing {
+                    model_id: ModelId::Sparse,
+                },
+            ),
+            (
+                "EMB-E012",
+                EmbeddingError::RecallLossExceeded {
+                    model_id: ModelId::Hdc,
+                    measured: 0.75,
+                    max_allowed: 0.05,
+                },
+            ),
         ];
 
         println!("PHYSICAL VERIFICATION OF 12 SPEC ERROR CODES:");
@@ -83,7 +121,10 @@ mod full_state_verification {
             println!("    spec_code() = {:?}", actual_code);
             println!("    severity() = {:?}", severity);
             println!("    is_recoverable() = {}", recoverable);
-            println!("    Message contains code: {}", message.contains(expected_code));
+            println!(
+                "    Message contains code: {}",
+                message.contains(expected_code)
+            );
 
             // PHYSICAL ASSERTION - this will FAIL if data doesn't match
             assert_eq!(
@@ -110,51 +151,106 @@ mod full_state_verification {
         println!("\n========== SEVERITY VERIFICATION ==========");
 
         // Critical errors (7 total)
-        let critical_codes = ["EMB-E001", "EMB-E002", "EMB-E003", "EMB-E004", "EMB-E005", "EMB-E006", "EMB-E008"];
+        let critical_codes = [
+            "EMB-E001", "EMB-E002", "EMB-E003", "EMB-E004", "EMB-E005", "EMB-E006", "EMB-E008",
+        ];
         let critical_errors: Vec<EmbeddingError> = vec![
-            EmbeddingError::CudaUnavailable { message: "test".into() },
-            EmbeddingError::InsufficientVram { required_bytes: 0, available_bytes: 0, required_gb: 0.0, available_gb: 0.0 },
-            EmbeddingError::WeightFileMissing { model_id: ModelId::Semantic, path: PathBuf::new() },
-            EmbeddingError::WeightChecksumMismatch { model_id: ModelId::Semantic, expected: "".into(), actual: "".into() },
-            EmbeddingError::ModelDimensionMismatch { model_id: ModelId::Semantic, expected: 0, actual: 0 },
-            EmbeddingError::ProjectionMatrixMissing { path: PathBuf::new() },
-            EmbeddingError::InferenceValidationFailed { model_id: ModelId::Semantic, reason: "".into() },
+            EmbeddingError::CudaUnavailable {
+                message: "test".into(),
+            },
+            EmbeddingError::InsufficientVram {
+                required_bytes: 0,
+                available_bytes: 0,
+                required_gb: 0.0,
+                available_gb: 0.0,
+            },
+            EmbeddingError::WeightFileMissing {
+                model_id: ModelId::Semantic,
+                path: PathBuf::new(),
+            },
+            EmbeddingError::WeightChecksumMismatch {
+                model_id: ModelId::Semantic,
+                expected: "".into(),
+                actual: "".into(),
+            },
+            EmbeddingError::ModelDimensionMismatch {
+                model_id: ModelId::Semantic,
+                expected: 0,
+                actual: 0,
+            },
+            EmbeddingError::ProjectionMatrixMissing {
+                path: PathBuf::new(),
+            },
+            EmbeddingError::InferenceValidationFailed {
+                model_id: ModelId::Semantic,
+                reason: "".into(),
+            },
         ];
 
         println!("\nCRITICAL SEVERITY VERIFICATION:");
         for (i, err) in critical_errors.iter().enumerate() {
             let severity = err.severity();
             println!("  {} -> severity() = {:?}", critical_codes[i], severity);
-            assert_eq!(severity, ErrorSeverity::Critical, "FAILED: {} should be Critical", critical_codes[i]);
+            assert_eq!(
+                severity,
+                ErrorSeverity::Critical,
+                "FAILED: {} should be Critical",
+                critical_codes[i]
+            );
         }
 
         // High errors (3 total)
         let high_codes = ["EMB-E007", "EMB-E010", "EMB-E011"];
         let high_errors: Vec<EmbeddingError> = vec![
-            EmbeddingError::OomDuringBatch { batch_size: 0, model_id: ModelId::Semantic },
-            EmbeddingError::StorageCorruption { id: "".into(), reason: "".into() },
-            EmbeddingError::CodebookMissing { model_id: ModelId::Semantic },
+            EmbeddingError::OomDuringBatch {
+                batch_size: 0,
+                model_id: ModelId::Semantic,
+            },
+            EmbeddingError::StorageCorruption {
+                id: "".into(),
+                reason: "".into(),
+            },
+            EmbeddingError::CodebookMissing {
+                model_id: ModelId::Semantic,
+            },
         ];
 
         println!("\nHIGH SEVERITY VERIFICATION:");
         for (i, err) in high_errors.iter().enumerate() {
             let severity = err.severity();
             println!("  {} -> severity() = {:?}", high_codes[i], severity);
-            assert_eq!(severity, ErrorSeverity::High, "FAILED: {} should be High", high_codes[i]);
+            assert_eq!(
+                severity,
+                ErrorSeverity::High,
+                "FAILED: {} should be High",
+                high_codes[i]
+            );
         }
 
         // Medium errors (2 total)
         let medium_codes = ["EMB-E009", "EMB-E012"];
         let medium_errors: Vec<EmbeddingError> = vec![
-            EmbeddingError::InputTooLarge { max_tokens: 0, actual_tokens: 0 },
-            EmbeddingError::RecallLossExceeded { model_id: ModelId::Semantic, measured: 0.0, max_allowed: 0.0 },
+            EmbeddingError::InputTooLarge {
+                max_tokens: 0,
+                actual_tokens: 0,
+            },
+            EmbeddingError::RecallLossExceeded {
+                model_id: ModelId::Semantic,
+                measured: 0.0,
+                max_allowed: 0.0,
+            },
         ];
 
         println!("\nMEDIUM SEVERITY VERIFICATION:");
         for (i, err) in medium_errors.iter().enumerate() {
             let severity = err.severity();
             println!("  {} -> severity() = {:?}", medium_codes[i], severity);
-            assert_eq!(severity, ErrorSeverity::Medium, "FAILED: {} should be Medium", medium_codes[i]);
+            assert_eq!(
+                severity,
+                ErrorSeverity::Medium,
+                "FAILED: {} should be Medium",
+                medium_codes[i]
+            );
         }
 
         println!("\n✓ ALL SEVERITY CLASSIFICATIONS PHYSICALLY VERIFIED");
@@ -167,17 +263,83 @@ mod full_state_verification {
 
         // All SPEC errors that should NOT be recoverable (11 total)
         let non_recoverable: Vec<(&str, EmbeddingError)> = vec![
-            ("EMB-E001", EmbeddingError::CudaUnavailable { message: "".into() }),
-            ("EMB-E002", EmbeddingError::InsufficientVram { required_bytes: 0, available_bytes: 0, required_gb: 0.0, available_gb: 0.0 }),
-            ("EMB-E003", EmbeddingError::WeightFileMissing { model_id: ModelId::Semantic, path: PathBuf::new() }),
-            ("EMB-E004", EmbeddingError::WeightChecksumMismatch { model_id: ModelId::Semantic, expected: "".into(), actual: "".into() }),
-            ("EMB-E005", EmbeddingError::ModelDimensionMismatch { model_id: ModelId::Semantic, expected: 0, actual: 0 }),
-            ("EMB-E006", EmbeddingError::ProjectionMatrixMissing { path: PathBuf::new() }),
-            ("EMB-E007", EmbeddingError::OomDuringBatch { batch_size: 0, model_id: ModelId::Semantic }),
-            ("EMB-E008", EmbeddingError::InferenceValidationFailed { model_id: ModelId::Semantic, reason: "".into() }),
-            ("EMB-E010", EmbeddingError::StorageCorruption { id: "".into(), reason: "".into() }),
-            ("EMB-E011", EmbeddingError::CodebookMissing { model_id: ModelId::Semantic }),
-            ("EMB-E012", EmbeddingError::RecallLossExceeded { model_id: ModelId::Semantic, measured: 0.0, max_allowed: 0.0 }),
+            (
+                "EMB-E001",
+                EmbeddingError::CudaUnavailable { message: "".into() },
+            ),
+            (
+                "EMB-E002",
+                EmbeddingError::InsufficientVram {
+                    required_bytes: 0,
+                    available_bytes: 0,
+                    required_gb: 0.0,
+                    available_gb: 0.0,
+                },
+            ),
+            (
+                "EMB-E003",
+                EmbeddingError::WeightFileMissing {
+                    model_id: ModelId::Semantic,
+                    path: PathBuf::new(),
+                },
+            ),
+            (
+                "EMB-E004",
+                EmbeddingError::WeightChecksumMismatch {
+                    model_id: ModelId::Semantic,
+                    expected: "".into(),
+                    actual: "".into(),
+                },
+            ),
+            (
+                "EMB-E005",
+                EmbeddingError::ModelDimensionMismatch {
+                    model_id: ModelId::Semantic,
+                    expected: 0,
+                    actual: 0,
+                },
+            ),
+            (
+                "EMB-E006",
+                EmbeddingError::ProjectionMatrixMissing {
+                    path: PathBuf::new(),
+                },
+            ),
+            (
+                "EMB-E007",
+                EmbeddingError::OomDuringBatch {
+                    batch_size: 0,
+                    model_id: ModelId::Semantic,
+                },
+            ),
+            (
+                "EMB-E008",
+                EmbeddingError::InferenceValidationFailed {
+                    model_id: ModelId::Semantic,
+                    reason: "".into(),
+                },
+            ),
+            (
+                "EMB-E010",
+                EmbeddingError::StorageCorruption {
+                    id: "".into(),
+                    reason: "".into(),
+                },
+            ),
+            (
+                "EMB-E011",
+                EmbeddingError::CodebookMissing {
+                    model_id: ModelId::Semantic,
+                },
+            ),
+            (
+                "EMB-E012",
+                EmbeddingError::RecallLossExceeded {
+                    model_id: ModelId::Semantic,
+                    measured: 0.0,
+                    max_allowed: 0.0,
+                },
+            ),
         ];
 
         println!("\nNON-RECOVERABLE VERIFICATION (should all be false):");
@@ -188,7 +350,10 @@ mod full_state_verification {
         }
 
         // THE ONLY recoverable error
-        let recoverable = EmbeddingError::InputTooLarge { max_tokens: 512, actual_tokens: 1024 };
+        let recoverable = EmbeddingError::InputTooLarge {
+            max_tokens: 512,
+            actual_tokens: 1024,
+        };
         let result = recoverable.is_recoverable();
         println!("\nRECOVERABLE VERIFICATION (should be true):");
         println!("  EMB-E009 -> is_recoverable() = {}", result);
@@ -239,8 +404,13 @@ mod full_state_verification {
 
         println!("BEFORE: Creating errors with empty strings");
 
-        let err1 = EmbeddingError::CudaUnavailable { message: String::new() };
-        let err2 = EmbeddingError::StorageCorruption { id: String::new(), reason: String::new() };
+        let err1 = EmbeddingError::CudaUnavailable {
+            message: String::new(),
+        };
+        let err2 = EmbeddingError::StorageCorruption {
+            id: String::new(),
+            reason: String::new(),
+        };
         let err3 = EmbeddingError::WeightChecksumMismatch {
             model_id: ModelId::Semantic,
             expected: String::new(),
@@ -249,7 +419,11 @@ mod full_state_verification {
 
         println!("AFTER: Errors created with empty strings");
 
-        for (name, err) in [("CudaUnavailable", &err1), ("StorageCorruption", &err2), ("WeightChecksumMismatch", &err3)] {
+        for (name, err) in [
+            ("CudaUnavailable", &err1),
+            ("StorageCorruption", &err2),
+            ("WeightChecksumMismatch", &err3),
+        ] {
             let msg = err.to_string();
             let code = err.spec_code();
             println!("\n  {}: ", name);
@@ -291,12 +465,18 @@ mod full_state_verification {
         println!("\n  NaN test:");
         println!("    spec_code() = {:?}", err_nan.spec_code());
         println!("    severity() = {:?}", err_nan.severity());
-        println!("    Message contains NaN: {}", msg_nan.to_lowercase().contains("nan"));
+        println!(
+            "    Message contains NaN: {}",
+            msg_nan.to_lowercase().contains("nan")
+        );
 
         println!("\n  NEG_INFINITY test:");
         println!("    spec_code() = {:?}", err_neg_inf.spec_code());
         println!("    severity() = {:?}", err_neg_inf.severity());
-        println!("    Message contains inf: {}", msg_neg_inf.to_lowercase().contains("inf"));
+        println!(
+            "    Message contains inf: {}",
+            msg_neg_inf.to_lowercase().contains("inf")
+        );
 
         // Physical verification
         assert_eq!(err_nan.spec_code(), Some("EMB-E012"));
@@ -317,31 +497,72 @@ mod full_state_verification {
         // Count by actually creating one of each SPEC variant
         let spec_variants: Vec<EmbeddingError> = vec![
             EmbeddingError::CudaUnavailable { message: "".into() },
-            EmbeddingError::InsufficientVram { required_bytes: 0, available_bytes: 0, required_gb: 0.0, available_gb: 0.0 },
-            EmbeddingError::WeightFileMissing { model_id: ModelId::Semantic, path: PathBuf::new() },
-            EmbeddingError::WeightChecksumMismatch { model_id: ModelId::Semantic, expected: "".into(), actual: "".into() },
-            EmbeddingError::ModelDimensionMismatch { model_id: ModelId::Semantic, expected: 0, actual: 0 },
-            EmbeddingError::ProjectionMatrixMissing { path: PathBuf::new() },
-            EmbeddingError::OomDuringBatch { batch_size: 0, model_id: ModelId::Semantic },
-            EmbeddingError::InferenceValidationFailed { model_id: ModelId::Semantic, reason: "".into() },
-            EmbeddingError::InputTooLarge { max_tokens: 0, actual_tokens: 0 },
-            EmbeddingError::StorageCorruption { id: "".into(), reason: "".into() },
-            EmbeddingError::CodebookMissing { model_id: ModelId::Semantic },
-            EmbeddingError::RecallLossExceeded { model_id: ModelId::Semantic, measured: 0.0, max_allowed: 0.0 },
+            EmbeddingError::InsufficientVram {
+                required_bytes: 0,
+                available_bytes: 0,
+                required_gb: 0.0,
+                available_gb: 0.0,
+            },
+            EmbeddingError::WeightFileMissing {
+                model_id: ModelId::Semantic,
+                path: PathBuf::new(),
+            },
+            EmbeddingError::WeightChecksumMismatch {
+                model_id: ModelId::Semantic,
+                expected: "".into(),
+                actual: "".into(),
+            },
+            EmbeddingError::ModelDimensionMismatch {
+                model_id: ModelId::Semantic,
+                expected: 0,
+                actual: 0,
+            },
+            EmbeddingError::ProjectionMatrixMissing {
+                path: PathBuf::new(),
+            },
+            EmbeddingError::OomDuringBatch {
+                batch_size: 0,
+                model_id: ModelId::Semantic,
+            },
+            EmbeddingError::InferenceValidationFailed {
+                model_id: ModelId::Semantic,
+                reason: "".into(),
+            },
+            EmbeddingError::InputTooLarge {
+                max_tokens: 0,
+                actual_tokens: 0,
+            },
+            EmbeddingError::StorageCorruption {
+                id: "".into(),
+                reason: "".into(),
+            },
+            EmbeddingError::CodebookMissing {
+                model_id: ModelId::Semantic,
+            },
+            EmbeddingError::RecallLossExceeded {
+                model_id: ModelId::Semantic,
+                measured: 0.0,
+                max_allowed: 0.0,
+            },
         ];
 
         let count = spec_variants.len();
-        println!("PHYSICAL COUNT: {} SPEC-EMB-001 error variants created", count);
+        println!(
+            "PHYSICAL COUNT: {} SPEC-EMB-001 error variants created",
+            count
+        );
 
         // Verify each has a spec_code
-        let codes_present: Vec<_> = spec_variants.iter()
-            .filter_map(|e| e.spec_code())
-            .collect();
+        let codes_present: Vec<_> = spec_variants.iter().filter_map(|e| e.spec_code()).collect();
 
         println!("SPEC CODES FOUND: {:?}", codes_present);
         println!("UNIQUE CODES: {}", codes_present.len());
 
-        assert_eq!(count, 12, "FAILED: Expected 12 SPEC variants, found {}", count);
+        assert_eq!(
+            count, 12,
+            "FAILED: Expected 12 SPEC variants, found {}",
+            count
+        );
         assert_eq!(codes_present.len(), 12, "FAILED: Expected 12 unique codes");
 
         println!("\n✓ FINAL VERIFICATION: 12 SPEC-EMB-001 VARIANTS PHYSICALLY EXIST");

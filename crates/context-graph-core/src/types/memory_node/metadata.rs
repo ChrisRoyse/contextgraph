@@ -294,7 +294,12 @@ impl NodeMetadata {
         // Rough estimate for HashMap: key lengths + value estimate (assume ~32 bytes avg)
         let custom_size: usize = self.custom.keys().map(|k| k.len() + 32).sum();
 
-        base + source_size + language_size + rationale_size + tags_size + child_ids_size + custom_size
+        base + source_size
+            + language_size
+            + rationale_size
+            + tags_size
+            + child_ids_size
+            + custom_size
     }
 }
 

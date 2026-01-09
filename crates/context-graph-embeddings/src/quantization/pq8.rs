@@ -53,7 +53,9 @@ pub enum PQ8QuantizationError {
 impl fmt::Display for PQ8QuantizationError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::EmptyEmbedding => write!(f, "Empty embedding: cannot quantize zero-length vector"),
+            Self::EmptyEmbedding => {
+                write!(f, "Empty embedding: cannot quantize zero-length vector")
+            }
             Self::ContainsNaN { index } => {
                 write!(f, "Invalid input: NaN value at index {}", index)
             }
@@ -75,11 +77,7 @@ impl fmt::Display for PQ8QuantizationError {
                 )
             }
             Self::InvalidMetadata { expected, got } => {
-                write!(
-                    f,
-                    "Invalid metadata: expected {}, got {}",
-                    expected, got
-                )
+                write!(f, "Invalid metadata: expected {}, got {}", expected, got)
             }
             Self::InvalidDataLength { expected, got } => {
                 write!(
@@ -175,9 +173,7 @@ impl PQ8Encoder {
             let mut subvector_centroids = Vec::with_capacity(NUM_CENTROIDS);
             for _ in 0..NUM_CENTROIDS {
                 // Generate centroid with varied values per dimension
-                let centroid: Vec<f32> = (0..subvector_dim)
-                    .map(|_| lcg_next(&mut seed))
-                    .collect();
+                let centroid: Vec<f32> = (0..subvector_dim).map(|_| lcg_next(&mut seed)).collect();
                 subvector_centroids.push(centroid);
             }
             centroids.push(subvector_centroids);
@@ -291,7 +287,10 @@ impl PQ8Encoder {
     ) -> Result<Vec<f32>, PQ8QuantizationError> {
         // Validate metadata
         match &quantized.metadata {
-            QuantizationMetadata::PQ8 { codebook_id, num_subvectors } => {
+            QuantizationMetadata::PQ8 {
+                codebook_id,
+                num_subvectors,
+            } => {
                 if *codebook_id != self.codebook.codebook_id {
                     warn!(
                         target: "quantization::pq8",
@@ -439,7 +438,11 @@ mod tests {
         assert_eq!(reconstructed.len(), 256);
 
         // Compute cosine similarity for reconstruction quality
-        let dot: f32 = embedding.iter().zip(reconstructed.iter()).map(|(a, b)| a * b).sum();
+        let dot: f32 = embedding
+            .iter()
+            .zip(reconstructed.iter())
+            .map(|(a, b)| a * b)
+            .sum();
         let norm_a: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm_b: f32 = reconstructed.iter().map(|x| x * x).sum::<f32>().sqrt();
         let cosine = dot / (norm_a * norm_b);
@@ -570,9 +573,13 @@ mod tests {
 
         for dim in dimensions {
             let encoder = PQ8Encoder::new(dim);
-            let embedding: Vec<f32> = (0..dim).map(|i| (i as f32 / dim as f32) * 2.0 - 1.0).collect();
+            let embedding: Vec<f32> = (0..dim)
+                .map(|i| (i as f32 / dim as f32) * 2.0 - 1.0)
+                .collect();
 
-            let quantized = encoder.quantize(&embedding).unwrap_or_else(|e| panic!("quantize {}D: {:?}", dim, e));
+            let quantized = encoder
+                .quantize(&embedding)
+                .unwrap_or_else(|e| panic!("quantize {}D: {:?}", dim, e));
             let reconstructed = encoder.dequantize(&quantized).expect("dequantize");
 
             assert_eq!(reconstructed.len(), dim);
@@ -599,7 +606,11 @@ mod tests {
             let reconstructed = encoder.dequantize(&quantized).expect("dequantize");
 
             // Compute cosine similarity
-            let dot: f32 = embedding.iter().zip(reconstructed.iter()).map(|(a, b)| a * b).sum();
+            let dot: f32 = embedding
+                .iter()
+                .zip(reconstructed.iter())
+                .map(|(a, b)| a * b)
+                .sum();
             let norm_a: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
             let norm_b: f32 = reconstructed.iter().map(|x| x * x).sum::<f32>().sqrt();
             let cosine = dot / (norm_a * norm_b);

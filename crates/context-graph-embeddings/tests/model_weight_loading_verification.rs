@@ -35,9 +35,7 @@ use safetensors::Dtype;
 use sha2::{Digest, Sha256};
 
 // Import from context-graph-embeddings
-use context_graph_embeddings::warm::{
-    ModelHandle, WarmModelRegistry, WarmModelState,
-};
+use context_graph_embeddings::warm::{ModelHandle, WarmModelRegistry, WarmModelState};
 
 // ============================================================================
 // Test 1: Create Real SafeTensors File
@@ -59,28 +57,20 @@ fn test_create_real_safetensors_file() {
 
     // Create real tensor data (4x4 matrix of floats)
     let tensor_data: Vec<f32> = vec![
-        0.1, 0.2, 0.3, 0.4,
-        0.5, 0.6, 0.7, 0.8,
-        0.9, 1.0, 1.1, 1.2,
-        1.3, 1.4, 1.5, 1.6,
+        0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6,
     ];
 
     // Convert to bytes (little-endian)
-    let tensor_bytes: Vec<u8> = tensor_data
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect();
+    let tensor_bytes: Vec<u8> = tensor_data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
     println!("Tensor data: {} f32 values", tensor_data.len());
     println!("Tensor bytes: {} bytes", tensor_bytes.len());
 
     // Create SafeTensors tensor view
     let shape: Vec<usize> = vec![4, 4];
-    let tensor_view = safetensors::tensor::TensorView::new(
-        Dtype::F32,
-        shape.clone(),
-        &tensor_bytes,
-    ).expect("Failed to create tensor view");
+    let tensor_view =
+        safetensors::tensor::TensorView::new(Dtype::F32, shape.clone(), &tensor_bytes)
+            .expect("Failed to create tensor view");
 
     // Build tensors map
     let mut tensors: HashMap<String, safetensors::tensor::TensorView<'_>> = HashMap::new();
@@ -96,16 +86,21 @@ fn test_create_real_safetensors_file() {
     fs::write(&file_path, &serialized).expect("Failed to write SafeTensors file");
 
     // PHYSICAL VERIFICATION: Check file exists
-    assert!(file_path.exists(), "[FAIL] SafeTensors file was not created on disk");
+    assert!(
+        file_path.exists(),
+        "[FAIL] SafeTensors file was not created on disk"
+    );
     println!("[PASS] File exists at: {:?}", file_path);
 
     // PHYSICAL VERIFICATION: Check file size matches
     let file_metadata = fs::metadata(&file_path).expect("Failed to get file metadata");
     let file_size = file_metadata.len() as usize;
     assert_eq!(
-        file_size, serialized.len(),
+        file_size,
+        serialized.len(),
         "[FAIL] File size mismatch: expected {}, got {}",
-        serialized.len(), file_size
+        serialized.len(),
+        file_size
     );
     println!("[PASS] File size matches: {} bytes", file_size);
 
@@ -118,12 +113,15 @@ fn test_create_real_safetensors_file() {
     println!("[PASS] File content matches serialized bytes");
 
     // Parse the SafeTensors file
-    let parsed = safetensors::SafeTensors::deserialize(&read_bytes)
-        .expect("Failed to parse SafeTensors");
+    let parsed =
+        safetensors::SafeTensors::deserialize(&read_bytes).expect("Failed to parse SafeTensors");
 
     // Verify tensor exists
     let tensor_names = parsed.names();
-    assert!(tensor_names.iter().any(|n| *n == "test_weights"), "[FAIL] test_weights tensor not found");
+    assert!(
+        tensor_names.iter().any(|n| *n == "test_weights"),
+        "[FAIL] test_weights tensor not found"
+    );
     println!("[PASS] Tensor 'test_weights' found in parsed file");
 
     // Verify tensor shape
@@ -166,10 +164,14 @@ fn test_sha256_checksum_is_deterministic() {
     hasher2.update(test_data);
     let checksum2: [u8; 32] = hasher2.finalize().into();
 
-    println!("Checksum 1: {:02x}{:02x}{:02x}{:02x}...",
-             checksum1[0], checksum1[1], checksum1[2], checksum1[3]);
-    println!("Checksum 2: {:02x}{:02x}{:02x}{:02x}...",
-             checksum2[0], checksum2[1], checksum2[2], checksum2[3]);
+    println!(
+        "Checksum 1: {:02x}{:02x}{:02x}{:02x}...",
+        checksum1[0], checksum1[1], checksum1[2], checksum1[3]
+    );
+    println!(
+        "Checksum 2: {:02x}{:02x}{:02x}{:02x}...",
+        checksum2[0], checksum2[1], checksum2[2], checksum2[3]
+    );
 
     // VERIFICATION: Checksums must be identical
     assert_eq!(
@@ -195,8 +197,10 @@ fn test_sha256_checksum_is_deterministic() {
     hasher3.update(different_data);
     let checksum3: [u8; 32] = hasher3.finalize().into();
 
-    println!("Checksum 3 (different data): {:02x}{:02x}{:02x}{:02x}...",
-             checksum3[0], checksum3[1], checksum3[2], checksum3[3]);
+    println!(
+        "Checksum 3 (different data): {:02x}{:02x}{:02x}{:02x}...",
+        checksum3[0], checksum3[1], checksum3[2], checksum3[3]
+    );
 
     assert_ne!(
         checksum1, checksum3,
@@ -240,21 +244,21 @@ fn test_load_weights_from_safetensors() {
         .map(|i| ((i * 17 + 42) % 10000) as f32 / 10000.0 - 0.5)
         .collect();
 
-    let tensor_bytes: Vec<u8> = tensor_data
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect();
+    let tensor_bytes: Vec<u8> = tensor_data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
-    println!("Creating tensor: {} x {} = {} params ({} bytes)",
-             vocab_size, embedding_dim, total_params, tensor_bytes.len());
+    println!(
+        "Creating tensor: {} x {} = {} params ({} bytes)",
+        vocab_size,
+        embedding_dim,
+        total_params,
+        tensor_bytes.len()
+    );
 
     // Create SafeTensors
     let shape: Vec<usize> = vec![vocab_size, embedding_dim];
-    let tensor_view = safetensors::tensor::TensorView::new(
-        Dtype::F32,
-        shape.clone(),
-        &tensor_bytes,
-    ).expect("Failed to create tensor view");
+    let tensor_view =
+        safetensors::tensor::TensorView::new(Dtype::F32, shape.clone(), &tensor_bytes)
+            .expect("Failed to create tensor view");
 
     let mut tensors: HashMap<String, safetensors::tensor::TensorView<'_>> = HashMap::new();
     tensors.insert("embeddings.weight".to_string(), tensor_view);
@@ -274,7 +278,10 @@ fn test_load_weights_from_safetensors() {
         file_bytes, serialized,
         "[FAIL] Read bytes don't match written bytes"
     );
-    println!("[PASS] File bytes read correctly: {} bytes", file_bytes.len());
+    println!(
+        "[PASS] File bytes read correctly: {} bytes",
+        file_bytes.len()
+    );
 
     // Compute SHA256 checksum
     let mut hasher = Sha256::new();
@@ -283,12 +290,14 @@ fn test_load_weights_from_safetensors() {
 
     // VERIFICATION: Checksum is valid
     assert_ne!(checksum, [0u8; 32], "[FAIL] Checksum is all zeros");
-    println!("[PASS] Checksum computed: {:02x}{:02x}{:02x}{:02x}...",
-             checksum[0], checksum[1], checksum[2], checksum[3]);
+    println!(
+        "[PASS] Checksum computed: {:02x}{:02x}{:02x}{:02x}...",
+        checksum[0], checksum[1], checksum[2], checksum[3]
+    );
 
     // Parse SafeTensors and extract metadata
-    let parsed = safetensors::SafeTensors::deserialize(&file_bytes)
-        .expect("Failed to parse SafeTensors");
+    let parsed =
+        safetensors::SafeTensors::deserialize(&file_bytes).expect("Failed to parse SafeTensors");
 
     let mut shapes: HashMap<String, Vec<usize>> = HashMap::new();
     let mut total_params_extracted = 0usize;
@@ -359,11 +368,14 @@ fn test_model_registry_state_transitions() {
     let expected_bytes = 100 * 1024 * 1024; // 100MB
     let expected_dimension = 768;
 
-    registry.register_model(model_id, expected_bytes, expected_dimension)
+    registry
+        .register_model(model_id, expected_bytes, expected_dimension)
         .expect("Failed to register model");
 
-    println!("Registered model: {} ({} bytes, {} dims)",
-             model_id, expected_bytes, expected_dimension);
+    println!(
+        "Registered model: {} ({} bytes, {} dims)",
+        model_id, expected_bytes, expected_dimension
+    );
 
     // VERIFICATION: Initial state is Pending
     let state = registry.get_state(model_id);
@@ -375,7 +387,9 @@ fn test_model_registry_state_transitions() {
     println!("[PASS] Initial state is Pending");
 
     // Transition: Pending -> Loading
-    registry.start_loading(model_id).expect("Failed to start loading");
+    registry
+        .start_loading(model_id)
+        .expect("Failed to start loading");
     let state = registry.get_state(model_id);
     assert!(
         matches!(state, Some(WarmModelState::Loading { .. })),
@@ -385,18 +399,32 @@ fn test_model_registry_state_transitions() {
     println!("[PASS] Transitioned to Loading");
 
     // Update progress
-    registry.update_progress(model_id, 50, expected_bytes / 2)
+    registry
+        .update_progress(model_id, 50, expected_bytes / 2)
         .expect("Failed to update progress");
-    if let Some(WarmModelState::Loading { progress_percent, bytes_loaded }) = registry.get_state(model_id) {
+    if let Some(WarmModelState::Loading {
+        progress_percent,
+        bytes_loaded,
+    }) = registry.get_state(model_id)
+    {
         assert_eq!(progress_percent, 50, "[FAIL] Progress should be 50%");
-        assert_eq!(bytes_loaded, expected_bytes / 2, "[FAIL] Bytes loaded mismatch");
-        println!("[PASS] Progress updated: {}%, {} bytes", progress_percent, bytes_loaded);
+        assert_eq!(
+            bytes_loaded,
+            expected_bytes / 2,
+            "[FAIL] Bytes loaded mismatch"
+        );
+        println!(
+            "[PASS] Progress updated: {}%, {} bytes",
+            progress_percent, bytes_loaded
+        );
     } else {
         panic!("[FAIL] State should still be Loading after progress update");
     }
 
     // Transition: Loading -> Validating
-    registry.mark_validating(model_id).expect("Failed to mark validating");
+    registry
+        .mark_validating(model_id)
+        .expect("Failed to mark validating");
     let state = registry.get_state(model_id);
     assert!(
         matches!(state, Some(WarmModelState::Validating)),
@@ -411,7 +439,9 @@ fn test_model_registry_state_transitions() {
     let handle = ModelHandle::new(vram_ptr, expected_bytes, 0, checksum);
 
     // Transition: Validating -> Warm
-    registry.mark_warm(model_id, handle).expect("Failed to mark warm");
+    registry
+        .mark_warm(model_id, handle)
+        .expect("Failed to mark warm");
     let state = registry.get_state(model_id);
     assert!(
         matches!(state, Some(WarmModelState::Warm)),
@@ -422,13 +452,32 @@ fn test_model_registry_state_transitions() {
 
     // VERIFICATION: Handle is now available
     let retrieved_handle = registry.get_handle(model_id);
-    assert!(retrieved_handle.is_some(), "[FAIL] Handle should be available");
+    assert!(
+        retrieved_handle.is_some(),
+        "[FAIL] Handle should be available"
+    );
     let handle = retrieved_handle.unwrap();
-    assert_eq!(handle.vram_address(), vram_ptr, "[FAIL] VRAM address mismatch");
-    assert_eq!(handle.allocation_bytes(), expected_bytes, "[FAIL] Allocation bytes mismatch");
-    assert_eq!(handle.weight_checksum(), checksum, "[FAIL] Checksum mismatch");
-    println!("[PASS] Handle verified: ptr=0x{:016x}, bytes={}, checksum=0x{:016x}",
-             handle.vram_address(), handle.allocation_bytes(), handle.weight_checksum());
+    assert_eq!(
+        handle.vram_address(),
+        vram_ptr,
+        "[FAIL] VRAM address mismatch"
+    );
+    assert_eq!(
+        handle.allocation_bytes(),
+        expected_bytes,
+        "[FAIL] Allocation bytes mismatch"
+    );
+    assert_eq!(
+        handle.weight_checksum(),
+        checksum,
+        "[FAIL] Checksum mismatch"
+    );
+    println!(
+        "[PASS] Handle verified: ptr=0x{:016x}, bytes={}, checksum=0x{:016x}",
+        handle.vram_address(),
+        handle.allocation_bytes(),
+        handle.weight_checksum()
+    );
 
     // VERIFICATION: Model is warm
     let entry = registry.get_entry(model_id).expect("Entry should exist");
@@ -450,32 +499,45 @@ fn test_model_registry_failure_transition() {
     let mut registry = WarmModelRegistry::new();
 
     // Register and start loading
-    registry.register_model("E2_Code", 50 * 1024 * 1024, 768)
+    registry
+        .register_model("E2_Code", 50 * 1024 * 1024, 768)
         .expect("Failed to register");
-    registry.start_loading("E2_Code").expect("Failed to start loading");
+    registry
+        .start_loading("E2_Code")
+        .expect("Failed to start loading");
 
     println!("Model E2_Code registered and loading started");
 
     // Simulate failure during loading
-    registry.mark_failed("E2_Code", 108, "CUDA allocation failed: out of memory")
+    registry
+        .mark_failed("E2_Code", 108, "CUDA allocation failed: out of memory")
         .expect("Failed to mark failed");
 
     let state = registry.get_state("E2_Code");
     match state {
-        Some(WarmModelState::Failed { error_code, error_message }) => {
+        Some(WarmModelState::Failed {
+            error_code,
+            error_message,
+        }) => {
             assert_eq!(error_code, 108, "[FAIL] Error code should be 108");
             assert!(
                 error_message.contains("CUDA allocation failed"),
                 "[FAIL] Error message should contain failure reason"
             );
-            println!("[PASS] Failed state recorded: code={}, message={}", error_code, error_message);
+            println!(
+                "[PASS] Failed state recorded: code={}, message={}",
+                error_code, error_message
+            );
         }
         _ => panic!("[FAIL] State should be Failed, got {:?}", state),
     }
 
     // VERIFICATION: is_failed() returns true
     let entry = registry.get_entry("E2_Code").expect("Entry should exist");
-    assert!(entry.state.is_failed(), "[FAIL] is_failed() should return true");
+    assert!(
+        entry.state.is_failed(),
+        "[FAIL] is_failed() should return true"
+    );
     println!("[PASS] is_failed() returns true");
 
     // VERIFICATION: Handle should NOT be available
@@ -507,21 +569,20 @@ fn test_load_multiple_tensors() {
     let tensor2_data: Vec<f32> = (0..3072).map(|i| (i as f32 * 0.5) / 1000.0).collect();
     let tensor2_bytes: Vec<u8> = tensor2_data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
-    let tensor3_data: Vec<f32> = (0..(768 * 768)).map(|i| ((i % 1000) as f32) / 1000.0 - 0.5).collect();
+    let tensor3_data: Vec<f32> = (0..(768 * 768))
+        .map(|i| ((i % 1000) as f32) / 1000.0 - 0.5)
+        .collect();
     let tensor3_bytes: Vec<u8> = tensor3_data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
     // Create tensor views
-    let view1 = safetensors::tensor::TensorView::new(
-        Dtype::F32, vec![768], &tensor1_bytes
-    ).unwrap();
+    let view1 =
+        safetensors::tensor::TensorView::new(Dtype::F32, vec![768], &tensor1_bytes).unwrap();
 
-    let view2 = safetensors::tensor::TensorView::new(
-        Dtype::F32, vec![3072], &tensor2_bytes
-    ).unwrap();
+    let view2 =
+        safetensors::tensor::TensorView::new(Dtype::F32, vec![3072], &tensor2_bytes).unwrap();
 
-    let view3 = safetensors::tensor::TensorView::new(
-        Dtype::F32, vec![768, 768], &tensor3_bytes
-    ).unwrap();
+    let view3 =
+        safetensors::tensor::TensorView::new(Dtype::F32, vec![768, 768], &tensor3_bytes).unwrap();
 
     let mut tensors: HashMap<String, safetensors::tensor::TensorView<'_>> = HashMap::new();
     tensors.insert("layer.bias".to_string(), view1);
@@ -563,15 +624,20 @@ fn test_load_multiple_tensors() {
         "[FAIL] Total params mismatch: expected {}, got {}",
         expected_params, total_params
     );
-    println!("[PASS] Total params: {} (expected {})", total_params, expected_params);
+    println!(
+        "[PASS] Total params: {} (expected {})",
+        total_params, expected_params
+    );
 
     // Verify checksum
     let mut hasher = Sha256::new();
     hasher.update(&file_bytes);
     let checksum: [u8; 32] = hasher.finalize().into();
     assert_ne!(checksum, [0u8; 32], "[FAIL] Checksum is all zeros");
-    println!("[PASS] Checksum: {:02x}{:02x}{:02x}{:02x}...",
-             checksum[0], checksum[1], checksum[2], checksum[3]);
+    println!(
+        "[PASS] Checksum: {:02x}{:02x}{:02x}{:02x}...",
+        checksum[0], checksum[1], checksum[2], checksum[3]
+    );
 
     println!("\n=== TEST PASSED: Multiple tensor file loaded correctly ===\n");
 }
@@ -626,10 +692,14 @@ fn test_checksum_changes_with_content() {
     hasher2.update(&bytes2);
     let checksum2: [u8; 32] = hasher2.finalize().into();
 
-    println!("File 1 checksum: {:02x}{:02x}{:02x}{:02x}...",
-             checksum1[0], checksum1[1], checksum1[2], checksum1[3]);
-    println!("File 2 checksum: {:02x}{:02x}{:02x}{:02x}...",
-             checksum2[0], checksum2[1], checksum2[2], checksum2[3]);
+    println!(
+        "File 1 checksum: {:02x}{:02x}{:02x}{:02x}...",
+        checksum1[0], checksum1[1], checksum1[2], checksum1[3]
+    );
+    println!(
+        "File 2 checksum: {:02x}{:02x}{:02x}{:02x}...",
+        checksum2[0], checksum2[1], checksum2[2], checksum2[3]
+    );
 
     // VERIFICATION: Checksums must be different
     assert_ne!(
@@ -642,7 +712,10 @@ fn test_checksum_changes_with_content() {
     let mut hasher3 = Sha256::new();
     hasher3.update(&bytes1);
     let checksum3: [u8; 32] = hasher3.finalize().into();
-    assert_eq!(checksum1, checksum3, "[FAIL] Same content should produce same checksum");
+    assert_eq!(
+        checksum1, checksum3,
+        "[FAIL] Same content should produce same checksum"
+    );
     println!("[PASS] Same content produces same checksum (deterministic)");
 
     println!("\n=== TEST PASSED: Checksum correctly tracks content changes ===\n");
@@ -665,24 +738,24 @@ fn test_load_large_safetensors() {
     let cols = 768;
     let total_params = rows * cols;
 
-    println!("Creating large tensor: {} x {} = {} params", rows, cols, total_params);
-    println!("Expected size: ~{:.2} MB (F32)", (total_params * 4) as f64 / 1024.0 / 1024.0);
+    println!(
+        "Creating large tensor: {} x {} = {} params",
+        rows, cols, total_params
+    );
+    println!(
+        "Expected size: ~{:.2} MB (F32)",
+        (total_params * 4) as f64 / 1024.0 / 1024.0
+    );
 
     // Generate deterministic data
     let tensor_data: Vec<f32> = (0..total_params)
         .map(|i| ((i * 31 + 7) % 10000) as f32 / 10000.0 - 0.5)
         .collect();
 
-    let tensor_bytes: Vec<u8> = tensor_data
-        .iter()
-        .flat_map(|f| f.to_le_bytes())
-        .collect();
+    let tensor_bytes: Vec<u8> = tensor_data.iter().flat_map(|f| f.to_le_bytes()).collect();
 
-    let view = safetensors::tensor::TensorView::new(
-        Dtype::F32,
-        vec![rows, cols],
-        &tensor_bytes,
-    ).expect("Failed to create tensor view");
+    let view = safetensors::tensor::TensorView::new(Dtype::F32, vec![rows, cols], &tensor_bytes)
+        .expect("Failed to create tensor view");
 
     let mut tensors: HashMap<String, safetensors::tensor::TensorView<'_>> = HashMap::new();
     tensors.insert("large_embeddings".to_string(), view);
@@ -691,7 +764,11 @@ fn test_load_large_safetensors() {
         .expect("Failed to serialize");
 
     let file_size = serialized.len();
-    println!("Serialized size: {} bytes ({:.2} MB)", file_size, file_size as f64 / 1024.0 / 1024.0);
+    println!(
+        "Serialized size: {} bytes ({:.2} MB)",
+        file_size,
+        file_size as f64 / 1024.0 / 1024.0
+    );
 
     // Time the write
     let write_start = std::time::Instant::now();
@@ -719,13 +796,14 @@ fn test_load_large_safetensors() {
 
     // VERIFICATION: Valid checksum
     assert_ne!(checksum, [0u8; 32], "[FAIL] Checksum is all zeros");
-    println!("[PASS] Checksum: {:02x}{:02x}{:02x}{:02x}...",
-             checksum[0], checksum[1], checksum[2], checksum[3]);
+    println!(
+        "[PASS] Checksum: {:02x}{:02x}{:02x}{:02x}...",
+        checksum[0], checksum[1], checksum[2], checksum[3]
+    );
 
     // Time parsing
     let parse_start = std::time::Instant::now();
-    let parsed = safetensors::SafeTensors::deserialize(&file_bytes)
-        .expect("Failed to parse");
+    let parsed = safetensors::SafeTensors::deserialize(&file_bytes).expect("Failed to parse");
     let parse_duration = parse_start.elapsed();
     println!("Parse time: {:?}", parse_duration);
 
@@ -779,36 +857,53 @@ fn test_model_weight_loading_summary() {
 
     // 1. File creation
     let file_exists = file_path.exists();
-    println!("  [{}] SafeTensors file created on disk", if file_exists { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] SafeTensors file created on disk",
+        if file_exists { "PASS" } else { "FAIL" }
+    );
     assert!(file_exists);
 
     // 2. File content
     let content_valid = file_bytes.len() == serialized.len();
-    println!("  [{}] File content matches serialized data ({} bytes)",
-             if content_valid { "PASS" } else { "FAIL" }, file_bytes.len());
+    println!(
+        "  [{}] File content matches serialized data ({} bytes)",
+        if content_valid { "PASS" } else { "FAIL" },
+        file_bytes.len()
+    );
     assert!(content_valid);
 
     // 3. Checksum validity
     let checksum_valid = checksum != [0u8; 32];
-    println!("  [{}] SHA256 checksum is valid (not all zeros)",
-             if checksum_valid { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] SHA256 checksum is valid (not all zeros)",
+        if checksum_valid { "PASS" } else { "FAIL" }
+    );
     assert!(checksum_valid);
 
     // 4. Tensor parsing
     let tensor_count = parsed.names().len();
     let tensor_valid = tensor_count > 0;
-    println!("  [{}] Tensor(s) parsed successfully ({} found)",
-             if tensor_valid { "PASS" } else { "FAIL" }, tensor_count);
+    println!(
+        "  [{}] Tensor(s) parsed successfully ({} found)",
+        if tensor_valid { "PASS" } else { "FAIL" },
+        tensor_count
+    );
     assert!(tensor_valid);
 
     // 5. Metadata extraction
     let tensor = parsed.tensor("test").expect("Tensor not found");
     let shape_valid = tensor.shape() == [1536];
     let dtype_valid = tensor.dtype() == Dtype::F32;
-    println!("  [{}] Shape extracted correctly: {:?}",
-             if shape_valid { "PASS" } else { "FAIL" }, tensor.shape());
-    println!("  [{}] Dtype extracted correctly: {:?}",
-             if dtype_valid { "PASS" } else { "FAIL" }, tensor.dtype());
+    println!(
+        "  [{}] Shape extracted correctly: {:?}",
+        if shape_valid { "PASS" } else { "FAIL" },
+        tensor.shape()
+    );
+    println!(
+        "  [{}] Dtype extracted correctly: {:?}",
+        if dtype_valid { "PASS" } else { "FAIL" },
+        tensor.dtype()
+    );
     assert!(shape_valid);
     assert!(dtype_valid);
 

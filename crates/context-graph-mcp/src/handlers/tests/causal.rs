@@ -38,21 +38,30 @@ async fn test_omni_infer_forward_requires_target() {
     let response = handlers.dispatch(request).await;
 
     // Should be an error response
-    assert!(response.error.is_some() || response.result.as_ref()
-        .map(|r| r.get("isError").and_then(|v| v.as_bool()).unwrap_or(false))
-        .unwrap_or(false),
+    assert!(
+        response.error.is_some()
+            || response
+                .result
+                .as_ref()
+                .map(|r| r.get("isError").and_then(|v| v.as_bool()).unwrap_or(false))
+                .unwrap_or(false),
         "Forward direction should require target parameter"
     );
 
     // Error message should mention target
     if let Some(err) = response.error {
-        assert!(err.message.to_lowercase().contains("target"),
-            "Error should mention missing target: {}", err.message);
+        assert!(
+            err.message.to_lowercase().contains("target"),
+            "Error should mention missing target: {}",
+            err.message
+        );
     } else if let Some(result) = response.result {
         if let Some(content) = result.get("content") {
             let text = content.to_string().to_lowercase();
-            assert!(text.contains("target"),
-                "Error should mention missing target");
+            assert!(
+                text.contains("target"),
+                "Error should mention missing target"
+            );
         }
     }
 }
@@ -80,9 +89,13 @@ async fn test_omni_infer_backward_requires_target() {
     let response = handlers.dispatch(request).await;
 
     // Should be an error response
-    assert!(response.error.is_some() || response.result.as_ref()
-        .map(|r| r.get("isError").and_then(|v| v.as_bool()).unwrap_or(false))
-        .unwrap_or(false),
+    assert!(
+        response.error.is_some()
+            || response
+                .result
+                .as_ref()
+                .map(|r| r.get("isError").and_then(|v| v.as_bool()).unwrap_or(false))
+                .unwrap_or(false),
         "Backward direction should require target parameter"
     );
 }
@@ -110,9 +123,13 @@ async fn test_omni_infer_bidirectional_requires_target() {
     let response = handlers.dispatch(request).await;
 
     // Should be an error response
-    assert!(response.error.is_some() || response.result.as_ref()
-        .map(|r| r.get("isError").and_then(|v| v.as_bool()).unwrap_or(false))
-        .unwrap_or(false),
+    assert!(
+        response.error.is_some()
+            || response
+                .result
+                .as_ref()
+                .map(|r| r.get("isError").and_then(|v| v.as_bool()).unwrap_or(false))
+                .unwrap_or(false),
         "Bidirectional direction should require target parameter"
     );
 }
@@ -144,13 +161,19 @@ async fn test_omni_infer_bridge_allows_no_target() {
     if let Some(result) = &response.result {
         if let Some(content) = result.get("content") {
             let text = content.to_string().to_lowercase();
-            assert!(!text.contains("missing required 'target'"),
-                "Bridge direction should NOT require target parameter");
+            assert!(
+                !text.contains("missing required 'target'"),
+                "Bridge direction should NOT require target parameter"
+            );
         }
     }
     if let Some(err) = &response.error {
-        assert!(!err.message.to_lowercase().contains("missing required 'target'"),
-            "Bridge direction should NOT require target parameter");
+        assert!(
+            !err.message
+                .to_lowercase()
+                .contains("missing required 'target'"),
+            "Bridge direction should NOT require target parameter"
+        );
     }
 }
 
@@ -180,13 +203,19 @@ async fn test_omni_infer_abduction_allows_no_target() {
     if let Some(result) = &response.result {
         if let Some(content) = result.get("content") {
             let text = content.to_string().to_lowercase();
-            assert!(!text.contains("missing required 'target'"),
-                "Abduction direction should NOT require target parameter");
+            assert!(
+                !text.contains("missing required 'target'"),
+                "Abduction direction should NOT require target parameter"
+            );
         }
     }
     if let Some(err) = &response.error {
-        assert!(!err.message.to_lowercase().contains("missing required 'target'"),
-            "Abduction direction should NOT require target parameter");
+        assert!(
+            !err.message
+                .to_lowercase()
+                .contains("missing required 'target'"),
+            "Abduction direction should NOT require target parameter"
+        );
     }
 }
 
@@ -218,8 +247,10 @@ async fn test_omni_infer_forward_with_target() {
     if let Some(result) = &response.result {
         if let Some(content) = result.get("content") {
             let text = content.to_string().to_lowercase();
-            assert!(!text.contains("missing required 'target'"),
-                "Forward with target should not report missing target");
+            assert!(
+                !text.contains("missing required 'target'"),
+                "Forward with target should not report missing target"
+            );
         }
     }
 }
@@ -246,9 +277,13 @@ async fn test_omni_infer_invalid_direction() {
     let response = handlers.dispatch(request).await;
 
     // Should error on invalid direction
-    assert!(response.error.is_some() || response.result.as_ref()
-        .map(|r| r.get("isError").and_then(|v| v.as_bool()).unwrap_or(false))
-        .unwrap_or(false),
+    assert!(
+        response.error.is_some()
+            || response
+                .result
+                .as_ref()
+                .map(|r| r.get("isError").and_then(|v| v.as_bool()).unwrap_or(false))
+                .unwrap_or(false),
         "Invalid direction should be rejected"
     );
 }
@@ -273,9 +308,13 @@ async fn test_omni_infer_requires_source() {
     let response = handlers.dispatch(request).await;
 
     // Should error on missing source
-    assert!(response.error.is_some() || response.result.as_ref()
-        .map(|r| r.get("isError").and_then(|v| v.as_bool()).unwrap_or(false))
-        .unwrap_or(false),
+    assert!(
+        response.error.is_some()
+            || response
+                .result
+                .as_ref()
+                .map(|r| r.get("isError").and_then(|v| v.as_bool()).unwrap_or(false))
+                .unwrap_or(false),
         "Missing source should be rejected"
     );
 }

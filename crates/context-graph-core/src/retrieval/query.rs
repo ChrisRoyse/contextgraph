@@ -87,7 +87,9 @@ impl Default for MultiEmbeddingQuery {
             min_similarity: 0.0,
             include_space_breakdown: false,
             pipeline_config: None,
-            aggregation: AggregationStrategy::RRF { k: similarity::RRF_K },
+            aggregation: AggregationStrategy::RRF {
+                k: similarity::RRF_K,
+            },
         }
     }
 }
@@ -137,10 +139,7 @@ impl MultiEmbeddingQuery {
         if self.final_limit == 0 || self.final_limit > 1000 {
             return Err(CoreError::ValidationError {
                 field: "final_limit".to_string(),
-                message: format!(
-                    "final_limit must be in [1, 1000], got {}",
-                    self.final_limit
-                ),
+                message: format!("final_limit must be in [1, 1000], got {}", self.final_limit),
             });
         }
 
@@ -362,9 +361,7 @@ impl EmbeddingSpaceMask {
 
     /// Get list of active space indices.
     pub fn active_indices(&self) -> Vec<usize> {
-        (0..NUM_EMBEDDERS)
-            .filter(|&i| self.is_active(i))
-            .collect()
+        (0..NUM_EMBEDDERS).filter(|&i| self.is_active(i)).collect()
     }
 
     /// Get embedding space name by index.

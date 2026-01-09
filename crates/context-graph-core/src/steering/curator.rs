@@ -60,14 +60,14 @@ impl Curator {
 
         if avg_quality < 0.5 {
             recommendations.push(
-                "Consider reviewing recent additions for quality - average is below 0.5".to_string(),
+                "Consider reviewing recent additions for quality - average is below 0.5"
+                    .to_string(),
             );
         }
 
         if avg_quality < 0.3 {
-            recommendations.push(
-                "Quality is critically low. Immediate review recommended.".to_string(),
-            );
+            recommendations
+                .push("Quality is critically low. Immediate review recommended.".to_string());
         }
 
         if low_quality_count > 10 {
@@ -79,7 +79,8 @@ impl Curator {
 
         if low_quality_count > 50 {
             recommendations.push(
-                "Excessive low-quality content. Consider batch cleanup or stricter ingestion.".to_string(),
+                "Excessive low-quality content. Consider batch cleanup or stricter ingestion."
+                    .to_string(),
             );
         }
 
@@ -268,7 +269,7 @@ mod tests {
         let (excellent, good, fair, poor, critical) = c.compute_distribution(&qualities);
 
         assert_eq!(excellent, 1); // 0.9
-        // 0.85 is not > 0.85, so it goes to good
+                                  // 0.85 is not > 0.85, so it goes to good
         assert_eq!(good, 2); // 0.85, 0.75
         assert_eq!(fair, 1); // 0.6
         assert_eq!(poor, 1); // 0.4

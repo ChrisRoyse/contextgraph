@@ -172,11 +172,7 @@ impl WarmValidator {
     /// # Errors
     ///
     /// Returns `WarmError::ModelValidationFailed` if checksums don't match.
-    pub fn validate_weight_checksum(
-        &self,
-        handle: &ModelHandle,
-        expected: u64,
-    ) -> WarmResult<()> {
+    pub fn validate_weight_checksum(&self, handle: &ModelHandle, expected: u64) -> WarmResult<()> {
         let actual = handle.weight_checksum();
         if expected != actual {
             return Err(WarmError::ModelValidationFailed {

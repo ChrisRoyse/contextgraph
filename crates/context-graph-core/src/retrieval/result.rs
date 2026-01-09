@@ -357,10 +357,7 @@ mod tests {
     fn test_space_search_result_ranked_ids() {
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
-        let matches = vec![
-            ScoredMatch::new(id1, 0.9, 0),
-            ScoredMatch::new(id2, 0.8, 1),
-        ];
+        let matches = vec![ScoredMatch::new(id1, 0.9, 0), ScoredMatch::new(id2, 0.8, 1)];
         let result = SpaceSearchResult::success(0, matches, Duration::from_millis(5), 1000);
 
         let ranked = result.ranked_ids();

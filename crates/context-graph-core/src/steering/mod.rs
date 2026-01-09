@@ -27,7 +27,9 @@ pub mod gardener;
 
 pub use assessor::Assessor;
 pub use curator::Curator;
-pub use feedback::{AssessorFeedback, CuratorFeedback, GardenerFeedback, SteeringFeedback, SteeringReward};
+pub use feedback::{
+    AssessorFeedback, CuratorFeedback, GardenerFeedback, SteeringFeedback, SteeringReward,
+};
 pub use gardener::Gardener;
 
 /// Steering system that coordinates Gardener, Curator, and Assessor.
@@ -99,11 +101,13 @@ impl SteeringSystem {
         let reward = SteeringReward::new(gardener_score, curator_score, assessor_score);
 
         // Get detailed feedback from each component
-        let gardener_details = self.gardener.evaluate(edge_count, orphan_count, connectivity);
+        let gardener_details = self
+            .gardener
+            .evaluate(edge_count, orphan_count, connectivity);
         let curator_details = self.curator.evaluate(avg_quality, low_quality_count);
-        let assessor_details = self
-            .assessor
-            .evaluate(retrieval_accuracy, learning_efficiency, prev_accuracy);
+        let assessor_details =
+            self.assessor
+                .evaluate(retrieval_accuracy, learning_efficiency, prev_accuracy);
 
         SteeringFeedback {
             reward,
@@ -139,13 +143,13 @@ mod tests {
     fn test_compute_feedback_positive() {
         let system = SteeringSystem::new();
         let feedback = system.compute_feedback(
-            100,   // edge_count
-            5,     // orphan_count
-            0.9,   // connectivity (high)
-            0.85,  // avg_quality (high)
-            2,     // low_quality_count
-            0.9,   // retrieval_accuracy (high)
-            0.85,  // learning_efficiency (high)
+            100,        // edge_count
+            5,          // orphan_count
+            0.9,        // connectivity (high)
+            0.85,       // avg_quality (high)
+            2,          // low_quality_count
+            0.9,        // retrieval_accuracy (high)
+            0.85,       // learning_efficiency (high)
             Some(0.85), // prev_accuracy
         );
 
@@ -160,13 +164,13 @@ mod tests {
     fn test_compute_feedback_negative() {
         let system = SteeringSystem::new();
         let feedback = system.compute_feedback(
-            100,   // edge_count
-            50,    // orphan_count (high)
-            0.2,   // connectivity (low)
-            0.3,   // avg_quality (low)
-            50,    // low_quality_count (high)
-            0.3,   // retrieval_accuracy (low)
-            0.2,   // learning_efficiency (low)
+            100,       // edge_count
+            50,        // orphan_count (high)
+            0.2,       // connectivity (low)
+            0.3,       // avg_quality (low)
+            50,        // low_quality_count (high)
+            0.3,       // retrieval_accuracy (low)
+            0.2,       // learning_efficiency (low)
             Some(0.5), // prev_accuracy (was better)
         );
 
@@ -180,9 +184,7 @@ mod tests {
     #[test]
     fn test_reward_clamping() {
         let system = SteeringSystem::new();
-        let feedback = system.compute_feedback(
-            100, 0, 1.0, 1.0, 0, 1.0, 1.0, None,
-        );
+        let feedback = system.compute_feedback(100, 0, 1.0, 1.0, 0, 1.0, 1.0, None);
 
         // Reward should be clamped to [-1, 1]
         assert!(feedback.reward.value <= 1.0);

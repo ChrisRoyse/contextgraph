@@ -25,7 +25,9 @@ use uuid::Uuid;
 
 use context_graph_core::alignment::{DefaultAlignmentCalculator, GoalAlignmentCalculator};
 use context_graph_core::purpose::{GoalDiscoveryMetadata, GoalHierarchy, GoalLevel, GoalNode};
-use context_graph_core::stubs::{InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor};
+use context_graph_core::stubs::{
+    InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor,
+};
 use context_graph_core::traits::{
     MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor,
 };
@@ -113,7 +115,9 @@ fn create_full_test_hierarchy() -> GoalHierarchy {
     )
     .expect("Failed to create North Star goal");
     let ns_id = ns_goal.id;
-    hierarchy.add_goal(ns_goal).expect("Failed to add North Star");
+    hierarchy
+        .add_goal(ns_goal)
+        .expect("Failed to add North Star");
 
     // Strategic goal 1 - child of North Star
     let s1_goal = GoalNode::child_goal(
@@ -125,7 +129,9 @@ fn create_full_test_hierarchy() -> GoalHierarchy {
     )
     .expect("Failed to create strategic goal 1");
     let s1_id = s1_goal.id;
-    hierarchy.add_goal(s1_goal).expect("Failed to add strategic goal 1");
+    hierarchy
+        .add_goal(s1_goal)
+        .expect("Failed to add strategic goal 1");
 
     // Strategic goal 2 - child of North Star
     let s2_goal = GoalNode::child_goal(
@@ -136,7 +142,9 @@ fn create_full_test_hierarchy() -> GoalHierarchy {
         discovery.clone(),
     )
     .expect("Failed to create strategic goal 2");
-    hierarchy.add_goal(s2_goal).expect("Failed to add strategic goal 2");
+    hierarchy
+        .add_goal(s2_goal)
+        .expect("Failed to add strategic goal 2");
 
     // Tactical goal - child of Strategic goal 1
     let t1_goal = GoalNode::child_goal(
@@ -148,7 +156,9 @@ fn create_full_test_hierarchy() -> GoalHierarchy {
     )
     .expect("Failed to create tactical goal");
     let t1_id = t1_goal.id;
-    hierarchy.add_goal(t1_goal).expect("Failed to add tactical goal");
+    hierarchy
+        .add_goal(t1_goal)
+        .expect("Failed to add tactical goal");
 
     // Immediate goal - child of Tactical goal
     let i1_goal = GoalNode::child_goal(
@@ -159,7 +169,9 @@ fn create_full_test_hierarchy() -> GoalHierarchy {
         discovery,
     )
     .expect("Failed to create immediate goal");
-    hierarchy.add_goal(i1_goal).expect("Failed to add immediate goal");
+    hierarchy
+        .add_goal(i1_goal)
+        .expect("Failed to add immediate goal");
 
     hierarchy
 }
@@ -219,7 +231,11 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
         "content": content,
         "importance": 0.9
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     let store_response = handlers.dispatch(store_request).await;
 
     assert!(store_response.error.is_none(), "Store handler must succeed");
@@ -238,8 +254,14 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
     println!("\n🔍 VERIFYING STORAGE IN SOURCE OF TRUTH:");
 
     let count_after_store = store.count().await.expect("count should succeed");
-    println!("   - Fingerprint count: {} (expected: 1)", count_after_store);
-    assert_eq!(count_after_store, 1, "Store must contain exactly 1 fingerprint");
+    println!(
+        "   - Fingerprint count: {} (expected: 1)",
+        count_after_store
+    );
+    assert_eq!(
+        count_after_store, 1,
+        "Store must contain exactly 1 fingerprint"
+    );
 
     let retrieved_fp = store
         .retrieve(fingerprint_id)
@@ -248,8 +270,14 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
         .expect("Fingerprint must exist in store");
 
     println!("   - Fingerprint ID in store: {}", retrieved_fp.id);
-    println!("   - Theta to North Star: {:.4}", retrieved_fp.theta_to_north_star);
-    println!("   - Purpose vector coherence: {:.4}", retrieved_fp.purpose_vector.coherence);
+    println!(
+        "   - Theta to North Star: {:.4}",
+        retrieved_fp.theta_to_north_star
+    );
+    println!(
+        "   - Purpose vector coherence: {:.4}",
+        retrieved_fp.purpose_vector.coherence
+    );
     println!(
         "   - Purpose vector (first 3): [{:.3}, {:.3}, {:.3}, ...]",
         retrieved_fp.purpose_vector.alignments[0],
@@ -257,7 +285,10 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
         retrieved_fp.purpose_vector.alignments[2]
     );
 
-    assert_eq!(retrieved_fp.id, fingerprint_id, "Retrieved ID must match stored ID");
+    assert_eq!(
+        retrieved_fp.id, fingerprint_id,
+        "Retrieved ID must match stored ID"
+    );
     assert_eq!(
         retrieved_fp.purpose_vector.alignments.len(),
         NUM_EMBEDDERS,
@@ -285,7 +316,10 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
     );
     let drift_response = handlers.dispatch(drift_request).await;
 
-    assert!(drift_response.error.is_none(), "Drift check handler must succeed");
+    assert!(
+        drift_response.error.is_none(),
+        "Drift check handler must succeed"
+    );
     let drift_result = drift_response.result.expect("Must have result");
 
     let summary = drift_result.get("summary").expect("Must have summary");
@@ -340,7 +374,10 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
     println!("Operations Verified:");
     println!("  1. memory/store: Created fingerprint {}", fingerprint_id);
     println!("  2. Direct store.retrieve() confirmed existence");
-    println!("  3. purpose/drift_check: avg_drift={:.4}", avg_drift.unwrap_or(0.0));
+    println!(
+        "  3. purpose/drift_check: avg_drift={:.4}",
+        avg_drift.unwrap_or(0.0)
+    );
     println!();
     println!("NOTE: purpose/north_star_alignment removed per TASK-CORE-001 (ARCH-03)");
     println!();
@@ -416,7 +453,11 @@ async fn test_full_state_verification_goal_hierarchy_navigation() {
 
     // Verify against Source of Truth
     let direct_count = hierarchy.read().len();
-    assert_eq!(goals.len(), direct_count, "Handler count must match Source of Truth");
+    assert_eq!(
+        goals.len(),
+        direct_count,
+        "Handler count must match Source of Truth"
+    );
     println!("   ✓ VERIFIED: get_all matches Source of Truth\n");
 
     // =========================================================================
@@ -433,7 +474,10 @@ async fn test_full_state_verification_goal_hierarchy_navigation() {
     );
     let get_children_response = handlers.dispatch(get_children_request).await;
 
-    assert!(get_children_response.error.is_none(), "get_children must succeed");
+    assert!(
+        get_children_response.error.is_none(),
+        "get_children must succeed"
+    );
     let get_children_result = get_children_response.result.expect("Must have result");
 
     let children = get_children_result
@@ -447,7 +491,10 @@ async fn test_full_state_verification_goal_hierarchy_navigation() {
     // Extract needed data before any async calls to avoid holding guard across await
     let direct_children_len = {
         let hierarchy_guard = hierarchy.read();
-        let ns_id = hierarchy_guard.north_star().expect("Must have North Star").id;
+        let ns_id = hierarchy_guard
+            .north_star()
+            .expect("Must have North Star")
+            .id;
         hierarchy_guard.children(&ns_id).len()
     }; // guard dropped here
     assert_eq!(
@@ -455,7 +502,10 @@ async fn test_full_state_verification_goal_hierarchy_navigation() {
         direct_children_len,
         "Handler children count must match Source of Truth"
     );
-    println!("   ✓ VERIFIED: get_children matches Source of Truth ({})", children.len());
+    println!(
+        "   ✓ VERIFIED: get_children matches Source of Truth ({})",
+        children.len()
+    );
 
     // =========================================================================
     // STEP 4: Execute get_ancestors and verify path
@@ -471,7 +521,10 @@ async fn test_full_state_verification_goal_hierarchy_navigation() {
     );
     let get_ancestors_response = handlers.dispatch(get_ancestors_request).await;
 
-    assert!(get_ancestors_response.error.is_none(), "get_ancestors must succeed");
+    assert!(
+        get_ancestors_response.error.is_none(),
+        "get_ancestors must succeed"
+    );
     let get_ancestors_result = get_ancestors_response.result.expect("Must have result");
 
     let ancestors = get_ancestors_result
@@ -484,12 +537,21 @@ async fn test_full_state_verification_goal_hierarchy_navigation() {
     // Verify against Source of Truth - get the immediate goal (last added child)
     let hierarchy_guard = hierarchy.read();
     let immediate_goals = hierarchy_guard.at_level(GoalLevel::Immediate);
-    let immediate_goal_id = immediate_goals.first().expect("Must have immediate goal").id;
+    let immediate_goal_id = immediate_goals
+        .first()
+        .expect("Must have immediate goal")
+        .id;
     let direct_path = hierarchy_guard.path_to_north_star(&immediate_goal_id);
     println!("   Direct path length: {}", direct_path.len());
 
     // Path should be: i1_vector -> t1_semantic -> s1_retrieval -> ns_ml_system
-    println!("   Path: {:?}", direct_path.iter().map(|g| g.to_string()).collect::<Vec<_>>());
+    println!(
+        "   Path: {:?}",
+        direct_path
+            .iter()
+            .map(|g| g.to_string())
+            .collect::<Vec<_>>()
+    );
     drop(hierarchy_guard);
 
     assert!(ancestors.len() >= 3, "Must have at least 3 ancestors");
@@ -503,9 +565,15 @@ async fn test_full_state_verification_goal_hierarchy_navigation() {
     println!("======================================================================");
     println!("Source of Truth: GoalHierarchy with 5 goals");
     println!("Operations Verified:");
-    println!("  - get_all: {} goals (matches Source of Truth)", goals.len());
+    println!(
+        "  - get_all: {} goals (matches Source of Truth)",
+        goals.len()
+    );
     println!("  - get_children(ns): {} children", children.len());
-    println!("  - get_ancestors(i1_vector): {} ancestors", ancestors.len());
+    println!(
+        "  - get_ancestors(i1_vector): {} ancestors",
+        ancestors.len()
+    );
     println!("======================================================================\n");
 }
 
@@ -530,17 +598,27 @@ async fn test_edge_case_purpose_query_12_elements() {
     // ACTION: 12-element purpose vector (WRONG - must be 13)
     println!("\n📝 ACTION: purpose/query with 12-element vector");
     let invalid_vector: Vec<f64> = vec![0.5; 12];
-    println!("   Vector length: {} (expected to fail)", invalid_vector.len());
+    println!(
+        "   Vector length: {} (expected to fail)",
+        invalid_vector.len()
+    );
 
     let query_params = json!({
         "purpose_vector": invalid_vector,
         "topK": 10
     });
-    let query_request = make_request("purpose/query", Some(JsonRpcId::Number(1)), Some(query_params));
+    let query_request = make_request(
+        "purpose/query",
+        Some(JsonRpcId::Number(1)),
+        Some(query_params),
+    );
     let response = handlers.dispatch(query_request).await;
 
     // Verify error
-    assert!(response.error.is_some(), "12-element vector must return error");
+    assert!(
+        response.error.is_some(),
+        "12-element vector must return error"
+    );
     let error = response.error.unwrap();
     println!("   Error code: {} (expected: -32602)", error.code);
     println!("   Error message: {}", error.message);
@@ -554,7 +632,10 @@ async fn test_edge_case_purpose_query_12_elements() {
     let after_count = store.count().await.expect("count should succeed");
     println!("\n📊 AFTER STATE:");
     println!("   Source of Truth count: {} (unchanged)", after_count);
-    assert_eq!(after_count, before_count, "Store count must remain unchanged");
+    assert_eq!(
+        after_count, before_count,
+        "Store count must remain unchanged"
+    );
 
     println!("\n✓ VERIFIED: 12-element vector correctly rejected, Source of Truth unchanged\n");
 }
@@ -581,7 +662,10 @@ async fn test_edge_case_autonomous_operation_no_north_star() {
     // BEFORE STATE
     println!("📊 BEFORE STATE:");
     println!("   Has North Star: {}", hierarchy.read().has_north_star());
-    assert!(!hierarchy.read().has_north_star(), "Must NOT have North Star");
+    assert!(
+        !hierarchy.read().has_north_star(),
+        "Must NOT have North Star"
+    );
 
     // Store fingerprint - should SUCCEED without North Star (AUTONOMOUS OPERATION)
     println!("\n📝 ATTEMPTING: memory/store (should succeed - autonomous operation)");
@@ -589,7 +673,11 @@ async fn test_edge_case_autonomous_operation_no_north_star() {
         "content": "Test content for autonomous alignment",
         "importance": 0.8
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     let store_response = handlers.dispatch(store_request).await;
 
     // Verify store succeeds with default purpose vector
@@ -599,7 +687,9 @@ async fn test_edge_case_autonomous_operation_no_north_star() {
         store_response.error
     );
     let result = store_response.result.expect("Should have result");
-    let fingerprint_id = result.get("fingerprintId").expect("Must have fingerprintId");
+    let fingerprint_id = result
+        .get("fingerprintId")
+        .expect("Must have fingerprintId");
     println!("   SUCCESS: fingerprintId={}", fingerprint_id);
 
     // TASK-CORE-001: Verify deprecated method returns METHOD_NOT_FOUND
@@ -615,7 +705,10 @@ async fn test_edge_case_autonomous_operation_no_north_star() {
     let response = handlers.dispatch(align_request).await;
 
     // TASK-CORE-001: Must return METHOD_NOT_FOUND (-32601) for deprecated method
-    assert!(response.error.is_some(), "Deprecated method must return error");
+    assert!(
+        response.error.is_some(),
+        "Deprecated method must return error"
+    );
     let align_error = response.error.unwrap();
     println!("   Error code: {} (expected: -32601)", align_error.code);
     println!("   Error message: {}", align_error.message);
@@ -624,7 +717,9 @@ async fn test_edge_case_autonomous_operation_no_north_star() {
         "Must return METHOD_NOT_FOUND (-32601) for deprecated method"
     );
 
-    println!("\n✓ VERIFIED: System operates autonomously, deprecated method returns METHOD_NOT_FOUND\n");
+    println!(
+        "\n✓ VERIFIED: System operates autonomously, deprecated method returns METHOD_NOT_FOUND\n"
+    );
 }
 
 // =============================================================================
@@ -665,7 +760,10 @@ async fn test_edge_case_goal_not_found() {
     let response = handlers.dispatch(query_request).await;
 
     // Verify error
-    assert!(response.error.is_some(), "Non-existent goal must return error");
+    assert!(
+        response.error.is_some(),
+        "Non-existent goal must return error"
+    );
     let error = response.error.unwrap();
     println!("   Error code: {} (expected: -32020)", error.code);
     println!("   Error message: {}", error.message);
@@ -721,7 +819,10 @@ async fn test_edge_case_north_star_update_returns_method_not_found() {
     let response = handlers.dispatch(update_request).await;
 
     // TASK-CORE-001: Verify METHOD_NOT_FOUND error
-    assert!(response.error.is_some(), "Deprecated method must return error");
+    assert!(
+        response.error.is_some(),
+        "Deprecated method must return error"
+    );
     let error = response.error.unwrap();
     println!("   Error code: {} (expected: -32601)", error.code);
     println!("   Error message: {}", error.message);
@@ -783,7 +884,10 @@ async fn test_edge_case_drift_check_invalid_uuids() {
 
     // AFTER STATE
     let after_count = store.count().await.expect("count should succeed");
-    assert_eq!(after_count, before_count, "Store count must remain unchanged");
+    assert_eq!(
+        after_count, before_count,
+        "Store count must remain unchanged"
+    );
 
     println!("\n✓ VERIFIED: Invalid UUIDs correctly rejected\n");
 }

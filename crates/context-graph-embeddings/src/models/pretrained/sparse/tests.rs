@@ -134,7 +134,10 @@ mod tests {
                 // Load failure is expected if projection matrix or CUDA missing
                 // Verify it's the expected error type (not some other failure)
                 assert!(
-                    matches!(e, EmbeddingError::ModelLoadError { .. } | EmbeddingError::GpuError { .. }),
+                    matches!(
+                        e,
+                        EmbeddingError::ModelLoadError { .. } | EmbeddingError::GpuError { .. }
+                    ),
                     "Expected ModelLoadError or GpuError, got: {:?}",
                     e
                 );
@@ -203,16 +206,21 @@ mod tests {
                 match result {
                     Ok(embedding) => {
                         // Verify embedding has correct dimension (1536 after projection)
-                        assert_eq!(embedding.vector.len(), 1536,
-                            "Projected embedding should be 1536D");
-                        assert!(embedding.is_projected,
-                            "is_projected flag should be true");
+                        assert_eq!(
+                            embedding.vector.len(),
+                            1536,
+                            "Projected embedding should be 1536D"
+                        );
+                        assert!(embedding.is_projected, "is_projected flag should be true");
                         assert_eq!(embedding.model_id, ModelId::Sparse);
                     }
                     Err(e) => {
                         // GPU error during inference is acceptable in test environment
-                        assert!(matches!(e, EmbeddingError::GpuError { .. }),
-                            "Unexpected error type: {:?}", e);
+                        assert!(
+                            matches!(e, EmbeddingError::GpuError { .. }),
+                            "Unexpected error type: {:?}",
+                            e
+                        );
                     }
                 }
             }
@@ -220,7 +228,10 @@ mod tests {
                 // Load failure is expected if projection matrix file is missing
                 // This is CORRECT behavior - the system fails fast
                 assert!(
-                    matches!(e, EmbeddingError::ModelLoadError { .. } | EmbeddingError::GpuError { .. }),
+                    matches!(
+                        e,
+                        EmbeddingError::ModelLoadError { .. } | EmbeddingError::GpuError { .. }
+                    ),
                     "Expected ModelLoadError or GpuError for missing weights, got: {:?}",
                     e
                 );
@@ -230,9 +241,11 @@ mod tests {
                     || err_msg.contains("projection")
                     || err_msg.contains("EMB-E006")
                     || err_msg.contains("CUDA");
-                assert!(has_useful_info,
+                assert!(
+                    has_useful_info,
                     "Error should mention projection or CUDA: {}",
-                    err_msg);
+                    err_msg
+                );
             }
         }
     }
@@ -276,7 +289,11 @@ mod tests {
 
         // CSR format verification
         assert_eq!(row_ptr, vec![0, 3], "row_ptr must be [0, nnz]");
-        assert_eq!(col_indices, vec![10, 100, 500], "col_indices must match indices as i32");
+        assert_eq!(
+            col_indices,
+            vec![10, 100, 500],
+            "col_indices must match indices as i32"
+        );
         assert_eq!(values, vec![0.5, 0.3, 0.8], "values must match weights");
     }
 
@@ -318,7 +335,8 @@ mod tests {
 
     #[test]
     fn test_sparse_vector_nnz() {
-        let sparse = SparseVector::new(vec![0, 100, 500, 1000, 2000], vec![0.1, 0.2, 0.3, 0.4, 0.5]);
+        let sparse =
+            SparseVector::new(vec![0, 100, 500, 1000, 2000], vec![0.1, 0.2, 0.3, 0.4, 0.5]);
         assert_eq!(sparse.nnz(), 5);
     }
 
@@ -332,7 +350,12 @@ mod tests {
 
         // More precise check: 1.0 - 3/30522 = 0.999901...
         let expected = 1.0 - (3.0 / 30522.0);
-        assert!((sparsity - expected).abs() < 0.0001, "Sparsity mismatch: {} vs {}", sparsity, expected);
+        assert!(
+            (sparsity - expected).abs() < 0.0001,
+            "Sparsity mismatch: {} vs {}",
+            sparsity,
+            expected
+        );
     }
 
     #[test]

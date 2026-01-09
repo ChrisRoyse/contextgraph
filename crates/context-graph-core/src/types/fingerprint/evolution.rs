@@ -92,7 +92,11 @@ pub struct PurposeSnapshot {
 
 impl PurposeSnapshot {
     /// Create a new snapshot at the current time.
-    pub fn new(purpose: PurposeVector, johari: JohariFingerprint, trigger: EvolutionTrigger) -> Self {
+    pub fn new(
+        purpose: PurposeVector,
+        johari: JohariFingerprint,
+        trigger: EvolutionTrigger,
+    ) -> Self {
         Self {
             timestamp: Utc::now(),
             purpose,
@@ -194,7 +198,8 @@ mod tests {
         let johari = make_test_johari();
 
         let before = Utc::now();
-        let snapshot = PurposeSnapshot::new(purpose.clone(), johari.clone(), EvolutionTrigger::Created);
+        let snapshot =
+            PurposeSnapshot::new(purpose.clone(), johari.clone(), EvolutionTrigger::Created);
         let after = Utc::now();
 
         // Timestamp should be between before and after

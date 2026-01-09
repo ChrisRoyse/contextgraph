@@ -124,12 +124,15 @@ impl EntityModel {
         )?;
 
         // Reshape for multi-head attention: [batch, heads, seq, head_dim]
-        let query =
-            Self::reshape_for_attention(query, batch_size, seq_len, num_heads, head_dim, layer_idx, "Q")?;
-        let key =
-            Self::reshape_for_attention(key, batch_size, seq_len, num_heads, head_dim, layer_idx, "K")?;
-        let value =
-            Self::reshape_for_attention(value, batch_size, seq_len, num_heads, head_dim, layer_idx, "V")?;
+        let query = Self::reshape_for_attention(
+            query, batch_size, seq_len, num_heads, head_dim, layer_idx, "Q",
+        )?;
+        let key = Self::reshape_for_attention(
+            key, batch_size, seq_len, num_heads, head_dim, layer_idx, "K",
+        )?;
+        let value = Self::reshape_for_attention(
+            value, batch_size, seq_len, num_heads, head_dim, layer_idx, "V",
+        )?;
 
         // Compute attention scores with mask
         let scores =
@@ -149,6 +152,13 @@ impl EntityModel {
         )?;
 
         // Apply output projection
-        Self::apply_output_projection(&context, attention, batch_size, seq_len, hidden_size, layer_idx)
+        Self::apply_output_projection(
+            &context,
+            attention,
+            batch_size,
+            seq_len,
+            hidden_size,
+            layer_idx,
+        )
     }
 }

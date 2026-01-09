@@ -27,8 +27,8 @@
 //!
 //! CUDA kernels for batch operations: TODO: M04-T23
 
-pub mod poincare;
 pub mod mobius;
+pub mod poincare;
 
-pub use poincare::PoincarePoint;
 pub use mobius::PoincareBall;
+pub use poincare::PoincarePoint;

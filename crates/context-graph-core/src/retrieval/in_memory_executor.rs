@@ -35,8 +35,8 @@ use crate::types::fingerprint::{SemanticFingerprint, NUM_EMBEDDERS};
 
 use super::{
     AggregatedMatch, AggregationStrategy, EmbeddingSpaceMask, IndexType, MultiEmbeddingQuery,
-    MultiEmbeddingQueryExecutor, MultiEmbeddingResult, PipelineStageTiming,
-    ScoredMatch, SpaceContribution, SpaceInfo, SpaceSearchResult,
+    MultiEmbeddingQueryExecutor, MultiEmbeddingResult, PipelineStageTiming, ScoredMatch,
+    SpaceContribution, SpaceInfo, SpaceSearchResult,
 };
 
 /// In-memory implementation of MultiEmbeddingQueryExecutor.
@@ -128,10 +128,7 @@ impl InMemoryMultiEmbeddingExecutor {
                     .await;
             }
             _ => {
-                SpaceSearchResult::failure(
-                    space_idx,
-                    format!("Invalid space index: {}", space_idx),
-                )
+                SpaceSearchResult::failure(space_idx, format!("Invalid space index: {}", space_idx))
             }
         }
     }
@@ -252,9 +249,7 @@ impl InMemoryMultiEmbeddingExecutor {
 
         // Apply RRF or other aggregation strategy
         let scores = match &query.aggregation {
-            AggregationStrategy::RRF { k } => {
-                AggregationStrategy::aggregate_rrf(&ranked_lists, *k)
-            }
+            AggregationStrategy::RRF { k } => AggregationStrategy::aggregate_rrf(&ranked_lists, *k),
             _ => {
                 // For non-RRF strategies, use RRF as fallback for ranking
                 AggregationStrategy::aggregate_rrf(&ranked_lists, rrf_k)
@@ -339,11 +334,7 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
                 .await;
 
             if !result.success {
-                tracing::error!(
-                    "Space {} search failed: {:?}",
-                    space_idx,
-                    result.error
-                );
+                tracing::error!("Space {} search failed: {:?}", space_idx, result.error);
                 spaces_failed += 1;
             }
             space_results.push(result);
@@ -360,12 +351,8 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
 
         let spaces_searched = space_results.iter().filter(|r| r.success).count();
 
-        let mut result = MultiEmbeddingResult::new(
-            aggregated,
-            total_time,
-            spaces_searched,
-            spaces_failed,
-        );
+        let mut result =
+            MultiEmbeddingResult::new(aggregated, total_time, spaces_searched, spaces_failed);
 
         // Include space breakdown if requested
         if query.include_space_breakdown {
@@ -406,11 +393,7 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
                 .await;
 
             if !result.success {
-                tracing::error!(
-                    "Space {} search failed: {:?}",
-                    space_idx,
-                    result.error
-                );
+                tracing::error!("Space {} search failed: {:?}", space_idx, result.error);
                 spaces_failed += 1;
             }
             space_results.push(result);
@@ -423,12 +406,8 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
         let total_time = start.elapsed();
         let spaces_searched = space_results.iter().filter(|r| r.success).count();
 
-        let mut result = MultiEmbeddingResult::new(
-            aggregated,
-            total_time,
-            spaces_searched,
-            spaces_failed,
-        );
+        let mut result =
+            MultiEmbeddingResult::new(aggregated, total_time, spaces_searched, spaces_failed);
 
         if query.include_space_breakdown {
             result = result.with_space_breakdown(space_results);
@@ -439,19 +418,19 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
 
     fn available_spaces(&self) -> Vec<SpaceInfo> {
         vec![
-            SpaceInfo::dense_hnsw(0, 1024, 0, true),   // E1 Semantic
-            SpaceInfo::dense_hnsw(1, 512, 0, true),    // E2 Temporal-Recent
-            SpaceInfo::dense_hnsw(2, 512, 0, true),    // E3 Temporal-Periodic
-            SpaceInfo::dense_hnsw(3, 512, 0, true),    // E4 Temporal-Positional
-            SpaceInfo::dense_hnsw(4, 768, 0, true),    // E5 Causal
-            SpaceInfo::sparse_inverted(5, 0, true),    // E6 Sparse
-            SpaceInfo::dense_hnsw(6, 1536, 0, true),   // E7 Code (Qodo-Embed)
-            SpaceInfo::dense_hnsw(7, 384, 0, true),    // E8 Graph
-            SpaceInfo::dense_hnsw(8, 1024, 0, true),   // E9 HDC (projected)
-            SpaceInfo::dense_hnsw(9, 768, 0, true),    // E10 Multimodal
-            SpaceInfo::dense_hnsw(10, 384, 0, true),   // E11 Entity
-            SpaceInfo::dense_hnsw(11, 128, 0, true),   // E12 Late-Interaction
-            SpaceInfo::sparse_inverted(12, 0, true),   // E13 SPLADE
+            SpaceInfo::dense_hnsw(0, 1024, 0, true), // E1 Semantic
+            SpaceInfo::dense_hnsw(1, 512, 0, true),  // E2 Temporal-Recent
+            SpaceInfo::dense_hnsw(2, 512, 0, true),  // E3 Temporal-Periodic
+            SpaceInfo::dense_hnsw(3, 512, 0, true),  // E4 Temporal-Positional
+            SpaceInfo::dense_hnsw(4, 768, 0, true),  // E5 Causal
+            SpaceInfo::sparse_inverted(5, 0, true),  // E6 Sparse
+            SpaceInfo::dense_hnsw(6, 1536, 0, true), // E7 Code (Qodo-Embed)
+            SpaceInfo::dense_hnsw(7, 384, 0, true),  // E8 Graph
+            SpaceInfo::dense_hnsw(8, 1024, 0, true), // E9 HDC (projected)
+            SpaceInfo::dense_hnsw(9, 768, 0, true),  // E10 Multimodal
+            SpaceInfo::dense_hnsw(10, 384, 0, true), // E11 Entity
+            SpaceInfo::dense_hnsw(11, 128, 0, true), // E12 Late-Interaction
+            SpaceInfo::sparse_inverted(12, 0, true), // E13 SPLADE
         ]
     }
 
@@ -469,10 +448,7 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
         // Validate query
         query.validate()?;
 
-        let config = query
-            .pipeline_config
-            .clone()
-            .unwrap_or_default();
+        let config = query.pipeline_config.clone().unwrap_or_default();
 
         // Generate query embeddings
         let embedding_output = self.provider.embed_all(&query.query_text).await?;
@@ -582,12 +558,8 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
             ],
         );
 
-        let mut result = MultiEmbeddingResult::new(
-            aggregated,
-            total_time,
-            spaces_searched,
-            spaces_failed,
-        );
+        let mut result =
+            MultiEmbeddingResult::new(aggregated, total_time, spaces_searched, spaces_failed);
         result = result.with_stage_timings(timing);
 
         if query.include_space_breakdown {

@@ -383,15 +383,20 @@ impl FeedbackLearner {
         let lr = self.config.learning_rate;
         let momentum = self.config.momentum;
 
-        for i in 0..NUM_EMBEDDERS {
+        for ((momentum_buf, adj), &grad) in self
+            .momentum_buffer
+            .iter_mut()
+            .zip(self.adjustments.iter_mut())
+            .zip(gradient.iter())
+        {
             // Update momentum buffer with exponential moving average
-            self.momentum_buffer[i] = momentum * self.momentum_buffer[i] + (1.0 - momentum) * gradient[i];
+            *momentum_buf = momentum * *momentum_buf + (1.0 - momentum) * grad;
 
             // Apply learning rate to momentum
-            self.adjustments[i] += lr * self.momentum_buffer[i];
+            *adj += lr * *momentum_buf;
 
             // Clamp adjustments to reasonable range [-1.0, 1.0]
-            self.adjustments[i] = self.adjustments[i].clamp(-1.0, 1.0);
+            *adj = adj.clamp(-1.0, 1.0);
         }
     }
 
@@ -579,12 +584,8 @@ mod tests {
 
     #[test]
     fn test_feedback_event_with_context() {
-        let event = FeedbackEvent::new(
-            Uuid::new_v4(),
-            FeedbackType::Neutral,
-            1000,
-        )
-        .with_context("test context");
+        let event = FeedbackEvent::new(Uuid::new_v4(), FeedbackType::Neutral, 1000)
+            .with_context("test context");
 
         assert_eq!(event.context, Some("test context".to_string()));
 
@@ -746,11 +747,7 @@ mod tests {
         let mut learner = FeedbackLearner::new();
 
         for i in 0..9 {
-            let event = FeedbackEvent::new(
-                Uuid::new_v4(),
-                FeedbackType::Neutral,
-                i as u64,
-            );
+            let event = FeedbackEvent::new(Uuid::new_v4(), FeedbackType::Neutral, i as u64);
             learner.record_feedback(event);
         }
 
@@ -972,11 +969,7 @@ mod tests {
         let mut learner = FeedbackLearner::new();
 
         for i in 0..5 {
-            let event = FeedbackEvent::new(
-                Uuid::new_v4(),
-                FeedbackType::Neutral,
-                i as u64,
-            );
+            let event = FeedbackEvent::new(Uuid::new_v4(), FeedbackType::Neutral, i as u64);
             learner.record_feedback(event);
         }
 
@@ -1072,11 +1065,7 @@ mod tests {
 
         // First batch
         for i in 0..5 {
-            let event = FeedbackEvent::new(
-                Uuid::new_v4(),
-                FeedbackType::Neutral,
-                i as u64,
-            );
+            let event = FeedbackEvent::new(Uuid::new_v4(), FeedbackType::Neutral, i as u64);
             learner.record_feedback(event);
         }
         learner.learn();
@@ -1084,11 +1073,7 @@ mod tests {
 
         // Second batch
         for i in 0..7 {
-            let event = FeedbackEvent::new(
-                Uuid::new_v4(),
-                FeedbackType::Neutral,
-                i as u64,
-            );
+            let event = FeedbackEvent::new(Uuid::new_v4(), FeedbackType::Neutral, i as u64);
             learner.record_feedback(event);
         }
         learner.learn();
@@ -1108,12 +1093,9 @@ mod tests {
         // Positive feedback increases confidence
         let uniform = [1.0 / NUM_EMBEDDERS as f32; NUM_EMBEDDERS];
         for _ in 0..5 {
-            let event = FeedbackEvent::new(
-                Uuid::new_v4(),
-                FeedbackType::Positive { magnitude: 1.0 },
-                0,
-            )
-            .with_contributions(uniform);
+            let event =
+                FeedbackEvent::new(Uuid::new_v4(), FeedbackType::Positive { magnitude: 1.0 }, 0)
+                    .with_contributions(uniform);
             learner.record_feedback(event);
         }
         learner.learn();
@@ -1123,12 +1105,9 @@ mod tests {
 
         // Negative feedback decreases confidence
         for _ in 0..5 {
-            let event = FeedbackEvent::new(
-                Uuid::new_v4(),
-                FeedbackType::Negative { magnitude: 1.0 },
-                0,
-            )
-            .with_contributions(uniform);
+            let event =
+                FeedbackEvent::new(Uuid::new_v4(), FeedbackType::Negative { magnitude: 1.0 }, 0)
+                    .with_contributions(uniform);
             learner.record_feedback(event);
         }
         learner.learn();
@@ -1228,8 +1207,14 @@ mod tests {
         );
 
         println!("[PASS] Real gradient calculation matches expected values");
-        println!("  - gradient[0] = {:.6} (expected {:.6})", gradient[0], expected_g0);
-        println!("  - gradient[3] = {:.6} (expected {:.6})", gradient[3], expected_g3);
+        println!(
+            "  - gradient[0] = {:.6} (expected {:.6})",
+            gradient[0], expected_g0
+        );
+        println!(
+            "  - gradient[3] = {:.6} (expected {:.6})",
+            gradient[3], expected_g3
+        );
         println!("  - gradient[5] = {:.6}", gradient[5]);
     }
 
@@ -1280,6 +1265,9 @@ mod tests {
 
         println!("[PASS] Multiple learning cycles show convergence");
         println!("  - Final adjustment[0] = {:.4}", final_adj);
-        println!("  - Total events processed = {}", learner.total_events_processed());
+        println!(
+            "  - Total events processed = {}",
+            learner.total_events_processed()
+        );
     }
 }

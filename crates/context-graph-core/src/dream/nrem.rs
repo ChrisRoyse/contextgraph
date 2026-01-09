@@ -156,7 +156,10 @@ impl NremPhase {
         let start = Instant::now();
         let _deadline = start + self.duration;
 
-        info!("Starting NREM phase: coupling={}, recency_bias={}", self.coupling, self.recency_bias);
+        info!(
+            "Starting NREM phase: coupling={}, recency_bias={}",
+            self.coupling, self.recency_bias
+        );
 
         let mut report = NremReport {
             memories_replayed: 0,

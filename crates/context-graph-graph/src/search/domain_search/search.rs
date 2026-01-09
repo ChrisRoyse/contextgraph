@@ -19,7 +19,9 @@ use crate::error::GraphResult;
 use crate::index::FaissGpuIndex;
 use crate::search::{semantic_search, Domain, NodeMetadataProvider, SearchFilters};
 
-use super::types::{DomainSearchResult, DomainSearchResults, DOMAIN_MATCH_BONUS, OVERFETCH_MULTIPLIER};
+use super::types::{
+    DomainSearchResult, DomainSearchResults, DOMAIN_MATCH_BONUS, OVERFETCH_MULTIPLIER,
+};
 
 // Re-export from core - DO NOT REDEFINE
 use context_graph_core::marblestone::NeurotransmitterWeights;

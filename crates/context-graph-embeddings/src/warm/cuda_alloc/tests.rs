@@ -289,10 +289,8 @@ fn test_verify_real_allocation_rejects_null() {
 
 #[test]
 fn test_verify_real_allocation_rejects_fake_pattern() {
-    let result = WarmCudaAllocator::verify_real_allocation(
-        FAKE_ALLOCATION_BASE_PATTERN,
-        "embedding_tensor",
-    );
+    let result =
+        WarmCudaAllocator::verify_real_allocation(FAKE_ALLOCATION_BASE_PATTERN, "embedding_tensor");
 
     assert!(result.is_err(), "Fake pointer MUST be rejected");
 
@@ -305,7 +303,10 @@ fn test_verify_real_allocation_rejects_fake_pattern() {
             assert_eq!(detected_address, FAKE_ALLOCATION_BASE_PATTERN);
             assert_eq!(tensor_name, "embedding_tensor");
         }
-        other => panic!("Expected FakeAllocationDetected (exit 109), got {:?}", other),
+        other => panic!(
+            "Expected FakeAllocationDetected (exit 109), got {:?}",
+            other
+        ),
     }
 }
 

@@ -13,12 +13,12 @@ use context_graph_core::types::fingerprint::{
     JohariFingerprint, PurposeVector, SemanticFingerprint, TeleologicalFingerprint, NUM_EMBEDDERS,
 };
 use context_graph_storage::column_families::cf_names;
+use context_graph_storage::get_column_family_descriptors;
 use context_graph_storage::teleological::{
     deserialize_memory_id_list, deserialize_teleological_fingerprint, e13_splade_inverted_key,
     fingerprint_key, get_teleological_cf_descriptors, serialize_memory_id_list,
     serialize_teleological_fingerprint, CF_E13_SPLADE_INVERTED, CF_FINGERPRINTS, TELEOLOGICAL_CFS,
 };
-use context_graph_storage::get_column_family_descriptors;
 use rocksdb::{Cache, Options, DB};
 use tempfile::TempDir;
 use uuid::Uuid;
@@ -74,7 +74,9 @@ fn create_real_fingerprint() -> TeleologicalFingerprint {
 
 #[test]
 fn test_rocksdb_open_with_19_column_families() {
-    println!("=== INTEGRATION: Open RocksDB with 19 column families (12 base + 7 teleological) ===");
+    println!(
+        "=== INTEGRATION: Open RocksDB with 19 column families (12 base + 7 teleological) ==="
+    );
 
     let temp_dir = TempDir::new().expect("Failed to create temp dir");
     let cache = Cache::new_lru_cache(256 * 1024 * 1024); // 256MB per constitution.yaml
@@ -144,7 +146,10 @@ fn test_rocksdb_store_retrieve_fingerprint() {
     let id = original.id;
 
     println!("BEFORE: Storing fingerprint {}", id);
-    println!("  - Theta to north star: {:.4}", original.theta_to_north_star);
+    println!(
+        "  - Theta to north star: {:.4}",
+        original.theta_to_north_star
+    );
     println!(
         "  - Evolution snapshots: {}",
         original.purpose_evolution.len()
@@ -156,7 +161,11 @@ fn test_rocksdb_store_retrieve_fingerprint() {
         .expect("Missing fingerprints CF");
     let key = fingerprint_key(&id);
     let value = serialize_teleological_fingerprint(&original);
-    println!("  - Serialized size: {} bytes ({:.2}KB)", value.len(), value.len() as f64 / 1024.0);
+    println!(
+        "  - Serialized size: {} bytes ({:.2}KB)",
+        value.len(),
+        value.len() as f64 / 1024.0
+    );
 
     db.put_cf(&cf, key, &value)
         .expect("Failed to store fingerprint");
@@ -170,7 +179,10 @@ fn test_rocksdb_store_retrieve_fingerprint() {
 
     let retrieved = deserialize_teleological_fingerprint(&retrieved_bytes);
     println!("AFTER: Retrieved fingerprint {}", retrieved.id);
-    println!("  - Theta to north star: {:.4}", retrieved.theta_to_north_star);
+    println!(
+        "  - Theta to north star: {:.4}",
+        retrieved.theta_to_north_star
+    );
     println!(
         "  - Evolution snapshots: {}",
         retrieved.purpose_evolution.len()
@@ -179,9 +191,7 @@ fn test_rocksdb_store_retrieve_fingerprint() {
     // Verify
     assert_eq!(original.id, retrieved.id);
     assert_eq!(original.content_hash, retrieved.content_hash);
-    assert!(
-        (original.theta_to_north_star - retrieved.theta_to_north_star).abs() < 1e-6
-    );
+    assert!((original.theta_to_north_star - retrieved.theta_to_north_star).abs() < 1e-6);
     assert_eq!(
         original.purpose_evolution.len(),
         retrieved.purpose_evolution.len()
@@ -215,7 +225,11 @@ fn test_rocksdb_e13_splade_inverted_index() {
     let term_id: u16 = 42;
     let memory_ids: Vec<Uuid> = (0..5).map(|_| Uuid::new_v4()).collect();
 
-    println!("BEFORE: Storing term {} with {} memory IDs", term_id, memory_ids.len());
+    println!(
+        "BEFORE: Storing term {} with {} memory IDs",
+        term_id,
+        memory_ids.len()
+    );
     for (i, id) in memory_ids.iter().enumerate() {
         println!("  [{}]: {}", i, id);
     }
@@ -269,9 +283,8 @@ fn test_rocksdb_multiple_fingerprints() {
         .expect("Missing fingerprints CF");
 
     // Create and store 10 fingerprints
-    let fingerprints: Vec<TeleologicalFingerprint> = (0..10)
-        .map(|_| create_real_fingerprint())
-        .collect();
+    let fingerprints: Vec<TeleologicalFingerprint> =
+        (0..10).map(|_| create_real_fingerprint()).collect();
 
     println!("BEFORE: Storing {} fingerprints", fingerprints.len());
 
@@ -284,7 +297,10 @@ fn test_rocksdb_multiple_fingerprints() {
     println!("  ✓ All fingerprints stored");
 
     // Retrieve and verify all
-    println!("AFTER: Retrieving and verifying {} fingerprints", fingerprints.len());
+    println!(
+        "AFTER: Retrieving and verifying {} fingerprints",
+        fingerprints.len()
+    );
 
     for (i, original) in fingerprints.iter().enumerate() {
         let key = fingerprint_key(&original.id);
@@ -333,7 +349,7 @@ fn test_rocksdb_e13_multiple_terms() {
         (100, (0..3).map(|_| Uuid::new_v4()).collect()),
         (200, (0..5).map(|_| Uuid::new_v4()).collect()),
         (300, (0..10).map(|_| Uuid::new_v4()).collect()),
-        (400, vec![]), // Empty list - edge case
+        (400, vec![]),                                     // Empty list - edge case
         (30521, (0..2).map(|_| Uuid::new_v4()).collect()), // Near max vocab
     ];
 
@@ -347,7 +363,10 @@ fn test_rocksdb_e13_multiple_terms() {
     }
 
     // Retrieve and verify all
-    println!("AFTER: Retrieving and verifying {} term mappings", term_data.len());
+    println!(
+        "AFTER: Retrieving and verifying {} term mappings",
+        term_data.len()
+    );
     for (term_id, original_ids) in &term_data {
         let key = e13_splade_inverted_key(*term_id);
         let retrieved_bytes = db
@@ -398,9 +417,7 @@ fn test_rocksdb_cf_isolation() {
     let e13_cf = db
         .cf_handle(CF_E13_SPLADE_INVERTED)
         .expect("Missing e13 CF");
-    let result = db
-        .get_cf(&e13_cf, key)
-        .expect("Failed to query e13 CF");
+    let result = db.get_cf(&e13_cf, key).expect("Failed to query e13 CF");
 
     assert!(
         result.is_none(),
@@ -430,8 +447,8 @@ fn test_rocksdb_persistence() {
         opts.create_if_missing(true);
         opts.create_missing_column_families(true);
 
-        let db = DB::open_cf_descriptors(&opts, &db_path, descriptors)
-            .expect("Failed to open RocksDB");
+        let db =
+            DB::open_cf_descriptors(&opts, &db_path, descriptors).expect("Failed to open RocksDB");
 
         let cf = db
             .cf_handle(CF_FINGERPRINTS)
@@ -468,7 +485,10 @@ fn test_rocksdb_persistence() {
         let retrieved = deserialize_teleological_fingerprint(&retrieved_bytes);
         assert_eq!(fp.id, retrieved.id);
 
-        println!("AFTER: Reopened DB and retrieved fingerprint {}", retrieved.id);
+        println!(
+            "AFTER: Reopened DB and retrieved fingerprint {}",
+            retrieved.id
+        );
     }
 
     println!("RESULT: PASS - Data persists across DB reopen");
@@ -488,13 +508,23 @@ fn test_total_column_families_is_19() {
 
     // Count teleological CFs (TASK-TELEO-006: 4 original + 3 new = 7)
     let teleological_descriptors = get_teleological_cf_descriptors(&cache);
-    println!("Teleological column families: {}", teleological_descriptors.len());
-    assert_eq!(teleological_descriptors.len(), 7, "Expected 7 teleological CFs (4 original + 3 TASK-TELEO-006)");
+    println!(
+        "Teleological column families: {}",
+        teleological_descriptors.len()
+    );
+    assert_eq!(
+        teleological_descriptors.len(),
+        7,
+        "Expected 7 teleological CFs (4 original + 3 TASK-TELEO-006)"
+    );
 
     // Total
     let total = base_descriptors.len() + teleological_descriptors.len();
     println!("Total column families: {}", total);
-    assert_eq!(total, 19, "Expected 19 total CFs (12 base + 7 teleological)");
+    assert_eq!(
+        total, 19,
+        "Expected 19 total CFs (12 base + 7 teleological)"
+    );
 
     // Verify by opening DB
     let mut all_descriptors = base_descriptors;

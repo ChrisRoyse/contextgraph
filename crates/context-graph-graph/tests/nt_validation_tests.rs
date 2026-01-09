@@ -53,7 +53,10 @@ fn test_validate_real_domain_medical() {
     );
     let result = validate_or_error(&weights);
     println!("AFTER: result = {:?}", result);
-    assert!(result.is_ok(), "Medical domain should validate successfully");
+    assert!(
+        result.is_ok(),
+        "Medical domain should validate successfully"
+    );
 }
 
 #[test]
@@ -261,13 +264,19 @@ fn test_boundary_values_accepted() {
     let min = NeurotransmitterWeights::new(0.0, 0.0, 0.0);
     let result = validate_or_error(&min);
     println!("AFTER: min boundary result = {:?}", result);
-    assert!(result.is_ok(), "Boundary min (0.0, 0.0, 0.0) should be valid");
+    assert!(
+        result.is_ok(),
+        "Boundary min (0.0, 0.0, 0.0) should be valid"
+    );
 
     println!("BEFORE: Testing boundary max (1.0, 1.0, 1.0)");
     let max = NeurotransmitterWeights::new(1.0, 1.0, 1.0);
     let result = validate_or_error(&max);
     println!("AFTER: max boundary result = {:?}", result);
-    assert!(result.is_ok(), "Boundary max (1.0, 1.0, 1.0) should be valid");
+    assert!(
+        result.is_ok(),
+        "Boundary max (1.0, 1.0, 1.0) should be valid"
+    );
 }
 
 #[test]

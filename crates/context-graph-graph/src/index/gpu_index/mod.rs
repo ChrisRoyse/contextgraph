@@ -24,14 +24,14 @@
 //! - `operations` - Train, search, and add operations
 //! - `persistence` - Save and load functionality
 
-mod resources;
 mod index;
 mod operations;
 mod persistence;
+mod resources;
 
 #[cfg(test)]
 mod tests;
 
 // Re-export all public items
-pub use resources::{GpuResources, create_shared_resources};
 pub use index::FaissGpuIndex;
+pub use resources::{create_shared_resources, GpuResources};

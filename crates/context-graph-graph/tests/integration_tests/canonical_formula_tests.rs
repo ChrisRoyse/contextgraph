@@ -17,10 +17,10 @@ use crate::common::fixtures::generate_poincare_point;
 fn test_m04_t27_canonical_formula_consistency() {
     println!("\n=== TEST: M04-T27 Canonical Formula Consistency ===");
 
+    use context_graph_cuda::cone::cone_membership_score_cpu;
+    use context_graph_graph::config::{ConeConfig, HyperbolicConfig};
     use context_graph_graph::entailment::cones::EntailmentCone;
     use context_graph_graph::hyperbolic::{PoincareBall, PoincarePoint as HyperbolicPoint};
-    use context_graph_graph::config::{HyperbolicConfig, ConeConfig};
-    use context_graph_cuda::cone::cone_membership_score_cpu;
 
     let ball = PoincareBall::new(HyperbolicConfig::default());
     let cone_config = ConeConfig::default();
@@ -56,7 +56,7 @@ fn test_m04_t27_canonical_formula_consistency() {
                 &apex_storage.coords,
                 aperture,
                 &point_storage.coords,
-                -1.0,  // curvature
+                -1.0, // curvature
             );
 
             // Compute difference
@@ -76,12 +76,16 @@ fn test_m04_t27_canonical_formula_consistency() {
             assert!(
                 (0.0..=1.0).contains(&score_graph),
                 "Graph score {} out of range at seed={}, point_seed={}",
-                score_graph, seed, point_seed
+                score_graph,
+                seed,
+                point_seed
             );
             assert!(
                 (0.0..=1.0).contains(&score_cuda_cpu),
                 "CUDA CPU score {} out of range at seed={}, point_seed={}",
-                score_cuda_cpu, seed, point_seed
+                score_cuda_cpu,
+                seed,
+                point_seed
             );
         }
     }
@@ -116,10 +120,10 @@ fn test_m04_t27_canonical_formula_consistency() {
 fn test_m04_t27_canonical_formula_edge_cases() {
     println!("\n=== TEST: M04-T27 Canonical Formula Edge Cases ===");
 
+    use context_graph_cuda::cone::cone_membership_score_cpu;
+    use context_graph_graph::config::{ConeConfig, HyperbolicConfig};
     use context_graph_graph::entailment::cones::EntailmentCone;
     use context_graph_graph::hyperbolic::{PoincareBall, PoincarePoint as HyperbolicPoint};
-    use context_graph_graph::config::{HyperbolicConfig, ConeConfig};
-    use context_graph_cuda::cone::cone_membership_score_cpu;
 
     let ball = PoincareBall::new(HyperbolicConfig::default());
     let cone_config = ConeConfig::default();
@@ -133,12 +137,8 @@ fn test_m04_t27_canonical_formula_edge_cases() {
             .expect("Cone creation should succeed");
 
         let score_graph = cone.membership_score(&apex_hyperbolic, &ball);
-        let score_cuda_cpu = cone_membership_score_cpu(
-            &apex.coords,
-            cone.effective_aperture(),
-            &apex.coords,
-            -1.0,
-        );
+        let score_cuda_cpu =
+            cone_membership_score_cpu(&apex.coords, cone.effective_aperture(), &apex.coords, -1.0);
 
         assert!(
             (score_graph - 1.0).abs() < 1e-4,
@@ -150,7 +150,10 @@ fn test_m04_t27_canonical_formula_edge_cases() {
             "Point at apex should have score 1.0 (cuda_cpu), got {}",
             score_cuda_cpu
         );
-        println!("    graph: {:.6}, cuda_cpu: {:.6} OK", score_graph, score_cuda_cpu);
+        println!(
+            "    graph: {:.6}, cuda_cpu: {:.6} OK",
+            score_graph, score_cuda_cpu
+        );
     }
 
     // Edge case 2: Apex at origin (degenerate cone)
@@ -182,7 +185,10 @@ fn test_m04_t27_canonical_formula_edge_cases() {
             "Apex at origin should give score 1.0 (cuda_cpu), got {}",
             score_cuda_cpu
         );
-        println!("    graph: {:.6}, cuda_cpu: {:.6} OK", score_graph, score_cuda_cpu);
+        println!(
+            "    graph: {:.6}, cuda_cpu: {:.6} OK",
+            score_graph, score_cuda_cpu
+        );
     }
 
     // Edge case 3: Point clearly inside cone (wide aperture)
@@ -203,12 +209,8 @@ fn test_m04_t27_canonical_formula_edge_cases() {
         let point = HyperbolicPoint::from_coords(point_coords);
 
         let score_graph = cone.membership_score(&point, &ball);
-        let score_cuda_cpu = cone_membership_score_cpu(
-            &apex_coords,
-            cone.effective_aperture(),
-            &point_coords,
-            -1.0,
-        );
+        let score_cuda_cpu =
+            cone_membership_score_cpu(&apex_coords, cone.effective_aperture(), &point_coords, -1.0);
 
         // Should be very high (likely 1.0 for wide cone)
         assert!(
@@ -219,9 +221,13 @@ fn test_m04_t27_canonical_formula_edge_cases() {
         assert!(
             (score_graph - score_cuda_cpu).abs() < 1e-4,
             "Implementations differ: graph={:.6}, cuda_cpu={:.6}",
+            score_graph,
+            score_cuda_cpu
+        );
+        println!(
+            "    graph: {:.6}, cuda_cpu: {:.6} OK",
             score_graph, score_cuda_cpu
         );
-        println!("    graph: {:.6}, cuda_cpu: {:.6} OK", score_graph, score_cuda_cpu);
     }
 
     // Edge case 4: Point clearly outside cone (narrow aperture)
@@ -243,12 +249,8 @@ fn test_m04_t27_canonical_formula_edge_cases() {
         let point = HyperbolicPoint::from_coords(point_coords);
 
         let score_graph = cone.membership_score(&point, &ball);
-        let score_cuda_cpu = cone_membership_score_cpu(
-            &apex_coords,
-            cone.effective_aperture(),
-            &point_coords,
-            -1.0,
-        );
+        let score_cuda_cpu =
+            cone_membership_score_cpu(&apex_coords, cone.effective_aperture(), &point_coords, -1.0);
 
         // Should be low (exponential decay)
         assert!(
@@ -259,9 +261,13 @@ fn test_m04_t27_canonical_formula_edge_cases() {
         assert!(
             (score_graph - score_cuda_cpu).abs() < 1e-4,
             "Implementations differ: graph={:.6}, cuda_cpu={:.6}",
+            score_graph,
+            score_cuda_cpu
+        );
+        println!(
+            "    graph: {:.6}, cuda_cpu: {:.6} OK",
             score_graph, score_cuda_cpu
         );
-        println!("    graph: {:.6}, cuda_cpu: {:.6} OK", score_graph, score_cuda_cpu);
     }
 
     println!("=== PASSED: M04-T27 Canonical Formula Edge Cases ===\n");

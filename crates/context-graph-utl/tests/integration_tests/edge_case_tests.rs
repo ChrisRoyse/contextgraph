@@ -4,7 +4,7 @@
 
 use context_graph_utl::processor::UtlProcessor;
 
-use super::helpers::{generate_embedding, generate_context, uniform_embedding};
+use super::helpers::{generate_context, generate_embedding, uniform_embedding};
 
 // =============================================================================
 // EDGE CASE TESTS (per M05-T25 specification)

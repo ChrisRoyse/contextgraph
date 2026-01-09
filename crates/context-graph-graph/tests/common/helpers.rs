@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 
 use context_graph_graph::{
     error::GraphResult,
-    storage::{GraphStorage, PoincarePoint, EntailmentCone, NodeId},
+    storage::{EntailmentCone, GraphStorage, NodeId, PoincarePoint},
 };
 
 /// Test timing result with NFR comparison.
@@ -72,10 +72,12 @@ where
 /// Returns both the storage and the temp directory path.
 /// Storage is automatically cleaned up when TempDir is dropped.
 pub fn create_test_storage() -> GraphResult<(GraphStorage, tempfile::TempDir)> {
-    let temp_dir = tempfile::tempdir()
-        .map_err(|e| context_graph_graph::error::GraphError::Storage(
-            format!("Failed to create temp directory: {}", e)
-        ))?;
+    let temp_dir = tempfile::tempdir().map_err(|e| {
+        context_graph_graph::error::GraphError::Storage(format!(
+            "Failed to create temp directory: {}",
+            e
+        ))
+    })?;
 
     let db_path = temp_dir.path().join("test_integration.db");
     let storage = GraphStorage::open_default(&db_path)?;
@@ -143,9 +145,7 @@ pub fn verify_hyperbolic_point(
     tolerance: f32,
 ) -> GraphResult<()> {
     let actual = storage.get_hyperbolic(node_id)?.ok_or_else(|| {
-        context_graph_graph::error::GraphError::NodeNotFound(
-            format!("hyperbolic[{}]", node_id)
-        )
+        context_graph_graph::error::GraphError::NodeNotFound(format!("hyperbolic[{}]", node_id))
     })?;
 
     for i in 0..actual.coords.len() {
@@ -170,9 +170,7 @@ pub fn verify_entailment_cone(
     tolerance: f32,
 ) -> GraphResult<()> {
     let actual = storage.get_cone(node_id)?.ok_or_else(|| {
-        context_graph_graph::error::GraphError::NodeNotFound(
-            format!("cone[{}]", node_id)
-        )
+        context_graph_graph::error::GraphError::NodeNotFound(format!("cone[{}]", node_id))
     })?;
 
     // Verify aperture
@@ -280,7 +278,10 @@ impl StateLog {
 
     pub fn verified(&self, expected: &str, actual: &str) {
         if expected == actual {
-            println!("VERIFIED: {} = {} (expected {})", self.component, actual, expected);
+            println!(
+                "VERIFIED: {} = {} (expected {})",
+                self.component, actual, expected
+            );
         } else {
             println!(
                 "MISMATCH: {} = {} (expected {})",

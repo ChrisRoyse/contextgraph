@@ -1,7 +1,7 @@
 //! Tests for WarmError exit codes, categories, and fatal vs non-fatal errors.
 
-use crate::warm::error::{WarmError, WarmResult};
 use super::helpers::{GB, MB};
+use crate::warm::error::{WarmError, WarmResult};
 
 #[test]
 fn test_exit_codes_fatal_101_to_110() {
@@ -103,7 +103,11 @@ fn test_exit_codes_fatal_101_to_110() {
             "Exit code mismatch for {:?}",
             err.category()
         );
-        assert!(err.is_fatal(), "Expected fatal for exit code {}", expected_code);
+        assert!(
+            err.is_fatal(),
+            "Expected fatal for exit code {}",
+            expected_code
+        );
     }
 }
 
@@ -150,7 +154,11 @@ fn test_exit_codes_non_fatal() {
             "Expected exit code 1 for {:?}",
             err.category()
         );
-        assert!(!err.is_fatal(), "Expected non-fatal for {:?}", err.category());
+        assert!(
+            !err.is_fatal(),
+            "Expected non-fatal for {:?}",
+            err.category()
+        );
     }
 }
 

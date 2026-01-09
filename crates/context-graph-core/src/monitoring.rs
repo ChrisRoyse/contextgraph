@@ -37,9 +37,9 @@
 //! ```
 
 use async_trait::async_trait;
-use thiserror::Error;
 use std::fmt;
 use std::time::Duration;
+use thiserror::Error;
 
 // ============================================================================
 // Error Types
@@ -626,16 +626,28 @@ mod tests {
 
         // All metric methods should fail with NotImplemented
         let result = monitor.coherence_recovery_time_ms().await;
-        assert!(matches!(result, Err(SystemMonitorError::NotImplemented { .. })));
+        assert!(matches!(
+            result,
+            Err(SystemMonitorError::NotImplemented { .. })
+        ));
 
         let result = monitor.attack_detection_rate().await;
-        assert!(matches!(result, Err(SystemMonitorError::NotImplemented { .. })));
+        assert!(matches!(
+            result,
+            Err(SystemMonitorError::NotImplemented { .. })
+        ));
 
         let result = monitor.false_positive_rate().await;
-        assert!(matches!(result, Err(SystemMonitorError::NotImplemented { .. })));
+        assert!(matches!(
+            result,
+            Err(SystemMonitorError::NotImplemented { .. })
+        ));
 
         let result = monitor.all_health_metrics().await;
-        assert!(matches!(result, Err(SystemMonitorError::NotImplemented { .. })));
+        assert!(matches!(
+            result,
+            Err(SystemMonitorError::NotImplemented { .. })
+        ));
 
         // is_operational returns Ok(false) - stub is running but not operational
         let result = monitor.is_operational().await;
@@ -647,13 +659,28 @@ mod tests {
         let provider = StubLayerStatusProvider::new();
 
         // Active layers
-        assert!(matches!(provider.perception_status().await, Ok(LayerStatus::Active)));
-        assert!(matches!(provider.memory_status().await, Ok(LayerStatus::Active)));
+        assert!(matches!(
+            provider.perception_status().await,
+            Ok(LayerStatus::Active)
+        ));
+        assert!(matches!(
+            provider.memory_status().await,
+            Ok(LayerStatus::Active)
+        ));
 
         // Stub layers
-        assert!(matches!(provider.reasoning_status().await, Ok(LayerStatus::Stub)));
-        assert!(matches!(provider.action_status().await, Ok(LayerStatus::Stub)));
-        assert!(matches!(provider.meta_status().await, Ok(LayerStatus::Stub)));
+        assert!(matches!(
+            provider.reasoning_status().await,
+            Ok(LayerStatus::Stub)
+        ));
+        assert!(matches!(
+            provider.action_status().await,
+            Ok(LayerStatus::Stub)
+        ));
+        assert!(matches!(
+            provider.meta_status().await,
+            Ok(LayerStatus::Stub)
+        ));
 
         // Unknown layer should error
         let result = provider.layer_status_by_name("unknown").await;
@@ -664,7 +691,10 @@ mod tests {
     fn test_layer_status_display() {
         assert_eq!(LayerStatus::Active.to_string(), "active");
         assert_eq!(LayerStatus::Stub.to_string(), "stub");
-        assert_eq!(LayerStatus::Error("test".to_string()).to_string(), "error: test");
+        assert_eq!(
+            LayerStatus::Error("test".to_string()).to_string(),
+            "error: test"
+        );
         assert_eq!(LayerStatus::NotImplemented.to_string(), "not_implemented");
         assert_eq!(LayerStatus::Disabled.to_string(), "disabled");
     }

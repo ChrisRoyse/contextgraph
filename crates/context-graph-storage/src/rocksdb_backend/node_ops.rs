@@ -8,7 +8,7 @@ use std::collections::HashSet;
 use rocksdb::WriteBatch;
 
 use crate::column_families::cf_names;
-use crate::serialization::{serialize_embedding, serialize_node, serialize_uuid, deserialize_node};
+use crate::serialization::{deserialize_node, serialize_embedding, serialize_node, serialize_uuid};
 use context_graph_core::types::MemoryNode;
 
 use super::core::RocksDbMemex;
@@ -93,7 +93,10 @@ impl RocksDbMemex {
     /// - `StorageError::NotFound` if node doesn't exist
     /// - `StorageError::Serialization` if deserialization fails
     /// - `StorageError::ReadFailed` if RocksDB read fails
-    pub fn get_node(&self, id: &context_graph_core::types::NodeId) -> Result<MemoryNode, StorageError> {
+    pub fn get_node(
+        &self,
+        id: &context_graph_core::types::NodeId,
+    ) -> Result<MemoryNode, StorageError> {
         let cf_nodes = self.get_cf(cf_names::NODES)?;
         let node_key = serialize_uuid(id);
 
@@ -196,7 +199,11 @@ impl RocksDbMemex {
     /// # Errors
     /// - `StorageError::NotFound` if node doesn't exist
     /// - `StorageError::WriteFailed` if RocksDB write fails
-    pub fn delete_node(&self, id: &context_graph_core::types::NodeId, soft_delete: bool) -> Result<(), StorageError> {
+    pub fn delete_node(
+        &self,
+        id: &context_graph_core::types::NodeId,
+        soft_delete: bool,
+    ) -> Result<(), StorageError> {
         // 1. Get existing node (MUST exist) - fail fast for non-existent
         let node = self.get_node(id)?;
 
@@ -209,7 +216,11 @@ impl RocksDbMemex {
             updated_node.metadata.mark_deleted();
 
             let cf_nodes = self.get_cf(cf_names::NODES)?;
-            batch.put_cf(cf_nodes, node_key.as_slice(), serialize_node(&updated_node)?);
+            batch.put_cf(
+                cf_nodes,
+                node_key.as_slice(),
+                serialize_node(&updated_node)?,
+            );
         } else {
             // Hard delete: Remove from ALL column families
             let cf_nodes = self.get_cf(cf_names::NODES)?;

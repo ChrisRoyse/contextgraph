@@ -209,7 +209,7 @@ impl TeleologicalWeights {
     pub fn semantic_focused() -> Self {
         let mut weights = [0.05; NUM_EMBEDDERS];
         weights[0] = 0.40; // E1_Semantic
-        // Redistribute remaining 0.60 across other 12 embedders
+                           // Redistribute remaining 0.60 across other 12 embedders
         for w in weights.iter_mut().skip(1) {
             *w = 0.60 / 12.0;
         }
@@ -355,12 +355,7 @@ impl DefaultAlignmentCalculator {
         // Apply level propagation weight
         let final_alignment = weighted_alignment * level_weight;
 
-        GoalScore::new(
-            goal.id,
-            goal.level,
-            final_alignment,
-            config_weight,
-        )
+        GoalScore::new(goal.id, goal.level, final_alignment, config_weight)
     }
 
     /// Compute cosine similarity for ALL 13 embedding spaces.
@@ -392,22 +387,33 @@ impl DefaultAlignmentCalculator {
 
         // ARCH-02: Apples-to-apples comparison - same embedder to same embedder
         // E1: Semantic (1024D) - E1 vs E1
-        alignments[0] = self.compute_dense_alignment(&fingerprint.e1_semantic, &goal_array.e1_semantic);
+        alignments[0] =
+            self.compute_dense_alignment(&fingerprint.e1_semantic, &goal_array.e1_semantic);
 
         // E2: Temporal Recent (512D) - E2 vs E2
-        alignments[1] = self.compute_dense_alignment(&fingerprint.e2_temporal_recent, &goal_array.e2_temporal_recent);
+        alignments[1] = self.compute_dense_alignment(
+            &fingerprint.e2_temporal_recent,
+            &goal_array.e2_temporal_recent,
+        );
 
         // E3: Temporal Periodic (512D) - E3 vs E3
-        alignments[2] = self.compute_dense_alignment(&fingerprint.e3_temporal_periodic, &goal_array.e3_temporal_periodic);
+        alignments[2] = self.compute_dense_alignment(
+            &fingerprint.e3_temporal_periodic,
+            &goal_array.e3_temporal_periodic,
+        );
 
         // E4: Temporal Positional (512D) - E4 vs E4
-        alignments[3] = self.compute_dense_alignment(&fingerprint.e4_temporal_positional, &goal_array.e4_temporal_positional);
+        alignments[3] = self.compute_dense_alignment(
+            &fingerprint.e4_temporal_positional,
+            &goal_array.e4_temporal_positional,
+        );
 
         // E5: Causal (768D) - E5 vs E5
         alignments[4] = self.compute_dense_alignment(&fingerprint.e5_causal, &goal_array.e5_causal);
 
         // E6: Sparse (SPLADE) - E6 vs E6
-        alignments[5] = self.compute_sparse_vector_alignment(&fingerprint.e6_sparse, &goal_array.e6_sparse);
+        alignments[5] =
+            self.compute_sparse_vector_alignment(&fingerprint.e6_sparse, &goal_array.e6_sparse);
 
         // E7: Code (1536D - Qodo-Embed) - E7 vs E7
         alignments[6] = self.compute_dense_alignment(&fingerprint.e7_code, &goal_array.e7_code);
@@ -419,16 +425,22 @@ impl DefaultAlignmentCalculator {
         alignments[8] = self.compute_dense_alignment(&fingerprint.e9_hdc, &goal_array.e9_hdc);
 
         // E10: Multimodal (768D) - E10 vs E10
-        alignments[9] = self.compute_dense_alignment(&fingerprint.e10_multimodal, &goal_array.e10_multimodal);
+        alignments[9] =
+            self.compute_dense_alignment(&fingerprint.e10_multimodal, &goal_array.e10_multimodal);
 
         // E11: Entity (384D) - E11 vs E11
-        alignments[10] = self.compute_dense_alignment(&fingerprint.e11_entity, &goal_array.e11_entity);
+        alignments[10] =
+            self.compute_dense_alignment(&fingerprint.e11_entity, &goal_array.e11_entity);
 
         // E12: Late Interaction (ColBERT) - E12 vs E12 (max-sim over tokens)
-        alignments[11] = self.compute_late_interaction_vectors(&fingerprint.e12_late_interaction, &goal_array.e12_late_interaction);
+        alignments[11] = self.compute_late_interaction_vectors(
+            &fingerprint.e12_late_interaction,
+            &goal_array.e12_late_interaction,
+        );
 
         // E13: SPLADE v3 - E13 vs E13
-        alignments[12] = self.compute_sparse_vector_alignment(&fingerprint.e13_splade, &goal_array.e13_splade);
+        alignments[12] =
+            self.compute_sparse_vector_alignment(&fingerprint.e13_splade, &goal_array.e13_splade);
 
         alignments
     }
@@ -552,10 +564,9 @@ impl DefaultAlignmentCalculator {
         let mut flags = MisalignmentFlags::empty();
 
         // Check tactical without strategic
-        if thresholds.is_tactical_without_strategic(
-            score.tactical_alignment,
-            score.strategic_alignment,
-        ) {
+        if thresholds
+            .is_tactical_without_strategic(score.tactical_alignment, score.strategic_alignment)
+        {
             flags.tactical_without_strategic = true;
             warn!(
                 tactical = score.tactical_alignment,
@@ -710,7 +721,11 @@ impl GoalAlignmentCalculator for DefaultAlignmentCalculator {
         // Compute embedder breakdown if enabled
         let embedder_breakdown = if config.include_embedder_breakdown {
             let breakdown = self.compute_embedder_breakdown(fingerprint);
-            self.check_inconsistent_alignment(&mut flags, &breakdown, &config.misalignment_thresholds);
+            self.check_inconsistent_alignment(
+                &mut flags,
+                &breakdown,
+                &config.misalignment_thresholds,
+            );
             Some(breakdown)
         } else {
             None
@@ -942,8 +957,12 @@ mod tests {
 
         // E12: Late Interaction - add a few token vectors
         fp.e12_late_interaction = vec![
-            (0..128).map(|i| ((i as f32 / 16.0 + seed * 2.0).sin()).clamp(-1.0, 1.0)).collect(),
-            (0..128).map(|i| ((i as f32 / 16.0 + seed * 2.1).sin()).clamp(-1.0, 1.0)).collect(),
+            (0..128)
+                .map(|i| ((i as f32 / 16.0 + seed * 2.0).sin()).clamp(-1.0, 1.0))
+                .collect(),
+            (0..128)
+                .map(|i| ((i as f32 / 16.0 + seed * 2.1).sin()).clamp(-1.0, 1.0))
+                .collect(),
         ];
 
         // E13: SPLADE sparse
@@ -1108,12 +1127,30 @@ mod tests {
             .expect("Alignment computation failed");
 
         println!("\n=== Alignment Result ===");
-        println!("BEFORE: fingerprint theta_to_north_star = {:.3}", fingerprint.theta_to_north_star);
-        println!("AFTER: composite_score = {:.3}", result.score.composite_score);
-        println!("  - north_star_alignment: {:.3}", result.score.north_star_alignment);
-        println!("  - strategic_alignment: {:.3}", result.score.strategic_alignment);
-        println!("  - tactical_alignment: {:.3}", result.score.tactical_alignment);
-        println!("  - immediate_alignment: {:.3}", result.score.immediate_alignment);
+        println!(
+            "BEFORE: fingerprint theta_to_north_star = {:.3}",
+            fingerprint.theta_to_north_star
+        );
+        println!(
+            "AFTER: composite_score = {:.3}",
+            result.score.composite_score
+        );
+        println!(
+            "  - north_star_alignment: {:.3}",
+            result.score.north_star_alignment
+        );
+        println!(
+            "  - strategic_alignment: {:.3}",
+            result.score.strategic_alignment
+        );
+        println!(
+            "  - tactical_alignment: {:.3}",
+            result.score.tactical_alignment
+        );
+        println!(
+            "  - immediate_alignment: {:.3}",
+            result.score.immediate_alignment
+        );
         println!("  - threshold: {:?}", result.score.threshold);
         println!("  - computation_time_us: {}", result.computation_time_us);
         println!("  - goal_count: {}", result.score.goal_count());
@@ -1121,10 +1158,10 @@ mod tests {
 
         assert!(result.score.goal_count() == 4);
         assert!(result.computation_time_us < 5000); // <5ms
-        // Note: With propagation weights (Tactical=0.4, Immediate=0.2) applied to 0.8 alignment,
-        // lower level goals will fall below Critical threshold (0.55).
-        // This is expected behavior - the propagation weights intentionally reduce alignment
-        // for goals farther from the North Star.
+                                                    // Note: With propagation weights (Tactical=0.4, Immediate=0.2) applied to 0.8 alignment,
+                                                    // lower level goals will fall below Critical threshold (0.55).
+                                                    // This is expected behavior - the propagation weights intentionally reduce alignment
+                                                    // for goals farther from the North Star.
         assert!(result.score.composite_score > 0.5); // Overall should still be acceptable
 
         println!("[VERIFIED] compute_alignment produces valid result");
@@ -1166,8 +1203,14 @@ mod tests {
 
         println!("\n=== Low Alignment Test ===");
         println!("BEFORE: fingerprint theta = 0.1");
-        println!("AFTER: flags.below_threshold = {}", result.flags.below_threshold);
-        println!("       flags.critical_goals = {:?}", result.flags.critical_goals);
+        println!(
+            "AFTER: flags.below_threshold = {}",
+            result.flags.below_threshold
+        );
+        println!(
+            "       flags.critical_goals = {:?}",
+            result.flags.critical_goals
+        );
         println!("       score.threshold = {:?}", result.score.threshold);
 
         // With such low alignment, we should see critical flags
@@ -1251,14 +1294,24 @@ mod tests {
 
         println!("\n=== Detected Patterns ===");
         for p in &patterns {
-            println!("  - {:?}: {} (severity {})", p.pattern_type, p.description, p.severity);
+            println!(
+                "  - {:?}: {} (severity {})",
+                p.pattern_type, p.description, p.severity
+            );
         }
 
         // Should detect OptimalAlignment and HierarchicalCoherence
-        let has_optimal = patterns.iter().any(|p| p.pattern_type == PatternType::OptimalAlignment);
-        let has_coherence = patterns.iter().any(|p| p.pattern_type == PatternType::HierarchicalCoherence);
+        let has_optimal = patterns
+            .iter()
+            .any(|p| p.pattern_type == PatternType::OptimalAlignment);
+        let has_coherence = patterns
+            .iter()
+            .any(|p| p.pattern_type == PatternType::HierarchicalCoherence);
 
-        assert!(has_optimal || has_coherence, "Should detect positive patterns for optimal alignment");
+        assert!(
+            has_optimal || has_coherence,
+            "Should detect positive patterns for optimal alignment"
+        );
         println!("[VERIFIED] detect_patterns identifies positive patterns");
     }
 
@@ -1269,7 +1322,7 @@ mod tests {
 
         // Create score with low North Star alignment using UUIDs
         let scores = vec![
-            GoalScore::new(Uuid::new_v4(), GoalLevel::NorthStar, 0.40, 0.4),  // Below warning
+            GoalScore::new(Uuid::new_v4(), GoalLevel::NorthStar, 0.40, 0.4), // Below warning
             GoalScore::new(Uuid::new_v4(), GoalLevel::Strategic, 0.80, 0.3),
         ];
         let score = GoalAlignmentScore::compute(scores, LevelWeights::default());
@@ -1281,10 +1334,15 @@ mod tests {
         println!("\n=== North Star Drift Detection ===");
         println!("BEFORE: north_star_alignment = 0.40");
         for p in &patterns {
-            println!("AFTER: pattern = {:?}, severity = {}", p.pattern_type, p.severity);
+            println!(
+                "AFTER: pattern = {:?}, severity = {}",
+                p.pattern_type, p.severity
+            );
         }
 
-        let has_drift = patterns.iter().any(|p| p.pattern_type == PatternType::NorthStarDrift);
+        let has_drift = patterns
+            .iter()
+            .any(|p| p.pattern_type == PatternType::NorthStarDrift);
         assert!(has_drift, "Should detect NorthStarDrift pattern");
         println!("[VERIFIED] detect_patterns identifies NorthStarDrift");
     }
@@ -1320,7 +1378,10 @@ mod tests {
             "Average computation time {}ms exceeds 5ms budget",
             avg_ms
         );
-        println!("[VERIFIED] Performance meets <5ms requirement (avg: {:.3}ms)", avg_ms);
+        println!(
+            "[VERIFIED] Performance meets <5ms requirement (avg: {:.3}ms)",
+            avg_ms
+        );
     }
 
     // =====================================================
@@ -1345,7 +1406,9 @@ mod tests {
             assert!(
                 (w - expected).abs() < 0.001,
                 "Weight {} should be {}, got {}",
-                i, expected, w
+                i,
+                expected,
+                w
             );
         }
 
@@ -1408,16 +1471,26 @@ mod tests {
             assert!(
                 (0.0..=1.0).contains(&alignment),
                 "Alignment {} should be in [0,1], got {}",
-                i, alignment
+                i,
+                alignment
             );
         }
 
         println!("\n=== Multi-Space Alignment Values ===");
         let embedder_names = [
-            "E1_Semantic", "E2_Temporal_Recent", "E3_Temporal_Periodic",
-            "E4_Temporal_Positional", "E5_Causal", "E6_Sparse",
-            "E7_Code", "E8_Graph", "E9_HDC", "E10_Multimodal",
-            "E11_Entity", "E12_LateInteraction", "E13_SPLADE"
+            "E1_Semantic",
+            "E2_Temporal_Recent",
+            "E3_Temporal_Periodic",
+            "E4_Temporal_Positional",
+            "E5_Causal",
+            "E6_Sparse",
+            "E7_Code",
+            "E8_Graph",
+            "E9_HDC",
+            "E10_Multimodal",
+            "E11_Entity",
+            "E12_LateInteraction",
+            "E13_SPLADE",
         ];
         for (i, &alignment) in alignments.iter().enumerate() {
             println!("  {}: {:.4}", embedder_names[i], alignment);
@@ -1457,7 +1530,10 @@ mod tests {
         println!("  Goal: {}", score.goal_id);
         println!("  Level: {:?}", score.level);
         println!("  Alignment: {:.4}", score.alignment);
-        println!("  Weighted Contribution: {:.4}", score.weighted_contribution);
+        println!(
+            "  Weighted Contribution: {:.4}",
+            score.weighted_contribution
+        );
         println!("  Threshold: {:?}", score.threshold);
 
         // The formula is: A_multi = SUM_i(w_i * A(E_i, V)) where SUM(w_i) = 1

@@ -23,11 +23,13 @@ use serde_json::json;
 
 use context_graph_core::alignment::{DefaultAlignmentCalculator, GoalAlignmentCalculator};
 use context_graph_core::purpose::{GoalDiscoveryMetadata, GoalHierarchy, GoalLevel, GoalNode};
-use context_graph_core::types::fingerprint::SemanticFingerprint;
-use context_graph_core::stubs::{InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor};
+use context_graph_core::stubs::{
+    InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor,
+};
 use context_graph_core::traits::{
     MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor,
 };
+use context_graph_core::types::fingerprint::SemanticFingerprint;
 
 use crate::handlers::Handlers;
 use crate::protocol::JsonRpcId;
@@ -93,7 +95,9 @@ fn create_handlers_with_north_star() -> (
         discovery,
     )
     .expect("Failed to create North Star");
-    hierarchy.add_goal(ns_goal).expect("Failed to add initial North Star");
+    hierarchy
+        .add_goal(ns_goal)
+        .expect("Failed to add initial North Star");
 
     let shared_hierarchy = Arc::new(RwLock::new(hierarchy));
 
@@ -134,7 +138,9 @@ fn create_handlers_with_full_hierarchy() -> (
     )
     .expect("Failed to create North Star");
     let ns_id = ns_goal.id;
-    hierarchy.add_goal(ns_goal).expect("Failed to add North Star");
+    hierarchy
+        .add_goal(ns_goal)
+        .expect("Failed to add North Star");
 
     // Strategic goal - child of North Star
     let s1_goal = GoalNode::child_goal(
@@ -146,7 +152,9 @@ fn create_handlers_with_full_hierarchy() -> (
     )
     .expect("Failed to create strategic goal");
     let s1_id = s1_goal.id;
-    hierarchy.add_goal(s1_goal).expect("Failed to add strategic goal");
+    hierarchy
+        .add_goal(s1_goal)
+        .expect("Failed to add strategic goal");
 
     // Tactical goal - child of Strategic
     let t1_goal = GoalNode::child_goal(
@@ -158,7 +166,9 @@ fn create_handlers_with_full_hierarchy() -> (
     )
     .expect("Failed to create tactical goal");
     let t1_id = t1_goal.id;
-    hierarchy.add_goal(t1_goal).expect("Failed to add tactical goal");
+    hierarchy
+        .add_goal(t1_goal)
+        .expect("Failed to add tactical goal");
 
     // Immediate goal - child of Tactical
     let i1_goal = GoalNode::child_goal(
@@ -169,7 +179,9 @@ fn create_handlers_with_full_hierarchy() -> (
         discovery,
     )
     .expect("Failed to create immediate goal");
-    hierarchy.add_goal(i1_goal).expect("Failed to add immediate goal");
+    hierarchy
+        .add_goal(i1_goal)
+        .expect("Failed to add immediate goal");
 
     let shared_hierarchy = Arc::new(RwLock::new(hierarchy));
 
@@ -382,11 +394,7 @@ async fn test_store_memory_succeeds_without_north_star() {
         "content": "Machine learning enables autonomous improvement",
         "importance": 0.8
     });
-    let request = make_request(
-        "memory/store",
-        Some(JsonRpcId::Number(1)),
-        Some(params),
-    );
+    let request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(params));
     let response = handlers.dispatch(request).await;
 
     // VERIFY: Succeeds with default purpose vector (AUTONOMOUS OPERATION)
@@ -430,11 +438,7 @@ async fn test_store_memory_succeeds_with_north_star() {
         "content": "Deep learning neural networks process information hierarchically",
         "importance": 0.9
     });
-    let request = make_request(
-        "memory/store",
-        Some(JsonRpcId::Number(1)),
-        Some(params),
-    );
+    let request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(params));
     let response = handlers.dispatch(request).await;
 
     // VERIFY: Succeeds
@@ -465,7 +469,8 @@ async fn test_store_memory_succeeds_with_north_star() {
 
     assert_eq!(fp.id, uuid, "FSV: Retrieved ID must match");
     assert_eq!(
-        fp.purpose_vector.alignments.len(), 13,
+        fp.purpose_vector.alignments.len(),
+        13,
         "FSV: Purpose vector must have 13 elements"
     );
 }
@@ -487,10 +492,26 @@ async fn test_get_goal_hierarchy_returns_tree() {
         let h = hierarchy.read();
         assert!(h.has_north_star(), "FSV BEFORE: Must have North Star");
         assert_eq!(h.len(), 4, "FSV BEFORE: Must have 4 goals");
-        assert_eq!(h.at_level(GoalLevel::NorthStar).len(), 1, "Must have 1 NorthStar");
-        assert_eq!(h.at_level(GoalLevel::Strategic).len(), 1, "Must have 1 Strategic");
-        assert_eq!(h.at_level(GoalLevel::Tactical).len(), 1, "Must have 1 Tactical");
-        assert_eq!(h.at_level(GoalLevel::Immediate).len(), 1, "Must have 1 Immediate");
+        assert_eq!(
+            h.at_level(GoalLevel::NorthStar).len(),
+            1,
+            "Must have 1 NorthStar"
+        );
+        assert_eq!(
+            h.at_level(GoalLevel::Strategic).len(),
+            1,
+            "Must have 1 Strategic"
+        );
+        assert_eq!(
+            h.at_level(GoalLevel::Tactical).len(),
+            1,
+            "Must have 1 Tactical"
+        );
+        assert_eq!(
+            h.at_level(GoalLevel::Immediate).len(),
+            1,
+            "Must have 1 Immediate"
+        );
     }
 
     // ACTION: Query get_all
@@ -564,14 +585,21 @@ async fn test_get_goal_hierarchy_returns_tree() {
     );
     let children_response = handlers.dispatch(children_request).await;
 
-    assert!(children_response.error.is_none(), "get_children must succeed");
+    assert!(
+        children_response.error.is_none(),
+        "get_children must succeed"
+    );
     let children_result = children_response.result.expect("Must have result");
 
     let children = children_result
         .get("children")
         .and_then(|v| v.as_array())
         .expect("Must have children array");
-    assert_eq!(children.len(), 1, "North Star must have 1 child (Strategic)");
+    assert_eq!(
+        children.len(),
+        1,
+        "North Star must have 1 child (Strategic)"
+    );
 
     // Verify the child is the Strategic goal
     let child = &children[0];
@@ -598,7 +626,10 @@ async fn test_get_goal_hierarchy_returns_tree() {
     );
     let ancestors_response = handlers.dispatch(ancestors_request).await;
 
-    assert!(ancestors_response.error.is_none(), "get_ancestors must succeed");
+    assert!(
+        ancestors_response.error.is_none(),
+        "get_ancestors must succeed"
+    );
     let ancestors_result = ancestors_response.result.expect("Must have result");
 
     let ancestors = ancestors_result
@@ -633,15 +664,9 @@ async fn test_hierarchy_query_nonexistent_goal() {
     let response = handlers.dispatch(request).await;
 
     // VERIFY: Fails with GOAL_NOT_FOUND
-    assert!(
-        response.error.is_some(),
-        "Must fail with non-existent goal"
-    );
+    assert!(response.error.is_some(), "Must fail with non-existent goal");
     let error = response.error.unwrap();
-    assert_eq!(
-        error.code, -32020,
-        "Must return GOAL_NOT_FOUND (-32020)"
-    );
+    assert_eq!(error.code, -32020, "Must return GOAL_NOT_FOUND (-32020)");
 }
 
 /// Test purpose/drift_check fails without North Star.

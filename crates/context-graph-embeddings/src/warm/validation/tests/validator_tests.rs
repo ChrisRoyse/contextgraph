@@ -155,7 +155,10 @@ fn test_validate_weight_checksum_mismatched() {
             ..
         } => {
             assert!(reason.contains("checksum"));
-            assert!(expected_output.as_ref().unwrap().contains("1111111111111111"));
+            assert!(expected_output
+                .as_ref()
+                .unwrap()
+                .contains("1111111111111111"));
             assert!(actual_output.as_ref().unwrap().contains("deadbeefcafebabe"));
         }
         _ => panic!("Expected ModelValidationFailed error"),

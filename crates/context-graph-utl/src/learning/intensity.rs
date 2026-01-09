@@ -93,12 +93,33 @@ mod tests {
 
     #[test]
     fn test_from_magnitude() {
-        assert_eq!(LearningIntensity::from_magnitude(0.1), LearningIntensity::Low);
-        assert_eq!(LearningIntensity::from_magnitude(0.29), LearningIntensity::Low);
-        assert_eq!(LearningIntensity::from_magnitude(0.3), LearningIntensity::Medium);
-        assert_eq!(LearningIntensity::from_magnitude(0.5), LearningIntensity::Medium);
-        assert_eq!(LearningIntensity::from_magnitude(0.69), LearningIntensity::Medium);
-        assert_eq!(LearningIntensity::from_magnitude(0.7), LearningIntensity::High);
-        assert_eq!(LearningIntensity::from_magnitude(0.9), LearningIntensity::High);
+        assert_eq!(
+            LearningIntensity::from_magnitude(0.1),
+            LearningIntensity::Low
+        );
+        assert_eq!(
+            LearningIntensity::from_magnitude(0.29),
+            LearningIntensity::Low
+        );
+        assert_eq!(
+            LearningIntensity::from_magnitude(0.3),
+            LearningIntensity::Medium
+        );
+        assert_eq!(
+            LearningIntensity::from_magnitude(0.5),
+            LearningIntensity::Medium
+        );
+        assert_eq!(
+            LearningIntensity::from_magnitude(0.69),
+            LearningIntensity::Medium
+        );
+        assert_eq!(
+            LearningIntensity::from_magnitude(0.7),
+            LearningIntensity::High
+        );
+        assert_eq!(
+            LearningIntensity::from_magnitude(0.9),
+            LearningIntensity::High
+        );
     }
 }

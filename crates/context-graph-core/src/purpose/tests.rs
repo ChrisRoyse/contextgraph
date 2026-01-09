@@ -82,12 +82,7 @@ fn create_north_star_goal(description: &str, base: f32) -> GoalNode {
 }
 
 /// Create a child goal for testing.
-fn create_child_goal(
-    description: &str,
-    level: GoalLevel,
-    parent_id: Uuid,
-    base: f32,
-) -> GoalNode {
+fn create_child_goal(description: &str, level: GoalLevel, parent_id: Uuid, base: f32) -> GoalNode {
     let fp = create_test_fingerprint(base);
     let discovery = create_test_discovery(DiscoveryMethod::Decomposition, 0.7);
     GoalNode::child_goal(description.to_string(), level, parent_id, fp, discovery).unwrap()
@@ -115,7 +110,12 @@ fn test_full_hierarchy_construction() {
     hierarchy.add_goal(strategic2).unwrap();
 
     // Add Tactical goals under strategic
-    let tactical1 = create_child_goal("Implement CNN from scratch", GoalLevel::Tactical, strat1_id, 0.7);
+    let tactical1 = create_child_goal(
+        "Implement CNN from scratch",
+        GoalLevel::Tactical,
+        strat1_id,
+        0.7,
+    );
     hierarchy.add_goal(tactical1).unwrap();
 
     // Verify hierarchy
@@ -138,7 +138,10 @@ fn test_hierarchy_validation_multiple_north_stars() {
     hierarchy.add_goal(ns1).unwrap();
     let result = hierarchy.add_goal(ns2);
 
-    assert!(matches!(result, Err(GoalHierarchyError::MultipleNorthStars)));
+    assert!(matches!(
+        result,
+        Err(GoalHierarchyError::MultipleNorthStars)
+    ));
     println!("[VERIFIED] Multiple North Stars rejected correctly");
 }
 
@@ -461,7 +464,9 @@ async fn test_purpose_computation_with_hierarchy_propagation() {
     // Test with propagation disabled
     let config_without = PurposeComputeConfig::with_hierarchy(hierarchy).with_propagation(false);
 
-    let result_without = computer.compute_purpose(&fingerprint, &config_without).await;
+    let result_without = computer
+        .compute_purpose(&fingerprint, &config_without)
+        .await;
     assert!(result_without.is_ok());
 
     println!("[VERIFIED] Hierarchical propagation produces different results");
@@ -668,7 +673,10 @@ async fn test_zeroed_fingerprint_alignment() {
     hierarchy.add_goal(ns).unwrap();
     let config = PurposeComputeConfig::with_hierarchy(hierarchy);
 
-    let purpose = computer.compute_purpose(&fingerprint, &config).await.unwrap();
+    let purpose = computer
+        .compute_purpose(&fingerprint, &config)
+        .await
+        .unwrap();
 
     // Zeroed fingerprint should have zero alignment with any goal
     for (i, alignment) in purpose.alignments.iter().enumerate() {

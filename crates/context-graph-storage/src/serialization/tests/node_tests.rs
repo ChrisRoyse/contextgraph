@@ -22,7 +22,9 @@ fn create_test_node() -> MemoryNode {
     node.importance = 0.75;
     node.emotional_valence = 0.5;
     node.quadrant = JohariQuadrant::Open;
-    node.metadata = NodeMetadata::new().with_source("test-source").with_language("en");
+    node.metadata = NodeMetadata::new()
+        .with_source("test-source")
+        .with_language("en");
     node
 }
 

@@ -78,11 +78,7 @@ pub fn dfs_traverse(
         // Check max nodes limit BEFORE processing
         if let Some(max) = params.max_nodes {
             if visited.len() >= max {
-                log::debug!(
-                    "DFS truncated at {} nodes (limit: {})",
-                    visited.len(),
-                    max
-                );
+                log::debug!("DFS truncated at {} nodes (limit: {})", visited.len(), max);
                 break;
             }
         }
@@ -135,7 +131,9 @@ pub fn dfs_traverse(
             result.parents.entry(neighbor_id).or_insert(Some(current));
 
             // Record edge traversal
-            result.edges_traversed.push((current, neighbor_id, effective_weight));
+            result
+                .edges_traversed
+                .push((current, neighbor_id, effective_weight));
         }
 
         // Push neighbors to stack in REVERSE order for correct DFS order

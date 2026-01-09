@@ -241,9 +241,7 @@ fn test_failed_entries_multiple() {
     assert_eq!(msg, "CUDA error");
 
     // Find E3 failure
-    let e3_failure = failed
-        .iter()
-        .find(|(id, _, _)| id == "E3_TemporalPeriodic");
+    let e3_failure = failed.iter().find(|(id, _, _)| id == "E3_TemporalPeriodic");
     assert!(e3_failure.is_some());
     let (_, code, msg) = e3_failure.unwrap();
     assert_eq!(*code, 104);

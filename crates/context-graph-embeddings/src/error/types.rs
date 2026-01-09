@@ -167,7 +167,6 @@ pub enum EmbeddingError {
     // =========================================================================
     // SPEC-EMB-001 Error Taxonomy (EMB-E001 through EMB-E012)
     // =========================================================================
-
     /// EMB-E001: CUDA is required but unavailable.
     ///
     /// Constitution: stack.gpu.cuda = "13.1"
@@ -289,7 +288,6 @@ pub enum EmbeddingError {
     // =========================================================================
     // QuantizationRouter Error Variants (TASK-EMB-020)
     // =========================================================================
-
     /// Quantizer for the specified method is not yet implemented.
     #[error("[{model_id:?}] Quantizer not implemented: {method}")]
     QuantizerNotImplemented {

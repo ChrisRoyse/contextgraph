@@ -140,7 +140,10 @@ fn test_edge_traversal_tracking() {
     edge.record_traversal();
     edge.record_traversal();
     edge.record_traversal();
-    println!("AFTER 3 TRAVERSALS: traversal_count={}", edge.traversal_count);
+    println!(
+        "AFTER 3 TRAVERSALS: traversal_count={}",
+        edge.traversal_count
+    );
 
     db.store_edge(&edge).expect("store");
 

@@ -94,7 +94,10 @@ pub trait NodeMetadataProvider {
     /// Default implementation calls get_node_domain for each ID.
     /// Override for optimized batch lookups.
     fn get_node_domains(&self, faiss_ids: &[i64]) -> Vec<Option<Domain>> {
-        faiss_ids.iter().map(|&id| self.get_node_domain(id)).collect()
+        faiss_ids
+            .iter()
+            .map(|&id| self.get_node_domain(id))
+            .collect()
     }
 }
 
@@ -168,10 +171,7 @@ pub fn semantic_search<M: NodeMetadataProvider>(
     }
 
     // Determine effective k
-    let effective_k = filters
-        .as_ref()
-        .map(|f| f.effective_k(k))
-        .unwrap_or(k);
+    let effective_k = filters.as_ref().map(|f| f.effective_k(k)).unwrap_or(k);
 
     // Perform FAISS search
     let start = Instant::now();
@@ -182,12 +182,7 @@ pub fn semantic_search<M: NodeMetadataProvider>(
     let raw_result = SearchResult::new(ids, distances, effective_k, 1);
 
     // Process results for query 0
-    let items = process_query_results(
-        &raw_result,
-        0,
-        filters.as_ref(),
-        metadata,
-    );
+    let items = process_query_results(&raw_result, 0, filters.as_ref(), metadata);
 
     Ok(SemanticSearchResult::new(
         items,
@@ -259,10 +254,7 @@ pub fn semantic_search_batch<M: NodeMetadataProvider>(
     }
 
     // Determine effective k
-    let effective_k = filters
-        .as_ref()
-        .map(|f| f.effective_k(k))
-        .unwrap_or(k);
+    let effective_k = filters.as_ref().map(|f| f.effective_k(k)).unwrap_or(k);
 
     // Perform batch FAISS search
     let start = Instant::now();
@@ -277,12 +269,7 @@ pub fn semantic_search_batch<M: NodeMetadataProvider>(
     let per_query_latency = total_latency.as_micros() as u64 / num_queries as u64;
 
     for query_idx in 0..num_queries {
-        let items = process_query_results(
-            &raw_result,
-            query_idx,
-            filters.as_ref(),
-            metadata,
-        );
+        let items = process_query_results(&raw_result, query_idx, filters.as_ref(), metadata);
 
         let result = SemanticSearchResult::new(items, effective_k, per_query_latency)
             .with_query_index(query_idx);
@@ -461,12 +448,7 @@ mod tests {
 
     #[test]
     fn test_process_query_results_no_filters() {
-        let raw = SearchResult::new(
-            vec![1, 2, 3],
-            vec![0.1, 0.2, 0.3],
-            3,
-            1,
-        );
+        let raw = SearchResult::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3], 3, 1);
 
         let items = process_query_results::<NoMetadataProvider>(&raw, 0, None, None);
 
@@ -478,12 +460,7 @@ mod tests {
 
     #[test]
     fn test_process_query_results_with_exclusions() {
-        let raw = SearchResult::new(
-            vec![1, 2, 3],
-            vec![0.1, 0.2, 0.3],
-            3,
-            1,
-        );
+        let raw = SearchResult::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3], 3, 1);
 
         let filters = SearchFilters::new().with_exclude_ids(vec![2]);
 
@@ -512,12 +489,7 @@ mod tests {
 
     #[test]
     fn test_process_query_results_with_distance_filter() {
-        let raw = SearchResult::new(
-            vec![1, 2, 3],
-            vec![0.1, 0.5, 1.5],
-            3,
-            1,
-        );
+        let raw = SearchResult::new(vec![1, 2, 3], vec![0.1, 0.5, 1.5], 3, 1);
 
         let filters = SearchFilters::new()
             .with_min_distance(0.2)
@@ -532,12 +504,7 @@ mod tests {
 
     #[test]
     fn test_process_query_results_with_max_results() {
-        let raw = SearchResult::new(
-            vec![1, 2, 3, 4, 5],
-            vec![0.1, 0.2, 0.3, 0.4, 0.5],
-            5,
-            1,
-        );
+        let raw = SearchResult::new(vec![1, 2, 3, 4, 5], vec![0.1, 0.2, 0.3, 0.4, 0.5], 5, 1);
 
         let filters = SearchFilters::new().with_max_results(2);
 
@@ -548,12 +515,7 @@ mod tests {
 
     #[test]
     fn test_process_query_results_with_metadata() {
-        let raw = SearchResult::new(
-            vec![1, 2, 3],
-            vec![0.1, 0.2, 0.3],
-            3,
-            1,
-        );
+        let raw = SearchResult::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3], 3, 1);
 
         let provider = TestMetadataProvider::new();
 
@@ -568,12 +530,7 @@ mod tests {
 
     #[test]
     fn test_process_query_results_with_domain_filter() {
-        let raw = SearchResult::new(
-            vec![1, 2, 3],
-            vec![0.1, 0.2, 0.3],
-            3,
-            1,
-        );
+        let raw = SearchResult::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3], 3, 1);
 
         let provider = TestMetadataProvider::new();
         let filters = SearchFilters::new().with_domain(Domain::Code);

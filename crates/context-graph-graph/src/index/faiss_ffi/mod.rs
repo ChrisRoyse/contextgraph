@@ -35,38 +35,23 @@
 
 // ========== Submodules ==========
 
-pub mod types;
 pub mod bindings;
 pub mod gpu_detection;
 pub mod gpu_resources;
 pub mod helpers;
+pub mod types;
 
 // ========== Re-exports for backwards compatibility ==========
 
 // Types
-pub use types::{
-    MetricType,
-    FaissIndex,
-    FaissGpuResourcesProvider,
-    FaissStandardGpuResources,
-};
+pub use types::{FaissGpuResourcesProvider, FaissIndex, FaissStandardGpuResources, MetricType};
 
 // FFI bindings - re-export all extern functions
 pub use bindings::{
-    faiss_index_factory,
-    faiss_StandardGpuResources_new,
-    faiss_StandardGpuResources_free,
-    faiss_index_cpu_to_gpu,
-    faiss_Index_train,
-    faiss_Index_is_trained,
-    faiss_Index_add_with_ids,
-    faiss_Index_search,
-    faiss_IndexIVF_set_nprobe,
-    faiss_Index_ntotal,
-    faiss_write_index,
-    faiss_read_index,
-    faiss_Index_free,
-    faiss_get_num_gpus,
+    faiss_IndexIVF_set_nprobe, faiss_Index_add_with_ids, faiss_Index_free, faiss_Index_is_trained,
+    faiss_Index_ntotal, faiss_Index_search, faiss_Index_train, faiss_StandardGpuResources_free,
+    faiss_StandardGpuResources_new, faiss_get_num_gpus, faiss_index_cpu_to_gpu,
+    faiss_index_factory, faiss_read_index, faiss_write_index,
 };
 
 // GPU detection

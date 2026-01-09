@@ -18,9 +18,13 @@ use uuid::Uuid;
 
 use context_graph_core::alignment::{DefaultAlignmentCalculator, GoalAlignmentCalculator};
 use context_graph_core::purpose::{GoalDiscoveryMetadata, GoalHierarchy, GoalLevel, GoalNode};
+use context_graph_core::stubs::{
+    InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor,
+};
+use context_graph_core::traits::{
+    MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor,
+};
 use context_graph_core::types::fingerprint::SemanticFingerprint;
-use context_graph_core::stubs::{InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor};
-use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor};
 
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcRequest};
@@ -47,9 +51,12 @@ fn create_verifiable_system() -> (
         GoalLevel::NorthStar,
         SemanticFingerprint::zeroed(),
         discovery.clone(),
-    ).expect("Failed to create North Star");
+    )
+    .expect("Failed to create North Star");
     let ns_id = ns_goal.id;
-    hierarchy.add_goal(ns_goal).expect("Failed to add North Star");
+    hierarchy
+        .add_goal(ns_goal)
+        .expect("Failed to add North Star");
 
     let s1_goal = GoalNode::child_goal(
         "Test Strategic Goal".into(),
@@ -57,8 +64,11 @@ fn create_verifiable_system() -> (
         ns_id,
         SemanticFingerprint::zeroed(),
         discovery,
-    ).expect("Failed to create strategic goal");
-    hierarchy.add_goal(s1_goal).expect("Failed to add strategic goal");
+    )
+    .expect("Failed to create strategic goal");
+    hierarchy
+        .add_goal(s1_goal)
+        .expect("Failed to add strategic goal");
 
     // We need to wrap in RwLock to share with handlers
     let hierarchy_lock = Arc::new(RwLock::new(hierarchy));
@@ -121,8 +131,14 @@ async fn manual_fsv_purpose_handlers() {
     // Extract all needed data in a block to ensure guard is dropped before any await calls
     let (initial_goal_count, has_north_star, north_star_info) = {
         let hierarchy_read = hierarchy.read();
-        let ns_info = hierarchy_read.north_star().map(|ns| (ns.id, ns.description.clone()));
-        (hierarchy_read.len(), hierarchy_read.has_north_star(), ns_info)
+        let ns_info = hierarchy_read
+            .north_star()
+            .map(|ns| (ns.id, ns.description.clone()));
+        (
+            hierarchy_read.len(),
+            hierarchy_read.has_north_star(),
+            ns_info,
+        )
     }; // guard dropped here
     println!();
     println!("🎯 GoalHierarchy (Source of Truth #2):");
@@ -146,13 +162,18 @@ async fn manual_fsv_purpose_handlers() {
     println!("└─────────────────────────────────────────────────────────────────┘");
 
     println!("📝 Executing: memory/store handler");
-    let store_request = make_request("memory/store", 1, json!({
-        "content": "Test content for FSV verification",
-        "metadata": { "source": "manual_fsv_test" }
-    }));
+    let store_request = make_request(
+        "memory/store",
+        1,
+        json!({
+            "content": "Test content for FSV verification",
+            "metadata": { "source": "manual_fsv_test" }
+        }),
+    );
 
     let store_response = handlers.dispatch(store_request).await;
-    let fingerprint_id_str = store_response.result
+    let fingerprint_id_str = store_response
+        .result
         .as_ref()
         .and_then(|r| r.get("fingerprintId"))
         .and_then(|v| v.as_str())
@@ -164,22 +185,36 @@ async fn manual_fsv_purpose_handlers() {
 
     // PHYSICAL VERIFICATION: Query Source of Truth directly
     println!("🔍 PHYSICAL VERIFICATION - Querying Source of Truth directly:");
-    let stored_fp = store.retrieve(fingerprint_id).await
+    let stored_fp = store
+        .retrieve(fingerprint_id)
+        .await
         .expect("retrieve should succeed")
         .expect("fingerprint must exist");
 
     println!("   ├─ store.retrieve({}) = FOUND", fingerprint_id);
     println!("   ├─ Fingerprint ID in store: {}", stored_fp.id);
     println!("   ├─ Content hash: {:?}", &stored_fp.content_hash[0..8]); // First 8 bytes
-    println!("   ├─ Purpose vector length: {}", stored_fp.purpose_vector.alignments.len());
-    println!("   ├─ Purpose vector (first 5): {:?}", &stored_fp.purpose_vector.alignments[0..5]);
-    println!("   ├─ Theta to North Star: {:.4}", stored_fp.theta_to_north_star);
+    println!(
+        "   ├─ Purpose vector length: {}",
+        stored_fp.purpose_vector.alignments.len()
+    );
+    println!(
+        "   ├─ Purpose vector (first 5): {:?}",
+        &stored_fp.purpose_vector.alignments[0..5]
+    );
+    println!(
+        "   ├─ Theta to North Star: {:.4}",
+        stored_fp.theta_to_north_star
+    );
     println!("   └─ Created at: {:?}", stored_fp.created_at);
 
     // Verify count increased
     let post_store_count = store.count().await.expect("count failed");
     println!();
-    println!("   Store count after operation: {} (was: {})", post_store_count, initial_store_count);
+    println!(
+        "   Store count after operation: {} (was: {})",
+        post_store_count, initial_store_count
+    );
     assert_eq!(post_store_count, 1, "Store should have 1 fingerprint");
 
     println!();
@@ -195,30 +230,45 @@ async fn manual_fsv_purpose_handlers() {
     println!("└─────────────────────────────────────────────────────────────────┘");
 
     println!("📝 Executing: purpose/north_star_alignment (deprecated)");
-    let alignment_request = make_request("purpose/north_star_alignment", 2, json!({
-        "fingerprint_id": fingerprint_id_str,
-        "include_breakdown": true,
-        "include_patterns": true
-    }));
+    let alignment_request = make_request(
+        "purpose/north_star_alignment",
+        2,
+        json!({
+            "fingerprint_id": fingerprint_id_str,
+            "include_breakdown": true,
+            "include_patterns": true
+        }),
+    );
 
     let alignment_response = handlers.dispatch(alignment_request).await;
 
     // TASK-CORE-001: Verify METHOD_NOT_FOUND error for deprecated method
     let alignment_error = alignment_response.error.as_ref().expect("Must have error");
-    println!("   ├─ Error code: {} (expected: -32601 METHOD_NOT_FOUND)", alignment_error.code);
+    println!(
+        "   ├─ Error code: {} (expected: -32601 METHOD_NOT_FOUND)",
+        alignment_error.code
+    );
     println!("   └─ Error message: {}", alignment_error.message);
-    assert_eq!(alignment_error.code, -32601, "Must return METHOD_NOT_FOUND for deprecated method");
+    assert_eq!(
+        alignment_error.code, -32601,
+        "Must return METHOD_NOT_FOUND for deprecated method"
+    );
 
     // CROSS-VERIFICATION: Verify fingerprint still exists and is unchanged
     println!();
     println!("🔍 CROSS-VERIFICATION - Fingerprint unchanged in Source of Truth:");
-    let fp_from_store = store.retrieve(fingerprint_id).await
+    let fp_from_store = store
+        .retrieve(fingerprint_id)
+        .await
         .expect("retrieve should succeed")
         .expect("fingerprint must exist");
 
     let pv_mean: f32 = fp_from_store.purpose_vector.alignments.iter().sum::<f32>() / 13.0;
     println!("   ├─ Fingerprint still exists: {}", fp_from_store.id);
-    println!("   ├─ Fingerprint theta_to_north_star: {:.4}", fp_from_store.theta_to_north_star);
+    println!(
+        "   ├─ Fingerprint theta_to_north_star: {:.4}",
+        fp_from_store.theta_to_north_star
+    );
     println!("   └─ Purpose vector mean: {:.4}", pv_mean);
 
     println!();
@@ -233,12 +283,17 @@ async fn manual_fsv_purpose_handlers() {
     println!("└─────────────────────────────────────────────────────────────────┘");
 
     println!("📝 Executing: goal/hierarchy_query get_all");
-    let get_all_request = make_request("goal/hierarchy_query", 3, json!({
-        "operation": "get_all"
-    }));
+    let get_all_request = make_request(
+        "goal/hierarchy_query",
+        3,
+        json!({
+            "operation": "get_all"
+        }),
+    );
 
     let get_all_response = handlers.dispatch(get_all_request).await;
-    let goals_from_handler = get_all_response.result
+    let goals_from_handler = get_all_response
+        .result
         .as_ref()
         .and_then(|r| r.get("goals"))
         .and_then(|v| v.as_array())
@@ -255,9 +310,20 @@ async fn manual_fsv_purpose_handlers() {
     let goal_ids_from_handler: Vec<(String, String, Uuid)> = goals_from_handler
         .iter()
         .map(|goal| {
-            let goal_id = goal.get("id").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-            let level = goal.get("level").and_then(|v| v.as_str()).unwrap_or("?").to_string();
-            let _desc = goal.get("description").and_then(|v| v.as_str()).unwrap_or("?");
+            let goal_id = goal
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_string();
+            let level = goal
+                .get("level")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?")
+                .to_string();
+            let _desc = goal
+                .get("description")
+                .and_then(|v| v.as_str())
+                .unwrap_or("?");
             let goal_uuid = Uuid::parse_str(&goal_id).expect("Goal ID must be valid UUID");
             (goal_id, level, goal_uuid)
         })
@@ -271,19 +337,35 @@ async fn manual_fsv_purpose_handlers() {
             .iter()
             .map(|(_, _, uuid)| hierarchy_read.get(uuid).is_some())
             .collect();
-        let ns = hierarchy_read.north_star().map(|ns| (ns.id, ns.description.clone()));
+        let ns = hierarchy_read
+            .north_star()
+            .map(|ns| (ns.id, ns.description.clone()));
         (count, exists_map, ns)
     }; // guard dropped here
 
     println!("   ├─ hierarchy.len() = {}", direct_goal_count);
-    assert_eq!(goals_from_handler.len(), direct_goal_count,
-        "Handler must return same count as Source of Truth");
+    assert_eq!(
+        goals_from_handler.len(),
+        direct_goal_count,
+        "Handler must return same count as Source of Truth"
+    );
 
     // List all goals from Source of Truth
     println!("   ├─ Goals in Source of Truth:");
-    for (i, ((goal_id, level, _), exists_in_sot)) in goal_ids_from_handler.iter().zip(goal_exists_map.iter()).enumerate() {
-        println!("   │   [{}] {} ({}) - exists in SoT: {}", i, goal_id, level, exists_in_sot);
-        assert!(*exists_in_sot, "Goal {} must exist in Source of Truth", goal_id);
+    for (i, ((goal_id, level, _), exists_in_sot)) in goal_ids_from_handler
+        .iter()
+        .zip(goal_exists_map.iter())
+        .enumerate()
+    {
+        println!(
+            "   │   [{}] {} ({}) - exists in SoT: {}",
+            i, goal_id, level, exists_in_sot
+        );
+        assert!(
+            *exists_in_sot,
+            "Goal {} must exist in Source of Truth",
+            goal_id
+        );
     }
 
     // Verify North Star specifically
@@ -308,21 +390,32 @@ async fn manual_fsv_purpose_handlers() {
     println!();
     println!("📝 Executing: purpose/query with 12-element vector (should fail)");
     let invalid_vector: Vec<f32> = vec![0.5; 12]; // Wrong size!
-    let invalid_request = make_request("purpose/query", 100, json!({
-        "purpose_vector": invalid_vector
-    }));
+    let invalid_request = make_request(
+        "purpose/query",
+        100,
+        json!({
+            "purpose_vector": invalid_vector
+        }),
+    );
 
     let invalid_response = handlers.dispatch(invalid_request).await;
     let error = invalid_response.error.as_ref().expect("Must have error");
 
-    println!("   ├─ Error code: {} (expected: -32602 INVALID_PARAMS)", error.code);
+    println!(
+        "   ├─ Error code: {} (expected: -32602 INVALID_PARAMS)",
+        error.code
+    );
     println!("   └─ Error message: {}", error.message);
 
     // VERIFY: Source of Truth unchanged
     let after_count = store.count().await.expect("count failed");
     println!();
     println!("📊 AFTER STATE:");
-    println!("   └─ Store count: {} (unchanged: {})", after_count, after_count == before_count);
+    println!(
+        "   └─ Store count: {} (unchanged: {})",
+        after_count,
+        after_count == before_count
+    );
 
     assert_eq!(before_count, after_count, "Store should be unchanged");
     assert_eq!(error.code, -32602, "Should return INVALID_PARAMS");
@@ -347,19 +440,29 @@ async fn manual_fsv_purpose_handlers() {
         hierarchy_read.get(&nonexistent_uuid).is_some()
     }; // guard dropped here
     println!("📊 BEFORE STATE:");
-    println!("   └─ Goal '{}' exists in SoT: {}", nonexistent_goal, exists);
+    println!(
+        "   └─ Goal '{}' exists in SoT: {}",
+        nonexistent_goal, exists
+    );
 
     println!();
     println!("📝 Executing: goal/hierarchy_query get_goal (nonexistent)");
-    let not_found_request = make_request("goal/hierarchy_query", 101, json!({
-        "operation": "get_goal",
-        "goal_id": nonexistent_goal
-    }));
+    let not_found_request = make_request(
+        "goal/hierarchy_query",
+        101,
+        json!({
+            "operation": "get_goal",
+            "goal_id": nonexistent_goal
+        }),
+    );
 
     let not_found_response = handlers.dispatch(not_found_request).await;
     let error = not_found_response.error.as_ref().expect("Must have error");
 
-    println!("   ├─ Error code: {} (expected: -32020 GOAL_NOT_FOUND)", error.code);
+    println!(
+        "   ├─ Error code: {} (expected: -32020 GOAL_NOT_FOUND)",
+        error.code
+    );
     println!("   └─ Error message: {}", error.message);
 
     // VERIFY: Goal still doesn't exist (no side effects) - extract data before next await
@@ -369,7 +472,10 @@ async fn manual_fsv_purpose_handlers() {
     }; // guard dropped here
     println!();
     println!("📊 AFTER STATE:");
-    println!("   └─ Goal '{}' still not in SoT: {}", nonexistent_goal, still_not_exists);
+    println!(
+        "   └─ Goal '{}' still not in SoT: {}",
+        nonexistent_goal, still_not_exists
+    );
 
     assert!(still_not_exists, "Nonexistent goal should still not exist");
     assert_eq!(error.code, -32020, "Should return GOAL_NOT_FOUND");
@@ -391,21 +497,32 @@ async fn manual_fsv_purpose_handlers() {
 
     println!();
     println!("📝 Executing: purpose/drift_check with invalid UUID");
-    let drift_request = make_request("purpose/drift_check", 102, json!({
-        "fingerprint_ids": ["not-a-valid-uuid", "also-invalid"]
-    }));
+    let drift_request = make_request(
+        "purpose/drift_check",
+        102,
+        json!({
+            "fingerprint_ids": ["not-a-valid-uuid", "also-invalid"]
+        }),
+    );
 
     let drift_response = handlers.dispatch(drift_request).await;
     let error = drift_response.error.as_ref().expect("Must have error");
 
-    println!("   ├─ Error code: {} (expected: -32602 INVALID_PARAMS)", error.code);
+    println!(
+        "   ├─ Error code: {} (expected: -32602 INVALID_PARAMS)",
+        error.code
+    );
     println!("   └─ Error message: {}", error.message);
 
     // VERIFY: Source of Truth unchanged
     println!();
     println!("📊 AFTER STATE:");
     let after_count = store.count().await.expect("count failed");
-    println!("   └─ Store count: {} (unchanged: {})", after_count, after_count == before_count);
+    println!(
+        "   └─ Store count: {} (unchanged: {})",
+        after_count,
+        after_count == before_count
+    );
 
     assert_eq!(before_count, after_count, "Store should be unchanged");
     assert_eq!(error.code, -32602, "Should return INVALID_PARAMS");
@@ -428,12 +545,17 @@ async fn manual_fsv_purpose_handlers() {
     println!("   ├─ Total fingerprints: {}", final_count);
 
     // Verify the stored fingerprint still exists by direct retrieval
-    let final_fp = store.retrieve(fingerprint_id).await
+    let final_fp = store
+        .retrieve(fingerprint_id)
+        .await
         .expect("retrieve should succeed")
         .expect("fingerprint must exist");
     println!("   ├─ Verified fingerprint {} exists", fingerprint_id);
     println!("   │      Content hash: {:?}", &final_fp.content_hash[0..8]);
-    println!("   │      Purpose vector[0..3]: {:?}", &final_fp.purpose_vector.alignments[0..3]);
+    println!(
+        "   │      Purpose vector[0..3]: {:?}",
+        &final_fp.purpose_vector.alignments[0..3]
+    );
     println!("   │      Theta to NS: {:.4}", final_fp.theta_to_north_star);
     println!("   └─ END OF STORE");
     println!();

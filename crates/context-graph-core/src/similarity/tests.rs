@@ -10,8 +10,8 @@
 
 use super::*;
 use crate::types::fingerprint::{
-    JohariFingerprint, PurposeVector, SemanticFingerprint, SparseVector,
-    TeleologicalFingerprint, NUM_EMBEDDERS,
+    JohariFingerprint, PurposeVector, SemanticFingerprint, SparseVector, TeleologicalFingerprint,
+    NUM_EMBEDDERS,
 };
 use uuid::Uuid;
 
@@ -23,7 +23,9 @@ fn create_test_fingerprint(seed: u64) -> TeleologicalFingerprint {
     // Simple LCG for reproducible "random" values
     let mut state = seed;
     let lcg_next = |s: &mut u64| -> f32 {
-        *s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+        *s = s
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
         // Map to [-1, 1] range
         ((*s >> 33) as f32 / u32::MAX as f32) * 2.0 - 1.0
     };
@@ -372,10 +374,7 @@ async fn edge_case_identical_vectors() {
     let engine = DefaultCrossSpaceEngine::new();
     let result = engine.compute_similarity(&fp, &fp, &config).await.unwrap();
 
-    println!(
-        "[AFTER] score={:.6}, expected ≈ 1.0",
-        result.score
-    );
+    println!("[AFTER] score={:.6}, expected ≈ 1.0", result.score);
 
     // Expected: score very close to 1.0
     assert!(
@@ -425,7 +424,10 @@ async fn test_missing_space_skip() {
         ..Default::default()
     };
 
-    let result = engine.compute_similarity(&fp1, &fp2, &config).await.unwrap();
+    let result = engine
+        .compute_similarity(&fp1, &fp2, &config)
+        .await
+        .unwrap();
 
     println!(
         "[TEST] Skip handling: score={:.4}, active={}",
@@ -475,7 +477,10 @@ async fn test_weighting_strategy_static() {
         ..Default::default()
     };
 
-    let result = engine.compute_similarity(&fp1, &fp2, &config).await.unwrap();
+    let result = engine
+        .compute_similarity(&fp1, &fp2, &config)
+        .await
+        .unwrap();
 
     println!(
         "[TEST] Static weighting: score={:.4}, E1 weight={}",
@@ -499,7 +504,10 @@ async fn test_weighting_strategy_purpose_aligned() {
         ..Default::default()
     };
 
-    let result = engine.compute_similarity(&fp1, &fp2, &config).await.unwrap();
+    let result = engine
+        .compute_similarity(&fp1, &fp2, &config)
+        .await
+        .unwrap();
 
     println!(
         "[TEST] Purpose-aligned: score={:.4}, purpose_contribution={:?}",
@@ -525,7 +533,10 @@ async fn test_explain_generates_valid_explanation() {
         ..Default::default()
     };
 
-    let result = engine.compute_similarity(&fp1, &fp2, &config).await.unwrap();
+    let result = engine
+        .compute_similarity(&fp1, &fp2, &config)
+        .await
+        .unwrap();
     let explanation = engine.explain(&result);
 
     println!("[TEST] Explanation summary: {}", explanation.summary);
@@ -551,7 +562,10 @@ async fn test_confidence_calculation() {
         ..Default::default()
     };
 
-    let result = engine.compute_similarity(&fp1, &fp2, &config).await.unwrap();
+    let result = engine
+        .compute_similarity(&fp1, &fp2, &config)
+        .await
+        .unwrap();
 
     println!(
         "[TEST] Confidence: {:.4}, active_count: {}",

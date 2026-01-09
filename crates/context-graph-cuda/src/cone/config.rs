@@ -1,7 +1,7 @@
 //! Configuration for Cone CUDA operations.
 
-use crate::error::{CudaError, CudaResult};
 use super::constants::DEFAULT_CURVATURE;
+use crate::error::{CudaError, CudaResult};
 
 /// Configuration for Cone CUDA operations.
 ///

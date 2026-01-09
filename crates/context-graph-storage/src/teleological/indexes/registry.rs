@@ -370,7 +370,11 @@ mod tests {
         let vec2 = vec![0.5f32; 384];
         e8_index.insert(id2, &vec2).unwrap();
 
-        println!("AFTER: E1 has {} vectors, E8 has {} vectors", e1_index.len(), e8_index.len());
+        println!(
+            "AFTER: E1 has {} vectors, E8 has {} vectors",
+            e1_index.len(),
+            e8_index.len()
+        );
 
         // Search E1
         let results = e1_index.search(&vec1, 1, None).unwrap();

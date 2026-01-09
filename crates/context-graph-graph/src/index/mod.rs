@@ -38,12 +38,14 @@
 //! - Compute Capability 12.0
 
 pub mod faiss_ffi;
-pub mod gpu_index;  // Now a directory module
+pub mod gpu_index; // Now a directory module
 pub mod gpu_memory;
 pub mod search_result;
 
 // Re-exports for convenience
 pub use faiss_ffi::{check_faiss_result, MetricType};
 pub use gpu_index::{FaissGpuIndex, GpuResources};
-pub use gpu_memory::{AllocationHandle, GpuMemoryConfig, GpuMemoryManager, MemoryCategory, MemoryStats};
+pub use gpu_memory::{
+    AllocationHandle, GpuMemoryConfig, GpuMemoryManager, MemoryCategory, MemoryStats,
+};
 pub use search_result::{SearchResult, SearchResultItem};

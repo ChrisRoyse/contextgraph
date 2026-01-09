@@ -1,6 +1,5 @@
 //! Manual output verification tests for ModelRegistry.
 
-
 use std::sync::Arc;
 
 use crate::traits::ModelFactory;

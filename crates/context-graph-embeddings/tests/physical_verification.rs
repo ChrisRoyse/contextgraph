@@ -16,8 +16,8 @@ fn physical_verification_checksum_matches_external_tool() {
     }
 
     // Load with our Rust function
-    let (file_bytes, checksum, metadata) = load_weights(file_path, "verification_test")
-        .expect("load_weights should succeed");
+    let (file_bytes, checksum, metadata) =
+        load_weights(file_path, "verification_test").expect("load_weights should succeed");
 
     // Convert checksum to hex string
     let rust_hex = hex::encode(checksum);
@@ -39,8 +39,14 @@ fn physical_verification_checksum_matches_external_tool() {
     );
 
     // Verify tensor metadata
-    assert_eq!(metadata.total_params, 4, "Expected 4 parameters (2x2 matrix)");
-    assert!(metadata.shapes.contains_key("weights"), "Should have 'weights' tensor");
+    assert_eq!(
+        metadata.total_params, 4,
+        "Expected 4 parameters (2x2 matrix)"
+    );
+    assert!(
+        metadata.shapes.contains_key("weights"),
+        "Should have 'weights' tensor"
+    );
 
     println!("\n✅ PHYSICAL VERIFICATION PASSED");
     println!("   - load_weights SHA256 matches external sha256sum");

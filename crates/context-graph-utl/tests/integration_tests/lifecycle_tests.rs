@@ -3,9 +3,9 @@
 //! Tests for lifecycle stage transitions at 50/500 thresholds per Marblestone (2016)
 
 use context_graph_utl::{
-    processor::UtlProcessor,
-    metrics::StageThresholds,
     lifecycle::{LifecycleLambdaWeights, LifecycleStage},
+    metrics::StageThresholds,
+    processor::UtlProcessor,
 };
 
 use super::helpers::uniform_embedding;

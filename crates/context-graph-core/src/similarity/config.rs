@@ -292,10 +292,7 @@ mod tests {
             "Uniform weights should sum to 1.0, got {}",
             sum
         );
-        println!(
-            "[PASS] Uniform weights sum to {:.6} (expected 1.0)",
-            sum
-        );
+        println!("[PASS] Uniform weights sum to {:.6} (expected 1.0)", sum);
     }
 
     #[test]

@@ -43,10 +43,10 @@ use crate::types::fingerprint::{TeleologicalFingerprint, NUM_EMBEDDERS};
 use crate::types::JohariQuadrant;
 
 use super::teleological_query::TeleologicalQuery;
-use super::teleological_result::{
-    PipelineBreakdown, ScoredMemory, TeleologicalRetrievalResult,
+use super::teleological_result::{PipelineBreakdown, ScoredMemory, TeleologicalRetrievalResult};
+use super::{
+    AggregatedMatch, MultiEmbeddingQueryExecutor, MultiEmbeddingResult, PipelineStageTiming,
 };
-use super::{AggregatedMatch, MultiEmbeddingQueryExecutor, MultiEmbeddingResult, PipelineStageTiming};
 
 /// Trait for teleological retrieval pipeline execution.
 ///
@@ -234,7 +234,10 @@ where
                 .await;
 
             let (goal_alignment, is_misaligned) = match alignment_result {
-                Ok(result) => (result.score.composite_score, result.flags.needs_intervention()),
+                Ok(result) => (
+                    result.score.composite_score,
+                    result.flags.needs_intervention(),
+                ),
                 Err(e) => {
                     warn!(
                         memory_id = %fingerprint.id,
@@ -302,7 +305,11 @@ where
         };
 
         // Sort by score descending
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         // Limit to teleological_limit
         let limit = config.teleological_limit;
@@ -443,9 +450,8 @@ where
         }
 
         // Apply proper Stage 4 filtering with real fingerprints
-        let (stage4_results, filtered_count, avg_filtered_alignment) = self
-            .apply_stage4_filtering(&candidates, query)
-            .await?;
+        let (stage4_results, filtered_count, avg_filtered_alignment) =
+            self.apply_stage4_filtering(&candidates, query).await?;
 
         let stage4_time = stage4_start.elapsed();
 
@@ -566,7 +572,11 @@ where
             results.push(scored);
         }
 
-        results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        results.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
 
         let limit = config.teleological_limit;
         if results.len() > limit {
@@ -637,10 +647,10 @@ mod tests {
     use crate::alignment::DefaultAlignmentCalculator;
     use crate::johari::DefaultJohariManager;
     use crate::purpose::{DiscoveryMethod, GoalDiscoveryMetadata, GoalLevel, GoalNode};
-    use crate::types::fingerprint::SemanticFingerprint;
     use crate::retrieval::teleological_result::AlignmentLevel;
     use crate::retrieval::InMemoryMultiEmbeddingExecutor;
     use crate::stubs::{InMemoryTeleologicalStore, StubMultiArrayProvider};
+    use crate::types::fingerprint::SemanticFingerprint;
     use std::sync::Arc;
 
     /// Create a test fingerprint for goal hierarchy.
@@ -662,7 +672,8 @@ mod tests {
         let mut hierarchy = GoalHierarchy::new();
 
         let ns_fp = create_test_goal_fingerprint(0.8);
-        let discovery = GoalDiscoveryMetadata::new(DiscoveryMethod::Bootstrap, 0.9, 1, 0.85).unwrap();
+        let discovery =
+            GoalDiscoveryMetadata::new(DiscoveryMethod::Bootstrap, 0.9, 1, 0.85).unwrap();
 
         let ns = GoalNode::autonomous_goal(
             "Build the best product".to_string(),
@@ -676,7 +687,8 @@ mod tests {
         hierarchy.add_goal(ns).expect("Failed to add North Star");
 
         let child_fp = create_test_goal_fingerprint(0.7);
-        let child_discovery = GoalDiscoveryMetadata::new(DiscoveryMethod::Decomposition, 0.8, 5, 0.75).unwrap();
+        let child_discovery =
+            GoalDiscoveryMetadata::new(DiscoveryMethod::Decomposition, 0.8, 5, 0.75).unwrap();
 
         let child = GoalNode::child_goal(
             "Improve UX".to_string(),
@@ -687,7 +699,9 @@ mod tests {
         )
         .expect("Failed to create strategic goal");
 
-        hierarchy.add_goal(child).expect("Failed to add strategic goal");
+        hierarchy
+            .add_goal(child)
+            .expect("Failed to add strategic goal");
 
         hierarchy
     }
@@ -713,7 +727,13 @@ mod tests {
         let johari_manager = Arc::new(DefaultJohariManager::new(store_arc.clone()));
         let hierarchy = create_test_hierarchy();
 
-        DefaultTeleologicalPipeline::new(executor, alignment_calc, johari_manager, store_arc, hierarchy)
+        DefaultTeleologicalPipeline::new(
+            executor,
+            alignment_calc,
+            johari_manager,
+            store_arc,
+            hierarchy,
+        )
     }
 
     #[tokio::test]
@@ -738,7 +758,11 @@ mod tests {
         assert!(result.spaces_searched > 0);
 
         println!("BEFORE: query text = 'authentication patterns'");
-        println!("AFTER: results = {}, time = {:?}", result.len(), result.total_time);
+        println!(
+            "AFTER: results = {}, time = {:?}",
+            result.len(),
+            result.total_time
+        );
         println!("[VERIFIED] Basic query execution works");
     }
 
@@ -803,10 +827,22 @@ mod tests {
 
         println!("Timing: {}", result.timing_summary());
         println!("  Stage 1 (SPLADE): {:?}", result.timing.stage1_splade);
-        println!("  Stage 2 (Matryoshka): {:?}", result.timing.stage2_matryoshka);
-        println!("  Stage 3 (Full HNSW): {:?}", result.timing.stage3_full_hnsw);
-        println!("  Stage 4 (Teleological): {:?}", result.timing.stage4_teleological);
-        println!("  Stage 5 (Late Interaction): {:?}", result.timing.stage5_late_interaction);
+        println!(
+            "  Stage 2 (Matryoshka): {:?}",
+            result.timing.stage2_matryoshka
+        );
+        println!(
+            "  Stage 3 (Full HNSW): {:?}",
+            result.timing.stage3_full_hnsw
+        );
+        println!(
+            "  Stage 4 (Teleological): {:?}",
+            result.timing.stage4_teleological
+        );
+        println!(
+            "  Stage 5 (Late Interaction): {:?}",
+            result.timing.stage5_late_interaction
+        );
         println!("  Total: {:?}", result.total_time);
 
         println!("[VERIFIED] All pipeline stages have timing measurements");

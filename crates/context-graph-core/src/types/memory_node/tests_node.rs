@@ -55,7 +55,11 @@ fn test_record_access_saturating() {
 fn test_compute_decay_in_valid_range() {
     let node = MemoryNode::new("test".to_string(), vec![0.0; 1536]);
     let decay = node.compute_decay();
-    assert!((0.0..=1.0).contains(&decay), "Decay {} must be in [0,1]", decay);
+    assert!(
+        (0.0..=1.0).contains(&decay),
+        "Decay {} must be in [0,1]",
+        decay
+    );
 }
 
 #[test]
@@ -128,7 +132,10 @@ fn test_validate_content_too_large() {
     let node = MemoryNode::new(big_content, vec![val; dim]);
 
     let result = node.validate();
-    assert!(matches!(result, Err(ValidationError::ContentTooLarge { .. })));
+    assert!(matches!(
+        result,
+        Err(ValidationError::ContentTooLarge { .. })
+    ));
 }
 
 #[test]
@@ -226,16 +233,8 @@ fn test_memory_node_clone() {
 #[test]
 fn test_memory_node_partial_eq() {
     let embedding = vec![0.1; 1536];
-    let node1 = MemoryNode::with_id(
-        uuid::Uuid::nil(),
-        "test".to_string(),
-        embedding.clone(),
-    );
-    let node2 = MemoryNode::with_id(
-        uuid::Uuid::nil(),
-        "test".to_string(),
-        embedding,
-    );
+    let node1 = MemoryNode::with_id(uuid::Uuid::nil(), "test".to_string(), embedding.clone());
+    let node2 = MemoryNode::with_id(uuid::Uuid::nil(), "test".to_string(), embedding);
 
     // Nodes with different timestamps won't be equal, but same ID
     assert_eq!(node1.id, node2.id);

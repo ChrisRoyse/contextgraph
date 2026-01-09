@@ -18,8 +18,7 @@
 use chrono::Utc;
 
 use crate::teleological::{
-    SynergyMatrix, CROSS_CORRELATION_COUNT, SYNERGY_DIM,
-    ProfileId, TeleologicalProfile,
+    ProfileId, SynergyMatrix, TeleologicalProfile, CROSS_CORRELATION_COUNT, SYNERGY_DIM,
 };
 use crate::types::fingerprint::PurposeVector;
 
@@ -143,7 +142,9 @@ impl SynergyService {
         assert!(
             i < SYNERGY_DIM && j < SYNERGY_DIM,
             "FAIL FAST: synergy indices ({}, {}) out of bounds (max {})",
-            i, j, SYNERGY_DIM - 1
+            i,
+            j,
+            SYNERGY_DIM - 1
         );
 
         let synergy = self.matrix.get_synergy(i, j);
@@ -195,12 +196,14 @@ impl SynergyService {
         assert!(
             i < SYNERGY_DIM && j < SYNERGY_DIM,
             "FAIL FAST: feedback pair ({}, {}) out of bounds",
-            i, j
+            i,
+            j
         );
         assert!(
             i != j,
             "FAIL FAST: feedback pair cannot be same index ({}, {})",
-            i, j
+            i,
+            j
         );
 
         // Update activation count
@@ -226,8 +229,8 @@ impl SynergyService {
         // EWMA update (only for off-diagonal)
         if i != j {
             let current = self.matrix.get_synergy(i, j);
-            let updated = current * (1.0 - self.config.learning_rate)
-                        + target * self.config.learning_rate;
+            let updated =
+                current * (1.0 - self.config.learning_rate) + target * self.config.learning_rate;
 
             // Clamp to valid range
             let clamped = updated.clamp(self.config.min_synergy, self.config.max_synergy);
@@ -271,8 +274,8 @@ impl SynergyService {
 
                 // Decay towards base synergy
                 let base = SynergyMatrix::BASE_SYNERGIES[i][j];
-                let decayed = current * self.config.decay_factor
-                            + base * (1.0 - self.config.decay_factor);
+                let decayed =
+                    current * self.config.decay_factor + base * (1.0 - self.config.decay_factor);
 
                 self.matrix.set_synergy(i, j, decayed);
             }
@@ -282,7 +285,10 @@ impl SynergyService {
     /// Get synergies modulated by purpose vector alignment.
     ///
     /// Higher alignment = stronger synergy contribution.
-    pub fn get_aligned_synergies(&self, purpose_vector: &PurposeVector) -> [f32; CROSS_CORRELATION_COUNT] {
+    pub fn get_aligned_synergies(
+        &self,
+        purpose_vector: &PurposeVector,
+    ) -> [f32; CROSS_CORRELATION_COUNT] {
         let alignments = purpose_vector.alignments;
         let mut result = [0.0f32; CROSS_CORRELATION_COUNT];
         let mut idx = 0;
@@ -339,7 +345,8 @@ impl SynergyService {
         assert!(
             i < SYNERGY_DIM && j < SYNERGY_DIM,
             "FAIL FAST: activation count indices ({}, {}) out of bounds",
-            i, j
+            i,
+            j
         );
         self.activation_counts[i][j]
     }
@@ -435,7 +442,10 @@ mod tests {
         service.apply_feedback(&feedback);
 
         let updated = service.compute_synergy(1, 3).synergy;
-        assert!(updated >= original, "Positive feedback should increase synergy");
+        assert!(
+            updated >= original,
+            "Positive feedback should increase synergy"
+        );
         assert_eq!(service.get_activation_count(1, 3), 1);
 
         println!("[PASS] apply_feedback increases synergy for positive feedback");
@@ -457,7 +467,10 @@ mod tests {
         service.apply_feedback(&feedback);
 
         let updated = service.compute_synergy(2, 5).synergy;
-        assert!(updated <= original, "Negative feedback should decrease synergy");
+        assert!(
+            updated <= original,
+            "Negative feedback should decrease synergy"
+        );
 
         println!("[PASS] apply_feedback decreases synergy for negative feedback");
     }
@@ -538,7 +551,12 @@ mod tests {
         );
 
         println!("[PASS] apply_decay moves synergies towards base values");
-        println!("  - Decayed: {:.4}, Base: {:.4}, Diff: {:.4}", decayed, base, (decayed - base).abs());
+        println!(
+            "  - Decayed: {:.4}, Base: {:.4}, Diff: {:.4}",
+            decayed,
+            base,
+            (decayed - base).abs()
+        );
     }
 
     #[test]

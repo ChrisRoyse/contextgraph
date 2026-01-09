@@ -161,7 +161,10 @@ fn edge_case_quadrant_transition() {
 
     let cf_open = db.get_cf(cf_names::JOHARI_OPEN).unwrap();
     let before_open = db.db().get_cf(cf_open, node_key).unwrap();
-    println!("BEFORE: johari_open entry exists = {}", before_open.is_some());
+    println!(
+        "BEFORE: johari_open entry exists = {}",
+        before_open.is_some()
+    );
     assert!(before_open.is_some());
 
     node.quadrant = JohariQuadrant::Hidden;
@@ -171,8 +174,11 @@ fn edge_case_quadrant_transition() {
     let cf_hidden = db.get_cf(cf_names::JOHARI_HIDDEN).unwrap();
     let after_hidden = db.db().get_cf(cf_hidden, node_key).unwrap();
 
-    println!("AFTER: johari_open={}, johari_hidden={}",
-        after_open.is_some(), after_hidden.is_some());
+    println!(
+        "AFTER: johari_open={}, johari_hidden={}",
+        after_open.is_some(),
+        after_hidden.is_some()
+    );
     assert!(after_open.is_none(), "Should be REMOVED from johari_open");
     assert!(after_hidden.is_some(), "Should be ADDED to johari_hidden");
 }
@@ -234,7 +240,11 @@ fn evidence_store_node_creates_all_indexes() {
     // Verify temporal index
     let cf_temporal = db.get_cf(cf_names::TEMPORAL).unwrap();
     let temporal_key = format_temporal_key(node.created_at, &node.id);
-    assert!(db.db().get_cf(cf_temporal, &temporal_key).unwrap().is_some());
+    assert!(db
+        .db()
+        .get_cf(cf_temporal, &temporal_key)
+        .unwrap()
+        .is_some());
 
     println!("RESULT: All indexes verified ✓");
 }

@@ -22,7 +22,10 @@ fn test_memory_node_json_serialization_round_trip() {
     let restored: MemoryNode =
         serde_json::from_str(&json_str).expect("MemoryNode must deserialize from JSON");
 
-    assert_eq!(restored, node, "Deserialized node must match original exactly");
+    assert_eq!(
+        restored, node,
+        "Deserialized node must match original exactly"
+    );
 }
 
 #[test]
@@ -46,13 +49,24 @@ fn test_memory_node_complex_metadata_serialization() {
     let json_str = serde_json::to_string(&node).unwrap();
     let restored: MemoryNode = serde_json::from_str(&json_str).unwrap();
 
-    assert_eq!(restored.metadata.source, Some("conversation:abc123".to_string()));
+    assert_eq!(
+        restored.metadata.source,
+        Some("conversation:abc123".to_string())
+    );
     assert_eq!(restored.metadata.language, Some("en-US".to_string()));
     assert_eq!(restored.metadata.tags.len(), 4);
-    assert!(restored.metadata.tags.contains(&"machine-learning".to_string()));
+    assert!(restored
+        .metadata
+        .tags
+        .contains(&"machine-learning".to_string()));
     assert_eq!(restored.metadata.utl_score, Some(0.9876543));
     assert!(restored.metadata.consolidated);
-    assert!(restored.metadata.rationale.as_ref().unwrap().contains("special chars"));
+    assert!(restored
+        .metadata
+        .rationale
+        .as_ref()
+        .unwrap()
+        .contains("special chars"));
 }
 
 #[test]
@@ -88,8 +102,14 @@ fn test_memory_node_timestamps_preserved() {
     let json_str = serde_json::to_string(&node).unwrap();
     let restored: MemoryNode = serde_json::from_str(&json_str).unwrap();
 
-    assert_eq!(restored.created_at, original_created_at, "created_at must be preserved");
-    assert_eq!(restored.accessed_at, original_accessed_at, "accessed_at must be preserved");
+    assert_eq!(
+        restored.created_at, original_created_at,
+        "created_at must be preserved"
+    );
+    assert_eq!(
+        restored.accessed_at, original_accessed_at,
+        "accessed_at must be preserved"
+    );
 }
 
 #[test]
@@ -117,10 +137,22 @@ fn test_memory_node_optional_fields_none_serialization() {
     let json_str = serde_json::to_string(&node).unwrap();
     let restored: MemoryNode = serde_json::from_str(&json_str).unwrap();
 
-    assert!(restored.metadata.source.is_none(), "None source must remain None");
-    assert!(restored.metadata.language.is_none(), "None language must remain None");
-    assert!(restored.metadata.utl_score.is_none(), "None utl_score must remain None");
-    assert!(restored.metadata.rationale.is_none(), "None rationale must remain None");
+    assert!(
+        restored.metadata.source.is_none(),
+        "None source must remain None"
+    );
+    assert!(
+        restored.metadata.language.is_none(),
+        "None language must remain None"
+    );
+    assert!(
+        restored.metadata.utl_score.is_none(),
+        "None utl_score must remain None"
+    );
+    assert!(
+        restored.metadata.rationale.is_none(),
+        "None rationale must remain None"
+    );
 }
 
 #[test]
@@ -152,7 +184,10 @@ fn test_memory_node_binary_json_equivalence() {
     let pretty_json = serde_json::to_string_pretty(&node).unwrap();
     let from_pretty: MemoryNode = serde_json::from_str(&pretty_json).unwrap();
 
-    assert_eq!(from_compact, from_pretty, "Compact and pretty JSON must deserialize identically");
+    assert_eq!(
+        from_compact, from_pretty,
+        "Compact and pretty JSON must deserialize identically"
+    );
     assert_eq!(from_compact, node, "Both must match original");
 }
 
@@ -167,7 +202,10 @@ newlines, plus unicode: 日本語 🎉 émojis"#;
     let json_str = serde_json::to_string(&node).unwrap();
     let restored: MemoryNode = serde_json::from_str(&json_str).unwrap();
 
-    assert_eq!(restored.content, special_content, "Special characters must be preserved");
+    assert_eq!(
+        restored.content, special_content,
+        "Special characters must be preserved"
+    );
 }
 
 #[test]
@@ -229,7 +267,10 @@ fn test_node_metadata_serde_roundtrip() {
     let json_str = serde_json::to_string(&meta).expect("serialize failed");
     let restored: NodeMetadata = serde_json::from_str(&json_str).expect("deserialize failed");
 
-    assert_eq!(meta, restored, "Round-trip serialization must preserve all fields");
+    assert_eq!(
+        meta, restored,
+        "Round-trip serialization must preserve all fields"
+    );
 }
 
 #[test]

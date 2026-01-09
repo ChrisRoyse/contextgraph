@@ -24,7 +24,8 @@ fn test_poincare_point_invariants() {
         assert!(
             norm <= 0.9 + 1e-5,
             "Point norm {} exceeds max 0.9 for seed {}",
-            norm, seed
+            norm,
+            seed
         );
         assert!(norm >= 0.0, "Point norm cannot be negative");
     }
@@ -42,12 +43,18 @@ fn test_poincare_point_invariants() {
     // Test boundary points
     let mut boundary_point = PoincarePoint::origin();
     boundary_point.coords[0] = 0.99999;
-    assert!(boundary_point.norm() < 1.0, "Boundary point should be inside ball");
+    assert!(
+        boundary_point.norm() < 1.0,
+        "Boundary point should be inside ball"
+    );
 
     // Just outside boundary should be invalid
     let mut outside_point = PoincarePoint::origin();
     outside_point.coords[0] = 1.0;
-    assert!(outside_point.norm() >= 1.0, "Point on boundary should not be inside ball");
+    assert!(
+        outside_point.norm() >= 1.0,
+        "Point on boundary should not be inside ball"
+    );
 
     println!("=== PASSED: Poincare Point Invariants ===\n");
 }
@@ -77,7 +84,8 @@ fn test_poincare_distance_properties() {
         assert!(
             (d_xy - d_yx).abs() < 1e-5,
             "Symmetry violated: d(x,y)={}, d(y,x)={}",
-            d_xy, d_yx
+            d_xy,
+            d_yx
         );
     }
 
@@ -94,7 +102,8 @@ fn test_poincare_distance_properties() {
         assert!(
             d_xz <= d_xy + d_yz + 1e-4,
             "Triangle inequality violated: d(x,z)={} > d(x,y)+d(y,z)={}",
-            d_xz, d_xy + d_yz
+            d_xz,
+            d_xy + d_yz
         );
     }
 

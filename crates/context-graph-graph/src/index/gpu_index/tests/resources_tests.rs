@@ -2,10 +2,10 @@
 //!
 //! Tests for GPU resource allocation, thread safety, and error handling.
 
-use std::sync::Arc;
 use crate::error::GraphError;
-use crate::index::gpu_index::GpuResources;
 use crate::index::faiss_ffi::gpu_available;
+use crate::index::gpu_index::GpuResources;
+use std::sync::Arc;
 
 #[test]
 fn test_gpu_resources_creation() {

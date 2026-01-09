@@ -50,11 +50,11 @@ impl MemoryCategory {
     /// Get default budget for this category in bytes.
     pub const fn default_budget(&self) -> usize {
         match self {
-            MemoryCategory::FaissIndex => 8 * 1024 * 1024 * 1024,       // 8GB
-            MemoryCategory::HyperbolicCoords => 2560 * 1024 * 1024,    // 2.5GB
-            MemoryCategory::EntailmentCones => 2764 * 1024 * 1024,     // 2.7GB
-            MemoryCategory::WorkingMemory => 10854 * 1024 * 1024,      // 10.8GB
-            MemoryCategory::Other => 512 * 1024 * 1024,                // 512MB
+            MemoryCategory::FaissIndex => 8 * 1024 * 1024 * 1024, // 8GB
+            MemoryCategory::HyperbolicCoords => 2560 * 1024 * 1024, // 2.5GB
+            MemoryCategory::EntailmentCones => 2764 * 1024 * 1024, // 2.7GB
+            MemoryCategory::WorkingMemory => 10854 * 1024 * 1024, // 10.8GB
+            MemoryCategory::Other => 512 * 1024 * 1024,           // 512MB
         }
     }
 
@@ -142,7 +142,7 @@ pub struct GpuMemoryConfig {
 impl Default for GpuMemoryConfig {
     fn default() -> Self {
         Self {
-            total_budget: 24 * 1024 * 1024 * 1024,  // 24GB safe limit
+            total_budget: 24 * 1024 * 1024 * 1024, // 24GB safe limit
             category_budgets: HashMap::new(),
             allow_overallocation: false,
             low_memory_threshold: 0.9,
@@ -174,13 +174,14 @@ impl GpuMemoryConfig {
     pub fn validate(&self) -> GraphResult<()> {
         if self.total_budget == 0 {
             return Err(GraphError::InvalidConfig(
-                "total_budget must be > 0".to_string()
+                "total_budget must be > 0".to_string(),
             ));
         }
         if self.low_memory_threshold <= 0.0 || self.low_memory_threshold > 1.0 {
-            return Err(GraphError::InvalidConfig(
-                format!("low_memory_threshold must be in (0, 1], got {}", self.low_memory_threshold)
-            ));
+            return Err(GraphError::InvalidConfig(format!(
+                "low_memory_threshold must be in (0, 1], got {}",
+                self.low_memory_threshold
+            )));
         }
         Ok(())
     }
@@ -257,7 +258,9 @@ impl ManagerInner {
         }
 
         // Check category budget
-        let category_budget = self.config.category_budgets
+        let category_budget = self
+            .config
+            .category_budgets
             .get(&category)
             .copied()
             .unwrap_or_else(|| category.default_budget());
@@ -311,7 +314,9 @@ impl ManagerInner {
             category_budget: all_categories
                 .iter()
                 .map(|&cat| {
-                    let budget = self.config.category_budgets
+                    let budget = self
+                        .config
+                        .category_budgets
                         .get(&cat)
                         .copied()
                         .unwrap_or_else(|| cat.default_budget());
@@ -378,7 +383,8 @@ impl GpuMemoryManager {
     /// - Allocation exceeds total budget
     /// - Allocation exceeds category budget
     pub fn allocate(&self, size: usize, category: MemoryCategory) -> GraphResult<AllocationHandle> {
-        let id = self.inner
+        let id = self
+            .inner
             .lock()
             .map_err(|_| GraphError::GpuResourceAllocation("Lock poisoned".into()))?
             .allocate(size, category)?;
@@ -395,23 +401,37 @@ impl GpuMemoryManager {
     pub fn available(&self) -> usize {
         self.inner
             .lock()
-            .map(|inner| inner.config.total_budget.saturating_sub(inner.total_allocated))
+            .map(|inner| {
+                inner
+                    .config
+                    .total_budget
+                    .saturating_sub(inner.total_allocated)
+            })
             .unwrap_or(0)
     }
 
     /// Get used memory in bytes.
     pub fn used(&self) -> usize {
-        self.inner.lock().map(|inner| inner.total_allocated).unwrap_or(0)
+        self.inner
+            .lock()
+            .map(|inner| inner.total_allocated)
+            .unwrap_or(0)
     }
 
     /// Get total budget in bytes.
     pub fn budget(&self) -> usize {
-        self.inner.lock().map(|inner| inner.config.total_budget).unwrap_or(0)
+        self.inner
+            .lock()
+            .map(|inner| inner.config.total_budget)
+            .unwrap_or(0)
     }
 
     /// Get memory statistics.
     pub fn stats(&self) -> MemoryStats {
-        self.inner.lock().map(|inner| inner.stats()).unwrap_or_default()
+        self.inner
+            .lock()
+            .map(|inner| inner.stats())
+            .unwrap_or_default()
     }
 
     /// Check if low memory condition (usage > threshold).
@@ -431,7 +451,9 @@ impl GpuMemoryManager {
         self.inner
             .lock()
             .map(|inner| {
-                let budget = inner.config.category_budgets
+                let budget = inner
+                    .config
+                    .category_budgets
                     .get(&category)
                     .copied()
                     .unwrap_or_else(|| category.default_budget());
@@ -466,10 +488,22 @@ mod tests {
 
     #[test]
     fn test_memory_category_default_budgets() {
-        assert_eq!(MemoryCategory::FaissIndex.default_budget(), 8 * 1024 * 1024 * 1024);
-        assert_eq!(MemoryCategory::HyperbolicCoords.default_budget(), 2560 * 1024 * 1024);
-        assert_eq!(MemoryCategory::EntailmentCones.default_budget(), 2764 * 1024 * 1024);
-        assert_eq!(MemoryCategory::WorkingMemory.default_budget(), 10854 * 1024 * 1024);
+        assert_eq!(
+            MemoryCategory::FaissIndex.default_budget(),
+            8 * 1024 * 1024 * 1024
+        );
+        assert_eq!(
+            MemoryCategory::HyperbolicCoords.default_budget(),
+            2560 * 1024 * 1024
+        );
+        assert_eq!(
+            MemoryCategory::EntailmentCones.default_budget(),
+            2764 * 1024 * 1024
+        );
+        assert_eq!(
+            MemoryCategory::WorkingMemory.default_budget(),
+            10854 * 1024 * 1024
+        );
         assert_eq!(MemoryCategory::Other.default_budget(), 512 * 1024 * 1024);
     }
 
@@ -504,9 +538,11 @@ mod tests {
 
     #[test]
     fn test_config_category_budget_builder() {
-        let config = GpuMemoryConfig::default()
-            .category_budget(MemoryCategory::FaissIndex, 1024);
-        assert_eq!(config.category_budgets.get(&MemoryCategory::FaissIndex), Some(&1024));
+        let config = GpuMemoryConfig::default().category_budget(MemoryCategory::FaissIndex, 1024);
+        assert_eq!(
+            config.category_budgets.get(&MemoryCategory::FaissIndex),
+            Some(&1024)
+        );
     }
 
     #[test]

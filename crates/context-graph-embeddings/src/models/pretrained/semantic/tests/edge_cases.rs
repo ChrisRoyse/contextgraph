@@ -5,8 +5,8 @@ use crate::traits::EmbeddingModel;
 use crate::types::{ModelId, ModelInput};
 use serial_test::serial;
 
+use super::super::SEMANTIC_DIMENSION;
 use super::helpers::create_test_model;
-use super::super::{SEMANTIC_DIMENSION};
 
 #[tokio::test]
 async fn test_edge_1_empty_input_text() {

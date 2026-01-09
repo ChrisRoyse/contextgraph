@@ -222,7 +222,10 @@ impl InMemoryTeleologicalStore {
     }
 
     /// Compute ColBERT-style late interaction score (MaxSim).
-    fn compute_late_interaction_score(query_tokens: &[Vec<f32>], target_tokens: &[Vec<f32>]) -> f32 {
+    fn compute_late_interaction_score(
+        query_tokens: &[Vec<f32>],
+        target_tokens: &[Vec<f32>],
+    ) -> f32 {
         if query_tokens.is_empty() || target_tokens.is_empty() {
             return 0.0;
         }
@@ -542,10 +545,7 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         }
 
         // Sort by score descending
-        results.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1)
-                .unwrap_or(std::cmp::Ordering::Equal)
-        });
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         results.truncate(top_k);
 
@@ -655,7 +655,10 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
             self.deleted.remove(&id);
         }
 
-        info!("Compaction complete: removed {} soft-deleted entries", self.deleted.len());
+        info!(
+            "Compaction complete: removed {} soft-deleted entries",
+            self.deleted.len()
+        );
         Ok(())
     }
 
@@ -664,10 +667,7 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         quadrant: usize,
         limit: usize,
     ) -> CoreResult<Vec<(Uuid, crate::types::fingerprint::JohariFingerprint)>> {
-        debug!(
-            "list_by_quadrant: quadrant={}, limit={}",
-            quadrant, limit
-        );
+        debug!("list_by_quadrant: quadrant={}, limit={}", quadrant, limit);
 
         if quadrant > 3 {
             error!("Invalid quadrant index: {} (must be 0-3)", quadrant);
@@ -795,7 +795,9 @@ mod tests {
         let result = store.update(fp).await.unwrap();
         assert!(!result);
 
-        println!("[VERIFIED] test_update_nonexistent_returns_false: Update returns false for missing ID");
+        println!(
+            "[VERIFIED] test_update_nonexistent_returns_false: Update returns false for missing ID"
+        );
     }
 
     #[tokio::test]

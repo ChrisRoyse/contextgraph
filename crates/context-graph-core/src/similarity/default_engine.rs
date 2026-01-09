@@ -30,9 +30,7 @@ use crate::types::fingerprint::{
 use super::config::{CrossSpaceConfig, MissingSpaceHandling, WeightingStrategy};
 use super::engine::CrossSpaceSimilarityEngine;
 use super::error::SimilarityError;
-use super::explanation::{
-    ScoreInterpretation, SimilarityExplanation, SpaceDetail, SPACE_NAMES,
-};
+use super::explanation::{ScoreInterpretation, SimilarityExplanation, SpaceDetail, SPACE_NAMES};
 use super::multi_utl::MultiUtlParams;
 use super::result::CrossSpaceSimilarity;
 
@@ -330,11 +328,8 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
 
         // Step 3: Handle AverageFill for missing spaces
         if config.missing_space_handling == MissingSpaceHandling::AverageFill && active_count > 0 {
-            let avg: f32 = space_scores
-                .iter()
-                .filter_map(|s| *s)
-                .sum::<f32>()
-                / active_count as f32;
+            let avg: f32 =
+                space_scores.iter().filter_map(|s| *s).sum::<f32>() / active_count as f32;
 
             for score in space_scores.iter_mut() {
                 if score.is_none() {
@@ -348,7 +343,8 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
 
         // Apply purpose weighting if enabled
         if config.use_purpose_weighting {
-            for (weight, alignment) in weights.iter_mut().zip(fp1.purpose_vector.alignments.iter()) {
+            for (weight, alignment) in weights.iter_mut().zip(fp1.purpose_vector.alignments.iter())
+            {
                 *weight *= alignment.abs();
             }
             Self::normalize_weights(&mut weights);
@@ -432,7 +428,8 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
         let active_count = result.active_count();
 
         // Build space details if breakdown available
-        let mut space_details: [Option<SpaceDetail>; NUM_EMBEDDERS] = [const { None }; NUM_EMBEDDERS];
+        let mut space_details: [Option<SpaceDetail>; NUM_EMBEDDERS] =
+            [const { None }; NUM_EMBEDDERS];
         let mut key_factors = Vec::new();
 
         if let (Some(ref scores), Some(ref weights)) = (&result.space_scores, &result.space_weights)
@@ -512,9 +509,7 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
                 // RRF doesn't use weights per se, return uniform for explanation
                 WeightingStrategy::uniform_weights()
             }
-            WeightingStrategy::PurposeWeightedRRF { .. } => {
-                WeightingStrategy::uniform_weights()
-            }
+            WeightingStrategy::PurposeWeightedRRF { .. } => WeightingStrategy::uniform_weights(),
             WeightingStrategy::LateInteraction => {
                 // Emphasize E12 for late interaction
                 let mut weights = [0.05; NUM_EMBEDDERS];
@@ -535,7 +530,10 @@ mod tests {
         let a = vec![1.0, 0.0, 0.0];
         let b = vec![1.0, 0.0, 0.0];
         let sim = DefaultCrossSpaceEngine::cosine_similarity_dense(&a, &b).unwrap();
-        assert!((sim - 1.0).abs() < 1e-6, "Identical vectors should have similarity 1.0");
+        assert!(
+            (sim - 1.0).abs() < 1e-6,
+            "Identical vectors should have similarity 1.0"
+        );
         println!("[PASS] Identical vectors: sim = {}", sim);
     }
 
@@ -544,7 +542,10 @@ mod tests {
         let a = vec![1.0, 0.0, 0.0];
         let b = vec![0.0, 1.0, 0.0];
         let sim = DefaultCrossSpaceEngine::cosine_similarity_dense(&a, &b).unwrap();
-        assert!(sim.abs() < 1e-6, "Orthogonal vectors should have similarity 0.0");
+        assert!(
+            sim.abs() < 1e-6,
+            "Orthogonal vectors should have similarity 0.0"
+        );
         println!("[PASS] Orthogonal vectors: sim = {}", sim);
     }
 
@@ -553,7 +554,10 @@ mod tests {
         let a = vec![1.0, 0.0, 0.0];
         let b = vec![-1.0, 0.0, 0.0];
         let sim = DefaultCrossSpaceEngine::cosine_similarity_dense(&a, &b).unwrap();
-        assert!((sim - (-1.0)).abs() < 1e-6, "Opposite vectors should have similarity -1.0");
+        assert!(
+            (sim - (-1.0)).abs() < 1e-6,
+            "Opposite vectors should have similarity -1.0"
+        );
         println!("[PASS] Opposite vectors: sim = {}", sim);
     }
 
@@ -569,20 +573,18 @@ mod tests {
         };
         // Intersection at indices 1 and 5: 0.5*0.4 + 0.2*0.1 = 0.2 + 0.02 = 0.22
         let dot = DefaultCrossSpaceEngine::sparse_dot_product(&a, &b);
-        assert!((dot - 0.22).abs() < 1e-6, "Sparse dot product mismatch: {}", dot);
+        assert!(
+            (dot - 0.22).abs() < 1e-6,
+            "Sparse dot product mismatch: {}",
+            dot
+        );
         println!("[PASS] Sparse dot product: {}", dot);
     }
 
     #[test]
     fn test_maxsim_token_level() {
-        let query = vec![
-            vec![1.0, 0.0],
-            vec![0.0, 1.0],
-        ];
-        let doc = vec![
-            vec![0.8, 0.2],
-            vec![0.1, 0.9],
-        ];
+        let query = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
+        let doc = vec![vec![0.8, 0.2], vec![0.1, 0.9]];
         let sim = DefaultCrossSpaceEngine::maxsim_token_level(&query, &doc);
         // q[0] best match: doc[0] = 0.8*1 + 0.2*0 = 0.8
         // q[1] best match: doc[1] = 0.1*0 + 0.9*1 = 0.9
@@ -596,19 +598,35 @@ mod tests {
         let engine = DefaultCrossSpaceEngine::new();
         let weights = engine.get_weights(&WeightingStrategy::Uniform);
         let sum: f32 = weights.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-5, "Uniform weights should sum to 1.0");
+        assert!(
+            (sum - 1.0).abs() < 1e-5,
+            "Uniform weights should sum to 1.0"
+        );
         println!("[PASS] Uniform weights sum: {}", sum);
     }
 
     #[test]
     fn test_compute_variance() {
         let scores: [Option<f32>; 13] = [
-            Some(0.5), Some(0.5), Some(0.5), Some(0.5), Some(0.5),
-            Some(0.5), Some(0.5), Some(0.5), Some(0.5), Some(0.5),
-            Some(0.5), Some(0.5), Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
+            Some(0.5),
         ];
         let variance = DefaultCrossSpaceEngine::compute_variance(&scores);
-        assert!(variance.abs() < 1e-6, "Constant scores should have 0 variance");
+        assert!(
+            variance.abs() < 1e-6,
+            "Constant scores should have 0 variance"
+        );
         println!("[PASS] Constant scores variance: {}", variance);
     }
 
@@ -617,7 +635,10 @@ mod tests {
         let mut weights = [2.0; NUM_EMBEDDERS];
         DefaultCrossSpaceEngine::normalize_weights(&mut weights);
         let sum: f32 = weights.iter().sum();
-        assert!((sum - 1.0).abs() < 1e-5, "Normalized weights should sum to 1.0");
+        assert!(
+            (sum - 1.0).abs() < 1e-5,
+            "Normalized weights should sum to 1.0"
+        );
         println!("[PASS] Normalized weights sum: {}", sum);
     }
 }

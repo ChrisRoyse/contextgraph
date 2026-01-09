@@ -6,7 +6,9 @@ use uuid::Uuid;
 use crate::types::fingerprint::evolution::EvolutionTrigger;
 use crate::types::fingerprint::purpose::AlignmentThreshold;
 
-use super::test_helpers::{make_test_hash, make_test_johari, make_test_purpose, make_test_semantic};
+use super::test_helpers::{
+    make_test_hash, make_test_johari, make_test_purpose, make_test_semantic,
+};
 use super::TeleologicalFingerprint;
 
 // ===== Creation Tests =====
@@ -167,7 +169,10 @@ fn test_teleological_alignment_delta_improvement() {
     let delta = fp.compute_alignment_delta();
     assert!((delta - 0.15).abs() < 1e-5);
 
-    println!("[PASS] alignment_delta shows positive improvement: {:.4}", delta);
+    println!(
+        "[PASS] alignment_delta shows positive improvement: {:.4}",
+        delta
+    );
 }
 
 #[test]
@@ -187,7 +192,10 @@ fn test_teleological_alignment_delta_degradation() {
     let delta = fp.compute_alignment_delta();
     assert!((delta - (-0.20)).abs() < 1e-5);
 
-    println!("[PASS] alignment_delta shows negative degradation: {:.4}", delta);
+    println!(
+        "[PASS] alignment_delta shows negative degradation: {:.4}",
+        delta
+    );
 }
 
 // ===== Misalignment Warning Tests =====
@@ -367,9 +375,7 @@ fn test_teleological_alignment_history_stats() {
 fn test_teleological_constants() {
     assert_eq!(TeleologicalFingerprint::EXPECTED_SIZE_BYTES, 46_000);
     assert_eq!(TeleologicalFingerprint::MAX_EVOLUTION_SNAPSHOTS, 100);
-    assert!(
-        (TeleologicalFingerprint::MISALIGNMENT_THRESHOLD - (-0.15)).abs() < f32::EPSILON
-    );
+    assert!((TeleologicalFingerprint::MISALIGNMENT_THRESHOLD - (-0.15)).abs() < f32::EPSILON);
 
     println!("[PASS] Constants match specification");
     println!(

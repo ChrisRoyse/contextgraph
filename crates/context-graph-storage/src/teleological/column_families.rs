@@ -376,12 +376,21 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
     vec![
         ColumnFamilyDescriptor::new(CF_FINGERPRINTS, fingerprint_cf_options(cache)),
         ColumnFamilyDescriptor::new(CF_PURPOSE_VECTORS, purpose_vector_cf_options(cache)),
-        ColumnFamilyDescriptor::new(CF_E13_SPLADE_INVERTED, e13_splade_inverted_cf_options(cache)),
+        ColumnFamilyDescriptor::new(
+            CF_E13_SPLADE_INVERTED,
+            e13_splade_inverted_cf_options(cache),
+        ),
         ColumnFamilyDescriptor::new(CF_E1_MATRYOSHKA_128, e1_matryoshka_128_cf_options(cache)),
         // TASK-TELEO-006: New teleological vector CFs
         ColumnFamilyDescriptor::new(CF_SYNERGY_MATRIX, synergy_matrix_cf_options(cache)),
-        ColumnFamilyDescriptor::new(CF_TELEOLOGICAL_PROFILES, teleological_profiles_cf_options(cache)),
-        ColumnFamilyDescriptor::new(CF_TELEOLOGICAL_VECTORS, teleological_vectors_cf_options(cache)),
+        ColumnFamilyDescriptor::new(
+            CF_TELEOLOGICAL_PROFILES,
+            teleological_profiles_cf_options(cache),
+        ),
+        ColumnFamilyDescriptor::new(
+            CF_TELEOLOGICAL_VECTORS,
+            teleological_vectors_cf_options(cache),
+        ),
     ]
 }
 

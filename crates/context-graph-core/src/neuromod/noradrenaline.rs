@@ -245,7 +245,11 @@ mod tests {
         }
 
         let diff = (modulator.value() - NE_BASELINE).abs();
-        assert!(diff < 0.2, "Expected value near baseline, got: {}", modulator.value());
+        assert!(
+            diff < 0.2,
+            "Expected value near baseline, got: {}",
+            modulator.value()
+        );
     }
 
     #[test]

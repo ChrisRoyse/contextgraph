@@ -136,15 +136,22 @@ pub fn gqa_forward(
 
     // Attention scores in FP32 to prevent overflow (FP16 max ~65504)
     // Q @ K^T can easily overflow in FP16 for longer sequences
-    let query_f32 = query.to_dtype(DType::F32).map_err(|e| EmbeddingError::GpuError {
-        message: format!("Qwen2 layer {} Q to F32 failed: {}", layer_idx, e),
-    })?;
-    let key_t_f32 = key_t.to_dtype(DType::F32).map_err(|e| EmbeddingError::GpuError {
-        message: format!("Qwen2 layer {} K^T to F32 failed: {}", layer_idx, e),
-    })?;
-    let attention_mask_f32 = attention_mask.to_dtype(DType::F32).map_err(|e| EmbeddingError::GpuError {
-        message: format!("Qwen2 layer {} mask to F32 failed: {}", layer_idx, e),
-    })?;
+    let query_f32 = query
+        .to_dtype(DType::F32)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("Qwen2 layer {} Q to F32 failed: {}", layer_idx, e),
+        })?;
+    let key_t_f32 = key_t
+        .to_dtype(DType::F32)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("Qwen2 layer {} K^T to F32 failed: {}", layer_idx, e),
+        })?;
+    let attention_mask_f32 =
+        attention_mask
+            .to_dtype(DType::F32)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("Qwen2 layer {} mask to F32 failed: {}", layer_idx, e),
+            })?;
 
     // Attention scores: Q @ K^T / sqrt(head_dim) in FP32
     let scale = 1.0 / (head_dim as f64).sqrt();
@@ -159,14 +166,12 @@ pub fn gqa_forward(
         })?;
 
     // Add attention mask (already in F32)
-    let scores = scores
-        .broadcast_add(&attention_mask_f32)
-        .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "Qwen2 layer {} attention mask add failed: {}",
-                layer_idx, e
-            ),
-        })?;
+    let scores =
+        scores
+            .broadcast_add(&attention_mask_f32)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("Qwen2 layer {} attention mask add failed: {}", layer_idx, e),
+            })?;
 
     // Softmax in FP32 (scores already in F32)
     let attention_probs_f32 =
@@ -176,11 +181,12 @@ pub fn gqa_forward(
             }
         })?;
     // Convert back to FP16 for context matmul
-    let attention_probs = attention_probs_f32.to_dtype(DType::F16).map_err(|e| {
-        EmbeddingError::GpuError {
-            message: format!("Qwen2 layer {} softmax to F16 failed: {}", layer_idx, e),
-        }
-    })?;
+    let attention_probs =
+        attention_probs_f32
+            .to_dtype(DType::F16)
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("Qwen2 layer {} softmax to F16 failed: {}", layer_idx, e),
+            })?;
 
     // Apply attention to values: [batch, heads, seq_len, head_dim]
     let context = attention_probs
@@ -197,10 +203,7 @@ pub fn gqa_forward(
         })?
         .contiguous()
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "Qwen2 layer {} context contiguous failed: {}",
-                layer_idx, e
-            ),
+            message: format!("Qwen2 layer {} context contiguous failed: {}", layer_idx, e),
         })?
         .reshape((batch_size, seq_len, num_heads * head_dim))
         .map_err(|e| EmbeddingError::GpuError {
@@ -241,10 +244,7 @@ fn linear_with_bias(
     name: &str,
 ) -> EmbeddingResult<Tensor> {
     x.matmul(&weight.t().map_err(|e| EmbeddingError::GpuError {
-        message: format!(
-            "Qwen2 layer {} {} transpose failed: {}",
-            layer_idx, name, e
-        ),
+        message: format!("Qwen2 layer {} {} transpose failed: {}", layer_idx, name, e),
     })?)
     .map_err(|e| EmbeddingError::GpuError {
         message: format!("Qwen2 layer {} {} matmul failed: {}", layer_idx, name, e),
@@ -271,7 +271,10 @@ fn repeat_kv(x: &Tensor, num_groups: usize, layer_idx: usize) -> EmbeddingResult
     let expanded = x
         .unsqueeze(2)
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!("Qwen2 layer {} KV expand unsqueeze failed: {}", layer_idx, e),
+            message: format!(
+                "Qwen2 layer {} KV expand unsqueeze failed: {}",
+                layer_idx, e
+            ),
         })?
         .expand((batch, num_kv_heads, num_groups, seq_len, head_dim))
         .map_err(|e| EmbeddingError::GpuError {

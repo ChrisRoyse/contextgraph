@@ -63,11 +63,11 @@ impl QuantizationMethod {
             ModelId::Multimodal => Self::PQ8, // E10
 
             // Float8: Temporal and graph embeddings
-            ModelId::TemporalRecent => Self::Float8E4M3,     // E2
-            ModelId::TemporalPeriodic => Self::Float8E4M3,   // E3
+            ModelId::TemporalRecent => Self::Float8E4M3, // E2
+            ModelId::TemporalPeriodic => Self::Float8E4M3, // E3
             ModelId::TemporalPositional => Self::Float8E4M3, // E4
-            ModelId::Graph => Self::Float8E4M3,              // E8
-            ModelId::Entity => Self::Float8E4M3,             // E11
+            ModelId::Graph => Self::Float8E4M3,          // E8
+            ModelId::Entity => Self::Float8E4M3,         // E11
 
             // Binary: Hyperdimensional computing
             ModelId::Hdc => Self::Binary, // E9
@@ -364,8 +364,7 @@ mod tests {
 
         for method in methods {
             let json = serde_json::to_string(&method).expect("serialize");
-            let restored: QuantizationMethod =
-                serde_json::from_str(&json).expect("deserialize");
+            let restored: QuantizationMethod = serde_json::from_str(&json).expect("deserialize");
             assert_eq!(restored, method);
         }
     }
@@ -379,8 +378,7 @@ mod tests {
         };
 
         let json = serde_json::to_string(&metadata).expect("serialize");
-        let restored: QuantizationMetadata =
-            serde_json::from_str(&json).expect("deserialize");
+        let restored: QuantizationMetadata = serde_json::from_str(&json).expect("deserialize");
 
         match restored {
             QuantizationMetadata::Float8 { scale, bias } => {

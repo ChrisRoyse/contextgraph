@@ -3,10 +3,13 @@
 //! Tests for boundary points, large batches, NT weight boundaries,
 //! empty graph cases, and fixture determinism.
 
-use context_graph_graph::{Domain, NeurotransmitterWeights, storage::{PoincarePoint, NodeId}};
+use context_graph_graph::{
+    storage::{NodeId, PoincarePoint},
+    Domain, NeurotransmitterWeights,
+};
 
-use crate::common::fixtures::{generate_poincare_point, generate_entailment_cone};
-use crate::common::helpers::{create_test_storage, verify_storage_state, measure_latency};
+use crate::common::fixtures::{generate_entailment_cone, generate_poincare_point};
+use crate::common::helpers::{create_test_storage, measure_latency, verify_storage_state};
 
 /// Test boundary points at Poincare ball edge.
 #[test]
@@ -31,7 +34,10 @@ fn test_poincare_boundary_points() {
     let origin = PoincarePoint::origin();
     let dist_to_origin = poincare_distance_cpu(&near_boundary.coords, &origin.coords, -1.0);
     println!("  Distance to origin: {:.6}", dist_to_origin);
-    assert!(dist_to_origin > 5.0, "Boundary points should be far from origin in hyperbolic space");
+    assert!(
+        dist_to_origin > 5.0,
+        "Boundary points should be far from origin in hyperbolic space"
+    );
 
     // Test two boundary points
     let mut boundary_a = PoincarePoint::origin();
@@ -41,7 +47,10 @@ fn test_poincare_boundary_points() {
     boundary_b.coords[1] = 0.999;
 
     let boundary_dist = poincare_distance_cpu(&boundary_a.coords, &boundary_b.coords, -1.0);
-    println!("  Distance between orthogonal boundary points: {:.6}", boundary_dist);
+    println!(
+        "  Distance between orthogonal boundary points: {:.6}",
+        boundary_dist
+    );
 
     println!("=== PASSED: Poincare Boundary Points ===\n");
 }
@@ -59,7 +68,9 @@ fn test_large_batch_operations() {
     let (_, prepare_timing) = measure_latency("prepare_10k_points", 1_000_000, || {
         for i in 0..batch_size {
             let point = generate_poincare_point(i as u32, 0.9);
-            storage.put_hyperbolic(i as NodeId, &point).expect("Put failed");
+            storage
+                .put_hyperbolic(i as NodeId, &point)
+                .expect("Put failed");
         }
     });
 
@@ -130,15 +141,26 @@ fn test_empty_graph_edge_cases() {
 
     // Query non-existent node
     let non_existent = storage.get_hyperbolic(99999).expect("Get should not fail");
-    assert!(non_existent.is_none(), "Non-existent node should return None");
+    assert!(
+        non_existent.is_none(),
+        "Non-existent node should return None"
+    );
 
     // Query non-existent cone
     let non_existent_cone = storage.get_cone(99999).expect("Get should not fail");
-    assert!(non_existent_cone.is_none(), "Non-existent cone should return None");
+    assert!(
+        non_existent_cone.is_none(),
+        "Non-existent cone should return None"
+    );
 
     // Query empty adjacency
-    let empty_adj = storage.get_adjacency(99999).expect("Get adjacency should not fail");
-    assert!(empty_adj.is_empty(), "Non-existent node should have empty adjacency");
+    let empty_adj = storage
+        .get_adjacency(99999)
+        .expect("Get adjacency should not fail");
+    assert!(
+        empty_adj.is_empty(),
+        "Non-existent node should have empty adjacency"
+    );
 
     // Verify counts
     verify_storage_state(&storage, 0, 0, 0).expect("Empty state verification failed");
@@ -155,17 +177,29 @@ fn test_fixture_determinism() {
     let point1 = generate_poincare_point(42, 0.9);
     let point2 = generate_poincare_point(42, 0.9);
 
-    assert_eq!(point1.coords, point2.coords, "Same seed should produce identical points");
+    assert_eq!(
+        point1.coords, point2.coords,
+        "Same seed should produce identical points"
+    );
 
     let cone1 = generate_entailment_cone(123, 0.8, (0.2, 0.6));
     let cone2 = generate_entailment_cone(123, 0.8, (0.2, 0.6));
 
-    assert_eq!(cone1.apex.coords, cone2.apex.coords, "Same seed should produce identical cones");
-    assert_eq!(cone1.aperture, cone2.aperture, "Same seed should produce identical apertures");
+    assert_eq!(
+        cone1.apex.coords, cone2.apex.coords,
+        "Same seed should produce identical cones"
+    );
+    assert_eq!(
+        cone1.aperture, cone2.aperture,
+        "Same seed should produce identical apertures"
+    );
 
     // Different seeds should produce different results
     let point3 = generate_poincare_point(43, 0.9);
-    assert_ne!(point1.coords, point3.coords, "Different seeds should produce different points");
+    assert_ne!(
+        point1.coords, point3.coords,
+        "Different seeds should produce different points"
+    );
 
     println!("=== PASSED: Fixture Determinism ===\n");
 }

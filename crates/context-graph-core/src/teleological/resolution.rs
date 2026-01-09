@@ -61,7 +61,11 @@ impl DomainAlignments {
     /// Get as 3D array.
     #[inline]
     pub fn as_array(&self) -> [f32; NUM_DOMAINS] {
-        [self.factual_domain, self.procedural_domain, self.affective_domain]
+        [
+            self.factual_domain,
+            self.procedural_domain,
+            self.affective_domain,
+        ]
     }
 
     /// Create from array.
@@ -167,7 +171,11 @@ impl DomainType {
     pub fn contributing_groups(self) -> &'static [GroupType] {
         match self {
             DomainType::Factual => &[GroupType::Factual, GroupType::Relational],
-            DomainType::Procedural => &[GroupType::Causal, GroupType::Implementation, GroupType::Temporal],
+            DomainType::Procedural => &[
+                GroupType::Causal,
+                GroupType::Implementation,
+                GroupType::Temporal,
+            ],
             DomainType::Affective => &[GroupType::Qualitative],
         }
     }
@@ -619,10 +627,7 @@ mod tests {
 
         // After recompute, should reflect new raw values
         // (difference may be small depending on the specific change)
-        assert!(
-            (hierarchy.overall - old_overall).abs() > 0.001
-                || hierarchy.raw[0] != 0.5
-        );
+        assert!((hierarchy.overall - old_overall).abs() > 0.001 || hierarchy.raw[0] != 0.5);
 
         println!("[PASS] recompute updates derived levels");
     }

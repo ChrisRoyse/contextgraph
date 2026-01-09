@@ -73,7 +73,11 @@ fn physical_verify_non_multiple_of_8_dimension() {
     println!("  reconstructed.len(): {}", reconstructed.len());
     println!("  first 5 values: {:?}", &reconstructed[0..5]);
 
-    assert_eq!(reconstructed.len(), 13, "Must reconstruct exactly 13 values");
+    assert_eq!(
+        reconstructed.len(),
+        13,
+        "Must reconstruct exactly 13 values"
+    );
     assert!(
         reconstructed.iter().all(|&v| v == 1.0),
         "All values should be +1.0"
@@ -105,7 +109,10 @@ fn physical_verify_10k_dimension_hdc() {
     println!("  first byte (binary): {:08b}", quantized.data[0]);
 
     // First byte should be 10101010 (alternating bits, MSB first)
-    assert_eq!(quantized.data[0], 0b10101010, "First byte should be 10101010");
+    assert_eq!(
+        quantized.data[0], 0b10101010,
+        "First byte should be 10101010"
+    );
     assert_eq!(quantized.data.len(), 1250, "10000 bits = 1250 bytes");
 
     let ratio = quantized.compression_ratio();
@@ -203,13 +210,19 @@ fn physical_verify_emb_e012_error_codes() {
     let empty_err = BinaryQuantizationError::EmptyInput;
     let empty_msg = format!("{}", empty_err);
     println!("EmptyInput: {}", empty_msg);
-    assert!(empty_msg.contains("EMB-E012"), "EmptyInput must have EMB-E012");
+    assert!(
+        empty_msg.contains("EMB-E012"),
+        "EmptyInput must have EMB-E012"
+    );
 
     // Test 2: InvalidValue (NaN)
     let nan_err = encoder.quantize(&[1.0, f32::NAN, 2.0], None).unwrap_err();
     let nan_msg = format!("{}", nan_err);
     println!("InvalidValue (NaN): {}", nan_msg);
-    assert!(nan_msg.contains("EMB-E012"), "InvalidValue must have EMB-E012");
+    assert!(
+        nan_msg.contains("EMB-E012"),
+        "InvalidValue must have EMB-E012"
+    );
     assert!(nan_msg.contains("index 1"), "Must identify index 1");
 
     // Test 3: InvalidValue (Infinity)
@@ -218,7 +231,10 @@ fn physical_verify_emb_e012_error_codes() {
         .unwrap_err();
     let inf_msg = format!("{}", inf_err);
     println!("InvalidValue (Inf): {}", inf_msg);
-    assert!(inf_msg.contains("EMB-E012"), "InvalidValue must have EMB-E012");
+    assert!(
+        inf_msg.contains("EMB-E012"),
+        "InvalidValue must have EMB-E012"
+    );
     assert!(inf_msg.contains("index 2"), "Must identify index 2");
 
     // Test 4: DataLengthMismatch

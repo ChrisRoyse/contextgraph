@@ -82,8 +82,9 @@ mod full_state_verification {
         );
 
         // Verify redaction markers are present
-        let has_redaction =
-            scrubbed.contains("[REDACTED]") || scrubbed.contains("REDACTED") || scrubbed.len() < pii_content.len();
+        let has_redaction = scrubbed.contains("[REDACTED]")
+            || scrubbed.contains("REDACTED")
+            || scrubbed.len() < pii_content.len();
 
         println!("\n=== VERIFICATION RESULTS ===");
         println!("SSN removed: {}", !scrubbed.contains("123-45-6789"));
@@ -131,7 +132,9 @@ mod full_state_verification {
             last_accessed: now,
         };
 
-        layer.learn_pattern(&pattern, response).expect("Should store");
+        layer
+            .learn_pattern(&pattern, response)
+            .expect("Should store");
 
         println!(
             "STORED PATTERN: dims={}, first_3=[{:.4}, {:.4}, {:.4}]",
@@ -261,7 +264,10 @@ mod full_state_verification {
 
         // Check scored memories if present
         if let Some(memories) = output.result.data.get("memories") {
-            println!("SCORED MEMORIES: {}", serde_json::to_string_pretty(memories).unwrap());
+            println!(
+                "SCORED MEMORIES: {}",
+                serde_json::to_string_pretty(memories).unwrap()
+            );
         }
 
         println!("\n[VERIFIED] Memory retrieval with decay scoring works");
@@ -451,7 +457,10 @@ mod full_state_verification {
         println!("\n=== GWT CONSCIOUSNESS EQUATION ===");
         println!("Formula: C(t) = I(t) x R(t) x D(t)");
         println!("  I(t) = Information = {:.4}", information);
-        println!("  R(t) = Resonance (Kuramoto order param) = {:.4}", resonance);
+        println!(
+            "  R(t) = Resonance (Kuramoto order param) = {:.4}",
+            resonance
+        );
         println!("  D(t) = Differentiation = {:.4}", differentiation);
         println!(
             "  Expected C(t) = I * R * D = {:.4}",
@@ -488,11 +497,22 @@ mod full_state_verification {
 
         let mut network = KuramotoNetwork::new(KURAMOTO_N, KURAMOTO_K);
 
-        println!("Initial network: N={}, K={}", network.size(), network.coupling());
+        println!(
+            "Initial network: N={}, K={}",
+            network.size(),
+            network.coupling()
+        );
 
         let r_initial = network.order_parameter();
         println!("Initial order parameter R(0) = {:.4}", r_initial);
-        println!("Initial phases: {:?}", network.phases().iter().map(|p| format!("{:.3}", p)).collect::<Vec<_>>());
+        println!(
+            "Initial phases: {:?}",
+            network
+                .phases()
+                .iter()
+                .map(|p| format!("{:.3}", p))
+                .collect::<Vec<_>>()
+        );
 
         // Run dynamics for several steps
         for step in 0..50 {
@@ -510,10 +530,7 @@ mod full_state_verification {
         println!("\nFinal order parameter R(T) = {:.4}", r_final);
         println!("Mean phase psi = {:.4}", network.mean_phase());
 
-        assert!(
-            (0.0..=1.0).contains(&r_final),
-            "Final R should be in [0,1]"
-        );
+        assert!((0.0..=1.0).contains(&r_final), "Final R should be in [0,1]");
 
         println!("\n[VERIFIED] Kuramoto network dynamics produce valid order parameter");
     }
@@ -663,7 +680,11 @@ mod full_state_verification {
         println!("============================================================");
         println!("=== PIPELINE COMPLETE ===");
         println!("============================================================");
-        println!("Total latency: {} us ({:.2} ms)", total_us, total_us as f64 / 1000.0);
+        println!(
+            "Total latency: {} us ({:.2} ms)",
+            total_us,
+            total_us as f64 / 1000.0
+        );
         println!("Layers processed: 5");
         println!(
             "All layers succeeded: {}",
@@ -752,7 +773,10 @@ mod full_state_verification {
         let l4_avg = l4_total / iterations as u64;
         let l5_avg = l5_total / iterations as u64;
 
-        println!("Layer Latency Results (avg over {} iterations):", iterations);
+        println!(
+            "Layer Latency Results (avg over {} iterations):",
+            iterations
+        );
         println!("  L1 Sensing:   {} us (budget: 5000 us)", l1_avg);
         println!("  L2 Reflex:    {} us (budget: 100 us)", l2_avg);
         println!("  L3 Memory:    {} us (budget: 1000 us)", l3_avg);

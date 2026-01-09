@@ -5,9 +5,7 @@
 mod tests {
     use chrono::{Duration, Utc};
 
-    use crate::models::custom::temporal_recent::{
-        TemporalRecentModel, TEMPORAL_RECENT_DIMENSION,
-    };
+    use crate::models::custom::temporal_recent::{TemporalRecentModel, TEMPORAL_RECENT_DIMENSION};
     use crate::traits::EmbeddingModel;
     use crate::types::{ModelId, ModelInput};
 
@@ -30,11 +28,9 @@ mod tests {
 
         // Somewhat old: 7 days ago (not too old to have significant decay)
         let old = ref_time - Duration::days(7);
-        let old_input = ModelInput::text_with_instruction(
-            "content",
-            format!("timestamp:{}", old.to_rfc3339()),
-        )
-        .expect("Failed to create");
+        let old_input =
+            ModelInput::text_with_instruction("content", format!("timestamp:{}", old.to_rfc3339()))
+                .expect("Failed to create");
 
         let recent_embedding = model.embed(&recent_input).await.expect("Recent embed");
         let old_embedding = model.embed(&old_input).await.expect("Old embed");

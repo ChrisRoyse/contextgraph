@@ -194,7 +194,9 @@ impl GapDetectionService {
             return GapReport {
                 gaps: vec![],
                 coverage_score: 0.0,
-                recommendations: vec!["No goals to analyze. Consider bootstrapping initial goals.".into()],
+                recommendations: vec![
+                    "No goals to analyze. Consider bootstrapping initial goals.".into()
+                ],
                 goals_analyzed: 0,
                 domains_detected: 0,
             };
@@ -339,8 +341,8 @@ impl GapDetectionService {
         let average = total / goals.len() as f32;
 
         // Penalize for inactive goals
-        let active_ratio = goals.iter().filter(|g| g.metrics.is_active()).count() as f32
-            / goals.len() as f32;
+        let active_ratio =
+            goals.iter().filter(|g| g.metrics.is_active()).count() as f32 / goals.len() as f32;
 
         // Weight by level (NorthStar goals matter more)
         let level_weighted: f32 = goals
@@ -406,9 +408,7 @@ impl GapDetectionService {
 
         if weak_coverage_count > 0 {
             if weak_coverage_count == 1 {
-                recommendations.push(
-                    "Review and strengthen the goal with weak coverage".into()
-                );
+                recommendations.push("Review and strengthen the goal with weak coverage".into());
             } else {
                 recommendations.push(format!(
                     "Review and strengthen {} goals with weak coverage",
@@ -419,9 +419,7 @@ impl GapDetectionService {
 
         if missing_link_count > 0 {
             if missing_link_count == 1 {
-                recommendations.push(
-                    "Consider establishing a link between related goals".into()
-                );
+                recommendations.push("Consider establishing a link between related goals".into());
             } else {
                 recommendations.push(format!(
                     "Consider establishing {} links between related goals",
@@ -456,7 +454,12 @@ mod tests {
     use super::*;
     use chrono::Utc;
 
-    fn create_test_metrics(goal_id: GoalId, memories: u32, retrievals: u32, alignment: f32) -> GoalActivityMetrics {
+    fn create_test_metrics(
+        goal_id: GoalId,
+        memories: u32,
+        retrievals: u32,
+        alignment: f32,
+    ) -> GoalActivityMetrics {
         GoalActivityMetrics {
             goal_id,
             new_aligned_memories_30d: memories,
@@ -676,7 +679,10 @@ mod tests {
         let json = serde_json::to_string(&config).expect("serialize");
         let deserialized: GapDetectionConfig = serde_json::from_str(&json).expect("deserialize");
         assert!((config.coverage_threshold - deserialized.coverage_threshold).abs() < f32::EPSILON);
-        assert_eq!(config.min_goals_per_domain, deserialized.min_goals_per_domain);
+        assert_eq!(
+            config.min_goals_per_domain,
+            deserialized.min_goals_per_domain
+        );
         println!("[PASS] test_gap_detection_config_serialization");
     }
 
@@ -890,9 +896,13 @@ mod tests {
         let service = GapDetectionService::with_config(config);
 
         // This goal has low activity (score < 0.5)
-        let goals = vec![
-            create_test_goal(GoalLevel::Strategic, vec!["security"], 10, 5, 0.3),
-        ];
+        let goals = vec![create_test_goal(
+            GoalLevel::Strategic,
+            vec!["security"],
+            10,
+            5,
+            0.3,
+        )];
 
         let gaps = service.detect_domain_gaps(&goals);
         assert_eq!(gaps.len(), 1);
@@ -909,7 +919,7 @@ mod tests {
 
         let goals = vec![
             create_test_goal(GoalLevel::Strategic, vec!["security"], 80, 40, 0.9), // Strong
-            create_test_goal(GoalLevel::Tactical, vec!["performance"], 5, 2, 0.1),  // Weak
+            create_test_goal(GoalLevel::Tactical, vec!["performance"], 5, 2, 0.1), // Weak
         ];
 
         let gaps = service.detect_weak_coverage(&goals);
@@ -1019,9 +1029,13 @@ mod tests {
     fn test_compute_coverage_score_single_goal() {
         let service = GapDetectionService::new();
 
-        let goals = vec![
-            create_test_goal(GoalLevel::NorthStar, vec!["core"], 100, 50, 1.0),
-        ];
+        let goals = vec![create_test_goal(
+            GoalLevel::NorthStar,
+            vec!["core"],
+            100,
+            50,
+            1.0,
+        )];
 
         let score = service.compute_coverage_score(&goals);
         assert!(score > 0.8); // High score for active NorthStar

@@ -62,8 +62,7 @@ fn test_legacy_graph_edge_serialization() {
 
     // Serialize and deserialize with bincode
     let bytes = bincode::serialize(&edge).expect("Serialize failed");
-    let deserialized: LegacyGraphEdge =
-        bincode::deserialize(&bytes).expect("Deserialize failed");
+    let deserialized: LegacyGraphEdge = bincode::deserialize(&bytes).expect("Deserialize failed");
 
     assert_eq!(deserialized.target, 42);
     assert_eq!(deserialized.edge_type, 7);
@@ -84,8 +83,7 @@ fn test_edge_case_corrupted_schema_version() {
         let config = StorageConfig::default();
         let cf_descriptors = get_column_family_descriptors(&config).unwrap();
 
-        let db =
-            rocksdb::DB::open_cf_descriptors(&db_opts, &db_path, cf_descriptors).unwrap();
+        let db = rocksdb::DB::open_cf_descriptors(&db_opts, &db_path, cf_descriptors).unwrap();
 
         let metadata_cf = db.cf_handle(CF_METADATA).unwrap();
 
@@ -154,9 +152,7 @@ fn test_edge_case_empty_database_initialization() {
     println!("VERIFIED: Empty database has all zero counts");
 
     // Schema version should be 0 (unmigrated)
-    let version = storage
-        .get_schema_version()
-        .expect("Get version failed");
+    let version = storage.get_schema_version().expect("Get version failed");
     assert_eq!(version, 0, "New DB should have version 0");
 
     println!("VERIFIED: Empty database has schema version 0");
@@ -180,8 +176,7 @@ fn test_edge_case_concurrent_arc_sharing() {
 
     println!("BEFORE: Testing concurrent access via Arc<DB> sharing");
 
-    let storage =
-        Arc::new(GraphStorage::open_default(&db_path).expect("Failed to open"));
+    let storage = Arc::new(GraphStorage::open_default(&db_path).expect("Failed to open"));
 
     // Spawn multiple threads that all share the same GraphStorage
     let mut handles = vec![];

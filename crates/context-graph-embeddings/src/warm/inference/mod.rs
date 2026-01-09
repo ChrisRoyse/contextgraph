@@ -16,6 +16,4 @@ mod engine;
 mod validation;
 
 pub use engine::InferenceEngine;
-pub use validation::{
-    cosine_similarity, detect_sin_wave_pattern, validate_inference_output_ap007,
-};
+pub use validation::{cosine_similarity, detect_sin_wave_pattern, validate_inference_output_ap007};

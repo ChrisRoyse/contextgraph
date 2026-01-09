@@ -23,9 +23,9 @@ pub mod bootstrap;
 pub mod curation;
 pub mod drift;
 pub mod evolution;
+pub mod services;
 pub mod thresholds;
 pub mod workflow;
-pub mod services;
 
 pub use bootstrap::*;
 pub use curation::*;
@@ -37,31 +37,70 @@ pub use workflow::*;
 // Explicit service re-exports to avoid ambiguous glob re-exports
 // (services module defines extended versions of some foundation types)
 pub use services::{
+    AdjustmentReport,
+    BayesianObservation,
     // NORTH-008: BootstrapService
-    BootstrapService, BootstrapServiceConfig, GoalCandidate,
-    // NORTH-009: ThresholdLearner
-    ThresholdLearner, ThresholdLearnerConfig, ThompsonState, EmbedderLearningState, BayesianObservation,
-    // NORTH-010: DriftDetector
-    DriftDetector, DetectorDataPoint, DriftRecommendation, DetectorState,
-    // NORTH-011: DriftCorrector
-    DriftCorrector, DriftCorrectorConfig, CorrectionResult, CorrectionStrategy,
-    // NORTH-012: PruningService
-    PruningService, MemoryMetadata, ExtendedPruningConfig,
+    BootstrapService,
+    BootstrapServiceConfig,
     // NORTH-013: ConsolidationService
-    ConsolidationService, MemoryContent, MemoryPair, ServiceConsolidationCandidate,
+    ConsolidationService,
+    CorrectionResult,
+    CorrectionStrategy,
+    // NORTH-018: DailyScheduler
+    DailyScheduler,
+    DetectorDataPoint,
+    DetectorState,
+    DiscoveryConfig,
+    DiscoveryResult,
+    // NORTH-011: DriftCorrector
+    DriftCorrector,
+    DriftCorrectorConfig,
+    // NORTH-010: DriftDetector
+    DriftDetector,
+    DriftRecommendation,
+    EmbedderLearningState,
+    // NORTH-019: EventOptimizer
+    EventOptimizer,
+    EventOptimizerConfig,
+    ExtendedPruningConfig,
+    GapDetectionConfig,
     // NORTH-014: GapDetectionService
-    GapDetectionService, GapType, GoalWithMetrics, GapDetectionConfig, GapReport,
-    // NORTH-015: SubGoalDiscovery
-    SubGoalDiscovery, MemoryCluster, DiscoveryConfig, DiscoveryResult,
-    // NORTH-016: WeightAdjuster
-    WeightAdjuster, WeightAdjusterConfig, AdjustmentReport,
+    GapDetectionService,
+    GapReport,
+    GapType,
+    GoalCandidate,
+    GoalWithMetrics,
+    HealingAction,
+    HealingResult,
+    HealthIssue,
+    IssueSeverity,
+    MemoryCluster,
+    MemoryContent,
+    MemoryMetadata,
+    MemoryPair,
     // NORTH-017: ObsolescenceDetector
     ObsolescenceDetector,
-    // NORTH-018: DailyScheduler
-    DailyScheduler, ScheduleResult, ScheduledTask, SchedulerCheckType,
-    // NORTH-019: EventOptimizer
-    EventOptimizer, EventOptimizerConfig, OptimizationTrigger, OptimizationAction,
-    SystemMetrics, OptimizationEventRecord, OptimizationPlan,
+    OptimizationAction,
+    OptimizationEventRecord,
+    OptimizationPlan,
+    OptimizationTrigger,
+    // NORTH-012: PruningService
+    PruningService,
+    ScheduleResult,
+    ScheduledTask,
+    SchedulerCheckType,
+    SelfHealingConfig,
     // NORTH-020: SelfHealingManager
-    SelfHealingManager, SelfHealingConfig, HealingAction, HealingResult, HealthIssue, IssueSeverity,
+    SelfHealingManager,
+    ServiceConsolidationCandidate,
+    // NORTH-015: SubGoalDiscovery
+    SubGoalDiscovery,
+    SystemMetrics,
+    ThompsonState,
+    // NORTH-009: ThresholdLearner
+    ThresholdLearner,
+    ThresholdLearnerConfig,
+    // NORTH-016: WeightAdjuster
+    WeightAdjuster,
+    WeightAdjusterConfig,
 };

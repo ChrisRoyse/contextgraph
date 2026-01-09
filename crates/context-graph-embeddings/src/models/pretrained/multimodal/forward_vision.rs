@@ -187,9 +187,11 @@ fn vision_transformer_layer(
     )?;
 
     // Residual connection
-    let hidden_states = hidden_states.add(&attn_output).map_err(|e| EmbeddingError::GpuError {
-        message: format!("Attention residual failed: {}", e),
-    })?;
+    let hidden_states = hidden_states
+        .add(&attn_output)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("Attention residual failed: {}", e),
+        })?;
 
     // Pre-norm for MLP
     let normed = layer_norm(

@@ -326,7 +326,10 @@ mod tests {
                 assert_eq!(field, "text");
                 assert!(message.contains("text or embeddings"));
                 println!("BEFORE: empty query");
-                println!("AFTER: ValidationError {{ field: '{}', message: '{}' }}", field, message);
+                println!(
+                    "AFTER: ValidationError {{ field: '{}', message: '{}' }}",
+                    field, message
+                );
             }
             other => panic!("Expected ValidationError, got: {:?}", other),
         }
@@ -353,8 +356,7 @@ mod tests {
 
     #[test]
     fn test_validate_empty_johari_filter_fails() {
-        let query = TeleologicalQuery::from_text("test")
-            .with_johari_filter(Vec::new());
+        let query = TeleologicalQuery::from_text("test").with_johari_filter(Vec::new());
         let result = query.validate();
 
         assert!(result.is_err(), "Empty johari_filter must fail");
@@ -404,8 +406,7 @@ mod tests {
 
     #[test]
     fn test_with_min_alignment() {
-        let query = TeleologicalQuery::from_text("test")
-            .with_min_alignment(0.70);
+        let query = TeleologicalQuery::from_text("test").with_min_alignment(0.70);
 
         let config = query.effective_config();
         assert!((config.min_alignment_threshold - 0.70).abs() < f32::EPSILON);
@@ -415,14 +416,12 @@ mod tests {
 
     #[test]
     fn test_with_min_alignment_clamped() {
-        let query = TeleologicalQuery::from_text("test")
-            .with_min_alignment(1.5);
+        let query = TeleologicalQuery::from_text("test").with_min_alignment(1.5);
 
         let config = query.effective_config();
         assert!((config.min_alignment_threshold - 1.0).abs() < f32::EPSILON);
 
-        let query2 = TeleologicalQuery::from_text("test")
-            .with_min_alignment(-0.5);
+        let query2 = TeleologicalQuery::from_text("test").with_min_alignment(-0.5);
 
         let config2 = query2.effective_config();
         assert!((config2.min_alignment_threshold - 0.0).abs() < f32::EPSILON);

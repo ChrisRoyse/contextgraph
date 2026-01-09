@@ -93,7 +93,7 @@ pub struct DomainThresholds {
     pub theta_warn: f32,
     pub theta_dup: f32,
     pub theta_edge: f32,
-    pub confidence_bias: f32,  // Domain-specific confidence calibration
+    pub confidence_bias: f32, // Domain-specific confidence calibration
 }
 
 impl DomainThresholds {
@@ -103,7 +103,7 @@ impl DomainThresholds {
 
         // Adjust base thresholds by domain strictness
         // Stricter domains have higher thresholds
-        let theta_opt = 0.75 + (strictness * 0.1);  // [0.75, 0.85]
+        let theta_opt = 0.75 + (strictness * 0.1); // [0.75, 0.85]
         let theta_acc = 0.70 + (strictness * 0.08); // [0.70, 0.78]
         let theta_warn = 0.55 + (strictness * 0.05); // [0.55, 0.60]
 
@@ -244,11 +244,7 @@ impl DomainManager {
 
     /// Apply similarity-based transfer learning
     /// Automatically finds similar domain and blends
-    pub fn apply_similarity_transfer(
-        &mut self,
-        domain: Domain,
-        alpha: f32,
-    ) -> Result<(), String> {
+    pub fn apply_similarity_transfer(&mut self, domain: Domain, alpha: f32) -> Result<(), String> {
         let similar = domain.find_similar();
         if similar != domain {
             self.transfer_learn(domain, similar, alpha)?;
@@ -258,10 +254,7 @@ impl DomainManager {
 
     /// Get all domains and their thresholds
     pub fn get_all(&self) -> Vec<(Domain, &DomainThresholds)> {
-        self.thresholds
-            .iter()
-            .map(|(d, t)| (*d, t))
-            .collect()
+        self.thresholds.iter().map(|(d, t)| (*d, t)).collect()
     }
 
     /// Validate all domains
@@ -282,7 +275,8 @@ impl DomainManager {
             Domain::Research,
             Domain::General,
         ] {
-            self.thresholds.insert(domain, DomainThresholds::new(domain));
+            self.thresholds
+                .insert(domain, DomainThresholds::new(domain));
         }
     }
 }

@@ -83,7 +83,9 @@ impl SteeringReward {
     pub fn limiting_factor(&self) -> &'static str {
         if self.gardener_score <= self.curator_score && self.gardener_score <= self.assessor_score {
             "gardener"
-        } else if self.curator_score <= self.gardener_score && self.curator_score <= self.assessor_score {
+        } else if self.curator_score <= self.gardener_score
+            && self.curator_score <= self.assessor_score
+        {
             "curator"
         } else {
             "assessor"

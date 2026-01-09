@@ -3,8 +3,8 @@
 //! Tests for Johari Window classification per constitution.yaml and contextprd.md
 
 use context_graph_utl::{
-    LearningSignal,
     johari::{JohariClassifier, JohariQuadrant, SuggestedAction},
+    LearningSignal,
 };
 
 // =============================================================================

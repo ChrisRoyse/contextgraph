@@ -140,9 +140,8 @@ fn test_graph_storage_open_and_migrate() {
 
     println!("BEFORE: Testing open_and_migrate");
 
-    let storage =
-        GraphStorage::open_and_migrate(&db_path, StorageConfig::default())
-            .expect("open_and_migrate failed");
+    let storage = GraphStorage::open_and_migrate(&db_path, StorageConfig::default())
+        .expect("open_and_migrate failed");
 
     let version = storage.get_schema_version().expect("Failed to get version");
     assert_eq!(version, SCHEMA_VERSION);
@@ -192,13 +191,17 @@ fn test_migration_preserves_existing_data() {
         storage.put_cone(2, &cone).expect("PUT failed");
 
         storage
-            .put_adjacency(3, &[LegacyGraphEdge { target: 4, edge_type: 1 }])
+            .put_adjacency(
+                3,
+                &[LegacyGraphEdge {
+                    target: 4,
+                    edge_type: 1,
+                }],
+            )
             .expect("PUT failed");
 
         // Version should still be 0
-        let version = storage
-            .get_schema_version()
-            .expect("Get version failed");
+        let version = storage.get_schema_version().expect("Get version failed");
         assert_eq!(version, 0);
 
         println!("Pre-migration: Wrote data at version 0");
@@ -206,13 +209,10 @@ fn test_migration_preserves_existing_data() {
 
     // Reopen with migration
     {
-        let storage =
-            GraphStorage::open_and_migrate(&db_path, StorageConfig::default())
-                .expect("open_and_migrate failed");
+        let storage = GraphStorage::open_and_migrate(&db_path, StorageConfig::default())
+            .expect("open_and_migrate failed");
 
-        let version = storage
-            .get_schema_version()
-            .expect("Get version failed");
+        let version = storage.get_schema_version().expect("Get version failed");
         assert_eq!(version, SCHEMA_VERSION);
 
         // Verify data preserved

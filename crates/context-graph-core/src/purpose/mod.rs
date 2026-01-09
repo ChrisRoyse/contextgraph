@@ -56,9 +56,9 @@
 //! // let purpose = computer.compute_purpose(&fingerprint, &config).await?;
 //! ```
 
-mod goals;
 mod computer;
 mod default_computer;
+mod goals;
 mod splade;
 
 #[cfg(test)]
@@ -66,10 +66,10 @@ mod tests;
 
 // Re-export goal types (TASK-CORE-005)
 // NOTE: GoalId is REMOVED - use uuid::Uuid directly
-pub use goals::{
-    DiscoveryMethod, GoalDiscoveryMetadata, GoalHierarchy, GoalHierarchyError, GoalLevel,
-    GoalNode, GoalNodeError,
-};
-pub use computer::{PurposeVectorComputer, PurposeComputeConfig, PurposeComputeError};
+pub use computer::{PurposeComputeConfig, PurposeComputeError, PurposeVectorComputer};
 pub use default_computer::DefaultPurposeComputer;
+pub use goals::{
+    DiscoveryMethod, GoalDiscoveryMetadata, GoalHierarchy, GoalHierarchyError, GoalLevel, GoalNode,
+    GoalNodeError,
+};
 pub use splade::SpladeAlignment;

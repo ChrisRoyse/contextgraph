@@ -5,10 +5,10 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
-use std::sync::Arc;
 use crate::config::IndexConfig;
-use crate::index::gpu_index::{FaissGpuIndex, GpuResources};
 use crate::index::faiss_ffi::gpu_available;
+use crate::index::gpu_index::{FaissGpuIndex, GpuResources};
+use std::sync::Arc;
 
 #[test]
 fn test_search_trained_index() {
@@ -64,11 +64,7 @@ fn test_search_trained_index() {
     println!("Adding {} vectors...", n_add);
 
     let add_data: Vec<f32> = (0..n_add)
-        .flat_map(|i| {
-            (0..config.dimension).map(move |d| {
-                ((i * 7 + d) as f32 * 0.001).cos()
-            })
-        })
+        .flat_map(|i| (0..config.dimension).map(move |d| ((i * 7 + d) as f32 * 0.001).cos()))
         .collect();
     let add_ids: Vec<i64> = (0..n_add as i64).collect();
 
@@ -126,14 +122,14 @@ fn test_full_index_workflow() {
     };
 
     // Generate training data
-    println!("Generating {} training vectors (dimension={})...",
-        config.min_train_vectors, config.dimension);
+    println!(
+        "Generating {} training vectors (dimension={})...",
+        config.min_train_vectors, config.dimension
+    );
 
     let training_data: Vec<f32> = (0..config.min_train_vectors)
         .flat_map(|i| {
-            (0..config.dimension).map(move |d| {
-                ((i * config.dimension + d) as f32 * 0.0001).sin()
-            })
+            (0..config.dimension).map(move |d| ((i * config.dimension + d) as f32 * 0.0001).sin())
         })
         .collect();
 
@@ -154,11 +150,7 @@ fn test_full_index_workflow() {
     println!("Adding {} vectors...", n_add);
 
     let add_data: Vec<f32> = (0..n_add)
-        .flat_map(|i| {
-            (0..config.dimension).map(move |d| {
-                ((i * 7 + d) as f32 * 0.001).cos()
-            })
-        })
+        .flat_map(|i| (0..config.dimension).map(move |d| ((i * 7 + d) as f32 * 0.001).cos()))
         .collect();
     let add_ids: Vec<i64> = (0..n_add as i64).collect();
 
@@ -190,8 +182,11 @@ fn test_full_index_workflow() {
             assert!(indices[0] >= 0, "First result should be valid");
 
             // Relaxed performance check for smaller dataset
-            assert!(search_time.as_millis() < 500,
-                "Search took too long: {:?}", search_time);
+            assert!(
+                search_time.as_millis() < 500,
+                "Search took too long: {:?}",
+                search_time
+            );
         }
         Err(e) => panic!("Search failed: {}", e),
     }
@@ -222,11 +217,7 @@ fn test_save_load_roundtrip() {
     };
 
     let training_data: Vec<f32> = (0..config.min_train_vectors)
-        .flat_map(|i| {
-            (0..config.dimension).map(move |d| {
-                ((i + d) as f32) * 0.001
-            })
-        })
+        .flat_map(|i| (0..config.dimension).map(move |d| ((i + d) as f32) * 0.001))
         .collect();
 
     match index.train(&training_data) {
@@ -236,9 +227,7 @@ fn test_save_load_roundtrip() {
 
     // Add some vectors
     let vectors: Vec<f32> = (0..1000)
-        .flat_map(|i| {
-            (0..config.dimension).map(move |d| (i + d) as f32 * 0.01)
-        })
+        .flat_map(|i| (0..config.dimension).map(move |d| (i + d) as f32 * 0.01))
         .collect();
     let ids: Vec<i64> = (0..1000).collect();
 
@@ -248,10 +237,7 @@ fn test_save_load_roundtrip() {
     }
 
     // Save to temp file
-    let temp_path = std::env::temp_dir().join(format!(
-        "test_index_{}.faiss",
-        std::process::id()
-    ));
+    let temp_path = std::env::temp_dir().join(format!("test_index_{}.faiss", std::process::id()));
 
     match index.save(&temp_path) {
         Ok(()) => println!("Index saved to {:?}", temp_path),

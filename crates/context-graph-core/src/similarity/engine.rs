@@ -7,12 +7,12 @@ use async_trait::async_trait;
 use std::collections::HashMap;
 use uuid::Uuid;
 
-use crate::types::fingerprint::{TeleologicalFingerprint, NUM_EMBEDDERS};
 use super::config::{CrossSpaceConfig, WeightingStrategy};
 use super::error::SimilarityError;
 use super::explanation::SimilarityExplanation;
 use super::multi_utl::MultiUtlParams;
 use super::result::CrossSpaceSimilarity;
+use crate::types::fingerprint::{TeleologicalFingerprint, NUM_EMBEDDERS};
 
 /// Engine for computing cross-space similarity across 13 embedding spaces.
 ///

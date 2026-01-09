@@ -4,14 +4,13 @@ use crate::error::EmbeddingError;
 use crate::traits::EmbeddingModel;
 use crate::types::{InputType, ModelId, ModelInput};
 
-use super::helpers::create_and_load_model;
 use super::super::SEMANTIC_DIMENSION;
+use super::helpers::create_and_load_model;
 
 #[tokio::test]
 async fn test_unsupported_code_input() {
     let model = create_and_load_model().await;
-    let input =
-        ModelInput::code("fn main() {}", "rust").expect("Failed to create code input");
+    let input = ModelInput::code("fn main() {}", "rust").expect("Failed to create code input");
 
     let result = model.embed(&input).await;
     assert!(result.is_err());
@@ -68,8 +67,8 @@ async fn test_query_vs_passage_different_embeddings() {
     let passage_embedding = model.embed(&passage_input).await.unwrap();
 
     // Query mode - use text_with_instruction with "query" in instruction
-    let query_input = ModelInput::text_with_instruction(content, "query:")
-        .expect("Failed to create input");
+    let query_input =
+        ModelInput::text_with_instruction(content, "query:").expect("Failed to create input");
     let query_embedding = model.embed(&query_input).await.unwrap();
 
     // Query and passage should produce different embeddings due to prefix

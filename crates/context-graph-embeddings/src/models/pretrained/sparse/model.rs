@@ -183,13 +183,15 @@ impl SparseModel {
         let mlm_head = load_mlm_head(&safetensors_path, device, &weights.config)?;
 
         // Load projection matrix (REQUIRED - no fallback)
-        let projection = super::projection::ProjectionMatrix::load(&self.model_path)
-            .map_err(|e| EmbeddingError::ModelLoadError {
-                model_id: self.model_id,
-                source: Box::new(std::io::Error::other(format!(
-                    "ProjectionMatrix load failed: {}",
-                    e
-                ))),
+        let projection =
+            super::projection::ProjectionMatrix::load(&self.model_path).map_err(|e| {
+                EmbeddingError::ModelLoadError {
+                    model_id: self.model_id,
+                    source: Box::new(std::io::Error::other(format!(
+                        "ProjectionMatrix load failed: {}",
+                        e
+                    ))),
+                }
             })?;
 
         tracing::info!(
@@ -347,11 +349,12 @@ impl SparseModel {
 
                 // Step 2: Project sparse (30522D) -> dense (1536D) using learned matrix
                 // CRITICAL: No hash fallback (AP-007). Uses real GPU matmul.
-                let dense_vector = projection.project(&sparse_vector).map_err(|e| {
-                    EmbeddingError::GpuError {
-                        message: format!("Sparse projection failed: {}", e),
-                    }
-                })?;
+                let dense_vector =
+                    projection
+                        .project(&sparse_vector)
+                        .map_err(|e| EmbeddingError::GpuError {
+                            message: format!("Sparse projection failed: {}", e),
+                        })?;
 
                 let latency_us = start.elapsed().as_micros() as u64;
 

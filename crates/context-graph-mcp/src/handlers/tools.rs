@@ -19,12 +19,14 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, error, warn};
 
 use context_graph_core::gwt::state_machine::ConsciousnessState;
-use context_graph_core::purpose::{DefaultPurposeComputer, PurposeComputeConfig, PurposeVectorComputer};
+use context_graph_core::purpose::{
+    DefaultPurposeComputer, PurposeComputeConfig, PurposeVectorComputer,
+};
 use context_graph_core::traits::TeleologicalSearchOptions;
-use context_graph_core::types::UtlContext;
 use context_graph_core::types::fingerprint::{
     JohariFingerprint, PurposeVector, TeleologicalFingerprint, NUM_EMBEDDERS,
 };
+use context_graph_core::types::UtlContext;
 
 use crate::middleware::CognitivePulse;
 use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
@@ -100,7 +102,8 @@ impl Handlers {
                 self.handle_get_threshold_status(id, Some(arguments)).await
             }
             tool_names::GET_CALIBRATION_METRICS => {
-                self.handle_get_calibration_metrics(id, Some(arguments)).await
+                self.handle_get_calibration_metrics(id, Some(arguments))
+                    .await
             }
             tool_names::TRIGGER_RECALIBRATION => {
                 self.handle_trigger_recalibration(id, Some(arguments)).await
@@ -113,35 +116,25 @@ impl Handlers {
                 self.call_get_amortized_shortcuts(id, arguments).await
             }
             // TASK-NEUROMOD-MCP: Neuromodulation tools
-            tool_names::GET_NEUROMODULATION_STATE => {
-                self.call_get_neuromodulation_state(id).await
-            }
+            tool_names::GET_NEUROMODULATION_STATE => self.call_get_neuromodulation_state(id).await,
             tool_names::ADJUST_NEUROMODULATOR => {
                 self.call_adjust_neuromodulator(id, arguments).await
             }
             // TASK-STEERING-001: Steering tools
-            tool_names::GET_STEERING_FEEDBACK => {
-                self.call_get_steering_feedback(id).await
-            }
+            tool_names::GET_STEERING_FEEDBACK => self.call_get_steering_feedback(id).await,
             // TASK-CAUSAL-001: Causal inference tools
-            tool_names::OMNI_INFER => {
-                self.call_omni_infer(id, arguments).await
-            }
+            tool_names::OMNI_INFER => self.call_omni_infer(id, arguments).await,
             // NOTE: Manual North Star tools REMOVED (set_north_star, get_north_star,
             // update_north_star, delete_north_star, init_north_star_from_documents,
             // get_goal_hierarchy) - they created single 1024D embeddings that cannot
             // be meaningfully compared to 13-embedder teleological arrays.
             // Use the autonomous system below which works with proper teleological embeddings.
             // TELEO-H1 to TELEO-H5: Teleological tools
-            tool_names::SEARCH_TELEOLOGICAL => {
-                self.call_search_teleological(id, arguments).await
-            }
+            tool_names::SEARCH_TELEOLOGICAL => self.call_search_teleological(id, arguments).await,
             tool_names::COMPUTE_TELEOLOGICAL_VECTOR => {
                 self.call_compute_teleological_vector(id, arguments).await
             }
-            tool_names::FUSE_EMBEDDINGS => {
-                self.call_fuse_embeddings(id, arguments).await
-            }
+            tool_names::FUSE_EMBEDDINGS => self.call_fuse_embeddings(id, arguments).await,
             tool_names::UPDATE_SYNERGY_MATRIX => {
                 self.call_update_synergy_matrix(id, arguments).await
             }
@@ -152,9 +145,7 @@ impl Handlers {
             tool_names::AUTO_BOOTSTRAP_NORTH_STAR => {
                 self.call_auto_bootstrap_north_star(id, arguments).await
             }
-            tool_names::GET_ALIGNMENT_DRIFT => {
-                self.call_get_alignment_drift(id, arguments).await
-            }
+            tool_names::GET_ALIGNMENT_DRIFT => self.call_get_alignment_drift(id, arguments).await,
             tool_names::TRIGGER_DRIFT_CORRECTION => {
                 self.call_trigger_drift_correction(id, arguments).await
             }
@@ -164,9 +155,7 @@ impl Handlers {
             tool_names::TRIGGER_CONSOLIDATION => {
                 self.call_trigger_consolidation(id, arguments).await
             }
-            tool_names::DISCOVER_SUB_GOALS => {
-                self.call_discover_sub_goals(id, arguments).await
-            }
+            tool_names::DISCOVER_SUB_GOALS => self.call_discover_sub_goals(id, arguments).await,
             tool_names::GET_AUTONOMOUS_STATUS => {
                 self.call_get_autonomous_status(id, arguments).await
             }
@@ -254,7 +243,11 @@ impl Handlers {
     ///
     /// If pulse computation fails during error response, logs warning
     /// but still returns the original error (pulse failure is secondary).
-    pub(super) fn tool_error_with_pulse(&self, id: Option<JsonRpcId>, message: &str) -> JsonRpcResponse {
+    pub(super) fn tool_error_with_pulse(
+        &self,
+        id: Option<JsonRpcId>,
+        message: &str,
+    ) -> JsonRpcResponse {
         // Try to compute pulse, but don't fail the error response if it fails
         let pulse_result = CognitivePulse::from_processor(self.utl_processor.as_ref());
 
@@ -320,7 +313,9 @@ impl Handlers {
         // Per TASK-CORE-005: Use E1 semantic embedding from TeleologicalArray for UTL alignment
         let goal_vector = {
             let hierarchy = self.goal_hierarchy.read();
-            hierarchy.north_star().map(|ns| ns.teleological_array.e1_semantic.clone())
+            hierarchy
+                .north_star()
+                .map(|ns| ns.teleological_array.e1_semantic.clone())
         };
 
         // Compute UTL metrics for the content
@@ -590,7 +585,8 @@ impl Handlers {
                     id,
                     error_codes::INTERNAL_ERROR,
                     "UTL processor returned incomplete status: missing 'lifecycle_phase'. \
-                     This indicates a broken UTL system that must be fixed.".to_string(),
+                     This indicates a broken UTL system that must be fixed."
+                        .to_string(),
                 );
             }
         };
@@ -598,12 +594,15 @@ impl Handlers {
         let entropy = match utl_status.get("entropy").and_then(|v| v.as_f64()) {
             Some(v) => v as f32,
             None => {
-                error!("get_memetic_status: UTL processor missing 'entropy' field - system is broken");
+                error!(
+                    "get_memetic_status: UTL processor missing 'entropy' field - system is broken"
+                );
                 return JsonRpcResponse::error(
                     id,
                     error_codes::INTERNAL_ERROR,
                     "UTL processor returned incomplete status: missing 'entropy'. \
-                     This indicates a broken UTL system that must be fixed.".to_string(),
+                     This indicates a broken UTL system that must be fixed."
+                        .to_string(),
                 );
             }
         };
@@ -616,7 +615,8 @@ impl Handlers {
                     id,
                     error_codes::INTERNAL_ERROR,
                     "UTL processor returned incomplete status: missing 'coherence'. \
-                     This indicates a broken UTL system that must be fixed.".to_string(),
+                     This indicates a broken UTL system that must be fixed."
+                        .to_string(),
                 );
             }
         };
@@ -629,7 +629,8 @@ impl Handlers {
                     id,
                     error_codes::INTERNAL_ERROR,
                     "UTL processor returned incomplete status: missing 'learning_score'. \
-                     This indicates a broken UTL system that must be fixed.".to_string(),
+                     This indicates a broken UTL system that must be fixed."
+                        .to_string(),
                 );
             }
         };
@@ -642,12 +643,16 @@ impl Handlers {
                     id,
                     error_codes::INTERNAL_ERROR,
                     "UTL processor returned incomplete status: missing 'johari_quadrant'. \
-                     This indicates a broken UTL system that must be fixed.".to_string(),
+                     This indicates a broken UTL system that must be fixed."
+                        .to_string(),
                 );
             }
         };
 
-        let consolidation_phase = match utl_status.get("consolidation_phase").and_then(|v| v.as_str()) {
+        let consolidation_phase = match utl_status
+            .get("consolidation_phase")
+            .and_then(|v| v.as_str())
+        {
             Some(phase) => phase,
             None => {
                 error!("get_memetic_status: UTL processor missing 'consolidation_phase' field - system is broken");
@@ -655,7 +660,8 @@ impl Handlers {
                     id,
                     error_codes::INTERNAL_ERROR,
                     "UTL processor returned incomplete status: missing 'consolidation_phase'. \
-                     This indicates a broken UTL system that must be fixed.".to_string(),
+                     This indicates a broken UTL system that must be fixed."
+                        .to_string(),
                 );
             }
         };
@@ -683,31 +689,46 @@ impl Handlers {
         };
 
         // TASK-EMB-024: Get REAL layer statuses from LayerStatusProvider
-        let perception_status = self.layer_status_provider.perception_status().await
+        let perception_status = self
+            .layer_status_provider
+            .perception_status()
+            .await
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|e| {
                 error!(error = %e, "get_memetic_status: perception_status FAILED");
                 "error".to_string()
             });
-        let memory_status = self.layer_status_provider.memory_status().await
+        let memory_status = self
+            .layer_status_provider
+            .memory_status()
+            .await
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|e| {
                 error!(error = %e, "get_memetic_status: memory_status FAILED");
                 "error".to_string()
             });
-        let reasoning_status = self.layer_status_provider.reasoning_status().await
+        let reasoning_status = self
+            .layer_status_provider
+            .reasoning_status()
+            .await
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|e| {
                 error!(error = %e, "get_memetic_status: reasoning_status FAILED");
                 "error".to_string()
             });
-        let action_status = self.layer_status_provider.action_status().await
+        let action_status = self
+            .layer_status_provider
+            .action_status()
+            .await
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|e| {
                 error!(error = %e, "get_memetic_status: action_status FAILED");
                 "error".to_string()
             });
-        let meta_status = self.layer_status_provider.meta_status().await
+        let meta_status = self
+            .layer_status_provider
+            .meta_status()
+            .await
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|e| {
                 error!(error = %e, "get_memetic_status: meta_status FAILED");
@@ -755,31 +776,46 @@ impl Handlers {
     /// TASK-EMB-024: Layer statuses now come from LayerStatusProvider.
     pub(super) async fn call_get_graph_manifest(&self, id: Option<JsonRpcId>) -> JsonRpcResponse {
         // TASK-EMB-024: Get REAL layer statuses from LayerStatusProvider
-        let perception_status = self.layer_status_provider.perception_status().await
+        let perception_status = self
+            .layer_status_provider
+            .perception_status()
+            .await
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|e| {
                 error!(error = %e, "get_graph_manifest: perception_status FAILED");
                 "error".to_string()
             });
-        let memory_status = self.layer_status_provider.memory_status().await
+        let memory_status = self
+            .layer_status_provider
+            .memory_status()
+            .await
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|e| {
                 error!(error = %e, "get_graph_manifest: memory_status FAILED");
                 "error".to_string()
             });
-        let reasoning_status = self.layer_status_provider.reasoning_status().await
+        let reasoning_status = self
+            .layer_status_provider
+            .reasoning_status()
+            .await
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|e| {
                 error!(error = %e, "get_graph_manifest: reasoning_status FAILED");
                 "error".to_string()
             });
-        let action_status = self.layer_status_provider.action_status().await
+        let action_status = self
+            .layer_status_provider
+            .action_status()
+            .await
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|e| {
                 error!(error = %e, "get_graph_manifest: action_status FAILED");
                 "error".to_string()
             });
-        let meta_status = self.layer_status_provider.meta_status().await
+        let meta_status = self
+            .layer_status_provider
+            .meta_status()
+            .await
             .map(|s| s.as_str().to_string())
             .unwrap_or_else(|e| {
                 error!(error = %e, "get_graph_manifest: meta_status FAILED");
@@ -861,7 +897,11 @@ impl Handlers {
             }
         };
 
-        match self.teleological_store.search_semantic(&query_embedding, options).await {
+        match self
+            .teleological_store
+            .search_semantic(&query_embedding, options)
+            .await
+        {
             Ok(results) => {
                 let results_json: Vec<_> = results
                     .iter()
@@ -1090,10 +1130,7 @@ impl Handlers {
     /// - elapsed_seconds: Time since creation/reset
     /// - embedding_labels: Names of the 13 embedding spaces
     /// - thresholds: State transition thresholds
-    pub(super) async fn call_get_kuramoto_sync(
-        &self,
-        id: Option<JsonRpcId>,
-    ) -> JsonRpcResponse {
+    pub(super) async fn call_get_kuramoto_sync(&self, id: Option<JsonRpcId>) -> JsonRpcResponse {
         debug!("Handling get_kuramoto_sync tool call");
 
         // FAIL FAST: Check kuramoto provider
@@ -1137,27 +1174,30 @@ impl Handlers {
         let elapsed = network.elapsed_total();
 
         // Return complete Kuramoto state
-        self.tool_result_with_pulse(id, json!({
-            "r": r,
-            "psi": psi,
-            "synchronization": sync,
-            "state": state,
-            "phases": phases.to_vec(),
-            "natural_freqs": natural_freqs.to_vec(),
-            "coupling": coupling,
-            "elapsed_seconds": elapsed.as_secs_f64(),
-            "embedding_labels": [
-                "E1_semantic", "E2_temporal_recent", "E3_temporal_periodic",
-                "E4_temporal_positional", "E5_causal", "E6_sparse",
-                "E7_code", "E8_graph", "E9_hdc", "E10_multimodal",
-                "E11_entity", "E12_late_interaction", "E13_splade"
-            ],
-            "thresholds": {
-                "conscious": 0.8,
-                "fragmented": 0.5,
-                "hypersync": 0.95
-            }
-        }))
+        self.tool_result_with_pulse(
+            id,
+            json!({
+                "r": r,
+                "psi": psi,
+                "synchronization": sync,
+                "state": state,
+                "phases": phases.to_vec(),
+                "natural_freqs": natural_freqs.to_vec(),
+                "coupling": coupling,
+                "elapsed_seconds": elapsed.as_secs_f64(),
+                "embedding_labels": [
+                    "E1_semantic", "E2_temporal_recent", "E3_temporal_periodic",
+                    "E4_temporal_positional", "E5_causal", "E6_sparse",
+                    "E7_code", "E8_graph", "E9_hdc", "E10_multimodal",
+                    "E11_entity", "E12_late_interaction", "E13_splade"
+                ],
+                "thresholds": {
+                    "conscious": 0.8,
+                    "fragmented": 0.5,
+                    "hypersync": 0.95
+                }
+            }),
+        )
     }
 
     /// get_workspace_status tool implementation.
@@ -1173,10 +1213,7 @@ impl Handlers {
     /// - has_conflict: Whether multiple memories compete (r > 0.8)
     /// - coherence_threshold: Threshold for workspace entry (default 0.8)
     /// - conflict_memories: List of conflicting memory UUIDs if has_conflict
-    pub(super) async fn call_get_workspace_status(
-        &self,
-        id: Option<JsonRpcId>,
-    ) -> JsonRpcResponse {
+    pub(super) async fn call_get_workspace_status(&self, id: Option<JsonRpcId>) -> JsonRpcResponse {
         debug!("Handling get_workspace_status tool call");
 
         // FAIL FAST: Check workspace provider
@@ -1238,10 +1275,7 @@ impl Handlers {
     /// - coherence_with_actions: Alignment between actions and purpose
     /// - identity_status: Healthy/Warning/Degraded/Critical
     /// - trajectory_length: Number of purpose snapshots stored
-    pub(super) async fn call_get_ego_state(
-        &self,
-        id: Option<JsonRpcId>,
-    ) -> JsonRpcResponse {
+    pub(super) async fn call_get_ego_state(&self, id: Option<JsonRpcId>) -> JsonRpcResponse {
         debug!("Handling get_ego_state tool call");
 
         // FAIL FAST: Check self-ego provider
@@ -1371,10 +1405,7 @@ impl Handlers {
             .get("alignment")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.8) as f32;
-        let force = args
-            .get("force")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let force = args.get("force").and_then(|v| v.as_bool()).unwrap_or(false);
 
         // Get current order parameter from Kuramoto network
         let r = {

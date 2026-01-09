@@ -9,13 +9,13 @@
 //! NOTE: `UtlComputationMetrics` is DIFFERENT from the per-computation
 //! `UtlMetrics` in context-graph-core.
 
-mod quadrant;
-mod thresholds;
 mod computation;
+mod quadrant;
 mod status;
+mod thresholds;
 
 // Re-export all public types for backwards compatibility
-pub use self::quadrant::QuadrantDistribution;
-pub use self::thresholds::StageThresholds;
 pub use self::computation::UtlComputationMetrics;
+pub use self::quadrant::QuadrantDistribution;
 pub use self::status::{ThresholdsResponse, UtlStatus, UtlStatusResponse};
+pub use self::thresholds::StageThresholds;

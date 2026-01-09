@@ -77,12 +77,21 @@ fn full_state_verify_bit_pattern_0xad() {
     println!("\n--- BEFORE STATE ---");
     println!("INPUT VECTOR (f32): {:?}", input);
     println!("INPUT LENGTH: {}", input.len());
-    println!("INPUT SIZE (bytes): {} (8 x 4 bytes per f32)", input.len() * 4);
+    println!(
+        "INPUT SIZE (bytes): {} (8 x 4 bytes per f32)",
+        input.len() * 4
+    );
     println!("THRESHOLD: 0.0 (default, sign-based)");
     println!("\nEXPECTED BIT COMPUTATION:");
     for (i, val) in input.iter().enumerate() {
         let bit = if *val >= 0.0 { 1 } else { 0 };
-        println!("  input[{}] = {:6.2} >= 0.0 ? {} -> bit {}", i, val, bit == 1, bit);
+        println!(
+            "  input[{}] = {:6.2} >= 0.0 ? {} -> bit {}",
+            i,
+            val,
+            bit == 1,
+            bit
+        );
     }
     println!("EXPECTED BITS: [1, 0, 1, 0, 1, 1, 0, 1]");
     println!("EXPECTED BYTE (MSB first): 10101101 = 0xAD = 173");
@@ -116,7 +125,11 @@ fn full_state_verify_bit_pattern_0xad() {
     println!("\n>>> SIGN-TO-BIT CORRELATION CHECK <<<");
     for (i, (&val, &bit)) in input.iter().zip(bits.iter()).enumerate() {
         let expected_bit = if val >= 0.0 { 1 } else { 0 };
-        let match_str = if bit == expected_bit { "✓ MATCH" } else { "✗ MISMATCH" };
+        let match_str = if bit == expected_bit {
+            "✓ MATCH"
+        } else {
+            "✗ MISMATCH"
+        };
         println!(
             "  input[{}] = {:6.2} -> expected bit {} | actual bit {} | {}",
             i, val, expected_bit, bit, match_str
@@ -145,13 +158,18 @@ fn full_state_verify_32x_compression() {
     println!("============================================================");
 
     let encoder = BinaryEncoder::new();
-    let input: Vec<f32> = (0..1024).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+    let input: Vec<f32> = (0..1024)
+        .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+        .collect();
 
     // ===== BEFORE STATE =====
     println!("\n--- BEFORE STATE ---");
     println!("INPUT: Vec<f32> with {} elements", input.len());
     println!("INPUT SIZE: {} bytes (1024 × 4 bytes)", input.len() * 4);
-    println!("EXPECTED OUTPUT SIZE: {} bytes (1024 bits / 8)", (1024 + 7) / 8);
+    println!(
+        "EXPECTED OUTPUT SIZE: {} bytes (1024 bits / 8)",
+        (1024 + 7) / 8
+    );
     println!("EXPECTED COMPRESSION: {:.1}x", (1024.0 * 4.0) / 128.0);
 
     // ===== EXECUTE =====
@@ -170,7 +188,10 @@ fn full_state_verify_32x_compression() {
     let data_ptr = quantized.data.as_ptr();
     println!("  data.as_ptr() = {:p}", data_ptr);
     println!("  First 32 bytes of actual data:");
-    hex_dump("first 32 bytes", &quantized.data[0..32.min(quantized.data.len())]);
+    hex_dump(
+        "first 32 bytes",
+        &quantized.data[0..32.min(quantized.data.len())],
+    );
 
     // Since input alternates 1.0, -1.0, bits should alternate 1,0,1,0...
     // Each byte should be 0b10101010 = 0xAA
@@ -184,7 +205,11 @@ fn full_state_verify_32x_compression() {
             println!("    byte[{}] = 0x{:02X} (expected 0xAA)", i, byte);
         }
     }
-    println!("  Pattern matches: {}/{} bytes", pattern_matches, quantized.data.len());
+    println!(
+        "  Pattern matches: {}/{} bytes",
+        pattern_matches,
+        quantized.data.len()
+    );
 
     // PHYSICAL SIZE VERIFICATION
     println!("\n>>> PHYSICAL SIZE VERIFICATION <<<");
@@ -196,7 +221,9 @@ fn full_state_verify_32x_compression() {
     assert_eq!(quantized.data.len(), 128, "Must be exactly 128 bytes");
     assert!((actual_ratio - 32.0).abs() < 0.1, "Must be 32x compression");
 
-    println!("\n✅ FULL STATE VERIFICATION PASSED: 128 bytes physically allocated (32x compression)\n");
+    println!(
+        "\n✅ FULL STATE VERIFICATION PASSED: 128 bytes physically allocated (32x compression)\n"
+    );
 }
 
 /// =============================================================
@@ -210,11 +237,16 @@ fn full_state_verify_10k_dimension() {
     println!("============================================================");
 
     let encoder = BinaryEncoder::new();
-    let input: Vec<f32> = (0..10000).map(|i| if i % 2 == 0 { 0.7 } else { -0.3 }).collect();
+    let input: Vec<f32> = (0..10000)
+        .map(|i| if i % 2 == 0 { 0.7 } else { -0.3 })
+        .collect();
 
     // ===== BEFORE STATE =====
     println!("\n--- BEFORE STATE ---");
-    println!("INPUT: Vec<f32> with {} elements (HDC typical)", input.len());
+    println!(
+        "INPUT: Vec<f32> with {} elements (HDC typical)",
+        input.len()
+    );
     println!("INPUT SIZE: {} bytes", input.len() * 4);
     println!("EXPECTED PACKED SIZE: {} bytes", (10000 + 7) / 8);
     println!("FIRST 10 INPUT VALUES: {:?}", &input[0..10]);
@@ -400,13 +432,23 @@ fn edge_case_audit_maximum_dimension() {
 
     let encoder = BinaryEncoder::new();
     let dimension = 100_000;
-    let input: Vec<f32> = (0..dimension).map(|i| if i % 3 == 0 { 0.5 } else { -0.5 }).collect();
+    let input: Vec<f32> = (0..dimension)
+        .map(|i| if i % 3 == 0 { 0.5 } else { -0.5 })
+        .collect();
 
     // ===== BEFORE STATE =====
     println!("\n--- BEFORE STATE ---");
     println!("INPUT DIMENSION: {}", dimension);
-    println!("INPUT MEMORY: {} bytes ({:.2} MB)", dimension * 4, (dimension * 4) as f64 / 1_000_000.0);
-    println!("EXPECTED OUTPUT: {} bytes ({:.2} KB)", (dimension + 7) / 8, ((dimension + 7) / 8) as f64 / 1000.0);
+    println!(
+        "INPUT MEMORY: {} bytes ({:.2} MB)",
+        dimension * 4,
+        (dimension * 4) as f64 / 1_000_000.0
+    );
+    println!(
+        "EXPECTED OUTPUT: {} bytes ({:.2} KB)",
+        (dimension + 7) / 8,
+        ((dimension + 7) / 8) as f64 / 1000.0
+    );
     println!("PATTERN: every 3rd element positive");
 
     // ===== EXECUTE =====
@@ -483,10 +525,10 @@ fn evidence_log_complete_state_dump() {
     // Test case: Known input with predictable output
     // Note: threshold is 0.0, so val >= 0.0 -> bit 1, val < 0.0 -> bit 0
     let input = vec![
-        1.0f32, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0,   // byte 0: 11110000 = 0xF0
-        1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0,      // byte 1: 10101010 = 0xAA
-        -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0,  // byte 2: 00000000 = 0x00
-        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,          // byte 3: 11111111 = 0xFF
+        1.0f32, 1.0, 1.0, 1.0, -1.0, -1.0, -1.0, -1.0, // byte 0: 11110000 = 0xF0
+        1.0, -1.0, 1.0, -1.0, 1.0, -1.0, 1.0, -1.0, // byte 1: 10101010 = 0xAA
+        -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, -1.0, // byte 2: 00000000 = 0x00
+        1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, // byte 3: 11111111 = 0xFF
     ];
 
     println!("\n--- INPUT DATA ---");
@@ -505,7 +547,11 @@ fn evidence_log_complete_state_dump() {
     println!("\n--- EXPECTED vs ACTUAL COMPARISON ---");
     let expected = [0xF0u8, 0xAA, 0x00, 0xFF];
     for (i, (&exp, &act)) in expected.iter().zip(quantized.data.iter()).enumerate() {
-        let status = if exp == act { "✓ MATCH" } else { "✗ MISMATCH" };
+        let status = if exp == act {
+            "✓ MATCH"
+        } else {
+            "✗ MISMATCH"
+        };
         println!(
             "  byte[{}]: expected 0x{:02X} ({:08b}) | actual 0x{:02X} ({:08b}) | {}",
             i, exp, exp, act, act, status

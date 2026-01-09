@@ -486,13 +486,9 @@ mod tests {
         use std::time::Duration;
 
         let past = SystemTime::now() - Duration::from_secs(3600);
-        let metadata = PurposeMetadata::with_timestamp(
-            GoalId::new("test"),
-            0.75,
-            past,
-            JohariQuadrant::Open,
-        )
-        .unwrap();
+        let metadata =
+            PurposeMetadata::with_timestamp(GoalId::new("test"), 0.75, past, JohariQuadrant::Open)
+                .unwrap();
 
         // 1 hour old, max age 30 min = stale
         assert!(metadata.is_stale(Duration::from_secs(1800)));
@@ -505,8 +501,8 @@ mod tests {
 
     #[test]
     fn test_purpose_metadata_serialization() {
-        let metadata = PurposeMetadata::new(GoalId::new("test_goal"), 0.75, JohariQuadrant::Hidden)
-            .unwrap();
+        let metadata =
+            PurposeMetadata::new(GoalId::new("test_goal"), 0.75, JohariQuadrant::Hidden).unwrap();
 
         let json = serde_json::to_string(&metadata).expect("Serialization should work");
         assert!(json.contains("test_goal"));
@@ -625,8 +621,7 @@ mod tests {
         )
         .unwrap();
 
-        let entry =
-            PurposeIndexEntry::new(Uuid::new_v4(), PurposeVector::default(), metadata);
+        let entry = PurposeIndexEntry::new(Uuid::new_v4(), PurposeVector::default(), metadata);
 
         // Entry is 2 hours old
         assert!(entry.is_stale(Duration::from_secs(3600))); // Stale after 1 hour

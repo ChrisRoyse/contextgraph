@@ -202,7 +202,11 @@ mod tests {
 
         // Should approach baseline (with 0.2 rate, 10 seconds of decay should get close)
         let diff = (modulator.value() - DA_BASELINE).abs();
-        assert!(diff < 0.5, "Expected value near baseline, got: {}", modulator.value());
+        assert!(
+            diff < 0.5,
+            "Expected value near baseline, got: {}",
+            modulator.value()
+        );
     }
 
     #[test]

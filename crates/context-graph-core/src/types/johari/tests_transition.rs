@@ -5,7 +5,11 @@ use super::*;
 #[test]
 fn test_transition_trigger_all_variants() {
     let all = TransitionTrigger::all();
-    assert_eq!(all.len(), 6, "TransitionTrigger should have exactly 6 variants");
+    assert_eq!(
+        all.len(),
+        6,
+        "TransitionTrigger should have exactly 6 variants"
+    );
     assert!(all.contains(&TransitionTrigger::ExplicitShare));
     assert!(all.contains(&TransitionTrigger::SelfRecognition));
     assert!(all.contains(&TransitionTrigger::PatternDiscovery));
@@ -25,12 +29,27 @@ fn test_transition_trigger_description_not_empty() {
 
 #[test]
 fn test_transition_trigger_display() {
-    assert_eq!(format!("{}", TransitionTrigger::ExplicitShare), "ExplicitShare");
-    assert_eq!(format!("{}", TransitionTrigger::SelfRecognition), "SelfRecognition");
-    assert_eq!(format!("{}", TransitionTrigger::PatternDiscovery), "PatternDiscovery");
+    assert_eq!(
+        format!("{}", TransitionTrigger::ExplicitShare),
+        "ExplicitShare"
+    );
+    assert_eq!(
+        format!("{}", TransitionTrigger::SelfRecognition),
+        "SelfRecognition"
+    );
+    assert_eq!(
+        format!("{}", TransitionTrigger::PatternDiscovery),
+        "PatternDiscovery"
+    );
     assert_eq!(format!("{}", TransitionTrigger::Privatize), "Privatize");
-    assert_eq!(format!("{}", TransitionTrigger::ExternalObservation), "ExternalObservation");
-    assert_eq!(format!("{}", TransitionTrigger::DreamConsolidation), "DreamConsolidation");
+    assert_eq!(
+        format!("{}", TransitionTrigger::ExternalObservation),
+        "ExternalObservation"
+    );
+    assert_eq!(
+        format!("{}", TransitionTrigger::DreamConsolidation),
+        "DreamConsolidation"
+    );
 }
 
 #[test]
@@ -44,12 +63,30 @@ fn test_transition_trigger_serde_roundtrip() {
 
 #[test]
 fn test_transition_trigger_serde_snake_case() {
-    assert_eq!(serde_json::to_string(&TransitionTrigger::ExplicitShare).unwrap(), "\"explicit_share\"");
-    assert_eq!(serde_json::to_string(&TransitionTrigger::SelfRecognition).unwrap(), "\"self_recognition\"");
-    assert_eq!(serde_json::to_string(&TransitionTrigger::PatternDiscovery).unwrap(), "\"pattern_discovery\"");
-    assert_eq!(serde_json::to_string(&TransitionTrigger::Privatize).unwrap(), "\"privatize\"");
-    assert_eq!(serde_json::to_string(&TransitionTrigger::ExternalObservation).unwrap(), "\"external_observation\"");
-    assert_eq!(serde_json::to_string(&TransitionTrigger::DreamConsolidation).unwrap(), "\"dream_consolidation\"");
+    assert_eq!(
+        serde_json::to_string(&TransitionTrigger::ExplicitShare).unwrap(),
+        "\"explicit_share\""
+    );
+    assert_eq!(
+        serde_json::to_string(&TransitionTrigger::SelfRecognition).unwrap(),
+        "\"self_recognition\""
+    );
+    assert_eq!(
+        serde_json::to_string(&TransitionTrigger::PatternDiscovery).unwrap(),
+        "\"pattern_discovery\""
+    );
+    assert_eq!(
+        serde_json::to_string(&TransitionTrigger::Privatize).unwrap(),
+        "\"privatize\""
+    );
+    assert_eq!(
+        serde_json::to_string(&TransitionTrigger::ExternalObservation).unwrap(),
+        "\"external_observation\""
+    );
+    assert_eq!(
+        serde_json::to_string(&TransitionTrigger::DreamConsolidation).unwrap(),
+        "\"dream_consolidation\""
+    );
 }
 
 #[test]
@@ -109,7 +146,9 @@ fn test_johari_transition_serde_roundtrip() {
     assert_eq!(transition.from, parsed.from);
     assert_eq!(transition.to, parsed.to);
     assert_eq!(transition.trigger, parsed.trigger);
-    let diff = (transition.timestamp - parsed.timestamp).num_milliseconds().abs();
+    let diff = (transition.timestamp - parsed.timestamp)
+        .num_milliseconds()
+        .abs();
     assert!(diff < 1000, "Timestamps should be within 1 second");
 }
 

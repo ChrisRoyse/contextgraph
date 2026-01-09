@@ -154,12 +154,13 @@ impl WarmHealthChecker {
                     WarmModelState::Loading { .. } | WarmModelState::Validating => {
                         models_loading += 1;
                     }
-                    WarmModelState::Failed { error_code, error_message } => {
+                    WarmModelState::Failed {
+                        error_code,
+                        error_message,
+                    } => {
                         models_failed += 1;
-                        error_messages.push(format!(
-                            "{}: [{}] {}",
-                            entry, error_code, error_message
-                        ));
+                        error_messages
+                            .push(format!("{}: [{}] {}", entry, error_code, error_message));
                     }
                     WarmModelState::Pending => models_pending += 1,
                 }

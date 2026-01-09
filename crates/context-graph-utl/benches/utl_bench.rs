@@ -7,10 +7,11 @@
 //! - Emotional weight: <1ms mean
 //! - Coherence tracking: <2ms mean
 
+use context_graph_core::types::EmotionalState;
 use context_graph_utl::{
+    coherence::CoherenceTracker,
     compute_learning_magnitude, compute_learning_magnitude_validated,
     config::{CoherenceConfig, EmotionalConfig, SurpriseConfig, UtlConfig},
-    coherence::CoherenceTracker,
     emotional::EmotionalWeightCalculator,
     johari::JohariClassifier,
     lifecycle::LifecycleManager,
@@ -18,7 +19,6 @@ use context_graph_utl::{
     processor::UtlProcessor,
     surprise::SurpriseCalculator,
 };
-use context_graph_core::types::EmotionalState;
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 
 // =============================================================================
@@ -202,7 +202,11 @@ fn bench_context_scaling(c: &mut Criterion) {
         group.throughput(Throughput::Elements(*size as u64));
         group.bench_with_input(BenchmarkId::from_parameter(size), &context, |b, ctx| {
             b.iter(|| {
-                processor.compute_learning(black_box(content), black_box(&embedding), black_box(ctx))
+                processor.compute_learning(
+                    black_box(content),
+                    black_box(&embedding),
+                    black_box(ctx),
+                )
             })
         });
     }
@@ -262,15 +266,21 @@ fn bench_emotional_content_scaling(c: &mut Criterion) {
     let mut group = c.benchmark_group("emotional_content_length");
 
     group.bench_function("short", |b| {
-        b.iter(|| calculator.compute_emotional_weight(black_box(short_content), EmotionalState::Neutral))
+        b.iter(|| {
+            calculator.compute_emotional_weight(black_box(short_content), EmotionalState::Neutral)
+        })
     });
 
     group.bench_function("medium", |b| {
-        b.iter(|| calculator.compute_emotional_weight(black_box(medium_content), EmotionalState::Neutral))
+        b.iter(|| {
+            calculator.compute_emotional_weight(black_box(medium_content), EmotionalState::Neutral)
+        })
     });
 
     group.bench_function("long", |b| {
-        b.iter(|| calculator.compute_emotional_weight(black_box(long_content), EmotionalState::Neutral))
+        b.iter(|| {
+            calculator.compute_emotional_weight(black_box(long_content), EmotionalState::Neutral)
+        })
     });
 
     group.finish();

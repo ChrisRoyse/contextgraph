@@ -23,14 +23,20 @@ use serde_json::json;
 use sha2::{Digest, Sha256};
 
 use context_graph_core::alignment::{DefaultAlignmentCalculator, GoalAlignmentCalculator};
-use context_graph_core::stubs::{InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor};
-use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor};
+use context_graph_core::stubs::{
+    InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor,
+};
+use context_graph_core::traits::{
+    MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor,
+};
 
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcRequest};
 
 // Import shared test helpers for RocksDB integration tests
-use super::{create_test_handlers_with_rocksdb_store_access, create_test_hierarchy, extract_mcp_tool_data};
+use super::{
+    create_test_handlers_with_rocksdb_store_access, create_test_hierarchy, extract_mcp_tool_data,
+};
 
 /// Create test handlers AND return direct access to the store for verification.
 ///
@@ -76,7 +82,11 @@ fn make_request(
 
 /// Helper: Check if fingerprint exists in store (via retrieve).
 async fn exists_in_store(store: &Arc<dyn TeleologicalMemoryStore>, id: uuid::Uuid) -> bool {
-    store.retrieve(id).await.map(|opt| opt.is_some()).unwrap_or(false)
+    store
+        .retrieve(id)
+        .await
+        .map(|opt| opt.is_some())
+        .unwrap_or(false)
 }
 
 // =============================================================================
@@ -129,7 +139,10 @@ async fn verify_store_creates_fingerprint_in_source_of_truth() {
     // CRITICAL: Directly verify fingerprint exists in store
     let exists = exists_in_store(&store, fingerprint_id).await;
     println!("  - Fingerprint {} exists: {}", fingerprint_id, exists);
-    assert!(exists, "VERIFICATION FAILED: Fingerprint must exist in store");
+    assert!(
+        exists,
+        "VERIFICATION FAILED: Fingerprint must exist in store"
+    );
 
     // CRITICAL: Retrieve and inspect actual stored data
     let stored_fp = store
@@ -140,13 +153,25 @@ async fn verify_store_creates_fingerprint_in_source_of_truth() {
 
     println!("\n[EVIDENCE] Stored fingerprint fields:");
     println!("  - ID: {}", stored_fp.id);
-    println!("  - theta_to_north_star: {:.4}", stored_fp.theta_to_north_star);
+    println!(
+        "  - theta_to_north_star: {:.4}",
+        stored_fp.theta_to_north_star
+    );
     println!("  - access_count: {}", stored_fp.access_count);
     println!("  - created_at: {}", stored_fp.created_at);
     println!("  - content_hash: {}", hex::encode(stored_fp.content_hash));
-    println!("  - semantic.e1_semantic len: {}", stored_fp.semantic.e1_semantic.len());
-    println!("  - purpose_vector.alignments: {:?}", &stored_fp.purpose_vector.alignments[..5]);
-    println!("  - johari.quadrants[0]: {:?}", stored_fp.johari.quadrants[0]);
+    println!(
+        "  - semantic.e1_semantic len: {}",
+        stored_fp.semantic.e1_semantic.len()
+    );
+    println!(
+        "  - purpose_vector.alignments: {:?}",
+        &stored_fp.purpose_vector.alignments[..5]
+    );
+    println!(
+        "  - johari.quadrants[0]: {:?}",
+        stored_fp.johari.quadrants[0]
+    );
 
     // Verify content hash matches expected
     let mut hasher = Sha256::new();
@@ -159,8 +184,14 @@ async fn verify_store_creates_fingerprint_in_source_of_truth() {
     println!("  - Content hash VERIFIED: matches SHA-256 of input");
 
     // Verify semantic fingerprint has valid embedding (stub uses 1024D)
-    assert!(!stored_fp.semantic.e1_semantic.is_empty(), "E1 must have embeddings");
-    println!("  - E1 semantic embedding dimension VERIFIED: {}", stored_fp.semantic.e1_semantic.len());
+    assert!(
+        !stored_fp.semantic.e1_semantic.is_empty(),
+        "E1 must have embeddings"
+    );
+    println!(
+        "  - E1 semantic embedding dimension VERIFIED: {}",
+        stored_fp.semantic.e1_semantic.len()
+    );
 
     // Count must have increased
     assert_eq!(count_after, count_before + 1, "Count must increase by 1");
@@ -185,7 +216,11 @@ async fn verify_retrieve_returns_source_of_truth_data() {
         "content": content,
         "importance": 0.9
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     let store_response = handlers.dispatch(store_request).await;
     let fingerprint_id_str = store_response
         .result
@@ -207,7 +242,10 @@ async fn verify_retrieve_returns_source_of_truth_data() {
     println!("\n[SOURCE OF TRUTH] Direct store.retrieve() data:");
     println!("  - ID: {}", truth_fp.id);
     println!("  - content_hash: {}", hex::encode(truth_fp.content_hash));
-    println!("  - theta_to_north_star: {:.4}", truth_fp.theta_to_north_star);
+    println!(
+        "  - theta_to_north_star: {:.4}",
+        truth_fp.theta_to_north_star
+    );
 
     // === NOW USE MCP HANDLER TO RETRIEVE ===
     let retrieve_params = json!({ "fingerprintId": fingerprint_id_str });
@@ -223,8 +261,14 @@ async fn verify_retrieve_returns_source_of_truth_data() {
 
     println!("\n[MCP HANDLER] memory/retrieve response:");
     println!("  - ID: {}", fp_json.get("id").unwrap().as_str().unwrap());
-    println!("  - contentHashHex: {}", fp_json.get("contentHashHex").unwrap().as_str().unwrap());
-    println!("  - thetaToNorthStar: {}", fp_json.get("thetaToNorthStar").unwrap());
+    println!(
+        "  - contentHashHex: {}",
+        fp_json.get("contentHashHex").unwrap().as_str().unwrap()
+    );
+    println!(
+        "  - thetaToNorthStar: {}",
+        fp_json.get("thetaToNorthStar").unwrap()
+    );
 
     // === VERIFY HANDLER RETURNS SAME DATA AS SOURCE OF TRUTH ===
     assert_eq!(
@@ -261,9 +305,20 @@ async fn verify_search_finds_data_in_source_of_truth() {
     let mut stored_ids = Vec::new();
     for (i, content) in contents.iter().enumerate() {
         let params = json!({ "content": content, "importance": 0.8 });
-        let request = make_request("memory/store", Some(JsonRpcId::Number(i as i64 + 1)), Some(params));
+        let request = make_request(
+            "memory/store",
+            Some(JsonRpcId::Number(i as i64 + 1)),
+            Some(params),
+        );
         let response = handlers.dispatch(request).await;
-        let id_str = response.result.unwrap().get("fingerprintId").unwrap().as_str().unwrap().to_string();
+        let id_str = response
+            .result
+            .unwrap()
+            .get("fingerprintId")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .to_string();
         stored_ids.push(uuid::Uuid::parse_str(&id_str).unwrap());
     }
 
@@ -282,7 +337,11 @@ async fn verify_search_finds_data_in_source_of_truth() {
         "topK": 10,
         "minSimilarity": 0.0  // P1-FIX-1: Required parameter for fail-fast
     });
-    let search_request = make_request("memory/search", Some(JsonRpcId::Number(10)), Some(search_params));
+    let search_request = make_request(
+        "memory/search",
+        Some(JsonRpcId::Number(10)),
+        Some(search_params),
+    );
     let search_response = handlers.dispatch(search_request).await;
 
     let result = search_response.result.expect("Should have result");
@@ -303,7 +362,10 @@ async fn verify_search_finds_data_in_source_of_truth() {
             "  Result {}: {} (sim={:.4}) - exists in store: {}",
             i, result_id, similarity, exists_in_truth
         );
-        assert!(exists_in_truth, "Search result must exist in Source of Truth");
+        assert!(
+            exists_in_truth,
+            "Search result must exist in Source of Truth"
+        );
     }
 
     println!("\n[VERIFICATION PASSED] All search results exist in Source of Truth");
@@ -322,7 +384,11 @@ async fn verify_delete_removes_from_source_of_truth() {
     // Store a fingerprint
     let content = "This content will be deleted";
     let store_params = json!({ "content": content, "importance": 0.5 });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     let store_response = handlers.dispatch(store_request).await;
     let fingerprint_id_str = store_response
         .result
@@ -339,7 +405,10 @@ async fn verify_delete_removes_from_source_of_truth() {
     let exists_before = exists_in_store(&store, fingerprint_id).await;
     println!("\n[BEFORE DELETE] Source of Truth state:");
     println!("  - Total count: {}", count_before);
-    println!("  - Fingerprint {} exists: {}", fingerprint_id, exists_before);
+    println!(
+        "  - Fingerprint {} exists: {}",
+        fingerprint_id, exists_before
+    );
     assert!(exists_before, "Fingerprint must exist before delete");
 
     // === EXECUTE HARD DELETE ===
@@ -347,13 +416,20 @@ async fn verify_delete_removes_from_source_of_truth() {
         "fingerprintId": fingerprint_id_str,
         "soft": false
     });
-    let delete_request = make_request("memory/delete", Some(JsonRpcId::Number(2)), Some(delete_params));
+    let delete_request = make_request(
+        "memory/delete",
+        Some(JsonRpcId::Number(2)),
+        Some(delete_params),
+    );
     let delete_response = handlers.dispatch(delete_request).await;
 
     let delete_result = delete_response.result.expect("Should have result");
     println!("\n[OPERATION] Hard delete response:");
     println!("  - deleted: {}", delete_result.get("deleted").unwrap());
-    println!("  - deleteType: {}", delete_result.get("deleteType").unwrap());
+    println!(
+        "  - deleteType: {}",
+        delete_result.get("deleteType").unwrap()
+    );
 
     // === AFTER DELETE - VERIFY SOURCE OF TRUTH ===
     let count_after = store.count().await.unwrap();
@@ -362,8 +438,14 @@ async fn verify_delete_removes_from_source_of_truth() {
 
     println!("\n[AFTER DELETE] Source of Truth state:");
     println!("  - Total count: {}", count_after);
-    println!("  - Fingerprint {} exists: {}", fingerprint_id, exists_after);
-    println!("  - Direct retrieve returns: {:?}", retrieve_after.as_ref().map(|fp| fp.id));
+    println!(
+        "  - Fingerprint {} exists: {}",
+        fingerprint_id, exists_after
+    );
+    println!(
+        "  - Direct retrieve returns: {:?}",
+        retrieve_after.as_ref().map(|fp| fp.id)
+    );
 
     // CRITICAL VERIFICATION: Fingerprint must be GONE from store
     assert!(
@@ -421,8 +503,15 @@ async fn verify_edge_case_empty_content() {
     println!("\n[AFTER] Store count: {}", count_after);
 
     assert!(response.error.is_some(), "Empty content must return error");
-    assert_eq!(response.error.unwrap().code, -32602, "Must be INVALID_PARAMS");
-    assert_eq!(count_before, count_after, "Store count must not change on error");
+    assert_eq!(
+        response.error.unwrap().code,
+        -32602,
+        "Must be INVALID_PARAMS"
+    );
+    assert_eq!(
+        count_before, count_after,
+        "Store count must not change on error"
+    );
 
     println!("\n[VERIFICATION PASSED] Empty content rejected, store unchanged");
     println!("================================================================================\n");
@@ -439,7 +528,11 @@ async fn verify_edge_case_invalid_uuid() {
 
     // Store one valid fingerprint first
     let store_params = json!({ "content": "Valid content", "importance": 0.5 });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // === BEFORE STATE ===
@@ -450,8 +543,8 @@ async fn verify_edge_case_invalid_uuid() {
     let invalid_uuids = [
         "not-a-uuid",
         "12345",
-        "00000000-0000-0000-0000",  // truncated
-        "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz",  // invalid chars
+        "00000000-0000-0000-0000",              // truncated
+        "zzzzzzzz-zzzz-zzzz-zzzz-zzzzzzzzzzzz", // invalid chars
     ];
 
     for invalid_uuid in &invalid_uuids {
@@ -459,14 +552,21 @@ async fn verify_edge_case_invalid_uuid() {
         let request = make_request("memory/retrieve", Some(JsonRpcId::Number(10)), Some(params));
         let response = handlers.dispatch(request).await;
 
-        println!("\n[OPERATION] Retrieve with invalid UUID: '{}'", invalid_uuid);
+        println!(
+            "\n[OPERATION] Retrieve with invalid UUID: '{}'",
+            invalid_uuid
+        );
         println!("  - Error returned: {}", response.error.is_some());
         if let Some(error) = &response.error {
             println!("  - Error code: {}", error.code);
         }
 
         assert!(response.error.is_some(), "Invalid UUID must return error");
-        assert_eq!(response.error.unwrap().code, -32602, "Must be INVALID_PARAMS");
+        assert_eq!(
+            response.error.unwrap().code,
+            -32602,
+            "Must be INVALID_PARAMS"
+        );
     }
 
     // === AFTER STATE - VERIFY NO CHANGE ===
@@ -493,7 +593,10 @@ async fn verify_edge_case_nonexistent_id() {
     // === VERIFY NOT IN SOURCE OF TRUTH ===
     let nonexistent_uuid = uuid::Uuid::parse_str(nonexistent_id).unwrap();
     let exists = exists_in_store(&store, nonexistent_uuid).await;
-    println!("\n[SOURCE OF TRUTH] ID {} exists: {}", nonexistent_id, exists);
+    println!(
+        "\n[SOURCE OF TRUTH] ID {} exists: {}",
+        nonexistent_id, exists
+    );
     assert!(!exists, "Non-existent ID must not exist in store");
 
     // === ATTEMPT RETRIEVE ===
@@ -512,7 +615,10 @@ async fn verify_edge_case_nonexistent_id() {
         println!("  - Error message: {}", error.message);
     }
 
-    assert!(retrieve_response.error.is_some(), "Non-existent ID must return error");
+    assert!(
+        retrieve_response.error.is_some(),
+        "Non-existent ID must return error"
+    );
     assert_eq!(
         retrieve_response.error.unwrap().code,
         -32010,
@@ -521,13 +627,20 @@ async fn verify_edge_case_nonexistent_id() {
 
     // === ATTEMPT DELETE ===
     let delete_params = json!({ "fingerprintId": nonexistent_id, "soft": false });
-    let delete_request = make_request("memory/delete", Some(JsonRpcId::Number(2)), Some(delete_params));
+    let delete_request = make_request(
+        "memory/delete",
+        Some(JsonRpcId::Number(2)),
+        Some(delete_params),
+    );
     let delete_response = handlers.dispatch(delete_request).await;
 
     println!("\n[OPERATION] Delete non-existent ID");
     // Delete of non-existent should succeed with deleted=false or return error depending on implementation
     if let Some(result) = &delete_response.result {
-        let deleted = result.get("deleted").and_then(|v| v.as_bool()).unwrap_or(false);
+        let deleted = result
+            .get("deleted")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         println!("  - Result deleted: {}", deleted);
     }
     if let Some(error) = &delete_response.error {
@@ -558,17 +671,30 @@ async fn verify_complete_evidence_log() {
     // === STEP 1: Generate embeddings (verify provider works) ===
     println!("\n[STEP 1: EMBEDDING GENERATION]");
     let test_content = "Convolutional neural networks excel at image recognition tasks";
-    let embedding_output = provider.embed_all(test_content).await.expect("embed_all should work");
+    let embedding_output = provider
+        .embed_all(test_content)
+        .await
+        .expect("embed_all should work");
     println!("  Content: \"{}\"", test_content);
     println!("  Embeddings generated: {} slots", 13);
-    println!("  E1 semantic dimension: {}", embedding_output.fingerprint.e1_semantic.len());
-    println!("  E6 sparse NNZ: {}", embedding_output.fingerprint.e6_sparse.nnz());
+    println!(
+        "  E1 semantic dimension: {}",
+        embedding_output.fingerprint.e1_semantic.len()
+    );
+    println!(
+        "  E6 sparse NNZ: {}",
+        embedding_output.fingerprint.e6_sparse.nnz()
+    );
     println!("  Total latency: {:?}", embedding_output.total_latency);
 
     // === STEP 2: Store via MCP handler ===
     println!("\n[STEP 2: MCP STORE OPERATION]");
     let store_params = json!({ "content": test_content, "importance": 0.95 });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     let store_response = handlers.dispatch(store_request).await;
 
     let store_result = store_response.result.expect("Store must succeed");
@@ -576,9 +702,18 @@ async fn verify_complete_evidence_log() {
     let fingerprint_id = uuid::Uuid::parse_str(fingerprint_id_str).unwrap();
 
     println!("  Response fingerprintId: {}", fingerprint_id_str);
-    println!("  Response embedderCount: {}", store_result.get("embedderCount").unwrap());
-    println!("  Response embeddingLatencyMs: {}", store_result.get("embeddingLatencyMs").unwrap());
-    println!("  Response storageLatencyMs: {}", store_result.get("storageLatencyMs").unwrap());
+    println!(
+        "  Response embedderCount: {}",
+        store_result.get("embedderCount").unwrap()
+    );
+    println!(
+        "  Response embeddingLatencyMs: {}",
+        store_result.get("embeddingLatencyMs").unwrap()
+    );
+    println!(
+        "  Response storageLatencyMs: {}",
+        store_result.get("storageLatencyMs").unwrap()
+    );
 
     // === STEP 3: Verify in Source of Truth ===
     println!("\n[STEP 3: SOURCE OF TRUTH VERIFICATION]");
@@ -586,18 +721,45 @@ async fn verify_complete_evidence_log() {
     println!("  Direct store.retrieve() succeeded");
     println!("  Stored fingerprint fields:");
     println!("    - id: {}", stored_fp.id);
-    println!("    - theta_to_north_star: {:.6}", stored_fp.theta_to_north_star);
+    println!(
+        "    - theta_to_north_star: {:.6}",
+        stored_fp.theta_to_north_star
+    );
     println!("    - access_count: {}", stored_fp.access_count);
     println!("    - created_at: {}", stored_fp.created_at);
     println!("    - last_updated: {}", stored_fp.last_updated);
-    println!("    - content_hash: {}", hex::encode(stored_fp.content_hash));
-    println!("    - semantic.e1_semantic[0..5]: {:?}", &stored_fp.semantic.e1_semantic[0..5]);
-    println!("    - semantic.e6_sparse.nnz: {}", stored_fp.semantic.e6_sparse.nnz());
-    println!("    - purpose_vector.alignments[0..5]: {:?}", &stored_fp.purpose_vector.alignments[0..5]);
-    println!("    - purpose_vector.dominant_embedder: {}", stored_fp.purpose_vector.dominant_embedder);
-    println!("    - purpose_vector.coherence: {:.6}", stored_fp.purpose_vector.coherence);
-    println!("    - johari.quadrants[0] (E1): {:?}", stored_fp.johari.quadrants[0]);
-    println!("    - johari.confidence[0] (E1): {:.6}", stored_fp.johari.confidence[0]);
+    println!(
+        "    - content_hash: {}",
+        hex::encode(stored_fp.content_hash)
+    );
+    println!(
+        "    - semantic.e1_semantic[0..5]: {:?}",
+        &stored_fp.semantic.e1_semantic[0..5]
+    );
+    println!(
+        "    - semantic.e6_sparse.nnz: {}",
+        stored_fp.semantic.e6_sparse.nnz()
+    );
+    println!(
+        "    - purpose_vector.alignments[0..5]: {:?}",
+        &stored_fp.purpose_vector.alignments[0..5]
+    );
+    println!(
+        "    - purpose_vector.dominant_embedder: {}",
+        stored_fp.purpose_vector.dominant_embedder
+    );
+    println!(
+        "    - purpose_vector.coherence: {:.6}",
+        stored_fp.purpose_vector.coherence
+    );
+    println!(
+        "    - johari.quadrants[0] (E1): {:?}",
+        stored_fp.johari.quadrants[0]
+    );
+    println!(
+        "    - johari.confidence[0] (E1): {:.6}",
+        stored_fp.johari.confidence[0]
+    );
 
     // Verify content hash
     let mut hasher = Sha256::new();
@@ -679,8 +841,14 @@ async fn test_rocksdb_fsv_store_creates_fingerprint() {
 
     // CRITICAL: Directly verify fingerprint exists in RocksDB
     let exists = exists_in_store(&store, fingerprint_id).await;
-    println!("  - Fingerprint {} exists in RocksDB: {}", fingerprint_id, exists);
-    assert!(exists, "VERIFICATION FAILED: Fingerprint must exist in RocksDB store");
+    println!(
+        "  - Fingerprint {} exists in RocksDB: {}",
+        fingerprint_id, exists
+    );
+    assert!(
+        exists,
+        "VERIFICATION FAILED: Fingerprint must exist in RocksDB store"
+    );
 
     // CRITICAL: Retrieve and inspect actual stored data from RocksDB
     let stored_fp = store
@@ -691,10 +859,16 @@ async fn test_rocksdb_fsv_store_creates_fingerprint() {
 
     println!("\n[EVIDENCE] Stored fingerprint fields from RocksDB:");
     println!("  - ID: {}", stored_fp.id);
-    println!("  - theta_to_north_star: {:.4}", stored_fp.theta_to_north_star);
+    println!(
+        "  - theta_to_north_star: {:.4}",
+        stored_fp.theta_to_north_star
+    );
     println!("  - access_count: {}", stored_fp.access_count);
     println!("  - content_hash: {}", hex::encode(stored_fp.content_hash));
-    println!("  - semantic.e1_semantic len: {}", stored_fp.semantic.e1_semantic.len());
+    println!(
+        "  - semantic.e1_semantic len: {}",
+        stored_fp.semantic.e1_semantic.len()
+    );
 
     // Verify content hash matches expected SHA-256
     let mut hasher = Sha256::new();
@@ -707,8 +881,14 @@ async fn test_rocksdb_fsv_store_creates_fingerprint() {
     println!("  - Content hash VERIFIED: matches SHA-256 of input");
 
     // Verify semantic fingerprint has valid embedding
-    assert!(!stored_fp.semantic.e1_semantic.is_empty(), "E1 must have embeddings");
-    println!("  - E1 semantic embedding dimension: {}", stored_fp.semantic.e1_semantic.len());
+    assert!(
+        !stored_fp.semantic.e1_semantic.is_empty(),
+        "E1 must have embeddings"
+    );
+    println!(
+        "  - E1 semantic embedding dimension: {}",
+        stored_fp.semantic.e1_semantic.len()
+    );
 
     println!("\n[FSV-ROCKSDB-001 PASSED] Fingerprint physically exists in RocksDB");
     println!("================================================================================\n");
@@ -753,7 +933,11 @@ async fn test_rocksdb_fsv_retrieve_returns_stored_data() {
 
     // === EXECUTE RETRIEVE OPERATION ===
     let retrieve_params = json!({ "fingerprintId": fingerprint_id_str });
-    let retrieve_request = make_request("memory/retrieve", Some(JsonRpcId::Number(2)), Some(retrieve_params));
+    let retrieve_request = make_request(
+        "memory/retrieve",
+        Some(JsonRpcId::Number(2)),
+        Some(retrieve_params),
+    );
     let retrieve_response = handlers.dispatch(retrieve_request).await;
 
     assert!(
@@ -763,17 +947,25 @@ async fn test_rocksdb_fsv_retrieve_returns_stored_data() {
     );
 
     let result = retrieve_response.result.expect("Should have result");
-    let fingerprint = result.get("fingerprint").expect("Must have fingerprint object");
+    let fingerprint = result
+        .get("fingerprint")
+        .expect("Must have fingerprint object");
 
     // === VERIFY RETRIEVED DATA MATCHES ROCKSDB ===
-    let retrieved_id = fingerprint.get("id").and_then(|v| v.as_str()).expect("Must have id");
+    let retrieved_id = fingerprint
+        .get("id")
+        .and_then(|v| v.as_str())
+        .expect("Must have id");
     assert_eq!(
         retrieved_id, fingerprint_id_str,
         "Retrieved ID must match stored ID"
     );
 
     // Verify content_hash matches what's in RocksDB
-    let retrieved_hash = fingerprint.get("contentHashHex").and_then(|v| v.as_str()).expect("Must have contentHashHex");
+    let retrieved_hash = fingerprint
+        .get("contentHashHex")
+        .and_then(|v| v.as_str())
+        .expect("Must have contentHashHex");
     let expected_hash_hex = hex::encode(stored_fp.content_hash);
     assert_eq!(
         retrieved_hash, expected_hash_hex,
@@ -817,15 +1009,25 @@ async fn test_rocksdb_fsv_delete_removes_from_store() {
 
     // Verify it exists BEFORE delete
     let exists_before = exists_in_store(&store, fingerprint_id).await;
-    assert!(exists_before, "Fingerprint must exist in RocksDB before delete");
-    println!("[BEFORE DELETE] Fingerprint exists in RocksDB: {}", exists_before);
+    assert!(
+        exists_before,
+        "Fingerprint must exist in RocksDB before delete"
+    );
+    println!(
+        "[BEFORE DELETE] Fingerprint exists in RocksDB: {}",
+        exists_before
+    );
 
     let count_before = store.count().await.expect("count() should work");
     println!("  - Store count: {}", count_before);
 
     // === EXECUTE DELETE OPERATION ===
     let delete_params = json!({ "fingerprintId": fingerprint_id_str, "soft": false });
-    let delete_request = make_request("memory/delete", Some(JsonRpcId::Number(2)), Some(delete_params));
+    let delete_request = make_request(
+        "memory/delete",
+        Some(JsonRpcId::Number(2)),
+        Some(delete_params),
+    );
     let delete_response = handlers.dispatch(delete_request).await;
 
     assert!(
@@ -835,21 +1037,36 @@ async fn test_rocksdb_fsv_delete_removes_from_store() {
     );
 
     let delete_result = delete_response.result.expect("Should have result");
-    let deleted = delete_result.get("deleted").and_then(|v| v.as_bool()).expect("Must have deleted flag");
+    let deleted = delete_result
+        .get("deleted")
+        .and_then(|v| v.as_bool())
+        .expect("Must have deleted flag");
     assert!(deleted, "Response must indicate deletion succeeded");
 
     // === VERIFY FINGERPRINT IS GONE FROM ROCKSDB ===
     let exists_after = exists_in_store(&store, fingerprint_id).await;
-    println!("\n[AFTER DELETE] Fingerprint exists in RocksDB: {}", exists_after);
-    assert!(!exists_after, "VERIFICATION FAILED: Fingerprint must be removed from RocksDB");
+    println!(
+        "\n[AFTER DELETE] Fingerprint exists in RocksDB: {}",
+        exists_after
+    );
+    assert!(
+        !exists_after,
+        "VERIFICATION FAILED: Fingerprint must be removed from RocksDB"
+    );
 
     let count_after = store.count().await.expect("count() should work");
     println!("  - Store count: {}", count_after);
     assert_eq!(count_after, count_before - 1, "Count must decrease by 1");
 
     // Double-check with retrieve - should return None
-    let retrieved = store.retrieve(fingerprint_id).await.expect("retrieve() should work");
-    assert!(retrieved.is_none(), "Retrieve must return None for deleted fingerprint");
+    let retrieved = store
+        .retrieve(fingerprint_id)
+        .await
+        .expect("retrieve() should work");
+    assert!(
+        retrieved.is_none(),
+        "Retrieve must return None for deleted fingerprint"
+    );
 
     println!("\n[FSV-ROCKSDB-003 PASSED] Fingerprint physically removed from RocksDB");
     println!("================================================================================\n");
@@ -880,7 +1097,11 @@ async fn test_rocksdb_fsv_multiple_fingerprints() {
     // Store multiple fingerprints
     for (i, content) in contents.iter().enumerate() {
         let params = json!({ "content": content, "importance": 0.8 });
-        let request = make_request("memory/store", Some(JsonRpcId::Number(i as i64 + 1)), Some(params));
+        let request = make_request(
+            "memory/store",
+            Some(JsonRpcId::Number(i as i64 + 1)),
+            Some(params),
+        );
         let response = handlers.dispatch(request).await;
 
         let result = response.result.expect("Store should succeed");
@@ -902,11 +1123,23 @@ async fn test_rocksdb_fsv_multiple_fingerprints() {
         let exists = exists_in_store(&store, *id).await;
         assert!(exists, "Fingerprint {} must exist in RocksDB", i + 1);
 
-        let fp = store.retrieve(*id).await.expect("retrieve() should work").expect("Must exist");
-        println!("  - Fingerprint {} exists: {} (hash: {})", i + 1, exists, hex::encode(&fp.content_hash[..8]));
+        let fp = store
+            .retrieve(*id)
+            .await
+            .expect("retrieve() should work")
+            .expect("Must exist");
+        println!(
+            "  - Fingerprint {} exists: {} (hash: {})",
+            i + 1,
+            exists,
+            hex::encode(&fp.content_hash[..8])
+        );
     }
 
-    println!("\n[FSV-ROCKSDB-004 PASSED] All {} fingerprints verified in RocksDB", contents.len());
+    println!(
+        "\n[FSV-ROCKSDB-004 PASSED] All {} fingerprints verified in RocksDB",
+        contents.len()
+    );
     println!("================================================================================\n");
 }
 
@@ -935,14 +1168,19 @@ mod real_embedding_fsv_tests {
     /// and stores them correctly in RocksDB.
     #[tokio::test]
     async fn test_fsv_real_embeddings_produce_13_embeddings() {
-        println!("\n================================================================================");
+        println!(
+            "\n================================================================================"
+        );
         println!("FSV-REAL-001: Verify REAL GPU Embeddings - 13 Embedding Spaces");
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
 
         let (handlers, _tempdir) = create_test_handlers_with_real_embeddings().await;
 
         // Store content with REAL GPU embeddings
-        let content = "Machine learning models transform input data through learned representations";
+        let content =
+            "Machine learning models transform input data through learned representations";
         let params = json!({
             "content": content,
             "importance": 0.9
@@ -954,11 +1192,15 @@ mod real_embedding_fsv_tests {
         let latency = start.elapsed();
         println!("\n[STORE] Latency: {:?}", latency);
 
-        assert!(response.error.is_none(), "Store must succeed with real embeddings");
+        assert!(
+            response.error.is_none(),
+            "Store must succeed with real embeddings"
+        );
         let result = response.result.expect("Must have result");
 
         // === FSV: Verify embedding count ===
-        let fingerprint_id = result.get("fingerprint_id")
+        let fingerprint_id = result
+            .get("fingerprint_id")
             .or_else(|| result.get("fingerprintId"))
             .and_then(|v| v.as_str())
             .expect("Must have fingerprint ID");
@@ -981,7 +1223,8 @@ mod real_embedding_fsv_tests {
                     assert!(
                         (-1.0..=1.0).contains(&val),
                         "PV[{}] must be in [-1, 1]: {}",
-                        i, val
+                        i,
+                        val
                     );
                 }
             }
@@ -989,7 +1232,9 @@ mod real_embedding_fsv_tests {
         }
 
         println!("\n[FSV-REAL-001 PASSED] 13 embeddings generated by ProductionMultiArrayProvider");
-        println!("================================================================================\n");
+        println!(
+            "================================================================================\n"
+        );
     }
 
     /// FSV-REAL-002: Verify REAL embeddings enable semantic search.
@@ -998,17 +1243,30 @@ mod real_embedding_fsv_tests {
     /// (not deterministic stub values).
     #[tokio::test]
     async fn test_fsv_real_embeddings_semantic_search_quality() {
-        println!("\n================================================================================");
+        println!(
+            "\n================================================================================"
+        );
         println!("FSV-REAL-002: Verify REAL GPU Embeddings - Semantic Search Quality");
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
 
         let (handlers, _tempdir) = create_test_handlers_with_real_embeddings().await;
 
         // Store diverse content
         let test_data = [
-            ("Python is a popular programming language for data science and machine learning", 0.9),
-            ("Rust provides memory safety guarantees through its ownership system", 0.9),
-            ("The Great Wall of China is an ancient fortification structure", 0.8),
+            (
+                "Python is a popular programming language for data science and machine learning",
+                0.9,
+            ),
+            (
+                "Rust provides memory safety guarantees through its ownership system",
+                0.9,
+            ),
+            (
+                "The Great Wall of China is an ancient fortification structure",
+                0.8,
+            ),
         ];
 
         let mut stored_ids = Vec::new();
@@ -1017,12 +1275,17 @@ mod real_embedding_fsv_tests {
                 "content": content,
                 "importance": importance
             });
-            let request = make_request("memory/store", Some(JsonRpcId::Number(i as i64 + 1)), Some(params));
+            let request = make_request(
+                "memory/store",
+                Some(JsonRpcId::Number(i as i64 + 1)),
+                Some(params),
+            );
             let response = handlers.dispatch(request).await;
             assert!(response.error.is_none(), "Store {} must succeed", i);
 
             if let Some(result) = response.result {
-                if let Some(id) = result.get("fingerprint_id")
+                if let Some(id) = result
+                    .get("fingerprint_id")
                     .or_else(|| result.get("fingerprintId"))
                     .and_then(|v| v.as_str())
                 {
@@ -1040,26 +1303,42 @@ mod real_embedding_fsv_tests {
             "topK": 10,
             "minSimilarity": 0.0
         });
-        let request = make_request("search/multi", Some(JsonRpcId::Number(100)), Some(search_params));
+        let request = make_request(
+            "search/multi",
+            Some(JsonRpcId::Number(100)),
+            Some(search_params),
+        );
         let response = handlers.dispatch(request).await;
 
         assert!(response.error.is_none(), "Search must succeed");
         let result = response.result.expect("Must have result");
-        let results = result.get("results")
+        let results = result
+            .get("results")
             .and_then(|v| v.as_array())
             .expect("Must have results array");
 
         println!("\n[FSV] Search results for 'programming languages':");
         for (i, r) in results.iter().enumerate() {
             let content = r.get("content").and_then(|v| v.as_str()).unwrap_or("?");
-            let sim = r.get("combined_similarity").and_then(|v| v.as_f64()).unwrap_or(0.0);
-            println!("  [{}] sim={:.4}: {}...", i, sim, &content[..40.min(content.len())]);
+            let sim = r
+                .get("combined_similarity")
+                .and_then(|v| v.as_f64())
+                .unwrap_or(0.0);
+            println!(
+                "  [{}] sim={:.4}: {}...",
+                i,
+                sim,
+                &content[..40.min(content.len())]
+            );
         }
 
         // With real embeddings, programming content should rank higher than Great Wall
         // The top 2 results should be programming-related
         if results.len() >= 2 {
-            let top_content = results[0].get("content").and_then(|v| v.as_str()).unwrap_or("");
+            let top_content = results[0]
+                .get("content")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
             let is_programming = top_content.contains("Python")
                 || top_content.contains("Rust")
                 || top_content.contains("programming");
@@ -1072,7 +1351,9 @@ mod real_embedding_fsv_tests {
         }
 
         println!("\n[FSV-REAL-002 PASSED] Semantic search with real embeddings verified");
-        println!("================================================================================\n");
+        println!(
+            "================================================================================\n"
+        );
     }
 
     /// FSV-REAL-003: Verify REAL embeddings persist correctly.
@@ -1080,14 +1361,19 @@ mod real_embedding_fsv_tests {
     /// Tests store -> retrieve -> verify cycle with real embeddings.
     #[tokio::test]
     async fn test_fsv_real_embeddings_persistence() {
-        println!("\n================================================================================");
+        println!(
+            "\n================================================================================"
+        );
         println!("FSV-REAL-003: Verify REAL GPU Embeddings - Persistence");
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
 
         let (handlers, _tempdir) = create_test_handlers_with_real_embeddings().await;
 
         // Store with real embeddings
-        let content = "Quantum computing uses superposition and entanglement for parallel processing";
+        let content =
+            "Quantum computing uses superposition and entanglement for parallel processing";
         let params = json!({
             "content": content,
             "importance": 0.95
@@ -1098,7 +1384,8 @@ mod real_embedding_fsv_tests {
 
         let result = response.result.expect("Must have result");
         let data = extract_mcp_tool_data(&result);
-        let fingerprint_id = data.get("fingerprint_id")
+        let fingerprint_id = data
+            .get("fingerprint_id")
             .or_else(|| data.get("fingerprintId"))
             .and_then(|v| v.as_str())
             .expect("Must have fingerprint ID");
@@ -1109,7 +1396,11 @@ mod real_embedding_fsv_tests {
         let retrieve_params = json!({
             "fingerprintId": fingerprint_id
         });
-        let request = make_request("memory/retrieve", Some(JsonRpcId::Number(2)), Some(retrieve_params));
+        let request = make_request(
+            "memory/retrieve",
+            Some(JsonRpcId::Number(2)),
+            Some(retrieve_params),
+        );
         let response = handlers.dispatch(request).await;
         assert!(response.error.is_none(), "Retrieve must succeed");
 
@@ -1117,15 +1408,20 @@ mod real_embedding_fsv_tests {
         let data = extract_mcp_tool_data(&result);
 
         // Verify retrieved ID matches (response has fingerprint.id, not fingerprintId)
-        let retrieved_id = data.get("fingerprint")
+        let retrieved_id = data
+            .get("fingerprint")
             .and_then(|fp| fp.get("id"))
             .and_then(|v| v.as_str())
             .expect("Must have fingerprint.id");
-        assert_eq!(retrieved_id, fingerprint_id, "Retrieved ID must match stored ID");
+        assert_eq!(
+            retrieved_id, fingerprint_id,
+            "Retrieved ID must match stored ID"
+        );
         println!("[FSV] Retrieved fingerprint ID matches ✓");
 
         // Verify content hash exists (proves data persisted) - it's in fingerprint.contentHashHex
-        if let Some(hash) = data.get("fingerprint")
+        if let Some(hash) = data
+            .get("fingerprint")
             .and_then(|fp| fp.get("contentHashHex"))
             .and_then(|v| v.as_str())
         {
@@ -1137,7 +1433,11 @@ mod real_embedding_fsv_tests {
             "fingerprintId": fingerprint_id,
             "soft": false
         });
-        let request = make_request("memory/delete", Some(JsonRpcId::Number(3)), Some(delete_params));
+        let request = make_request(
+            "memory/delete",
+            Some(JsonRpcId::Number(3)),
+            Some(delete_params),
+        );
         let response = handlers.dispatch(request).await;
         assert!(response.error.is_none(), "Delete must succeed");
         println!("[FSV] Deleted fingerprint ✓");
@@ -1149,7 +1449,11 @@ mod real_embedding_fsv_tests {
             "topK": 10,
             "minSimilarity": 0.0
         });
-        let request = make_request("search/multi", Some(JsonRpcId::Number(4)), Some(search_params));
+        let request = make_request(
+            "search/multi",
+            Some(JsonRpcId::Number(4)),
+            Some(search_params),
+        );
         let response = handlers.dispatch(request).await;
         assert!(response.error.is_none(), "Search must succeed");
 
@@ -1159,7 +1463,9 @@ mod real_embedding_fsv_tests {
         println!("[FSV] Verified fingerprint removed from store ✓");
 
         println!("\n[FSV-REAL-003 PASSED] Real embedding persistence verified");
-        println!("================================================================================\n");
+        println!(
+            "================================================================================\n"
+        );
     }
 
     /// FSV-REAL-004: Verify all 13 embedding spaces searchable.
@@ -1167,9 +1473,13 @@ mod real_embedding_fsv_tests {
     /// Tests that single-space search works for all 13 embedding types.
     #[tokio::test]
     async fn test_fsv_real_embeddings_all_spaces_searchable() {
-        println!("\n================================================================================");
+        println!(
+            "\n================================================================================"
+        );
         println!("FSV-REAL-004: Verify REAL GPU Embeddings - All 13 Spaces Searchable");
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
 
         let (handlers, _tempdir) = create_test_handlers_with_real_embeddings().await;
 
@@ -1185,9 +1495,19 @@ mod real_embedding_fsv_tests {
 
         // Test each of 13 embedding spaces
         let space_names = [
-            "E1:Semantic", "E2:TempCyclic", "E3:TempDecay", "E4:TempCtx",
-            "E5:Causal", "E6:Sparse", "E7:Code", "E8:Graph", "E9:HDC",
-            "E10:Multimodal", "E11:Entity", "E12:LateInteract", "E13:Sparse2"
+            "E1:Semantic",
+            "E2:TempCyclic",
+            "E3:TempDecay",
+            "E4:TempCtx",
+            "E5:Causal",
+            "E6:Sparse",
+            "E7:Code",
+            "E8:Graph",
+            "E9:HDC",
+            "E10:Multimodal",
+            "E11:Entity",
+            "E12:LateInteract",
+            "E13:Sparse2",
         ];
 
         println!("\n[FSV] Testing single-space search for all 13 spaces:");
@@ -1203,15 +1523,23 @@ mod real_embedding_fsv_tests {
             let request = make_request(
                 "search/single_space",
                 Some(JsonRpcId::Number((100 + space_index) as i64)),
-                Some(search_params)
+                Some(search_params),
             );
             let response = handlers.dispatch(request).await;
 
-            let status = if response.error.is_none() { "✓" } else { "✗" };
-            let count = response.result
+            let status = if response.error.is_none() {
+                "✓"
+            } else {
+                "✗"
+            };
+            let count = response
+                .result
                 .and_then(|r| r.get("count").and_then(|c| c.as_u64()))
                 .unwrap_or(0);
-            println!("  [{}] {} {} (results: {})", space_index, space_name, status, count);
+            println!(
+                "  [{}] {} {} (results: {})",
+                space_index, space_name, status, count
+            );
 
             if response.error.is_some() {
                 all_passed = false;
@@ -1221,7 +1549,9 @@ mod real_embedding_fsv_tests {
         assert!(all_passed, "All 13 space searches must succeed");
 
         println!("\n[FSV-REAL-004 PASSED] All 13 embedding spaces searchable");
-        println!("================================================================================\n");
+        println!(
+            "================================================================================\n"
+        );
     }
 
     /// FSV-REAL-005: Verify REAL embedding latency targets.
@@ -1230,17 +1560,25 @@ mod real_embedding_fsv_tests {
     /// Constitution targets: single_embed <10ms, inject_context p95 <25ms.
     #[tokio::test]
     async fn test_fsv_real_embeddings_latency() {
-        println!("\n================================================================================");
+        println!(
+            "\n================================================================================"
+        );
         println!("FSV-REAL-005: Verify REAL GPU Embeddings - Latency Performance");
-        println!("================================================================================");
+        println!(
+            "================================================================================"
+        );
 
         let (handlers, _tempdir) = create_test_handlers_with_real_embeddings().await;
 
         // Warm up
-        let warmup = make_request("memory/store", Some(JsonRpcId::Number(0)), Some(json!({
-            "content": "Warmup content",
-            "importance": 0.5
-        })));
+        let warmup = make_request(
+            "memory/store",
+            Some(JsonRpcId::Number(0)),
+            Some(json!({
+                "content": "Warmup content",
+                "importance": 0.5
+            })),
+        );
         handlers.dispatch(warmup).await;
 
         // Benchmark store operations
@@ -1256,7 +1594,7 @@ mod real_embedding_fsv_tests {
             let request = make_request(
                 "memory/store",
                 Some(JsonRpcId::Number((i + 1) as i64)),
-                Some(params)
+                Some(params),
             );
 
             let start = Instant::now();
@@ -1279,12 +1617,17 @@ mod real_embedding_fsv_tests {
 
         // Soft assertions - warn but don't fail based on hardware
         if p95 > 50 {
-            println!("  - Note: P95 {}ms exceeds 50ms (may be acceptable depending on hardware)", p95);
+            println!(
+                "  - Note: P95 {}ms exceeds 50ms (may be acceptable depending on hardware)",
+                p95
+            );
         } else {
             println!("  - P95 {}ms within 50ms target ✓", p95);
         }
 
         println!("\n[FSV-REAL-005 PASSED] Latency measurement complete");
-        println!("================================================================================\n");
+        println!(
+            "================================================================================\n"
+        );
     }
 }

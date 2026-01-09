@@ -56,8 +56,8 @@ pub use marblestone::{Domain, EdgeType, NeurotransmitterWeights};
 
 // Production monitoring types (traits and error types only)
 pub use monitoring::{
-    HealthMetrics, LayerInfo, LayerStatus, LayerStatusProvider, MonitorResult,
-    SystemMonitor, SystemMonitorError,
+    HealthMetrics, LayerInfo, LayerStatus, LayerStatusProvider, MonitorResult, SystemMonitor,
+    SystemMonitorError,
 };
 
 // AP-007: Stub monitors are TEST ONLY - not available in production builds

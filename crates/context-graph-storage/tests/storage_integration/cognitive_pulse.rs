@@ -23,10 +23,7 @@ fn test_cognitive_pulse_action_matrix() {
 
     // entropy < 0.4, coherence > 0.6 -> Ready
     let ready = CognitivePulse::from_values(0.3, 0.8);
-    println!(
-        "entropy=0.3, coherence=0.8 => {:?}",
-        ready.suggested_action
-    );
+    println!("entropy=0.3, coherence=0.8 => {:?}", ready.suggested_action);
     assert_eq!(
         ready.suggested_action,
         SuggestedAction::Ready,

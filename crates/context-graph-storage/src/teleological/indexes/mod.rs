@@ -78,16 +78,16 @@ pub mod registry;
 
 // Re-export from hnsw_config
 pub use hnsw_config::{
+    // Functions
+    all_hnsw_configs,
+    get_hnsw_config,
+    get_inverted_index_config,
     // Enums
     DistanceMetric,
     EmbedderIndex,
     // Structs
     HnswConfig,
     InvertedIndexConfig,
-    // Functions
-    all_hnsw_configs,
-    get_hnsw_config,
-    get_inverted_index_config,
 };
 
 // Re-export dimension constants
@@ -97,7 +97,9 @@ pub use hnsw_config::{
 };
 
 // Re-export from metrics
-pub use metrics::{compute_distance, cosine_similarity, distance_to_similarity, recommended_metric};
+pub use metrics::{
+    compute_distance, cosine_similarity, distance_to_similarity, recommended_metric,
+};
 
 // Re-export from per-embedder index modules (TASK-CORE-007)
 pub use embedder_index::{validate_vector, EmbedderIndexOps, IndexError, IndexResult};
@@ -562,7 +564,10 @@ mod tests {
         }
 
         assert_eq!(registry.total_vectors(), 30);
-        println!("    Total vectors across 3 indexes: {}", registry.total_vectors());
+        println!(
+            "    Total vectors across 3 indexes: {}",
+            registry.total_vectors()
+        );
         println!("    Total memory: {} bytes", registry.total_memory_bytes());
         println!("    PASS");
 
@@ -614,7 +619,11 @@ mod tests {
             EmbedderIndex::E12LateInteraction,
             EmbedderIndex::E13Splade,
         ] {
-            assert!(registry.get(embedder).is_none(), "{:?} should return None", embedder);
+            assert!(
+                registry.get(embedder).is_none(),
+                "{:?} should return None",
+                embedder
+            );
             println!("  {:?}: None ✓", embedder);
         }
 

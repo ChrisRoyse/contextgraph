@@ -111,9 +111,18 @@ fn test_all_12_cfs_accessible() {
     let (_tmp, db) = create_temp_db();
 
     let expected_cfs = [
-        "nodes", "edges", "embeddings", "metadata",
-        "johari_open", "johari_hidden", "johari_blind", "johari_unknown",
-        "temporal", "tags", "sources", "system",
+        "nodes",
+        "edges",
+        "embeddings",
+        "metadata",
+        "johari_open",
+        "johari_hidden",
+        "johari_blind",
+        "johari_unknown",
+        "temporal",
+        "tags",
+        "sources",
+        "system",
     ];
 
     for cf in &expected_cfs {
@@ -142,7 +151,10 @@ fn test_health_check_verifies_all_cfs() {
     // Health check should pass on fresh database
     let result = db.health_check();
     assert!(result.is_ok());
-    println!("Health check passed: all {} CFs verified", cf_names::ALL.len());
+    println!(
+        "Health check passed: all {} CFs verified",
+        cf_names::ALL.len()
+    );
 }
 
 #[test]

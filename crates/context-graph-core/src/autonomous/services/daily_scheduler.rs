@@ -137,7 +137,11 @@ impl DailyScheduler {
 
     /// Get all tasks that are due at the current hour
     pub fn get_due_tasks(&self, current_hour: u32) -> Vec<ScheduledTask> {
-        assert!(current_hour <= 23, "Hour must be 0-23, got {}", current_hour);
+        assert!(
+            current_hour <= 23,
+            "Hour must be 0-23, got {}",
+            current_hour
+        );
 
         self.tasks
             .values()
@@ -167,7 +171,11 @@ impl DailyScheduler {
 
     /// Execute all tasks that are due at the current hour
     pub fn execute_due_tasks(&mut self, current_hour: u32) -> ScheduleResult {
-        assert!(current_hour <= 23, "Hour must be 0-23, got {}", current_hour);
+        assert!(
+            current_hour <= 23,
+            "Hour must be 0-23, got {}",
+            current_hour
+        );
 
         let mut result = ScheduleResult::default();
 
@@ -240,7 +248,9 @@ impl DailyScheduler {
                     24 - current_hour + task_hour
                 } else {
                     // Same hour - if not run today, it's next
-                    if t.last_run.map_or(true, |lr| lr.date_naive() != now.date_naive()) {
+                    if t.last_run
+                        .map_or(true, |lr| lr.date_naive() != now.date_naive())
+                    {
                         0
                     } else {
                         24
@@ -336,7 +346,9 @@ mod tests {
         let drift_task = scheduler.get_task(&SchedulerCheckType::DriftCheck).unwrap();
         assert_eq!(drift_task.scheduled_hour, 8);
 
-        let stats_task = scheduler.get_task(&SchedulerCheckType::StatsReport).unwrap();
+        let stats_task = scheduler
+            .get_task(&SchedulerCheckType::StatsReport)
+            .unwrap();
         assert_eq!(stats_task.scheduled_hour, 14);
 
         let prep_task = scheduler.get_task(&SchedulerCheckType::Prep).unwrap();
@@ -403,7 +415,9 @@ mod tests {
         // Default drift check is at hour 6
         let due = scheduler.get_due_tasks(6);
         assert!(!due.is_empty());
-        assert!(due.iter().any(|t| t.check_type == SchedulerCheckType::DriftCheck));
+        assert!(due
+            .iter()
+            .any(|t| t.check_type == SchedulerCheckType::DriftCheck));
 
         println!("[PASS] test_get_due_tasks_at_scheduled_hour");
     }
@@ -425,14 +439,20 @@ mod tests {
 
         // Default consolidation window is (0, 2)
         let due_0 = scheduler.get_due_tasks(0);
-        assert!(due_0.iter().any(|t| t.check_type == SchedulerCheckType::Consolidation));
+        assert!(due_0
+            .iter()
+            .any(|t| t.check_type == SchedulerCheckType::Consolidation));
 
         let due_1 = scheduler.get_due_tasks(1);
-        assert!(due_1.iter().any(|t| t.check_type == SchedulerCheckType::Consolidation));
+        assert!(due_1
+            .iter()
+            .any(|t| t.check_type == SchedulerCheckType::Consolidation));
 
         // Hour 2 is outside the window (window is [0, 2))
         let due_2 = scheduler.get_due_tasks(2);
-        assert!(!due_2.iter().any(|t| t.check_type == SchedulerCheckType::Consolidation));
+        assert!(!due_2
+            .iter()
+            .any(|t| t.check_type == SchedulerCheckType::Consolidation));
 
         println!("[PASS] test_get_due_tasks_consolidation_window");
     }
@@ -459,7 +479,9 @@ mod tests {
         let result = scheduler.execute_due_tasks(6);
 
         assert!(!result.executed_tasks.is_empty());
-        assert!(result.executed_tasks.contains(&SchedulerCheckType::DriftCheck));
+        assert!(result
+            .executed_tasks
+            .contains(&SchedulerCheckType::DriftCheck));
 
         // Verify task was marked completed
         let task = scheduler.get_task(&SchedulerCheckType::DriftCheck).unwrap();
@@ -513,7 +535,10 @@ mod tests {
     fn test_mark_completed() {
         let mut scheduler = DailyScheduler::new();
 
-        let task = scheduler.get_task(&SchedulerCheckType::DriftCheck).unwrap().clone();
+        let task = scheduler
+            .get_task(&SchedulerCheckType::DriftCheck)
+            .unwrap()
+            .clone();
         assert!(task.last_run.is_none());
 
         scheduler.mark_completed(&task);
@@ -550,7 +575,9 @@ mod tests {
 
         // Should not be in due tasks
         let due = scheduler.get_due_tasks(6);
-        assert!(!due.iter().any(|t| t.check_type == SchedulerCheckType::DriftCheck));
+        assert!(!due
+            .iter()
+            .any(|t| t.check_type == SchedulerCheckType::DriftCheck));
 
         println!("[PASS] test_disable_task");
     }
@@ -627,7 +654,9 @@ mod tests {
 
         let due = scheduler.get_due_tasks(6);
         assert!(due.len() >= 2);
-        assert!(due.iter().any(|t| t.check_type == SchedulerCheckType::DriftCheck));
+        assert!(due
+            .iter()
+            .any(|t| t.check_type == SchedulerCheckType::DriftCheck));
         assert!(due.iter().any(|t| t.check_type == custom));
 
         println!("[PASS] test_multiple_tasks_same_hour");
@@ -648,7 +677,8 @@ mod tests {
         for hour in [22, 23, 0, 1] {
             let due = scheduler.get_due_tasks(hour);
             assert!(
-                due.iter().any(|t| t.check_type == SchedulerCheckType::Consolidation),
+                due.iter()
+                    .any(|t| t.check_type == SchedulerCheckType::Consolidation),
                 "Consolidation should be due at hour {}",
                 hour
             );
@@ -656,7 +686,9 @@ mod tests {
 
         // Should not be due outside window
         let due = scheduler.get_due_tasks(2);
-        assert!(!due.iter().any(|t| t.check_type == SchedulerCheckType::Consolidation));
+        assert!(!due
+            .iter()
+            .any(|t| t.check_type == SchedulerCheckType::Consolidation));
 
         println!("[PASS] test_consolidation_window_wraparound");
     }
@@ -671,8 +703,12 @@ mod tests {
         let result = scheduler.execute_due_tasks(6);
 
         // Drift check should be in skipped, not executed
-        assert!(!result.executed_tasks.contains(&SchedulerCheckType::DriftCheck));
-        assert!(result.skipped_tasks.contains(&SchedulerCheckType::DriftCheck));
+        assert!(!result
+            .executed_tasks
+            .contains(&SchedulerCheckType::DriftCheck));
+        assert!(result
+            .skipped_tasks
+            .contains(&SchedulerCheckType::DriftCheck));
 
         println!("[PASS] test_execute_with_disabled_tasks");
     }
@@ -750,13 +786,17 @@ mod tests {
         let drift = scheduler.get_task(&SchedulerCheckType::DriftCheck).unwrap();
         assert_eq!(drift.scheduled_hour, 6);
 
-        let stats = scheduler.get_task(&SchedulerCheckType::StatsReport).unwrap();
+        let stats = scheduler
+            .get_task(&SchedulerCheckType::StatsReport)
+            .unwrap();
         assert_eq!(stats.scheduled_hour, 12);
 
         let prep = scheduler.get_task(&SchedulerCheckType::Prep).unwrap();
         assert_eq!(prep.scheduled_hour, 18);
 
-        let consolidation = scheduler.get_task(&SchedulerCheckType::Consolidation).unwrap();
+        let consolidation = scheduler
+            .get_task(&SchedulerCheckType::Consolidation)
+            .unwrap();
         assert_eq!(consolidation.scheduled_hour, 0);
 
         println!("[PASS] test_scheduler_default_schedule_values");

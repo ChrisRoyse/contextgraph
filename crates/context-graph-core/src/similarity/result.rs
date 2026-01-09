@@ -121,15 +121,13 @@ impl CrossSpaceSimilarity {
     /// - `None` if breakdown not included or space was inactive
     #[inline]
     pub fn get_space_score(&self, space_idx: usize) -> Option<f32> {
-        self.space_scores
-            .as_ref()
-            .and_then(|scores| {
-                if space_idx < NUM_EMBEDDERS {
-                    scores[space_idx]
-                } else {
-                    None
-                }
-            })
+        self.space_scores.as_ref().and_then(|scores| {
+            if space_idx < NUM_EMBEDDERS {
+                scores[space_idx]
+            } else {
+                None
+            }
+        })
     }
 
     /// Create a result indicating insufficient active spaces.
@@ -203,10 +201,7 @@ impl CrossSpaceSimilarity {
     ///
     /// # Formula
     /// confidence = (active_count / NUM_EMBEDDERS) * (1 - normalized_variance)
-    pub fn compute_confidence(
-        active_count: u32,
-        scores_variance: f32,
-    ) -> f32 {
+    pub fn compute_confidence(active_count: u32, scores_variance: f32) -> f32 {
         let coverage = active_count as f32 / NUM_EMBEDDERS as f32;
         // Variance of [0, 1] scores has max ~0.25, so normalize by 0.25
         let variance_factor = 1.0 - (scores_variance / 0.25).min(1.0);

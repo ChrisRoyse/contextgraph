@@ -31,4 +31,6 @@ mod tests;
 pub use search::{
     compute_net_activation, domain_aware_search, domain_nt_summary, expected_domain_boost,
 };
-pub use types::{DomainSearchResult, DomainSearchResults, DOMAIN_MATCH_BONUS, OVERFETCH_MULTIPLIER};
+pub use types::{
+    DomainSearchResult, DomainSearchResults, DOMAIN_MATCH_BONUS, OVERFETCH_MULTIPLIER,
+};

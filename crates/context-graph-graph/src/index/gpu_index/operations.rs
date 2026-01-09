@@ -4,12 +4,12 @@
 
 use std::os::raw::{c_float, c_long};
 
-use crate::error::{GraphError, GraphResult};
 use super::super::faiss_ffi::{
-    faiss_Index_train, faiss_Index_add_with_ids, faiss_Index_search,
-    faiss_IndexIVF_set_nprobe, check_faiss_result,
+    check_faiss_result, faiss_IndexIVF_set_nprobe, faiss_Index_add_with_ids, faiss_Index_search,
+    faiss_Index_train,
 };
 use super::index::FaissGpuIndex;
+use crate::error::{GraphError, GraphResult};
 
 impl FaissGpuIndex {
     /// Train the index with representative vectors.
@@ -73,7 +73,8 @@ impl FaissGpuIndex {
 
         check_faiss_result(ret, "faiss_Index_train").map_err(|e| {
             GraphError::FaissTrainingFailed(format!(
-                "Training failed with {} vectors: {}", n_vectors, e
+                "Training failed with {} vectors: {}",
+                n_vectors, e
             ))
         })?;
 
@@ -81,10 +82,7 @@ impl FaissGpuIndex {
         // SAFETY: index_ptr is valid, nprobe value is valid.
         // Note: faiss_IndexIVF_set_nprobe returns void (no error code).
         unsafe {
-            faiss_IndexIVF_set_nprobe(
-                self.index_ptr.as_ptr(),
-                self.config.nprobe,
-            );
+            faiss_IndexIVF_set_nprobe(self.index_ptr.as_ptr(), self.config.nprobe);
         }
 
         self.is_trained = true;
@@ -147,7 +145,8 @@ impl FaissGpuIndex {
 
         check_faiss_result(ret, "faiss_Index_search").map_err(|e| {
             GraphError::FaissSearchFailed(format!(
-                "Search failed for {} queries, k={}: {}", n_queries, k, e
+                "Search failed for {} queries, k={}: {}",
+                n_queries, k, e
             ))
         })?;
 
@@ -188,7 +187,9 @@ impl FaissGpuIndex {
 
         if n_vectors != ids.len() {
             return Err(GraphError::InvalidConfig(format!(
-                "Vector count ({}) doesn't match ID count ({})", n_vectors, ids.len()
+                "Vector count ({}) doesn't match ID count ({})",
+                n_vectors,
+                ids.len()
             )));
         }
 
@@ -205,9 +206,7 @@ impl FaissGpuIndex {
         };
 
         check_faiss_result(ret, "faiss_Index_add_with_ids").map_err(|e| {
-            GraphError::FaissAddFailed(format!(
-                "Failed to add {} vectors: {}", n_vectors, e
-            ))
+            GraphError::FaissAddFailed(format!("Failed to add {} vectors: {}", n_vectors, e))
         })?;
 
         self.vector_count += n_vectors;

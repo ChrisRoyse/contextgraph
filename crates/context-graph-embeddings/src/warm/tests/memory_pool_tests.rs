@@ -1,8 +1,8 @@
 //! Tests for WarmMemoryPools dual-pool architecture.
 
+use super::helpers::{GB, MB};
 use crate::warm::error::WarmError;
 use crate::warm::memory_pool::WarmMemoryPools;
-use super::helpers::{GB, MB};
 
 #[test]
 fn test_rtx_5090_factory_capacities() {
@@ -17,7 +17,9 @@ fn test_rtx_5090_factory_capacities() {
 fn test_model_allocation_and_tracking() {
     let mut pools = WarmMemoryPools::rtx_5090();
 
-    pools.allocate_model("E1_Semantic", 800 * MB, 0x1000).unwrap();
+    pools
+        .allocate_model("E1_Semantic", 800 * MB, 0x1000)
+        .unwrap();
 
     let alloc = pools.get_model_allocation("E1_Semantic").unwrap();
     assert_eq!(alloc.size_bytes, 800 * MB);
@@ -30,7 +32,9 @@ fn test_model_allocation_and_tracking() {
 fn test_model_deallocation() {
     let mut pools = WarmMemoryPools::rtx_5090();
 
-    pools.allocate_model("E1_Semantic", 800 * MB, 0x1000).unwrap();
+    pools
+        .allocate_model("E1_Semantic", 800 * MB, 0x1000)
+        .unwrap();
     pools.free_model("E1_Semantic").unwrap();
 
     assert!(pools.get_model_allocation("E1_Semantic").is_none());
@@ -46,7 +50,10 @@ fn test_budget_enforcement_model_pool() {
 
     // This should fail (exceeds 24GB capacity)
     let result = pools.allocate_model("model3", 2 * GB, 0x3000);
-    assert!(matches!(result, Err(WarmError::VramAllocationFailed { .. })));
+    assert!(matches!(
+        result,
+        Err(WarmError::VramAllocationFailed { .. })
+    ));
 }
 
 #[test]
@@ -67,7 +74,10 @@ fn test_working_memory_exhaustion() {
     pools.allocate_working(8 * GB).unwrap();
 
     let result = pools.allocate_working(1);
-    assert!(matches!(result, Err(WarmError::WorkingMemoryExhausted { .. })));
+    assert!(matches!(
+        result,
+        Err(WarmError::WorkingMemoryExhausted { .. })
+    ));
 }
 
 #[test]

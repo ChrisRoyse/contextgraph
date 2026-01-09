@@ -159,10 +159,7 @@ impl LearningSignal {
         }
 
         // Also check component values for NaN (fail fast)
-        if self.delta_s.is_nan()
-            || self.delta_c.is_nan()
-            || self.w_e.is_nan()
-            || self.phi.is_nan()
+        if self.delta_s.is_nan() || self.delta_c.is_nan() || self.w_e.is_nan() || self.phi.is_nan()
         {
             return Err(UtlError::InvalidComputation {
                 delta_s: self.delta_s,

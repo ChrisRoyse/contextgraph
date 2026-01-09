@@ -150,7 +150,10 @@ async fn test_edge_case_long_input() {
     match too_long_result {
         Ok(tokens) => {
             // Truncation behavior - model produces valid output
-            assert!(!tokens.vectors.is_empty(), "Truncated input should produce embeddings");
+            assert!(
+                !tokens.vectors.is_empty(),
+                "Truncated input should produce embeddings"
+            );
         }
         Err(EmbeddingError::InputTooLong { .. }) => {
             // Also valid - strict length checking

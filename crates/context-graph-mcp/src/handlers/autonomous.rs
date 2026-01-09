@@ -23,12 +23,11 @@ use serde::Deserialize;
 use serde_json::json;
 use tracing::{debug, error, info, warn};
 
-use context_graph_core::autonomous::{
-    BootstrapService, ConsolidationService, DriftCorrector,
-    DriftDetector, PruningService, SubGoalDiscovery,
-    DiscoveryConfig, DriftSeverity,
-};
 use context_graph_core::autonomous::drift::DriftState;
+use context_graph_core::autonomous::{
+    BootstrapService, ConsolidationService, DiscoveryConfig, DriftCorrector, DriftDetector,
+    DriftSeverity, PruningService, SubGoalDiscovery,
+};
 
 use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
 
@@ -241,10 +240,7 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, "auto_bootstrap_north_star: Failed to parse parameters");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 
@@ -344,10 +340,7 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, "get_alignment_drift: Failed to parse parameters");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 
@@ -454,10 +447,7 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, "trigger_drift_correction: Failed to parse parameters");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 
@@ -494,7 +484,9 @@ impl Handlers {
 
         // Check if correction is needed (unless forced)
         if !params.force && state.severity == DriftSeverity::None {
-            warn!("trigger_drift_correction: No drift detected and force=false, skipping correction");
+            warn!(
+                "trigger_drift_correction: No drift detected and force=false, skipping correction"
+            );
             return self.tool_result_with_pulse(
                 id,
                 json!({
@@ -568,10 +560,7 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, "get_pruning_candidates: Failed to parse parameters");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 
@@ -647,10 +636,7 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, "trigger_consolidation: Failed to parse parameters");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 
@@ -742,10 +728,7 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, "discover_sub_goals: Failed to parse parameters");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 
@@ -873,10 +856,7 @@ impl Handlers {
             Ok(p) => p,
             Err(e) => {
                 error!(error = %e, "get_autonomous_status: Failed to parse parameters");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid parameters: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid parameters: {}", e));
             }
         };
 
@@ -911,7 +891,8 @@ impl Handlers {
         let trend = detector.compute_trend();
 
         let corrector = DriftCorrector::new();
-        let (corrections_applied, successful_corrections, success_rate) = corrector.correction_stats();
+        let (corrections_applied, successful_corrections, success_rate) =
+            corrector.correction_stats();
 
         // Build services status
         let services = json!({

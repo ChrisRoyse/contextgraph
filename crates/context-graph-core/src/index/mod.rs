@@ -71,8 +71,7 @@ pub use status::{IndexHealth, IndexStatus, MultiIndexHealth};
 
 // Re-export key types from local config (avoiding cyclic dependency with context-graph-storage)
 pub use config::{
-    DistanceMetric, EmbedderIndex, HnswConfig, InvertedIndexConfig,
-    E1_DIM, E1_MATRYOSHKA_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM, E6_SPARSE_VOCAB,
-    E7_DIM, E8_DIM, E9_DIM, E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB,
-    NUM_EMBEDDERS, PURPOSE_VECTOR_DIM,
+    DistanceMetric, EmbedderIndex, HnswConfig, InvertedIndexConfig, E10_DIM, E11_DIM,
+    E12_TOKEN_DIM, E13_SPLADE_VOCAB, E1_DIM, E1_MATRYOSHKA_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM,
+    E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM, NUM_EMBEDDERS, PURPOSE_VECTOR_DIM,
 };

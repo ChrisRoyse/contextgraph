@@ -137,12 +137,10 @@ impl MultimodalModel {
         // Layer norms
         let layer_norm1_weight =
             Self::get_tensor(vb, &format!("{}.layer_norm1.weight", prefix), &[h])?;
-        let layer_norm1_bias =
-            Self::get_tensor(vb, &format!("{}.layer_norm1.bias", prefix), &[h])?;
+        let layer_norm1_bias = Self::get_tensor(vb, &format!("{}.layer_norm1.bias", prefix), &[h])?;
         let layer_norm2_weight =
             Self::get_tensor(vb, &format!("{}.layer_norm2.weight", prefix), &[h])?;
-        let layer_norm2_bias =
-            Self::get_tensor(vb, &format!("{}.layer_norm2.bias", prefix), &[h])?;
+        let layer_norm2_bias = Self::get_tensor(vb, &format!("{}.layer_norm2.bias", prefix), &[h])?;
 
         Ok(ClipVisionLayerWeights {
             attention,

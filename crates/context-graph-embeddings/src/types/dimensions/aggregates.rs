@@ -42,10 +42,8 @@ pub const MODEL_COUNT: usize = 13;
 
 /// Compile-time assertion that TOTAL_DIMENSION equals expected value.
 /// This will cause a compilation error if dimensions change incorrectly.
-const _TOTAL_DIMENSION_CHECK: () = assert!(
-    TOTAL_DIMENSION == 10624,
-    "TOTAL_DIMENSION must equal 10624"
-);
+const _TOTAL_DIMENSION_CHECK: () =
+    assert!(TOTAL_DIMENSION == 10624, "TOTAL_DIMENSION must equal 10624");
 
 /// Compile-time assertion that MODEL_COUNT equals 13.
 const _MODEL_COUNT_CHECK: () = assert!(MODEL_COUNT == 13, "MODEL_COUNT must equal 13");

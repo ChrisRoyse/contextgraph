@@ -31,7 +31,9 @@ use crate::handlers::Handlers;
 
 /// Extract goal IDs from the hierarchy via get_all query.
 /// Returns (north_star_id, strategic_ids, tactical_ids, immediate_ids).
-async fn get_goal_ids_from_hierarchy(handlers: &Handlers) -> (String, Vec<String>, Vec<String>, Vec<String>) {
+async fn get_goal_ids_from_hierarchy(
+    handlers: &Handlers,
+) -> (String, Vec<String>, Vec<String>, Vec<String>) {
     let query_params = json!({ "operation": "get_all" });
     let query_request = make_request(
         "goal/hierarchy_query",
@@ -40,7 +42,10 @@ async fn get_goal_ids_from_hierarchy(handlers: &Handlers) -> (String, Vec<String
     );
     let response = handlers.dispatch(query_request).await;
     let result = response.result.expect("get_all should succeed");
-    let goals = result.get("goals").and_then(|v| v.as_array()).expect("Should have goals");
+    let goals = result
+        .get("goals")
+        .and_then(|v| v.as_array())
+        .expect("Should have goals");
 
     let mut north_star_id = String::new();
     let mut strategic_ids = Vec::new();
@@ -48,7 +53,11 @@ async fn get_goal_ids_from_hierarchy(handlers: &Handlers) -> (String, Vec<String
     let mut immediate_ids = Vec::new();
 
     for goal in goals {
-        let id = goal.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+        let id = goal
+            .get("id")
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string();
         let level = goal.get("level").and_then(|v| v.as_str()).unwrap_or("");
         match level {
             "NorthStar" => north_star_id = id,
@@ -76,7 +85,11 @@ async fn test_purpose_query_valid_vector() {
         "content": "Machine learning enables computers to learn from data",
         "importance": 0.9
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // Query with 13D purpose vector
@@ -88,7 +101,11 @@ async fn test_purpose_query_valid_vector() {
         "purpose_vector": purpose_vector,
         "topK": 10
     });
-    let query_request = make_request("purpose/query", Some(JsonRpcId::Number(2)), Some(query_params));
+    let query_request = make_request(
+        "purpose/query",
+        Some(JsonRpcId::Number(2)),
+        Some(query_params),
+    );
     let response = handlers.dispatch(query_request).await;
 
     assert!(response.error.is_none(), "purpose/query should succeed");
@@ -97,7 +114,10 @@ async fn test_purpose_query_valid_vector() {
     // Verify response structure
     assert!(result.get("results").is_some(), "Should have results array");
     assert!(result.get("count").is_some(), "Should have count");
-    assert!(result.get("query_metadata").is_some(), "Should have query_metadata");
+    assert!(
+        result.get("query_metadata").is_some(),
+        "Should have query_metadata"
+    );
 
     // Verify query_metadata structure
     let metadata = result.get("query_metadata").unwrap();
@@ -138,7 +158,11 @@ async fn test_purpose_query_missing_vector_fails() {
     let query_params = json!({
         "topK": 10
     });
-    let query_request = make_request("purpose/query", Some(JsonRpcId::Number(1)), Some(query_params));
+    let query_request = make_request(
+        "purpose/query",
+        Some(JsonRpcId::Number(1)),
+        Some(query_params),
+    );
     let response = handlers.dispatch(query_request).await;
 
     assert!(
@@ -146,7 +170,10 @@ async fn test_purpose_query_missing_vector_fails() {
         "purpose/query must fail without purpose_vector"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
         error.message.contains("purpose_vector"),
         "Error should mention missing purpose_vector"
@@ -164,7 +191,11 @@ async fn test_purpose_query_wrong_vector_size_fails() {
     let query_params = json!({
         "purpose_vector": invalid_vector
     });
-    let query_request = make_request("purpose/query", Some(JsonRpcId::Number(1)), Some(query_params));
+    let query_request = make_request(
+        "purpose/query",
+        Some(JsonRpcId::Number(1)),
+        Some(query_params),
+    );
     let response = handlers.dispatch(query_request).await;
 
     assert!(
@@ -172,7 +203,10 @@ async fn test_purpose_query_wrong_vector_size_fails() {
         "purpose/query must fail with 12-element vector"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
         error.message.contains("13") || error.message.contains("elements"),
         "Error should mention 13 elements required"
@@ -191,7 +225,11 @@ async fn test_purpose_query_out_of_range_values_fails() {
     let query_params = json!({
         "purpose_vector": invalid_vector
     });
-    let query_request = make_request("purpose/query", Some(JsonRpcId::Number(1)), Some(query_params));
+    let query_request = make_request(
+        "purpose/query",
+        Some(JsonRpcId::Number(1)),
+        Some(query_params),
+    );
     let response = handlers.dispatch(query_request).await;
 
     assert!(
@@ -199,9 +237,14 @@ async fn test_purpose_query_out_of_range_values_fails() {
         "purpose/query must fail with out-of-range value"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
-        error.message.contains("range") || error.message.contains("0.0") || error.message.contains("1.0"),
+        error.message.contains("range")
+            || error.message.contains("0.0")
+            || error.message.contains("1.0"),
         "Error should mention valid range [0.0, 1.0]"
     );
 }
@@ -216,7 +259,11 @@ async fn test_purpose_query_min_alignment_filter() {
         "content": "Purpose alignment testing content",
         "importance": 0.8
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     let purpose_vector: Vec<f64> = vec![0.7; 13];
@@ -226,7 +273,11 @@ async fn test_purpose_query_min_alignment_filter() {
         "minAlignment": 0.5,
         "topK": 5
     });
-    let query_request = make_request("purpose/query", Some(JsonRpcId::Number(2)), Some(query_params));
+    let query_request = make_request(
+        "purpose/query",
+        Some(JsonRpcId::Number(2)),
+        Some(query_params),
+    );
     let response = handlers.dispatch(query_request).await;
 
     assert!(response.error.is_none(), "purpose/query should succeed");
@@ -234,7 +285,9 @@ async fn test_purpose_query_min_alignment_filter() {
 
     // Verify min_alignment_filter is reported
     let metadata = result.get("query_metadata").unwrap();
-    let min_filter = metadata.get("min_alignment_filter").and_then(|v| v.as_f64());
+    let min_filter = metadata
+        .get("min_alignment_filter")
+        .and_then(|v| v.as_f64());
     assert_eq!(min_filter, Some(0.5), "Should report min_alignment_filter");
 }
 
@@ -255,7 +308,11 @@ async fn test_north_star_alignment_valid_fingerprint() {
         "content": "Building the best ML learning system for education",
         "importance": 0.9
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     let store_response = handlers.dispatch(store_request).await;
     let fingerprint_id = store_response
         .result
@@ -392,7 +449,11 @@ async fn test_north_star_alignment_autonomous_operation() {
         "content": "Test content for autonomous operation",
         "importance": 0.8
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     let store_response = handlers.dispatch(store_request).await;
 
     // Store should succeed with default purpose vector
@@ -402,7 +463,10 @@ async fn test_north_star_alignment_autonomous_operation() {
         store_response.error
     );
     let result = store_response.result.expect("Should have result");
-    assert!(result.get("fingerprintId").is_some(), "Must return fingerprintId");
+    assert!(
+        result.get("fingerprintId").is_some(),
+        "Must return fingerprintId"
+    );
 
     // TASK-CORE-001: purpose/north_star_alignment is deprecated
     let align_params = json!({
@@ -460,10 +524,21 @@ async fn test_goal_hierarchy_get_all() {
         "Should have at least one goal (North Star)"
     );
 
-    let stats = result.get("hierarchy_stats").expect("Should have hierarchy_stats");
-    assert!(stats.get("total_goals").is_some(), "Should have total_goals");
-    assert!(stats.get("has_north_star").is_some(), "Should have has_north_star");
-    assert!(stats.get("level_counts").is_some(), "Should have level_counts");
+    let stats = result
+        .get("hierarchy_stats")
+        .expect("Should have hierarchy_stats");
+    assert!(
+        stats.get("total_goals").is_some(),
+        "Should have total_goals"
+    );
+    assert!(
+        stats.get("has_north_star").is_some(),
+        "Should have has_north_star"
+    );
+    assert!(
+        stats.get("level_counts").is_some(),
+        "Should have level_counts"
+    );
 }
 
 /// Test goal/hierarchy_query get_goal operation.
@@ -549,7 +624,11 @@ async fn test_goal_hierarchy_get_children() {
 
     // From test hierarchy, North Star has 2 strategic children
     let children = children.unwrap();
-    assert_eq!(children.len(), 2, "North Star should have 2 strategic children");
+    assert_eq!(
+        children.len(),
+        2,
+        "North Star should have 2 strategic children"
+    );
 }
 
 /// Test goal/hierarchy_query get_ancestors operation.
@@ -560,7 +639,10 @@ async fn test_goal_hierarchy_get_ancestors() {
 
     // First, get the actual immediate goal ID from the hierarchy
     let (_, _, _, immediate_ids) = get_goal_ids_from_hierarchy(&handlers).await;
-    assert!(!immediate_ids.is_empty(), "Should have at least one Immediate goal");
+    assert!(
+        !immediate_ids.is_empty(),
+        "Should have at least one Immediate goal"
+    );
     let immediate_id = &immediate_ids[0];
 
     // Get ancestors of immediate goal
@@ -600,7 +682,10 @@ async fn test_goal_hierarchy_get_subtree() {
 
     // First, get the actual strategic goal ID from the hierarchy
     let (_, strategic_ids, _, _) = get_goal_ids_from_hierarchy(&handlers).await;
-    assert!(!strategic_ids.is_empty(), "Should have at least one Strategic goal");
+    assert!(
+        !strategic_ids.is_empty(),
+        "Should have at least one Strategic goal"
+    );
     let strategic_id = &strategic_ids[0];
 
     // Get subtree rooted at strategic goal
@@ -655,7 +740,10 @@ async fn test_goal_hierarchy_missing_operation_fails() {
         "goal/hierarchy_query must fail without operation"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
         error.message.contains("operation"),
         "Error should mention missing operation"
@@ -682,7 +770,10 @@ async fn test_goal_hierarchy_unknown_operation_fails() {
         "goal/hierarchy_query must fail with unknown operation"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
 }
 
 /// Test goal/hierarchy_query fails with non-existent goal.
@@ -708,7 +799,10 @@ async fn test_goal_hierarchy_goal_not_found_fails() {
         "goal/hierarchy_query must fail with non-existent goal"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32020, "Should return GOAL_NOT_FOUND error code");
+    assert_eq!(
+        error.code, -32020,
+        "Should return GOAL_NOT_FOUND error code"
+    );
 }
 
 // =============================================================================
@@ -723,7 +817,10 @@ async fn test_goal_aligned_memories_valid() {
 
     // First, get the actual strategic goal ID from the hierarchy
     let (_, strategic_ids, _, _) = get_goal_ids_from_hierarchy(&handlers).await;
-    assert!(!strategic_ids.is_empty(), "Should have at least one Strategic goal");
+    assert!(
+        !strategic_ids.is_empty(),
+        "Should have at least one Strategic goal"
+    );
     let strategic_id = &strategic_ids[0];
 
     // Store content
@@ -731,7 +828,11 @@ async fn test_goal_aligned_memories_valid() {
         "content": "Improving retrieval accuracy through semantic search",
         "importance": 0.9
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // Find memories aligned to strategic goal
@@ -762,7 +863,10 @@ async fn test_goal_aligned_memories_valid() {
 
     assert!(result.get("results").is_some(), "Should have results array");
     assert!(result.get("count").is_some(), "Should have count");
-    assert!(result.get("search_time_ms").is_some(), "Should report search_time_ms");
+    assert!(
+        result.get("search_time_ms").is_some(),
+        "Should report search_time_ms"
+    );
 }
 
 /// Test goal/aligned_memories fails with missing goal_id.
@@ -785,7 +889,10 @@ async fn test_goal_aligned_memories_missing_id_fails() {
         "goal/aligned_memories must fail without goal_id"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
         error.message.contains("goal_id"),
         "Error should mention missing goal_id"
@@ -815,7 +922,10 @@ async fn test_goal_aligned_memories_goal_not_found_fails() {
         "goal/aligned_memories must fail with non-existent goal"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32020, "Should return GOAL_NOT_FOUND error code");
+    assert_eq!(
+        error.code, -32020,
+        "Should return GOAL_NOT_FOUND error code"
+    );
 }
 
 // =============================================================================
@@ -918,7 +1028,10 @@ async fn test_drift_check_missing_ids_fails() {
         "purpose/drift_check must fail without fingerprint_ids"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
         error.message.contains("fingerprint_ids"),
         "Error should mention missing fingerprint_ids"
@@ -945,7 +1058,10 @@ async fn test_drift_check_empty_ids_fails() {
         "purpose/drift_check must fail with empty fingerprint_ids"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
 }
 
 /// Test autonomous operation: store succeeds without North Star.
@@ -966,7 +1082,11 @@ async fn test_store_autonomous_operation_for_drift() {
         "content": "Test content for autonomous drift check",
         "importance": 0.8
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     let store_response = handlers.dispatch(store_request).await;
 
     // Store should succeed with default purpose vector
@@ -976,7 +1096,9 @@ async fn test_store_autonomous_operation_for_drift() {
         store_response.error
     );
     let result = store_response.result.expect("Should have result");
-    let fingerprint_id = result.get("fingerprintId").expect("Must return fingerprintId");
+    let fingerprint_id = result
+        .get("fingerprintId")
+        .expect("Must return fingerprintId");
 
     // Verify the response contains expected fields demonstrating autonomous storage
     assert!(
@@ -984,7 +1106,10 @@ async fn test_store_autonomous_operation_for_drift() {
         "Must include embedding latency"
     );
 
-    println!("Successfully stored fingerprint {} autonomously (no North Star)", fingerprint_id);
+    println!(
+        "Successfully stored fingerprint {} autonomously (no North Star)",
+        fingerprint_id
+    );
 }
 
 /// Test purpose/drift_check handles not-found fingerprints gracefully.
@@ -1299,7 +1424,10 @@ async fn test_full_state_verification_purpose_workflow() {
     }
 
     assert_eq!(stored_ids.len(), 3, "Must have stored 3 fingerprints");
-    println!("[FSV] STEP 2 VERIFIED: Stored {} fingerprints", stored_ids.len());
+    println!(
+        "[FSV] STEP 2 VERIFIED: Stored {} fingerprints",
+        stored_ids.len()
+    );
 
     // =========================================================================
     // STEP 3: Query via purpose/query with 13D vector

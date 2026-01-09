@@ -70,9 +70,7 @@ fn pv_003_binary_roundtrip_preserves_signs() {
         .map(|i| if i % 2 == 0 { 0.75 } else { -0.75 })
         .collect();
 
-    let quantized = router
-        .quantize(ModelId::Hdc, &original)
-        .expect("quantize");
+    let quantized = router.quantize(ModelId::Hdc, &original).expect("quantize");
     let reconstructed = router
         .dequantize(ModelId::Hdc, &quantized)
         .expect("dequantize");
@@ -88,10 +86,7 @@ fn pv_003_binary_roundtrip_preserves_signs() {
             matches += 1;
         } else {
             mismatches += 1;
-            println!(
-                "  Mismatch at {}: orig={}, recon={}",
-                i, orig, recon
-            );
+            println!("  Mismatch at {}: orig={}, recon={}", i, orig, recon);
         }
     }
 
@@ -133,7 +128,11 @@ fn pv_004_pq8_quantization_succeeds() {
 
         let quantized = result.unwrap();
         assert_eq!(quantized.method, QuantizationMethod::PQ8);
-        assert_eq!(quantized.data.len(), 8, "PQ8 produces 8 bytes (8 subvectors)");
+        assert_eq!(
+            quantized.data.len(),
+            8,
+            "PQ8 produces 8 bytes (8 subvectors)"
+        );
         assert_eq!(quantized.original_dim, dim);
 
         // Verify round-trip
@@ -142,8 +141,10 @@ fn pv_004_pq8_quantization_succeeds() {
         assert_eq!(dequantized.unwrap().len(), dim);
 
         let compression = (dim * 4) as f32 / quantized.data.len() as f32;
-        println!("  {} ({:?}): SUCCESS, dim={}, compressed=8 bytes, ratio={:.1}x",
-                 name, model_id, dim, compression);
+        println!(
+            "  {} ({:?}): SUCCESS, dim={}, compressed=8 bytes, ratio={:.1}x",
+            name, model_id, dim, compression
+        );
     }
 }
 
@@ -174,7 +175,11 @@ fn pv_005_float8_quantization_succeeds() {
 
         let quantized = result.unwrap();
         assert_eq!(quantized.method, QuantizationMethod::Float8E4M3);
-        assert_eq!(quantized.data.len(), dim, "Float8 produces 1 byte per element");
+        assert_eq!(
+            quantized.data.len(),
+            dim,
+            "Float8 produces 1 byte per element"
+        );
         assert_eq!(quantized.original_dim, dim);
 
         // Verify round-trip
@@ -183,8 +188,14 @@ fn pv_005_float8_quantization_succeeds() {
         assert_eq!(dequantized.unwrap().len(), dim);
 
         let compression = (dim * 4) as f32 / quantized.data.len() as f32;
-        println!("  {} ({:?}): SUCCESS, dim={}, compressed={} bytes, ratio={:.1}x",
-                 name, model_id, dim, quantized.data.len(), compression);
+        println!(
+            "  {} ({:?}): SUCCESS, dim={}, compressed={} bytes, ratio={:.1}x",
+            name,
+            model_id,
+            dim,
+            quantized.data.len(),
+            compression
+        );
     }
 }
 
@@ -210,7 +221,10 @@ fn pv_006_sparse_rejects_dense_vectors() {
         assert!(result.is_err(), "{} should fail", name);
 
         match result.unwrap_err() {
-            EmbeddingError::InvalidModelInput { model_id: m, reason } => {
+            EmbeddingError::InvalidModelInput {
+                model_id: m,
+                reason,
+            } => {
                 println!("  {} ({:?}): InvalidModelInput, reason={}", name, m, reason);
                 assert!(reason.contains("Sparse"));
             }
@@ -248,11 +262,23 @@ fn pv_007_all_model_ids_have_method_assignments() {
     }
 
     // Verify expected methods per Constitution
-    assert_eq!(router.method_for(ModelId::Semantic), QuantizationMethod::PQ8);
-    assert_eq!(router.method_for(ModelId::TemporalRecent), QuantizationMethod::Float8E4M3);
+    assert_eq!(
+        router.method_for(ModelId::Semantic),
+        QuantizationMethod::PQ8
+    );
+    assert_eq!(
+        router.method_for(ModelId::TemporalRecent),
+        QuantizationMethod::Float8E4M3
+    );
     assert_eq!(router.method_for(ModelId::Hdc), QuantizationMethod::Binary);
-    assert_eq!(router.method_for(ModelId::Sparse), QuantizationMethod::SparseNative);
-    assert_eq!(router.method_for(ModelId::LateInteraction), QuantizationMethod::TokenPruning);
+    assert_eq!(
+        router.method_for(ModelId::Sparse),
+        QuantizationMethod::SparseNative
+    );
+    assert_eq!(
+        router.method_for(ModelId::LateInteraction),
+        QuantizationMethod::TokenPruning
+    );
 }
 
 // ============================================================================

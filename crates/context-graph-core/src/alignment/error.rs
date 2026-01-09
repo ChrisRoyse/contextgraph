@@ -16,7 +16,9 @@ pub enum AlignmentError {
     /// No North Star goal defined in the hierarchy.
     ///
     /// Resolution: Add a North Star goal using `GoalNode::autonomous_goal()` with `GoalLevel::NorthStar`.
-    #[error("No North Star goal defined in hierarchy - cannot compute alignment without a North Star")]
+    #[error(
+        "No North Star goal defined in hierarchy - cannot compute alignment without a North Star"
+    )]
     NoNorthStar,
 
     /// Goal not found in hierarchy.

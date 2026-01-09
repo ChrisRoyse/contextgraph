@@ -3,12 +3,10 @@
 //! Tests for neurotransmitter modulation formula and domain bonus in traversal.
 
 use context_graph_graph::{
-    Domain, NeurotransmitterWeights,
-    storage::LegacyGraphEdge,
-    marblestone::DOMAIN_MATCH_BONUS,
+    marblestone::DOMAIN_MATCH_BONUS, storage::LegacyGraphEdge, Domain, NeurotransmitterWeights,
 };
 
-use crate::common::fixtures::{generate_test_nodes, generate_test_edges};
+use crate::common::fixtures::{generate_test_edges, generate_test_nodes};
 use crate::common::helpers::create_test_storage;
 
 /// Test NT modulation formula correctness.
@@ -31,23 +29,31 @@ fn test_nt_modulation_formula() {
     let expected = (base_weight * (1.0 + net + domain_bonus) * steering).clamp(0.0, 1.0);
 
     println!("  Neutral weights test:");
-    println!("    excitatory={:.3}, inhibitory={:.3}, modulatory={:.3}",
-        neutral.excitatory, neutral.inhibitory, neutral.modulatory);
-    println!("    net={:.3}, domain_bonus={:.3}, steering={:.3}",
-        net, domain_bonus, steering);
+    println!(
+        "    excitatory={:.3}, inhibitory={:.3}, modulatory={:.3}",
+        neutral.excitatory, neutral.inhibitory, neutral.modulatory
+    );
+    println!(
+        "    net={:.3}, domain_bonus={:.3}, steering={:.3}",
+        net, domain_bonus, steering
+    );
     println!("    expected_weight={:.3}", expected);
 
     // Test case 2: Code domain weights (high excitatory)
     let code_weights = NeurotransmitterWeights::for_domain(Domain::Code);
     println!("\n  Code domain weights:");
-    println!("    excitatory={:.3}, inhibitory={:.3}, modulatory={:.3}",
-        code_weights.excitatory, code_weights.inhibitory, code_weights.modulatory);
+    println!(
+        "    excitatory={:.3}, inhibitory={:.3}, modulatory={:.3}",
+        code_weights.excitatory, code_weights.inhibitory, code_weights.modulatory
+    );
 
     // Test case 3: Legal domain weights (balanced)
     let legal_weights = NeurotransmitterWeights::for_domain(Domain::Legal);
     println!("\n  Legal domain weights:");
-    println!("    excitatory={:.3}, inhibitory={:.3}, modulatory={:.3}",
-        legal_weights.excitatory, legal_weights.inhibitory, legal_weights.modulatory);
+    println!(
+        "    excitatory={:.3}, inhibitory={:.3}, modulatory={:.3}",
+        legal_weights.excitatory, legal_weights.inhibitory, legal_weights.modulatory
+    );
 
     println!("=== PASSED: NT Modulation Formula ===\n");
 }
@@ -63,7 +69,9 @@ fn test_domain_bonus_in_traversal() {
     let nodes = generate_test_nodes(42, 20, 1536);
 
     for node in &nodes {
-        storage.put_hyperbolic(node.id, &node.point).expect("Put hyperbolic failed");
+        storage
+            .put_hyperbolic(node.id, &node.point)
+            .expect("Put hyperbolic failed");
     }
 
     // Create edges with different domains
@@ -79,10 +87,15 @@ fn test_domain_bonus_in_traversal() {
             Domain::Research => 4,
             Domain::General => 5,
         };
-        storage.add_edge(edge.source_id, LegacyGraphEdge {
-            target: edge.target_id,
-            edge_type: edge_type_u8,
-        }).expect("Add edge failed");
+        storage
+            .add_edge(
+                edge.source_id,
+                LegacyGraphEdge {
+                    target: edge.target_id,
+                    edge_type: edge_type_u8,
+                },
+            )
+            .expect("Add edge failed");
     }
 
     // Test domain bonus calculation
@@ -91,7 +104,11 @@ fn test_domain_bonus_in_traversal() {
         let same_domain_weight = edge.effective_weight(edge.domain, DOMAIN_MATCH_BONUS);
 
         // Different domain query
-        let other_domain = if edge.domain == Domain::Code { Domain::Legal } else { Domain::Code };
+        let other_domain = if edge.domain == Domain::Code {
+            Domain::Legal
+        } else {
+            Domain::Code
+        };
         let diff_domain_weight = edge.effective_weight(other_domain, DOMAIN_MATCH_BONUS);
 
         // Same domain should have higher or equal effective weight

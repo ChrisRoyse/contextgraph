@@ -1,8 +1,8 @@
 //! Test modules for search_result.
 
-mod query_tests;
-mod metrics_tests;
 mod item_tests;
+mod metrics_tests;
+mod query_tests;
 
 use crate::index::search_result::SearchResult;
 
@@ -13,7 +13,8 @@ fn test_new_creates_valid_result() {
     let result = SearchResult::new(
         vec![1, 2, 3, 4, 5, 6],
         vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
-        3, 2,
+        3,
+        2,
     );
 
     assert_eq!(result.k, 3);
@@ -52,10 +53,11 @@ fn test_len_and_k() {
     let result = SearchResult::new(
         vec![1, 2, 3, 4, 5, 6],
         vec![0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
-        3, 2,
+        3,
+        2,
     );
 
-    assert_eq!(result.len(), 2);  // num_queries
+    assert_eq!(result.len(), 2); // num_queries
     assert_eq!(result.k(), 3);
 }
 
@@ -63,11 +65,7 @@ fn test_len_and_k() {
 
 #[test]
 fn test_search_result_clone() {
-    let result = SearchResult::new(
-        vec![1, 2, 3],
-        vec![0.1, 0.2, 0.3],
-        3, 1,
-    );
+    let result = SearchResult::new(vec![1, 2, 3], vec![0.1, 0.2, 0.3], 3, 1);
     let cloned = result.clone();
 
     assert_eq!(cloned.ids, result.ids);

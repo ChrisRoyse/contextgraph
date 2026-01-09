@@ -42,7 +42,13 @@ fn create_handlers_with_stub_monitors() -> Handlers {
     let goal_hierarchy = GoalHierarchy::default();
 
     // NOTE: Handlers::new() uses StubSystemMonitor and StubLayerStatusProvider by default
-    Handlers::new(store, utl_processor, multi_array, alignment_calc, goal_hierarchy)
+    Handlers::new(
+        store,
+        utl_processor,
+        multi_array,
+        alignment_calc,
+        goal_hierarchy,
+    )
 }
 
 /// Create test handlers with shared MetaUtlTracker for direct verification.
@@ -110,24 +116,33 @@ async fn test_task_emb_024_stub_system_monitor_returns_error_32050() {
 
     // VERIFY: Response should be an error
     println!("RESPONSE INSPECTION:");
-    assert!(response.error.is_some(), "Expected error response, got success: {:?}", response.result);
+    assert!(
+        response.error.is_some(),
+        "Expected error response, got success: {:?}",
+        response.result
+    );
 
     let error = response.error.unwrap();
-    println!("  Error code: {} (expected: -32050 SYSTEM_MONITOR_ERROR)", error.code);
+    println!(
+        "  Error code: {} (expected: -32050 SYSTEM_MONITOR_ERROR)",
+        error.code
+    );
     println!("  Error message: {}", error.message);
 
     // VERIFY: Error code is -32050
     assert_eq!(
         error.code,
         error_codes::SYSTEM_MONITOR_ERROR,
-        "Expected SYSTEM_MONITOR_ERROR (-32050), got {}", error.code
+        "Expected SYSTEM_MONITOR_ERROR (-32050), got {}",
+        error.code
     );
 
     // VERIFY: Error message contains "Not implemented"
     assert!(
-        error.message.to_lowercase().contains("not implemented") ||
-        error.message.to_lowercase().contains("failed to get"),
-        "Error message should indicate not implemented: {}", error.message
+        error.message.to_lowercase().contains("not implemented")
+            || error.message.to_lowercase().contains("failed to get"),
+        "Error message should indicate not implemented: {}",
+        error.message
     );
 
     println!("\n======================================================================");
@@ -147,7 +162,10 @@ async fn test_task_emb_024_coherence_recovery_fails_with_stub() {
     let handlers = create_handlers_with_stub_monitors();
 
     // The first metric to fail is coherence_recovery_time_ms
-    let request = make_request("meta_utl/health_metrics", json!({ "include_targets": true }));
+    let request = make_request(
+        "meta_utl/health_metrics",
+        json!({ "include_targets": true }),
+    );
     let response = handlers.dispatch(request).await;
 
     assert!(response.error.is_some(), "Should fail with error");
@@ -158,9 +176,9 @@ async fn test_task_emb_024_coherence_recovery_fails_with_stub() {
 
     // Error message should mention the metric
     assert!(
-        error.message.contains("coherence_recovery") ||
-        error.message.contains("Not implemented"),
-        "Error should mention the failing metric: {}", error.message
+        error.message.contains("coherence_recovery") || error.message.contains("Not implemented"),
+        "Error should mention the failing metric: {}",
+        error.message
     );
 
     println!("EVIDENCE: coherence_recovery_time_ms FAILS (no hardcoded 8500 value)");
@@ -191,17 +209,22 @@ async fn test_task_emb_024_layer_status_provider_honest_statuses() {
     let response = handlers.dispatch(request).await;
 
     // VERIFY: Response should succeed (layer statuses are available)
-    assert!(response.error.is_none(), "get_memetic_status should succeed: {:?}", response.error);
+    assert!(
+        response.error.is_none(),
+        "get_memetic_status should succeed: {:?}",
+        response.error
+    );
 
     let result = response.result.unwrap();
     // The result is wrapped in MCP tool response format
-    let content = result["content"].as_array()
+    let content = result["content"]
+        .as_array()
         .and_then(|arr| arr.first())
         .and_then(|obj| obj["text"].as_str())
         .expect("Should have content text");
 
-    let data: serde_json::Value = serde_json::from_str(content)
-        .expect("Content should be valid JSON");
+    let data: serde_json::Value =
+        serde_json::from_str(content).expect("Content should be valid JSON");
 
     println!("LAYER STATUSES FROM StubLayerStatusProvider:");
     let layers = &data["layers"];
@@ -214,11 +237,31 @@ async fn test_task_emb_024_layer_status_provider_honest_statuses() {
     // VERIFY: Expected statuses per StubLayerStatusProvider
     // Perception and Memory are "active" (have working implementations)
     // Reasoning, Action, Meta are "stub" (not yet implemented)
-    assert_eq!(layers["perception"].as_str().unwrap(), "active", "perception should be active");
-    assert_eq!(layers["memory"].as_str().unwrap(), "active", "memory should be active");
-    assert_eq!(layers["reasoning"].as_str().unwrap(), "stub", "reasoning should be stub");
-    assert_eq!(layers["action"].as_str().unwrap(), "stub", "action should be stub");
-    assert_eq!(layers["meta"].as_str().unwrap(), "stub", "meta should be stub");
+    assert_eq!(
+        layers["perception"].as_str().unwrap(),
+        "active",
+        "perception should be active"
+    );
+    assert_eq!(
+        layers["memory"].as_str().unwrap(),
+        "active",
+        "memory should be active"
+    );
+    assert_eq!(
+        layers["reasoning"].as_str().unwrap(),
+        "stub",
+        "reasoning should be stub"
+    );
+    assert_eq!(
+        layers["action"].as_str().unwrap(),
+        "stub",
+        "action should be stub"
+    );
+    assert_eq!(
+        layers["meta"].as_str().unwrap(),
+        "stub",
+        "meta should be stub"
+    );
 
     println!("\n======================================================================");
     println!("EVIDENCE: StubLayerStatusProvider returns honest layer statuses");
@@ -258,24 +301,32 @@ async fn test_task_emb_024_pipeline_breakdown_returns_error_32052() {
 
     // VERIFY: Response should be an error
     println!("RESPONSE INSPECTION:");
-    assert!(response.error.is_some(), "Expected error response when include_pipeline_breakdown=true");
+    assert!(
+        response.error.is_some(),
+        "Expected error response when include_pipeline_breakdown=true"
+    );
 
     let error = response.error.unwrap();
-    println!("  Error code: {} (expected: -32052 PIPELINE_METRICS_UNAVAILABLE)", error.code);
+    println!(
+        "  Error code: {} (expected: -32052 PIPELINE_METRICS_UNAVAILABLE)",
+        error.code
+    );
     println!("  Error message: {}", error.message);
 
     // VERIFY: Error code is -32052
     assert_eq!(
         error.code,
         error_codes::PIPELINE_METRICS_UNAVAILABLE,
-        "Expected PIPELINE_METRICS_UNAVAILABLE (-32052), got {}", error.code
+        "Expected PIPELINE_METRICS_UNAVAILABLE (-32052), got {}",
+        error.code
     );
 
     // VERIFY: Error message is descriptive
     assert!(
-        error.message.contains("not yet implemented") ||
-        error.message.contains("Pipeline breakdown"),
-        "Error message should explain the issue: {}", error.message
+        error.message.contains("not yet implemented")
+            || error.message.contains("Pipeline breakdown"),
+        "Error message should explain the issue: {}",
+        error.message
     );
 
     println!("\n======================================================================");
@@ -306,7 +357,11 @@ async fn test_task_emb_024_search_multi_without_breakdown_succeeds() {
     let response = handlers.dispatch(request).await;
 
     // VERIFY: Should succeed (no pipeline breakdown requested)
-    assert!(response.error.is_none(), "search/multi should succeed without pipeline breakdown: {:?}", response.error);
+    assert!(
+        response.error.is_none(),
+        "search/multi should succeed without pipeline breakdown: {:?}",
+        response.error
+    );
 
     let result = response.result.unwrap();
     println!("SUCCESS: search/multi returned {} results", result["count"]);
@@ -338,7 +393,10 @@ async fn test_task_emb_024_edge_case_empty_params() {
     let response = handlers.dispatch(request).await;
 
     // Should still fail with SYSTEM_MONITOR_ERROR
-    assert!(response.error.is_some(), "Should fail even with empty params");
+    assert!(
+        response.error.is_some(),
+        "Should fail even with empty params"
+    );
     let error = response.error.unwrap();
     assert_eq!(error.code, error_codes::SYSTEM_MONITOR_ERROR);
 
@@ -377,9 +435,10 @@ async fn test_task_emb_024_edge_case_invalid_params_format() {
 
     // The error should be either INVALID_PARAMS or SYSTEM_MONITOR_ERROR
     assert!(
-        error.code == error_codes::SYSTEM_MONITOR_ERROR ||
-        error.code == error_codes::INVALID_PARAMS,
-        "Should be SYSTEM_MONITOR_ERROR or INVALID_PARAMS, got {}", error.code
+        error.code == error_codes::SYSTEM_MONITOR_ERROR
+            || error.code == error_codes::INVALID_PARAMS,
+        "Should be SYSTEM_MONITOR_ERROR or INVALID_PARAMS, got {}",
+        error.code
     );
 
     println!("EVIDENCE: Invalid params handled gracefully (no panic)");
@@ -434,12 +493,24 @@ async fn test_task_emb_024_no_hardcoded_values_8500_097_0015() {
     let response_str = serde_json::to_string(&response).unwrap();
 
     // VERIFY: No hardcoded values in response
-    assert!(!response_str.contains("8500"), "Should not contain hardcoded 8500");
-    assert!(!response_str.contains("0.97"), "Should not contain hardcoded 0.97");
-    assert!(!response_str.contains("0.015"), "Should not contain hardcoded 0.015");
+    assert!(
+        !response_str.contains("8500"),
+        "Should not contain hardcoded 8500"
+    );
+    assert!(
+        !response_str.contains("0.97"),
+        "Should not contain hardcoded 0.97"
+    );
+    assert!(
+        !response_str.contains("0.015"),
+        "Should not contain hardcoded 0.015"
+    );
 
     // Should be an error response
-    assert!(response.error.is_some(), "Should be error, not success with fake values");
+    assert!(
+        response.error.is_some(),
+        "Should be error, not success with fake values"
+    );
 
     println!("EVIDENCE: No hardcoded values found in response");
     println!("  - '8500' NOT found (old coherence_recovery_time_ms)");
@@ -469,7 +540,8 @@ async fn test_task_emb_024_layer_statuses_are_honest_not_placeholder() {
     assert!(response.error.is_none());
 
     let result = response.result.unwrap();
-    let content = result["content"].as_array()
+    let content = result["content"]
+        .as_array()
         .and_then(|arr| arr.first())
         .and_then(|obj| obj["text"].as_str())
         .unwrap();
@@ -482,12 +554,21 @@ async fn test_task_emb_024_layer_statuses_are_honest_not_placeholder() {
     let perception = layers["perception"].as_str().unwrap();
     let memory = layers["memory"].as_str().unwrap();
 
-    assert_eq!(perception, "active", "perception should be active, not placeholder stub");
-    assert_eq!(memory, "active", "memory should be active, not placeholder stub");
+    assert_eq!(
+        perception, "active",
+        "perception should be active, not placeholder stub"
+    );
+    assert_eq!(
+        memory, "active",
+        "memory should be active, not placeholder stub"
+    );
 
     // And some ARE stub - which is HONEST reporting
     let reasoning = layers["reasoning"].as_str().unwrap();
-    assert_eq!(reasoning, "stub", "reasoning IS stub (honest reporting, not placeholder)");
+    assert_eq!(
+        reasoning, "stub",
+        "reasoning IS stub (honest reporting, not placeholder)"
+    );
 
     println!("EVIDENCE: Layer statuses are honest, not placeholders");
     println!("  - perception='active' (has real implementation)");

@@ -2,11 +2,8 @@
 //!
 //! Tests for emotional weight calculation and state modifiers
 
-use context_graph_utl::{
-    config::EmotionalConfig,
-    emotional::EmotionalWeightCalculator,
-};
 use context_graph_core::types::EmotionalState;
+use context_graph_utl::{config::EmotionalConfig, emotional::EmotionalWeightCalculator};
 
 // =============================================================================
 // EMOTIONAL WEIGHT TESTS
@@ -25,10 +22,7 @@ fn test_emotional_weight_bounds() {
     ];
 
     for (content, min_expected, max_expected) in test_cases {
-        let weight = calculator.compute_emotional_weight(
-            content,
-            EmotionalState::Neutral,
-        );
+        let weight = calculator.compute_emotional_weight(content, EmotionalState::Neutral);
         assert!(
             (0.5..=1.5).contains(&weight),
             "weight {} out of [0.5, 1.5] for '{}'",

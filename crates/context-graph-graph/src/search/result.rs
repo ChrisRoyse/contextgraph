@@ -238,21 +238,27 @@ impl SemanticSearchResult {
         self.items.sort_by(|a, b| {
             let score_a = a.relevance_score.unwrap_or(a.similarity);
             let score_b = b.relevance_score.unwrap_or(b.similarity);
-            score_b.partial_cmp(&score_a).unwrap_or(std::cmp::Ordering::Equal)
+            score_b
+                .partial_cmp(&score_a)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
 
     /// Sort results by similarity (highest first).
     pub fn sort_by_similarity(&mut self) {
         self.items.sort_by(|a, b| {
-            b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal)
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
 
     /// Sort results by distance (lowest first).
     pub fn sort_by_distance(&mut self) {
         self.items.sort_by(|a, b| {
-            a.distance.partial_cmp(&b.distance).unwrap_or(std::cmp::Ordering::Equal)
+            a.distance
+                .partial_cmp(&b.distance)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
     }
 
@@ -268,7 +274,10 @@ impl SemanticSearchResult {
         SearchStats {
             count: self.items.len(),
             min_similarity: similarities.iter().cloned().fold(f32::INFINITY, f32::min),
-            max_similarity: similarities.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
+            max_similarity: similarities
+                .iter()
+                .cloned()
+                .fold(f32::NEG_INFINITY, f32::max),
             avg_similarity: similarities.iter().sum::<f32>() / similarities.len() as f32,
             min_distance: distances.iter().cloned().fold(f32::INFINITY, f32::min),
             max_distance: distances.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
@@ -386,8 +395,7 @@ mod tests {
 
     #[test]
     fn test_compute_relevance_with_domain_match() {
-        let mut item = SemanticSearchResultItem::new(1, 0.2, 0.8)
-            .with_domain(Domain::Code);
+        let mut item = SemanticSearchResultItem::new(1, 0.2, 0.8).with_domain(Domain::Code);
 
         item.compute_relevance(Some(Domain::Code), 1.2);
 
@@ -397,8 +405,7 @@ mod tests {
 
     #[test]
     fn test_compute_relevance_no_domain_match() {
-        let mut item = SemanticSearchResultItem::new(1, 0.2, 0.8)
-            .with_domain(Domain::Code);
+        let mut item = SemanticSearchResultItem::new(1, 0.2, 0.8).with_domain(Domain::Code);
 
         item.compute_relevance(Some(Domain::Research), 1.2);
 
@@ -408,8 +415,7 @@ mod tests {
 
     #[test]
     fn test_compute_relevance_clamp() {
-        let mut item = SemanticSearchResultItem::new(1, 0.0, 0.95)
-            .with_domain(Domain::Code);
+        let mut item = SemanticSearchResultItem::new(1, 0.0, 0.95).with_domain(Domain::Code);
 
         // 0.95 * 1.2 = 1.14, should clamp to 1.0
         item.compute_relevance(Some(Domain::Code), 1.2);
@@ -485,8 +491,7 @@ mod tests {
             SemanticSearchResultItem::new(2, 0.5, 0.75),
             SemanticSearchResultItem::new(3, 0.8, 0.60),
         ];
-        let result = SemanticSearchResult::new(items, 10, 500)
-            .filter_by_similarity(0.7);
+        let result = SemanticSearchResult::new(items, 10, 500).filter_by_similarity(0.7);
 
         assert_eq!(result.len(), 2);
         assert!(result.items.iter().all(|i| i.similarity >= 0.7));
@@ -499,8 +504,7 @@ mod tests {
             SemanticSearchResultItem::new(2, 0.2, 0.90).with_domain(Domain::Research),
             SemanticSearchResultItem::new(3, 0.3, 0.85).with_domain(Domain::Code),
         ];
-        let result = SemanticSearchResult::new(items, 10, 500)
-            .filter_by_domain(Domain::Code);
+        let result = SemanticSearchResult::new(items, 10, 500).filter_by_domain(Domain::Code);
 
         assert_eq!(result.len(), 2);
         assert!(result.items.iter().all(|i| i.domain == Some(Domain::Code)));
@@ -558,14 +562,8 @@ mod tests {
     #[test]
     fn test_batch_semantic_search_result() {
         let results = vec![
-            SemanticSearchResult::new(
-                vec![SemanticSearchResultItem::new(1, 0.1, 0.95)],
-                10, 200
-            ),
-            SemanticSearchResult::new(
-                vec![SemanticSearchResultItem::new(2, 0.2, 0.90)],
-                10, 300
-            ),
+            SemanticSearchResult::new(vec![SemanticSearchResultItem::new(1, 0.1, 0.95)], 10, 200),
+            SemanticSearchResult::new(vec![SemanticSearchResultItem::new(2, 0.2, 0.90)], 10, 300),
         ];
         let batch = BatchSemanticSearchResult::new(results, 500);
 
@@ -587,12 +585,11 @@ mod tests {
 
     #[test]
     fn test_batch_semantic_search_result_get() {
-        let results = vec![
-            SemanticSearchResult::new(
-                vec![SemanticSearchResultItem::new(1, 0.1, 0.95)],
-                10, 200
-            ),
-        ];
+        let results = vec![SemanticSearchResult::new(
+            vec![SemanticSearchResultItem::new(1, 0.1, 0.95)],
+            10,
+            200,
+        )];
         let batch = BatchSemanticSearchResult::new(results, 200);
 
         assert!(batch.get(0).is_some());

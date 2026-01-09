@@ -236,10 +236,16 @@ impl HnswConfig {
             );
         }
         if ef_search < 1 {
-            panic!("HNSW CONFIG ERROR: ef_search must be >= 1, got {}", ef_search);
+            panic!(
+                "HNSW CONFIG ERROR: ef_search must be >= 1, got {}",
+                ef_search
+            );
         }
         if dimension < 1 {
-            panic!("HNSW CONFIG ERROR: dimension must be >= 1, got {}", dimension);
+            panic!(
+                "HNSW CONFIG ERROR: dimension must be >= 1, got {}",
+                dimension
+            );
         }
 
         Self {

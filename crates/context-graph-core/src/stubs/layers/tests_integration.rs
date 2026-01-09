@@ -27,11 +27,26 @@ async fn test_all_layers_unhealthy() {
     let learning = StubLearningLayer::new();
     let coherence = StubCoherenceLayer::new();
 
-    assert!(!sensing.health_check().await.unwrap(), "Sensing stub should be unhealthy");
-    assert!(!reflex.health_check().await.unwrap(), "Reflex stub should be unhealthy");
-    assert!(!memory.health_check().await.unwrap(), "Memory stub should be unhealthy");
-    assert!(!learning.health_check().await.unwrap(), "Learning stub should be unhealthy");
-    assert!(!coherence.health_check().await.unwrap(), "Coherence stub should be unhealthy");
+    assert!(
+        !sensing.health_check().await.unwrap(),
+        "Sensing stub should be unhealthy"
+    );
+    assert!(
+        !reflex.health_check().await.unwrap(),
+        "Reflex stub should be unhealthy"
+    );
+    assert!(
+        !memory.health_check().await.unwrap(),
+        "Memory stub should be unhealthy"
+    );
+    assert!(
+        !learning.health_check().await.unwrap(),
+        "Learning stub should be unhealthy"
+    );
+    assert!(
+        !coherence.health_check().await.unwrap(),
+        "Coherence stub should be unhealthy"
+    );
 }
 
 #[tokio::test]
@@ -78,10 +93,7 @@ async fn test_layer_errors_reference_documentation() {
     ];
 
     for layer in layers {
-        let input = LayerInput::new(
-            "test-request".to_string(),
-            "test content".to_string(),
-        );
+        let input = LayerInput::new("test-request".to_string(), "test content".to_string());
         let result = layer.process(input).await;
 
         if let Err(CoreError::NotImplemented(msg)) = result {
@@ -146,10 +158,10 @@ async fn test_layer_names_indicate_not_implemented() {
 async fn test_latency_budgets_defined() {
     // Even though stubs fail, they should still have latency budgets defined
     let layers: Vec<(Box<dyn NervousLayer>, u64)> = vec![
-        (Box::new(StubSensingLayer::new()), 5), // 5ms
-        (Box::new(StubReflexLayer::new()), 0),  // 100us (< 1ms)
-        (Box::new(StubMemoryLayer::new()), 1),  // 1ms
-        (Box::new(StubLearningLayer::new()), 10), // 10ms
+        (Box::new(StubSensingLayer::new()), 5),    // 5ms
+        (Box::new(StubReflexLayer::new()), 0),     // 100us (< 1ms)
+        (Box::new(StubMemoryLayer::new()), 1),     // 1ms
+        (Box::new(StubLearningLayer::new()), 10),  // 10ms
         (Box::new(StubCoherenceLayer::new()), 10), // 10ms
     ];
 

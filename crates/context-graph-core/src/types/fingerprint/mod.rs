@@ -32,17 +32,17 @@
 //! assert!(size > 60000); // ~60KB minimum for dense embeddings
 //! ```
 
-mod semantic;
-mod sparse;
-mod purpose;
 mod evolution;
 mod johari;
+mod purpose;
+mod semantic;
+mod sparse;
 mod teleological;
 
 // Re-export SemanticFingerprint types (TASK-F001, TASK-CORE-003)
 pub use semantic::{
-    EmbeddingRef, EmbeddingSlice, SemanticFingerprint, TeleologicalArray, ValidationError,
-    E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM,
+    EmbeddingRef, EmbeddingSlice, SemanticFingerprint, TeleologicalArray, ValidationError, E10_DIM,
+    E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM,
     E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM, NUM_EMBEDDERS, TOTAL_DENSE_DIMS,
 };
 

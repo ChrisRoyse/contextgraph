@@ -402,8 +402,7 @@ impl KMeansPurposeClustering for StandardKMeans {
         }
 
         // Build clusters with metadata
-        let clusters =
-            build_clusters(entries, &assignments, &centroids, config.k);
+        let clusters = build_clusters(entries, &assignments, &centroids, config.k);
 
         // Compute WCSS (within-cluster sum of squares)
         let wcss = compute_wcss(&vectors, &assignments, &centroids);
@@ -428,10 +427,7 @@ impl KMeansPurposeClustering for StandardKMeans {
 /// Uses squared distance to avoid sqrt for comparison.
 #[inline]
 fn euclidean_distance_squared(a: &[f32; PURPOSE_VECTOR_DIM], b: &[f32; PURPOSE_VECTOR_DIM]) -> f32 {
-    a.iter()
-        .zip(b.iter())
-        .map(|(x, y)| (x - y) * (x - y))
-        .sum()
+    a.iter().zip(b.iter()).map(|(x, y)| (x - y) * (x - y)).sum()
 }
 
 /// Compute Euclidean distance between two vectors.
@@ -475,7 +471,10 @@ fn kmeans_plus_plus_init(
         if total == 0.0 {
             // All points are at centroid locations, pick next available
             for (i, _) in vectors.iter().enumerate() {
-                if !centroids.iter().any(|c| euclidean_distance_squared(c, &vectors[i]) < 1e-10) {
+                if !centroids
+                    .iter()
+                    .any(|c| euclidean_distance_squared(c, &vectors[i]) < 1e-10)
+                {
                     centroids.push(vectors[i]);
                     break;
                 }
@@ -868,7 +867,12 @@ mod tests {
             ),
             PurposeCluster::new(
                 [0.5; PURPOSE_VECTOR_DIM],
-                vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()],
+                vec![
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                    Uuid::new_v4(),
+                ],
                 0.9,
                 None,
             ),
@@ -1022,11 +1026,7 @@ mod tests {
 
         // All clusters should have members
         for (i, cluster) in result.clusters.iter().enumerate() {
-            assert!(
-                !cluster.is_empty(),
-                "Cluster {} should not be empty",
-                i
-            );
+            assert!(!cluster.is_empty(), "Cluster {} should not be empty", i);
             println!(
                 "  Cluster {}: {} members, coherence={:.4}, goal={:?}",
                 i,

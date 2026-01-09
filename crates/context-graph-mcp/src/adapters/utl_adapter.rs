@@ -78,8 +78,8 @@ impl UtlProcessorAdapter {
 
     /// Try to create adapter, returning error if config is invalid.
     pub fn try_new(config: UtlConfig) -> CoreResult<Self> {
-        let processor = RealUtlProcessor::try_new(config)
-            .map_err(|e| CoreError::UtlError(e.to_string()))?;
+        let processor =
+            RealUtlProcessor::try_new(config).map_err(|e| CoreError::UtlError(e.to_string()))?;
         Ok(Self {
             inner: Arc::new(RwLock::new(processor)),
             metrics: Arc::new(RwLock::new(UtlComputationMetrics::new())),
@@ -361,8 +361,9 @@ impl UtlProcessor for UtlProcessorAdapter {
         };
 
         // Convert to MCP response format
-        serde_json::to_value(status.to_mcp_response())
-            .unwrap_or_else(|e| serde_json::json!({"error": format!("serialization failed: {}", e)}))
+        serde_json::to_value(status.to_mcp_response()).unwrap_or_else(
+            |e| serde_json::json!({"error": format!("serialization failed: {}", e)}),
+        )
     }
 }
 

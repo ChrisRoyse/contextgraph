@@ -4,13 +4,13 @@
 
 use context_graph_utl::{
     compute_learning_magnitude,
-    LearningSignal,
-    processor::UtlProcessor,
     johari::{JohariQuadrant, SuggestedAction},
     lifecycle::{LifecycleLambdaWeights, LifecycleStage},
+    processor::UtlProcessor,
+    LearningSignal,
 };
 
-use super::helpers::{generate_embedding, generate_context};
+use super::helpers::{generate_context, generate_embedding};
 
 // =============================================================================
 // FULL UTL PIPELINE TESTS

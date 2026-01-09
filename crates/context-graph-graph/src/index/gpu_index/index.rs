@@ -7,14 +7,13 @@ use std::os::raw::c_int;
 use std::ptr::NonNull;
 use std::sync::Arc;
 
-use crate::config::IndexConfig;
-use crate::error::{GraphError, GraphResult};
 use super::super::faiss_ffi::{
-    FaissIndex, MetricType,
-    faiss_index_factory, faiss_index_cpu_to_gpu,
-    faiss_Index_ntotal, faiss_Index_free, check_faiss_result,
+    check_faiss_result, faiss_Index_free, faiss_Index_ntotal, faiss_index_cpu_to_gpu,
+    faiss_index_factory, FaissIndex, MetricType,
 };
 use super::resources::GpuResources;
+use crate::config::IndexConfig;
+use crate::error::{GraphError, GraphResult};
 
 /// FAISS GPU IVF-PQ Index wrapper.
 ///
@@ -99,16 +98,21 @@ impl FaissGpuIndex {
     ///
     /// Returns `GraphError::FaissIndexCreation` if index creation fails.
     /// Returns `GraphError::InvalidConfig` if configuration is invalid.
-    pub fn with_resources(config: IndexConfig, gpu_resources: Arc<GpuResources>) -> GraphResult<Self> {
+    pub fn with_resources(
+        config: IndexConfig,
+        gpu_resources: Arc<GpuResources>,
+    ) -> GraphResult<Self> {
         // Validate configuration
         validate_config(&config)?;
 
         // Create factory string
         let factory_string = config.factory_string();
-        let c_factory = CString::new(factory_string.clone())
-            .map_err(|e| GraphError::InvalidConfig(format!(
-                "Invalid factory string '{}': {}", factory_string, e
-            )))?;
+        let c_factory = CString::new(factory_string.clone()).map_err(|e| {
+            GraphError::InvalidConfig(format!(
+                "Invalid factory string '{}': {}",
+                factory_string, e
+            ))
+        })?;
 
         // Create CPU index first
         let mut cpu_index: *mut FaissIndex = std::ptr::null_mut();
@@ -126,13 +130,14 @@ impl FaissGpuIndex {
 
         check_faiss_result(ret, "faiss_index_factory").map_err(|e| {
             GraphError::FaissIndexCreation(format!(
-                "Failed to create CPU index '{}': {}", factory_string, e
+                "Failed to create CPU index '{}': {}",
+                factory_string, e
             ))
         })?;
 
         if cpu_index.is_null() {
             return Err(GraphError::FaissIndexCreation(
-                "CPU index pointer is null after factory creation".to_string()
+                "CPU index pointer is null after factory creation".to_string(),
             ));
         }
 
@@ -156,13 +161,14 @@ impl FaissGpuIndex {
 
         check_faiss_result(ret, "faiss_index_cpu_to_gpu").map_err(|e| {
             GraphError::GpuTransferFailed(format!(
-                "Failed to transfer index to GPU {}: {}", config.gpu_id, e
+                "Failed to transfer index to GPU {}: {}",
+                config.gpu_id, e
             ))
         })?;
 
         if gpu_index.is_null() {
             return Err(GraphError::GpuResourceAllocation(
-                "GPU index pointer is null after transfer".to_string()
+                "GPU index pointer is null after transfer".to_string(),
             ));
         }
 
@@ -253,17 +259,15 @@ impl std::fmt::Debug for FaissGpuIndex {
 fn validate_config(config: &IndexConfig) -> GraphResult<()> {
     if config.dimension == 0 {
         return Err(GraphError::InvalidConfig(
-            "dimension must be > 0".to_string()
+            "dimension must be > 0".to_string(),
         ));
     }
     if config.nlist == 0 {
-        return Err(GraphError::InvalidConfig(
-            "nlist must be > 0".to_string()
-        ));
+        return Err(GraphError::InvalidConfig("nlist must be > 0".to_string()));
     }
     if config.pq_segments == 0 {
         return Err(GraphError::InvalidConfig(
-            "pq_segments must be > 0".to_string()
+            "pq_segments must be > 0".to_string(),
         ));
     }
     if config.dimension % config.pq_segments != 0 {

@@ -108,26 +108,22 @@ fn test_suggested_action_invalid_serde_rejected() {
 #[test]
 fn test_suggested_action_descriptions_contain_mcp_tools() {
     // Verify key actions have MCP tool guidance
-    assert!(
-        SuggestedAction::Explore
-            .description()
-            .contains("epistemic_action")
-    );
-    assert!(SuggestedAction::Explore.description().contains("trigger_dream"));
-    assert!(
-        SuggestedAction::Consolidate
-            .description()
-            .contains("trigger_dream")
-    );
-    assert!(
-        SuggestedAction::Consolidate
-            .description()
-            .contains("merge_concepts")
-    );
-    assert!(
-        SuggestedAction::Stabilize
-            .description()
-            .contains("critique_context")
-    );
-    assert!(SuggestedAction::Review.description().contains("reflect_on_memory"));
+    assert!(SuggestedAction::Explore
+        .description()
+        .contains("epistemic_action"));
+    assert!(SuggestedAction::Explore
+        .description()
+        .contains("trigger_dream"));
+    assert!(SuggestedAction::Consolidate
+        .description()
+        .contains("trigger_dream"));
+    assert!(SuggestedAction::Consolidate
+        .description()
+        .contains("merge_concepts"));
+    assert!(SuggestedAction::Stabilize
+        .description()
+        .contains("critique_context"));
+    assert!(SuggestedAction::Review
+        .description()
+        .contains("reflect_on_memory"));
 }

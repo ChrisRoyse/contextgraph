@@ -8,10 +8,10 @@
 //! 2. UCB (Upper Confidence Bound): θ = argmax[μ(θ) + c√(ln(N)/n(θ))]
 //! 3. Budgeted UCB: violation_budget(t) = B_0 × exp(-λ×t)
 
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
 use rand::prelude::*;
 use rand_distr::Beta;
+use std::collections::HashMap;
 
 /// Arm of the bandit (threshold candidate)
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -146,7 +146,10 @@ impl ThresholdBandit {
                         );
                         // Return error by panicking in debug, use mean in release as last resort
                         #[cfg(debug_assertions)]
-                        panic!("Invalid Beta distribution parameters: alpha={}, beta={}", alpha, beta_param);
+                        panic!(
+                            "Invalid Beta distribution parameters: alpha={}, beta={}",
+                            alpha, beta_param
+                        );
                         #[cfg(not(debug_assertions))]
                         {
                             alpha / (alpha + beta_param)
@@ -297,7 +300,7 @@ mod tests {
 
         let (alpha, beta) = stats.get_beta_params();
         assert_eq!(alpha, 3.0); // 2 + 1
-        assert_eq!(beta, 1.0);  // 0 + 1
+        assert_eq!(beta, 1.0); // 0 + 1
     }
 
     #[test]
@@ -328,10 +331,7 @@ mod tests {
 
     #[test]
     fn test_record_outcomes() {
-        let arms = vec![
-            ThresholdArm { value: 0.70 },
-            ThresholdArm { value: 0.75 },
-        ];
+        let arms = vec![ThresholdArm { value: 0.70 }, ThresholdArm { value: 0.75 }];
         let mut bandit = ThresholdBandit::new(arms, 1.5);
 
         bandit.record_outcome(ThresholdArm { value: 0.70 }, true);
@@ -414,7 +414,9 @@ mod tests {
         let mut selected_counts = std::collections::HashMap::new();
         for _ in 0..1000 {
             let selected = bandit.select_thompson().unwrap();
-            *selected_counts.entry(ordered_float(selected.value)).or_insert(0u32) += 1;
+            *selected_counts
+                .entry(ordered_float(selected.value))
+                .or_insert(0u32) += 1;
         }
 
         let count_080 = *selected_counts.get(&ordered_float(0.80)).unwrap_or(&0);
@@ -430,7 +432,9 @@ mod tests {
             "Thompson sampling should explore other arms, but only selected 0.80 arm. \
              This indicates the implementation is greedy, not stochastic. \
              Counts: 0.80={}, 0.75={}, 0.70={}",
-            count_080, count_075, count_070
+            count_080,
+            count_075,
+            count_070
         );
 
         // But the best arm should still be selected most often (it has highest mean)
@@ -438,7 +442,8 @@ mod tests {
             count_080 > other_count,
             "Best arm (0.80) should still be selected most often. \
              Counts: 0.80={}, others={}",
-            count_080, other_count
+            count_080,
+            other_count
         );
 
         // Sanity check: all selections should sum to 1000
@@ -465,7 +470,9 @@ mod tests {
         let mut selected_counts = std::collections::HashMap::new();
         for _ in 0..3000 {
             let selected = bandit.select_thompson().unwrap();
-            *selected_counts.entry(ordered_float(selected.value)).or_insert(0u32) += 1;
+            *selected_counts
+                .entry(ordered_float(selected.value))
+                .or_insert(0u32) += 1;
         }
 
         // With uniform priors, each arm should be selected roughly 1000 times
@@ -475,17 +482,15 @@ mod tests {
             assert!(
                 (600..=1400).contains(&count),
                 "With uniform priors, arm {} should be selected ~1000 times but got {}",
-                arm.value, count
+                arm.value,
+                count
             );
         }
     }
 
     #[test]
     fn test_thompson_sampling_returns_some() {
-        let arms = vec![
-            ThresholdArm { value: 0.70 },
-            ThresholdArm { value: 0.75 },
-        ];
+        let arms = vec![ThresholdArm { value: 0.70 }, ThresholdArm { value: 0.75 }];
         let bandit = ThresholdBandit::new(arms, 1.5);
 
         // Should always return Some for non-empty bandit

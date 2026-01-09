@@ -145,9 +145,14 @@ mod tests {
     fn test_bootstrap_config_default() {
         let config = BootstrapConfig::default();
         assert!(config.auto_init);
-        assert_eq!(config.fallback_description, "General purpose knowledge acquisition");
+        assert_eq!(
+            config.fallback_description,
+            "General purpose knowledge acquisition"
+        );
         assert!(config.source_patterns.contains(&"*.md".to_string()));
-        assert!(config.source_patterns.contains(&"constitution.yaml".to_string()));
+        assert!(config
+            .source_patterns
+            .contains(&"constitution.yaml".to_string()));
         assert!(config.source_patterns.contains(&"package.json".to_string()));
         assert!(config.source_patterns.contains(&"README*".to_string()));
     }
@@ -158,7 +163,10 @@ mod tests {
         let serialized = serde_json::to_string(&config).expect("serialize");
         let deserialized: BootstrapConfig = serde_json::from_str(&serialized).expect("deserialize");
         assert_eq!(config.auto_init, deserialized.auto_init);
-        assert_eq!(config.fallback_description, deserialized.fallback_description);
+        assert_eq!(
+            config.fallback_description,
+            deserialized.fallback_description
+        );
         assert_eq!(config.source_patterns, deserialized.source_patterns);
     }
 

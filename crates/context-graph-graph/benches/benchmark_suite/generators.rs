@@ -74,7 +74,10 @@ pub fn generate_cone_batch_flat(count: usize) -> Vec<f32> {
 
 /// Generate real graph adjacency for BFS benchmarks.
 /// Creates a connected graph with controlled edge density.
-pub fn generate_graph_adjacency(node_count: usize, avg_edges_per_node: usize) -> HashMap<u64, Vec<u64>> {
+pub fn generate_graph_adjacency(
+    node_count: usize,
+    avg_edges_per_node: usize,
+) -> HashMap<u64, Vec<u64>> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 

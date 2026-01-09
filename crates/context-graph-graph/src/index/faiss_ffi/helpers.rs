@@ -7,8 +7,8 @@
 //!
 //! - TECH-GRAPH-004 Section 3.1: FAISS FFI Bindings
 
-use std::os::raw::c_int;
 use crate::error::{GraphError, GraphResult};
+use std::os::raw::c_int;
 
 /// Check FAISS result code and convert to GraphResult.
 ///

@@ -139,8 +139,7 @@ impl UtlComputationMetrics {
                 ALPHA * learning_magnitude + (1.0 - ALPHA) * self.avg_learning_magnitude;
             self.avg_delta_s = ALPHA * delta_s + (1.0 - ALPHA) * self.avg_delta_s;
             self.avg_delta_c = ALPHA * delta_c + (1.0 - ALPHA) * self.avg_delta_c;
-            self.avg_latency_us =
-                ALPHA_F64 * latency_us + (1.0 - ALPHA_F64) * self.avg_latency_us;
+            self.avg_latency_us = ALPHA_F64 * latency_us + (1.0 - ALPHA_F64) * self.avg_latency_us;
         }
 
         self.quadrant_distribution.increment(quadrant);

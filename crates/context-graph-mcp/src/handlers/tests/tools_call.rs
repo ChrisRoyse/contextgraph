@@ -164,32 +164,42 @@ async fn test_get_memetic_status_utl_values_in_valid_range() {
     );
 
     let response = handlers.dispatch(request).await;
-    assert!(response.error.is_none(), "get_memetic_status should not error");
+    assert!(
+        response.error.is_none(),
+        "get_memetic_status should not error"
+    );
 
     let result = response.result.expect("Must have result");
     let content = result.get("content").expect("Must have content array");
-    let text = content[0].get("text").expect("First content must have text");
-    let data: serde_json::Value = serde_json::from_str(text.as_str().unwrap())
-        .expect("text must be valid JSON");
+    let text = content[0]
+        .get("text")
+        .expect("First content must have text");
+    let data: serde_json::Value =
+        serde_json::from_str(text.as_str().unwrap()).expect("text must be valid JSON");
 
     let utl = data.get("utl").expect("Response must have utl field");
 
     // Verify ranges per constitution.yaml:154-157
     let entropy = utl["entropy"].as_f64().expect("entropy must be f64");
     let coherence = utl["coherence"].as_f64().expect("coherence must be f64");
-    let learning_score = utl["learningScore"].as_f64().expect("learningScore must be f64");
+    let learning_score = utl["learningScore"]
+        .as_f64()
+        .expect("learningScore must be f64");
 
     assert!(
         (0.0..=1.0).contains(&entropy),
-        "entropy {} not in [0,1]", entropy
+        "entropy {} not in [0,1]",
+        entropy
     );
     assert!(
         (0.0..=1.0).contains(&coherence),
-        "coherence {} not in [0,1]", coherence
+        "coherence {} not in [0,1]",
+        coherence
     );
     assert!(
         (0.0..=1.0).contains(&learning_score),
-        "learningScore {} not in [0,1]", learning_score
+        "learningScore {} not in [0,1]",
+        learning_score
     );
 }
 
@@ -212,14 +222,17 @@ async fn test_get_memetic_status_johari_quadrant_valid() {
     let data: serde_json::Value = serde_json::from_str(text.as_str().unwrap()).unwrap();
 
     let utl = data.get("utl").expect("Must have utl");
-    let johari = utl["johariQuadrant"].as_str().expect("johariQuadrant must be string");
+    let johari = utl["johariQuadrant"]
+        .as_str()
+        .expect("johariQuadrant must be string");
 
     // Per constitution.yaml:159-163
     let valid_quadrants = ["Open", "Blind", "Hidden", "Unknown"];
     assert!(
         valid_quadrants.contains(&johari),
         "Invalid Johari quadrant: '{}'. Must be one of {:?}",
-        johari, valid_quadrants
+        johari,
+        valid_quadrants
     );
 }
 
@@ -243,7 +256,9 @@ async fn test_get_memetic_status_suggested_action_matches_johari() {
 
     let utl = data.get("utl").expect("Must have utl");
     let johari = utl["johariQuadrant"].as_str().unwrap();
-    let action = utl["suggestedAction"].as_str().expect("suggestedAction must be string");
+    let action = utl["suggestedAction"]
+        .as_str()
+        .expect("suggestedAction must be string");
 
     // Verify mapping per constitution.yaml:159-163
     let expected_action = match johari {
@@ -322,14 +337,17 @@ async fn test_get_memetic_status_consolidation_phase_valid() {
     let data: serde_json::Value = serde_json::from_str(text.as_str().unwrap()).unwrap();
 
     let utl = data.get("utl").expect("Must have utl");
-    let phase = utl["consolidationPhase"].as_str().expect("consolidationPhase must be string");
+    let phase = utl["consolidationPhase"]
+        .as_str()
+        .expect("consolidationPhase must be string");
 
     // Per constitution.yaml:211-213 (dream phases)
     let valid_phases = ["NREM", "REM", "Wake"];
     assert!(
         valid_phases.contains(&phase),
         "Invalid consolidation phase: '{}'. Must be one of {:?}",
-        phase, valid_phases
+        phase,
+        valid_phases
     );
 }
 

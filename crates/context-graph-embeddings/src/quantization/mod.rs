@@ -13,20 +13,20 @@
 //! | Sparse | E6, E13 | native | 0% | PASS-THROUGH |
 //! | TokenPruning | E12 | ~50% | <2% | NOT IMPLEMENTED |
 
-mod types;
 pub mod binary;
 pub mod float8;
 pub mod pq8;
 pub mod router;
+mod types;
 
 #[cfg(test)]
 mod edge_case_verification;
 
-pub use types::{
-    BinaryEncoder, Float8Encoder, PQ8Codebook, QuantizationMetadata, QuantizationMethod,
-    QuantizedEmbedding,
-};
 pub use binary::BinaryQuantizationError;
 pub use float8::{Float8E4M3Encoder, Float8QuantizationError};
 pub use pq8::{PQ8Encoder, PQ8QuantizationError};
 pub use router::QuantizationRouter;
+pub use types::{
+    BinaryEncoder, Float8Encoder, PQ8Codebook, QuantizationMetadata, QuantizationMethod,
+    QuantizedEmbedding,
+};

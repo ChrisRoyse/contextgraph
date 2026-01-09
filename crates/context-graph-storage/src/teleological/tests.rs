@@ -77,14 +77,19 @@ fn test_teleological_cf_names_count() {
 fn test_teleological_cf_names_unique() {
     use std::collections::HashSet;
     let set: HashSet<_> = TELEOLOGICAL_CFS.iter().collect();
-    assert_eq!(set.len(), TELEOLOGICAL_CF_COUNT, "All CF names must be unique");
+    assert_eq!(
+        set.len(),
+        TELEOLOGICAL_CF_COUNT,
+        "All CF names must be unique"
+    );
 }
 
 #[test]
 fn test_teleological_cf_names_are_snake_case() {
     for name in TELEOLOGICAL_CFS {
         assert!(
-            name.chars().all(|c| c.is_lowercase() || c == '_' || c.is_ascii_digit()),
+            name.chars()
+                .all(|c| c.is_lowercase() || c == '_' || c.is_ascii_digit()),
             "CF name '{}' should be snake_case",
             name
         );
@@ -153,7 +158,12 @@ fn test_get_teleological_cf_descriptors_returns_7() {
     use rocksdb::Cache;
     let cache = Cache::new_lru_cache(256 * 1024 * 1024);
     let descriptors = get_teleological_cf_descriptors(&cache);
-    assert_eq!(descriptors.len(), TELEOLOGICAL_CF_COUNT, "Must return exactly {} descriptors", TELEOLOGICAL_CF_COUNT);
+    assert_eq!(
+        descriptors.len(),
+        TELEOLOGICAL_CF_COUNT,
+        "Must return exactly {} descriptors",
+        TELEOLOGICAL_CF_COUNT
+    );
 }
 
 // =========================================================================
@@ -266,7 +276,10 @@ fn test_serialize_teleological_roundtrip() {
     println!("  - SemanticFingerprint: default (all 13 embedders)");
     println!("  - PurposeVector: 13D with alignment 0.75");
     println!("  - JohariFingerprint: 13×4 quadrants");
-    println!("  - Evolution snapshots: {}", original.purpose_evolution.len());
+    println!(
+        "  - Evolution snapshots: {}",
+        original.purpose_evolution.len()
+    );
 
     let serialized = serialize_teleological_fingerprint(&original);
     println!("SERIALIZED: {} bytes", serialized.len());
@@ -275,8 +288,14 @@ fn test_serialize_teleological_roundtrip() {
 
     let deserialized = deserialize_teleological_fingerprint(&serialized);
     println!("AFTER: Deserialized fingerprint ID: {}", deserialized.id);
-    println!("  - Evolution snapshots: {}", deserialized.purpose_evolution.len());
-    println!("  - Theta to north star: {:.4}", deserialized.theta_to_north_star);
+    println!(
+        "  - Evolution snapshots: {}",
+        deserialized.purpose_evolution.len()
+    );
+    println!(
+        "  - Theta to north star: {:.4}",
+        deserialized.theta_to_north_star
+    );
 
     assert_eq!(original.id, deserialized.id);
     assert_eq!(original.content_hash, deserialized.content_hash);
@@ -296,7 +315,11 @@ fn test_fingerprint_size_in_range() {
     // - Plus sparse vectors, JohariFingerprint (~520B), PurposeVector (52B), metadata
     // - Total: ~32-40KB for a fresh fingerprint with 1 evolution snapshot
     println!("BEFORE: Expected range [25KB, 100KB]");
-    println!("AFTER: Actual size {} bytes ({:.2}KB)", serialized.len(), serialized.len() as f64 / 1024.0);
+    println!(
+        "AFTER: Actual size {} bytes ({:.2}KB)",
+        serialized.len(),
+        serialized.len() as f64 / 1024.0
+    );
 
     assert!(
         serialized.len() >= 25_000,
@@ -629,7 +652,7 @@ fn test_teleological_profile_key_roundtrip() {
     let test_cases = vec![
         "simple",
         "complex_profile_name",
-        "a",  // minimum length
+        "a", // minimum length
         "research-task-001",
         "profile_with_numbers_123",
     ];
@@ -762,7 +785,9 @@ fn test_descriptors_in_correct_order() {
             descriptors[i].name(),
             *cf_name,
             "Descriptor {} should be '{}', got '{}'",
-            i, cf_name, descriptors[i].name()
+            i,
+            cf_name,
+            descriptors[i].name()
         );
     }
 }
@@ -774,7 +799,11 @@ fn test_get_all_teleological_cf_descriptors_returns_20() {
     let descriptors = get_all_teleological_cf_descriptors(&cache);
 
     // 7 teleological + 13 quantized embedder = 20
-    assert_eq!(descriptors.len(), 20, "Must return 7 teleological + 13 quantized = 20 CFs");
+    assert_eq!(
+        descriptors.len(),
+        20,
+        "Must return 7 teleological + 13 quantized = 20 CFs"
+    );
 }
 
 // =========================================================================
@@ -785,8 +814,12 @@ fn test_get_all_teleological_cf_descriptors_returns_20() {
 fn edge_case_teleological_profile_unicode() {
     println!("=== EDGE CASE: Profile key with unicode characters ===");
 
-    let profile_id = "research_ai";  // ASCII only for safety
-    println!("BEFORE: Profile ID '{}' ({} bytes)", profile_id, profile_id.len());
+    let profile_id = "research_ai"; // ASCII only for safety
+    println!(
+        "BEFORE: Profile ID '{}' ({} bytes)",
+        profile_id,
+        profile_id.len()
+    );
 
     let key = teleological_profile_key(profile_id);
     println!("SERIALIZED: {} bytes", key.len());

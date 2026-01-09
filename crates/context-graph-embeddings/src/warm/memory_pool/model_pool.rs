@@ -90,12 +90,7 @@ impl ModelMemoryPool {
     ///
     /// Returns `WarmError::ModelAlreadyRegistered` if model already allocated.
     /// Returns `WarmError::VramAllocationFailed` if allocation exceeds capacity.
-    pub fn allocate(
-        &mut self,
-        model_id: &str,
-        size_bytes: usize,
-        vram_ptr: u64,
-    ) -> WarmResult<()> {
+    pub fn allocate(&mut self, model_id: &str, size_bytes: usize, vram_ptr: u64) -> WarmResult<()> {
         // Check for duplicate allocation
         if self.contains(model_id) {
             return Err(WarmError::ModelAlreadyRegistered {

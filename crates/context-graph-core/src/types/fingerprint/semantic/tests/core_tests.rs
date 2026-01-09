@@ -167,16 +167,8 @@ fn test_dimension_constants() {
     assert_eq!(E13_SPLADE_VOCAB, 30_522);
     assert_eq!(NUM_EMBEDDERS, 13);
 
-    let calculated = E1_DIM
-        + E2_DIM
-        + E3_DIM
-        + E4_DIM
-        + E5_DIM
-        + E7_DIM
-        + E8_DIM
-        + E9_DIM
-        + E10_DIM
-        + E11_DIM;
+    let calculated =
+        E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E7_DIM + E8_DIM + E9_DIM + E10_DIM + E11_DIM;
     assert_eq!(TOTAL_DENSE_DIMS, calculated);
 }
 
@@ -185,8 +177,7 @@ fn test_e13_splade_nnz() {
     let mut fp = SemanticFingerprint::zeroed();
     assert_eq!(fp.e13_splade_nnz(), 0);
 
-    fp.e13_splade =
-        SparseVector::new(vec![100, 200, 300, 400, 500], vec![0.1, 0.2, 0.3, 0.4, 0.5])
-            .expect("valid sparse vector");
+    fp.e13_splade = SparseVector::new(vec![100, 200, 300, 400, 500], vec![0.1, 0.2, 0.3, 0.4, 0.5])
+        .expect("valid sparse vector");
     assert_eq!(fp.e13_splade_nnz(), 5);
 }

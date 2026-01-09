@@ -98,19 +98,19 @@ impl Embedder {
     /// Returns an `EmbedderDims` variant describing the embedding shape.
     pub fn expected_dims(self) -> EmbedderDims {
         match self {
-            Self::Semantic => EmbedderDims::Dense(E1_DIM),            // 1024
-            Self::TemporalRecent => EmbedderDims::Dense(E2_DIM),      // 512
-            Self::TemporalPeriodic => EmbedderDims::Dense(E3_DIM),    // 512
-            Self::TemporalPositional => EmbedderDims::Dense(E4_DIM),  // 512
-            Self::Causal => EmbedderDims::Dense(E5_DIM),              // 768
+            Self::Semantic => EmbedderDims::Dense(E1_DIM), // 1024
+            Self::TemporalRecent => EmbedderDims::Dense(E2_DIM), // 512
+            Self::TemporalPeriodic => EmbedderDims::Dense(E3_DIM), // 512
+            Self::TemporalPositional => EmbedderDims::Dense(E4_DIM), // 512
+            Self::Causal => EmbedderDims::Dense(E5_DIM),   // 768
             Self::Sparse => EmbedderDims::Sparse {
                 vocab_size: E6_SPARSE_VOCAB,
             }, // 30522
-            Self::Code => EmbedderDims::Dense(E7_DIM),                // 1536
-            Self::Graph => EmbedderDims::Dense(E8_DIM),               // 384
-            Self::Hdc => EmbedderDims::Dense(E9_DIM),                 // 1024 (projected)
-            Self::Multimodal => EmbedderDims::Dense(E10_DIM),         // 768
-            Self::Entity => EmbedderDims::Dense(E11_DIM),             // 384
+            Self::Code => EmbedderDims::Dense(E7_DIM),     // 1536
+            Self::Graph => EmbedderDims::Dense(E8_DIM),    // 384
+            Self::Hdc => EmbedderDims::Dense(E9_DIM),      // 1024 (projected)
+            Self::Multimodal => EmbedderDims::Dense(E10_DIM), // 768
+            Self::Entity => EmbedderDims::Dense(E11_DIM),  // 384
             Self::LateInteraction => EmbedderDims::TokenLevel {
                 per_token: E12_TOKEN_DIM,
             }, // 128
@@ -395,7 +395,10 @@ mod tests {
 
     #[test]
     fn test_expected_dims_match_constants() {
-        assert_eq!(Embedder::Semantic.expected_dims(), EmbedderDims::Dense(1024));
+        assert_eq!(
+            Embedder::Semantic.expected_dims(),
+            EmbedderDims::Dense(1024)
+        );
         assert_eq!(
             Embedder::TemporalRecent.expected_dims(),
             EmbedderDims::Dense(512)
@@ -544,8 +547,14 @@ mod tests {
     #[test]
     fn test_embedder_dims_primary_dim() {
         assert_eq!(EmbedderDims::Dense(1024).primary_dim(), 1024);
-        assert_eq!(EmbedderDims::Sparse { vocab_size: 30522 }.primary_dim(), 30522);
-        assert_eq!(EmbedderDims::TokenLevel { per_token: 128 }.primary_dim(), 128);
+        assert_eq!(
+            EmbedderDims::Sparse { vocab_size: 30522 }.primary_dim(),
+            30522
+        );
+        assert_eq!(
+            EmbedderDims::TokenLevel { per_token: 128 }.primary_dim(),
+            128
+        );
         println!("[PASS] EmbedderDims::primary_dim() works correctly");
     }
 }

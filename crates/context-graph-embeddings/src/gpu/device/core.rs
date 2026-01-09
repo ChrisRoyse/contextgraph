@@ -21,8 +21,8 @@
 use candle_core::Device;
 use std::sync::OnceLock;
 
-use crate::gpu::GpuInfo;
 use super::utils::query_gpu_info;
+use crate::gpu::GpuInfo;
 
 /// Global GPU device singleton.
 pub(crate) static GPU_DEVICE: OnceLock<Device> = OnceLock::new();
@@ -98,12 +98,8 @@ pub fn init_gpu() -> Result<&'static Device, candle_core::Error> {
     tracing::info!("Attempting CUDA device 0 initialization...");
 
     match Device::new_cuda(0) {
-        Ok(device) => {
-            init_success(device)
-        }
-        Err(e) => {
-            init_failure(e)
-        }
+        Ok(device) => init_success(device),
+        Err(e) => init_failure(e),
     }
 }
 

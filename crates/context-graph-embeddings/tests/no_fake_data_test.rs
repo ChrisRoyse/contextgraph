@@ -13,12 +13,10 @@
 //! All fake data MUST be detected and rejected.
 //! No silent fallbacks - errors should panic or return Err.
 
-use context_graph_embeddings::storage::{
-    StoredQuantizedFingerprint, NUM_EMBEDDERS,
-};
 use context_graph_embeddings::quantization::{
-    QuantizationMethod, QuantizedEmbedding, QuantizationMetadata,
+    QuantizationMetadata, QuantizationMethod, QuantizedEmbedding,
 };
+use context_graph_embeddings::storage::{StoredQuantizedFingerprint, NUM_EMBEDDERS};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -34,7 +32,10 @@ const FAKE_POINTER: u64 = 0x7f80_0000_0000u64;
 fn test_fake_pointer_constant_value() {
     // This value appears in simulated GPU allocations
     assert_eq!(FAKE_POINTER, 0x7f80_0000_0000);
-    eprintln!("[VERIFIED] FAKE_POINTER = 0x{:x} (Constitution AP-007 value)", FAKE_POINTER);
+    eprintln!(
+        "[VERIFIED] FAKE_POINTER = 0x{:x} (Constitution AP-007 value)",
+        FAKE_POINTER
+    );
 }
 
 /// Test: Real pointer addresses should not match fake pattern
@@ -42,14 +43,18 @@ fn test_fake_pointer_constant_value() {
 fn test_real_pointer_detection() {
     // Real CUDA pointers typically have different patterns
     let real_pointers: Vec<u64> = vec![
-        0x7fff_0000_1000,  // Typical CUDA allocation
-        0x7fff_8000_0000,  // Another valid region
-        0x0000_0001_0000,  // Low memory region
-        0xfffe_0000_0000,  // High memory region
+        0x7fff_0000_1000, // Typical CUDA allocation
+        0x7fff_8000_0000, // Another valid region
+        0x0000_0001_0000, // Low memory region
+        0xfffe_0000_0000, // High memory region
     ];
 
     for ptr in real_pointers {
-        assert_ne!(ptr, FAKE_POINTER, "Real pointer {:x} should not match fake pattern", ptr);
+        assert_ne!(
+            ptr, FAKE_POINTER,
+            "Real pointer {:x} should not match fake pattern",
+            ptr
+        );
     }
 
     eprintln!("[VERIFIED] Real pointer addresses don't match FAKE_POINTER");
@@ -81,10 +86,7 @@ fn detect_sin_wave_pattern(output: &[f32]) -> bool {
     }
 
     // Compute consecutive differences
-    let diffs: Vec<f32> = output
-        .windows(2)
-        .map(|w| w[1] - w[0])
-        .collect();
+    let diffs: Vec<f32> = output.windows(2).map(|w| w[1] - w[0]).collect();
 
     // Compute variance of differences
     let mean: f32 = diffs.iter().sum::<f32>() / diffs.len() as f32;
@@ -99,9 +101,7 @@ fn detect_sin_wave_pattern(output: &[f32]) -> bool {
 #[test]
 fn test_detect_pure_sin_wave() {
     // Generate sin wave: sin(i * 0.001)
-    let sin_wave: Vec<f32> = (0..768)
-        .map(|i| (i as f32 * 0.001).sin())
-        .collect();
+    let sin_wave: Vec<f32> = (0..768).map(|i| (i as f32 * 0.001).sin()).collect();
 
     assert!(
         detect_sin_wave_pattern(&sin_wave),
@@ -131,9 +131,7 @@ fn test_detect_scaled_sin_wave() {
 #[test]
 fn test_detect_high_frequency_sin_wave() {
     // Generate high frequency sin wave
-    let high_freq_sin: Vec<f32> = (0..512)
-        .map(|i| (i as f32 * 0.1).sin())
-        .collect();
+    let high_freq_sin: Vec<f32> = (0..512).map(|i| (i as f32 * 0.1).sin()).collect();
 
     // High frequency sin wave might not be detected by variance method
     // because differences between samples are larger
@@ -214,9 +212,7 @@ fn test_detect_all_zeros() {
 #[test]
 fn test_detect_near_zeros() {
     // Values very close to zero
-    let near_zeros: Vec<f32> = (0..768)
-        .map(|i| (i as f32 % 2.0) * 1e-11)
-        .collect();
+    let near_zeros: Vec<f32> = (0..768).map(|i| (i as f32 % 2.0) * 1e-11).collect();
 
     assert!(
         detect_all_zeros(&near_zeros),
@@ -230,9 +226,7 @@ fn test_detect_near_zeros() {
 #[test]
 fn test_small_values_not_zeros() {
     // Values that are small but meaningful
-    let small_values: Vec<f32> = (0..768)
-        .map(|i| ((i % 10) as f32 - 5.0) * 0.001)
-        .collect();
+    let small_values: Vec<f32> = (0..768).map(|i| ((i % 10) as f32 - 5.0) * 0.001).collect();
 
     assert!(
         !detect_all_zeros(&small_values),
@@ -332,10 +326,9 @@ fn test_zero_checksum_invalid() {
 fn test_real_checksum_valid() {
     // SHA256-like checksum (non-zero)
     let real_checksum: [u8; 32] = [
-        0x2c, 0xf2, 0x4d, 0xba, 0x5f, 0xb0, 0xa3, 0x0e,
-        0x26, 0xe8, 0x3b, 0x2a, 0xc5, 0xb9, 0xe2, 0x9e,
-        0x1b, 0x16, 0x1e, 0x5c, 0x1f, 0xa7, 0x42, 0x5e,
-        0x73, 0x04, 0x33, 0x62, 0x93, 0x8b, 0x98, 0x24,
+        0x2c, 0xf2, 0x4d, 0xba, 0x5f, 0xb0, 0xa3, 0x0e, 0x26, 0xe8, 0x3b, 0x2a, 0xc5, 0xb9, 0xe2,
+        0x9e, 0x1b, 0x16, 0x1e, 0x5c, 0x1f, 0xa7, 0x42, 0x5e, 0x73, 0x04, 0x33, 0x62, 0x93, 0x8b,
+        0x98, 0x24,
     ];
 
     assert!(
@@ -378,35 +371,38 @@ fn create_valid_embeddings() -> HashMap<u8, QuantizedEmbedding> {
         };
 
         // Fill with non-zero data to avoid fake detection
-        let data: Vec<u8> = (0..data_len).map(|j| ((i as usize * 17 + j) % 256) as u8).collect();
+        let data: Vec<u8> = (0..data_len)
+            .map(|j| ((i as usize * 17 + j) % 256) as u8)
+            .collect();
 
-        map.insert(i, QuantizedEmbedding {
-            method,
-            original_dim: dim,
-            data,
-            metadata: match method {
-                QuantizationMethod::PQ8 => QuantizationMetadata::PQ8 {
-                    codebook_id: i as u32,
-                    num_subvectors: 8,
-                },
-                QuantizationMethod::Float8E4M3 => QuantizationMetadata::Float8 {
-                    scale: 1.0,
-                    bias: 0.0,
-                },
-                QuantizationMethod::Binary => QuantizationMetadata::Binary {
-                    threshold: 0.0,
-                },
-                QuantizationMethod::SparseNative => QuantizationMetadata::Sparse {
-                    vocab_size: 30522,
-                    nnz: 50,
-                },
-                QuantizationMethod::TokenPruning => QuantizationMetadata::TokenPruning {
-                    original_tokens: 128,
-                    kept_tokens: 64,
-                    threshold: 0.5,
+        map.insert(
+            i,
+            QuantizedEmbedding {
+                method,
+                original_dim: dim,
+                data,
+                metadata: match method {
+                    QuantizationMethod::PQ8 => QuantizationMetadata::PQ8 {
+                        codebook_id: i as u32,
+                        num_subvectors: 8,
+                    },
+                    QuantizationMethod::Float8E4M3 => QuantizationMetadata::Float8 {
+                        scale: 1.0,
+                        bias: 0.0,
+                    },
+                    QuantizationMethod::Binary => QuantizationMetadata::Binary { threshold: 0.0 },
+                    QuantizationMethod::SparseNative => QuantizationMetadata::Sparse {
+                        vocab_size: 30522,
+                        nnz: 50,
+                    },
+                    QuantizationMethod::TokenPruning => QuantizationMetadata::TokenPruning {
+                        original_tokens: 128,
+                        kept_tokens: 64,
+                        threshold: 0.5,
+                    },
                 },
             },
-        });
+        );
     }
     map
 }
@@ -456,15 +452,18 @@ fn test_missing_embedder_panics() {
 fn test_invalid_embedder_index_panics() {
     let mut embeddings = create_valid_embeddings();
     embeddings.remove(&12);
-    embeddings.insert(15, QuantizedEmbedding {
-        method: QuantizationMethod::SparseNative,
-        original_dim: 30522,
-        data: vec![0u8; 100],
-        metadata: QuantizationMetadata::Sparse {
-            vocab_size: 30522,
-            nnz: 50,
+    embeddings.insert(
+        15,
+        QuantizedEmbedding {
+            method: QuantizationMethod::SparseNative,
+            original_dim: 30522,
+            data: vec![0u8; 100],
+            metadata: QuantizationMetadata::Sparse {
+                vocab_size: 30522,
+                nnz: 50,
+            },
         },
-    });
+    );
 
     // This MUST panic
     let _ = StoredQuantizedFingerprint::new(
@@ -538,7 +537,10 @@ fn test_edge_case_empty_output() {
     // Empty array: is "all zeros" vacuously (all 0 elements are zeros)
     assert!(is_zeros, "Empty array is vacuously all zeros");
 
-    eprintln!("[EDGE CASE 3] Empty output: sin={}, zeros={}", is_sin, is_zeros);
+    eprintln!(
+        "[EDGE CASE 3] Empty output: sin={}, zeros={}",
+        is_sin, is_zeros
+    );
 }
 
 // =============================================================================
@@ -556,44 +558,57 @@ fn test_ap007_compliance_matrix() {
 
     // 1. Fake pointer
     let fake_ptr_detected = FAKE_POINTER == 0x7f80_0000_0000;
-    println!("  [{}] Fake pointer (0x7f80...) detection",
-             if fake_ptr_detected { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] Fake pointer (0x7f80...) detection",
+        if fake_ptr_detected { "PASS" } else { "FAIL" }
+    );
     assert!(fake_ptr_detected);
 
     // 2. Sin wave output
     let sin_wave: Vec<f32> = (0..768).map(|i| (i as f32 * 0.001).sin()).collect();
     let sin_detected = detect_sin_wave_pattern(&sin_wave);
-    println!("  [{}] Sin wave pattern detection",
-             if sin_detected { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] Sin wave pattern detection",
+        if sin_detected { "PASS" } else { "FAIL" }
+    );
     assert!(sin_detected);
 
     // 3. All-zeros output
     let zeros: Vec<f32> = vec![0.0; 768];
     let zeros_detected = detect_all_zeros(&zeros);
-    println!("  [{}] All-zeros output detection",
-             if zeros_detected { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] All-zeros output detection",
+        if zeros_detected { "PASS" } else { "FAIL" }
+    );
     assert!(zeros_detected);
 
     // 4. VRAM delta mismatch
     let delta_mismatch = detect_vram_delta_mismatch(1024, 1000);
-    println!("  [{}] VRAM delta mismatch detection",
-             if delta_mismatch { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] VRAM delta mismatch detection",
+        if delta_mismatch { "PASS" } else { "FAIL" }
+    );
     assert!(delta_mismatch);
 
     // 5. Zero checksum
     let zero_checksum: [u8; 32] = [0u8; 32];
     let checksum_invalid = !validate_checksum(&zero_checksum);
-    println!("  [{}] Zero checksum rejection",
-             if checksum_invalid { "PASS" } else { "FAIL" });
+    println!(
+        "  [{}] Zero checksum rejection",
+        if checksum_invalid { "PASS" } else { "FAIL" }
+    );
     assert!(checksum_invalid);
 
     // 6. Real data passes all checks
     let real_embedding: Vec<f32> = (0..768)
         .map(|i| ((i * 17 + 42) % 1000) as f32 / 1000.0 - 0.5)
         .collect();
-    let real_is_valid = !detect_sin_wave_pattern(&real_embedding) && !detect_all_zeros(&real_embedding);
-    println!("  [{}] Real embedding passes validation",
-             if real_is_valid { "PASS" } else { "FAIL" });
+    let real_is_valid =
+        !detect_sin_wave_pattern(&real_embedding) && !detect_all_zeros(&real_embedding);
+    println!(
+        "  [{}] Real embedding passes validation",
+        if real_is_valid { "PASS" } else { "FAIL" }
+    );
     assert!(real_is_valid);
 
     println!("========================================");

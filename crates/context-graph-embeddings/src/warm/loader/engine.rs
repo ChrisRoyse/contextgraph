@@ -127,7 +127,10 @@ impl WarmLoader {
     pub fn load_all_models(&mut self) -> WarmResult<()> {
         self.start_time = Some(Instant::now());
 
-        tracing::info!("Starting warm model loading for {} models", TOTAL_MODEL_COUNT);
+        tracing::info!(
+            "Starting warm model loading for {} models",
+            TOTAL_MODEL_COUNT
+        );
 
         // Step 1: Pre-flight checks
         if let Err(e) = run_preflight_checks(&self.config, &mut self.gpu_info) {
@@ -142,13 +145,15 @@ impl WarmLoader {
 
         // Step 3: Load each model in order using REAL CUDA allocation
         // Get mutable reference to cuda_allocator - REQUIRED, no fallback
-        let cuda_allocator = self.cuda_allocator.as_mut().ok_or_else(|| {
-            WarmError::CudaInitFailed {
-                cuda_error: "CUDA allocator not initialized - CUDA is REQUIRED (RTX 5090)".to_string(),
-                driver_version: String::new(),
-                gpu_name: String::new(),
-            }
-        });
+        let cuda_allocator =
+            self.cuda_allocator
+                .as_mut()
+                .ok_or_else(|| WarmError::CudaInitFailed {
+                    cuda_error: "CUDA allocator not initialized - CUDA is REQUIRED (RTX 5090)"
+                        .to_string(),
+                    driver_version: String::new(),
+                    gpu_name: String::new(),
+                });
 
         let cuda_allocator = match cuda_allocator {
             Ok(alloc) => alloc,
@@ -218,10 +223,7 @@ impl WarmLoader {
     /// Check if all models are warm.
     #[must_use]
     pub fn all_warm(&self) -> bool {
-        self.registry
-            .read()
-            .map(|r| r.all_warm())
-            .unwrap_or(false)
+        self.registry.read().map(|r| r.all_warm()).unwrap_or(false)
     }
 
     /// Get a summary of the loading state.
@@ -327,13 +329,14 @@ impl WarmLoader {
         model_id: &str,
         size_bytes: usize,
     ) -> WarmResult<u64> {
-        let cuda_allocator = self.cuda_allocator.as_mut().ok_or_else(|| {
-            WarmError::CudaInitFailed {
-                cuda_error: "CUDA allocator not initialized for test".to_string(),
-                driver_version: String::new(),
-                gpu_name: String::new(),
-            }
-        })?;
+        let cuda_allocator =
+            self.cuda_allocator
+                .as_mut()
+                .ok_or_else(|| WarmError::CudaInitFailed {
+                    cuda_error: "CUDA allocator not initialized for test".to_string(),
+                    driver_version: String::new(),
+                    gpu_name: String::new(),
+                })?;
         allocate_model_vram(model_id, size_bytes, &mut self.memory_pools, cuda_allocator)
     }
 }

@@ -3,17 +3,21 @@
 //! This module performs REAL verification by directly inspecting Sources of Truth.
 //! NOT relying on handler return values - physically checking data stores.
 
-use std::sync::Arc;
 use parking_lot::RwLock;
 use serde_json::json;
+use std::sync::Arc;
 use uuid::Uuid;
 
 use context_graph_core::alignment::{DefaultAlignmentCalculator, GoalAlignmentCalculator};
 use context_graph_core::johari::{DynDefaultJohariManager, JohariTransitionManager, NUM_EMBEDDERS};
 use context_graph_core::purpose::{GoalDiscoveryMetadata, GoalHierarchy, GoalLevel, GoalNode};
+use context_graph_core::stubs::{
+    InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor,
+};
+use context_graph_core::traits::{
+    MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor,
+};
 use context_graph_core::types::fingerprint::SemanticFingerprint;
-use context_graph_core::stubs::{InMemoryTeleologicalStore, StubMultiArrayProvider, StubUtlProcessor};
-use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor};
 use context_graph_core::types::JohariQuadrant;
 
 use crate::handlers::core::MetaUtlTracker;
@@ -42,7 +46,8 @@ fn create_test_hierarchy() -> GoalHierarchy {
         GoalLevel::NorthStar,
         SemanticFingerprint::zeroed(),
         discovery.clone(),
-    ).expect("Failed to create North Star");
+    )
+    .expect("Failed to create North Star");
     let ns_id = ns_goal.id;
     hierarchy.add_goal(ns_goal).unwrap();
 
@@ -52,7 +57,8 @@ fn create_test_hierarchy() -> GoalHierarchy {
         ns_id,
         SemanticFingerprint::zeroed(),
         discovery,
-    ).expect("Failed to create strategic goal");
+    )
+    .expect("Failed to create strategic goal");
     hierarchy.add_goal(s1_goal).unwrap();
 
     hierarchy
@@ -75,12 +81,18 @@ async fn manual_fsv_memory_store_physical_verification() {
     let multi_array: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(StubMultiArrayProvider::new());
     let alignment: Arc<dyn GoalAlignmentCalculator> = Arc::new(DefaultAlignmentCalculator::new());
     let hierarchy = Arc::new(RwLock::new(create_test_hierarchy()));
-    let johari: Arc<dyn JohariTransitionManager> = Arc::new(DynDefaultJohariManager::new(store.clone()));
+    let johari: Arc<dyn JohariTransitionManager> =
+        Arc::new(DynDefaultJohariManager::new(store.clone()));
     let tracker = Arc::new(RwLock::new(MetaUtlTracker::new()));
 
     let handlers = Handlers::with_meta_utl_tracker(
-        store.clone(), utl_processor, multi_array, alignment,
-        hierarchy, johari, tracker,
+        store.clone(),
+        utl_processor,
+        multi_array,
+        alignment,
+        hierarchy,
+        johari,
+        tracker,
     );
 
     // =========================================================================
@@ -98,10 +110,14 @@ async fn manual_fsv_memory_store_physical_verification() {
     // =========================================================================
     println!("📝 EXECUTE: memory/store handler");
     let content = "Neural networks learn patterns from data";
-    let request = make_request("memory/store", 1, json!({
-        "content": content,
-        "importance": 0.9
-    }));
+    let request = make_request(
+        "memory/store",
+        1,
+        json!({
+            "content": content,
+            "importance": 0.9
+        }),
+    );
     let response = handlers.dispatch(request).await;
 
     // Extract ID from response (but we WON'T trust this - we'll verify)
@@ -122,30 +138,65 @@ async fn manual_fsv_memory_store_physical_verification() {
 
     // 2. Directly retrieve the fingerprint from store
     println!("\n   DIRECT RETRIEVAL from InMemoryTeleologicalStore:");
-    let stored_fp = store.retrieve(returned_id).await
+    let stored_fp = store
+        .retrieve(returned_id)
+        .await
         .expect("retrieve should succeed")
         .expect("Fingerprint MUST exist in store");
 
     println!("   - stored_fp.id = {}", stored_fp.id);
     println!("   - stored_fp.created_at = {}", stored_fp.created_at);
     println!("   - stored_fp.access_count = {}", stored_fp.access_count);
-    println!("   - stored_fp.content_hash length = {} bytes", stored_fp.content_hash.len());
+    println!(
+        "   - stored_fp.content_hash length = {} bytes",
+        stored_fp.content_hash.len()
+    );
 
     // 3. Verify the 13 embedding spaces exist
     println!("\n   PHYSICAL EVIDENCE - 13 EMBEDDING SPACES:");
-    println!("   - E1 (semantic) dim: {}", stored_fp.semantic.e1_semantic.len());
-    println!("   - E2 (temporal_recent) dim: {}", stored_fp.semantic.e2_temporal_recent.len());
-    println!("   - E3 (temporal_periodic) dim: {}", stored_fp.semantic.e3_temporal_periodic.len());
-    println!("   - E4 (temporal_positional) dim: {}", stored_fp.semantic.e4_temporal_positional.len());
-    println!("   - E5 (causal) dim: {}", stored_fp.semantic.e5_causal.len());
-    println!("   - E6 (sparse) active: {}", stored_fp.semantic.e6_sparse.indices.len());
+    println!(
+        "   - E1 (semantic) dim: {}",
+        stored_fp.semantic.e1_semantic.len()
+    );
+    println!(
+        "   - E2 (temporal_recent) dim: {}",
+        stored_fp.semantic.e2_temporal_recent.len()
+    );
+    println!(
+        "   - E3 (temporal_periodic) dim: {}",
+        stored_fp.semantic.e3_temporal_periodic.len()
+    );
+    println!(
+        "   - E4 (temporal_positional) dim: {}",
+        stored_fp.semantic.e4_temporal_positional.len()
+    );
+    println!(
+        "   - E5 (causal) dim: {}",
+        stored_fp.semantic.e5_causal.len()
+    );
+    println!(
+        "   - E6 (sparse) active: {}",
+        stored_fp.semantic.e6_sparse.indices.len()
+    );
     println!("   - E7 (code) dim: {}", stored_fp.semantic.e7_code.len());
     println!("   - E8 (graph) dim: {}", stored_fp.semantic.e8_graph.len());
     println!("   - E9 (hdc) dim: {}", stored_fp.semantic.e9_hdc.len());
-    println!("   - E10 (multimodal) dim: {}", stored_fp.semantic.e10_multimodal.len());
-    println!("   - E11 (entity) dim: {}", stored_fp.semantic.e11_entity.len());
-    println!("   - E12 (late_interaction) tokens: {}", stored_fp.semantic.e12_late_interaction.len());
-    println!("   - E13 (splade) active: {}", stored_fp.semantic.e13_splade.indices.len());
+    println!(
+        "   - E10 (multimodal) dim: {}",
+        stored_fp.semantic.e10_multimodal.len()
+    );
+    println!(
+        "   - E11 (entity) dim: {}",
+        stored_fp.semantic.e11_entity.len()
+    );
+    println!(
+        "   - E12 (late_interaction) tokens: {}",
+        stored_fp.semantic.e12_late_interaction.len()
+    );
+    println!(
+        "   - E13 (splade) active: {}",
+        stored_fp.semantic.e13_splade.indices.len()
+    );
 
     // 4. Verify purpose vector
     println!("\n   PURPOSE VECTOR (13 alignments):");
@@ -192,20 +243,35 @@ async fn manual_fsv_delete_physical_verification() {
     let multi_array: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(StubMultiArrayProvider::new());
     let alignment: Arc<dyn GoalAlignmentCalculator> = Arc::new(DefaultAlignmentCalculator::new());
     let hierarchy = Arc::new(RwLock::new(create_test_hierarchy()));
-    let johari: Arc<dyn JohariTransitionManager> = Arc::new(DynDefaultJohariManager::new(store.clone()));
+    let johari: Arc<dyn JohariTransitionManager> =
+        Arc::new(DynDefaultJohariManager::new(store.clone()));
     let tracker = Arc::new(RwLock::new(MetaUtlTracker::new()));
 
     let handlers = Handlers::with_meta_utl_tracker(
-        store.clone(), utl_processor, multi_array, alignment,
-        hierarchy, johari, tracker,
+        store.clone(),
+        utl_processor,
+        multi_array,
+        alignment,
+        hierarchy,
+        johari,
+        tracker,
     );
 
     // First store something
-    let store_response = handlers.dispatch(make_request("memory/store", 1, json!({
-        "content": "Data to be deleted",
-        "importance": 0.5
-    }))).await;
-    let fp_id_str = store_response.result.unwrap()["fingerprintId"].as_str().unwrap().to_string();
+    let store_response = handlers
+        .dispatch(make_request(
+            "memory/store",
+            1,
+            json!({
+                "content": "Data to be deleted",
+                "importance": 0.5
+            }),
+        ))
+        .await;
+    let fp_id_str = store_response.result.unwrap()["fingerprintId"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let fp_id = Uuid::parse_str(&fp_id_str).unwrap();
 
     // =========================================================================
@@ -215,18 +281,31 @@ async fn manual_fsv_delete_physical_verification() {
     let before_count = store.count().await.unwrap();
     let exists_before = store.retrieve(fp_id).await.unwrap();
     println!("   store.count() = {}", before_count);
-    println!("   store.retrieve({}) = {:?}", fp_id, exists_before.is_some());
-    assert!(exists_before.is_some(), "Fingerprint MUST exist before delete");
+    println!(
+        "   store.retrieve({}) = {:?}",
+        fp_id,
+        exists_before.is_some()
+    );
+    assert!(
+        exists_before.is_some(),
+        "Fingerprint MUST exist before delete"
+    );
     println!("   ✓ VERIFIED: Fingerprint physically exists\n");
 
     // =========================================================================
     // EXECUTE: Hard delete
     // =========================================================================
     println!("📝 EXECUTE: memory/delete (hard)");
-    let delete_response = handlers.dispatch(make_request("memory/delete", 2, json!({
-        "fingerprintId": fp_id_str,
-        "soft": false
-    }))).await;
+    let delete_response = handlers
+        .dispatch(make_request(
+            "memory/delete",
+            2,
+            json!({
+                "fingerprintId": fp_id_str,
+                "soft": false
+            }),
+        ))
+        .await;
     println!("   Handler returned: {:?}", delete_response.result);
 
     // =========================================================================
@@ -237,10 +316,17 @@ async fn manual_fsv_delete_physical_verification() {
     let exists_after = store.retrieve(fp_id).await.unwrap();
 
     println!("   store.count() = {} (was {})", after_count, before_count);
-    println!("   store.retrieve({}) = {:?}", fp_id, exists_after.is_none());
+    println!(
+        "   store.retrieve({}) = {:?}",
+        fp_id,
+        exists_after.is_none()
+    );
 
     assert_eq!(after_count, 0, "Count MUST be 0 after hard delete");
-    assert!(exists_after.is_none(), "Fingerprint MUST NOT exist after hard delete");
+    assert!(
+        exists_after.is_none(),
+        "Fingerprint MUST NOT exist after hard delete"
+    );
 
     // =========================================================================
     // EVIDENCE OF SUCCESS
@@ -272,20 +358,35 @@ async fn manual_fsv_johari_transition_physical_verification() {
     let multi_array: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(StubMultiArrayProvider::new());
     let alignment: Arc<dyn GoalAlignmentCalculator> = Arc::new(DefaultAlignmentCalculator::new());
     let hierarchy = Arc::new(RwLock::new(create_test_hierarchy()));
-    let johari: Arc<dyn JohariTransitionManager> = Arc::new(DynDefaultJohariManager::new(store.clone()));
+    let johari: Arc<dyn JohariTransitionManager> =
+        Arc::new(DynDefaultJohariManager::new(store.clone()));
     let tracker = Arc::new(RwLock::new(MetaUtlTracker::new()));
 
     let handlers = Handlers::with_meta_utl_tracker(
-        store.clone(), utl_processor, multi_array, alignment,
-        hierarchy, johari, tracker,
+        store.clone(),
+        utl_processor,
+        multi_array,
+        alignment,
+        hierarchy,
+        johari,
+        tracker,
     );
 
     // Store a fingerprint first
-    let store_response = handlers.dispatch(make_request("memory/store", 1, json!({
-        "content": "Knowledge for Johari testing",
-        "importance": 0.7
-    }))).await;
-    let memory_id_str = store_response.result.unwrap()["fingerprintId"].as_str().unwrap().to_string();
+    let store_response = handlers
+        .dispatch(make_request(
+            "memory/store",
+            1,
+            json!({
+                "content": "Knowledge for Johari testing",
+                "importance": 0.7
+            }),
+        ))
+        .await;
+    let memory_id_str = store_response.result.unwrap()["fingerprintId"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let memory_id = Uuid::parse_str(&memory_id_str).unwrap();
 
     // =========================================================================
@@ -294,23 +395,41 @@ async fn manual_fsv_johari_transition_physical_verification() {
     println!("📊 BEFORE TRANSITION - PHYSICAL VERIFICATION:");
     let fp_before = store.retrieve(memory_id).await.unwrap().unwrap();
 
-    println!("   E1 (semantic) quadrant: {:?}", fp_before.johari.dominant_quadrant(0));
-    println!("   E2 (episodic) quadrant: {:?}", fp_before.johari.dominant_quadrant(1));
-    println!("   E3 (procedural) quadrant: {:?}", fp_before.johari.dominant_quadrant(2));
+    println!(
+        "   E1 (semantic) quadrant: {:?}",
+        fp_before.johari.dominant_quadrant(0)
+    );
+    println!(
+        "   E2 (episodic) quadrant: {:?}",
+        fp_before.johari.dominant_quadrant(1)
+    );
+    println!(
+        "   E3 (procedural) quadrant: {:?}",
+        fp_before.johari.dominant_quadrant(2)
+    );
 
     let e1_before = fp_before.johari.dominant_quadrant(0);
-    println!("\n   Target: E1 currently {:?}, will transition to Open", e1_before);
+    println!(
+        "\n   Target: E1 currently {:?}, will transition to Open",
+        e1_before
+    );
 
     // =========================================================================
     // EXECUTE: Johari transition E1 -> Open
     // =========================================================================
     println!("\n📝 EXECUTE: johari/transition (E1 -> Open)");
-    let transition_response = handlers.dispatch(make_request("johari/transition", 2, json!({
-        "memory_id": memory_id_str,
-        "embedder_index": 0,
-        "to_quadrant": "open",
-        "trigger": "pattern_discovery"
-    }))).await;
+    let transition_response = handlers
+        .dispatch(make_request(
+            "johari/transition",
+            2,
+            json!({
+                "memory_id": memory_id_str,
+                "embedder_index": 0,
+                "to_quadrant": "open",
+                "trigger": "pattern_discovery"
+            }),
+        ))
+        .await;
     println!("   Handler returned: {:?}", transition_response.result);
 
     // =========================================================================
@@ -320,7 +439,10 @@ async fn manual_fsv_johari_transition_physical_verification() {
     let fp_after = store.retrieve(memory_id).await.unwrap().unwrap();
 
     let e1_after = fp_after.johari.dominant_quadrant(0);
-    println!("   E1 (semantic) quadrant: {:?} (was {:?})", e1_after, e1_before);
+    println!(
+        "   E1 (semantic) quadrant: {:?} (was {:?})",
+        e1_after, e1_before
+    );
 
     // Print all 13 quadrants for full visibility
     println!("\n   ALL 13 QUADRANTS IN SOURCE OF TRUTH:");
@@ -330,7 +452,11 @@ async fn manual_fsv_johari_transition_physical_verification() {
         println!("   - E{}: {:?}{}", i + 1, q, changed);
     }
 
-    assert_eq!(e1_after, JohariQuadrant::Open, "E1 MUST be Open after transition");
+    assert_eq!(
+        e1_after,
+        JohariQuadrant::Open,
+        "E1 MUST be Open after transition"
+    );
 
     // =========================================================================
     // EVIDENCE OF SUCCESS
@@ -363,12 +489,18 @@ async fn manual_fsv_meta_utl_tracker_physical_verification() {
     let multi_array: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(StubMultiArrayProvider::new());
     let alignment: Arc<dyn GoalAlignmentCalculator> = Arc::new(DefaultAlignmentCalculator::new());
     let hierarchy = Arc::new(RwLock::new(create_test_hierarchy()));
-    let johari: Arc<dyn JohariTransitionManager> = Arc::new(DynDefaultJohariManager::new(store.clone()));
+    let johari: Arc<dyn JohariTransitionManager> =
+        Arc::new(DynDefaultJohariManager::new(store.clone()));
     let tracker = Arc::new(RwLock::new(MetaUtlTracker::new()));
 
     let handlers = Handlers::with_meta_utl_tracker(
-        store.clone(), utl_processor, multi_array, alignment,
-        hierarchy.clone(), johari, tracker.clone(),
+        store.clone(),
+        utl_processor,
+        multi_array,
+        alignment,
+        hierarchy.clone(),
+        johari,
+        tracker.clone(),
     );
 
     // PRE-CONDITION: Need 10+ validations for predict_storage to work
@@ -382,11 +514,20 @@ async fn manual_fsv_meta_utl_tracker_physical_verification() {
     }
 
     // Store a fingerprint first
-    let store_response = handlers.dispatch(make_request("memory/store", 1, json!({
-        "content": "Data for prediction testing",
-        "importance": 0.8
-    }))).await;
-    let fp_id_str = store_response.result.unwrap()["fingerprintId"].as_str().unwrap().to_string();
+    let store_response = handlers
+        .dispatch(make_request(
+            "memory/store",
+            1,
+            json!({
+                "content": "Data for prediction testing",
+                "importance": 0.8
+            }),
+        ))
+        .await;
+    let fp_id_str = store_response.result.unwrap()["fingerprintId"]
+        .as_str()
+        .unwrap()
+        .to_string();
 
     // =========================================================================
     // BEFORE PREDICTION - PHYSICAL VERIFICATION
@@ -394,7 +535,10 @@ async fn manual_fsv_meta_utl_tracker_physical_verification() {
     println!("📊 BEFORE PREDICTION - PHYSICAL VERIFICATION:");
     {
         let t = tracker.read();
-        println!("   tracker.pending_predictions.len() = {}", t.pending_predictions.len());
+        println!(
+            "   tracker.pending_predictions.len() = {}",
+            t.pending_predictions.len()
+        );
         println!("   tracker.validation_count = {}", t.validation_count);
     }
 
@@ -402,12 +546,21 @@ async fn manual_fsv_meta_utl_tracker_physical_verification() {
     // EXECUTE: Create prediction
     // =========================================================================
     println!("\n📝 EXECUTE: meta_utl/predict_storage");
-    let predict_response = handlers.dispatch(make_request("meta_utl/predict_storage", 2, json!({
-        "fingerprint_id": fp_id_str,
-        "coherence_delta": 0.05
-    }))).await;
+    let predict_response = handlers
+        .dispatch(make_request(
+            "meta_utl/predict_storage",
+            2,
+            json!({
+                "fingerprint_id": fp_id_str,
+                "coherence_delta": 0.05
+            }),
+        ))
+        .await;
 
-    let prediction_id_str = predict_response.result.unwrap()["prediction_id"].as_str().unwrap().to_string();
+    let prediction_id_str = predict_response.result.unwrap()["prediction_id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let prediction_id = Uuid::parse_str(&prediction_id_str).unwrap();
     println!("   Handler returned prediction_id: {}", prediction_id);
 
@@ -417,9 +570,15 @@ async fn manual_fsv_meta_utl_tracker_physical_verification() {
     println!("\n🔍 AFTER PREDICTION - PHYSICAL VERIFICATION:");
     {
         let t = tracker.read();
-        println!("   tracker.pending_predictions.len() = {}", t.pending_predictions.len());
-        println!("   tracker.pending_predictions.contains_key({}) = {}",
-            prediction_id, t.pending_predictions.contains_key(&prediction_id));
+        println!(
+            "   tracker.pending_predictions.len() = {}",
+            t.pending_predictions.len()
+        );
+        println!(
+            "   tracker.pending_predictions.contains_key({}) = {}",
+            prediction_id,
+            t.pending_predictions.contains_key(&prediction_id)
+        );
 
         if let Some(pred) = t.pending_predictions.get(&prediction_id) {
             println!("\n   PHYSICAL EVIDENCE - PREDICTION IN TRACKER:");
@@ -434,10 +593,16 @@ async fn manual_fsv_meta_utl_tracker_physical_verification() {
     // EXECUTE: Validate prediction
     // =========================================================================
     println!("\n📝 EXECUTE: meta_utl/validate_prediction");
-    let validate_response = handlers.dispatch(make_request("meta_utl/validate_prediction", 3, json!({
-        "prediction_id": prediction_id_str,
-        "actual_coherence_delta": 0.048
-    }))).await;
+    let validate_response = handlers
+        .dispatch(make_request(
+            "meta_utl/validate_prediction",
+            3,
+            json!({
+                "prediction_id": prediction_id_str,
+                "actual_coherence_delta": 0.048
+            }),
+        ))
+        .await;
     println!("   Handler returned: {:?}", validate_response.result);
 
     // =========================================================================
@@ -446,9 +611,15 @@ async fn manual_fsv_meta_utl_tracker_physical_verification() {
     println!("\n🔍 AFTER VALIDATION - PHYSICAL VERIFICATION:");
     {
         let t = tracker.read();
-        println!("   tracker.pending_predictions.len() = {}", t.pending_predictions.len());
-        println!("   tracker.pending_predictions.contains_key({}) = {}",
-            prediction_id, t.pending_predictions.contains_key(&prediction_id));
+        println!(
+            "   tracker.pending_predictions.len() = {}",
+            t.pending_predictions.len()
+        );
+        println!(
+            "   tracker.pending_predictions.contains_key({}) = {}",
+            prediction_id,
+            t.pending_predictions.contains_key(&prediction_id)
+        );
         println!("   tracker.validation_count = {}", t.validation_count);
     }
 
@@ -460,7 +631,10 @@ async fn manual_fsv_meta_utl_tracker_physical_verification() {
     println!("================================================================================");
     println!("Source of Truth: MetaUtlTracker");
     println!("Physical Evidence:");
-    println!("  - Prediction {} was ADDED to pending_predictions", prediction_id);
+    println!(
+        "  - Prediction {} was ADDED to pending_predictions",
+        prediction_id
+    );
     println!("  - After validation, prediction REMOVED from pending_predictions");
     println!("  - validation_count incremented");
     println!("================================================================================\n");
@@ -480,12 +654,18 @@ async fn manual_fsv_edge_case_empty_content() {
     let multi_array: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(StubMultiArrayProvider::new());
     let alignment: Arc<dyn GoalAlignmentCalculator> = Arc::new(DefaultAlignmentCalculator::new());
     let hierarchy = Arc::new(RwLock::new(create_test_hierarchy()));
-    let johari: Arc<dyn JohariTransitionManager> = Arc::new(DynDefaultJohariManager::new(store.clone()));
+    let johari: Arc<dyn JohariTransitionManager> =
+        Arc::new(DynDefaultJohariManager::new(store.clone()));
     let tracker = Arc::new(RwLock::new(MetaUtlTracker::new()));
 
     let handlers = Handlers::with_meta_utl_tracker(
-        store.clone(), utl_processor, multi_array, alignment,
-        hierarchy, johari, tracker,
+        store.clone(),
+        utl_processor,
+        multi_array,
+        alignment,
+        hierarchy,
+        johari,
+        tracker,
     );
 
     // BEFORE STATE
@@ -495,10 +675,16 @@ async fn manual_fsv_edge_case_empty_content() {
 
     // EXECUTE with empty content
     println!("\n📝 EXECUTE: memory/store with content=\"\"");
-    let response = handlers.dispatch(make_request("memory/store", 1, json!({
-        "content": "",
-        "importance": 0.5
-    }))).await;
+    let response = handlers
+        .dispatch(make_request(
+            "memory/store",
+            1,
+            json!({
+                "content": "",
+                "importance": 0.5
+            }),
+        ))
+        .await;
 
     // VERIFY ERROR
     println!("\n🔍 VERIFY ERROR:");
@@ -530,12 +716,18 @@ async fn manual_fsv_edge_case_invalid_uuid() {
     let multi_array: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(StubMultiArrayProvider::new());
     let alignment: Arc<dyn GoalAlignmentCalculator> = Arc::new(DefaultAlignmentCalculator::new());
     let hierarchy = Arc::new(RwLock::new(create_test_hierarchy()));
-    let johari: Arc<dyn JohariTransitionManager> = Arc::new(DynDefaultJohariManager::new(store.clone()));
+    let johari: Arc<dyn JohariTransitionManager> =
+        Arc::new(DynDefaultJohariManager::new(store.clone()));
     let tracker = Arc::new(RwLock::new(MetaUtlTracker::new()));
 
     let handlers = Handlers::with_meta_utl_tracker(
-        store.clone(), utl_processor, multi_array, alignment,
-        hierarchy, johari, tracker,
+        store.clone(),
+        utl_processor,
+        multi_array,
+        alignment,
+        hierarchy,
+        johari,
+        tracker,
     );
 
     // BEFORE STATE
@@ -545,9 +737,15 @@ async fn manual_fsv_edge_case_invalid_uuid() {
 
     // EXECUTE with invalid UUID
     println!("\n📝 EXECUTE: memory/retrieve with fingerprintId=\"not-a-uuid\"");
-    let response = handlers.dispatch(make_request("memory/retrieve", 1, json!({
-        "fingerprintId": "not-a-uuid"
-    }))).await;
+    let response = handlers
+        .dispatch(make_request(
+            "memory/retrieve",
+            1,
+            json!({
+                "fingerprintId": "not-a-uuid"
+            }),
+        ))
+        .await;
 
     // VERIFY ERROR
     println!("\n🔍 VERIFY ERROR:");
@@ -579,12 +777,18 @@ async fn manual_fsv_edge_case_nonexistent_fingerprint() {
     let multi_array: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(StubMultiArrayProvider::new());
     let alignment: Arc<dyn GoalAlignmentCalculator> = Arc::new(DefaultAlignmentCalculator::new());
     let hierarchy = Arc::new(RwLock::new(create_test_hierarchy()));
-    let johari: Arc<dyn JohariTransitionManager> = Arc::new(DynDefaultJohariManager::new(store.clone()));
+    let johari: Arc<dyn JohariTransitionManager> =
+        Arc::new(DynDefaultJohariManager::new(store.clone()));
     let tracker = Arc::new(RwLock::new(MetaUtlTracker::new()));
 
     let handlers = Handlers::with_meta_utl_tracker(
-        store.clone(), utl_processor, multi_array, alignment,
-        hierarchy, johari, tracker,
+        store.clone(),
+        utl_processor,
+        multi_array,
+        alignment,
+        hierarchy,
+        johari,
+        tracker,
     );
 
     let fake_uuid = Uuid::new_v4();
@@ -597,9 +801,15 @@ async fn manual_fsv_edge_case_nonexistent_fingerprint() {
 
     // EXECUTE
     println!("\n📝 EXECUTE: memory/retrieve with non-existent UUID");
-    let response = handlers.dispatch(make_request("memory/retrieve", 1, json!({
-        "fingerprintId": fake_uuid.to_string()
-    }))).await;
+    let response = handlers
+        .dispatch(make_request(
+            "memory/retrieve",
+            1,
+            json!({
+                "fingerprintId": fake_uuid.to_string()
+            }),
+        ))
+        .await;
 
     // VERIFY ERROR
     println!("\n🔍 VERIFY ERROR:");

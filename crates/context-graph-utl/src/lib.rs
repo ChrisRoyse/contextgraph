@@ -149,10 +149,19 @@ mod tests {
     fn test_learning_signal_api() {
         // Verify LearningSignal is accessible
         let signal = LearningSignal::new(
-            0.75, 0.6, 0.8, 1.2, 0.5, None,
-            JohariQuadrant::Open, SuggestedAction::DirectRecall,
-            true, true, 1500,
-        ).unwrap();
+            0.75,
+            0.6,
+            0.8,
+            1.2,
+            0.5,
+            None,
+            JohariQuadrant::Open,
+            SuggestedAction::DirectRecall,
+            true,
+            true,
+            1500,
+        )
+        .unwrap();
         assert!(signal.is_high_learning()); // is_high_learning() uses > 0.7 threshold
     }
 

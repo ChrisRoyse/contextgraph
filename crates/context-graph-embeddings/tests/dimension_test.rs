@@ -24,23 +24,48 @@
 //! TOTAL_DIMENSION = 9856
 
 use context_graph_embeddings::{
-    ModelId, QuantizationMethod,
     dimensions::{
-        // Aggregate dimensions
-        MODEL_COUNT, TOTAL_DIMENSION,
-        // Projected dimensions
-        SEMANTIC, TEMPORAL_RECENT, TEMPORAL_PERIODIC, TEMPORAL_POSITIONAL,
-        CAUSAL, SPARSE, CODE, GRAPH, HDC, MULTIMODAL, ENTITY, LATE_INTERACTION, SPLADE,
-        // Native dimensions
-        SEMANTIC_NATIVE, TEMPORAL_RECENT_NATIVE, TEMPORAL_PERIODIC_NATIVE,
-        TEMPORAL_POSITIONAL_NATIVE, CAUSAL_NATIVE, SPARSE_NATIVE, CODE_NATIVE,
-        GRAPH_NATIVE, HDC_NATIVE, MULTIMODAL_NATIVE, ENTITY_NATIVE,
-        LATE_INTERACTION_NATIVE, SPLADE_NATIVE,
-        // Arrays
-        NATIVE_DIMENSIONS, PROJECTED_DIMENSIONS, OFFSETS,
         // Helper functions
-        native_dimension_by_index, projected_dimension_by_index, offset_by_index,
+        native_dimension_by_index,
+        offset_by_index,
+        projected_dimension_by_index,
+        CAUSAL,
+        CAUSAL_NATIVE,
+        CODE,
+        CODE_NATIVE,
+        ENTITY,
+        ENTITY_NATIVE,
+        GRAPH,
+        GRAPH_NATIVE,
+        HDC,
+        HDC_NATIVE,
+        LATE_INTERACTION,
+        LATE_INTERACTION_NATIVE,
+        // Aggregate dimensions
+        MODEL_COUNT,
+        MULTIMODAL,
+        MULTIMODAL_NATIVE,
+        // Arrays
+        NATIVE_DIMENSIONS,
+        OFFSETS,
+        PROJECTED_DIMENSIONS,
+        // Projected dimensions
+        SEMANTIC,
+        // Native dimensions
+        SEMANTIC_NATIVE,
+        SPARSE,
+        SPARSE_NATIVE,
+        SPLADE,
+        SPLADE_NATIVE,
+        TEMPORAL_PERIODIC,
+        TEMPORAL_PERIODIC_NATIVE,
+        TEMPORAL_POSITIONAL,
+        TEMPORAL_POSITIONAL_NATIVE,
+        TEMPORAL_RECENT,
+        TEMPORAL_RECENT_NATIVE,
+        TOTAL_DIMENSION,
     },
+    ModelId, QuantizationMethod,
 };
 
 // =============================================================================
@@ -50,54 +75,54 @@ use context_graph_embeddings::{
 /// Expected native dimensions for all 13 models.
 /// These are the raw output dimensions from each model before projection.
 const EXPECTED_NATIVE_DIMS: [(ModelId, usize); 13] = [
-    (ModelId::Semantic, 1024),           // E1
-    (ModelId::TemporalRecent, 512),      // E2
-    (ModelId::TemporalPeriodic, 512),    // E3
-    (ModelId::TemporalPositional, 512),  // E4
-    (ModelId::Causal, 768),              // E5
-    (ModelId::Sparse, 30522),            // E6
-    (ModelId::Code, 1536),               // E7
-    (ModelId::Graph, 384),               // E8
-    (ModelId::Hdc, 10000),               // E9
-    (ModelId::Multimodal, 768),          // E10
-    (ModelId::Entity, 384),              // E11
-    (ModelId::LateInteraction, 128),     // E12
-    (ModelId::Splade, 30522),            // E13
+    (ModelId::Semantic, 1024),          // E1
+    (ModelId::TemporalRecent, 512),     // E2
+    (ModelId::TemporalPeriodic, 512),   // E3
+    (ModelId::TemporalPositional, 512), // E4
+    (ModelId::Causal, 768),             // E5
+    (ModelId::Sparse, 30522),           // E6
+    (ModelId::Code, 1536),              // E7
+    (ModelId::Graph, 384),              // E8
+    (ModelId::Hdc, 10000),              // E9
+    (ModelId::Multimodal, 768),         // E10
+    (ModelId::Entity, 384),             // E11
+    (ModelId::LateInteraction, 128),    // E12
+    (ModelId::Splade, 30522),           // E13
 ];
 
 /// Expected projected dimensions for all 13 models.
 /// These are the dimensions used for Multi-Array Storage.
 const EXPECTED_PROJECTED_DIMS: [(ModelId, usize); 13] = [
-    (ModelId::Semantic, 1024),           // E1 - no projection
-    (ModelId::TemporalRecent, 512),      // E2 - no projection
-    (ModelId::TemporalPeriodic, 512),    // E3 - no projection
-    (ModelId::TemporalPositional, 512),  // E4 - no projection
-    (ModelId::Causal, 768),              // E5 - no projection
-    (ModelId::Sparse, 1536),             // E6 - 30K -> 1536
-    (ModelId::Code, 1536),               // E7 - native 1536D
-    (ModelId::Graph, 384),               // E8 - no projection
-    (ModelId::Hdc, 1024),                // E9 - 10K -> 1024
-    (ModelId::Multimodal, 768),          // E10 - no projection
-    (ModelId::Entity, 384),              // E11 - no projection
-    (ModelId::LateInteraction, 128),     // E12 - no projection
-    (ModelId::Splade, 1536),             // E13 - 30K -> 1536
+    (ModelId::Semantic, 1024),          // E1 - no projection
+    (ModelId::TemporalRecent, 512),     // E2 - no projection
+    (ModelId::TemporalPeriodic, 512),   // E3 - no projection
+    (ModelId::TemporalPositional, 512), // E4 - no projection
+    (ModelId::Causal, 768),             // E5 - no projection
+    (ModelId::Sparse, 1536),            // E6 - 30K -> 1536
+    (ModelId::Code, 1536),              // E7 - native 1536D
+    (ModelId::Graph, 384),              // E8 - no projection
+    (ModelId::Hdc, 1024),               // E9 - 10K -> 1024
+    (ModelId::Multimodal, 768),         // E10 - no projection
+    (ModelId::Entity, 384),             // E11 - no projection
+    (ModelId::LateInteraction, 128),    // E12 - no projection
+    (ModelId::Splade, 1536),            // E13 - 30K -> 1536
 ];
 
 /// Expected quantization methods for all 13 models.
 const EXPECTED_QUANTIZATION: [(ModelId, QuantizationMethod); 13] = [
-    (ModelId::Semantic, QuantizationMethod::PQ8),              // E1
+    (ModelId::Semantic, QuantizationMethod::PQ8), // E1
     (ModelId::TemporalRecent, QuantizationMethod::Float8E4M3), // E2
     (ModelId::TemporalPeriodic, QuantizationMethod::Float8E4M3), // E3
     (ModelId::TemporalPositional, QuantizationMethod::Float8E4M3), // E4
-    (ModelId::Causal, QuantizationMethod::PQ8),                // E5
-    (ModelId::Sparse, QuantizationMethod::SparseNative),       // E6
-    (ModelId::Code, QuantizationMethod::PQ8),                  // E7
-    (ModelId::Graph, QuantizationMethod::Float8E4M3),          // E8
-    (ModelId::Hdc, QuantizationMethod::Binary),                // E9
-    (ModelId::Multimodal, QuantizationMethod::PQ8),            // E10
-    (ModelId::Entity, QuantizationMethod::Float8E4M3),         // E11
+    (ModelId::Causal, QuantizationMethod::PQ8),   // E5
+    (ModelId::Sparse, QuantizationMethod::SparseNative), // E6
+    (ModelId::Code, QuantizationMethod::PQ8),     // E7
+    (ModelId::Graph, QuantizationMethod::Float8E4M3), // E8
+    (ModelId::Hdc, QuantizationMethod::Binary),   // E9
+    (ModelId::Multimodal, QuantizationMethod::PQ8), // E10
+    (ModelId::Entity, QuantizationMethod::Float8E4M3), // E11
     (ModelId::LateInteraction, QuantizationMethod::TokenPruning), // E12
-    (ModelId::Splade, QuantizationMethod::SparseNative),       // E13
+    (ModelId::Splade, QuantizationMethod::SparseNative), // E13
 ];
 
 /// Expected total dimension sum.
@@ -133,7 +158,10 @@ mod native_dimension_tests {
             512,
             "E2 TemporalRecent: expected native dimension 512"
         );
-        assert_eq!(TEMPORAL_RECENT_NATIVE, 512, "TEMPORAL_RECENT_NATIVE constant mismatch");
+        assert_eq!(
+            TEMPORAL_RECENT_NATIVE, 512,
+            "TEMPORAL_RECENT_NATIVE constant mismatch"
+        );
     }
 
     /// Test E3 TemporalPeriodic native dimension matches Constitution.
@@ -144,7 +172,10 @@ mod native_dimension_tests {
             512,
             "E3 TemporalPeriodic: expected native dimension 512"
         );
-        assert_eq!(TEMPORAL_PERIODIC_NATIVE, 512, "TEMPORAL_PERIODIC_NATIVE constant mismatch");
+        assert_eq!(
+            TEMPORAL_PERIODIC_NATIVE, 512,
+            "TEMPORAL_PERIODIC_NATIVE constant mismatch"
+        );
     }
 
     /// Test E4 TemporalPositional native dimension matches Constitution.
@@ -155,7 +186,10 @@ mod native_dimension_tests {
             512,
             "E4 TemporalPositional: expected native dimension 512"
         );
-        assert_eq!(TEMPORAL_POSITIONAL_NATIVE, 512, "TEMPORAL_POSITIONAL_NATIVE constant mismatch");
+        assert_eq!(
+            TEMPORAL_POSITIONAL_NATIVE, 512,
+            "TEMPORAL_POSITIONAL_NATIVE constant mismatch"
+        );
     }
 
     /// Test E5 Causal native dimension matches Constitution.
@@ -221,7 +255,10 @@ mod native_dimension_tests {
             768,
             "E10 Multimodal: expected native dimension 768 (CLIP)"
         );
-        assert_eq!(MULTIMODAL_NATIVE, 768, "MULTIMODAL_NATIVE constant mismatch");
+        assert_eq!(
+            MULTIMODAL_NATIVE, 768,
+            "MULTIMODAL_NATIVE constant mismatch"
+        );
     }
 
     /// Test E11 Entity native dimension matches Constitution.
@@ -243,7 +280,10 @@ mod native_dimension_tests {
             128,
             "E12 LateInteraction: expected native dimension 128 (per token)"
         );
-        assert_eq!(LATE_INTERACTION_NATIVE, 128, "LATE_INTERACTION_NATIVE constant mismatch");
+        assert_eq!(
+            LATE_INTERACTION_NATIVE, 128,
+            "LATE_INTERACTION_NATIVE constant mismatch"
+        );
     }
 
     /// Test E13 Splade native dimension matches Constitution.
@@ -325,7 +365,10 @@ mod projected_dimension_tests {
             512,
             "E3 TemporalPeriodic: expected projected dimension 512"
         );
-        assert_eq!(TEMPORAL_PERIODIC, 512, "TEMPORAL_PERIODIC constant mismatch");
+        assert_eq!(
+            TEMPORAL_PERIODIC, 512,
+            "TEMPORAL_PERIODIC constant mismatch"
+        );
     }
 
     /// Test E4 TemporalPositional projected dimension (no projection needed).
@@ -336,7 +379,10 @@ mod projected_dimension_tests {
             512,
             "E4 TemporalPositional: expected projected dimension 512"
         );
-        assert_eq!(TEMPORAL_POSITIONAL, 512, "TEMPORAL_POSITIONAL constant mismatch");
+        assert_eq!(
+            TEMPORAL_POSITIONAL, 512,
+            "TEMPORAL_POSITIONAL constant mismatch"
+        );
     }
 
     /// Test E5 Causal projected dimension (no projection needed).
@@ -378,7 +424,10 @@ mod projected_dimension_tests {
         );
         assert_eq!(CODE, 1536, "CODE constant mismatch");
         // Verify no expansion needed (1:1 ratio)
-        assert_eq!(CODE, CODE_NATIVE, "E7 Code should have no projection (native 1536D)");
+        assert_eq!(
+            CODE, CODE_NATIVE,
+            "E7 Code should have no projection (native 1536D)"
+        );
     }
 
     /// Test E8 Graph projected dimension (no projection needed).
@@ -570,10 +619,7 @@ mod quantization_method_tests {
     /// Test SparseNative models: E6, E13.
     #[test]
     fn test_sparse_native_models() {
-        let sparse_models = [
-            (ModelId::Sparse, "E6"),
-            (ModelId::Splade, "E13"),
-        ];
+        let sparse_models = [(ModelId::Sparse, "E6"), (ModelId::Splade, "E13")];
 
         for (model_id, label) in sparse_models {
             assert_eq!(
@@ -748,10 +794,7 @@ mod aggregate_dimension_tests {
     /// Test sum from ModelId iteration equals TOTAL_DIMENSION.
     #[test]
     fn test_model_id_iteration_sum() {
-        let sum: usize = ModelId::all()
-            .iter()
-            .map(|m| m.projected_dimension())
-            .sum();
+        let sum: usize = ModelId::all().iter().map(|m| m.projected_dimension()).sum();
 
         assert_eq!(
             sum, TOTAL_DIMENSION,
@@ -765,7 +808,8 @@ mod aggregate_dimension_tests {
     #[test]
     fn test_total_dimension_breakdown() {
         // Constitution: 1024 + 512 + 512 + 512 + 768 + 1536 + 768 + 384 + 1024 + 768 + 384 + 128 + 1536 = 9856
-        let expected_breakdown = 1024 + 512 + 512 + 512 + 768 + 1536 + 768 + 384 + 1024 + 768 + 384 + 128 + 1536;
+        let expected_breakdown =
+            1024 + 512 + 512 + 512 + 768 + 1536 + 768 + 384 + 1024 + 768 + 384 + 128 + 1536;
         assert_eq!(
             expected_breakdown, EXPECTED_TOTAL_DIMENSION,
             "Documented breakdown sum {} != expected {}",
@@ -839,13 +883,13 @@ mod offset_tests {
     /// Test OFFSETS array matches offset_by_index function.
     #[test]
     fn test_offsets_array_consistency() {
-        for i in 0..MODEL_COUNT {
+        for (i, &offset) in OFFSETS.iter().enumerate() {
             assert_eq!(
-                OFFSETS[i],
+                offset,
                 offset_by_index(i),
                 "OFFSETS[{}] ({}) != offset_by_index({}) ({})",
                 i,
-                OFFSETS[i],
+                offset,
                 i,
                 offset_by_index(i)
             );
@@ -942,8 +986,7 @@ mod edge_case_tests {
                     assert_eq!(
                         projected, native,
                         "E7 Code should have no projection: {} == {} expected",
-                        projected,
-                        native
+                        projected, native
                     );
                 }
                 // E6, E9, E13: compression
@@ -981,12 +1024,11 @@ mod edge_case_tests {
         assert_eq!(min_dim, 128, "Minimum projected dimension should be 128");
 
         // Maximum native dimension is 30522 (E6 Sparse, E13 Splade)
-        let max_native = ModelId::all()
-            .iter()
-            .map(|m| m.dimension())
-            .max()
-            .unwrap();
-        assert_eq!(max_native, 30522, "Maximum native dimension should be 30522");
+        let max_native = ModelId::all().iter().map(|m| m.dimension()).max().unwrap();
+        assert_eq!(
+            max_native, 30522,
+            "Maximum native dimension should be 30522"
+        );
 
         // Maximum projected dimension is 1536 (E6 Sparse, E13 Splade)
         let max_projected = ModelId::all()
@@ -994,7 +1036,10 @@ mod edge_case_tests {
             .map(|m| m.projected_dimension())
             .max()
             .unwrap();
-        assert_eq!(max_projected, 1536, "Maximum projected dimension should be 1536");
+        assert_eq!(
+            max_projected, 1536,
+            "Maximum projected dimension should be 1536"
+        );
 
         println!("[PASS] Dimension boundary values verified");
     }
@@ -1034,9 +1079,21 @@ mod model_metadata_tests {
     #[test]
     fn test_model_id_repr_order() {
         assert_eq!(ModelId::Semantic as u8, 0, "Semantic should be 0");
-        assert_eq!(ModelId::TemporalRecent as u8, 1, "TemporalRecent should be 1");
-        assert_eq!(ModelId::TemporalPeriodic as u8, 2, "TemporalPeriodic should be 2");
-        assert_eq!(ModelId::TemporalPositional as u8, 3, "TemporalPositional should be 3");
+        assert_eq!(
+            ModelId::TemporalRecent as u8,
+            1,
+            "TemporalRecent should be 1"
+        );
+        assert_eq!(
+            ModelId::TemporalPeriodic as u8,
+            2,
+            "TemporalPeriodic should be 2"
+        );
+        assert_eq!(
+            ModelId::TemporalPositional as u8,
+            3,
+            "TemporalPositional should be 3"
+        );
         assert_eq!(ModelId::Causal as u8, 4, "Causal should be 4");
         assert_eq!(ModelId::Sparse as u8, 5, "Sparse should be 5");
         assert_eq!(ModelId::Code as u8, 6, "Code should be 6");
@@ -1044,7 +1101,11 @@ mod model_metadata_tests {
         assert_eq!(ModelId::Hdc as u8, 8, "Hdc should be 8");
         assert_eq!(ModelId::Multimodal as u8, 9, "Multimodal should be 9");
         assert_eq!(ModelId::Entity as u8, 10, "Entity should be 10");
-        assert_eq!(ModelId::LateInteraction as u8, 11, "LateInteraction should be 11");
+        assert_eq!(
+            ModelId::LateInteraction as u8,
+            11,
+            "LateInteraction should be 11"
+        );
         assert_eq!(ModelId::Splade as u8, 12, "Splade should be 12");
         println!("[PASS] ModelId repr(u8) values match E1-E13 order");
     }
@@ -1083,7 +1144,11 @@ mod model_metadata_tests {
     #[test]
     fn test_custom_models_count() {
         let custom_count: usize = ModelId::custom().count();
-        assert_eq!(custom_count, 4, "Expected 4 custom models, got {}", custom_count);
+        assert_eq!(
+            custom_count, 4,
+            "Expected 4 custom models, got {}",
+            custom_count
+        );
 
         let pretrained_count: usize = ModelId::pretrained().count();
         assert_eq!(
@@ -1126,29 +1191,38 @@ mod comprehensive_validation {
         // 3. Verify all native dimensions
         for (model_id, expected) in &EXPECTED_NATIVE_DIMS {
             let actual = model_id.dimension();
-            assert_eq!(actual, *expected, "{:?} native dimension mismatch", model_id);
+            assert_eq!(
+                actual, *expected,
+                "{:?} native dimension mismatch",
+                model_id
+            );
         }
         println!("[3/6] All 13 native dimensions verified");
 
         // 4. Verify all projected dimensions
         for (model_id, expected) in &EXPECTED_PROJECTED_DIMS {
             let actual = model_id.projected_dimension();
-            assert_eq!(actual, *expected, "{:?} projected dimension mismatch", model_id);
+            assert_eq!(
+                actual, *expected,
+                "{:?} projected dimension mismatch",
+                model_id
+            );
         }
         println!("[4/6] All 13 projected dimensions verified");
 
         // 5. Verify all quantization methods
         for (model_id, expected) in &EXPECTED_QUANTIZATION {
             let actual = QuantizationMethod::for_model_id(*model_id);
-            assert_eq!(actual, *expected, "{:?} quantization method mismatch", model_id);
+            assert_eq!(
+                actual, *expected,
+                "{:?} quantization method mismatch",
+                model_id
+            );
         }
         println!("[5/6] All 13 quantization methods verified");
 
         // 6. Verify sum consistency
-        let sum: usize = ModelId::all()
-            .iter()
-            .map(|m| m.projected_dimension())
-            .sum();
+        let sum: usize = ModelId::all().iter().map(|m| m.projected_dimension()).sum();
         assert_eq!(sum, TOTAL_DIMENSION, "Sum mismatch with TOTAL_DIMENSION");
         println!("[6/6] Sum of projected dimensions = TOTAL_DIMENSION");
 

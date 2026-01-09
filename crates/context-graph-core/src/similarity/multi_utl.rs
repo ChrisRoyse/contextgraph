@@ -265,36 +265,24 @@ impl MultiUtlParams {
     pub fn validate(&self) -> Option<String> {
         // Check w_e range [0.5, 1.5]
         if self.w_e < 0.5 || self.w_e > 1.5 {
-            return Some(format!(
-                "w_e ({}) out of range [0.5, 1.5]",
-                self.w_e
-            ));
+            return Some(format!("w_e ({}) out of range [0.5, 1.5]", self.w_e));
         }
 
         // Check phi range [0, pi]
         if self.phi < 0.0 || self.phi > std::f32::consts::PI {
-            return Some(format!(
-                "phi ({}) out of range [0, pi]",
-                self.phi
-            ));
+            return Some(format!("phi ({}) out of range [0, pi]", self.phi));
         }
 
         // Check for NaN/Infinity
         for (i, &delta) in self.semantic_deltas.iter().enumerate() {
             if delta.is_nan() || delta.is_infinite() {
-                return Some(format!(
-                    "semantic_deltas[{}] is NaN or Infinite",
-                    i
-                ));
+                return Some(format!("semantic_deltas[{}] is NaN or Infinite", i));
             }
         }
 
         for (i, &delta) in self.coherence_deltas.iter().enumerate() {
             if delta.is_nan() || delta.is_infinite() {
-                return Some(format!(
-                    "coherence_deltas[{}] is NaN or Infinite",
-                    i
-                ));
+                return Some(format!("coherence_deltas[{}] is NaN or Infinite", i));
             }
         }
 
@@ -372,7 +360,10 @@ mod tests {
         assert!((large - 1.0).abs() < 1e-6);
         assert!(small.abs() < 1e-6);
 
-        println!("[PASS] Sigmoid handles overflow: large={}, small={}", large, small);
+        println!(
+            "[PASS] Sigmoid handles overflow: large={}, small={}",
+            large, small
+        );
     }
 
     #[test]
@@ -395,7 +386,10 @@ mod tests {
 
         // compute_validated() should fail for garbage input
         let result = params.compute_validated();
-        assert!(result.is_err(), "compute_validated should reject garbage input");
+        assert!(
+            result.is_err(),
+            "compute_validated should reject garbage input"
+        );
         assert!(result.unwrap_err().contains("GIGO rejected"));
 
         println!("[PASS] Default params correctly detected as garbage input");
@@ -501,12 +495,18 @@ mod tests {
             coherence_deltas: [0.1; NUM_EMBEDDERS],
             ..Default::default()
         };
-        assert!(valid.validate().is_none(), "Valid params should pass validation");
+        assert!(
+            valid.validate().is_none(),
+            "Valid params should pass validation"
+        );
 
         // AP-007: Default (all-zero) params now fail GIGO validation
         let garbage = MultiUtlParams::default();
         let garbage_err = garbage.validate();
-        assert!(garbage_err.is_some(), "Garbage input should fail validation");
+        assert!(
+            garbage_err.is_some(),
+            "Garbage input should fail validation"
+        );
         assert!(garbage_err.unwrap().contains("GIGO rejected"));
 
         let invalid_w_e = MultiUtlParams::default().with_w_e(2.0);
@@ -543,7 +543,9 @@ mod tests {
 
     #[test]
     fn test_from_purpose_alignments() {
-        let alignments = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2, -0.3];
+        let alignments = [
+            0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2, -0.3,
+        ];
         let params = MultiUtlParams::from_purpose_alignments(alignments);
 
         for (i, &alignment) in alignments.iter().enumerate().take(NUM_EMBEDDERS) {

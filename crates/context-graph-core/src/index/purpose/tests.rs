@@ -29,9 +29,9 @@ mod tests {
     use super::super::hnsw_purpose::{HnswPurposeIndex, PurposeIndexOps};
     use super::super::query::{PurposeQuery, PurposeQueryTarget, PurposeSearchResult};
 
+    use super::super::entry::GoalId;
     use crate::index::config::{DistanceMetric, HnswConfig, PURPOSE_VECTOR_DIM};
     use crate::index::error::IndexError;
-    use super::super::entry::GoalId;
     use crate::types::fingerprint::PurposeVector;
     use crate::types::JohariQuadrant;
 
@@ -88,17 +88,29 @@ mod tests {
 
         // Cluster 1: low values (base around 0.2)
         for i in 0..5 {
-            entries.push(create_entry(0.15 + i as f32 * 0.02, "goal_low", JohariQuadrant::Open));
+            entries.push(create_entry(
+                0.15 + i as f32 * 0.02,
+                "goal_low",
+                JohariQuadrant::Open,
+            ));
         }
 
         // Cluster 2: medium values (base around 0.5)
         for i in 0..5 {
-            entries.push(create_entry(0.45 + i as f32 * 0.02, "goal_mid", JohariQuadrant::Hidden));
+            entries.push(create_entry(
+                0.45 + i as f32 * 0.02,
+                "goal_mid",
+                JohariQuadrant::Hidden,
+            ));
         }
 
         // Cluster 3: high values (base around 0.8)
         for i in 0..5 {
-            entries.push(create_entry(0.75 + i as f32 * 0.02, "goal_high", JohariQuadrant::Blind));
+            entries.push(create_entry(
+                0.75 + i as f32 * 0.02,
+                "goal_high",
+                JohariQuadrant::Blind,
+            ));
         }
 
         entries
@@ -114,8 +126,14 @@ mod tests {
         let err = PurposeIndexError::not_found(id);
         let msg = err.to_string();
 
-        assert!(msg.contains(&id.to_string()), "Error should contain memory ID");
-        assert!(msg.contains("not found"), "Error should contain 'not found'");
+        assert!(
+            msg.contains(&id.to_string()),
+            "Error should contain memory ID"
+        );
+        assert!(
+            msg.contains("not found"),
+            "Error should contain 'not found'"
+        );
 
         println!("[VERIFIED] NotFound error contains memory ID: {}", msg);
     }
@@ -128,7 +146,10 @@ mod tests {
         assert!(msg.contains("1.5"), "Error should contain invalid value");
         assert!(msg.contains("test context"), "Error should contain context");
 
-        println!("[VERIFIED] InvalidConfidence error contains value and context: {}", msg);
+        println!(
+            "[VERIFIED] InvalidConfidence error contains value and context: {}",
+            msg
+        );
     }
 
     #[test]
@@ -136,7 +157,10 @@ mod tests {
         let err = PurposeIndexError::invalid_query("limit must be positive");
         let msg = err.to_string();
 
-        assert!(msg.contains("limit must be positive"), "Error should contain reason");
+        assert!(
+            msg.contains("limit must be positive"),
+            "Error should contain reason"
+        );
 
         println!("[VERIFIED] InvalidQuery error contains reason: {}", msg);
     }
@@ -146,10 +170,16 @@ mod tests {
         let err = PurposeIndexError::dimension_mismatch(13, 10);
         let msg = err.to_string();
 
-        assert!(msg.contains("13"), "Error should contain expected dimension");
+        assert!(
+            msg.contains("13"),
+            "Error should contain expected dimension"
+        );
         assert!(msg.contains("10"), "Error should contain actual dimension");
 
-        println!("[VERIFIED] DimensionMismatch error contains dimensions: {}", msg);
+        println!(
+            "[VERIFIED] DimensionMismatch error contains dimensions: {}",
+            msg
+        );
     }
 
     #[test]
@@ -157,7 +187,10 @@ mod tests {
         let err = PurposeIndexError::clustering("insufficient data points");
         let msg = err.to_string();
 
-        assert!(msg.contains("insufficient data points"), "Error should contain reason");
+        assert!(
+            msg.contains("insufficient data points"),
+            "Error should contain reason"
+        );
 
         println!("[VERIFIED] ClusteringError contains reason: {}", msg);
     }
@@ -183,7 +216,10 @@ mod tests {
         assert!(msg.contains("saving index"), "Error should contain context");
         assert!(msg.contains("disk full"), "Error should contain message");
 
-        println!("[VERIFIED] PersistenceError contains context and message: {}", msg);
+        println!(
+            "[VERIFIED] PersistenceError contains context and message: {}",
+            msg
+        );
     }
 
     #[test]
@@ -229,11 +265,7 @@ mod tests {
     #[test]
     fn test_purpose_metadata_all_quadrants() {
         for quadrant in JohariQuadrant::all() {
-            let metadata = PurposeMetadata::new(
-                GoalId::new("test_goal"),
-                0.75,
-                quadrant,
-            ).unwrap();
+            let metadata = PurposeMetadata::new(GoalId::new("test_goal"), 0.75, quadrant).unwrap();
 
             assert_eq!(metadata.dominant_quadrant, quadrant);
         }
@@ -243,13 +275,13 @@ mod tests {
 
     #[test]
     fn test_purpose_index_entry_with_real_purpose_vector() {
-        let alignments = [0.8, 0.7, 0.9, 0.6, 0.75, 0.65, 0.85, 0.72, 0.78, 0.68, 0.82, 0.71, 0.76];
+        let alignments = [
+            0.8, 0.7, 0.9, 0.6, 0.75, 0.65, 0.85, 0.72, 0.78, 0.68, 0.82, 0.71, 0.76,
+        ];
         let pv = PurposeVector::new(alignments);
-        let metadata = PurposeMetadata::new(
-            GoalId::new("learn_pytorch"),
-            0.9,
-            JohariQuadrant::Hidden,
-        ).unwrap();
+        let metadata =
+            PurposeMetadata::new(GoalId::new("learn_pytorch"), 0.9, JohariQuadrant::Hidden)
+                .unwrap();
 
         let memory_id = Uuid::new_v4();
         let entry = PurposeIndexEntry::new(memory_id, pv, metadata);
@@ -268,7 +300,10 @@ mod tests {
         assert_eq!(entry.get_alignments().len(), PURPOSE_VECTOR_DIM);
         assert_eq!(entry.get_alignments().len(), 13);
 
-        println!("[VERIFIED] Entry alignments have dimension {}", PURPOSE_VECTOR_DIM);
+        println!(
+            "[VERIFIED] Entry alignments have dimension {}",
+            PURPOSE_VECTOR_DIM
+        );
     }
 
     #[test]
@@ -280,7 +315,10 @@ mod tests {
         let aggregate = entry.aggregate_alignment();
         assert!((aggregate - 0.75).abs() < f32::EPSILON);
 
-        println!("[VERIFIED] Entry aggregate_alignment returns correct mean: {:.4}", aggregate);
+        println!(
+            "[VERIFIED] Entry aggregate_alignment returns correct mean: {:.4}",
+            aggregate
+        );
     }
 
     #[test]
@@ -379,7 +417,10 @@ mod tests {
         let result = PurposeQuery::new(PurposeQueryTarget::Vector(pv.clone()), 10, -0.1);
         assert!(result.is_err());
 
-        println!("[VERIFIED] FAIL FAST: Query rejects invalid min_similarity: {}", msg);
+        println!(
+            "[VERIFIED] FAIL FAST: Query rejects invalid min_similarity: {}",
+            msg
+        );
     }
 
     #[test]
@@ -414,7 +455,10 @@ mod tests {
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("min_cluster_size"));
 
-        println!("[VERIFIED] FAIL FAST: Pattern target rejects min_cluster_size=0: {}", msg);
+        println!(
+            "[VERIFIED] FAIL FAST: Pattern target rejects min_cluster_size=0: {}",
+            msg
+        );
     }
 
     // =========================================================================
@@ -431,16 +475,24 @@ mod tests {
 
         let result = clusterer.cluster_purposes(&entries, &config).unwrap();
 
-        println!("[AFTER] clusters={}, iterations={}, WCSS={:.4}",
-            result.num_clusters(), result.iterations, result.wcss);
+        println!(
+            "[AFTER] clusters={}, iterations={}, WCSS={:.4}",
+            result.num_clusters(),
+            result.iterations,
+            result.wcss
+        );
 
         assert_eq!(result.num_clusters(), 3);
         assert_eq!(result.total_points(), 15);
 
         for (i, cluster) in result.clusters.iter().enumerate() {
             assert!(!cluster.is_empty(), "Cluster {} should not be empty", i);
-            println!("  Cluster {}: {} members, coherence={:.4}",
-                i, cluster.len(), cluster.coherence);
+            println!(
+                "  Cluster {}: {} members, coherence={:.4}",
+                i,
+                cluster.len(),
+                cluster.coherence
+            );
         }
 
         println!("[VERIFIED] K-means with real 13D purpose vectors produces 3 clusters");
@@ -454,12 +506,19 @@ mod tests {
 
         let result = clusterer.cluster_purposes(&entries, &config).unwrap();
 
-        assert!(result.converged, "Should converge with well-separated clusters");
-        assert!(result.iterations < config.max_iterations,
-            "Should converge before max_iterations");
+        assert!(
+            result.converged,
+            "Should converge with well-separated clusters"
+        );
+        assert!(
+            result.iterations < config.max_iterations,
+            "Should converge before max_iterations"
+        );
 
-        println!("[VERIFIED] Convergence detected at iteration {} < max {}",
-            result.iterations, config.max_iterations);
+        println!(
+            "[VERIFIED] Convergence detected at iteration {} < max {}",
+            result.iterations, config.max_iterations
+        );
     }
 
     #[test]
@@ -477,7 +536,10 @@ mod tests {
         let coherence = result.clusters[0].coherence;
         assert!(coherence > 0.9, "Tight cluster should have high coherence");
 
-        println!("[VERIFIED] Cluster coherence calculation: {:.4} > 0.9", coherence);
+        println!(
+            "[VERIFIED] Cluster coherence calculation: {:.4} > 0.9",
+            coherence
+        );
     }
 
     #[test]
@@ -520,16 +582,24 @@ mod tests {
         let entry = create_entry(0.7, "test_goal", JohariQuadrant::Open);
         let memory_id = entry.memory_id;
 
-        println!("[BEFORE] len={}, contains({})={}",
-            index.len(), memory_id, index.contains(memory_id));
+        println!(
+            "[BEFORE] len={}, contains({})={}",
+            index.len(),
+            memory_id,
+            index.contains(memory_id)
+        );
 
         // Insert
         index.insert(entry.clone()).unwrap();
         assert_eq!(index.len(), 1);
         assert!(index.contains(memory_id));
 
-        println!("[AFTER INSERT] len={}, contains({})={}",
-            index.len(), memory_id, index.contains(memory_id));
+        println!(
+            "[AFTER INSERT] len={}, contains({})={}",
+            index.len(),
+            memory_id,
+            index.contains(memory_id)
+        );
 
         // Get
         let retrieved = index.get(memory_id).unwrap();
@@ -541,8 +611,12 @@ mod tests {
         assert_eq!(index.len(), 0);
         assert!(!index.contains(memory_id));
 
-        println!("[AFTER REMOVE] len={}, contains({})={}",
-            index.len(), memory_id, index.contains(memory_id));
+        println!(
+            "[AFTER REMOVE] len={}, contains({})={}",
+            index.len(),
+            memory_id,
+            index.contains(memory_id)
+        );
 
         println!("[VERIFIED] Insert/remove/get cycle works correctly");
     }
@@ -646,7 +720,10 @@ mod tests {
             assert_eq!(result.metadata.primary_goal.as_str(), "goal_a");
         }
 
-        println!("[VERIFIED] Goal filtering returns only matching entries ({} results)", results.len());
+        println!(
+            "[VERIFIED] Goal filtering returns only matching entries ({} results)",
+            results.len()
+        );
     }
 
     #[test]
@@ -675,7 +752,10 @@ mod tests {
             assert_eq!(result.metadata.dominant_quadrant, JohariQuadrant::Hidden);
         }
 
-        println!("[VERIFIED] Quadrant filtering returns only matching entries ({} results)", results.len());
+        println!(
+            "[VERIFIED] Quadrant filtering returns only matching entries ({} results)",
+            results.len()
+        );
     }
 
     #[test]
@@ -697,11 +777,17 @@ mod tests {
         let results = index.search(&query).unwrap();
 
         for result in &results {
-            assert!(result.purpose_similarity >= 0.8,
-                "Similarity {} should be >= 0.8", result.purpose_similarity);
+            assert!(
+                result.purpose_similarity >= 0.8,
+                "Similarity {} should be >= 0.8",
+                result.purpose_similarity
+            );
         }
 
-        println!("[VERIFIED] min_similarity threshold filters results ({} passed)", results.len());
+        println!(
+            "[VERIFIED] min_similarity threshold filters results ({} passed)",
+            results.len()
+        );
     }
 
     #[test]
@@ -718,12 +804,20 @@ mod tests {
         // Correct database semantics: searching an empty index returns empty results
         // Error should only occur on actual failures (network, disk, corruption, invalid input)
         let result = index.search(&query);
-        assert!(result.is_ok(), "Search on empty index should succeed with empty results");
+        assert!(
+            result.is_ok(),
+            "Search on empty index should succeed with empty results"
+        );
 
         let results = result.unwrap();
-        assert!(results.is_empty(), "Empty index should return empty results");
+        assert!(
+            results.is_empty(),
+            "Empty index should return empty results"
+        );
 
-        println!("[VERIFIED] Search on empty index returns empty results (correct database semantics)");
+        println!(
+            "[VERIFIED] Search on empty index returns empty results (correct database semantics)"
+        );
     }
 
     #[test]
@@ -737,7 +831,10 @@ mod tests {
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("not found"));
 
-        println!("[VERIFIED] FAIL FAST: Get fails for non-existent memory: {}", msg);
+        println!(
+            "[VERIFIED] FAIL FAST: Get fails for non-existent memory: {}",
+            msg
+        );
     }
 
     #[test]
@@ -750,7 +847,10 @@ mod tests {
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("not found"));
 
-        println!("[VERIFIED] FAIL FAST: Remove fails for non-existent memory: {}", msg);
+        println!(
+            "[VERIFIED] FAIL FAST: Remove fails for non-existent memory: {}",
+            msg
+        );
     }
 
     #[test]
@@ -789,14 +889,18 @@ mod tests {
         let index = HnswPurposeIndex::new(purpose_config()).unwrap();
         let non_existent = Uuid::new_v4();
 
-        let query = PurposeQuery::new(PurposeQueryTarget::from_memory(non_existent), 10, 0.0).unwrap();
+        let query =
+            PurposeQuery::new(PurposeQueryTarget::from_memory(non_existent), 10, 0.0).unwrap();
         let result = index.search(&query);
 
         assert!(result.is_err());
         let msg = result.unwrap_err().to_string();
         assert!(msg.contains("not found"));
 
-        println!("[VERIFIED] FAIL FAST: FromMemory search fails for non-existent memory: {}", msg);
+        println!(
+            "[VERIFIED] FAIL FAST: FromMemory search fails for non-existent memory: {}",
+            msg
+        );
     }
 
     // =========================================================================
@@ -811,8 +915,12 @@ mod tests {
         assert!(index.is_empty());
         assert_eq!(index.len(), 0);
         assert_eq!(index.goal_count(), 0);
-        println!("[STATE] Initial: empty={}, len={}, goals={}",
-            index.is_empty(), index.len(), index.goal_count());
+        println!(
+            "[STATE] Initial: empty={}, len={}, goals={}",
+            index.is_empty(),
+            index.len(),
+            index.goal_count()
+        );
 
         // Step 1: Insert multiple entries with diverse goals/quadrants
         let entries: Vec<PurposeIndexEntry> = vec![
@@ -835,44 +943,59 @@ mod tests {
         for id in &ids {
             assert!(index.contains(*id));
         }
-        println!("[STATE] After 5 inserts: len={}, goals={}", index.len(), index.goal_count());
+        println!(
+            "[STATE] After 5 inserts: len={}, goals={}",
+            index.len(),
+            index.goal_count()
+        );
 
         // Step 2: Verify secondary indexes updated
         let alpha_set = index.get_by_goal(&GoalId::new("goal_alpha")).unwrap();
         assert_eq!(alpha_set.len(), 2);
         let open_set = index.get_by_quadrant(JohariQuadrant::Open).unwrap();
         assert_eq!(open_set.len(), 2);
-        println!("[STATE] Secondary indexes: goal_alpha={}, quadrant_open={}",
-            alpha_set.len(), open_set.len());
+        println!(
+            "[STATE] Secondary indexes: goal_alpha={}, quadrant_open={}",
+            alpha_set.len(),
+            open_set.len()
+        );
 
         // Step 3: Search with each query type
         // Vector search
         let vector_query = PurposeQuery::new(
             PurposeQueryTarget::Vector(create_purpose_vector(0.5, 0.02)),
-            5, 0.0
-        ).unwrap();
+            5,
+            0.0,
+        )
+        .unwrap();
         let vector_results = index.search(&vector_query).unwrap();
         assert_eq!(vector_results.len(), 5);
         println!("[STATE] Vector search: {} results", vector_results.len());
 
         // FromMemory search
-        let from_memory_query = PurposeQuery::new(
-            PurposeQueryTarget::from_memory(ids[2]),
-            3, 0.0
-        ).unwrap();
+        let from_memory_query =
+            PurposeQuery::new(PurposeQueryTarget::from_memory(ids[2]), 3, 0.0).unwrap();
         let from_memory_results = index.search(&from_memory_query).unwrap();
         assert!(!from_memory_results.is_empty());
-        println!("[STATE] FromMemory search: {} results", from_memory_results.len());
+        println!(
+            "[STATE] FromMemory search: {} results",
+            from_memory_results.len()
+        );
 
         // Filtered search
         let filtered_query = PurposeQuery::new(
             PurposeQueryTarget::Vector(create_purpose_vector(0.5, 0.02)),
-            10, 0.0
-        ).unwrap()
+            10,
+            0.0,
+        )
+        .unwrap()
         .with_goal_filter(GoalId::new("goal_beta"));
         let filtered_results = index.search(&filtered_query).unwrap();
         assert_eq!(filtered_results.len(), 2);
-        println!("[STATE] Filtered search (goal_beta): {} results", filtered_results.len());
+        println!(
+            "[STATE] Filtered search (goal_beta): {} results",
+            filtered_results.len()
+        );
 
         // Step 4: Remove entries and verify cleanup
         let to_remove = ids[0]; // goal_alpha, Open
@@ -884,16 +1007,24 @@ mod tests {
         assert_eq!(alpha_set.len(), 1); // Reduced from 2 to 1
         let open_set = index.get_by_quadrant(JohariQuadrant::Open).unwrap();
         assert_eq!(open_set.len(), 1); // Reduced from 2 to 1
-        println!("[STATE] After remove: len={}, goal_alpha={}, quadrant_open={}",
-            index.len(), alpha_set.len(), open_set.len());
+        println!(
+            "[STATE] After remove: len={}, goal_alpha={}, quadrant_open={}",
+            index.len(),
+            alpha_set.len(),
+            open_set.len()
+        );
 
         // Step 5: Clear and verify
         index.clear();
         assert!(index.is_empty());
         assert_eq!(index.len(), 0);
         assert_eq!(index.goal_count(), 0);
-        println!("[STATE] After clear: empty={}, len={}, goals={}",
-            index.is_empty(), index.len(), index.goal_count());
+        println!(
+            "[STATE] After clear: empty={}, len={}, goals={}",
+            index.is_empty(),
+            index.len(),
+            index.goal_count()
+        );
 
         println!("[VERIFIED] Full state verification complete - all data structures consistent");
     }
@@ -941,23 +1072,19 @@ mod tests {
     fn test_full_state_results_contain_complete_data() {
         let mut index = HnswPurposeIndex::new(purpose_config()).unwrap();
 
-        let alignments = [0.8, 0.7, 0.9, 0.6, 0.75, 0.65, 0.85, 0.72, 0.78, 0.68, 0.82, 0.71, 0.76];
+        let alignments = [
+            0.8, 0.7, 0.9, 0.6, 0.75, 0.65, 0.85, 0.72, 0.78, 0.68, 0.82, 0.71, 0.76,
+        ];
         let pv = PurposeVector::new(alignments);
-        let metadata = PurposeMetadata::new(
-            GoalId::new("complete_test"),
-            0.95,
-            JohariQuadrant::Blind,
-        ).unwrap();
+        let metadata =
+            PurposeMetadata::new(GoalId::new("complete_test"), 0.95, JohariQuadrant::Blind)
+                .unwrap();
         let entry = PurposeIndexEntry::new(Uuid::new_v4(), pv.clone(), metadata);
         let memory_id = entry.memory_id;
 
         index.insert(entry).unwrap();
 
-        let query = PurposeQuery::new(
-            PurposeQueryTarget::Vector(pv.clone()),
-            1,
-            0.0,
-        ).unwrap();
+        let query = PurposeQuery::new(PurposeQueryTarget::Vector(pv.clone()), 1, 0.0).unwrap();
 
         let results = index.search(&query).unwrap();
         assert_eq!(results.len(), 1);
@@ -986,7 +1113,10 @@ mod tests {
         assert!(msg.contains("13"));
         assert!(msg.contains("100"));
 
-        println!("[VERIFIED] FAIL FAST: Index rejects wrong dimension config: {}", msg);
+        println!(
+            "[VERIFIED] FAIL FAST: Index rejects wrong dimension config: {}",
+            msg
+        );
     }
 
     #[test]
@@ -1002,7 +1132,8 @@ mod tests {
             PurposeQueryTarget::Vector(create_purpose_vector(0.5, 0.01)),
             10,
             0.0,
-        ).unwrap();
+        )
+        .unwrap();
 
         let results = index.search(&query).unwrap();
 
@@ -1051,22 +1182,32 @@ mod tests {
             PurposeQueryTarget::Vector(create_purpose_vector(0.5, 0.02)),
             5, // Limit to 5
             0.0,
-        ).unwrap();
+        )
+        .unwrap();
 
         let results = index.search(&query).unwrap();
 
         assert!(results.len() <= 5);
 
-        println!("[VERIFIED] Search respects limit parameter ({} results)", results.len());
+        println!(
+            "[VERIFIED] Search respects limit parameter ({} results)",
+            results.len()
+        );
     }
 
     #[test]
     fn test_goals_list_returns_all_goals() {
         let mut index = HnswPurposeIndex::new(purpose_config()).unwrap();
 
-        index.insert(create_entry(0.5, "alpha", JohariQuadrant::Open)).unwrap();
-        index.insert(create_entry(0.6, "beta", JohariQuadrant::Hidden)).unwrap();
-        index.insert(create_entry(0.7, "gamma", JohariQuadrant::Blind)).unwrap();
+        index
+            .insert(create_entry(0.5, "alpha", JohariQuadrant::Open))
+            .unwrap();
+        index
+            .insert(create_entry(0.6, "beta", JohariQuadrant::Hidden))
+            .unwrap();
+        index
+            .insert(create_entry(0.7, "gamma", JohariQuadrant::Blind))
+            .unwrap();
 
         let goals = index.goals();
 
@@ -1133,12 +1274,9 @@ mod tests {
     #[test]
     fn test_entry_stale_detection() {
         let past = SystemTime::now() - Duration::from_secs(3600);
-        let metadata = PurposeMetadata::with_timestamp(
-            GoalId::new("test"),
-            0.75,
-            past,
-            JohariQuadrant::Open,
-        ).unwrap();
+        let metadata =
+            PurposeMetadata::with_timestamp(GoalId::new("test"), 0.75, past, JohariQuadrant::Open)
+                .unwrap();
 
         let entry = PurposeIndexEntry::new(Uuid::new_v4(), PurposeVector::default(), metadata);
 
@@ -1202,7 +1340,9 @@ mod tests {
         assert!(result_k1.wcss >= result_k2.wcss);
         assert!(result_k2.wcss >= result_k3.wcss);
 
-        println!("[VERIFIED] WCSS decreases with increasing k: k1={:.4}, k2={:.4}, k3={:.4}",
-            result_k1.wcss, result_k2.wcss, result_k3.wcss);
+        println!(
+            "[VERIFIED] WCSS decreases with increasing k: k1={:.4}, k2={:.4}, k3={:.4}",
+            result_k1.wcss, result_k2.wcss, result_k3.wcss
+        );
     }
 }

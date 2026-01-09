@@ -38,4 +38,3 @@ pub use batch::Batch;
 pub use queue::BatchQueue;
 pub use request::BatchRequest;
 pub use stats::{BatchQueueStats, BatchQueueSummary};
-

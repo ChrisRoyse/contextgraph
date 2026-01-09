@@ -16,9 +16,7 @@ fn test_tag_index_consistency() {
     db.store_node(&node).expect("store");
 
     // Query for rust tag
-    let rust_nodes = db
-        .get_nodes_by_tag("rust", None, 0)
-        .expect("query rust");
+    let rust_nodes = db.get_nodes_by_tag("rust", None, 0).expect("query rust");
     println!("VERIFY: 'rust' tag has {} nodes", rust_nodes.len());
     assert!(
         rust_nodes.contains(&node.id),
@@ -31,12 +29,8 @@ fn test_tag_index_consistency() {
     db.update_node(&node).expect("update");
 
     // Verify indexes updated
-    let rust_after = db
-        .get_nodes_by_tag("rust", None, 0)
-        .expect("query rust");
-    let tokio_nodes = db
-        .get_nodes_by_tag("tokio", None, 0)
-        .expect("query tokio");
+    let rust_after = db.get_nodes_by_tag("rust", None, 0).expect("query rust");
+    let tokio_nodes = db.get_nodes_by_tag("tokio", None, 0).expect("query tokio");
 
     println!(
         "VERIFY: rust={}, tokio={}",
@@ -58,11 +52,7 @@ fn test_tag_index_consistency() {
 fn test_multiple_tags_per_node() {
     let (db, _tmp) = setup_db();
     let mut node = create_test_node();
-    node.metadata.tags = vec![
-        "tag1".to_string(),
-        "tag2".to_string(),
-        "tag3".to_string(),
-    ];
+    node.metadata.tags = vec!["tag1".to_string(), "tag2".to_string(), "tag3".to_string()];
 
     println!("=== MULTIPLE TAGS TEST ===");
     db.store_node(&node).expect("store");
@@ -125,10 +115,7 @@ fn edge_case_source_index() {
     let by_source = db
         .get_nodes_by_source("test-source-url", None, 0)
         .expect("query");
-    println!(
-        "VERIFY: source index contains {} nodes",
-        by_source.len()
-    );
+    println!("VERIFY: source index contains {} nodes", by_source.len());
     assert!(
         by_source.contains(&node.id),
         "node should be indexed by source"

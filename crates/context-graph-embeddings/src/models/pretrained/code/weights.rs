@@ -79,7 +79,9 @@ impl QwenWeights {
         let shard2_path = model_path.join("model-00002-of-00002.safetensors");
         let single_path = model_path.join("model.safetensors");
 
-        let safetensor_paths: Vec<std::path::PathBuf> = if shard1_path.exists() && shard2_path.exists() {
+        let safetensor_paths: Vec<std::path::PathBuf> = if shard1_path.exists()
+            && shard2_path.exists()
+        {
             vec![shard1_path, shard2_path]
         } else if single_path.exists() {
             vec![single_path]
@@ -119,7 +121,10 @@ impl QwenWeights {
 
         // Load token embeddings
         let embed_tokens = vb
-            .get((config.vocab_size, config.hidden_size), "embed_tokens.weight")
+            .get(
+                (config.vocab_size, config.hidden_size),
+                "embed_tokens.weight",
+            )
             .map_err(|e| EmbeddingError::GpuError {
                 message: format!("Qwen2 embed_tokens.weight load failed: {}", e),
             })?;
@@ -132,11 +137,11 @@ impl QwenWeights {
         }
 
         // Load final layer norm
-        let norm_weight = vb
-            .get((config.hidden_size,), "norm.weight")
-            .map_err(|e| EmbeddingError::GpuError {
-                message: format!("Qwen2 norm.weight load failed: {}", e),
-            })?;
+        let norm_weight =
+            vb.get((config.hidden_size,), "norm.weight")
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!("Qwen2 norm.weight load failed: {}", e),
+                })?;
 
         Ok(QwenWeights {
             config,

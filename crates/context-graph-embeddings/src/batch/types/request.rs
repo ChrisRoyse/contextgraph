@@ -150,7 +150,8 @@ impl BatchRequest {
                 instruction,
             } => {
                 // Include instruction in estimate if present
-                let total_len = content.len() + instruction.as_ref().map_or(0, |s: &String| s.len());
+                let total_len =
+                    content.len() + instruction.as_ref().map_or(0, |s: &String| s.len());
                 // Rough estimate: 4 chars per token, minimum 1
                 (total_len / 4).max(1)
             }

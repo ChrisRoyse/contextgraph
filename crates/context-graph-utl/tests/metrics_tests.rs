@@ -5,13 +5,13 @@
 //! UtlComputationMetrics, and UtlStatus with lifecycle and phase components.
 
 use context_graph_utl::{
+    johari::JohariQuadrant,
     metrics::{
         QuadrantDistribution, StageThresholds, ThresholdsResponse, UtlComputationMetrics,
         UtlStatus, UtlStatusResponse,
     },
-    johari::JohariQuadrant,
-    LifecycleLambdaWeights, LifecycleStage,
     phase::ConsolidationPhase,
+    LifecycleLambdaWeights, LifecycleStage,
 };
 
 /// Test that StageThresholds factory methods produce correct stage-specific values

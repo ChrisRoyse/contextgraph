@@ -63,7 +63,9 @@ pub enum AggregationStrategy {
 impl Default for AggregationStrategy {
     fn default() -> Self {
         // k=60 per constitution.yaml embeddings.similarity.rrf_constant
-        Self::RRF { k: similarity::RRF_K }
+        Self::RRF {
+            k: similarity::RRF_K,
+        }
     }
 }
 
@@ -83,7 +85,10 @@ impl AggregationStrategy {
             Self::RRF { .. } => {
                 panic!("RRF requires rank-based input - use aggregate_rrf()");
             }
-            Self::WeightedAverage { weights, require_all } => {
+            Self::WeightedAverage {
+                weights,
+                require_all,
+            } => {
                 if *require_all && matches.len() < NUM_EMBEDDERS {
                     return 0.0;
                 }
@@ -98,10 +103,7 @@ impl AggregationStrategy {
                     0.0
                 }
             }
-            Self::MaxPooling => matches
-                .iter()
-                .map(|(_, sim)| *sim)
-                .fold(0.0_f32, f32::max),
+            Self::MaxPooling => matches.iter().map(|(_, sim)| *sim).fold(0.0_f32, f32::max),
             Self::PurposeWeighted { purpose_vector } => {
                 let (sum, weight_sum) = matches
                     .iter()
@@ -206,8 +208,11 @@ mod tests {
         assert!((*scores.get(&id1).unwrap() - expected_id1).abs() < 0.0001);
         assert!((*scores.get(&id2).unwrap() - expected_id2).abs() < 0.0001);
 
-        println!("[VERIFIED] RRF single list: id1={:.6}, id2={:.6}",
-            scores.get(&id1).unwrap(), scores.get(&id2).unwrap());
+        println!(
+            "[VERIFIED] RRF single list: id1={:.6}, id2={:.6}",
+            scores.get(&id1).unwrap(),
+            scores.get(&id2).unwrap()
+        );
     }
 
     #[test]
@@ -217,8 +222,8 @@ mod tests {
         let id3 = Uuid::new_v4();
 
         let ranked_lists = vec![
-            (0, vec![id1, id2, id3]), // Space 0: id1=rank0, id2=rank1, id3=rank2
-            (1, vec![id2, id1, id3]), // Space 1: id2=rank0, id1=rank1, id3=rank2
+            (0, vec![id1, id2, id3]),  // Space 0: id1=rank0, id2=rank1, id3=rank2
+            (1, vec![id2, id1, id3]),  // Space 1: id2=rank0, id1=rank1, id3=rank2
             (12, vec![id1, id3, id2]), // Space 12 (SPLADE): id1=rank0, id3=rank1, id2=rank2
         ];
 
@@ -271,7 +276,10 @@ mod tests {
         let score1 = scores.get(&id1).unwrap();
         let score2 = scores.get(&id2).unwrap();
 
-        assert!(score1 > score2, "id1 should rank higher due to higher weight in space 0");
+        assert!(
+            score1 > score2,
+            "id1 should rank higher due to higher weight in space 0"
+        );
 
         println!(
             "[VERIFIED] RRF weighted: id1={:.4}, id2={:.4}",
@@ -295,7 +303,12 @@ mod tests {
 
         // (0.8 * 1.0 + 0.6 * 0.5) / (1.0 + 0.5) = 1.1 / 1.5 = 0.7333...
         let expected = 1.1 / 1.5;
-        assert!((score - expected).abs() < 0.001, "Expected {}, got {}", expected, score);
+        assert!(
+            (score - expected).abs() < 0.001,
+            "Expected {}, got {}",
+            expected,
+            score
+        );
 
         println!("[VERIFIED] WeightedAverage: score={:.4}", score);
     }
@@ -312,7 +325,10 @@ mod tests {
         let matches = vec![(0, 0.8), (1, 0.6)];
         let score = strategy.aggregate(&matches);
 
-        assert_eq!(score, 0.0, "Should return 0 when require_all is true and not all spaces matched");
+        assert_eq!(
+            score, 0.0,
+            "Should return 0 when require_all is true and not all spaces matched"
+        );
 
         println!("[VERIFIED] WeightedAverage require_all: score=0.0 when incomplete");
     }
@@ -383,7 +399,10 @@ mod tests {
         let contrib2 = AggregationStrategy::rrf_contribution(5, 60.0);
         assert!((contrib2 - 1.0 / 66.0).abs() < 0.0001);
 
-        println!("[VERIFIED] rrf_contribution: rank0={:.6}, rank5={:.6}", contrib, contrib2);
+        println!(
+            "[VERIFIED] rrf_contribution: rank0={:.6}, rank5={:.6}",
+            contrib, contrib2
+        );
     }
 
     #[test]

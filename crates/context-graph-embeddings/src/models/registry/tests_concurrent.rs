@@ -1,6 +1,5 @@
 //! Concurrency tests for ModelRegistry.
 
-
 use std::sync::Arc;
 
 use crate::traits::get_memory_estimate;
@@ -51,11 +50,13 @@ async fn test_concurrent_load_different_models() {
 
     let registry = Arc::new(ModelRegistry::new(config, factory).await.unwrap());
 
-    let models = [ModelId::Semantic,
+    let models = [
+        ModelId::Semantic,
         ModelId::Code,
         ModelId::Graph,
         ModelId::Entity,
-        ModelId::Hdc];
+        ModelId::Hdc,
+    ];
 
     let handles: Vec<_> = models
         .iter()

@@ -660,6 +660,9 @@ mod tests {
         let key1 = drift_history_key(ts1, &uuid);
         let key2 = drift_history_key(ts2, &uuid);
 
-        assert_ne!(key1, key2, "Different timestamps must produce different keys");
+        assert_ne!(
+            key1, key2,
+            "Different timestamps must produce different keys"
+        );
     }
 }

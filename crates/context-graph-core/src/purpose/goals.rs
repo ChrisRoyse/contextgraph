@@ -585,8 +585,17 @@ mod tests {
     }
 
     // Helper function to create clustering discovery metadata
-    fn clustering_discovery(confidence: f32, cluster_size: usize, coherence: f32) -> Result<GoalDiscoveryMetadata, GoalNodeError> {
-        GoalDiscoveryMetadata::new(DiscoveryMethod::Clustering, confidence, cluster_size, coherence)
+    fn clustering_discovery(
+        confidence: f32,
+        cluster_size: usize,
+        coherence: f32,
+    ) -> Result<GoalDiscoveryMetadata, GoalNodeError> {
+        GoalDiscoveryMetadata::new(
+            DiscoveryMethod::Clustering,
+            confidence,
+            cluster_size,
+            coherence,
+        )
     }
 
     #[test]
@@ -717,12 +726,7 @@ mod tests {
         fp.e1_semantic = vec![]; // Invalid - empty
 
         let discovery = test_discovery();
-        let result = GoalNode::autonomous_goal(
-            "Test".into(),
-            GoalLevel::NorthStar,
-            fp,
-            discovery,
-        );
+        let result = GoalNode::autonomous_goal("Test".into(), GoalLevel::NorthStar, fp, discovery);
 
         assert!(result.is_err());
         assert!(matches!(result, Err(GoalNodeError::InvalidArray(_))));
@@ -734,13 +738,8 @@ mod tests {
         let fp = test_fingerprint();
         let discovery = test_discovery();
 
-        let goal = GoalNode::autonomous_goal(
-            "Test".into(),
-            GoalLevel::NorthStar,
-            fp,
-            discovery,
-        )
-        .unwrap();
+        let goal =
+            GoalNode::autonomous_goal("Test".into(), GoalLevel::NorthStar, fp, discovery).unwrap();
 
         let array = goal.array();
         assert_eq!(array.e1_semantic.len(), 1024);
@@ -752,13 +751,8 @@ mod tests {
         let fp = test_fingerprint();
         let discovery = test_discovery();
 
-        let mut goal = GoalNode::autonomous_goal(
-            "Test".into(),
-            GoalLevel::NorthStar,
-            fp,
-            discovery,
-        )
-        .unwrap();
+        let mut goal =
+            GoalNode::autonomous_goal("Test".into(), GoalLevel::NorthStar, fp, discovery).unwrap();
 
         let child_id = Uuid::new_v4();
         goal.add_child(child_id);
@@ -796,7 +790,10 @@ mod tests {
 
         assert!(hierarchy.add_goal(ns1).is_ok());
         let result = hierarchy.add_goal(ns2);
-        assert!(matches!(result, Err(GoalHierarchyError::MultipleNorthStars)));
+        assert!(matches!(
+            result,
+            Err(GoalHierarchyError::MultipleNorthStars)
+        ));
         println!("[VERIFIED] GoalHierarchy enforces single North Star");
     }
 
@@ -933,13 +930,9 @@ mod tests {
         let fp = test_fingerprint();
         let discovery = clustering_discovery(0.85, 42, 0.78).unwrap();
 
-        let goal = GoalNode::autonomous_goal(
-            "Test goal".into(),
-            GoalLevel::Strategic,
-            fp,
-            discovery,
-        )
-        .unwrap();
+        let goal =
+            GoalNode::autonomous_goal("Test goal".into(), GoalLevel::Strategic, fp, discovery)
+                .unwrap();
 
         // Serialize
         let json = serde_json::to_string(&goal).expect("Serialize");
@@ -983,12 +976,7 @@ mod tests {
         fp.e1_semantic = vec![]; // Invalid - empty
 
         let discovery = test_discovery();
-        let result = GoalNode::autonomous_goal(
-            "Test".into(),
-            GoalLevel::NorthStar,
-            fp,
-            discovery,
-        );
+        let result = GoalNode::autonomous_goal("Test".into(), GoalLevel::NorthStar, fp, discovery);
 
         assert!(result.is_err());
         match result {
@@ -1026,18 +1014,16 @@ mod tests {
         )
         .unwrap();
 
-        let ns2 = GoalNode::autonomous_goal(
-            "NS2".into(),
-            GoalLevel::NorthStar,
-            fp,
-            discovery,
-        )
-        .unwrap();
+        let ns2 =
+            GoalNode::autonomous_goal("NS2".into(), GoalLevel::NorthStar, fp, discovery).unwrap();
 
         hierarchy.add_goal(ns1).unwrap();
         let result = hierarchy.add_goal(ns2);
 
-        assert!(matches!(result, Err(GoalHierarchyError::MultipleNorthStars)));
+        assert!(matches!(
+            result,
+            Err(GoalHierarchyError::MultipleNorthStars)
+        ));
         println!("[EDGE CASE 3 PASSED] Multiple North Stars rejected");
     }
 

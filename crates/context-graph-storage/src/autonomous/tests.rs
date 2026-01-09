@@ -17,6 +17,7 @@ use uuid::Uuid;
 
 mod integration_tests {
     use super::*;
+    use chrono::Utc;
     use context_graph_core::autonomous::{
         bootstrap::GoalId,
         curation::{MemoryCurationState, MemoryId},
@@ -25,7 +26,6 @@ mod integration_tests {
         thresholds::AdaptiveThresholdState,
         workflow::AutonomousConfig,
     };
-    use chrono::Utc;
 
     #[test]
     fn test_autonomous_config_key_usage() {
@@ -219,13 +219,15 @@ mod cf_descriptor_tests {
         let cache = Cache::new_lru_cache(256 * 1024 * 1024);
         let descriptors = get_autonomous_cf_descriptors(&cache);
 
-        let expected_names = [CF_AUTONOMOUS_CONFIG,
+        let expected_names = [
+            CF_AUTONOMOUS_CONFIG,
             CF_ADAPTIVE_THRESHOLD_STATE,
             CF_DRIFT_HISTORY,
             CF_GOAL_ACTIVITY_METRICS,
             CF_AUTONOMOUS_LINEAGE,
             CF_CONSOLIDATION_HISTORY,
-            CF_MEMORY_CURATION];
+            CF_MEMORY_CURATION,
+        ];
 
         for (i, expected) in expected_names.iter().enumerate() {
             assert_eq!(
@@ -240,11 +242,11 @@ mod cf_descriptor_tests {
     #[test]
     fn test_cf_options_with_various_cache_sizes() {
         let sizes = [
-            0,                     // Zero
-            1024,                  // 1KB
-            1024 * 1024,           // 1MB
-            256 * 1024 * 1024,     // 256MB
-            1024 * 1024 * 1024,    // 1GB
+            0,                  // Zero
+            1024,               // 1KB
+            1024 * 1024,        // 1MB
+            256 * 1024 * 1024,  // 256MB
+            1024 * 1024 * 1024, // 1GB
         ];
 
         for size in sizes {
@@ -272,15 +274,7 @@ mod key_format_edge_cases {
         let uuid = Uuid::new_v4();
 
         // Test all boundary timestamps
-        let timestamps = vec![
-            i64::MIN,
-            i64::MIN + 1,
-            -1,
-            0,
-            1,
-            i64::MAX - 1,
-            i64::MAX,
-        ];
+        let timestamps = vec![i64::MIN, i64::MIN + 1, -1, 0, 1, i64::MAX - 1, i64::MAX];
 
         for ts in timestamps {
             let key = drift_history_key(ts, &uuid);
@@ -338,11 +332,7 @@ mod key_format_edge_cases {
 
         // Verify lexicographic ordering matches timestamp ordering
         for i in 0..keys.len() - 1 {
-            assert!(
-                keys[i] < keys[i + 1],
-                "Key ordering broken at index {}",
-                i
-            );
+            assert!(keys[i] < keys[i + 1], "Key ordering broken at index {}", i);
         }
     }
 
@@ -457,15 +447,12 @@ mod determinism_tests {
 // =============================================================================
 
 mod serialization_pattern_tests {
-    use context_graph_core::autonomous::{
-        curation::MemoryCurationState,
-        drift::DriftDataPoint,
-        evolution::GoalActivityMetrics,
-        thresholds::AdaptiveThresholdState,
-        workflow::AutonomousConfig,
-        bootstrap::GoalId,
-    };
     use chrono::Utc;
+    use context_graph_core::autonomous::{
+        bootstrap::GoalId, curation::MemoryCurationState, drift::DriftDataPoint,
+        evolution::GoalActivityMetrics, thresholds::AdaptiveThresholdState,
+        workflow::AutonomousConfig,
+    };
 
     #[test]
     fn test_autonomous_config_serialization_roundtrip() {

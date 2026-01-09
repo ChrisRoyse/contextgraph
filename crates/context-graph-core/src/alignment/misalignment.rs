@@ -296,7 +296,7 @@ mod tests {
         flags.tactical_without_strategic = true;
 
         assert_eq!(flags.flag_count(), 3); // below_threshold, divergent, tactical_without_strategic
-        // Note: Each Uuid::new_v4() creates a unique ID, so no duplicates
+                                           // Note: Each Uuid::new_v4() creates a unique ID, so no duplicates
         assert_eq!(flags.critical_goals.len(), 2);
         assert_eq!(flags.warning_goals.len(), 1);
         assert_eq!(flags.severity(), 2);

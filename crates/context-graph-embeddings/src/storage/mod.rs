@@ -18,29 +18,27 @@
 //!
 //! The conversion between these types happens in the Logic Layer (TASK-EMB-022).
 
-mod types;
 pub mod multi_space;
+mod types;
 
 #[cfg(test)]
 mod full_state_verification;
 
 pub use types::{
+    EmbedderQueryResult,
+    IndexEntry,
+    MultiSpaceQueryResult,
+    // Types
+    StoredQuantizedFingerprint,
     // Constants
     EXPECTED_QUANTIZED_SIZE_BYTES,
     MAX_QUANTIZED_SIZE_BYTES,
     MIN_QUANTIZED_SIZE_BYTES,
     NUM_EMBEDDERS,
-    STORAGE_VERSION,
     RRF_K,
-    // Types
-    StoredQuantizedFingerprint,
-    IndexEntry,
-    EmbedderQueryResult,
-    MultiSpaceQueryResult,
+    STORAGE_VERSION,
 };
 
 pub use multi_space::{
-    MultiSpaceSearchEngine,
-    QuantizedFingerprintRetriever,
-    MultiSpaceIndexProvider,
+    MultiSpaceIndexProvider, MultiSpaceSearchEngine, QuantizedFingerprintRetriever,
 };

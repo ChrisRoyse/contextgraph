@@ -52,10 +52,10 @@ pub struct ConeConfig {
 impl Default for ConeConfig {
     fn default() -> Self {
         Self {
-            min_aperture: 0.1,           // ~5.7 degrees
-            max_aperture: 1.5,           // ~85.9 degrees
-            base_aperture: 1.0,          // ~57.3 degrees
-            aperture_decay: 0.85,        // 15% narrower per level
+            min_aperture: 0.1,    // ~5.7 degrees
+            max_aperture: 1.5,    // ~85.9 degrees
+            base_aperture: 1.0,   // ~57.3 degrees
+            aperture_decay: 0.85, // 15% narrower per level
             membership_threshold: 0.7,
         }
     }

@@ -116,7 +116,11 @@ impl JohariFingerprint {
             embedder_idx,
             NUM_EMBEDDERS - 1
         );
-        assert!(open >= 0.0, "open weight must be non-negative, got {}", open);
+        assert!(
+            open >= 0.0,
+            "open weight must be non-negative, got {}",
+            open
+        );
         assert!(
             hidden >= 0.0,
             "hidden weight must be non-negative, got {}",

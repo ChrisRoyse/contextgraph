@@ -55,10 +55,8 @@ impl Handlers {
         let source = match Uuid::parse_str(source_str) {
             Ok(id) => id,
             Err(e) => {
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid UUID format for source: {}", e),
-                );
+                return self
+                    .tool_error_with_pulse(id, &format!("Invalid UUID format for source: {}", e));
             }
         };
 

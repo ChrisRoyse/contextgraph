@@ -4,10 +4,8 @@ use crate::traits::EmbeddingModel;
 use crate::types::ModelInput;
 use serial_test::serial;
 
+use super::super::{SemanticModel, PASSAGE_PREFIX, QUERY_PREFIX, SEMANTIC_DIMENSION};
 use super::helpers::{create_and_load_model, create_test_model};
-use super::super::{
-    SemanticModel, PASSAGE_PREFIX, QUERY_PREFIX, SEMANTIC_DIMENSION,
-};
 
 #[tokio::test]
 #[serial]
@@ -36,8 +34,8 @@ async fn test_mov_1_vector_dimension() {
 #[serial]
 async fn test_mov_2_l2_normalization() {
     let model = create_and_load_model().await;
-    let input = ModelInput::text("Test sentence for normalization check")
-        .expect("Failed to create input");
+    let input =
+        ModelInput::text("Test sentence for normalization check").expect("Failed to create input");
 
     let embedding = model.embed(&input).await.unwrap();
 

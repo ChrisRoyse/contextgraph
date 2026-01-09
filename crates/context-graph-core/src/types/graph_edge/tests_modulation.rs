@@ -63,8 +63,7 @@ fn test_get_modulated_weight_always_in_range() {
     for domain in Domain::all() {
         for edge_type in EdgeType::all() {
             for sr in [-1.0_f32, -0.5, 0.0, 0.5, 1.0] {
-                let mut edge =
-                    GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), edge_type, domain);
+                let mut edge = GraphEdge::new(Uuid::new_v4(), Uuid::new_v4(), edge_type, domain);
                 edge.steering_reward = sr;
                 let modulated = edge.get_modulated_weight();
                 assert!(

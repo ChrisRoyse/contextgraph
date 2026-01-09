@@ -39,5 +39,8 @@ fn test_clone_independent() {
     modified.coords[0] = 0.9;
     // Use modified to ensure it's read
     assert_eq!(modified.coords[0], 0.9, "Modified value should be 0.9");
-    assert_eq!(original.coords[0], 0.1, "Original must be independent from modifications");
+    assert_eq!(
+        original.coords[0], 0.1,
+        "Original must be independent from modifications"
+    );
 }

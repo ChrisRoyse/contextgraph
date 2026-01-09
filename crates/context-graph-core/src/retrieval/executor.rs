@@ -104,8 +104,10 @@ pub trait MultiEmbeddingQueryExecutor: Send + Sync {
     ///
     /// # Performance Target
     /// <60ms total @ 1M memories
-    async fn execute_pipeline(&self, query: MultiEmbeddingQuery)
-        -> CoreResult<MultiEmbeddingResult>;
+    async fn execute_pipeline(
+        &self,
+        query: MultiEmbeddingQuery,
+    ) -> CoreResult<MultiEmbeddingResult>;
 }
 
 /// Information about a single embedding space.

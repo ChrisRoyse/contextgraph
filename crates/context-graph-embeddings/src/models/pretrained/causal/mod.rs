@@ -34,6 +34,8 @@ mod weights;
 mod tests;
 
 // Re-export used public types
-pub use config::{CAUSAL_DIMENSION, CAUSAL_LATENCY_BUDGET_MS, CAUSAL_MAX_TOKENS, DEFAULT_ATTENTION_WINDOW};
+pub use config::{
+    CAUSAL_DIMENSION, CAUSAL_LATENCY_BUDGET_MS, CAUSAL_MAX_TOKENS, DEFAULT_ATTENTION_WINDOW,
+};
 
 pub use model::CausalModel;

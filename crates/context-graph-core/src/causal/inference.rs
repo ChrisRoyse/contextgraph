@@ -49,7 +49,6 @@ impl InferenceDirection {
         }
     }
 
-
     /// Check if this direction requires a target node.
     pub fn requires_target(&self) -> bool {
         matches!(
@@ -63,11 +62,17 @@ impl InferenceDirection {
     /// Get a description of the inference direction.
     pub fn description(&self) -> &'static str {
         match self {
-            InferenceDirection::Forward => "Forward inference: What effect does source have on target?",
+            InferenceDirection::Forward => {
+                "Forward inference: What effect does source have on target?"
+            }
             InferenceDirection::Backward => "Backward inference: What caused the target?",
-            InferenceDirection::Bidirectional => "Bidirectional inference: How do source and target influence each other?",
+            InferenceDirection::Bidirectional => {
+                "Bidirectional inference: How do source and target influence each other?"
+            }
             InferenceDirection::Bridge => "Bridge inference: Cross-domain causal relationships",
-            InferenceDirection::Abduction => "Abduction: Best hypothesis to explain the observation",
+            InferenceDirection::Abduction => {
+                "Abduction: Best hypothesis to explain the observation"
+            }
         }
     }
 }
@@ -190,7 +195,11 @@ impl OmniInfer {
     }
 
     /// Create with custom configuration.
-    pub fn with_config(min_confidence: f32, max_path_length: usize, include_indirect: bool) -> Self {
+    pub fn with_config(
+        min_confidence: f32,
+        max_path_length: usize,
+        include_indirect: bool,
+    ) -> Self {
         Self {
             min_confidence: min_confidence.clamp(0.0, 1.0),
             max_path_length: max_path_length.max(1),
@@ -399,8 +408,14 @@ mod tests {
 
     #[test]
     fn test_inference_direction_from_str() {
-        assert_eq!("forward".parse::<InferenceDirection>(), Ok(InferenceDirection::Forward));
-        assert_eq!("BACKWARD".parse::<InferenceDirection>(), Ok(InferenceDirection::Backward));
+        assert_eq!(
+            "forward".parse::<InferenceDirection>(),
+            Ok(InferenceDirection::Forward)
+        );
+        assert_eq!(
+            "BACKWARD".parse::<InferenceDirection>(),
+            Ok(InferenceDirection::Backward)
+        );
         assert_eq!("invalid".parse::<InferenceDirection>(), Err(()));
     }
 
@@ -427,7 +442,9 @@ mod tests {
         let source = Uuid::new_v4();
         let target = Uuid::new_v4();
 
-        let results = infer.infer(source, Some(target), InferenceDirection::Forward).unwrap();
+        let results = infer
+            .infer(source, Some(target), InferenceDirection::Forward)
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].direction, InferenceDirection::Forward);
         assert_eq!(results[0].source, source);
@@ -440,7 +457,9 @@ mod tests {
         let source = Uuid::new_v4();
         let target = Uuid::new_v4();
 
-        let results = infer.infer(source, Some(target), InferenceDirection::Backward).unwrap();
+        let results = infer
+            .infer(source, Some(target), InferenceDirection::Backward)
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].direction, InferenceDirection::Backward);
     }
@@ -451,7 +470,9 @@ mod tests {
         let source = Uuid::new_v4();
         let target = Uuid::new_v4();
 
-        let results = infer.infer(source, Some(target), InferenceDirection::Bidirectional).unwrap();
+        let results = infer
+            .infer(source, Some(target), InferenceDirection::Bidirectional)
+            .unwrap();
         assert_eq!(results.len(), 2); // Both directions
     }
 
@@ -461,7 +482,9 @@ mod tests {
         let source = Uuid::new_v4();
 
         // Bridge doesn't require target
-        let results = infer.infer(source, None, InferenceDirection::Bridge).unwrap();
+        let results = infer
+            .infer(source, None, InferenceDirection::Bridge)
+            .unwrap();
         assert_eq!(results.len(), 1);
     }
 
@@ -470,7 +493,9 @@ mod tests {
         let infer = OmniInfer::new();
         let observation = Uuid::new_v4();
 
-        let results = infer.infer(observation, None, InferenceDirection::Abduction).unwrap();
+        let results = infer
+            .infer(observation, None, InferenceDirection::Abduction)
+            .unwrap();
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].direction, InferenceDirection::Abduction);
     }

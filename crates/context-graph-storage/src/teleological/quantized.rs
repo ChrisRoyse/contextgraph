@@ -102,11 +102,17 @@ pub enum QuantizedStorageError {
 
     /// RocksDB write failed.
     #[error("STORAGE ERROR: RocksDB write failed for fingerprint {fingerprint_id}: {reason}")]
-    WriteFailed { fingerprint_id: Uuid, reason: String },
+    WriteFailed {
+        fingerprint_id: Uuid,
+        reason: String,
+    },
 
     /// RocksDB read failed.
     #[error("STORAGE ERROR: RocksDB read failed for fingerprint {fingerprint_id}: {reason}")]
-    ReadFailed { fingerprint_id: Uuid, reason: String },
+    ReadFailed {
+        fingerprint_id: Uuid,
+        reason: String,
+    },
 
     /// Fingerprint not found.
     #[error("STORAGE ERROR: Fingerprint {fingerprint_id} not found in storage.")]
@@ -332,13 +338,14 @@ impl QuantizedFingerprintStorage for RocksDbMemex {
             }
 
             let cf_name = QUANTIZED_EMBEDDER_CFS[*embedder_idx as usize];
-            let cf = self
-                .get_cf(cf_name)
-                .map_err(|_| QuantizedStorageError::ColumnFamilyNotFound {
-                    cf_name: cf_name.to_string(),
-                })?;
+            let cf =
+                self.get_cf(cf_name)
+                    .map_err(|_| QuantizedStorageError::ColumnFamilyNotFound {
+                        cf_name: cf_name.to_string(),
+                    })?;
 
-            let serialized = serialize_quantized_embedding(fingerprint.id, *embedder_idx, embedding)?;
+            let serialized =
+                serialize_quantized_embedding(fingerprint.id, *embedder_idx, embedding)?;
             batch.put_cf(cf, key, &serialized);
         }
 
@@ -362,11 +369,11 @@ impl QuantizedFingerprintStorage for RocksDbMemex {
 
         // Load all 13 embedders
         for (embedder_idx, cf_name) in QUANTIZED_EMBEDDER_CFS.iter().enumerate() {
-            let cf = self
-                .get_cf(cf_name)
-                .map_err(|_| QuantizedStorageError::ColumnFamilyNotFound {
-                    cf_name: cf_name.to_string(),
-                })?;
+            let cf =
+                self.get_cf(cf_name)
+                    .map_err(|_| QuantizedStorageError::ColumnFamilyNotFound {
+                        cf_name: cf_name.to_string(),
+                    })?;
 
             let data = self
                 .db()
@@ -500,11 +507,11 @@ impl QuantizedFingerprintStorage for RocksDbMemex {
 
         // Delete from all 13 embedder CFs
         for cf_name in QUANTIZED_EMBEDDER_CFS {
-            let cf = self
-                .get_cf(cf_name)
-                .map_err(|_| QuantizedStorageError::ColumnFamilyNotFound {
-                    cf_name: cf_name.to_string(),
-                })?;
+            let cf =
+                self.get_cf(cf_name)
+                    .map_err(|_| QuantizedStorageError::ColumnFamilyNotFound {
+                        cf_name: cf_name.to_string(),
+                    })?;
             batch.delete_cf(cf, key);
         }
 
@@ -579,7 +586,9 @@ mod tests {
             };
 
             // Create realistic test data (NOT mock - actual byte patterns)
-            let data: Vec<u8> = (0..data_len).map(|j| ((i as usize * 17 + j) % 256) as u8).collect();
+            let data: Vec<u8> = (0..data_len)
+                .map(|j| ((i as usize * 17 + j) % 256) as u8)
+                .collect();
 
             map.insert(
                 i,
@@ -596,7 +605,9 @@ mod tests {
                             scale: 1.0,
                             bias: 0.0,
                         },
-                        QuantizationMethod::Binary => QuantizationMetadata::Binary { threshold: 0.0 },
+                        QuantizationMethod::Binary => {
+                            QuantizationMetadata::Binary { threshold: 0.0 }
+                        }
                         QuantizationMethod::SparseNative => QuantizationMetadata::Sparse {
                             vocab_size: 30522,
                             nnz: 50,
@@ -618,9 +629,9 @@ mod tests {
         StoredQuantizedFingerprint::new(
             Uuid::new_v4(),
             create_test_embeddings(),
-            [0.5f32; 13],      // Purpose vector
+            [0.5f32; 13],         // Purpose vector
             [0.4, 0.3, 0.2, 0.1], // Johari quadrants
-            [42u8; 32],        // Content hash
+            [42u8; 32],           // Content hash
         )
     }
 
@@ -667,8 +678,8 @@ mod tests {
             metadata: QuantizationMetadata::Binary { threshold: 0.0 },
         };
 
-        let serialized = serialize_quantized_embedding(id, 8, &embedding)
-            .expect("serialization should succeed");
+        let serialized =
+            serialize_quantized_embedding(id, 8, &embedding).expect("serialization should succeed");
 
         let deserialized = deserialize_quantized_embedding(id, 8, &serialized)
             .expect("deserialization should succeed");
@@ -731,7 +742,9 @@ mod tests {
         );
 
         // Load single embedder
-        let emb_0 = memex.load_embedder(id, 0).expect("load embedder 0 should succeed");
+        let emb_0 = memex
+            .load_embedder(id, 0)
+            .expect("load embedder 0 should succeed");
         assert_eq!(emb_0.method, original.embeddings.get(&0).unwrap().method);
 
         // Load full fingerprint
@@ -746,21 +759,13 @@ mod tests {
         for i in 0..13u8 {
             let orig = original.embeddings.get(&i).unwrap();
             let load = loaded.embeddings.get(&i).unwrap();
-            assert_eq!(
-                orig.method, load.method,
-                "embedder {} method mismatch",
-                i
-            );
+            assert_eq!(orig.method, load.method, "embedder {} method mismatch", i);
             assert_eq!(
                 orig.original_dim, load.original_dim,
                 "embedder {} dim mismatch",
                 i
             );
-            assert_eq!(
-                orig.data, load.data,
-                "embedder {} data mismatch",
-                i
-            );
+            assert_eq!(orig.data, load.data, "embedder {} data mismatch", i);
         }
 
         // Delete
@@ -857,8 +862,8 @@ mod tests {
             assert!(!raw_data.is_empty(), "CF {} should have data", cf_name);
 
             // Verify raw data can be deserialized
-            let embedding: QuantizedEmbedding = bincode::deserialize(&raw_data)
-                .expect("raw data should deserialize");
+            let embedding: QuantizedEmbedding =
+                bincode::deserialize(&raw_data).expect("raw data should deserialize");
 
             // Verify embedding matches original
             let original_emb = fingerprint.embeddings.get(&(i as u8)).unwrap();
@@ -884,10 +889,7 @@ mod tests {
         let fingerprint = create_test_fingerprint();
         let size = fingerprint.estimated_size_bytes();
 
-        assert!(
-            size > 0,
-            "Estimated size should be > 0"
-        );
+        assert!(size > 0, "Estimated size should be > 0");
         assert!(
             size <= MAX_QUANTIZED_SIZE_BYTES,
             "Estimated size {} exceeds max {}",

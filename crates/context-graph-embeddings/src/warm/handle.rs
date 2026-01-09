@@ -44,27 +44,39 @@ impl ModelHandle {
 
     /// Get the raw VRAM device pointer. Only valid within the CUDA context.
     #[must_use]
-    pub fn vram_address(&self) -> u64 { self.vram_base_ptr }
+    pub fn vram_address(&self) -> u64 {
+        self.vram_base_ptr
+    }
 
     /// Get the total bytes allocated in VRAM.
     #[must_use]
-    pub fn allocation_bytes(&self) -> usize { self.allocation_bytes }
+    pub fn allocation_bytes(&self) -> usize {
+        self.allocation_bytes
+    }
 
     /// Get the CUDA device ordinal for this allocation.
     #[must_use]
-    pub fn device_ordinal(&self) -> u32 { self.device_ordinal }
+    pub fn device_ordinal(&self) -> u32 {
+        self.device_ordinal
+    }
 
     /// Get the weight checksum (SHA256 truncated to 64 bits).
     #[must_use]
-    pub fn weight_checksum(&self) -> u64 { self.weight_checksum }
+    pub fn weight_checksum(&self) -> u64 {
+        self.weight_checksum
+    }
 
     /// Get the duration since this allocation was created.
     #[must_use]
-    pub fn uptime(&self) -> Duration { self.allocated_at.elapsed() }
+    pub fn uptime(&self) -> Duration {
+        self.allocated_at.elapsed()
+    }
 
     /// Format VRAM address as hex for health check (e.g., "0x00007f8a00000000").
     #[must_use]
-    pub fn vram_address_hex(&self) -> String { format!("0x{:016x}", self.vram_base_ptr) }
+    pub fn vram_address_hex(&self) -> String {
+        format!("0x{:016x}", self.vram_base_ptr)
+    }
 }
 
 #[cfg(test)]
@@ -73,7 +85,12 @@ mod tests {
 
     #[test]
     fn test_new_and_accessors() {
-        let h = ModelHandle::new(0x7f8a_0000_0000, 512 * 1024 * 1024, 0, 0xdead_beef_cafe_babe);
+        let h = ModelHandle::new(
+            0x7f8a_0000_0000,
+            512 * 1024 * 1024,
+            0,
+            0xdead_beef_cafe_babe,
+        );
         assert_eq!(h.vram_address(), 0x7f8a_0000_0000);
         assert_eq!(h.allocation_bytes(), 512 * 1024 * 1024);
         assert_eq!(h.device_ordinal(), 0);
@@ -82,9 +99,18 @@ mod tests {
 
     #[test]
     fn test_vram_address_hex_formatting() {
-        assert_eq!(ModelHandle::new(0x7f8a_0000_0000, 1024, 0, 0).vram_address_hex(), "0x00007f8a00000000");
-        assert_eq!(ModelHandle::new(u64::MAX, 1024, 0, 0).vram_address_hex(), "0xffffffffffffffff");
-        assert_eq!(ModelHandle::new(0, 1024, 0, 0).vram_address_hex(), "0x0000000000000000");
+        assert_eq!(
+            ModelHandle::new(0x7f8a_0000_0000, 1024, 0, 0).vram_address_hex(),
+            "0x00007f8a00000000"
+        );
+        assert_eq!(
+            ModelHandle::new(u64::MAX, 1024, 0, 0).vram_address_hex(),
+            "0xffffffffffffffff"
+        );
+        assert_eq!(
+            ModelHandle::new(0, 1024, 0, 0).vram_address_hex(),
+            "0x0000000000000000"
+        );
     }
 
     #[test]

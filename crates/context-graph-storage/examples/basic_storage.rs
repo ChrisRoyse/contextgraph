@@ -121,7 +121,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let hidden_node_ids = memex.query_by_quadrant(JohariQuadrant::Hidden, Some(10))?;
     println!("Found {} node(s) in Hidden quadrant", hidden_node_ids.len());
 
-    assert!(!open_node_ids.is_empty(), "Open quadrant should have at least one node");
+    assert!(
+        !open_node_ids.is_empty(),
+        "Open quadrant should have at least one node"
+    );
     println!("  ✓ Quadrant queries working correctly\n");
 
     // ========================================
@@ -141,7 +144,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             n.metadata.tags
         );
     }
-    assert!(!rust_node_ids.is_empty(), "Should find at least one rust-tagged node");
+    assert!(
+        !rust_node_ids.is_empty(),
+        "Should find at least one rust-tagged node"
+    );
     println!("  ✓ Tag queries working correctly\n");
 
     // ========================================
@@ -177,7 +183,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let soft_deleted = memex.get_node(&blind_node.id)?;
     println!("  Soft deleted node still retrievable");
     println!("  metadata.deleted = {}", soft_deleted.metadata.deleted);
-    assert!(soft_deleted.metadata.deleted, "Node should be marked as deleted");
+    assert!(
+        soft_deleted.metadata.deleted,
+        "Node should be marked as deleted"
+    );
     println!("  ✓ Soft delete verified\n");
 
     // ========================================
@@ -192,7 +201,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Retrieve embedding
     let retrieved_embedding = memex.get_embedding(&node_id)?;
-    println!("Retrieved embedding with {} dimensions", retrieved_embedding.len());
+    println!(
+        "Retrieved embedding with {} dimensions",
+        retrieved_embedding.len()
+    );
     assert_eq!(retrieved_embedding.len(), 1536);
 
     // Check if embedding exists

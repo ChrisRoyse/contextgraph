@@ -344,7 +344,10 @@ mod tests {
 
         let (is_sin_wave, _, _) = detect_sin_wave_pattern(&output);
 
-        assert!(!is_sin_wave, "Random noise should NOT be detected as sin wave");
+        assert!(
+            !is_sin_wave,
+            "Random noise should NOT be detected as sin wave"
+        );
     }
 
     #[test]
@@ -376,7 +379,10 @@ mod tests {
         let b = vec![1.0, 2.0, 3.0, 4.0];
 
         let sim = cosine_similarity(&a, &b);
-        assert!((sim - 1.0).abs() < 1e-6, "Identical vectors should have similarity 1.0");
+        assert!(
+            (sim - 1.0).abs() < 1e-6,
+            "Identical vectors should have similarity 1.0"
+        );
     }
 
     #[test]
@@ -472,6 +478,9 @@ mod tests {
 
         let result = validate_inference_output_ap007("test_model", &output, Some(&golden));
 
-        assert!(result.is_ok(), "Should pass with identical golden reference");
+        assert!(
+            result.is_ok(),
+            "Should pass with identical golden reference"
+        );
     }
 }

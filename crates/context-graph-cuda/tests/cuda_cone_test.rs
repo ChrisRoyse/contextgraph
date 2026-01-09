@@ -27,8 +27,8 @@
 //! ```
 
 use context_graph_cuda::cone::{
-    cone_check_batch_cpu, cone_membership_score_cpu, is_cone_gpu_available,
-    ConeCudaConfig, ConeData, CONE_DATA_DIM, POINT_DIM,
+    cone_check_batch_cpu, cone_membership_score_cpu, is_cone_gpu_available, ConeCudaConfig,
+    ConeData, CONE_DATA_DIM, POINT_DIM,
 };
 use context_graph_cuda::CudaError;
 
@@ -40,7 +40,10 @@ use context_graph_cuda::CudaError;
 fn test_integration_config_defaults_are_valid() {
     let config = ConeCudaConfig::default();
     assert!(config.validate().is_ok(), "Default config should be valid");
-    assert!((config.curvature - (-1.0)).abs() < 1e-6, "Default curvature should be -1.0");
+    assert!(
+        (config.curvature - (-1.0)).abs() < 1e-6,
+        "Default curvature should be -1.0"
+    );
 }
 
 #[test]
@@ -145,8 +148,11 @@ fn test_integration_cone_data_gpu_format_roundtrip() {
     // Verify roundtrip
     assert!((restored.aperture - aperture).abs() < 1e-6);
     for (i, (restored_val, original_val)) in restored.apex.iter().zip(apex.iter()).enumerate() {
-        assert!((restored_val - original_val).abs() < 1e-6,
-            "Mismatch at index {}", i);
+        assert!(
+            (restored_val - original_val).abs() < 1e-6,
+            "Mismatch at index {}",
+            i
+        );
     }
 }
 
@@ -588,7 +594,10 @@ fn test_integration_gpu_availability_check() {
     println!("Cone GPU available: {}", available);
 
     #[cfg(not(feature = "cuda"))]
-    assert!(!available, "Without cuda feature, GPU should not be available");
+    assert!(
+        !available,
+        "Without cuda feature, GPU should not be available"
+    );
 }
 
 // ============================================================================
@@ -603,18 +612,27 @@ fn test_integration_kernel_info() {
 
     #[cfg(feature = "cuda")]
     {
-        assert!(info.is_some(), "Kernel info should be available with cuda feature");
+        assert!(
+            info.is_some(),
+            "Kernel info should be available with cuda feature"
+        );
         let info = info.unwrap();
         assert_eq!(info.block_dim_x, 32, "Block dim X should be 32");
         assert_eq!(info.block_dim_y, 8, "Block dim Y should be 8");
         assert_eq!(info.point_dim, 64, "Point dim should be 64");
         assert_eq!(info.cone_data_dim, 65, "Cone data dim should be 65");
-        assert!(info.shared_mem_bytes > 0, "Shared memory should be positive");
+        assert!(
+            info.shared_mem_bytes > 0,
+            "Shared memory should be positive"
+        );
         println!("Kernel info: {:?}", info);
     }
 
     #[cfg(not(feature = "cuda"))]
-    assert!(info.is_none(), "Kernel info should be None without cuda feature");
+    assert!(
+        info.is_none(),
+        "Kernel info should be None without cuda feature"
+    );
 }
 
 // ============================================================================

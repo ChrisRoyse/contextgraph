@@ -12,10 +12,7 @@
 //! - Qualitative: E10, E11 (feel/principle)
 //! - Implementation: E6 (code)
 
-use crate::teleological::{
-    GroupAlignments, GroupType,
-    types::NUM_EMBEDDERS,
-};
+use crate::teleological::{types::NUM_EMBEDDERS, GroupAlignments, GroupType};
 
 /// Configuration for group aggregation.
 #[derive(Clone, Debug)]
@@ -182,13 +179,9 @@ impl GroupAggregator {
         }
 
         match self.config.method {
-            AggregationMethod::Average => {
-                values.iter().sum::<f32>() / values.len() as f32
-            }
+            AggregationMethod::Average => values.iter().sum::<f32>() / values.len() as f32,
             AggregationMethod::WeightedAverage => {
-                let weighted_sum: f32 = values.iter().zip(weights.iter())
-                    .map(|(v, w)| v * w)
-                    .sum();
+                let weighted_sum: f32 = values.iter().zip(weights.iter()).map(|(v, w)| v * w).sum();
                 let weight_sum: f32 = weights.iter().sum();
                 if weight_sum > f32::EPSILON {
                     weighted_sum / weight_sum
@@ -196,12 +189,8 @@ impl GroupAggregator {
                     0.0
                 }
             }
-            AggregationMethod::Max => {
-                values.iter().cloned().fold(f32::NEG_INFINITY, f32::max)
-            }
-            AggregationMethod::Min => {
-                values.iter().cloned().fold(f32::INFINITY, f32::min)
-            }
+            AggregationMethod::Max => values.iter().cloned().fold(f32::NEG_INFINITY, f32::max),
+            AggregationMethod::Min => values.iter().cloned().fold(f32::INFINITY, f32::min),
             AggregationMethod::GeometricMean => {
                 let product: f32 = values.iter().map(|v| v.max(f32::EPSILON)).product();
                 product.powf(1.0 / values.len() as f32)
@@ -223,9 +212,8 @@ impl GroupAggregator {
         }
 
         let mean: f32 = values.iter().sum::<f32>() / values.len() as f32;
-        let variance: f32 = values.iter()
-            .map(|v| (v - mean).powi(2))
-            .sum::<f32>() / values.len() as f32;
+        let variance: f32 =
+            values.iter().map(|v| (v - mean).powi(2)).sum::<f32>() / values.len() as f32;
         let std_dev = variance.sqrt();
 
         let min = values.iter().cloned().fold(f32::INFINITY, f32::min);
@@ -271,7 +259,10 @@ mod tests {
     #[test]
     fn test_group_aggregator_new() {
         let aggregator = GroupAggregator::new();
-        assert_eq!(aggregator.config().method, AggregationMethod::WeightedAverage);
+        assert_eq!(
+            aggregator.config().method,
+            AggregationMethod::WeightedAverage
+        );
 
         println!("[PASS] GroupAggregator::new creates default config");
     }
@@ -351,7 +342,9 @@ mod tests {
 
     #[test]
     fn test_aggregation_methods() {
-        let alignments = [0.3f32, 0.5, 0.7, 0.4, 0.6, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5];
+        let alignments = [
+            0.3f32, 0.5, 0.7, 0.4, 0.6, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+        ];
 
         // Average method
         let avg_aggregator = GroupAggregator::with_config(GroupAggregationConfig {

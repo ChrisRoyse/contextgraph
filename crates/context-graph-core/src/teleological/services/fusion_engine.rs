@@ -9,15 +9,14 @@
 //! that creates meaning greater than the sum of its parts."
 
 use crate::teleological::{
-    TeleologicalVector,
-    TeleologicalProfile, ProfileId,
     types::{EMBEDDING_DIM, NUM_EMBEDDERS},
+    ProfileId, TeleologicalProfile, TeleologicalVector,
 };
 use crate::types::fingerprint::PurposeVector;
 
-use super::synergy_service::SynergyService;
 use super::correlation_extractor::CorrelationExtractor;
 use super::group_aggregator::GroupAggregator;
+use super::synergy_service::SynergyService;
 
 /// Configuration for fusion engine.
 #[derive(Clone, Debug)]
@@ -70,8 +69,7 @@ pub struct ComponentScores {
 }
 
 /// Metadata about the fusion process.
-#[derive(Clone, Debug)]
-#[derive(Default)]
+#[derive(Clone, Debug, Default)]
 pub struct FusionMetadata {
     /// Number of active embedders (alignment > threshold)
     pub active_embedders: usize,
@@ -82,7 +80,6 @@ pub struct FusionMetadata {
     /// Profile used (if any)
     pub profile_id: Option<ProfileId>,
 }
-
 
 /// TELEO-012: Orchestrates multi-embedding fusion.
 ///
@@ -136,22 +133,21 @@ impl FusionEngine {
     /// # Panics
     ///
     /// Panics if embeddings or alignments have wrong dimensions (FAIL FAST).
-    pub fn fuse(
-        &self,
-        embeddings: &[Vec<f32>],
-        alignments: &[f32; NUM_EMBEDDERS],
-    ) -> FusionResult {
+    pub fn fuse(&self, embeddings: &[Vec<f32>], alignments: &[f32; NUM_EMBEDDERS]) -> FusionResult {
         assert!(
             embeddings.len() == NUM_EMBEDDERS,
             "FAIL FAST: Expected {} embeddings, got {}",
-            NUM_EMBEDDERS, embeddings.len()
+            NUM_EMBEDDERS,
+            embeddings.len()
         );
 
         for (i, emb) in embeddings.iter().enumerate() {
             assert!(
                 emb.len() == EMBEDDING_DIM,
                 "FAIL FAST: Embedding {} has dimension {}, expected {}",
-                i, emb.len(), EMBEDDING_DIM
+                i,
+                emb.len(),
+                EMBEDDING_DIM
             );
         }
 
@@ -166,7 +162,9 @@ impl FusionEngine {
             None
         };
 
-        let corr_result = self.correlation_extractor.extract(embeddings, synergy_matrix);
+        let corr_result = self
+            .correlation_extractor
+            .extract(embeddings, synergy_matrix);
         let corr_score = 1.0 - corr_result.sparsity;
 
         // Step 3: Aggregate to groups
@@ -192,8 +190,9 @@ impl FusionEngine {
         };
 
         // Compute overall confidence
-        let confidence = (pv_score * 0.3 + corr_score * 0.25 + group_score * 0.25 + synergy_score * 0.2)
-            * self.embedding_coverage(alignments);
+        let confidence =
+            (pv_score * 0.3 + corr_score * 0.25 + group_score * 0.25 + synergy_score * 0.2)
+                * self.embedding_coverage(alignments);
 
         // Build metadata (before moving group_result.alignments)
         let active_embedders = alignments.iter().filter(|&&a| a > 0.1).count();
@@ -297,7 +296,8 @@ impl FusionEngine {
                 let correlation = correlations[idx].abs();
 
                 // High synergy pair is "utilized" if correlation and alignments are meaningful
-                if synergy >= 0.7 && correlation > 0.1 && alignments[i] > 0.2 && alignments[j] > 0.2 {
+                if synergy >= 0.7 && correlation > 0.1 && alignments[i] > 0.2 && alignments[j] > 0.2
+                {
                     utilized += 1;
                 }
 
@@ -373,7 +373,10 @@ mod tests {
         let result = engine.fuse(&embeddings, &alignments);
 
         assert!(result.confidence > 0.0);
-        assert_eq!(result.vector.cross_correlations.len(), CROSS_CORRELATION_COUNT);
+        assert_eq!(
+            result.vector.cross_correlations.len(),
+            CROSS_CORRELATION_COUNT
+        );
         assert!(result.metadata.active_embedders == NUM_EMBEDDERS);
 
         println!("[PASS] fuse produces valid FusionResult");

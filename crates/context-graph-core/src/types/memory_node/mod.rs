@@ -25,11 +25,11 @@ mod node;
 mod validation;
 
 #[cfg(test)]
-mod tests_serialization;
-#[cfg(test)]
 mod tests_metadata;
 #[cfg(test)]
 mod tests_node;
+#[cfg(test)]
+mod tests_serialization;
 
 // Re-export all public types for backwards compatibility
 pub use metadata::NodeMetadata;

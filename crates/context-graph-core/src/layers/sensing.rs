@@ -513,9 +513,7 @@ mod tests {
         let scrubber = PiiScrubber::new();
 
         // AWS access key
-        let result = scrubber
-            .scrub("AWS key: AKIAIOSFODNN7EXAMPLE")
-            .unwrap();
+        let result = scrubber.scrub("AWS key: AKIAIOSFODNN7EXAMPLE").unwrap();
         assert!(result.pii_found);
         assert_eq!(result.detection_counts.get(&PiiPattern::ApiKey), Some(&1));
         assert!(result.content.contains("[REDACTED:API_KEY]"));
@@ -527,9 +525,7 @@ mod tests {
         assert!(result.pii_found);
 
         // Generic api_key pattern
-        let result = scrubber
-            .scrub("api_key=abcdefghij1234567890")
-            .unwrap();
+        let result = scrubber.scrub("api_key=abcdefghij1234567890").unwrap();
         assert!(result.pii_found);
     }
 
@@ -540,10 +536,7 @@ mod tests {
         // password=
         let result = scrubber.scrub("password=secret123").unwrap();
         assert!(result.pii_found);
-        assert_eq!(
-            result.detection_counts.get(&PiiPattern::Password),
-            Some(&1)
-        );
+        assert_eq!(result.detection_counts.get(&PiiPattern::Password), Some(&1));
         assert!(result.content.contains("[REDACTED:PASSWORD]"));
         assert!(!result.content.contains("secret123"));
 
@@ -672,7 +665,10 @@ mod tests {
     #[tokio::test]
     async fn test_sensing_layer_computes_delta_s() {
         let layer = SensingLayer::new();
-        let input = LayerInput::new("test-123".to_string(), "Some text content here.".to_string());
+        let input = LayerInput::new(
+            "test-123".to_string(),
+            "Some text content here.".to_string(),
+        );
 
         let output = layer.process(input).await.unwrap();
 

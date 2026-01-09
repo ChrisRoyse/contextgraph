@@ -65,7 +65,11 @@ fn test_validate_valid() {
     jf.set_quadrant(0, 0.25, 0.25, 0.25, 0.25, 0.5);
 
     let result = jf.validate();
-    assert!(result.is_ok(), "Valid fingerprint should pass: {:?}", result);
+    assert!(
+        result.is_ok(),
+        "Valid fingerprint should pass: {:?}",
+        result
+    );
 
     println!("[PASS] validate() returns Ok for valid fingerprint");
 }

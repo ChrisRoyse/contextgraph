@@ -130,7 +130,10 @@ pub fn get_modulated_weights_batch(edges: &[GraphEdge], query_domain: Domain) ->
 
 /// Batch compute traversal costs for multiple edges.
 pub fn traversal_costs_batch(edges: &[GraphEdge], query_domain: Domain) -> Vec<f32> {
-    edges.iter().map(|e| traversal_cost(e, query_domain)).collect()
+    edges
+        .iter()
+        .map(|e| traversal_cost(e, query_domain))
+        .collect()
 }
 
 /// Modulation effect classification.
@@ -305,7 +308,11 @@ mod modulation_tests {
         let edge = make_test_edge(0.5, Domain::Code);
         let ratio = modulation_ratio(&edge, Domain::Code);
         // effective = 0.8, base = 0.5, ratio = 1.6
-        assert!((ratio - 1.6).abs() < 0.01, "Expected ratio ~1.6, got {}", ratio);
+        assert!(
+            (ratio - 1.6).abs() < 0.01,
+            "Expected ratio ~1.6, got {}",
+            ratio
+        );
     }
 
     #[test]
@@ -319,9 +326,15 @@ mod modulation_tests {
     fn test_zero_base_weight() {
         let edge = make_test_edge(0.0, Domain::Code);
         let w = get_modulated_weight(&edge, Domain::Code);
-        assert!((w - 0.0).abs() < 1e-6, "Zero base should give zero effective");
+        assert!(
+            (w - 0.0).abs() < 1e-6,
+            "Zero base should give zero effective"
+        );
         let ratio = modulation_ratio(&edge, Domain::Code);
-        assert!((ratio - 1.0).abs() < 1e-6, "Zero base should give ratio 1.0");
+        assert!(
+            (ratio - 1.0).abs() < 1e-6,
+            "Zero base should give ratio 1.0"
+        );
     }
 
     #[test]
@@ -340,7 +353,11 @@ mod modulation_tests {
     fn test_expected_domain_modulation() {
         // Code: net_act = 0.5, mult = 1.0 + 0.5 + 0.1 = 1.6
         let code_mod = expected_domain_modulation(Domain::Code);
-        assert!((code_mod - 1.6).abs() < 0.01, "Code should be ~1.6, got {}", code_mod);
+        assert!(
+            (code_mod - 1.6).abs() < 0.01,
+            "Code should be ~1.6, got {}",
+            code_mod
+        );
 
         // General: net_act = 0.5 - 0.2 + 0.15 = 0.45, mult = 1.55
         let general_mod = expected_domain_modulation(Domain::General);
@@ -367,8 +384,8 @@ mod modulation_tests {
     fn test_clamping_high_values() {
         let mut edge = make_test_edge(1.0, Domain::Creative);
         edge.steering_reward = 1.0; // steering_factor = 1.5
-        // Creative: net_act = 0.8 - 0.1 + 0.3 = 1.0
-        // w_eff = 1.0 * (1.0 + 1.0 + 0.1) * 1.5 = 3.15 -> clamped to 1.0
+                                    // Creative: net_act = 0.8 - 0.1 + 0.3 = 1.0
+                                    // w_eff = 1.0 * (1.0 + 1.0 + 0.1) * 1.5 = 3.15 -> clamped to 1.0
         let w = get_modulated_weight(&edge, Domain::Creative);
         assert!((w - 1.0).abs() < 1e-6, "Should clamp to 1.0");
     }
@@ -394,7 +411,11 @@ mod modulation_tests {
 
         // w2 should be 3x w1 (1.5 / 0.5 = 3)
         assert!(w2 > w1, "Higher steering should give higher weight");
-        assert!((w2 / w1 - 3.0).abs() < 0.1, "Ratio should be ~3x, got {}", w2 / w1);
+        assert!(
+            (w2 / w1 - 3.0).abs() < 0.1,
+            "Ratio should be ~3x, got {}",
+            w2 / w1
+        );
     }
 
     // ========== EDGE CASE TESTS WITH BEFORE/AFTER STATE ==========
@@ -402,7 +423,10 @@ mod modulation_tests {
     #[test]
     fn test_edge_case_zero_weight() {
         let edge = make_test_edge(0.0, Domain::Code);
-        println!("BEFORE: base_weight={}, domain={:?}", edge.weight, edge.domain);
+        println!(
+            "BEFORE: base_weight={}, domain={:?}",
+            edge.weight, edge.domain
+        );
         let w = get_modulated_weight(&edge, Domain::Code);
         println!("AFTER: effective_weight={}", w);
         assert!((w - 0.0).abs() < 1e-6, "Zero base must give zero effective");
@@ -412,7 +436,10 @@ mod modulation_tests {
     fn test_edge_case_clamp() {
         let mut edge = make_test_edge(1.0, Domain::Creative);
         edge.steering_reward = 1.0;
-        println!("BEFORE: base={}, steering_reward={}, domain=Creative", edge.weight, edge.steering_reward);
+        println!(
+            "BEFORE: base={}, steering_reward={}, domain=Creative",
+            edge.weight, edge.steering_reward
+        );
         let w = get_modulated_weight(&edge, Domain::Creative);
         println!("AFTER: effective={} (expected: clamped to 1.0)", w);
         assert!((w - 1.0).abs() < 1e-6, "Must clamp to 1.0");
@@ -424,7 +451,10 @@ mod modulation_tests {
         println!("BEFORE: edge_domain=Code, query_domain=Legal");
         let w_match = get_modulated_weight(&edge, Domain::Code);
         let w_mismatch = get_modulated_weight(&edge, Domain::Legal);
-        println!("AFTER: match_weight={}, mismatch_weight={}", w_match, w_mismatch);
+        println!(
+            "AFTER: match_weight={}, mismatch_weight={}",
+            w_match, w_mismatch
+        );
         println!("Difference (domain bonus): {}", w_match - w_mismatch);
         assert!(w_match > w_mismatch, "Domain match must give higher weight");
     }
@@ -456,14 +486,19 @@ mod modulation_tests {
             assert!(
                 (costs[i] - expected_cost).abs() < 1e-6,
                 "Cost mismatch for edge {}: {} vs {}",
-                i, costs[i], expected_cost
+                i,
+                costs[i],
+                expected_cost
             );
         }
     }
 
     #[test]
     fn test_domain_match_bonus_constant() {
-        assert!((DOMAIN_MATCH_BONUS - 0.1).abs() < 1e-6, "DOMAIN_MATCH_BONUS should be 0.1");
+        assert!(
+            (DOMAIN_MATCH_BONUS - 0.1).abs() < 1e-6,
+            "DOMAIN_MATCH_BONUS should be 0.1"
+        );
     }
 
     #[test]
@@ -483,7 +518,9 @@ mod modulation_tests {
             assert!(
                 (actual - expected).abs() < 0.01,
                 "Domain {:?}: expected {}, got {}",
-                domain, expected, actual
+                domain,
+                expected,
+                actual
             );
         }
     }

@@ -185,7 +185,11 @@ impl std::fmt::Display for ScheduleValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::InvalidHour { field, value } => {
-                write!(f, "Invalid hour {} for field '{}' (must be 0-23)", value, field)
+                write!(
+                    f,
+                    "Invalid hour {} for field '{}' (must be 0-23)",
+                    value, field
+                )
             }
             Self::InvalidConsolidationWindow { start, end } => {
                 write!(
@@ -484,7 +488,10 @@ mod tests {
         assert_eq!(deserialized.bootstrap.auto_init, config.bootstrap.auto_init);
         assert_eq!(deserialized.thresholds.enabled, config.thresholds.enabled);
         assert_eq!(deserialized.pruning.enabled, config.pruning.enabled);
-        assert_eq!(deserialized.consolidation.enabled, config.consolidation.enabled);
+        assert_eq!(
+            deserialized.consolidation.enabled,
+            config.consolidation.enabled
+        );
         assert_eq!(deserialized.drift.auto_correct, config.drift.auto_correct);
         assert_eq!(deserialized.goals.auto_discover, config.goals.auto_discover);
     }
@@ -646,7 +653,10 @@ mod tests {
         let json = serde_json::to_string(&schedule).expect("serialize");
         let deserialized: DailySchedule = serde_json::from_str(&json).expect("deserialize");
 
-        assert_eq!(deserialized.consolidation_window, schedule.consolidation_window);
+        assert_eq!(
+            deserialized.consolidation_window,
+            schedule.consolidation_window
+        );
         assert_eq!(deserialized.drift_check_hour, schedule.drift_check_hour);
         assert_eq!(deserialized.stats_hour, schedule.stats_hour);
         assert_eq!(deserialized.prep_hour, schedule.prep_hour);
@@ -670,7 +680,10 @@ mod tests {
     // ScheduledCheckType tests
     #[test]
     fn test_scheduled_check_type_equality() {
-        assert_eq!(ScheduledCheckType::DriftCheck, ScheduledCheckType::DriftCheck);
+        assert_eq!(
+            ScheduledCheckType::DriftCheck,
+            ScheduledCheckType::DriftCheck
+        );
         assert_ne!(
             ScheduledCheckType::DriftCheck,
             ScheduledCheckType::ConsolidationWindow
@@ -696,7 +709,8 @@ mod tests {
 
         for check_type in types {
             let json = serde_json::to_string(&check_type).expect("serialize");
-            let deserialized: ScheduledCheckType = serde_json::from_str(&json).expect("deserialize");
+            let deserialized: ScheduledCheckType =
+                serde_json::from_str(&json).expect("deserialize");
             assert_eq!(deserialized, check_type);
         }
     }
@@ -951,9 +965,7 @@ mod tests {
         let drift_config = DriftConfig::default();
         status.drift_state.add_data_point(0.65, 5, &drift_config); // Creates moderate drift
         status.drift_state.baseline = 0.75;
-        status
-            .drift_state
-            .add_data_point(0.65, 5, &drift_config);
+        status.drift_state.add_data_point(0.65, 5, &drift_config);
         assert!(status.has_pending_work());
     }
 
@@ -1004,7 +1016,10 @@ mod tests {
 
         assert_eq!(deserialized.enabled, status.enabled);
         assert_eq!(deserialized.bootstrap_complete, status.bootstrap_complete);
-        assert_eq!(deserialized.north_star_configured, status.north_star_configured);
+        assert_eq!(
+            deserialized.north_star_configured,
+            status.north_star_configured
+        );
         assert_eq!(deserialized.pending_prune_count, status.pending_prune_count);
         assert_eq!(
             deserialized.consolidation_queue_size,

@@ -66,8 +66,12 @@ impl Handlers {
             "Code" => atc_guard.get_domain_thresholds(context_graph_core::atc::Domain::Code),
             "Medical" => atc_guard.get_domain_thresholds(context_graph_core::atc::Domain::Medical),
             "Legal" => atc_guard.get_domain_thresholds(context_graph_core::atc::Domain::Legal),
-            "Creative" => atc_guard.get_domain_thresholds(context_graph_core::atc::Domain::Creative),
-            "Research" => atc_guard.get_domain_thresholds(context_graph_core::atc::Domain::Research),
+            "Creative" => {
+                atc_guard.get_domain_thresholds(context_graph_core::atc::Domain::Creative)
+            }
+            "Research" => {
+                atc_guard.get_domain_thresholds(context_graph_core::atc::Domain::Research)
+            }
             _ => atc_guard.get_domain_thresholds(context_graph_core::atc::Domain::General),
         };
 
@@ -116,7 +120,11 @@ impl Handlers {
             }
         }
 
-        info!(domain = domain, ece = calibration.ece, "Threshold status retrieved");
+        info!(
+            domain = domain,
+            ece = calibration.ece,
+            "Threshold status retrieved"
+        );
         self.tool_result_with_pulse(id, response)
     }
 
@@ -172,9 +180,13 @@ impl Handlers {
         let status_description = match metrics.quality_status {
             context_graph_core::atc::CalibrationStatus::Excellent => "Excellent - no action needed",
             context_graph_core::atc::CalibrationStatus::Good => "Good - monitoring recommended",
-            context_graph_core::atc::CalibrationStatus::Acceptable => "Acceptable - consider recalibration soon",
+            context_graph_core::atc::CalibrationStatus::Acceptable => {
+                "Acceptable - consider recalibration soon"
+            }
             context_graph_core::atc::CalibrationStatus::Poor => "Poor - recalibration recommended",
-            context_graph_core::atc::CalibrationStatus::Critical => "Critical - immediate recalibration required",
+            context_graph_core::atc::CalibrationStatus::Critical => {
+                "Critical - immediate recalibration required"
+            }
         };
 
         // Build response

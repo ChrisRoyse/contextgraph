@@ -68,7 +68,9 @@ fn create_verifiable_handlers() -> (
 }
 
 /// Create a test fingerprint with a specific Johari configuration.
-fn create_test_fingerprint_with_johari(quadrants: [JohariQuadrant; NUM_EMBEDDERS]) -> TeleologicalFingerprint {
+fn create_test_fingerprint_with_johari(
+    quadrants: [JohariQuadrant; NUM_EMBEDDERS],
+) -> TeleologicalFingerprint {
     let mut johari = JohariFingerprint::zeroed();
     for (idx, quadrant) in quadrants.iter().enumerate() {
         match quadrant {
@@ -177,9 +179,15 @@ async fn test_full_state_verification_distribution_cycle() {
 
     // Verify counts match expected
     assert_eq!(open_count, 4, "[VERIFICATION FAILED] Open count mismatch");
-    assert_eq!(hidden_count, 3, "[VERIFICATION FAILED] Hidden count mismatch");
+    assert_eq!(
+        hidden_count, 3,
+        "[VERIFICATION FAILED] Hidden count mismatch"
+    );
     assert_eq!(blind_count, 3, "[VERIFICATION FAILED] Blind count mismatch");
-    assert_eq!(unknown_count, 3, "[VERIFICATION FAILED] Unknown count mismatch");
+    assert_eq!(
+        unknown_count, 3,
+        "[VERIFICATION FAILED] Unknown count mismatch"
+    );
 
     // Verify all 13 embedders present in response
     let per_embedder = result["per_embedder_quadrants"].as_array().unwrap();
@@ -467,12 +475,7 @@ async fn edge_case_3_soft_classification_sum() {
     println!("[VERIFICATION] Checking soft classification sums:");
     for (i, weights) in stored.johari.quadrants.iter().enumerate() {
         let sum: f32 = weights.iter().sum();
-        println!(
-            "  E{}: weights={:?}, sum={}",
-            i + 1,
-            weights,
-            sum
-        );
+        println!("  E{}: weights={:?}, sum={}", i + 1, weights, sum);
 
         assert!(
             (sum - 1.0).abs() < 0.001,
@@ -500,7 +503,10 @@ async fn edge_case_4_invalid_transition_rejected() {
 
     // [STATE BEFORE]
     let before = store.retrieve(memory_id).await.unwrap().unwrap();
-    println!("[STATE BEFORE] E1: {:?}", before.johari.dominant_quadrant(0));
+    println!(
+        "[STATE BEFORE] E1: {:?}",
+        before.johari.dominant_quadrant(0)
+    );
 
     // Attempt invalid transition: Open -> Blind (not allowed)
     let request = make_request(
@@ -731,7 +737,10 @@ async fn test_full_state_verification_cross_space_analysis() {
     println!("Source of Truth: InMemoryTeleologicalStore");
     println!("  - Fingerprint ID: {}", memory_id);
     println!("  - Blind spots detected: {}", blind_spots.len());
-    println!("  - Learning opportunities: {}", learning_opportunities.len());
+    println!(
+        "  - Learning opportunities: {}",
+        learning_opportunities.len()
+    );
     println!("======================================================================\n");
 }
 

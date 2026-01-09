@@ -34,7 +34,10 @@ mod tests {
         assert_eq!(DEFAULT_DECAY_RATES.len(), 4);
         assert_eq!(FEATURES_PER_SCALE, 128);
         assert_eq!(MAX_TIME_DELTA_SECS, 31536000.0); // 1 year
-        assert_eq!(NUM_TIME_SCALES * FEATURES_PER_SCALE, TEMPORAL_RECENT_DIMENSION);
+        assert_eq!(
+            NUM_TIME_SCALES * FEATURES_PER_SCALE,
+            TEMPORAL_RECENT_DIMENSION
+        );
     }
 
     #[test]

@@ -140,10 +140,7 @@ fn edge_case_boundary_values() {
 
     println!(
         "AFTER: weight={}, confidence={}, steering_reward={}, traversal_count={}",
-        restored.weight,
-        restored.confidence,
-        restored.steering_reward,
-        restored.traversal_count
+        restored.weight, restored.confidence, restored.steering_reward, restored.traversal_count
     );
 
     assert_eq!(edge.weight, restored.weight);

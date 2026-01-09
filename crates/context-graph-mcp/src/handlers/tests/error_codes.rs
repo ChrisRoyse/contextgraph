@@ -13,8 +13,13 @@ async fn test_method_not_found_error() {
 
     let response = handlers.dispatch(request).await;
 
-    assert!(response.result.is_none(), "Should not have result for error");
-    let error = response.error.expect("Should have error for unknown method");
+    assert!(
+        response.result.is_none(),
+        "Should not have result for error"
+    );
+    let error = response
+        .error
+        .expect("Should have error for unknown method");
     assert_eq!(error.code, error_codes::METHOD_NOT_FOUND);
     assert!(error.message.contains("Method not found"));
 }
@@ -26,7 +31,9 @@ async fn test_invalid_params_missing_tools_call_params() {
 
     let response = handlers.dispatch(request).await;
 
-    let error = response.error.expect("Should have error for missing params");
+    let error = response
+        .error
+        .expect("Should have error for missing params");
     assert_eq!(error.code, error_codes::INVALID_PARAMS);
     assert!(error.message.contains("Missing params"));
 }
@@ -83,8 +90,5 @@ async fn test_error_response_has_string_id() {
 
     let response = handlers.dispatch(request).await;
 
-    assert_eq!(
-        response.id,
-        Some(JsonRpcId::String("test-id".to_string()))
-    );
+    assert_eq!(response.id, Some(JsonRpcId::String("test-id".to_string())));
 }

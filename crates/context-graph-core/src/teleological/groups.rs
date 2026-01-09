@@ -71,7 +71,10 @@ impl GroupAlignments {
     /// # Arguments
     /// * `alignments` - 13D array of per-embedder alignment values
     /// * `weights` - Optional per-embedder weights (defaults to uniform)
-    pub fn from_alignments(alignments: &[f32; NUM_EMBEDDERS], weights: Option<&[f32; NUM_EMBEDDERS]>) -> Self {
+    pub fn from_alignments(
+        alignments: &[f32; NUM_EMBEDDERS],
+        weights: Option<&[f32; NUM_EMBEDDERS]>,
+    ) -> Self {
         let default_weights = [1.0f32; NUM_EMBEDDERS];
         let w = weights.unwrap_or(&default_weights);
 
@@ -140,7 +143,8 @@ impl GroupAlignments {
     pub fn std_dev(&self) -> f32 {
         let arr = self.as_array();
         let mean = self.average();
-        let variance: f32 = arr.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / NUM_GROUPS as f32;
+        let variance: f32 =
+            arr.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / NUM_GROUPS as f32;
         variance.sqrt()
     }
 
@@ -233,7 +237,11 @@ impl GroupAlignments {
 }
 
 /// Compute weighted average for a group of embeddings.
-fn weighted_group_average(alignments: &[f32; NUM_EMBEDDERS], weights: &[f32; NUM_EMBEDDERS], indices: &[usize]) -> f32 {
+fn weighted_group_average(
+    alignments: &[f32; NUM_EMBEDDERS],
+    weights: &[f32; NUM_EMBEDDERS],
+    indices: &[usize],
+) -> f32 {
     if indices.is_empty() {
         return 0.0;
     }
@@ -623,11 +631,7 @@ mod tests {
 
         for group in GroupType::ALL {
             for &idx in group.embedding_indices() {
-                assert!(
-                    !covered[idx],
-                    "Embedding {} is in multiple groups",
-                    idx
-                );
+                assert!(!covered[idx], "Embedding {} is in multiple groups", idx);
                 covered[idx] = true;
             }
         }

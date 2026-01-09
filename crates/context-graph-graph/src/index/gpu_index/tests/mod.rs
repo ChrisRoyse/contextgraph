@@ -5,6 +5,6 @@
 //! - `index_tests` - Index creation and validation tests
 //! - `workflow_tests` - Full integration workflow tests
 
-mod resources_tests;
 mod index_tests;
+mod resources_tests;
 mod workflow_tests;

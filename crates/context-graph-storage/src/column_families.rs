@@ -654,13 +654,31 @@ mod tests {
 
         // Verify all 7 teleological CFs are present (4 original + 3 TASK-TELEO-006)
         assert!(names.contains(&"fingerprints"), "Missing CF: fingerprints");
-        assert!(names.contains(&"purpose_vectors"), "Missing CF: purpose_vectors");
-        assert!(names.contains(&"e13_splade_inverted"), "Missing CF: e13_splade_inverted");
-        assert!(names.contains(&"e1_matryoshka_128"), "Missing CF: e1_matryoshka_128");
+        assert!(
+            names.contains(&"purpose_vectors"),
+            "Missing CF: purpose_vectors"
+        );
+        assert!(
+            names.contains(&"e13_splade_inverted"),
+            "Missing CF: e13_splade_inverted"
+        );
+        assert!(
+            names.contains(&"e1_matryoshka_128"),
+            "Missing CF: e1_matryoshka_128"
+        );
         // TASK-TELEO-006: New teleological vector CFs
-        assert!(names.contains(&"synergy_matrix"), "Missing CF: synergy_matrix");
-        assert!(names.contains(&"teleological_profiles"), "Missing CF: teleological_profiles");
-        assert!(names.contains(&"teleological_vectors"), "Missing CF: teleological_vectors");
+        assert!(
+            names.contains(&"synergy_matrix"),
+            "Missing CF: synergy_matrix"
+        );
+        assert!(
+            names.contains(&"teleological_profiles"),
+            "Missing CF: teleological_profiles"
+        );
+        assert!(
+            names.contains(&"teleological_vectors"),
+            "Missing CF: teleological_vectors"
+        );
     }
 
     #[test]
@@ -670,12 +688,33 @@ mod tests {
         let names: Vec<_> = descriptors.iter().map(|d| d.name()).collect();
 
         // Verify all 7 autonomous CFs are present
-        assert!(names.contains(&"autonomous_config"), "Missing CF: autonomous_config");
-        assert!(names.contains(&"adaptive_threshold_state"), "Missing CF: adaptive_threshold_state");
-        assert!(names.contains(&"drift_history"), "Missing CF: drift_history");
-        assert!(names.contains(&"goal_activity_metrics"), "Missing CF: goal_activity_metrics");
-        assert!(names.contains(&"autonomous_lineage"), "Missing CF: autonomous_lineage");
-        assert!(names.contains(&"consolidation_history"), "Missing CF: consolidation_history");
-        assert!(names.contains(&"memory_curation"), "Missing CF: memory_curation");
+        assert!(
+            names.contains(&"autonomous_config"),
+            "Missing CF: autonomous_config"
+        );
+        assert!(
+            names.contains(&"adaptive_threshold_state"),
+            "Missing CF: adaptive_threshold_state"
+        );
+        assert!(
+            names.contains(&"drift_history"),
+            "Missing CF: drift_history"
+        );
+        assert!(
+            names.contains(&"goal_activity_metrics"),
+            "Missing CF: goal_activity_metrics"
+        );
+        assert!(
+            names.contains(&"autonomous_lineage"),
+            "Missing CF: autonomous_lineage"
+        );
+        assert!(
+            names.contains(&"consolidation_history"),
+            "Missing CF: consolidation_history"
+        );
+        assert!(
+            names.contains(&"memory_curation"),
+            "Missing CF: memory_curation"
+        );
     }
 }

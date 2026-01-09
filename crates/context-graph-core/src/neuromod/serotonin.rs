@@ -233,7 +233,11 @@ mod tests {
         }
 
         let diff = (modulator.value() - SEROTONIN_BASELINE).abs();
-        assert!(diff < 0.1, "Expected value near baseline, got: {}", modulator.value());
+        assert!(
+            diff < 0.1,
+            "Expected value near baseline, got: {}",
+            modulator.value()
+        );
     }
 
     #[test]

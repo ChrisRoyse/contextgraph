@@ -53,34 +53,64 @@ mod tests;
 
 // Re-export column family types
 pub use column_families::{
-    e1_matryoshka_128_cf_options, e13_splade_inverted_cf_options, fingerprint_cf_options,
-    get_teleological_cf_descriptors, purpose_vector_cf_options, CF_E1_MATRYOSHKA_128,
-    CF_E13_SPLADE_INVERTED, CF_FINGERPRINTS, CF_PURPOSE_VECTORS, TELEOLOGICAL_CFS,
-    TELEOLOGICAL_CF_COUNT,
-    // TASK-TELEO-006: New teleological vector column families
-    CF_SYNERGY_MATRIX, CF_TELEOLOGICAL_PROFILES, CF_TELEOLOGICAL_VECTORS,
-    synergy_matrix_cf_options, teleological_profiles_cf_options, teleological_vectors_cf_options,
-    // Quantized embedder column families (TASK-EMB-022)
-    quantized_embedder_cf_options, get_quantized_embedder_cf_descriptors,
+    e13_splade_inverted_cf_options,
+    e1_matryoshka_128_cf_options,
+    fingerprint_cf_options,
     get_all_teleological_cf_descriptors,
-    CF_EMB_0, CF_EMB_1, CF_EMB_2, CF_EMB_3, CF_EMB_4, CF_EMB_5, CF_EMB_6,
-    CF_EMB_7, CF_EMB_8, CF_EMB_9, CF_EMB_10, CF_EMB_11, CF_EMB_12,
-    QUANTIZED_EMBEDDER_CFS, QUANTIZED_EMBEDDER_CF_COUNT,
+    get_quantized_embedder_cf_descriptors,
+    get_teleological_cf_descriptors,
+    purpose_vector_cf_options,
+    // Quantized embedder column families (TASK-EMB-022)
+    quantized_embedder_cf_options,
+    synergy_matrix_cf_options,
+    teleological_profiles_cf_options,
+    teleological_vectors_cf_options,
+    CF_E13_SPLADE_INVERTED,
+    CF_E1_MATRYOSHKA_128,
+    CF_EMB_0,
+    CF_EMB_1,
+    CF_EMB_10,
+    CF_EMB_11,
+    CF_EMB_12,
+    CF_EMB_2,
+    CF_EMB_3,
+    CF_EMB_4,
+    CF_EMB_5,
+    CF_EMB_6,
+    CF_EMB_7,
+    CF_EMB_8,
+    CF_EMB_9,
+    CF_FINGERPRINTS,
+    CF_PURPOSE_VECTORS,
+    // TASK-TELEO-006: New teleological vector column families
+    CF_SYNERGY_MATRIX,
+    CF_TELEOLOGICAL_PROFILES,
+    CF_TELEOLOGICAL_VECTORS,
+    QUANTIZED_EMBEDDER_CFS,
+    QUANTIZED_EMBEDDER_CF_COUNT,
+    TELEOLOGICAL_CFS,
+    TELEOLOGICAL_CF_COUNT,
 };
 
 // Re-export quantized storage types (TASK-EMB-022)
-pub use quantized::{
-    QuantizedFingerprintStorage, QuantizedStorageError, QuantizedStorageResult,
-};
+pub use quantized::{QuantizedFingerprintStorage, QuantizedStorageError, QuantizedStorageResult};
 
 // Re-export schema types
 pub use schema::{
-    e13_splade_inverted_key, e1_matryoshka_128_key, fingerprint_key, parse_e13_splade_key,
-    parse_fingerprint_key, purpose_vector_key, parse_purpose_vector_key, parse_e1_matryoshka_key,
+    e13_splade_inverted_key,
+    e1_matryoshka_128_key,
+    fingerprint_key,
+    parse_e13_splade_key,
+    parse_e1_matryoshka_key,
+    parse_fingerprint_key,
+    parse_purpose_vector_key,
+    parse_teleological_profile_key,
+    parse_teleological_vector_key,
+    purpose_vector_key,
+    teleological_profile_key,
+    teleological_vector_key,
     // TASK-TELEO-006: New key format functions
     SYNERGY_MATRIX_KEY,
-    teleological_profile_key, parse_teleological_profile_key,
-    teleological_vector_key, parse_teleological_vector_key,
 };
 
 // Re-export serialization types
@@ -92,17 +122,38 @@ pub use serialization::{
 
 // Re-export index configuration types (TASK-F005)
 pub use indexes::{
-    // Enums
-    DistanceMetric, EmbedderIndex,
-    // Structs
-    HnswConfig, InvertedIndexConfig,
     // Config functions
-    all_hnsw_configs, get_hnsw_config, get_inverted_index_config,
+    all_hnsw_configs,
     // Metric functions
-    compute_distance, cosine_similarity, distance_to_similarity, recommended_metric,
+    compute_distance,
+    cosine_similarity,
+    distance_to_similarity,
+    get_hnsw_config,
+    get_inverted_index_config,
+    recommended_metric,
+    // Enums
+    DistanceMetric,
+    EmbedderIndex,
+    // Structs
+    HnswConfig,
+    InvertedIndexConfig,
+    E10_DIM,
+    E11_DIM,
+    E12_TOKEN_DIM,
+    E13_SPLADE_VOCAB,
     // Dimension constants
-    E1_DIM, E1_MATRYOSHKA_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM,
-    E9_DIM, E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, NUM_EMBEDDERS, PURPOSE_VECTOR_DIM,
+    E1_DIM,
+    E1_MATRYOSHKA_DIM,
+    E2_DIM,
+    E3_DIM,
+    E4_DIM,
+    E5_DIM,
+    E6_SPARSE_VOCAB,
+    E7_DIM,
+    E8_DIM,
+    E9_DIM,
+    NUM_EMBEDDERS,
+    PURPOSE_VECTOR_DIM,
 };
 
 // Re-export RocksDB teleological store (TASK: RocksDbTeleologicalStore)

@@ -61,19 +61,15 @@ pub fn bench_bfs_traversal(c: &mut Criterion) {
     for &node_count in config::GRAPH_SIZES {
         // Tree-like graph (sparse)
         let tree_storage = BfsStorage::new(node_count, 2);
-        group.bench_with_input(
-            BenchmarkId::new("tree", node_count),
-            &node_count,
-            |b, _| {
-                b.iter(|| {
-                    bfs_traverse(
-                        black_box(&tree_storage),
-                        black_box(0),
-                        black_box(config::BFS_MAX_DEPTH),
-                    )
-                })
-            },
-        );
+        group.bench_with_input(BenchmarkId::new("tree", node_count), &node_count, |b, _| {
+            b.iter(|| {
+                bfs_traverse(
+                    black_box(&tree_storage),
+                    black_box(0),
+                    black_box(config::BFS_MAX_DEPTH),
+                )
+            })
+        });
 
         // Random graph (medium density)
         let random_storage = BfsStorage::new(node_count, 5);

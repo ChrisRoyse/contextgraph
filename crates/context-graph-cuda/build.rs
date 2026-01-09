@@ -59,10 +59,22 @@ fn compile_cuda_kernels() {
     let nvcc = find_nvcc();
 
     // Compile poincare_distance.cu
-    compile_kernel(&nvcc, "kernels/poincare_distance.cu", "poincare_distance", &cuda_arch, &out_dir);
+    compile_kernel(
+        &nvcc,
+        "kernels/poincare_distance.cu",
+        "poincare_distance",
+        &cuda_arch,
+        &out_dir,
+    );
 
     // Compile cone_check.cu
-    compile_kernel(&nvcc, "kernels/cone_check.cu", "cone_check", &cuda_arch, &out_dir);
+    compile_kernel(
+        &nvcc,
+        "kernels/cone_check.cu",
+        "cone_check",
+        &cuda_arch,
+        &out_dir,
+    );
 }
 
 #[cfg(feature = "cuda")]
@@ -106,7 +118,13 @@ fn find_nvcc() -> PathBuf {
 }
 
 #[cfg(feature = "cuda")]
-fn compile_kernel(nvcc: &std::path::Path, source: &str, name: &str, arch: &str, out_dir: &std::path::Path) {
+fn compile_kernel(
+    nvcc: &std::path::Path,
+    source: &str,
+    name: &str,
+    arch: &str,
+    out_dir: &std::path::Path,
+) {
     let obj_path = out_dir.join(format!("{}.o", name));
     let lib_path = out_dir.join(format!("lib{}.a", name));
 
@@ -160,7 +178,11 @@ fn compile_kernel(nvcc: &std::path::Path, source: &str, name: &str, arch: &str, 
 
     // Create static library using ar
     let ar_status = Command::new("ar")
-        .args(["rcs", lib_path.to_str().unwrap(), obj_path.to_str().unwrap()])
+        .args([
+            "rcs",
+            lib_path.to_str().unwrap(),
+            obj_path.to_str().unwrap(),
+        ])
         .status()
         .expect("Failed to run ar - is it installed?");
 
@@ -211,7 +233,11 @@ fn compile_kernel(nvcc: &std::path::Path, source: &str, name: &str, arch: &str, 
         }
     } else {
         // Common CUDA library paths
-        for path in &["/usr/local/cuda/lib64", "/usr/local/cuda/lib", "/opt/cuda/lib64"] {
+        for path in &[
+            "/usr/local/cuda/lib64",
+            "/usr/local/cuda/lib",
+            "/opt/cuda/lib64",
+        ] {
             if PathBuf::from(path).exists() {
                 println!("cargo:rustc-link-search=native={}", path);
             }

@@ -4,5 +4,5 @@
 //! - `basic`: Construction, can_allocate, and allocate tests
 //! - `advanced`: Deallocate, usage tracking, and edge case tests
 
-mod basic;
 mod advanced;
+mod basic;

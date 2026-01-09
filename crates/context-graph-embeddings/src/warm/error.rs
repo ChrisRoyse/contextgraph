@@ -314,7 +314,9 @@ pub enum WarmError {
     // === Exit Code 115: Inference Failed ===
     /// Inference execution failed.
     /// Error code: EMB-E011
-    #[error("[EMB-E011] Inference failed for {model_id}: {reason} (input_hash=0x{input_hash:016x})")]
+    #[error(
+        "[EMB-E011] Inference failed for {model_id}: {reason} (input_hash=0x{input_hash:016x})"
+    )]
     InferenceFailed {
         /// The model identifier.
         model_id: String,
@@ -388,7 +390,9 @@ impl WarmError {
         match self {
             Self::ModelFileMissing { .. } => "MODEL_FILE",
             Self::ModelLoadFailed { .. } => "MODEL_LOAD",
-            Self::ModelValidationFailed { .. } | Self::ModelDimensionMismatch { .. } => "MODEL_VALIDATION",
+            Self::ModelValidationFailed { .. } | Self::ModelDimensionMismatch { .. } => {
+                "MODEL_VALIDATION"
+            }
             Self::VramInsufficientTotal { .. } | Self::VramInsufficientHeadroom { .. } => "VRAM",
             Self::CudaUnavailable { .. }
             | Self::CudaInitFailed { .. }

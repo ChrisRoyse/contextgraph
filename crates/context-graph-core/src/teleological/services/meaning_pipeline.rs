@@ -16,12 +16,12 @@
 //! adds something unique, but the magic is in their combination."
 
 use crate::teleological::{
-    SynergyMatrix, TeleologicalVector, GroupAlignments,
     types::{EMBEDDING_DIM, NUM_EMBEDDERS},
+    GroupAlignments, SynergyMatrix, TeleologicalVector,
 };
 use crate::types::fingerprint::PurposeVector;
 
-use super::correlation_extractor::{CorrelationExtractor, CorrelationConfig};
+use super::correlation_extractor::{CorrelationConfig, CorrelationExtractor};
 use super::synergy_service::SynergyService;
 
 /// Configuration for the meaning extraction pipeline.
@@ -102,7 +102,9 @@ impl MeaningPipeline {
     /// Create with custom configuration.
     pub fn with_config(config: MeaningPipelineConfig) -> Self {
         Self {
-            correlation_extractor: CorrelationExtractor::with_config(config.correlation_config.clone()),
+            correlation_extractor: CorrelationExtractor::with_config(
+                config.correlation_config.clone(),
+            ),
             config,
             synergy_service: SynergyService::new(),
         }
@@ -134,14 +136,17 @@ impl MeaningPipeline {
         assert!(
             embeddings.len() == NUM_EMBEDDERS,
             "FAIL FAST: Expected {} embeddings, got {}",
-            NUM_EMBEDDERS, embeddings.len()
+            NUM_EMBEDDERS,
+            embeddings.len()
         );
 
         for (i, emb) in embeddings.iter().enumerate() {
             assert!(
                 emb.len() == EMBEDDING_DIM,
                 "FAIL FAST: Embedding {} has dimension {}, expected {}",
-                i, emb.len(), EMBEDDING_DIM
+                i,
+                emb.len(),
+                EMBEDDING_DIM
             );
         }
 
@@ -150,10 +155,9 @@ impl MeaningPipeline {
         let pv_confidence = self.compute_purpose_confidence(&purpose_vector);
 
         // Stage 2: Extract cross-correlations
-        let corr_result = self.correlation_extractor.extract(
-            embeddings,
-            Some(self.synergy_service.matrix()),
-        );
+        let corr_result = self
+            .correlation_extractor
+            .extract(embeddings, Some(self.synergy_service.matrix()));
         let corr_confidence = 1.0 - corr_result.sparsity;
 
         // Stage 3: Compute group alignments
@@ -175,17 +179,13 @@ impl MeaningPipeline {
         }
 
         // Calculate embedding coverage
-        let active_embeddings = purpose_alignments
-            .iter()
-            .filter(|&&a| a > 0.1)
-            .count();
+        let active_embeddings = purpose_alignments.iter().filter(|&&a| a > 0.1).count();
         let embedding_coverage = active_embeddings as f32 / NUM_EMBEDDERS as f32;
 
         // Overall confidence
-        let overall_confidence = (pv_confidence * 0.4
-                                + corr_confidence * 0.3
-                                + group_confidence * 0.3)
-                                * embedding_coverage.sqrt();
+        let overall_confidence =
+            (pv_confidence * 0.4 + corr_confidence * 0.3 + group_confidence * 0.3)
+                * embedding_coverage.sqrt();
 
         vector.confidence = overall_confidence;
 
@@ -225,10 +225,9 @@ impl MeaningPipeline {
         }
 
         // Extract with aligned matrix
-        let corr_result = self.correlation_extractor.extract(
-            embeddings,
-            Some(&aligned_matrix),
-        );
+        let corr_result = self
+            .correlation_extractor
+            .extract(embeddings, Some(&aligned_matrix));
 
         let pv_confidence = self.compute_purpose_confidence(&purpose_vector);
         let corr_confidence = 1.0 - corr_result.sparsity;
@@ -327,7 +326,10 @@ mod tests {
         let result = pipeline.extract(&embeddings, &alignments);
 
         assert!(result.confidence > 0.0);
-        assert_eq!(result.vector.cross_correlations.len(), CROSS_CORRELATION_COUNT);
+        assert_eq!(
+            result.vector.cross_correlations.len(),
+            CROSS_CORRELATION_COUNT
+        );
 
         println!("[PASS] extract produces valid MeaningExtractionResult");
     }

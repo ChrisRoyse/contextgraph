@@ -37,7 +37,8 @@ impl NervousLayer for StubCoherenceLayer {
         // FAIL FAST - No mock data in production (AP-007)
         Err(CoreError::NotImplemented(
             "L5 CoherenceLayer requires real implementation. \
-             See: docs2/codestate/sherlockplans/agent4-bio-nervous-research.md".into()
+             See: docs2/codestate/sherlockplans/agent4-bio-nervous-research.md"
+                .into(),
         ))
     }
 
@@ -79,7 +80,10 @@ mod tests {
     #[tokio::test]
     async fn test_coherence_layer_health_check_returns_false() {
         let layer = StubCoherenceLayer::new();
-        assert!(!layer.health_check().await.unwrap(), "Stub should report unhealthy");
+        assert!(
+            !layer.health_check().await.unwrap(),
+            "Stub should report unhealthy"
+        );
     }
 
     #[test]

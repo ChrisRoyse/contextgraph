@@ -15,8 +15,8 @@
 //! - θ_dup > θ_edge (duplicate stricter than edge)
 //! - Per-embedder bounds respected
 
+use chrono::{DateTime, Duration, Utc};
 use std::collections::HashMap;
-use chrono::{DateTime, Utc, Duration};
 
 /// Observation of threshold performance
 #[derive(Debug, Clone)]
@@ -85,15 +85,14 @@ impl GaussianProcessTracker {
         }
 
         let n = self.observations.len() as f32;
-        self.mean = self.observations
-            .iter()
-            .map(|o| o.performance)
-            .sum::<f32>() / n;
+        self.mean = self.observations.iter().map(|o| o.performance).sum::<f32>() / n;
 
-        let variance: f32 = self.observations
+        let variance: f32 = self
+            .observations
             .iter()
             .map(|o| (o.performance - self.mean).powi(2))
-            .sum::<f32>() / n;
+            .sum::<f32>()
+            / n;
 
         self.variance = variance.max(0.01); // Avoid zero variance
     }
@@ -190,11 +189,7 @@ impl GaussianProcessTracker {
     }
 
     /// Compute Expected Improvement
-    pub fn expected_improvement(
-        &self,
-        predicted_mean: f32,
-        predicted_std: f32,
-    ) -> f32 {
+    pub fn expected_improvement(&self, predicted_mean: f32, predicted_std: f32) -> f32 {
         if predicted_std == 0.0 {
             return 0.0;
         }
@@ -291,9 +286,11 @@ impl ThresholdConstraints {
 
         // Check monotonicity
         if self.enforce_monotonicity {
-            if let (Some(&opt), Some(&acc), Some(&warn)) =
-                (config.get("theta_opt"), config.get("theta_acc"), config.get("theta_warn"))
-            {
+            if let (Some(&opt), Some(&acc), Some(&warn)) = (
+                config.get("theta_opt"),
+                config.get("theta_acc"),
+                config.get("theta_warn"),
+            ) {
                 if !(opt > acc && acc > warn) {
                     return false;
                 }
@@ -401,7 +398,8 @@ impl BayesianOptimizer {
 
     /// Get best configuration found so far
     pub fn get_best_config(&self) -> Option<HashMap<String, f32>> {
-        self.gp.observations
+        self.gp
+            .observations
             .iter()
             .max_by(|a, b| a.performance.partial_cmp(&b.performance).unwrap())
             .map(|obs| obs.thresholds.clone())
@@ -580,11 +578,7 @@ mod tests {
             k_diff,
             k_same
         );
-        assert!(
-            k_diff > 0.0,
-            "Kernel should be positive, got {}",
-            k_diff
-        );
+        assert!(k_diff > 0.0, "Kernel should be positive, got {}", k_diff);
     }
 
     #[test]

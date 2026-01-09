@@ -14,9 +14,9 @@
 
 use std::ptr::NonNull;
 
-use crate::error::{GraphError, GraphResult};
 use super::bindings::{faiss_StandardGpuResources_free, faiss_StandardGpuResources_new};
 use super::types::{FaissGpuResourcesProvider, FaissStandardGpuResources};
+use crate::error::{GraphError, GraphResult};
 
 /// RAII wrapper for FAISS GPU resources.
 ///

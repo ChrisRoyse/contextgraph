@@ -1,6 +1,5 @@
 //! Token embedding and pooling tests for LateInteractionModel.
 
-
 use super::tests::create_and_load_model;
 use super::*;
 #[allow(unused_imports)]

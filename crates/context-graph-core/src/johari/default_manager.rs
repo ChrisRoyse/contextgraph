@@ -171,13 +171,12 @@ impl<S: TeleologicalMemoryStore + 'static> JohariTransitionManager for DefaultJo
             let quadrant = JohariFingerprint::classify_quadrant(delta_s, delta_c);
 
             // Apply disclosure intent override: if hidden intent, force Hidden
-            let final_quadrant = if !context.disclosure_intent[embedder_idx]
-                && quadrant == JohariQuadrant::Open
-            {
-                JohariQuadrant::Hidden
-            } else {
-                quadrant
-            };
+            let final_quadrant =
+                if !context.disclosure_intent[embedder_idx] && quadrant == JohariQuadrant::Open {
+                    JohariQuadrant::Hidden
+                } else {
+                    quadrant
+                };
 
             // Set hard classification (100% weight to one quadrant)
             set_quadrant_weights(&mut fingerprint, embedder_idx, final_quadrant);
@@ -219,7 +218,10 @@ impl<S: TeleologicalMemoryStore + 'static> JohariTransitionManager for DefaultJo
         }
 
         // Validate trigger is valid for this transition
-        if current_quadrant.transition_to(to_quadrant, trigger).is_err() {
+        if current_quadrant
+            .transition_to(to_quadrant, trigger)
+            .is_err()
+        {
             return Err(JohariError::InvalidTrigger {
                 from: current_quadrant,
                 to: to_quadrant,
@@ -482,13 +484,12 @@ impl JohariTransitionManager for DynDefaultJohariManager {
             let quadrant = JohariFingerprint::classify_quadrant(delta_s, delta_c);
 
             // Apply disclosure intent override: if hidden intent, force Hidden
-            let final_quadrant = if !context.disclosure_intent[embedder_idx]
-                && quadrant == JohariQuadrant::Open
-            {
-                JohariQuadrant::Hidden
-            } else {
-                quadrant
-            };
+            let final_quadrant =
+                if !context.disclosure_intent[embedder_idx] && quadrant == JohariQuadrant::Open {
+                    JohariQuadrant::Hidden
+                } else {
+                    quadrant
+                };
 
             // Set hard classification (100% weight to one quadrant)
             set_quadrant_weights(&mut fingerprint, embedder_idx, final_quadrant);
@@ -530,7 +531,10 @@ impl JohariTransitionManager for DynDefaultJohariManager {
         }
 
         // Validate trigger is valid for this transition
-        if current_quadrant.transition_to(to_quadrant, trigger).is_err() {
+        if current_quadrant
+            .transition_to(to_quadrant, trigger)
+            .is_err()
+        {
             return Err(JohariError::InvalidTrigger {
                 from: current_quadrant,
                 to: to_quadrant,
@@ -846,7 +850,9 @@ mod tests {
             );
         }
 
-        println!("[VERIFIED] test_classify_from_utl_state: All embedders correctly classified as Open");
+        println!(
+            "[VERIFIED] test_classify_from_utl_state: All embedders correctly classified as Open"
+        );
     }
 
     #[tokio::test]
@@ -857,9 +863,9 @@ mod tests {
 
         // Test all four quadrant classifications
         let test_cases = [
-            (0.3, 0.7, JohariQuadrant::Open),   // Low S, High C
-            (0.3, 0.3, JohariQuadrant::Hidden), // Low S, Low C
-            (0.7, 0.3, JohariQuadrant::Blind),  // High S, Low C
+            (0.3, 0.7, JohariQuadrant::Open),    // Low S, High C
+            (0.3, 0.3, JohariQuadrant::Hidden),  // Low S, Low C
+            (0.7, 0.3, JohariQuadrant::Blind),   // High S, Low C
             (0.7, 0.7, JohariQuadrant::Unknown), // High S, High C
         ];
 
@@ -894,7 +900,12 @@ mod tests {
 
         // Transition Hidden → Open via ExplicitShare
         let result = manager
-            .transition(id, 0, JohariQuadrant::Open, TransitionTrigger::ExplicitShare)
+            .transition(
+                id,
+                0,
+                JohariQuadrant::Open,
+                TransitionTrigger::ExplicitShare,
+            )
             .await
             .unwrap();
 
@@ -908,7 +919,9 @@ mod tests {
             "[VERIFICATION FAILED] Transition not persisted to store"
         );
 
-        println!("[VERIFIED] test_transition_valid: Hidden→Open transition succeeded and persisted");
+        println!(
+            "[VERIFIED] test_transition_valid: Hidden→Open transition succeeded and persisted"
+        );
     }
 
     #[tokio::test]
@@ -989,8 +1002,16 @@ mod tests {
 
         // Batch with one invalid transition (invalid embedder index)
         let transitions_invalid_idx = vec![
-            (0, JohariQuadrant::Open, TransitionTrigger::DreamConsolidation),
-            (99, JohariQuadrant::Open, TransitionTrigger::DreamConsolidation), // Invalid index
+            (
+                0,
+                JohariQuadrant::Open,
+                TransitionTrigger::DreamConsolidation,
+            ),
+            (
+                99,
+                JohariQuadrant::Open,
+                TransitionTrigger::DreamConsolidation,
+            ), // Invalid index
         ];
 
         let result = manager.transition_batch(id, transitions_invalid_idx).await;
@@ -1021,9 +1042,21 @@ mod tests {
 
         // Valid batch transitions
         let transitions = vec![
-            (0, JohariQuadrant::Open, TransitionTrigger::DreamConsolidation),
-            (1, JohariQuadrant::Hidden, TransitionTrigger::DreamConsolidation),
-            (2, JohariQuadrant::Blind, TransitionTrigger::ExternalObservation),
+            (
+                0,
+                JohariQuadrant::Open,
+                TransitionTrigger::DreamConsolidation,
+            ),
+            (
+                1,
+                JohariQuadrant::Hidden,
+                TransitionTrigger::DreamConsolidation,
+            ),
+            (
+                2,
+                JohariQuadrant::Blind,
+                TransitionTrigger::ExternalObservation,
+            ),
         ];
 
         let result = manager.transition_batch(id, transitions).await.unwrap();
@@ -1038,7 +1071,9 @@ mod tests {
         assert_eq!(stored.johari.dominant_quadrant(1), JohariQuadrant::Hidden);
         assert_eq!(stored.johari.dominant_quadrant(2), JohariQuadrant::Blind);
 
-        println!("[VERIFIED] test_batch_transition_success: All batch transitions applied and persisted");
+        println!(
+            "[VERIFIED] test_batch_transition_success: All batch transitions applied and persisted"
+        );
     }
 
     // ==================== EDGE CASE TESTS (Required by TASK-L004) ====================
@@ -1232,7 +1267,9 @@ mod tests {
             }
         ));
 
-        println!("[VERIFIED] test_matches_pattern_at_least: AtLeast pattern matching works correctly");
+        println!(
+            "[VERIFIED] test_matches_pattern_at_least: AtLeast pattern matching works correctly"
+        );
     }
 
     // ==================== TRANSITION HISTORY TESTS (Critical Bug Fix) ====================
@@ -1249,7 +1286,12 @@ mod tests {
 
         // Perform a transition
         let _result = manager
-            .transition(id, 0, JohariQuadrant::Open, TransitionTrigger::ExplicitShare)
+            .transition(
+                id,
+                0,
+                JohariQuadrant::Open,
+                TransitionTrigger::ExplicitShare,
+            )
             .await
             .unwrap();
 
@@ -1264,7 +1306,9 @@ mod tests {
         assert_eq!(history[0].to, JohariQuadrant::Open);
         assert_eq!(history[0].trigger, TransitionTrigger::ExplicitShare);
 
-        println!("[VERIFIED] test_transition_history_recorded: Transition correctly recorded in history");
+        println!(
+            "[VERIFIED] test_transition_history_recorded: Transition correctly recorded in history"
+        );
     }
 
     #[tokio::test]
@@ -1279,7 +1323,12 @@ mod tests {
 
         // Perform a transition
         let _result = manager
-            .transition(id, 0, JohariQuadrant::Open, TransitionTrigger::ExplicitShare)
+            .transition(
+                id,
+                0,
+                JohariQuadrant::Open,
+                TransitionTrigger::ExplicitShare,
+            )
             .await
             .unwrap();
 
@@ -1300,7 +1349,11 @@ mod tests {
             1,
             "Expected 1 ExplicitShare trigger"
         );
-        assert_eq!(stats.count_for_embedder(0), 1, "Expected 1 transition on E1");
+        assert_eq!(
+            stats.count_for_embedder(0),
+            1,
+            "Expected 1 transition on E1"
+        );
 
         println!("[VERIFIED] test_transition_stats_computed: Stats correctly computed from real transitions");
     }
@@ -1319,9 +1372,21 @@ mod tests {
 
         // Perform batch transitions
         let transitions = vec![
-            (0, JohariQuadrant::Open, TransitionTrigger::DreamConsolidation),
-            (1, JohariQuadrant::Hidden, TransitionTrigger::DreamConsolidation),
-            (2, JohariQuadrant::Blind, TransitionTrigger::ExternalObservation),
+            (
+                0,
+                JohariQuadrant::Open,
+                TransitionTrigger::DreamConsolidation,
+            ),
+            (
+                1,
+                JohariQuadrant::Hidden,
+                TransitionTrigger::DreamConsolidation,
+            ),
+            (
+                2,
+                JohariQuadrant::Blind,
+                TransitionTrigger::ExternalObservation,
+            ),
         ];
         let _result = manager.transition_batch(id, transitions).await.unwrap();
 
@@ -1333,9 +1398,18 @@ mod tests {
 
         // History is in reverse chronological order, so newest first
         // Transitions are inserted in order, so embedder 2 is newest
-        let t0 = history.iter().find(|t| t.embedder_idx == 0).expect("Missing E1 transition");
-        let t1 = history.iter().find(|t| t.embedder_idx == 1).expect("Missing E2 transition");
-        let t2 = history.iter().find(|t| t.embedder_idx == 2).expect("Missing E3 transition");
+        let t0 = history
+            .iter()
+            .find(|t| t.embedder_idx == 0)
+            .expect("Missing E1 transition");
+        let t1 = history
+            .iter()
+            .find(|t| t.embedder_idx == 1)
+            .expect("Missing E2 transition");
+        let t2 = history
+            .iter()
+            .find(|t| t.embedder_idx == 2)
+            .expect("Missing E3 transition");
 
         assert_eq!(t0.from, JohariQuadrant::Unknown);
         assert_eq!(t0.to, JohariQuadrant::Open);
@@ -1344,7 +1418,9 @@ mod tests {
         assert_eq!(t2.from, JohariQuadrant::Unknown);
         assert_eq!(t2.to, JohariQuadrant::Blind);
 
-        println!("[VERIFIED] test_batch_transitions_recorded_in_history: All batch transitions recorded");
+        println!(
+            "[VERIFIED] test_batch_transitions_recorded_in_history: All batch transitions recorded"
+        );
     }
 
     #[tokio::test]
@@ -1363,11 +1439,21 @@ mod tests {
 
         // Perform transitions on both
         let _result = manager
-            .transition(id1, 0, JohariQuadrant::Open, TransitionTrigger::ExplicitShare)
+            .transition(
+                id1,
+                0,
+                JohariQuadrant::Open,
+                TransitionTrigger::ExplicitShare,
+            )
             .await
             .unwrap();
         let _result = manager
-            .transition(id2, 0, JohariQuadrant::Open, TransitionTrigger::ExplicitShare)
+            .transition(
+                id2,
+                0,
+                JohariQuadrant::Open,
+                TransitionTrigger::ExplicitShare,
+            )
             .await
             .unwrap();
 
@@ -1381,6 +1467,8 @@ mod tests {
         assert_eq!(history2.len(), 1);
         assert_eq!(history2[0].memory_id, id2);
 
-        println!("[VERIFIED] test_history_filtered_by_memory_id: History correctly filtered per memory");
+        println!(
+            "[VERIFIED] test_history_filtered_by_memory_id: History correctly filtered per memory"
+        );
     }
 }

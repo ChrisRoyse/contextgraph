@@ -388,7 +388,10 @@ fn test_uses_stubs_helper() {
         },
         ..Default::default()
     };
-    assert!(!config_real.uses_stubs(), "Real config should not use stubs");
+    assert!(
+        !config_real.uses_stubs(),
+        "Real config should not use stubs"
+    );
 
     // Just one stub
     let config_one_stub = Config {
@@ -442,7 +445,10 @@ fn test_is_production_safe_helper() {
         },
         ..Default::default()
     };
-    assert!(config_safe.is_production_safe(), "Should be production safe");
+    assert!(
+        config_safe.is_production_safe(),
+        "Should be production safe"
+    );
 
     // Production phase, with stubs - NOT safe
     let config_unsafe = Config {

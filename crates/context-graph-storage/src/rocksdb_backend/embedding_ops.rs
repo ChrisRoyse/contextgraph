@@ -138,10 +138,8 @@ impl RocksDbMemex {
         let keys: Vec<[u8; 16]> = node_ids.iter().map(serialize_uuid).collect();
 
         // Create CF references for multi_get_cf
-        let cf_key_pairs: Vec<(&rocksdb::ColumnFamily, &[u8])> = keys
-            .iter()
-            .map(|k| (cf_embeddings, k.as_slice()))
-            .collect();
+        let cf_key_pairs: Vec<(&rocksdb::ColumnFamily, &[u8])> =
+            keys.iter().map(|k| (cf_embeddings, k.as_slice())).collect();
 
         // Execute batch read
         let results = self.db.multi_get_cf(cf_key_pairs);

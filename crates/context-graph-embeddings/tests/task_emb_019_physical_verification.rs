@@ -12,11 +12,9 @@ use std::path::Path;
 /// PHYSICAL VERIFICATION: compile_error! macro must exist in preflight.rs
 #[test]
 fn verify_compile_error_macro_exists() {
-    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/warm/loader/preflight.rs");
+    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/warm/loader/preflight.rs");
 
-    let content = fs::read_to_string(&preflight_path)
-        .expect("Failed to read preflight.rs");
+    let content = fs::read_to_string(&preflight_path).expect("Failed to read preflight.rs");
 
     // Must contain compile_error! macro
     assert!(
@@ -43,11 +41,9 @@ fn verify_compile_error_macro_exists() {
 /// PHYSICAL VERIFICATION: No fake GPU creation code
 #[test]
 fn verify_no_fake_gpu_creation() {
-    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/warm/loader/preflight.rs");
+    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/warm/loader/preflight.rs");
 
-    let content = fs::read_to_string(&preflight_path)
-        .expect("Failed to read preflight.rs");
+    let content = fs::read_to_string(&preflight_path).expect("Failed to read preflight.rs");
 
     // Must NOT contain hardcoded simulated GPU name as a return value
     // It's OK to contain it in error detection logic
@@ -89,11 +85,9 @@ fn verify_no_fake_gpu_creation() {
 /// PHYSICAL VERIFICATION: initialize_cuda_allocator returns WarmResult, not Option
 #[test]
 fn verify_return_type_is_result_not_option() {
-    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/warm/loader/preflight.rs");
+    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/warm/loader/preflight.rs");
 
-    let content = fs::read_to_string(&preflight_path)
-        .expect("Failed to read preflight.rs");
+    let content = fs::read_to_string(&preflight_path).expect("Failed to read preflight.rs");
 
     // Must contain the new return type signature
     assert!(
@@ -125,11 +119,9 @@ fn verify_return_type_is_result_not_option() {
 /// PHYSICAL VERIFICATION: CudaUnavailable error variant exists in error.rs
 #[test]
 fn verify_cuda_unavailable_error_exists() {
-    let error_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/warm/error.rs");
+    let error_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/warm/error.rs");
 
-    let content = fs::read_to_string(&error_path)
-        .expect("Failed to read error.rs");
+    let content = fs::read_to_string(&error_path).expect("Failed to read error.rs");
 
     // Must contain CudaUnavailable variant
     assert!(
@@ -155,11 +147,9 @@ fn verify_cuda_unavailable_error_exists() {
 /// PHYSICAL VERIFICATION: No stub mode code path
 #[test]
 fn verify_no_stub_mode_code_path() {
-    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/warm/loader/preflight.rs");
+    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/warm/loader/preflight.rs");
 
-    let content = fs::read_to_string(&preflight_path)
-        .expect("Failed to read preflight.rs");
+    let content = fs::read_to_string(&preflight_path).expect("Failed to read preflight.rs");
 
     // Must NOT contain "running in stub mode" log message
     assert!(
@@ -178,7 +168,10 @@ fn verify_no_stub_mode_code_path() {
         }
 
         // After compile_error!, reset
-        if in_non_cuda_block && line.contains(");") && lines[..i].iter().any(|l| l.contains("compile_error!")) {
+        if in_non_cuda_block
+            && line.contains(");")
+            && lines[..i].iter().any(|l| l.contains("compile_error!"))
+        {
             in_non_cuda_block = false;
         }
     }
@@ -199,11 +192,9 @@ fn verify_no_stub_mode_code_path() {
 /// PHYSICAL VERIFICATION: Simulated GPU rejection logic exists
 #[test]
 fn verify_simulated_gpu_rejection_logic() {
-    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/warm/loader/preflight.rs");
+    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/warm/loader/preflight.rs");
 
-    let content = fs::read_to_string(&preflight_path)
-        .expect("Failed to read preflight.rs");
+    let content = fs::read_to_string(&preflight_path).expect("Failed to read preflight.rs");
 
     // Must contain logic to detect and reject simulated GPUs
     assert!(
@@ -225,11 +216,9 @@ fn verify_simulated_gpu_rejection_logic() {
 /// Edge Case Test: Verify all required cfg attributes
 #[test]
 fn verify_cfg_attributes() {
-    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("src/warm/loader/preflight.rs");
+    let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/warm/loader/preflight.rs");
 
-    let content = fs::read_to_string(&preflight_path)
-        .expect("Failed to read preflight.rs");
+    let content = fs::read_to_string(&preflight_path).expect("Failed to read preflight.rs");
 
     // Must have cfg(not(feature = "cuda")) for compile_error
     assert!(

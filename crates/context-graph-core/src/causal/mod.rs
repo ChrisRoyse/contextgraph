@@ -25,7 +25,7 @@ pub mod inference;
 pub mod scm;
 
 pub use asymmetric::{
-    compute_asymmetric_similarity, compute_asymmetric_similarity_simple, adjust_batch_similarities,
+    adjust_batch_similarities, compute_asymmetric_similarity, compute_asymmetric_similarity_simple,
     CausalDirection, InterventionContext,
 };
 pub use inference::{InferenceDirection, InferenceResult, OmniInfer};

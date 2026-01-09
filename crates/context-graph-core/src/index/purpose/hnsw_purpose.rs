@@ -434,7 +434,11 @@ impl HnswPurposeIndex {
             .iter()
             .filter_map(|(id, vector)| {
                 let metadata = self.metadata.get(id)?;
-                Some(PurposeIndexEntry::new(*id, vector.clone(), metadata.clone()))
+                Some(PurposeIndexEntry::new(
+                    *id,
+                    vector.clone(),
+                    metadata.clone(),
+                ))
             })
             .collect();
 
@@ -457,10 +461,9 @@ impl HnswPurposeIndex {
         for cluster in clustering_result.clusters {
             if cluster.len() >= min_cluster_size && cluster.coherence >= coherence_threshold {
                 for memory_id in cluster.members {
-                    if let (Some(vector), Some(metadata)) = (
-                        self.vectors.get(&memory_id),
-                        self.metadata.get(&memory_id),
-                    ) {
+                    if let (Some(vector), Some(metadata)) =
+                        (self.vectors.get(&memory_id), self.metadata.get(&memory_id))
+                    {
                         // Apply additional filters
                         if let Some(ref goal_filter) = query.goal_filter {
                             if metadata.primary_goal.as_str() != goal_filter.as_str() {
@@ -864,7 +867,10 @@ mod tests {
 
         assert_eq!(index.goal_count(), 1);
         assert_eq!(
-            index.get_by_goal(&GoalId::new("shared_goal")).unwrap().len(),
+            index
+                .get_by_goal(&GoalId::new("shared_goal"))
+                .unwrap()
+                .len(),
             2
         );
 
@@ -872,7 +878,10 @@ mod tests {
 
         assert_eq!(index.goal_count(), 1); // Goal still exists
         assert_eq!(
-            index.get_by_goal(&GoalId::new("shared_goal")).unwrap().len(),
+            index
+                .get_by_goal(&GoalId::new("shared_goal"))
+                .unwrap()
+                .len(),
             1
         ); // But with one less member
 
@@ -939,7 +948,10 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("not found"));
 
-        println!("[VERIFIED] FAIL FAST: Get fails for non-existent entry: {}", msg);
+        println!(
+            "[VERIFIED] FAIL FAST: Get fails for non-existent entry: {}",
+            msg
+        );
     }
 
     // =========================================================================
@@ -959,12 +971,20 @@ mod tests {
         // Correct database semantics: searching an empty index returns empty results
         // Error should only occur on actual failures (network, disk, corruption, invalid input)
         let result = index.search(&query);
-        assert!(result.is_ok(), "Search on empty index should succeed with empty results");
+        assert!(
+            result.is_ok(),
+            "Search on empty index should succeed with empty results"
+        );
 
         let results = result.unwrap();
-        assert!(results.is_empty(), "Empty index should return empty results");
+        assert!(
+            results.is_empty(),
+            "Empty index should return empty results"
+        );
 
-        println!("[VERIFIED] Search on empty index returns empty results (correct database semantics)");
+        println!(
+            "[VERIFIED] Search on empty index returns empty results (correct database semantics)"
+        );
     }
 
     #[test]
@@ -1004,13 +1024,16 @@ mod tests {
 
         for i in 0..10 {
             index
-                .insert(create_entry(0.1 + i as f32 * 0.08, "goal", JohariQuadrant::Open))
+                .insert(create_entry(
+                    0.1 + i as f32 * 0.08,
+                    "goal",
+                    JohariQuadrant::Open,
+                ))
                 .unwrap();
         }
 
         let query_vector = create_purpose_vector(0.9, 0.01);
-        let query =
-            PurposeQuery::new(PurposeQueryTarget::vector(query_vector), 10, 0.8).unwrap();
+        let query = PurposeQuery::new(PurposeQueryTarget::vector(query_vector), 10, 0.8).unwrap();
 
         let results = index.search(&query).unwrap();
 
@@ -1036,10 +1059,18 @@ mod tests {
         // Insert entries with different goals
         for i in 0..5 {
             index
-                .insert(create_entry(0.5 + i as f32 * 0.02, "goal_a", JohariQuadrant::Open))
+                .insert(create_entry(
+                    0.5 + i as f32 * 0.02,
+                    "goal_a",
+                    JohariQuadrant::Open,
+                ))
                 .unwrap();
             index
-                .insert(create_entry(0.5 + i as f32 * 0.02, "goal_b", JohariQuadrant::Open))
+                .insert(create_entry(
+                    0.5 + i as f32 * 0.02,
+                    "goal_b",
+                    JohariQuadrant::Open,
+                ))
                 .unwrap();
         }
 
@@ -1143,8 +1174,7 @@ mod tests {
 
         // Search from existing memory
         let source_id = entries[2].memory_id;
-        let query =
-            PurposeQuery::new(PurposeQueryTarget::from_memory(source_id), 3, 0.0).unwrap();
+        let query = PurposeQuery::new(PurposeQueryTarget::from_memory(source_id), 3, 0.0).unwrap();
 
         let results = index.search(&query).unwrap();
 
@@ -1182,7 +1212,11 @@ mod tests {
 
         for i in 0..20 {
             index
-                .insert(create_entry(0.3 + i as f32 * 0.03, "goal", JohariQuadrant::Open))
+                .insert(create_entry(
+                    0.3 + i as f32 * 0.03,
+                    "goal",
+                    JohariQuadrant::Open,
+                ))
                 .unwrap();
         }
 

@@ -140,15 +140,9 @@ impl QuantizationRouter {
         );
 
         match method {
-            QuantizationMethod::Binary => {
-                self.quantize_binary(model_id, embedding)
-            }
-            QuantizationMethod::PQ8 => {
-                self.quantize_pq8(model_id, embedding)
-            }
-            QuantizationMethod::Float8E4M3 => {
-                self.quantize_float8(model_id, embedding)
-            }
+            QuantizationMethod::Binary => self.quantize_binary(model_id, embedding),
+            QuantizationMethod::PQ8 => self.quantize_pq8(model_id, embedding),
+            QuantizationMethod::Float8E4M3 => self.quantize_float8(model_id, embedding),
             QuantizationMethod::SparseNative => {
                 warn!(
                     target: "quantization::router",
@@ -157,7 +151,9 @@ impl QuantizationRouter {
                 );
                 Err(EmbeddingError::InvalidModelInput {
                     model_id,
-                    reason: "Sparse models store indices+values directly, not via dense quantization".to_string(),
+                    reason:
+                        "Sparse models store indices+values directly, not via dense quantization"
+                            .to_string(),
                 })
             }
             QuantizationMethod::TokenPruning => {
@@ -209,15 +205,9 @@ impl QuantizationRouter {
         );
 
         match method {
-            QuantizationMethod::Binary => {
-                self.dequantize_binary(model_id, quantized)
-            }
-            QuantizationMethod::PQ8 => {
-                self.dequantize_pq8(model_id, quantized)
-            }
-            QuantizationMethod::Float8E4M3 => {
-                self.dequantize_float8(model_id, quantized)
-            }
+            QuantizationMethod::Binary => self.dequantize_binary(model_id, quantized),
+            QuantizationMethod::PQ8 => self.dequantize_pq8(model_id, quantized),
+            QuantizationMethod::Float8E4M3 => self.dequantize_float8(model_id, quantized),
             QuantizationMethod::SparseNative => {
                 warn!(
                     target: "quantization::router",
@@ -226,7 +216,9 @@ impl QuantizationRouter {
                 );
                 Err(EmbeddingError::InvalidModelInput {
                     model_id,
-                    reason: "Sparse models store indices+values directly, not via dense quantization".to_string(),
+                    reason:
+                        "Sparse models store indices+values directly, not via dense quantization"
+                            .to_string(),
                 })
             }
             QuantizationMethod::TokenPruning => {
@@ -474,8 +466,8 @@ impl QuantizationRouter {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::QuantizationMetadata;
+    use super::*;
 
     // =========================================================================
     // Router initialization tests
@@ -510,23 +502,53 @@ mod tests {
         }
 
         // Verify specific mappings per Constitution
-        assert_eq!(router.method_for(ModelId::Semantic), QuantizationMethod::PQ8);
+        assert_eq!(
+            router.method_for(ModelId::Semantic),
+            QuantizationMethod::PQ8
+        );
         assert_eq!(router.method_for(ModelId::Causal), QuantizationMethod::PQ8);
         assert_eq!(router.method_for(ModelId::Code), QuantizationMethod::PQ8);
-        assert_eq!(router.method_for(ModelId::Multimodal), QuantizationMethod::PQ8);
+        assert_eq!(
+            router.method_for(ModelId::Multimodal),
+            QuantizationMethod::PQ8
+        );
 
-        assert_eq!(router.method_for(ModelId::TemporalRecent), QuantizationMethod::Float8E4M3);
-        assert_eq!(router.method_for(ModelId::TemporalPeriodic), QuantizationMethod::Float8E4M3);
-        assert_eq!(router.method_for(ModelId::TemporalPositional), QuantizationMethod::Float8E4M3);
-        assert_eq!(router.method_for(ModelId::Graph), QuantizationMethod::Float8E4M3);
-        assert_eq!(router.method_for(ModelId::Entity), QuantizationMethod::Float8E4M3);
+        assert_eq!(
+            router.method_for(ModelId::TemporalRecent),
+            QuantizationMethod::Float8E4M3
+        );
+        assert_eq!(
+            router.method_for(ModelId::TemporalPeriodic),
+            QuantizationMethod::Float8E4M3
+        );
+        assert_eq!(
+            router.method_for(ModelId::TemporalPositional),
+            QuantizationMethod::Float8E4M3
+        );
+        assert_eq!(
+            router.method_for(ModelId::Graph),
+            QuantizationMethod::Float8E4M3
+        );
+        assert_eq!(
+            router.method_for(ModelId::Entity),
+            QuantizationMethod::Float8E4M3
+        );
 
         assert_eq!(router.method_for(ModelId::Hdc), QuantizationMethod::Binary);
 
-        assert_eq!(router.method_for(ModelId::Sparse), QuantizationMethod::SparseNative);
-        assert_eq!(router.method_for(ModelId::Splade), QuantizationMethod::SparseNative);
+        assert_eq!(
+            router.method_for(ModelId::Sparse),
+            QuantizationMethod::SparseNative
+        );
+        assert_eq!(
+            router.method_for(ModelId::Splade),
+            QuantizationMethod::SparseNative
+        );
 
-        assert_eq!(router.method_for(ModelId::LateInteraction), QuantizationMethod::TokenPruning);
+        assert_eq!(
+            router.method_for(ModelId::LateInteraction),
+            QuantizationMethod::TokenPruning
+        );
     }
 
     // =========================================================================
@@ -561,9 +583,7 @@ mod tests {
             .map(|i| if i % 3 == 0 { 0.5 } else { -0.5 })
             .collect();
 
-        let quantized = router
-            .quantize(ModelId::Hdc, &input)
-            .expect("quantize");
+        let quantized = router.quantize(ModelId::Hdc, &input).expect("quantize");
 
         let reconstructed = router
             .dequantize(ModelId::Hdc, &quantized)
@@ -607,9 +627,7 @@ mod tests {
         let router = QuantizationRouter::new();
 
         // Create input with known range
-        let input: Vec<f32> = (0..1024)
-            .map(|i| (i as f32 / 512.0) - 1.0)
-            .collect();
+        let input: Vec<f32> = (0..1024).map(|i| (i as f32 / 512.0) - 1.0).collect();
 
         let quantized = router
             .quantize(ModelId::Semantic, &input)
@@ -622,7 +640,11 @@ mod tests {
         assert_eq!(reconstructed.len(), 1024);
 
         // Compute cosine similarity for reconstruction quality
-        let dot: f32 = input.iter().zip(reconstructed.iter()).map(|(a, b)| a * b).sum();
+        let dot: f32 = input
+            .iter()
+            .zip(reconstructed.iter())
+            .map(|(a, b)| a * b)
+            .sum();
         let norm_a: f32 = input.iter().map(|x| x * x).sum::<f32>().sqrt();
         let norm_b: f32 = reconstructed.iter().map(|x| x * x).sum::<f32>().sqrt();
         let cosine = dot / (norm_a * norm_b);
@@ -651,7 +673,9 @@ mod tests {
         ];
 
         for (model_id, dim) in pq8_models {
-            let embedding: Vec<f32> = (0..dim).map(|i| (i as f32 / dim as f32) * 2.0 - 1.0).collect();
+            let embedding: Vec<f32> = (0..dim)
+                .map(|i| (i as f32 / dim as f32) * 2.0 - 1.0)
+                .collect();
             let result = router.quantize(model_id, &embedding);
             assert!(
                 result.is_ok(),
@@ -780,7 +804,10 @@ mod tests {
 
         assert!(result.is_err());
         match result.unwrap_err() {
-            EmbeddingError::UnsupportedOperation { model_id, operation } => {
+            EmbeddingError::UnsupportedOperation {
+                model_id,
+                operation,
+            } => {
                 assert_eq!(model_id, ModelId::LateInteraction);
                 assert!(operation.contains("TokenPruning"));
             }
@@ -964,12 +991,20 @@ mod tests {
         let large: Vec<f32> = (0..65536).map(|i| (i as f32).sin()).collect();
 
         let result = router.quantize(ModelId::Hdc, &large);
-        assert!(result.is_ok(), "Large dimension quantization failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "Large dimension quantization failed: {:?}",
+            result.err()
+        );
 
         let q = result.unwrap();
         assert_eq!(q.original_dim, 65536);
         // 65536 bits / 8 = 8192 bytes
-        assert_eq!(q.data.len(), 8192, "Expected 8192 bytes for 65536-bit binary vector");
+        assert_eq!(
+            q.data.len(),
+            8192,
+            "Expected 8192 bytes for 65536-bit binary vector"
+        );
     }
 
     /// Edge Case 3: All same value (all zeros) - degenerate case.
@@ -983,7 +1018,11 @@ mod tests {
         let all_zeros = vec![0.0f32; 256];
 
         let result = router.quantize(ModelId::Hdc, &all_zeros);
-        assert!(result.is_ok(), "All-zeros quantization failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "All-zeros quantization failed: {:?}",
+            result.err()
+        );
 
         let q = result.unwrap();
         assert_eq!(q.original_dim, 256);
@@ -1024,7 +1063,9 @@ mod tests {
     fn test_edge_alternating_pattern() {
         let router = QuantizationRouter::new();
         // Pattern: +, -, +, -, ... (8 values = 1 byte)
-        let alternating: Vec<f32> = (0..8).map(|i| if i % 2 == 0 { 1.0 } else { -1.0 }).collect();
+        let alternating: Vec<f32> = (0..8)
+            .map(|i| if i % 2 == 0 { 1.0 } else { -1.0 })
+            .collect();
 
         let result = router.quantize(ModelId::Hdc, &alternating);
         assert!(result.is_ok());

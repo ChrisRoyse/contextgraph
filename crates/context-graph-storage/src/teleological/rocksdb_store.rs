@@ -39,16 +39,14 @@ use uuid::Uuid;
 use context_graph_core::error::{CoreError, CoreResult};
 use context_graph_core::teleological::ComparisonValidationError;
 
-use super::indexes::{
-    EmbedderIndex, EmbedderIndexOps, EmbedderIndexRegistry, IndexError,
-};
+use super::indexes::{EmbedderIndex, EmbedderIndexOps, EmbedderIndexRegistry, IndexError};
 use context_graph_core::traits::{
     TeleologicalMemoryStore, TeleologicalSearchOptions, TeleologicalSearchResult,
     TeleologicalStorageBackend,
 };
 use context_graph_core::types::fingerprint::{
-    PurposeVector, SemanticFingerprint, SparseVector, TeleologicalFingerprint,
-    JohariFingerprint, NUM_EMBEDDERS,
+    JohariFingerprint, PurposeVector, SemanticFingerprint, SparseVector, TeleologicalFingerprint,
+    NUM_EMBEDDERS,
 };
 
 use super::column_families::{
@@ -60,9 +58,8 @@ use super::schema::{
     purpose_vector_key,
 };
 use super::serialization::{
-    deserialize_memory_id_list, deserialize_teleological_fingerprint,
-    serialize_e1_matryoshka_128, serialize_memory_id_list, serialize_purpose_vector,
-    serialize_teleological_fingerprint,
+    deserialize_memory_id_list, deserialize_teleological_fingerprint, serialize_e1_matryoshka_128,
+    serialize_memory_id_list, serialize_purpose_vector, serialize_teleological_fingerprint,
 };
 
 // ============================================================================
@@ -413,17 +410,9 @@ impl RocksDbTeleologicalStore {
             let term_key = e13_splade_inverted_key(term_id);
 
             // Read existing posting list
-            let existing = self
-                .db
-                .get_cf(cf_inverted, term_key)
-                .map_err(|e| {
-                    TeleologicalStoreError::rocksdb_op(
-                        "get",
-                        CF_E13_SPLADE_INVERTED,
-                        None,
-                        e,
-                    )
-                })?;
+            let existing = self.db.get_cf(cf_inverted, term_key).map_err(|e| {
+                TeleologicalStoreError::rocksdb_op("get", CF_E13_SPLADE_INVERTED, None, e)
+            })?;
 
             let mut ids: Vec<Uuid> = match existing {
                 Some(data) => deserialize_memory_id_list(&data),
@@ -579,7 +568,10 @@ impl RocksDbTeleologicalStore {
             compute_cosine_similarity(&query.e1_semantic, &stored.e1_semantic),
             compute_cosine_similarity(&query.e2_temporal_recent, &stored.e2_temporal_recent),
             compute_cosine_similarity(&query.e3_temporal_periodic, &stored.e3_temporal_periodic),
-            compute_cosine_similarity(&query.e4_temporal_positional, &stored.e4_temporal_positional),
+            compute_cosine_similarity(
+                &query.e4_temporal_positional,
+                &stored.e4_temporal_positional,
+            ),
             compute_cosine_similarity(&query.e5_causal, &stored.e5_causal),
             0.0, // E6 sparse - use search_sparse()
             compute_cosine_similarity(&query.e7_code, &stored.e7_code),
@@ -684,7 +676,8 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         self.store_fingerprint_internal(&fingerprint)?;
 
         // Add to per-embedder indexes for O(log n) search
-        self.add_to_indexes(&fingerprint).map_err(|e| CoreError::IndexError(e.to_string()))?;
+        self.add_to_indexes(&fingerprint)
+            .map_err(|e| CoreError::IndexError(e.to_string()))?;
 
         Ok(id)
     }
@@ -724,18 +717,25 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
             let mut batch = WriteBatch::default();
             self.remove_from_splade_inverted_index(&mut batch, &id, &old_fp.semantic.e13_splade)?;
             self.db.write(batch).map_err(|e| {
-                TeleologicalStoreError::rocksdb_op("write_batch", CF_E13_SPLADE_INVERTED, Some(id), e)
+                TeleologicalStoreError::rocksdb_op(
+                    "write_batch",
+                    CF_E13_SPLADE_INVERTED,
+                    Some(id),
+                    e,
+                )
             })?;
         }
 
         // Remove from per-embedder indexes (will be re-added with updated vectors)
-        self.remove_from_indexes(id).map_err(|e| CoreError::IndexError(e.to_string()))?;
+        self.remove_from_indexes(id)
+            .map_err(|e| CoreError::IndexError(e.to_string()))?;
 
         // Store updated fingerprint in RocksDB
         self.store_fingerprint_internal(&fingerprint)?;
 
         // Add updated fingerprint to per-embedder indexes
-        self.add_to_indexes(&fingerprint).map_err(|e| CoreError::IndexError(e.to_string()))?;
+        self.add_to_indexes(&fingerprint)
+            .map_err(|e| CoreError::IndexError(e.to_string()))?;
 
         Ok(true)
     }
@@ -790,7 +790,8 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
             }
 
             // Remove from per-embedder indexes
-            self.remove_from_indexes(id).map_err(|e| CoreError::IndexError(e.to_string()))?;
+            self.remove_from_indexes(id)
+                .map_err(|e| CoreError::IndexError(e.to_string()))?;
         }
 
         info!("Deleted fingerprint {} (soft={})", id, soft);
@@ -811,14 +812,14 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
 
         // ARCH-04: Entry-point discovery - search E1 Semantic first
         let entry_embedder = EmbedderIndex::E1Semantic;
-        let entry_index = self.index_registry.get(entry_embedder)
-            .ok_or_else(|| CoreError::IndexError(
-                format!("Entry-point index {:?} not found", entry_embedder)
-            ))?;
+        let entry_index = self.index_registry.get(entry_embedder).ok_or_else(|| {
+            CoreError::IndexError(format!("Entry-point index {:?} not found", entry_embedder))
+        })?;
 
         // Search E1 semantic space with 2x top_k to allow filtering
         let k = (options.top_k * 2).max(20);
-        let candidates = entry_index.search(&query.e1_semantic, k, None)
+        let candidates = entry_index
+            .search(&query.e1_semantic, k, None)
             .map_err(|e| {
                 error!("Entry-point search failed: {}", e);
                 CoreError::IndexError(e.to_string())
@@ -884,18 +885,17 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         );
 
         // Use PurposeVector index for O(log n) search
-        let pv_index = self.index_registry.get(EmbedderIndex::PurposeVector)
-            .ok_or_else(|| CoreError::IndexError(
-                "PurposeVector index not found".to_string()
-            ))?;
+        let pv_index = self
+            .index_registry
+            .get(EmbedderIndex::PurposeVector)
+            .ok_or_else(|| CoreError::IndexError("PurposeVector index not found".to_string()))?;
 
         // Search purpose vector space with 2x top_k to allow filtering
         let k = (options.top_k * 2).max(20);
-        let candidates = pv_index.search(&query.alignments, k, None)
-            .map_err(|e| {
-                error!("Purpose vector search failed: {}", e);
-                CoreError::IndexError(e.to_string())
-            })?;
+        let candidates = pv_index.search(&query.alignments, k, None).map_err(|e| {
+            error!("Purpose vector search failed: {}", e);
+            CoreError::IndexError(e.to_string())
+        })?;
 
         // Fetch full fingerprints for candidates
         let mut results = Vec::with_capacity(candidates.len());
@@ -1010,7 +1010,10 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
 
     // ==================== Batch Operations ====================
 
-    async fn store_batch(&self, fingerprints: Vec<TeleologicalFingerprint>) -> CoreResult<Vec<Uuid>> {
+    async fn store_batch(
+        &self,
+        fingerprints: Vec<TeleologicalFingerprint>,
+    ) -> CoreResult<Vec<Uuid>> {
         debug!("Storing batch of {} fingerprints", fingerprints.len());
 
         let mut ids = Vec::with_capacity(fingerprints.len());
@@ -1025,7 +1028,10 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         Ok(ids)
     }
 
-    async fn retrieve_batch(&self, ids: &[Uuid]) -> CoreResult<Vec<Option<TeleologicalFingerprint>>> {
+    async fn retrieve_batch(
+        &self,
+        ids: &[Uuid],
+    ) -> CoreResult<Vec<Option<TeleologicalFingerprint>>> {
         debug!("Retrieving batch of {} fingerprints", ids.len());
 
         let mut results = Vec::with_capacity(ids.len());
@@ -1054,8 +1060,9 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
 
         let mut count = 0;
         for item in iter {
-            let (key, _) = item
-                .map_err(|e| TeleologicalStoreError::rocksdb_op("iterate", CF_FINGERPRINTS, None, e))?;
+            let (key, _) = item.map_err(|e| {
+                TeleologicalStoreError::rocksdb_op("iterate", CF_FINGERPRINTS, None, e)
+            })?;
             let id = parse_fingerprint_key(&key);
 
             // Exclude soft-deleted
@@ -1079,8 +1086,9 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         let mut counts = [0usize; 4];
 
         for item in iter {
-            let (key, value) = item
-                .map_err(|e| TeleologicalStoreError::rocksdb_op("iterate", CF_FINGERPRINTS, None, e))?;
+            let (key, value) = item.map_err(|e| {
+                TeleologicalStoreError::rocksdb_op("iterate", CF_FINGERPRINTS, None, e)
+            })?;
             let id = parse_fingerprint_key(&key);
 
             // Skip soft-deleted
@@ -1136,26 +1144,26 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
 
         for cf_name in TELEOLOGICAL_CFS {
             let cf = self.get_cf(cf_name)?;
-            self.db.flush_cf(cf).map_err(|e| {
-                TeleologicalStoreError::RocksDbOperation {
+            self.db
+                .flush_cf(cf)
+                .map_err(|e| TeleologicalStoreError::RocksDbOperation {
                     operation: "flush",
                     cf: cf_name,
                     key: None,
                     source: e,
-                }
-            })?;
+                })?;
         }
 
         for cf_name in QUANTIZED_EMBEDDER_CFS {
             let cf = self.get_cf(cf_name)?;
-            self.db.flush_cf(cf).map_err(|e| {
-                TeleologicalStoreError::RocksDbOperation {
+            self.db
+                .flush_cf(cf)
+                .map_err(|e| TeleologicalStoreError::RocksDbOperation {
                     operation: "flush",
                     cf: cf_name,
                     key: None,
                     source: e,
-                }
-            })?;
+                })?;
         }
 
         info!("Flushed all column families");
@@ -1295,10 +1303,7 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         Ok(results)
     }
 
-    async fn list_all_johari(
-        &self,
-        limit: usize,
-    ) -> CoreResult<Vec<(Uuid, JohariFingerprint)>> {
+    async fn list_all_johari(&self, limit: usize) -> CoreResult<Vec<(Uuid, JohariFingerprint)>> {
         debug!("list_all_johari: limit={}", limit);
 
         let cf = self.get_cf(CF_FINGERPRINTS)?;
@@ -1340,9 +1345,9 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
 /// of the dominant quadrant (0=Open, 1=Hidden, 2=Blind, 3=Unknown).
 fn get_aggregate_dominant_quadrant(johari: &JohariFingerprint) -> usize {
     let mut totals = [0.0_f32; 4];
-    for embedder_idx in 0..NUM_EMBEDDERS {
-        for q in 0..4 {
-            totals[q] += johari.quadrants[embedder_idx][q];
+    for quadrant in johari.quadrants.iter().take(NUM_EMBEDDERS) {
+        for (total, &q_val) in totals.iter_mut().zip(quadrant.iter()) {
+            *total += q_val;
         }
     }
 
@@ -1434,19 +1439,19 @@ mod tests {
 
         // Create SemanticFingerprint with correct fields (per semantic/fingerprint.rs)
         let semantic = SemanticFingerprint {
-            e1_semantic: generate_vec(1024, seed),                    // 1024D
-            e2_temporal_recent: generate_vec(512, seed + 1),          // 512D
-            e3_temporal_periodic: generate_vec(512, seed + 2),        // 512D
-            e4_temporal_positional: generate_vec(512, seed + 3),      // 512D
-            e5_causal: generate_vec(768, seed + 4),                   // 768D
-            e6_sparse: generate_sparse(seed + 5),                     // Sparse
-            e7_code: generate_vec(1536, seed + 6),                    // 1536D
-            e8_graph: generate_vec(384, seed + 7),                    // 384D
-            e9_hdc: generate_vec(1024, seed + 8),                     // 1024D HDC (projected)
-            e10_multimodal: generate_vec(768, seed + 9),              // 768D
-            e11_entity: generate_vec(384, seed + 10),                 // 384D
+            e1_semantic: generate_vec(1024, seed),               // 1024D
+            e2_temporal_recent: generate_vec(512, seed + 1),     // 512D
+            e3_temporal_periodic: generate_vec(512, seed + 2),   // 512D
+            e4_temporal_positional: generate_vec(512, seed + 3), // 512D
+            e5_causal: generate_vec(768, seed + 4),              // 768D
+            e6_sparse: generate_sparse(seed + 5),                // Sparse
+            e7_code: generate_vec(1536, seed + 6),               // 1536D
+            e8_graph: generate_vec(384, seed + 7),               // 384D
+            e9_hdc: generate_vec(1024, seed + 8),                // 1024D HDC (projected)
+            e10_multimodal: generate_vec(768, seed + 9),         // 768D
+            e11_entity: generate_vec(384, seed + 10),            // 384D
             e12_late_interaction: generate_late_interaction(seed + 11), // Vec<Vec<f32>>
-            e13_splade: generate_sparse(seed + 12),                   // Sparse
+            e13_splade: generate_sparse(seed + 12),              // Sparse
         };
 
         // Create PurposeVector with correct structure (alignments: [f32; 13])
@@ -1591,9 +1596,18 @@ mod tests {
 
         assert_eq!(store.count().await.unwrap(), 0);
 
-        store.store(create_test_fingerprint_with_seed(1)).await.unwrap();
-        store.store(create_test_fingerprint_with_seed(2)).await.unwrap();
-        store.store(create_test_fingerprint_with_seed(3)).await.unwrap();
+        store
+            .store(create_test_fingerprint_with_seed(1))
+            .await
+            .unwrap();
+        store
+            .store(create_test_fingerprint_with_seed(2))
+            .await
+            .unwrap();
+        store
+            .store(create_test_fingerprint_with_seed(3))
+            .await
+            .unwrap();
 
         assert_eq!(store.count().await.unwrap(), 3);
     }

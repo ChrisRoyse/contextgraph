@@ -54,8 +54,7 @@ pub use handle::ModelHandle;
 
 // Re-export registry types for convenient access
 pub use registry::{
-    SharedWarmRegistry, WarmModelEntry, WarmModelRegistry,
-    EMBEDDING_MODEL_IDS, TOTAL_MODEL_COUNT,
+    SharedWarmRegistry, WarmModelEntry, WarmModelRegistry, EMBEDDING_MODEL_IDS, TOTAL_MODEL_COUNT,
 };
 
 // Re-export validation types for convenient access
@@ -66,10 +65,9 @@ pub use memory_pool::{ModelAllocation, ModelMemoryPool, WarmMemoryPools, Working
 
 // Re-export CUDA allocation types for convenient access
 pub use cuda_alloc::{
-    GpuInfo, VramAllocation, WarmCudaAllocator,
-    FAKE_ALLOCATION_BASE_PATTERN, GOLDEN_SIMILARITY_THRESHOLD,
-    MINIMUM_VRAM_BYTES, REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR,
-    SIN_WAVE_ENERGY_THRESHOLD,
+    GpuInfo, VramAllocation, WarmCudaAllocator, FAKE_ALLOCATION_BASE_PATTERN,
+    GOLDEN_SIMILARITY_THRESHOLD, MINIMUM_VRAM_BYTES, REQUIRED_COMPUTE_MAJOR,
+    REQUIRED_COMPUTE_MINOR, SIN_WAVE_ENERGY_THRESHOLD,
 };
 
 // Re-export loader types for convenient access
@@ -83,8 +81,8 @@ pub use health::{WarmHealthCheck, WarmHealthChecker, WarmHealthStatus};
 
 // Re-export diagnostic types for convenient access
 pub use diagnostics::{
-    ErrorDiagnostic, GpuDiagnostics, MemoryDiagnostics, ModelDiagnostic,
-    SystemInfo, WarmDiagnosticReport, WarmDiagnostics,
+    ErrorDiagnostic, GpuDiagnostics, MemoryDiagnostics, ModelDiagnostic, SystemInfo,
+    WarmDiagnosticReport, WarmDiagnostics,
 };
 
 // Re-export integration types for convenient access
@@ -92,6 +90,5 @@ pub use integration::WarmEmbeddingPipeline;
 
 // Re-export inference types for convenient access (TASK-EMB-015, TASK-EMB-017)
 pub use inference::{
-    cosine_similarity, detect_sin_wave_pattern, validate_inference_output_ap007,
-    InferenceEngine,
+    cosine_similarity, detect_sin_wave_pattern, validate_inference_output_ap007, InferenceEngine,
 };

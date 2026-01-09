@@ -503,7 +503,9 @@ mod tests {
         let deserialized: TeleologicalVector = serde_json::from_str(&json).unwrap();
 
         assert!((tv.confidence - deserialized.confidence).abs() < f32::EPSILON);
-        assert!((tv.get_correlation(1, 4) - deserialized.get_correlation(1, 4)).abs() < f32::EPSILON);
+        assert!(
+            (tv.get_correlation(1, 4) - deserialized.get_correlation(1, 4)).abs() < f32::EPSILON
+        );
 
         println!("[PASS] Serialization roundtrip works");
     }

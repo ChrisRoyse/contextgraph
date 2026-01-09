@@ -98,7 +98,8 @@ impl CalibrationComputer {
             return 0.0;
         }
 
-        let sum: f32 = self.predictions
+        let sum: f32 = self
+            .predictions
             .iter()
             .map(|p| {
                 let actual = if p.is_correct { 1.0 } else { 0.0 };
@@ -134,12 +135,8 @@ impl CalibrationComputer {
             }
 
             let bin_size = bin.len() as f32;
-            let avg_confidence = bin
-                .iter()
-                .map(|p| p.confidence)
-                .sum::<f32>() / bin_size;
-            let avg_accuracy =
-                bin.iter().filter(|p| p.is_correct).count() as f32 / bin_size;
+            let avg_confidence = bin.iter().map(|p| p.confidence).sum::<f32>() / bin_size;
+            let avg_accuracy = bin.iter().filter(|p| p.is_correct).count() as f32 / bin_size;
 
             let contribution = (bin_size / total) * (avg_confidence - avg_accuracy).abs();
             ece += contribution;
@@ -172,12 +169,8 @@ impl CalibrationComputer {
             }
 
             let bin_size = bin.len() as f32;
-            let avg_confidence = bin
-                .iter()
-                .map(|p| p.confidence)
-                .sum::<f32>() / bin_size;
-            let avg_accuracy =
-                bin.iter().filter(|p| p.is_correct).count() as f32 / bin_size;
+            let avg_confidence = bin.iter().map(|p| p.confidence).sum::<f32>() / bin_size;
+            let avg_accuracy = bin.iter().filter(|p| p.is_correct).count() as f32 / bin_size;
 
             let error = (avg_confidence - avg_accuracy).abs();
             mce = mce.max(error);
@@ -217,17 +210,17 @@ impl CalibrationComputer {
         for pred in &self.predictions {
             let bin_idx = (pred.confidence * self.num_bins as f32).floor() as u32;
             let bin_idx = bin_idx.min(self.num_bins as u32 - 1);
-            bins.entry(bin_idx)
-                .or_default()
-                .push(*pred);
+            bins.entry(bin_idx).or_default().push(*pred);
         }
 
         let mut bin_stats = Vec::new();
         for i in 0..self.num_bins {
             if let Some(preds) = bins.get(&(i as u32)) {
                 if !preds.is_empty() {
-                    let avg_conf = preds.iter().map(|p| p.confidence).sum::<f32>() / preds.len() as f32;
-                    let accuracy = preds.iter().filter(|p| p.is_correct).count() as f32 / preds.len() as f32;
+                    let avg_conf =
+                        preds.iter().map(|p| p.confidence).sum::<f32>() / preds.len() as f32;
+                    let accuracy =
+                        preds.iter().filter(|p| p.is_correct).count() as f32 / preds.len() as f32;
 
                     bin_stats.push(BinStatistics {
                         bin_index: i,
@@ -278,7 +271,10 @@ mod tests {
         }
 
         let brier = computer.compute_brier();
-        assert!(brier < 0.001, "Perfect 1.0 confidence with correct = perfect score");
+        assert!(
+            brier < 0.001,
+            "Perfect 1.0 confidence with correct = perfect score"
+        );
     }
 
     #[test]
@@ -329,11 +325,20 @@ mod tests {
 
     #[test]
     fn test_calibration_status() {
-        assert_eq!(CalibrationStatus::from_ece(0.02), CalibrationStatus::Excellent);
+        assert_eq!(
+            CalibrationStatus::from_ece(0.02),
+            CalibrationStatus::Excellent
+        );
         assert_eq!(CalibrationStatus::from_ece(0.08), CalibrationStatus::Good);
-        assert_eq!(CalibrationStatus::from_ece(0.12), CalibrationStatus::Acceptable);
+        assert_eq!(
+            CalibrationStatus::from_ece(0.12),
+            CalibrationStatus::Acceptable
+        );
         assert_eq!(CalibrationStatus::from_ece(0.20), CalibrationStatus::Poor);
-        assert_eq!(CalibrationStatus::from_ece(0.30), CalibrationStatus::Critical);
+        assert_eq!(
+            CalibrationStatus::from_ece(0.30),
+            CalibrationStatus::Critical
+        );
     }
 
     #[test]
@@ -358,8 +363,14 @@ mod tests {
         }
 
         let metrics = computer.compute_all();
-        assert!(metrics.ece < 0.25, "ECE should be reasonable for well-calibrated data");
-        assert!(metrics.brier < 0.25, "Brier should be low for well-calibrated data");
+        assert!(
+            metrics.ece < 0.25,
+            "ECE should be reasonable for well-calibrated data"
+        );
+        assert!(
+            metrics.brier < 0.25,
+            "Brier should be low for well-calibrated data"
+        );
         assert_eq!(metrics.sample_count, 30);
     }
 

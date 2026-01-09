@@ -206,45 +206,43 @@ impl InferenceEngine {
         let token_indices = self.create_token_indices(test_input, vocab_size, input_hash)?;
 
         // Create input tensor on GPU
-        let input_tensor = Tensor::from_slice(
-            &token_indices,
-            (token_indices.len(),),
-            &self.device,
-        )
-        .map_err(|e| {
-            error!(
-                target: "warm::inference",
-                code = "EMB-E011",
-                model_id = %self.model_id,
-                input_hash = format!("0x{:016x}", input_hash),
-                error = %e,
-                "Failed to create input tensor"
-            );
-            WarmError::InferenceFailed {
-                model_id: self.model_id.clone(),
-                reason: format!("Failed to create input tensor: {}", e),
-                input_hash,
-            }
-        })?;
+        let input_tensor = Tensor::from_slice(&token_indices, (token_indices.len(),), &self.device)
+            .map_err(|e| {
+                error!(
+                    target: "warm::inference",
+                    code = "EMB-E011",
+                    model_id = %self.model_id,
+                    input_hash = format!("0x{:016x}", input_hash),
+                    error = %e,
+                    "Failed to create input tensor"
+                );
+                WarmError::InferenceFailed {
+                    model_id: self.model_id.clone(),
+                    reason: format!("Failed to create input tensor: {}", e),
+                    input_hash,
+                }
+            })?;
 
         // Perform embedding lookup via GPU indexing
         // This is REAL GPU computation, not fake data
         let embedding_inner = embedding_tensor.inner();
-        let output_tensor = embedding_inner.index_select(&input_tensor, 0).map_err(|e| {
-            error!(
-                target: "warm::inference",
-                code = "EMB-E011",
-                model_id = %self.model_id,
-                input_hash = format!("0x{:016x}", input_hash),
-                error = %e,
-                "GPU embedding lookup failed"
-            );
-            WarmError::InferenceFailed {
-                model_id: self.model_id.clone(),
-                reason: format!("GPU embedding lookup failed: {}", e),
-                input_hash,
-            }
-        })?;
+        let output_tensor = embedding_inner
+            .index_select(&input_tensor, 0)
+            .map_err(|e| {
+                error!(
+                    target: "warm::inference",
+                    code = "EMB-E011",
+                    model_id = %self.model_id,
+                    input_hash = format!("0x{:016x}", input_hash),
+                    error = %e,
+                    "GPU embedding lookup failed"
+                );
+                WarmError::InferenceFailed {
+                    model_id: self.model_id.clone(),
+                    reason: format!("GPU embedding lookup failed: {}", e),
+                    input_hash,
+                }
+            })?;
 
         // Apply mean pooling over sequence dimension
         let pooled = output_tensor.mean(0).map_err(|e| {
@@ -382,7 +380,8 @@ impl InferenceEngine {
             );
             return Err(WarmError::InferenceFailed {
                 model_id: self.model_id.clone(),
-                reason: "Output is all zeros - real inference must produce non-zero output".to_string(),
+                reason: "Output is all zeros - real inference must produce non-zero output"
+                    .to_string(),
                 input_hash,
             });
         }

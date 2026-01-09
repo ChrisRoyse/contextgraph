@@ -45,15 +45,21 @@ pub enum WarmModelState {
 impl WarmModelState {
     /// Returns `true` if the model is ready for inference.
     #[inline]
-    pub fn is_warm(&self) -> bool { matches!(self, Self::Warm) }
+    pub fn is_warm(&self) -> bool {
+        matches!(self, Self::Warm)
+    }
 
     /// Returns `true` if loading or validation failed.
     #[inline]
-    pub fn is_failed(&self) -> bool { matches!(self, Self::Failed { .. }) }
+    pub fn is_failed(&self) -> bool {
+        matches!(self, Self::Failed { .. })
+    }
 
     /// Returns `true` if the model is currently loading.
     #[inline]
-    pub fn is_loading(&self) -> bool { matches!(self, Self::Loading { .. }) }
+    pub fn is_loading(&self) -> bool {
+        matches!(self, Self::Loading { .. })
+    }
 }
 
 #[cfg(test)]
@@ -68,7 +74,10 @@ mod tests {
 
     #[test]
     fn test_loading_predicates() {
-        let s = WarmModelState::Loading { progress_percent: 50, bytes_loaded: 1024 };
+        let s = WarmModelState::Loading {
+            progress_percent: 50,
+            bytes_loaded: 1024,
+        };
         assert!(!s.is_warm() && !s.is_failed() && s.is_loading());
     }
 
@@ -86,7 +95,10 @@ mod tests {
 
     #[test]
     fn test_failed_predicates() {
-        let s = WarmModelState::Failed { error_code: 101, error_message: "VRAM".into() };
+        let s = WarmModelState::Failed {
+            error_code: 101,
+            error_message: "VRAM".into(),
+        };
         assert!(!s.is_warm() && s.is_failed() && !s.is_loading());
     }
 }

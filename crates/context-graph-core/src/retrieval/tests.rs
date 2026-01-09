@@ -400,7 +400,10 @@ async fn test_execute_pipeline() {
     let timings = result.stage_timings.unwrap();
     assert!(timings.total() > Duration::ZERO);
 
-    println!("[VERIFIED] Pipeline execution returns stage timings: {}", timings.summary());
+    println!(
+        "[VERIFIED] Pipeline execution returns stage timings: {}",
+        timings.summary()
+    );
 }
 
 #[tokio::test]
@@ -463,20 +466,10 @@ async fn test_embedding_space_mask_active_indices() {
 
 #[tokio::test]
 async fn test_multi_embedding_result_latency_check() {
-    let result = MultiEmbeddingResult::new(
-        vec![],
-        Duration::from_millis(50),
-        13,
-        0,
-    );
+    let result = MultiEmbeddingResult::new(vec![], Duration::from_millis(50), 13, 0);
     assert!(result.within_latency_target());
 
-    let result_slow = MultiEmbeddingResult::new(
-        vec![],
-        Duration::from_millis(70),
-        13,
-        0,
-    );
+    let result_slow = MultiEmbeddingResult::new(vec![], Duration::from_millis(70), 13, 0);
     assert!(!result_slow.within_latency_target());
 
     println!("[VERIFIED] within_latency_target correctly checks 60ms threshold");

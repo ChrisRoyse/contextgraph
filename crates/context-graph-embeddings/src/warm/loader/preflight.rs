@@ -26,17 +26,17 @@ compile_error!(
 );
 
 #[cfg(feature = "cuda")]
+use super::constants::{GB, MODEL_SIZES};
+#[cfg(feature = "cuda")]
+use super::helpers::format_bytes;
+#[cfg(feature = "cuda")]
+use crate::warm::config::WarmConfig;
+#[cfg(feature = "cuda")]
 use crate::warm::cuda_alloc::{
     GpuInfo, WarmCudaAllocator, MINIMUM_VRAM_BYTES, REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR,
 };
 #[cfg(feature = "cuda")]
-use crate::warm::config::WarmConfig;
-#[cfg(feature = "cuda")]
 use crate::warm::error::{WarmError, WarmResult};
-#[cfg(feature = "cuda")]
-use super::constants::{GB, MODEL_SIZES};
-#[cfg(feature = "cuda")]
-use super::helpers::format_bytes;
 
 /// Run pre-flight checks before loading.
 ///
@@ -58,10 +58,7 @@ use super::helpers::format_bytes;
 /// Returns `WarmError::VramInsufficientTotal` with EMB-E003 if:
 /// - Total VRAM below 32GB
 #[cfg(feature = "cuda")]
-pub fn run_preflight_checks(
-    config: &WarmConfig,
-    gpu_info: &mut Option<GpuInfo>,
-) -> WarmResult<()> {
+pub fn run_preflight_checks(config: &WarmConfig, gpu_info: &mut Option<GpuInfo>) -> WarmResult<()> {
     tracing::info!("Running pre-flight checks...");
 
     // Try to create a temporary allocator to query GPU info
@@ -70,7 +67,10 @@ pub fn run_preflight_checks(
 
     // CRITICAL: Verify this is NOT a simulated GPU
     let name_lower = info.name.to_lowercase();
-    if name_lower.contains("simulated") || name_lower.contains("stub") || name_lower.contains("fake") {
+    if name_lower.contains("simulated")
+        || name_lower.contains("stub")
+        || name_lower.contains("fake")
+    {
         tracing::error!(
             "[EMB-E001] DETECTED SIMULATED GPU: '{}' - Real GPU required!",
             info.name

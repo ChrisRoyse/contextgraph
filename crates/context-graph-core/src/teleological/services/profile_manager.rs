@@ -18,9 +18,7 @@
 
 use std::collections::HashMap;
 
-use crate::teleological::{
-    GroupType, ProfileId, TeleologicalProfile, NUM_EMBEDDERS,
-};
+use crate::teleological::{GroupType, ProfileId, TeleologicalProfile, NUM_EMBEDDERS};
 
 /// Configuration for ProfileManager.
 #[derive(Clone, Debug)]
@@ -143,11 +141,13 @@ impl ProfileManager {
 
         // Research analysis profile - emphasizes E1, E4, E7 (Semantic, Causal, Procedural)
         let research_profile = Self::research_analysis();
-        self.profiles.insert(research_profile.id.clone(), research_profile);
+        self.profiles
+            .insert(research_profile.id.clone(), research_profile);
 
         // Creative writing profile - emphasizes E10, E11 (Emotional, Abstract)
         let creative_profile = Self::creative_writing();
-        self.profiles.insert(creative_profile.id.clone(), creative_profile);
+        self.profiles
+            .insert(creative_profile.id.clone(), creative_profile);
     }
 
     /// Create the code_implementation built-in profile.
@@ -178,7 +178,8 @@ impl ProfileManager {
         );
         profile.embedding_weights = weights;
         profile.is_system = true;
-        profile.description = Some("Optimized for programming and code implementation tasks".to_string());
+        profile.description =
+            Some("Optimized for programming and code implementation tasks".to_string());
         profile
     }
 
@@ -258,11 +259,12 @@ impl ProfileManager {
     /// - `id` is empty (FAIL FAST)
     /// - Maximum profiles limit exceeded (FAIL FAST)
     /// - Any weight is negative (FAIL FAST)
-    pub fn create_profile(&mut self, id: &str, weights: [f32; NUM_EMBEDDERS]) -> TeleologicalProfile {
-        assert!(
-            !id.is_empty(),
-            "FAIL FAST: Profile ID cannot be empty"
-        );
+    pub fn create_profile(
+        &mut self,
+        id: &str,
+        weights: [f32; NUM_EMBEDDERS],
+    ) -> TeleologicalProfile {
+        assert!(!id.is_empty(), "FAIL FAST: Profile ID cannot be empty");
         assert!(
             self.profiles.len() < self.config.max_profiles,
             "FAIL FAST: Maximum profiles limit ({}) exceeded",
@@ -272,7 +274,8 @@ impl ProfileManager {
             assert!(
                 w >= 0.0,
                 "FAIL FAST: Weight at index {} cannot be negative (got {})",
-                i, w
+                i,
+                w
             );
         }
 
@@ -310,7 +313,8 @@ impl ProfileManager {
             assert!(
                 w >= 0.0,
                 "FAIL FAST: Weight at index {} cannot be negative (got {})",
-                i, w
+                i,
+                w
             );
         }
 
@@ -349,9 +353,44 @@ impl ProfileManager {
         let mut best_match: Option<(ProfileId, f32, String)> = None;
 
         // Check for code-related keywords
-        let code_keywords = ["code", "implement", "function", "class", "method", "program", "algorithm", "debug", "compile", "rust", "python", "javascript"];
-        let research_keywords = ["research", "analyze", "understand", "explain", "why", "how", "cause", "effect", "study", "investigate"];
-        let creative_keywords = ["write", "creative", "story", "poem", "artistic", "express", "imagine", "narrative", "prose", "fiction"];
+        let code_keywords = [
+            "code",
+            "implement",
+            "function",
+            "class",
+            "method",
+            "program",
+            "algorithm",
+            "debug",
+            "compile",
+            "rust",
+            "python",
+            "javascript",
+        ];
+        let research_keywords = [
+            "research",
+            "analyze",
+            "understand",
+            "explain",
+            "why",
+            "how",
+            "cause",
+            "effect",
+            "study",
+            "investigate",
+        ];
+        let creative_keywords = [
+            "write",
+            "creative",
+            "story",
+            "poem",
+            "artistic",
+            "express",
+            "imagine",
+            "narrative",
+            "prose",
+            "fiction",
+        ];
 
         // Score each profile
         for id in self.profiles.keys() {
@@ -567,7 +606,11 @@ mod tests {
 
         // Weights should sum to 1.0 (normalized)
         let sum: f32 = profile.embedding_weights.iter().sum();
-        assert!((sum - 1.0).abs() < 0.01, "Weights should sum to ~1.0, got {}", sum);
+        assert!(
+            (sum - 1.0).abs() < 0.01,
+            "Weights should sum to ~1.0, got {}",
+            sum
+        );
 
         println!("[PASS] code_implementation profile emphasizes E6");
     }
@@ -732,7 +775,11 @@ mod tests {
         let matched = result.unwrap();
         assert_eq!(matched.profile_id.as_str(), "code_implementation");
         assert!(matched.similarity > 0.1);
-        assert!(matched.reason.contains("code") || matched.reason.contains("implement") || matched.reason.contains("algorithm"));
+        assert!(
+            matched.reason.contains("code")
+                || matched.reason.contains("implement")
+                || matched.reason.contains("algorithm")
+        );
 
         println!("[PASS] find_best_match matches code context to code_implementation");
     }
@@ -885,12 +932,16 @@ mod tests {
         // Implementation group should match code_implementation
         let impl_profiles = manager.get_profiles_for_group(GroupType::Implementation);
         assert!(!impl_profiles.is_empty());
-        assert!(impl_profiles.iter().any(|p| p.id.as_str() == "code_implementation"));
+        assert!(impl_profiles
+            .iter()
+            .any(|p| p.id.as_str() == "code_implementation"));
 
         // Qualitative group should match creative_writing
         let qual_profiles = manager.get_profiles_for_group(GroupType::Qualitative);
         assert!(!qual_profiles.is_empty());
-        assert!(qual_profiles.iter().any(|p| p.id.as_str() == "creative_writing"));
+        assert!(qual_profiles
+            .iter()
+            .any(|p| p.id.as_str() == "creative_writing"));
 
         println!("[PASS] get_profiles_for_group returns profiles with high group weights");
     }

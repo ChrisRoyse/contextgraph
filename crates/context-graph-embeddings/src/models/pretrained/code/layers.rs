@@ -27,12 +27,16 @@ pub fn rms_norm(x: &Tensor, weight: &Tensor, eps: f64) -> EmbeddingResult<Tensor
     let original_dtype = x.dtype();
 
     // Convert to F32 for numerical stability with large values
-    let x_f32 = x.to_dtype(DType::F32).map_err(|e| EmbeddingError::GpuError {
-        message: format!("Qwen2 RMSNorm x to F32 failed: {}", e),
-    })?;
-    let weight_f32 = weight.to_dtype(DType::F32).map_err(|e| EmbeddingError::GpuError {
-        message: format!("Qwen2 RMSNorm weight to F32 failed: {}", e),
-    })?;
+    let x_f32 = x
+        .to_dtype(DType::F32)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("Qwen2 RMSNorm x to F32 failed: {}", e),
+        })?;
+    let weight_f32 = weight
+        .to_dtype(DType::F32)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("Qwen2 RMSNorm weight to F32 failed: {}", e),
+        })?;
 
     // Compute RMS: sqrt(mean(x^2))
     let variance = x_f32
@@ -80,9 +84,11 @@ pub fn rms_norm(x: &Tensor, weight: &Tensor, eps: f64) -> EmbeddingResult<Tensor
         })?;
 
     // Convert back to original dtype
-    result.to_dtype(original_dtype).map_err(|e| EmbeddingError::GpuError {
-        message: format!("Qwen2 RMSNorm to original dtype failed: {}", e),
-    })
+    result
+        .to_dtype(original_dtype)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("Qwen2 RMSNorm to original dtype failed: {}", e),
+        })
 }
 
 /// Run single decoder layer forward pass.
@@ -110,18 +116,21 @@ pub fn decoder_layer_forward(
     )?;
 
     // Self-attention with GQA and RoPE
-    let attention_output =
-        gqa_forward(&normed, &layer.attention, attention_mask, rope_cache, config, layer_idx)?;
+    let attention_output = gqa_forward(
+        &normed,
+        &layer.attention,
+        attention_mask,
+        rope_cache,
+        config,
+        layer_idx,
+    )?;
 
     // Residual connection
     let hidden_states =
         hidden_states
             .add(&attention_output)
             .map_err(|e| EmbeddingError::GpuError {
-                message: format!(
-                    "Qwen2 layer {} attention residual failed: {}",
-                    layer_idx, e
-                ),
+                message: format!("Qwen2 layer {} attention residual failed: {}", layer_idx, e),
             })?;
 
     // Pre-norm: apply RMSNorm before FFN
@@ -167,20 +176,21 @@ pub fn swiglu_ffn_forward(
     let hidden_flat = hidden_states
         .reshape((batch_size * seq_len, hidden_size))
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "Qwen2 layer {} FFN flatten hidden failed: {}",
-                layer_idx, e
-            ),
+            message: format!("Qwen2 layer {} FFN flatten hidden failed: {}", layer_idx, e),
         })?;
 
     // Gate projection: [batch*seq, hidden] @ [intermediate, hidden]^T -> [batch*seq, intermediate]
     let gate = hidden_flat
-        .matmul(&mlp.gate_proj_weight.t().map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "Qwen2 layer {} FFN gate_proj transpose failed: {}",
-                layer_idx, e
-            ),
-        })?)
+        .matmul(
+            &mlp.gate_proj_weight
+                .t()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!(
+                        "Qwen2 layer {} FFN gate_proj transpose failed: {}",
+                        layer_idx, e
+                    ),
+                })?,
+        )
         .map_err(|e| EmbeddingError::GpuError {
             message: format!(
                 "Qwen2 layer {} FFN gate_proj matmul failed: {}",
@@ -190,17 +200,18 @@ pub fn swiglu_ffn_forward(
 
     // Up projection: [batch*seq, hidden] @ [intermediate, hidden]^T -> [batch*seq, intermediate]
     let up = hidden_flat
-        .matmul(&mlp.up_proj_weight.t().map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "Qwen2 layer {} FFN up_proj transpose failed: {}",
-                layer_idx, e
-            ),
-        })?)
+        .matmul(
+            &mlp.up_proj_weight
+                .t()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!(
+                        "Qwen2 layer {} FFN up_proj transpose failed: {}",
+                        layer_idx, e
+                    ),
+                })?,
+        )
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "Qwen2 layer {} FFN up_proj matmul failed: {}",
-                layer_idx, e
-            ),
+            message: format!("Qwen2 layer {} FFN up_proj matmul failed: {}", layer_idx, e),
         })?;
 
     // SiLU activation on gate: silu(x) = x * sigmoid(x)
@@ -209,18 +220,24 @@ pub fn swiglu_ffn_forward(
     })?;
 
     // Element-wise multiply: gate * up
-    let intermediate = gate_activated.mul(&up).map_err(|e| EmbeddingError::GpuError {
-        message: format!("Qwen2 layer {} FFN gate*up failed: {}", layer_idx, e),
-    })?;
+    let intermediate = gate_activated
+        .mul(&up)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("Qwen2 layer {} FFN gate*up failed: {}", layer_idx, e),
+        })?;
 
     // Down projection: [batch*seq, intermediate] @ [hidden, intermediate]^T -> [batch*seq, hidden]
     intermediate
-        .matmul(&mlp.down_proj_weight.t().map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "Qwen2 layer {} FFN down_proj transpose failed: {}",
-                layer_idx, e
-            ),
-        })?)
+        .matmul(
+            &mlp.down_proj_weight
+                .t()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!(
+                        "Qwen2 layer {} FFN down_proj transpose failed: {}",
+                        layer_idx, e
+                    ),
+                })?,
+        )
         .map_err(|e| EmbeddingError::GpuError {
             message: format!(
                 "Qwen2 layer {} FFN down_proj matmul failed: {}",
@@ -229,9 +246,6 @@ pub fn swiglu_ffn_forward(
         })?
         .reshape((batch_size, seq_len, hidden_size))
         .map_err(|e| EmbeddingError::GpuError {
-            message: format!(
-                "Qwen2 layer {} FFN reshape output failed: {}",
-                layer_idx, e
-            ),
+            message: format!("Qwen2 layer {} FFN reshape output failed: {}", layer_idx, e),
         })
 }

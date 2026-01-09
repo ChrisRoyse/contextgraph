@@ -70,11 +70,11 @@ fn test_semantic_fingerprint_serialization_roundtrip() {
     fp.e5_causal[50] = 3.125; // Use a non-PI value
     fp.e9_hdc[1023] = -1.0; // E9 now has 1024 dims (projected)
 
-    fp.e6_sparse = SparseVector::new(vec![100, 200, 300], vec![0.5, 0.6, 0.7])
-        .expect("valid sparse vector");
+    fp.e6_sparse =
+        SparseVector::new(vec![100, 200, 300], vec![0.5, 0.6, 0.7]).expect("valid sparse vector");
 
-    fp.e13_splade = SparseVector::new(vec![500, 1000, 1500], vec![0.8, 0.9, 1.0])
-        .expect("valid sparse vector");
+    fp.e13_splade =
+        SparseVector::new(vec![500, 1000, 1500], vec![0.8, 0.9, 1.0]).expect("valid sparse vector");
 
     let mut token = vec![0.0_f32; E12_TOKEN_DIM];
     token[0] = 1.0;

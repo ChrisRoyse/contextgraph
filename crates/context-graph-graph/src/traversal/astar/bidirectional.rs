@@ -43,12 +43,14 @@ pub fn astar_bidirectional(
 
     // Get hyperbolic embeddings (NO FALLBACK)
     let start_point = to_hyperbolic_point(
-        storage.get_hyperbolic(start)?
-            .ok_or(GraphError::MissingHyperbolicData(start))?
+        storage
+            .get_hyperbolic(start)?
+            .ok_or(GraphError::MissingHyperbolicData(start))?,
     );
     let goal_point = to_hyperbolic_point(
-        storage.get_hyperbolic(goal)?
-            .ok_or(GraphError::MissingHyperbolicData(goal))?
+        storage
+            .get_hyperbolic(goal)?
+            .ok_or(GraphError::MissingHyperbolicData(goal))?,
     );
 
     // Forward search state
@@ -92,14 +94,35 @@ pub fn astar_bidirectional(
         // Choose direction
         let (open_set, g_scores, parent_map, closed_set, other_closed, other_g, target_point) =
             if forward_turn && !forward_open.is_empty() {
-                (&mut forward_open, &mut forward_g, &mut forward_parent,
-                 &mut forward_closed, &backward_closed, &backward_g, &goal_point)
+                (
+                    &mut forward_open,
+                    &mut forward_g,
+                    &mut forward_parent,
+                    &mut forward_closed,
+                    &backward_closed,
+                    &backward_g,
+                    &goal_point,
+                )
             } else if !backward_open.is_empty() {
-                (&mut backward_open, &mut backward_g, &mut backward_parent,
-                 &mut backward_closed, &forward_closed, &forward_g, &start_point)
+                (
+                    &mut backward_open,
+                    &mut backward_g,
+                    &mut backward_parent,
+                    &mut backward_closed,
+                    &forward_closed,
+                    &forward_g,
+                    &start_point,
+                )
             } else if !forward_open.is_empty() {
-                (&mut forward_open, &mut forward_g, &mut forward_parent,
-                 &mut forward_closed, &backward_closed, &backward_g, &goal_point)
+                (
+                    &mut forward_open,
+                    &mut forward_g,
+                    &mut forward_parent,
+                    &mut forward_closed,
+                    &backward_closed,
+                    &backward_g,
+                    &goal_point,
+                )
             } else {
                 break;
             };
@@ -178,8 +201,9 @@ pub fn astar_bidirectional(
 
             // Get heuristic
             let neighbor_point = to_hyperbolic_point(
-                storage.get_hyperbolic(neighbor_id)?
-                    .ok_or(GraphError::MissingHyperbolicData(neighbor_id))?
+                storage
+                    .get_hyperbolic(neighbor_id)?
+                    .ok_or(GraphError::MissingHyperbolicData(neighbor_id))?,
             );
 
             let h = params.heuristic_scale * ball.distance(&neighbor_point, target_point);

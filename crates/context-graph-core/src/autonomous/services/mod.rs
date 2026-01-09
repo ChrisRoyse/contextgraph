@@ -31,46 +31,59 @@
 
 // NORTH Logic Layer Services (008-020)
 pub mod bootstrap_service;
-pub mod threshold_learner;
-pub mod drift_detector;
-pub mod drift_corrector;
-pub mod pruning_service;
 pub mod consolidation_service;
-pub mod gap_detection;
-pub mod subgoal_discovery;
-pub mod weight_adjuster;
-pub mod obsolescence_detector;
 pub mod daily_scheduler;
+pub mod drift_corrector;
+pub mod drift_detector;
 pub mod event_optimizer;
+pub mod gap_detection;
+pub mod obsolescence_detector;
+pub mod pruning_service;
 pub mod self_healing_manager;
+pub mod subgoal_discovery;
+pub mod threshold_learner;
+pub mod weight_adjuster;
 
 // Explicit re-exports - only service primary types to avoid ambiguous glob re-exports
 // NORTH-008: BootstrapService
-pub use bootstrap_service::{BootstrapResult, BootstrapService, BootstrapServiceConfig, GoalCandidate};
+pub use bootstrap_service::{
+    BootstrapResult, BootstrapService, BootstrapServiceConfig, GoalCandidate,
+};
 
 // NORTH-009: ThresholdLearner
-pub use threshold_learner::{ThresholdLearner, ThresholdLearnerConfig, ThompsonState, EmbedderLearningState, BayesianObservation};
+pub use threshold_learner::{
+    BayesianObservation, EmbedderLearningState, ThompsonState, ThresholdLearner,
+    ThresholdLearnerConfig,
+};
 
 // NORTH-010: DriftDetector
-pub use drift_detector::{DriftDetector, DetectorDataPoint, DriftRecommendation, DetectorState};
+pub use drift_detector::{DetectorDataPoint, DetectorState, DriftDetector, DriftRecommendation};
 
 // NORTH-011: DriftCorrector
-pub use drift_corrector::{DriftCorrector, DriftCorrectorConfig, CorrectionResult, CorrectionStrategy};
+pub use drift_corrector::{
+    CorrectionResult, CorrectionStrategy, DriftCorrector, DriftCorrectorConfig,
+};
 
 // NORTH-012: PruningService
-pub use pruning_service::{PruningService, PruneReason, MemoryMetadata, PruningReport, ExtendedPruningConfig};
+pub use pruning_service::{
+    ExtendedPruningConfig, MemoryMetadata, PruneReason, PruningReport, PruningService,
+};
 
 // NORTH-013: ConsolidationService
-pub use consolidation_service::{ConsolidationService, MemoryContent, MemoryPair, ServiceConsolidationCandidate};
+pub use consolidation_service::{
+    ConsolidationService, MemoryContent, MemoryPair, ServiceConsolidationCandidate,
+};
 
 // NORTH-014: GapDetectionService
-pub use gap_detection::{GapDetectionService, GapType, GoalWithMetrics, GapDetectionConfig, GapReport};
+pub use gap_detection::{
+    GapDetectionConfig, GapDetectionService, GapReport, GapType, GoalWithMetrics,
+};
 
 // NORTH-015: SubGoalDiscovery
-pub use subgoal_discovery::{SubGoalDiscovery, MemoryCluster, DiscoveryConfig, DiscoveryResult};
+pub use subgoal_discovery::{DiscoveryConfig, DiscoveryResult, MemoryCluster, SubGoalDiscovery};
 
 // NORTH-016: WeightAdjuster
-pub use weight_adjuster::{WeightAdjuster, WeightAdjusterConfig, AdjustmentReport};
+pub use weight_adjuster::{AdjustmentReport, WeightAdjuster, WeightAdjusterConfig};
 
 // NORTH-017: ObsolescenceDetector
 pub use obsolescence_detector::ObsolescenceDetector;
@@ -80,12 +93,11 @@ pub use daily_scheduler::{DailyScheduler, ScheduleResult, ScheduledTask, Schedul
 
 // NORTH-019: EventOptimizer
 pub use event_optimizer::{
-    EventOptimizer, EventOptimizerConfig, OptimizationTrigger, OptimizationAction,
-    SystemMetrics, OptimizationEventRecord, OptimizationPlan,
+    EventOptimizer, EventOptimizerConfig, OptimizationAction, OptimizationEventRecord,
+    OptimizationPlan, OptimizationTrigger, SystemMetrics,
 };
 
 // NORTH-020: SelfHealingManager
 pub use self_healing_manager::{
-    SelfHealingManager, SelfHealingConfig,
-    IssueSeverity, HealthIssue, HealingAction, HealingResult,
+    HealingAction, HealingResult, HealthIssue, IssueSeverity, SelfHealingConfig, SelfHealingManager,
 };

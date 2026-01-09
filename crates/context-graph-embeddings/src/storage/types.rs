@@ -188,7 +188,8 @@ impl StoredQuantizedFingerprint {
         }
 
         let theta_to_north_star = purpose_vector.iter().sum::<f32>() / 13.0;
-        let (dominant_quadrant, johari_confidence) = Self::compute_dominant_quadrant(&johari_quadrants);
+        let (dominant_quadrant, johari_confidence) =
+            Self::compute_dominant_quadrant(&johari_quadrants);
         let now = chrono::Utc::now().timestamp_millis();
 
         Self {
@@ -238,22 +239,22 @@ impl StoredQuantizedFingerprint {
 
         // Fixed fields
         size += 16; // id (UUID)
-        size += 1;  // version
+        size += 1; // version
         size += 52; // purpose_vector (13 × 4 bytes)
-        size += 4;  // theta_to_north_star
+        size += 4; // theta_to_north_star
         size += 16; // johari_quadrants (4 × 4 bytes)
-        size += 1;  // dominant_quadrant
-        size += 4;  // johari_confidence
+        size += 1; // dominant_quadrant
+        size += 4; // johari_confidence
         size += 32; // content_hash
-        size += 8;  // created_at_ms
-        size += 8;  // last_updated_ms
-        size += 8;  // access_count
-        size += 1;  // deleted
+        size += 8; // created_at_ms
+        size += 8; // last_updated_ms
+        size += 8; // access_count
+        size += 1; // deleted
 
         // Variable fields: embeddings
         for qe in self.embeddings.values() {
-            size += 1;  // method (enum variant)
-            size += 8;  // original_dim
+            size += 1; // method (enum variant)
+            size += 8; // original_dim
             size += qe.data.len(); // compressed data
             size += 32; // metadata (approximate)
         }
@@ -388,7 +389,12 @@ impl IndexEntry {
             );
         }
 
-        let dot: f32 = self.vector.iter().zip(other.iter()).map(|(a, b)| a * b).sum();
+        let dot: f32 = self
+            .vector
+            .iter()
+            .zip(other.iter())
+            .map(|(a, b)| a * b)
+            .sum();
         let other_norm: f32 = other.iter().map(|x| x * x).sum::<f32>().sqrt();
 
         if self.norm > 1e-10 && other_norm > 1e-10 {
@@ -561,33 +567,36 @@ mod tests {
                 _ => unreachable!(),
             };
 
-            map.insert(i, QuantizedEmbedding {
-                method,
-                original_dim: dim,
-                data: vec![0u8; data_len],
-                metadata: match method {
-                    QuantizationMethod::PQ8 => QuantizationMetadata::PQ8 {
-                        codebook_id: i as u32,
-                        num_subvectors: 8,
-                    },
-                    QuantizationMethod::Float8E4M3 => QuantizationMetadata::Float8 {
-                        scale: 1.0,
-                        bias: 0.0,
-                    },
-                    QuantizationMethod::Binary => QuantizationMetadata::Binary {
-                        threshold: 0.0,
-                    },
-                    QuantizationMethod::SparseNative => QuantizationMetadata::Sparse {
-                        vocab_size: 30522,
-                        nnz: 50,
-                    },
-                    QuantizationMethod::TokenPruning => QuantizationMetadata::TokenPruning {
-                        original_tokens: 128,
-                        kept_tokens: 64,
-                        threshold: 0.5,
+            map.insert(
+                i,
+                QuantizedEmbedding {
+                    method,
+                    original_dim: dim,
+                    data: vec![0u8; data_len],
+                    metadata: match method {
+                        QuantizationMethod::PQ8 => QuantizationMetadata::PQ8 {
+                            codebook_id: i as u32,
+                            num_subvectors: 8,
+                        },
+                        QuantizationMethod::Float8E4M3 => QuantizationMetadata::Float8 {
+                            scale: 1.0,
+                            bias: 0.0,
+                        },
+                        QuantizationMethod::Binary => {
+                            QuantizationMetadata::Binary { threshold: 0.0 }
+                        }
+                        QuantizationMethod::SparseNative => QuantizationMetadata::Sparse {
+                            vocab_size: 30522,
+                            nnz: 50,
+                        },
+                        QuantizationMethod::TokenPruning => QuantizationMetadata::TokenPruning {
+                            original_tokens: 128,
+                            kept_tokens: 64,
+                            threshold: 0.5,
+                        },
                     },
                 },
-            });
+            );
         }
         map
     }
@@ -764,7 +773,10 @@ mod tests {
 
         // Normalized should return zero vector (not NaN/Inf)
         let normalized = entry.normalized();
-        assert!(normalized.iter().all(|&x| x == 0.0), "Expected zero vector for normalized");
+        assert!(
+            normalized.iter().all(|&x| x == 0.0),
+            "Expected zero vector for normalized"
+        );
         assert_eq!(normalized.len(), 3);
 
         // Cosine similarity with zero vector should be 0.0
@@ -782,21 +794,33 @@ mod tests {
         let result_rank_0 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 0);
         let result_rank_1000 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 1000);
 
-        let rrf_0 = result_rank_0.rrf_contribution();     // 1/60 = 0.0167
+        let rrf_0 = result_rank_0.rrf_contribution(); // 1/60 = 0.0167
         let rrf_1000 = result_rank_1000.rrf_contribution(); // 1/1060 = 0.00094
 
         // Verify actual values
         let expected_rrf_0 = 1.0 / 60.0;
         let expected_rrf_1000 = 1.0 / 1060.0;
 
-        assert!((rrf_0 - expected_rrf_0).abs() < f32::EPSILON,
-            "Expected rrf_0={}, got {}", expected_rrf_0, rrf_0);
-        assert!((rrf_1000 - expected_rrf_1000).abs() < f32::EPSILON,
-            "Expected rrf_1000={}, got {}", expected_rrf_1000, rrf_1000);
+        assert!(
+            (rrf_0 - expected_rrf_0).abs() < f32::EPSILON,
+            "Expected rrf_0={}, got {}",
+            expected_rrf_0,
+            rrf_0
+        );
+        assert!(
+            (rrf_1000 - expected_rrf_1000).abs() < f32::EPSILON,
+            "Expected rrf_1000={}, got {}",
+            expected_rrf_1000,
+            rrf_1000
+        );
 
         // Rank 0 contributes 10x+ more than rank 1000
-        assert!(rrf_0 > rrf_1000 * 10.0,
-            "Rank 0 ({}) should be >10x rank 1000 ({})", rrf_0, rrf_1000);
+        assert!(
+            rrf_0 > rrf_1000 * 10.0,
+            "Rank 0 ({}) should be >10x rank 1000 ({})",
+            rrf_0,
+            rrf_1000
+        );
     }
 
     /// Test that invalid embedder index in embeddings map panics
@@ -806,15 +830,18 @@ mod tests {
         let mut embeddings = create_test_embeddings();
         // Remove valid key 12 and add invalid key 13
         embeddings.remove(&12);
-        embeddings.insert(13, QuantizedEmbedding {
-            method: QuantizationMethod::SparseNative,
-            original_dim: 30522,
-            data: vec![0u8; 100],
-            metadata: QuantizationMetadata::Sparse {
-                vocab_size: 30522,
-                nnz: 50,
+        embeddings.insert(
+            13,
+            QuantizedEmbedding {
+                method: QuantizationMethod::SparseNative,
+                original_dim: 30522,
+                data: vec![0u8; 100],
+                metadata: QuantizationMetadata::Sparse {
+                    vocab_size: 30522,
+                    nnz: 50,
+                },
             },
-        });
+        );
 
         StoredQuantizedFingerprint::new(
             Uuid::new_v4(),
@@ -874,7 +901,10 @@ mod tests {
         );
 
         // Our test embeddings use the correct methods per Constitution
-        assert!(fp.validate_quantization_methods(), "Test embeddings should use correct quantization methods");
+        assert!(
+            fp.validate_quantization_methods(),
+            "Test embeddings should use correct quantization methods"
+        );
     }
 
     /// Test dominant quadrant calculation

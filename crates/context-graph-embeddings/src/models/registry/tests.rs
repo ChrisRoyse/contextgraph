@@ -3,7 +3,6 @@
 //! Comprehensive test suite covering configuration, registry creation,
 //! initialization, load/unload operations, concurrency, and edge cases.
 
-
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 

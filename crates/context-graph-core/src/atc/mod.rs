@@ -44,9 +44,7 @@ pub mod level2_temperature;
 pub mod level3_bandit;
 pub mod level4_bayesian;
 
-pub use calibration::{
-    CalibrationComputer, CalibrationMetrics, CalibrationStatus, Prediction,
-};
+pub use calibration::{CalibrationComputer, CalibrationMetrics, CalibrationStatus, Prediction};
 pub use domain::{Domain, DomainManager, DomainThresholds};
 pub use level1_ewma::{DriftTracker, EwmaState};
 pub use level2_temperature::{
@@ -57,8 +55,8 @@ pub use crate::teleological::Embedder;
 pub use level3_bandit::{ThresholdArm, ThresholdBandit};
 pub use level4_bayesian::{BayesianOptimizer, ThresholdConstraints, ThresholdObservation};
 
-use std::collections::HashMap;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 
 /// Unified ATC system orchestrating all 4 levels
 #[derive(Debug)]
@@ -124,12 +122,7 @@ impl AdaptiveThresholdCalibration {
     }
 
     /// Record prediction for calibration (Level 2)
-    pub fn record_prediction(
-        &mut self,
-        embedder: Embedder,
-        confidence: f32,
-        is_correct: bool,
-    ) {
+    pub fn record_prediction(&mut self, embedder: Embedder, confidence: f32, is_correct: bool) {
         self.level2.record(embedder, confidence, is_correct);
     }
 
@@ -298,9 +291,18 @@ mod tests {
         let mut atc = AdaptiveThresholdCalibration::new();
 
         let predictions = vec![
-            Prediction { confidence: 0.9, is_correct: true },
-            Prediction { confidence: 0.8, is_correct: true },
-            Prediction { confidence: 0.7, is_correct: false },
+            Prediction {
+                confidence: 0.9,
+                is_correct: true,
+            },
+            Prediction {
+                confidence: 0.8,
+                is_correct: true,
+            },
+            Prediction {
+                confidence: 0.7,
+                is_correct: false,
+            },
         ];
 
         atc.update_calibration_metrics(predictions);

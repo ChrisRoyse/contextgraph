@@ -110,10 +110,11 @@ fn test_compute_effective_weight_general_domain() {
     // w_eff = (0.3 * 0.92) = 0.276
 
     let weights = NeurotransmitterWeights::for_domain(Domain::General);
+    println!("BEFORE: Computing effective weight for General domain with base=1.0");
     println!(
-        "BEFORE: Computing effective weight for General domain with base=1.0"
+        "  weights: e={}, i={}, m={}",
+        weights.excitatory, weights.inhibitory, weights.modulatory
     );
-    println!("  weights: e={}, i={}, m={}", weights.excitatory, weights.inhibitory, weights.modulatory);
 
     let effective = weights.compute_effective_weight(1.0);
     println!("AFTER: effective = {}", effective);
@@ -137,10 +138,11 @@ fn test_compute_effective_weight_code_domain() {
     // w_eff = (0.3 * 0.96) = 0.288
 
     let weights = NeurotransmitterWeights::for_domain(Domain::Code);
+    println!("BEFORE: Computing effective weight for Code domain with base=1.0");
     println!(
-        "BEFORE: Computing effective weight for Code domain with base=1.0"
+        "  weights: e={}, i={}, m={}",
+        weights.excitatory, weights.inhibitory, weights.modulatory
     );
-    println!("  weights: e={}, i={}, m={}", weights.excitatory, weights.inhibitory, weights.modulatory);
 
     let effective = weights.compute_effective_weight(1.0);
     println!("AFTER: effective = {}", effective);
@@ -164,10 +166,11 @@ fn test_compute_effective_weight_creative_domain() {
     // w_eff = (0.7 * 1.04) = 0.728
 
     let weights = NeurotransmitterWeights::for_domain(Domain::Creative);
+    println!("BEFORE: Computing effective weight for Creative domain with base=1.0");
     println!(
-        "BEFORE: Computing effective weight for Creative domain with base=1.0"
+        "  weights: e={}, i={}, m={}",
+        weights.excitatory, weights.inhibitory, weights.modulatory
     );
-    println!("  weights: e={}, i={}, m={}", weights.excitatory, weights.inhibitory, weights.modulatory);
 
     let effective = weights.compute_effective_weight(1.0);
     println!("AFTER: effective = {}", effective);
@@ -190,9 +193,7 @@ fn test_compute_effective_weight_with_base_half() {
     // w_eff = (0.15 * 0.92) = 0.138
 
     let weights = NeurotransmitterWeights::for_domain(Domain::General);
-    println!(
-        "BEFORE: Computing effective weight for General domain with base=0.5"
-    );
+    println!("BEFORE: Computing effective weight for General domain with base=0.5");
 
     let effective = weights.compute_effective_weight(0.5);
     println!("AFTER: effective = {}", effective);
@@ -232,8 +233,10 @@ fn test_all_domains_produce_valid_weights() {
     println!("BEFORE: Testing all domains produce valid weights");
     for domain in Domain::all() {
         let weights = NeurotransmitterWeights::for_domain(domain);
-        println!("  Testing {:?}: e={}, i={}, m={}",
-            domain, weights.excitatory, weights.inhibitory, weights.modulatory);
+        println!(
+            "  Testing {:?}: e={}, i={}, m={}",
+            domain, weights.excitatory, weights.inhibitory, weights.modulatory
+        );
         assert!(
             weights.validate(),
             "Domain {:?} produces invalid weights: e={}, i={}, m={}",

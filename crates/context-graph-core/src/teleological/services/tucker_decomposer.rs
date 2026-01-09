@@ -13,10 +13,7 @@
 //! - Compressed: 4 x 4 x 128 + 13*4 + 13*4 + 1024*128 = 133,256 floats
 //! - Ratio: ~1.3x compression with minimal information loss
 
-use crate::teleological::{
-    TuckerCore, SYNERGY_DIM,
-    types::EMBEDDING_DIM,
-};
+use crate::teleological::{types::EMBEDDING_DIM, TuckerCore, SYNERGY_DIM};
 
 /// Configuration for Tucker decomposition.
 #[derive(Clone, Debug)]
@@ -93,7 +90,8 @@ impl TuckerDecomposer {
         assert!(
             tensor.len() == expected_size,
             "FAIL FAST: Expected tensor of size {}, got {}",
-            expected_size, tensor.len()
+            expected_size,
+            tensor.len()
         );
 
         // Initialize core with specified ranks
@@ -127,14 +125,17 @@ impl TuckerDecomposer {
         assert!(
             embeddings.len() == SYNERGY_DIM,
             "FAIL FAST: Expected {} embeddings, got {}",
-            SYNERGY_DIM, embeddings.len()
+            SYNERGY_DIM,
+            embeddings.len()
         );
 
         for (i, emb) in embeddings.iter().enumerate() {
             assert!(
                 emb.len() == EMBEDDING_DIM,
                 "FAIL FAST: Embedding {} has dimension {}, expected {}",
-                i, emb.len(), EMBEDDING_DIM
+                i,
+                emb.len(),
+                EMBEDDING_DIM
             );
         }
 
@@ -143,7 +144,12 @@ impl TuckerDecomposer {
 
         for (i, emb_i) in embeddings.iter().enumerate().take(SYNERGY_DIM) {
             for (j, emb_j) in embeddings.iter().enumerate().take(SYNERGY_DIM) {
-                for (k, (&val_i, &val_j)) in emb_i.iter().zip(emb_j.iter()).enumerate().take(EMBEDDING_DIM) {
+                for (k, (&val_i, &val_j)) in emb_i
+                    .iter()
+                    .zip(emb_j.iter())
+                    .enumerate()
+                    .take(EMBEDDING_DIM)
+                {
                     let idx = i * SYNERGY_DIM * EMBEDDING_DIM + j * EMBEDDING_DIM + k;
                     tensor[idx] = val_i * val_j;
                 }
@@ -376,7 +382,10 @@ mod tests {
         // Default ranks should achieve some compression
         assert!(ratio > 1.0, "Compression ratio {} should be > 1.0", ratio);
 
-        println!("[PASS] Default ranks achieve compression ratio: {:.2}x", ratio);
+        println!(
+            "[PASS] Default ranks achieve compression ratio: {:.2}x",
+            ratio
+        );
     }
 
     #[test]
@@ -432,6 +441,9 @@ mod tests {
         assert_eq!(decomposer.config().ranks, (8, 8, 256));
 
         let estimated_ratio = TuckerDecomposer::estimate_compression_ratio(config.ranks);
-        println!("[PASS] Custom ranks (8,8,256) ratio: {:.2}x", estimated_ratio);
+        println!(
+            "[PASS] Custom ranks (8,8,256) ratio: {:.2}x",
+            estimated_ratio
+        );
     }
 }

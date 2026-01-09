@@ -13,8 +13,8 @@ use crate::error::{CoreError, CoreResult};
 
 // Re-export all sub-config types for backwards compatibility
 pub use sub_configs::{
-    CudaConfig, EmbeddingConfig, FeatureFlags, IndexConfig, LoggingConfig, McpConfig,
-    ServerConfig, StorageConfig, UtlConfig,
+    CudaConfig, EmbeddingConfig, FeatureFlags, IndexConfig, LoggingConfig, McpConfig, ServerConfig,
+    StorageConfig, UtlConfig,
 };
 
 /// System development phase.
@@ -159,28 +159,28 @@ impl Config {
         if self.embedding.model == "stub" {
             dangerous_configs.push(
                 "embedding.model = \"stub\" → System will use FAKE embeddings that return \
-                 deterministic garbage. ALL similarity computations will be MEANINGLESS."
+                 deterministic garbage. ALL similarity computations will be MEANINGLESS.",
             );
         }
 
         if self.storage.backend == "memory" {
             dangerous_configs.push(
                 "storage.backend = \"memory\" → ALL DATA WILL BE LOST on restart. \
-                 No persistence, no durability, no recovery."
+                 No persistence, no durability, no recovery.",
             );
         }
 
         if self.index.backend == "memory" {
             dangerous_configs.push(
                 "index.backend = \"memory\" → HNSW indexes are ephemeral. \
-                 No persistent vector search capability."
+                 No persistent vector search capability.",
             );
         }
 
         if self.utl.mode == "stub" {
             dangerous_configs.push(
                 "utl.mode = \"stub\" → UTL computations will use FAKE processing. \
-                 Learning scores, consolidation, and lifecycle are MEANINGLESS."
+                 Learning scores, consolidation, and lifecycle are MEANINGLESS.",
             );
         }
 
@@ -194,13 +194,17 @@ impl Config {
                 // But emit warning to stderr so developers know what's happening
                 // Unless CONTEXT_GRAPH_MCP_QUIET is set (for MCP servers)
                 if !dangerous_configs.is_empty() && !suppress_warnings {
-                    eprintln!("\n╔════════════════════════════════════════════════════════════════╗");
+                    eprintln!(
+                        "\n╔════════════════════════════════════════════════════════════════╗"
+                    );
                     eprintln!("║ ⚠️  GHOST PHASE: Running with stub/development configuration   ║");
                     eprintln!("╠════════════════════════════════════════════════════════════════╣");
                     for config in &dangerous_configs {
                         eprintln!("║ • {}", config.split('→').next().unwrap_or(config).trim());
                     }
-                    eprintln!("╚════════════════════════════════════════════════════════════════╝\n");
+                    eprintln!(
+                        "╚════════════════════════════════════════════════════════════════╝\n"
+                    );
                 }
                 Ok(())
             }
@@ -208,47 +212,41 @@ impl Config {
                 // Development phase warns but allows stubs for active development
                 // Unless CONTEXT_GRAPH_MCP_QUIET is set (for MCP servers)
                 if !dangerous_configs.is_empty() && !suppress_warnings {
-                    eprintln!("\n╔════════════════════════════════════════════════════════════════╗");
+                    eprintln!(
+                        "\n╔════════════════════════════════════════════════════════════════╗"
+                    );
                     eprintln!("║ ⚠️  DEVELOPMENT PHASE: Stub configurations detected            ║");
                     eprintln!("║ You should be implementing real backends, not using stubs!     ║");
                     eprintln!("╠════════════════════════════════════════════════════════════════╣");
                     for config in &dangerous_configs {
                         eprintln!("║ • {}", config.split('→').next().unwrap_or(config).trim());
                     }
-                    eprintln!("╚════════════════════════════════════════════════════════════════╝\n");
+                    eprintln!(
+                        "╚════════════════════════════════════════════════════════════════╝\n"
+                    );
                 }
                 Ok(())
             }
             Phase::Production => {
                 // Production phase FAILS HARD if any stubs are detected
                 if !dangerous_configs.is_empty() {
-                    let mut error_msg = String::from(
-                        "PRODUCTION PHASE SAFETY VIOLATION - REFUSING TO START\n\n"
-                    );
+                    let mut error_msg =
+                        String::from("PRODUCTION PHASE SAFETY VIOLATION - REFUSING TO START\n\n");
                     error_msg.push_str("The following dangerous configurations were detected:\n\n");
 
                     for (i, config) in dangerous_configs.iter().enumerate() {
                         error_msg.push_str(&format!("{}. {}\n\n", i + 1, config));
                     }
 
+                    error_msg.push_str("REMEDIATION:\n");
                     error_msg.push_str(
-                        "REMEDIATION:\n"
+                        "  • Set embedding.model to a real model (e.g., \"multi_array_13\")\n",
                     );
-                    error_msg.push_str(
-                        "  • Set embedding.model to a real model (e.g., \"multi_array_13\")\n"
-                    );
-                    error_msg.push_str(
-                        "  • Set storage.backend to \"rocksdb\" with valid path\n"
-                    );
-                    error_msg.push_str(
-                        "  • Set index.backend to \"hnsw\" with persistence\n"
-                    );
-                    error_msg.push_str(
-                        "  • Set utl.mode to \"real\" for actual UTL computation\n\n"
-                    );
-                    error_msg.push_str(
-                        "Or, if testing, set phase = \"ghost\" or \"development\""
-                    );
+                    error_msg.push_str("  • Set storage.backend to \"rocksdb\" with valid path\n");
+                    error_msg.push_str("  • Set index.backend to \"hnsw\" with persistence\n");
+                    error_msg
+                        .push_str("  • Set utl.mode to \"real\" for actual UTL computation\n\n");
+                    error_msg.push_str("Or, if testing, set phase = \"ghost\" or \"development\"");
 
                     return Err(CoreError::ConfigError(error_msg));
                 }

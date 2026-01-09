@@ -74,12 +74,8 @@ fn test_pulse_from_values() {
 
 #[test]
 fn test_pulse_with_emotion() {
-    let pulse = CognitivePulse::with_emotion(
-        0.5,
-        0.6,
-        EmotionalState::Focused,
-        Some(LayerId::Memory),
-    );
+    let pulse =
+        CognitivePulse::with_emotion(0.5, 0.6, EmotionalState::Focused, Some(LayerId::Memory));
     assert_eq!(pulse.entropy, 0.5);
     assert_eq!(pulse.coherence, 0.6);
     assert_eq!(pulse.coherence_delta, 0.0);
@@ -111,10 +107,10 @@ fn test_is_healthy() {
 #[test]
 fn test_pulse_clamps_values() {
     let pulse = CognitivePulse::new(
-        1.5,   // should clamp to 1.0
-        -0.5,  // should clamp to 0.0
-        2.0,   // should clamp to 1.0
-        3.0,   // should clamp to 2.0
+        1.5,  // should clamp to 1.0
+        -0.5, // should clamp to 0.0
+        2.0,  // should clamp to 1.0
+        3.0,  // should clamp to 2.0
         SuggestedAction::Continue,
         None,
     );

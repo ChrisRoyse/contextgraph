@@ -56,7 +56,11 @@ pub(crate) fn format_source_key(source: &str, id: &NodeId) -> Vec<u8> {
 /// - Bytes 16-31: target_id UUID (16 bytes)
 /// - Byte 32: edge_type as u8 (1 byte)
 #[inline]
-pub(crate) fn format_edge_key(source_id: &NodeId, target_id: &NodeId, edge_type: EdgeType) -> Vec<u8> {
+pub(crate) fn format_edge_key(
+    source_id: &NodeId,
+    target_id: &NodeId,
+    edge_type: EdgeType,
+) -> Vec<u8> {
     let mut key = Vec::with_capacity(33);
     key.extend_from_slice(&serialize_uuid(source_id));
     key.extend_from_slice(&serialize_uuid(target_id));

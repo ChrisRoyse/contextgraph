@@ -40,10 +40,7 @@ pub enum JohariError {
     ///
     /// None of the batch operations are applied if any validation fails (all-or-nothing).
     #[error("Batch validation failed at index {idx}: {reason}")]
-    BatchValidationFailed {
-        idx: usize,
-        reason: String,
-    },
+    BatchValidationFailed { idx: usize, reason: String },
 
     /// Classification operation failed.
     #[error("Classification error: {0}")]

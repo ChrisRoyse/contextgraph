@@ -3,10 +3,10 @@
 //! Tests for UtlState, LearningSignal, and processor state management
 
 use context_graph_utl::{
-    LearningIntensity, LearningSignal, UtlState,
-    processor::UtlProcessor,
     johari::{JohariQuadrant, SuggestedAction},
     lifecycle::{LifecycleLambdaWeights, LifecycleStage},
+    processor::UtlProcessor,
+    LearningIntensity, LearningSignal, UtlState,
 };
 
 use super::helpers::uniform_embedding;
@@ -133,8 +133,7 @@ fn test_utl_state_serialization() {
     };
 
     let json = serde_json::to_string(&state).expect("serialization must succeed");
-    let deserialized: UtlState =
-        serde_json::from_str(&json).expect("deserialization must succeed");
+    let deserialized: UtlState = serde_json::from_str(&json).expect("deserialization must succeed");
 
     assert_eq!(deserialized.delta_s, state.delta_s);
     assert_eq!(deserialized.quadrant, state.quadrant);

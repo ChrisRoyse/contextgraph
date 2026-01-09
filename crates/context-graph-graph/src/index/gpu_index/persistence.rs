@@ -8,16 +8,14 @@ use std::path::Path;
 use std::ptr::NonNull;
 use std::sync::Arc;
 
-use crate::config::IndexConfig;
-use crate::error::{GraphError, GraphResult};
 use super::super::faiss_ffi::{
-    FaissIndex,
-    faiss_index_cpu_to_gpu, faiss_Index_is_trained,
-    faiss_write_index, faiss_read_index, faiss_Index_free,
-    faiss_Index_ntotal, check_faiss_result,
+    check_faiss_result, faiss_Index_free, faiss_Index_is_trained, faiss_Index_ntotal,
+    faiss_index_cpu_to_gpu, faiss_read_index, faiss_write_index, FaissIndex,
 };
 use super::index::FaissGpuIndex;
 use super::resources::GpuResources;
+use crate::config::IndexConfig;
+use crate::error::{GraphError, GraphResult};
 
 impl FaissGpuIndex {
     /// Save index to file.
@@ -31,18 +29,15 @@ impl FaissGpuIndex {
     /// Returns error if file cannot be written or FAISS serialization fails.
     pub fn save<P: AsRef<Path>>(&self, path: P) -> GraphResult<()> {
         let path_str = path.as_ref().to_string_lossy();
-        let c_path = CString::new(path_str.as_ref())
-            .map_err(|e| GraphError::InvalidConfig(format!(
-                "Invalid path '{}': {}", path_str, e
-            )))?;
+        let c_path = CString::new(path_str.as_ref()).map_err(|e| {
+            GraphError::InvalidConfig(format!("Invalid path '{}': {}", path_str, e))
+        })?;
 
         // SAFETY: index_ptr is valid, c_path is valid null-terminated string.
         let ret = unsafe { faiss_write_index(self.index_ptr.as_ptr(), c_path.as_ptr()) };
 
         check_faiss_result(ret, "faiss_write_index").map_err(|e| {
-            GraphError::Serialization(format!(
-                "Failed to save index to '{}': {}", path_str, e
-            ))
+            GraphError::Serialization(format!("Failed to save index to '{}': {}", path_str, e))
         })?;
 
         Ok(())
@@ -71,10 +66,9 @@ impl FaissGpuIndex {
         gpu_resources: Arc<GpuResources>,
     ) -> GraphResult<Self> {
         let path_str = path.as_ref().to_string_lossy();
-        let c_path = CString::new(path_str.as_ref())
-            .map_err(|e| GraphError::InvalidConfig(format!(
-                "Invalid path '{}': {}", path_str, e
-            )))?;
+        let c_path = CString::new(path_str.as_ref()).map_err(|e| {
+            GraphError::InvalidConfig(format!("Invalid path '{}': {}", path_str, e))
+        })?;
 
         // Load CPU index from file
         let mut cpu_index: *mut FaissIndex = std::ptr::null_mut();
@@ -83,14 +77,13 @@ impl FaissGpuIndex {
         let ret = unsafe { faiss_read_index(c_path.as_ptr(), 0, &mut cpu_index) };
 
         check_faiss_result(ret, "faiss_read_index").map_err(|e| {
-            GraphError::Deserialization(format!(
-                "Failed to load index from '{}': {}", path_str, e
-            ))
+            GraphError::Deserialization(format!("Failed to load index from '{}': {}", path_str, e))
         })?;
 
         if cpu_index.is_null() {
             return Err(GraphError::Deserialization(format!(
-                "Loaded index pointer is null for '{}'", path_str
+                "Loaded index pointer is null for '{}'",
+                path_str
             )));
         }
 
@@ -113,13 +106,14 @@ impl FaissGpuIndex {
 
         check_faiss_result(ret, "faiss_index_cpu_to_gpu").map_err(|e| {
             GraphError::GpuTransferFailed(format!(
-                "Failed to transfer loaded index to GPU {}: {}", config.gpu_id, e
+                "Failed to transfer loaded index to GPU {}: {}",
+                config.gpu_id, e
             ))
         })?;
 
         if gpu_index.is_null() {
             return Err(GraphError::GpuResourceAllocation(
-                "Loaded GPU index pointer is null after transfer".to_string()
+                "Loaded GPU index pointer is null after transfer".to_string(),
             ));
         }
 

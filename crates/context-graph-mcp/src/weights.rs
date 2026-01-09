@@ -360,7 +360,10 @@ mod tests {
     fn test_get_weight_profile() {
         let semantic = get_weight_profile("semantic_search");
         assert!(semantic.is_some(), "semantic_search profile should exist");
-        assert!((semantic.unwrap()[0] - 0.28).abs() < 0.001, "E1 should be 0.28");
+        assert!(
+            (semantic.unwrap()[0] - 0.28).abs() < 0.001,
+            "E1 should be 0.28"
+        );
 
         let missing = get_weight_profile("nonexistent");
         assert!(missing.is_none(), "Unknown profile should return None");

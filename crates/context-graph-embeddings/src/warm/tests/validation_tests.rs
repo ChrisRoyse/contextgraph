@@ -1,8 +1,8 @@
 //! Tests for WarmValidator dimension/weight/inference validation.
 
+use super::helpers::test_handle_full;
 use crate::warm::error::WarmError;
 use crate::warm::validation::{TestInferenceConfig, TestInput, ValidationResult, WarmValidator};
-use super::helpers::test_handle_full;
 
 #[test]
 fn test_validator_default_tolerance() {
@@ -106,7 +106,9 @@ fn test_validate_weights_finite_negative_inf() {
 fn test_validate_weight_checksum_matching() {
     let v = WarmValidator::new();
     let handle = test_handle_full(0x1000, 1024, 0, 0xdeadbeefcafebabe);
-    assert!(v.validate_weight_checksum(&handle, 0xdeadbeefcafebabe).is_ok());
+    assert!(v
+        .validate_weight_checksum(&handle, 0xdeadbeefcafebabe)
+        .is_ok());
 }
 
 #[test]
@@ -277,8 +279,7 @@ fn test_validation_result_failure() {
         actual: 50,
     };
 
-    let result =
-        ValidationResult::failure("model1".to_string(), false, true, false, 100, error);
+    let result = ValidationResult::failure("model1".to_string(), false, true, false, 100, error);
 
     assert!(!result.is_valid());
     assert!(!result.dimension_valid);

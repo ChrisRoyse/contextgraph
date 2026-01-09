@@ -108,58 +108,112 @@ fn test_learning_signal_validation_nan_component() {
 fn test_learning_intensity_boundary_values() {
     // Low: < 0.3
     let low_signal = LearningSignal::new(
-        0.29, 0.5, 0.5, 1.0, 0.0, None,
-        JohariQuadrant::Hidden, SuggestedAction::GetNeighborhood,
-        false, false, 100,
-    ).unwrap();
+        0.29,
+        0.5,
+        0.5,
+        1.0,
+        0.0,
+        None,
+        JohariQuadrant::Hidden,
+        SuggestedAction::GetNeighborhood,
+        false,
+        false,
+        100,
+    )
+    .unwrap();
     assert_eq!(low_signal.intensity_category(), LearningIntensity::Low);
     assert!(low_signal.is_low_learning());
     assert!(!low_signal.is_high_learning());
 
     // Medium: 0.3 - 0.7
     let med_signal = LearningSignal::new(
-        0.5, 0.5, 0.5, 1.0, 0.0, None,
-        JohariQuadrant::Hidden, SuggestedAction::GetNeighborhood,
-        false, true, 100,
-    ).unwrap();
+        0.5,
+        0.5,
+        0.5,
+        1.0,
+        0.0,
+        None,
+        JohariQuadrant::Hidden,
+        SuggestedAction::GetNeighborhood,
+        false,
+        true,
+        100,
+    )
+    .unwrap();
     assert_eq!(med_signal.intensity_category(), LearningIntensity::Medium);
     assert!(!med_signal.is_low_learning());
     assert!(!med_signal.is_high_learning());
 
     // High: > 0.7
     let high_signal = LearningSignal::new(
-        0.85, 0.5, 0.5, 1.0, 0.0, None,
-        JohariQuadrant::Open, SuggestedAction::DirectRecall,
-        true, true, 100,
-    ).unwrap();
+        0.85,
+        0.5,
+        0.5,
+        1.0,
+        0.0,
+        None,
+        JohariQuadrant::Open,
+        SuggestedAction::DirectRecall,
+        true,
+        true,
+        100,
+    )
+    .unwrap();
     assert_eq!(high_signal.intensity_category(), LearningIntensity::High);
     assert!(!high_signal.is_low_learning());
     assert!(high_signal.is_high_learning());
 
     // Boundary at 0.3 (should be Medium)
     let boundary_low = LearningSignal::new(
-        0.3, 0.5, 0.5, 1.0, 0.0, None,
-        JohariQuadrant::Hidden, SuggestedAction::GetNeighborhood,
-        false, true, 100,
-    ).unwrap();
+        0.3,
+        0.5,
+        0.5,
+        1.0,
+        0.0,
+        None,
+        JohariQuadrant::Hidden,
+        SuggestedAction::GetNeighborhood,
+        false,
+        true,
+        100,
+    )
+    .unwrap();
     assert_eq!(boundary_low.intensity_category(), LearningIntensity::Medium);
 
     // Boundary at 0.7 (should be High since magnitude >= 0.7)
     let boundary_high = LearningSignal::new(
-        0.7, 0.5, 0.5, 1.0, 0.0, None,
-        JohariQuadrant::Open, SuggestedAction::DirectRecall,
-        true, true, 100,
-    ).unwrap();
+        0.7,
+        0.5,
+        0.5,
+        1.0,
+        0.0,
+        None,
+        JohariQuadrant::Open,
+        SuggestedAction::DirectRecall,
+        true,
+        true,
+        100,
+    )
+    .unwrap();
     assert_eq!(boundary_high.intensity_category(), LearningIntensity::High);
 }
 
 #[test]
 fn test_learning_signal_serialization_roundtrip() {
     let original = LearningSignal::new(
-        0.7, 0.6, 0.8, 1.2, 0.5, None,
-        JohariQuadrant::Open, SuggestedAction::DirectRecall,
-        true, true, 1500,
-    ).unwrap();
+        0.7,
+        0.6,
+        0.8,
+        1.2,
+        0.5,
+        None,
+        JohariQuadrant::Open,
+        SuggestedAction::DirectRecall,
+        true,
+        true,
+        1500,
+    )
+    .unwrap();
 
     let json = serde_json::to_string(&original).expect("Serialization failed");
     let deserialized: LearningSignal = serde_json::from_str(&json).expect("Deserialization failed");
@@ -183,11 +237,19 @@ fn test_learning_signal_with_lambda_weights() {
 
     let weights = LifecycleLambdaWeights::for_stage(LifecycleStage::Growth);
     let signal = LearningSignal::new(
-        0.7, 0.6, 0.8, 1.2, 0.5,
+        0.7,
+        0.6,
+        0.8,
+        1.2,
+        0.5,
         Some(weights),
-        JohariQuadrant::Open, SuggestedAction::DirectRecall,
-        true, true, 1500,
-    ).unwrap();
+        JohariQuadrant::Open,
+        SuggestedAction::DirectRecall,
+        true,
+        true,
+        1500,
+    )
+    .unwrap();
 
     assert!(signal.lambda_weights.is_some());
     let lw = signal.lambda_weights.unwrap();

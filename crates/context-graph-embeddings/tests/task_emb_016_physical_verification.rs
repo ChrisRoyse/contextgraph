@@ -3,8 +3,8 @@
 //! These tests print BEFORE and AFTER state to provide physical proof
 //! of correct behavior. No mocks. No workarounds. Real data only.
 
+use context_graph_embeddings::warm::loader::types::{InferenceValidation, VramAllocationTracking};
 use std::time::Duration;
-use context_graph_embeddings::warm::loader::types::{VramAllocationTracking, InferenceValidation};
 
 /// Edge Case 1: VRAM Delta Mismatch Detection
 ///
@@ -29,10 +29,10 @@ fn physical_verify_vram_delta_mismatch() {
     // Create the struct with mismatched values
     let alloc = VramAllocationTracking {
         base_ptr: 0x7fff_0000_1000,
-        size_bytes: 1024,           // 1KB
+        size_bytes: 1024, // 1KB
         vram_before_mb: 1000,
         vram_after_mb: 2000,
-        vram_delta_mb: 1000,        // Claims 1000MB delta!
+        vram_delta_mb: 1000, // Claims 1000MB delta!
     };
 
     // EXECUTE: Call is_real()
@@ -78,15 +78,18 @@ fn physical_verify_fake_pointer_detection() {
     println!("\n--- BEFORE STATE ---");
     println!("Creating VramAllocationTracking with FAKE pointer:");
     println!("  base_ptr:       0x7f80_0000_0000 (KNOWN FAKE VALUE)");
-    println!("  FAKE_POINTER constant: 0x{:x}", VramAllocationTracking::FAKE_POINTER);
+    println!(
+        "  FAKE_POINTER constant: 0x{:x}",
+        VramAllocationTracking::FAKE_POINTER
+    );
     println!("  size_bytes:     104857600 (100MB)");
     println!("  vram_before_mb: 5000");
     println!("  vram_after_mb:  5100");
     println!("  vram_delta_mb:  100 (matches allocation - would pass delta check)");
 
     let alloc = VramAllocationTracking {
-        base_ptr: VramAllocationTracking::FAKE_POINTER,  // 0x7f80_0000_0000
-        size_bytes: 104_857_600,  // 100MB
+        base_ptr: VramAllocationTracking::FAKE_POINTER, // 0x7f80_0000_0000
+        size_bytes: 104_857_600,                        // 100MB
         vram_before_mb: 5000,
         vram_after_mb: 5100,
         vram_delta_mb: 100,
@@ -99,7 +102,11 @@ fn physical_verify_fake_pointer_detection() {
     println!("\n--- AFTER STATE ---");
     println!("VramAllocationTracking instance created:");
     println!("  base_ptr:       0x{:x}", alloc.base_ptr);
-    println!("  size_bytes:     {} ({:.1} MB)", alloc.size_bytes, alloc.size_mb());
+    println!(
+        "  size_bytes:     {} ({:.1} MB)",
+        alloc.size_bytes,
+        alloc.size_mb()
+    );
     println!("  vram_delta_mb:  {}", alloc.vram_delta_mb);
     println!("  delta_display:  {}", alloc.delta_display());
     println!("\n  is_real() RETURNED: {}", result);
@@ -107,10 +114,12 @@ fn physical_verify_fake_pointer_detection() {
     // VERIFICATION
     println!("\n--- VERIFICATION ---");
     println!("Checking: base_ptr == FAKE_POINTER?");
-    println!("  0x{:x} == 0x{:x} ? {}",
-             alloc.base_ptr,
-             VramAllocationTracking::FAKE_POINTER,
-             alloc.base_ptr == VramAllocationTracking::FAKE_POINTER);
+    println!(
+        "  0x{:x} == 0x{:x} ? {}",
+        alloc.base_ptr,
+        VramAllocationTracking::FAKE_POINTER,
+        alloc.base_ptr == VramAllocationTracking::FAKE_POINTER
+    );
 
     if !result {
         println!("✓ PASS: is_real() correctly returned FALSE for fake pointer");
@@ -142,13 +151,24 @@ fn physical_verify_sin_wave_detection() {
     println!("  Vector length: {}", sin_wave.len());
     println!("  First 10 values:");
     for (i, v) in sin_wave.iter().take(10).enumerate() {
-        println!("    [{}]: {:.6} = sin({} * 0.001) = sin({:.3})", i, v, i, i as f32 * 0.001);
+        println!(
+            "    [{}]: {:.6} = sin({} * 0.001) = sin({:.3})",
+            i,
+            v,
+            i,
+            i as f32 * 0.001
+        );
     }
 
     // Calculate variance to show why it's detected
-    let diffs: Vec<f32> = sin_wave.windows(2).take(9).map(|w| (w[1] - w[0]).abs()).collect();
+    let diffs: Vec<f32> = sin_wave
+        .windows(2)
+        .take(9)
+        .map(|w| (w[1] - w[0]).abs())
+        .collect();
     let mean_diff: f32 = diffs.iter().sum::<f32>() / diffs.len() as f32;
-    let variance: f32 = diffs.iter().map(|d| (d - mean_diff).powi(2)).sum::<f32>() / diffs.len() as f32;
+    let variance: f32 =
+        diffs.iter().map(|d| (d - mean_diff).powi(2)).sum::<f32>() / diffs.len() as f32;
 
     println!("\n  Consecutive differences (first 9):");
     for (i, d) in diffs.iter().enumerate() {
@@ -156,11 +176,16 @@ fn physical_verify_sin_wave_detection() {
     }
     println!("  Mean difference: {:.8}", mean_diff);
     println!("  Variance: {:.10}", variance);
-    println!("  SIN_WAVE_VARIANCE_THRESHOLD: {}", InferenceValidation::SIN_WAVE_VARIANCE_THRESHOLD);
-    println!("  variance < threshold? {} < {} = {}",
-             variance,
-             InferenceValidation::SIN_WAVE_VARIANCE_THRESHOLD,
-             variance < InferenceValidation::SIN_WAVE_VARIANCE_THRESHOLD);
+    println!(
+        "  SIN_WAVE_VARIANCE_THRESHOLD: {}",
+        InferenceValidation::SIN_WAVE_VARIANCE_THRESHOLD
+    );
+    println!(
+        "  variance < threshold? {} < {} = {}",
+        variance,
+        InferenceValidation::SIN_WAVE_VARIANCE_THRESHOLD,
+        variance < InferenceValidation::SIN_WAVE_VARIANCE_THRESHOLD
+    );
 
     let validation = InferenceValidation {
         sample_input: "test input".to_string(),
@@ -168,7 +193,7 @@ fn physical_verify_sin_wave_detection() {
         output_norm: 1.0,
         latency: Duration::from_millis(10),
         matches_golden: true,
-        golden_similarity: 0.99,  // High similarity to pass that check
+        golden_similarity: 0.99, // High similarity to pass that check
     };
 
     // EXECUTE
@@ -178,7 +203,10 @@ fn physical_verify_sin_wave_detection() {
     println!("\n--- AFTER STATE ---");
     println!("InferenceValidation instance created:");
     println!("  sample_input:     \"{}\"", validation.sample_input);
-    println!("  sample_output:    Vec<f32> with {} elements", validation.sample_output.len());
+    println!(
+        "  sample_output:    Vec<f32> with {} elements",
+        validation.sample_output.len()
+    );
     println!("  output_norm:      {}", validation.output_norm);
     println!("  latency:          {:?}", validation.latency);
     println!("  matches_golden:   {}", validation.matches_golden);
@@ -194,7 +222,10 @@ fn physical_verify_sin_wave_detection() {
         println!("✗ FAIL: is_real() incorrectly returned TRUE");
     }
 
-    assert!(!result, "is_real() should return false for sin wave pattern");
+    assert!(
+        !result,
+        "is_real() should return false for sin wave pattern"
+    );
     println!("\n[PHYSICAL PROOF COMPLETE]\n");
 }
 
@@ -212,7 +243,10 @@ fn physical_verify_low_golden_similarity() {
     // BEFORE STATE
     println!("\n--- BEFORE STATE ---");
     println!("Creating InferenceValidation with LOW golden similarity:");
-    println!("  MIN_GOLDEN_SIMILARITY threshold: {}", InferenceValidation::MIN_GOLDEN_SIMILARITY);
+    println!(
+        "  MIN_GOLDEN_SIMILARITY threshold: {}",
+        InferenceValidation::MIN_GOLDEN_SIMILARITY
+    );
 
     // Generate varied output (not sin wave, not zeros)
     let output: Vec<f32> = (0..768)
@@ -228,12 +262,14 @@ fn physical_verify_low_golden_similarity() {
         1.0,
         Duration::from_millis(50),
         false,
-        0.50,  // LOW golden similarity
+        0.50, // LOW golden similarity
     );
 
-    println!("  golden_similarity: {} (below {} threshold)",
-             validation.golden_similarity,
-             InferenceValidation::MIN_GOLDEN_SIMILARITY);
+    println!(
+        "  golden_similarity: {} (below {} threshold)",
+        validation.golden_similarity,
+        InferenceValidation::MIN_GOLDEN_SIMILARITY
+    );
 
     // EXECUTE
     let result = validation.is_real();
@@ -250,10 +286,12 @@ fn physical_verify_low_golden_similarity() {
     // VERIFICATION
     println!("\n--- VERIFICATION ---");
     println!("Checking: golden_similarity >= MIN_GOLDEN_SIMILARITY?");
-    println!("  {} >= {} ? {}",
-             validation.golden_similarity,
-             InferenceValidation::MIN_GOLDEN_SIMILARITY,
-             validation.golden_similarity >= InferenceValidation::MIN_GOLDEN_SIMILARITY);
+    println!(
+        "  {} >= {} ? {}",
+        validation.golden_similarity,
+        InferenceValidation::MIN_GOLDEN_SIMILARITY,
+        validation.golden_similarity >= InferenceValidation::MIN_GOLDEN_SIMILARITY
+    );
 
     if !result {
         println!("✓ PASS: is_real() correctly returned FALSE for low golden similarity");
@@ -261,7 +299,10 @@ fn physical_verify_low_golden_similarity() {
         println!("✗ FAIL: is_real() incorrectly returned TRUE");
     }
 
-    assert!(!result, "is_real() should return false for low golden similarity");
+    assert!(
+        !result,
+        "is_real() should return false for low golden similarity"
+    );
     println!("\n[PHYSICAL PROOF COMPLETE]\n");
 }
 
@@ -284,8 +325,12 @@ fn physical_verify_all_zeros_detection() {
     let zeros: Vec<f32> = vec![0.0; 768];
 
     println!("  Output: vec![0.0; 768]");
-    println!("  All values below ZERO_THRESHOLD? {}",
-             zeros.iter().all(|&v| v.abs() < InferenceValidation::ZERO_THRESHOLD));
+    println!(
+        "  All values below ZERO_THRESHOLD? {}",
+        zeros
+            .iter()
+            .all(|&v| v.abs() < InferenceValidation::ZERO_THRESHOLD)
+    );
 
     let validation = InferenceValidation {
         sample_input: "test".to_string(),
@@ -293,7 +338,7 @@ fn physical_verify_all_zeros_detection() {
         output_norm: 0.0,
         latency: Duration::from_millis(10),
         matches_golden: false,
-        golden_similarity: 0.99,  // High similarity to isolate zeros check
+        golden_similarity: 0.99, // High similarity to isolate zeros check
     };
 
     // EXECUTE
@@ -302,8 +347,18 @@ fn physical_verify_all_zeros_detection() {
     // AFTER STATE
     println!("\n--- AFTER STATE ---");
     println!("InferenceValidation instance created:");
-    println!("  sample_output:     {} zeros", validation.sample_output.len());
-    println!("  sum of abs values: {}", validation.sample_output.iter().map(|v| v.abs()).sum::<f32>());
+    println!(
+        "  sample_output:     {} zeros",
+        validation.sample_output.len()
+    );
+    println!(
+        "  sum of abs values: {}",
+        validation
+            .sample_output
+            .iter()
+            .map(|v| v.abs())
+            .sum::<f32>()
+    );
     println!("  calculated_norm:   {}", validation.calculate_norm());
     println!("\n  is_real() RETURNED: {}", result);
 
@@ -315,7 +370,10 @@ fn physical_verify_all_zeros_detection() {
         println!("✗ FAIL: is_real() incorrectly returned TRUE");
     }
 
-    assert!(!result, "is_real() should return false for all-zeros output");
+    assert!(
+        !result,
+        "is_real() should return false for all-zeros output"
+    );
     println!("\n[PHYSICAL PROOF COMPLETE]\n");
 }
 
@@ -340,9 +398,9 @@ fn physical_verify_valid_allocation_accepted() {
 
     let alloc = VramAllocationTracking::new(
         0x7fff_0000_1000,
-        104_857_600,    // 100MB
+        104_857_600, // 100MB
         5000,
-        5100,           // 100MB delta
+        5100, // 100MB delta
     );
 
     // EXECUTE
@@ -352,7 +410,11 @@ fn physical_verify_valid_allocation_accepted() {
     println!("\n--- AFTER STATE ---");
     println!("VramAllocationTracking instance created:");
     println!("  base_ptr:       0x{:x}", alloc.base_ptr);
-    println!("  size_bytes:     {} ({:.1} MB)", alloc.size_bytes, alloc.size_mb());
+    println!(
+        "  size_bytes:     {} ({:.1} MB)",
+        alloc.size_bytes,
+        alloc.size_mb()
+    );
     println!("  vram_delta_mb:  {}", alloc.vram_delta_mb);
     println!("  delta_display:  {}", alloc.delta_display());
     println!("\n  is_real() RETURNED: {}", result);
@@ -365,7 +427,11 @@ fn physical_verify_valid_allocation_accepted() {
 
     println!("  Expected delta: {} MB", expected_delta);
     println!("  Actual delta:   {} MB", actual_delta);
-    println!("  Difference:     {} MB (within {} MB tolerance)", diff, VramAllocationTracking::DELTA_TOLERANCE_MB);
+    println!(
+        "  Difference:     {} MB (within {} MB tolerance)",
+        diff,
+        VramAllocationTracking::DELTA_TOLERANCE_MB
+    );
 
     if result {
         println!("✓ PASS: is_real() correctly returned TRUE for valid allocation");
@@ -407,7 +473,7 @@ fn physical_verify_valid_inference_accepted() {
         1.0,
         Duration::from_millis(50),
         true,
-        0.98,  // High golden similarity
+        0.98, // High golden similarity
     );
 
     // EXECUTE

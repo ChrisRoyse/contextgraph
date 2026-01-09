@@ -127,8 +127,12 @@ pub trait EmbedderIndexOps: Send + Sync {
     ///
     /// - `IndexError::DimensionMismatch` if query dimension != config.dimension
     /// - `IndexError::InvalidVector` if query contains NaN or Inf
-    fn search(&self, query: &[f32], k: usize, ef_search: Option<usize>)
-        -> IndexResult<Vec<(Uuid, f32)>>;
+    fn search(
+        &self,
+        query: &[f32],
+        k: usize,
+        ef_search: Option<usize>,
+    ) -> IndexResult<Vec<(Uuid, f32)>>;
 
     /// Batch insert multiple vectors.
     ///

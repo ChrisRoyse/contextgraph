@@ -84,9 +84,15 @@ impl Default for ConsolidationConfig {
 pub enum MemoryCurationState {
     #[default]
     Active,
-    Dormant { since: DateTime<Utc> },
-    Archived { since: DateTime<Utc> },
-    PendingDeletion { scheduled: DateTime<Utc> },
+    Dormant {
+        since: DateTime<Utc>,
+    },
+    Archived {
+        since: DateTime<Utc>,
+    },
+    PendingDeletion {
+        scheduled: DateTime<Utc>,
+    },
 }
 
 /// Reason for pruning a memory
@@ -525,23 +531,13 @@ mod tests {
         assert!(candidate.can_merge);
 
         // Just below similarity threshold
-        let candidate = ConsolidationCandidate::new(
-            MemoryId::new(),
-            MemoryId::new(),
-            0.919,
-            0.05,
-            &config,
-        );
+        let candidate =
+            ConsolidationCandidate::new(MemoryId::new(), MemoryId::new(), 0.919, 0.05, &config);
         assert!(!candidate.can_merge);
 
         // Just above theta diff threshold
-        let candidate = ConsolidationCandidate::new(
-            MemoryId::new(),
-            MemoryId::new(),
-            0.92,
-            0.051,
-            &config,
-        );
+        let candidate =
+            ConsolidationCandidate::new(MemoryId::new(), MemoryId::new(), 0.92, 0.051, &config);
         assert!(!candidate.can_merge);
     }
 

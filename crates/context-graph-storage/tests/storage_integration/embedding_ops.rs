@@ -76,9 +76,7 @@ fn test_delete_embedding() {
     db.delete_embedding(&node_id).expect("delete embedding");
 
     // Verify embedding is gone
-    let exists = db
-        .embedding_exists(&node_id)
-        .expect("check after delete");
+    let exists = db.embedding_exists(&node_id).expect("check after delete");
     println!("VERIFY: embedding_exists after delete = {}", exists);
     assert!(!exists, "embedding should not exist after delete");
 

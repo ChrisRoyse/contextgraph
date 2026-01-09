@@ -6,8 +6,8 @@
 use chrono::Utc;
 
 use crate::autonomous::{
-    GoalActivityMetrics, GoalEvolutionConfig, GoalId,
-    ObsolescenceAction, ObsolescenceEvaluation, ObsolescenceReason,
+    GoalActivityMetrics, GoalEvolutionConfig, GoalId, ObsolescenceAction, ObsolescenceEvaluation,
+    ObsolescenceReason,
 };
 
 /// Seconds per day constant for threshold calculations
@@ -148,9 +148,7 @@ impl ObsolescenceDetector {
         // 1. High average child alignment (>0.9)
         // 2. Positive weight trend (still improving)
         // 3. Some activity (not just dormant)
-        metrics.avg_child_alignment > 0.9
-            && metrics.weight_trend >= 0.0
-            && metrics.is_active()
+        metrics.avg_child_alignment > 0.9 && metrics.weight_trend >= 0.0 && metrics.is_active()
     }
 
     /// Detect if a goal has low relevance based on alignment score.
@@ -289,7 +287,10 @@ mod tests {
     fn test_default_matches_new() {
         let detector1 = ObsolescenceDetector::new();
         let detector2 = ObsolescenceDetector::default();
-        assert_eq!(detector1.config.obsolescence_days, detector2.config.obsolescence_days);
+        assert_eq!(
+            detector1.config.obsolescence_days,
+            detector2.config.obsolescence_days
+        );
         println!("[PASS] test_default_matches_new");
     }
 
@@ -547,9 +548,10 @@ mod tests {
         let metrics = create_inactive_metrics(goal_id.clone(), 90);
         let eval = detector.evaluate(&goal_id, &metrics);
 
-        let has_no_memories_reason = eval.reasons.iter().any(|r| {
-            matches!(r, ObsolescenceReason::NoNewMemories { .. })
-        });
+        let has_no_memories_reason = eval
+            .reasons
+            .iter()
+            .any(|r| matches!(r, ObsolescenceReason::NoNewMemories { .. }));
         assert!(has_no_memories_reason);
         println!("[PASS] test_evaluate_includes_no_new_memories_reason");
     }
@@ -561,9 +563,10 @@ mod tests {
         let metrics = create_inactive_metrics(goal_id.clone(), 90);
         let eval = detector.evaluate(&goal_id, &metrics);
 
-        let has_no_retrievals_reason = eval.reasons.iter().any(|r| {
-            matches!(r, ObsolescenceReason::NoRetrievals { .. })
-        });
+        let has_no_retrievals_reason = eval
+            .reasons
+            .iter()
+            .any(|r| matches!(r, ObsolescenceReason::NoRetrievals { .. }));
         assert!(has_no_retrievals_reason);
         println!("[PASS] test_evaluate_includes_no_retrievals_reason");
     }
@@ -582,9 +585,10 @@ mod tests {
         };
         let eval = detector.evaluate(&goal_id, &metrics);
 
-        let has_alignment_reason = eval.reasons.iter().any(|r| {
-            matches!(r, ObsolescenceReason::ChildAlignmentDropping { .. })
-        });
+        let has_alignment_reason = eval
+            .reasons
+            .iter()
+            .any(|r| matches!(r, ObsolescenceReason::ChildAlignmentDropping { .. }));
         assert!(has_alignment_reason);
         println!("[PASS] test_evaluate_detects_child_alignment_dropping");
     }
@@ -620,7 +624,10 @@ mod tests {
 
         let goals = vec![
             (goal_id1.clone(), create_active_metrics(goal_id1.clone())),
-            (goal_id2.clone(), create_inactive_metrics(goal_id2.clone(), 90)),
+            (
+                goal_id2.clone(),
+                create_inactive_metrics(goal_id2.clone(), 90),
+            ),
             (goal_id3.clone(), create_active_metrics(goal_id3.clone())),
         ];
 
@@ -698,30 +705,39 @@ mod tests {
         let declining_id = GoalId::new();
 
         let goals = vec![
-            (active_id.clone(), GoalActivityMetrics {
-                goal_id: active_id.clone(),
-                new_aligned_memories_30d: 20,
-                retrievals_14d: 15,
-                avg_child_alignment: 0.8,
-                weight_trend: 0.05,
-                last_activity: Utc::now(),
-            }),
-            (inactive_id.clone(), GoalActivityMetrics {
-                goal_id: inactive_id.clone(),
-                new_aligned_memories_30d: 0,
-                retrievals_14d: 0,
-                avg_child_alignment: 0.6,
-                weight_trend: 0.0,
-                last_activity: Utc::now() - Duration::days(60),
-            }),
-            (declining_id.clone(), GoalActivityMetrics {
-                goal_id: declining_id.clone(),
-                new_aligned_memories_30d: 2,
-                retrievals_14d: 1,
-                avg_child_alignment: 0.25,
-                weight_trend: -0.1,
-                last_activity: Utc::now(),
-            }),
+            (
+                active_id.clone(),
+                GoalActivityMetrics {
+                    goal_id: active_id.clone(),
+                    new_aligned_memories_30d: 20,
+                    retrievals_14d: 15,
+                    avg_child_alignment: 0.8,
+                    weight_trend: 0.05,
+                    last_activity: Utc::now(),
+                },
+            ),
+            (
+                inactive_id.clone(),
+                GoalActivityMetrics {
+                    goal_id: inactive_id.clone(),
+                    new_aligned_memories_30d: 0,
+                    retrievals_14d: 0,
+                    avg_child_alignment: 0.6,
+                    weight_trend: 0.0,
+                    last_activity: Utc::now() - Duration::days(60),
+                },
+            ),
+            (
+                declining_id.clone(),
+                GoalActivityMetrics {
+                    goal_id: declining_id.clone(),
+                    new_aligned_memories_30d: 2,
+                    retrievals_14d: 1,
+                    avg_child_alignment: 0.25,
+                    weight_trend: -0.1,
+                    last_activity: Utc::now(),
+                },
+            ),
         ];
 
         let results = detector.batch_evaluate(&goals);
@@ -736,9 +752,10 @@ mod tests {
 
         // Declining goal should have alignment issue
         assert!(results[2].is_obsolete);
-        let has_alignment_issue = results[2].reasons.iter().any(|r| {
-            matches!(r, ObsolescenceReason::ChildAlignmentDropping { .. })
-        });
+        let has_alignment_issue = results[2]
+            .reasons
+            .iter()
+            .any(|r| matches!(r, ObsolescenceReason::ChildAlignmentDropping { .. }));
         assert!(has_alignment_issue);
 
         println!("[PASS] test_full_obsolescence_workflow");
@@ -763,7 +780,10 @@ mod tests {
         // Should detect child alignment dropping (0.0 is below threshold)
         // but no inactivity since last_activity is now
         // Verify the evaluation completed and has valid structure
-        assert!(!eval.reasons.is_empty() || !eval.is_obsolete, "Evaluation should either have reasons or be non-obsolete");
+        assert!(
+            !eval.reasons.is_empty() || !eval.is_obsolete,
+            "Evaluation should either have reasons or be non-obsolete"
+        );
         println!("[PASS] test_detector_handles_edge_cases");
     }
 

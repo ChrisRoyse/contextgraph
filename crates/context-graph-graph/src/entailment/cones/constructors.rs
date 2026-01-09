@@ -40,10 +40,7 @@ impl EntailmentCone {
     pub fn new(apex: PoincarePoint, depth: u32, config: &ConeConfig) -> Result<Self, GraphError> {
         // FAIL FAST: Validate apex immediately
         if !apex.is_valid() {
-            tracing::error!(
-                norm = apex.norm(),
-                "Invalid apex point: norm must be < 1.0"
-            );
+            tracing::error!(norm = apex.norm(), "Invalid apex point: norm must be < 1.0");
             return Err(GraphError::InvalidHyperbolicPoint { norm: apex.norm() });
         }
 
@@ -103,10 +100,7 @@ impl EntailmentCone {
 
         // FAIL FAST: Validate aperture range
         if aperture <= 0.0 || aperture > std::f32::consts::FRAC_PI_2 {
-            tracing::error!(
-                aperture = aperture,
-                "Aperture out of valid range (0, π/2]"
-            );
+            tracing::error!(aperture = aperture, "Aperture out of valid range (0, π/2]");
             return Err(GraphError::InvalidAperture(aperture));
         }
 

@@ -5,7 +5,9 @@ use candle_core::Tensor;
 use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::gpu::AttentionWeights;
 
-use super::gpu_attention_ops::{compute_attention, compute_qkv_projection, reshape_for_attention, ProjectionDims};
+use super::gpu_attention_ops::{
+    compute_attention, compute_qkv_projection, reshape_for_attention, ProjectionDims,
+};
 
 /// Run self-attention forward pass.
 pub(crate) fn self_attention_forward(
@@ -39,7 +41,11 @@ pub(crate) fn self_attention_forward(
         })?;
 
     // Q, K, V projections
-    let dims = ProjectionDims { batch_size, seq_len, hidden_size };
+    let dims = ProjectionDims {
+        batch_size,
+        seq_len,
+        hidden_size,
+    };
     let query = compute_qkv_projection(
         &hidden_flat,
         &attention.query_weight,

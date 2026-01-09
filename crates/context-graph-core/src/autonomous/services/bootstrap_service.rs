@@ -429,7 +429,10 @@ impl BootstrapService {
     /// Count goal-related keywords in text
     fn count_keywords(&self, text: &str) -> usize {
         let lower = text.to_lowercase();
-        GOAL_KEYWORDS.iter().filter(|&&kw| lower.contains(kw)).count()
+        GOAL_KEYWORDS
+            .iter()
+            .filter(|&&kw| lower.contains(kw))
+            .count()
     }
 
     /// Calculate semantic density (keyword concentration)
@@ -641,7 +644,10 @@ mod tests {
 
         let candidates = service.extract_goal_candidates(content, "docs/overview.md");
 
-        assert!(candidates.len() >= 2, "Should find multiple goal candidates");
+        assert!(
+            candidates.len() >= 2,
+            "Should find multiple goal candidates"
+        );
 
         let has_mission = candidates.iter().any(|c| c.text.contains("mission"));
         let has_purpose = candidates.iter().any(|c| c.text.contains("purpose"));
@@ -720,7 +726,8 @@ mod tests {
     fn test_score_candidate_basic() {
         let service = BootstrapService::new();
         let candidate = GoalCandidate {
-            text: "The goal of this system is to provide intelligent memory management.".to_string(),
+            text: "The goal of this system is to provide intelligent memory management."
+                .to_string(),
             source: "README.md".to_string(),
             position: 0.1,
             density: 0.15,
@@ -874,8 +881,9 @@ mod tests {
                 line_number: 1,
             },
             GoalCandidate {
-                text: "The purpose of this system is to provide a comprehensive knowledge framework."
-                    .to_string(),
+                text:
+                    "The purpose of this system is to provide a comprehensive knowledge framework."
+                        .to_string(),
                 source: "b.md".to_string(),
                 position: 0.1,
                 density: 0.15,
@@ -1156,9 +1164,8 @@ objectives:
 
         // Candidate in middle with high density
         let middle_high_density = GoalCandidate {
-            text:
-                "The goal mission purpose objective vision is to build a system architecture."
-                    .to_string(),
+            text: "The goal mission purpose objective vision is to build a system architecture."
+                .to_string(),
             source: "test.md".to_string(),
             position: 0.5,
             density: 0.4,

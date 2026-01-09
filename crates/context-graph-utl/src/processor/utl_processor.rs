@@ -2,17 +2,17 @@
 
 use std::time::Instant;
 
-use crate::config::UtlConfig;
-use crate::error::{UtlError, UtlResult};
-use crate::surprise::SurpriseCalculator;
 use crate::coherence::CoherenceTracker;
+use crate::config::UtlConfig;
 use crate::emotional::EmotionalWeightCalculator;
-use crate::phase::PhaseOscillator;
+use crate::error::{UtlError, UtlResult};
 use crate::johari::JohariClassifier;
 use crate::lifecycle::LifecycleManager;
+use crate::phase::PhaseOscillator;
+use crate::surprise::SurpriseCalculator;
 use crate::{
-    compute_learning_magnitude_validated, LearningSignal, LifecycleLambdaWeights,
-    LifecycleStage, JohariQuadrant, SuggestedAction,
+    compute_learning_magnitude_validated, JohariQuadrant, LearningSignal, LifecycleLambdaWeights,
+    LifecycleStage, SuggestedAction,
 };
 use context_graph_core::types::EmotionalState;
 
@@ -101,7 +101,12 @@ impl UtlProcessor {
         embedding: &[f32],
         context_embeddings: &[Vec<f32>],
     ) -> UtlResult<LearningSignal> {
-        self.compute_learning_internal(content, embedding, context_embeddings, EmotionalState::Neutral)
+        self.compute_learning_internal(
+            content,
+            embedding,
+            context_embeddings,
+            EmotionalState::Neutral,
+        )
     }
 
     /// Compute learning with explicit emotional state.
@@ -128,9 +133,15 @@ impl UtlProcessor {
         let _transitioned = self.lifecycle_manager.increment();
 
         // Compute UTL components
-        let delta_s = self.surprise_calculator.compute_surprise(embedding, context_embeddings);
-        let delta_c = self.coherence_tracker.compute_coherence(embedding, context_embeddings);
-        let w_e = self.emotional_calculator.compute_emotional_weight(content, emotional_state);
+        let delta_s = self
+            .surprise_calculator
+            .compute_surprise(embedding, context_embeddings);
+        let delta_c = self
+            .coherence_tracker
+            .compute_coherence(embedding, context_embeddings);
+        let w_e = self
+            .emotional_calculator
+            .compute_emotional_weight(content, emotional_state);
         let phi = self.phase_oscillator.phase();
         let lambda_weights = self.lifecycle_manager.current_weights();
 
@@ -158,9 +169,17 @@ impl UtlProcessor {
         self.computation_count += 1;
 
         LearningSignal::new(
-            magnitude, delta_s, delta_c, w_e, phi,
-            Some(lambda_weights), quadrant, suggested_action,
-            should_consolidate, should_store, latency_us,
+            magnitude,
+            delta_s,
+            delta_c,
+            w_e,
+            phi,
+            Some(lambda_weights),
+            quadrant,
+            suggested_action,
+            should_consolidate,
+            should_store,
+            latency_us,
         )
     }
 

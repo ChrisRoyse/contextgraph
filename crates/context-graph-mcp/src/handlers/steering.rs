@@ -45,10 +45,7 @@ impl Handlers {
             Ok(c) => c,
             Err(e) => {
                 error!(error = %e, "get_steering_feedback: Failed to get node count");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Failed to get node count: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Failed to get node count: {}", e));
             }
         };
 

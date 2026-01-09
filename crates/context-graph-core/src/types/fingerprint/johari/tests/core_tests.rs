@@ -45,7 +45,9 @@ fn test_zeroed() {
         }
     }
 
-    println!("[PASS] zeroed() creates valid fingerprint with zero quadrants and uniform transitions");
+    println!(
+        "[PASS] zeroed() creates valid fingerprint with zero quadrants and uniform transitions"
+    );
 }
 
 // NOTE: stub() method has been removed as part of backwards compat cleanup

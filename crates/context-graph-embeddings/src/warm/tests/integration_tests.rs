@@ -1,10 +1,10 @@
 //! Cross-component integration tests.
 
+use super::helpers::{test_config, test_handle, test_handle_full, MB};
 use crate::warm::memory_pool::WarmMemoryPools;
 use crate::warm::registry::{WarmModelRegistry, EMBEDDING_MODEL_IDS, TOTAL_MODEL_COUNT};
 use crate::warm::state::WarmModelState;
 use crate::warm::validation::{TestInferenceConfig, WarmValidator};
-use super::helpers::{test_config, test_handle, test_handle_full, MB};
 
 #[test]
 fn test_full_warm_loading_pipeline_simulation() {

@@ -44,7 +44,9 @@ pub enum BinaryQuantizationError {
     },
 
     /// Metadata type mismatch.
-    #[error("[EMB-E012] BINARY_DEQUANTIZATION_FAILED: Expected Binary metadata, got different variant")]
+    #[error(
+        "[EMB-E012] BINARY_DEQUANTIZATION_FAILED: Expected Binary metadata, got different variant"
+    )]
     MetadataMismatch,
 }
 
@@ -109,7 +111,10 @@ impl BinaryEncoder {
                     value = %val,
                     "Invalid value in embedding"
                 );
-                return Err(BinaryQuantizationError::InvalidValue { index: i, value: val });
+                return Err(BinaryQuantizationError::InvalidValue {
+                    index: i,
+                    value: val,
+                });
             }
         }
 

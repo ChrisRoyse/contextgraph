@@ -28,7 +28,10 @@ mod edge_case_tests {
         println!("  effective_weight = {}", effective);
         println!("  Expected: 0.0 (zero base means zero effective)");
 
-        assert_eq!(effective, 0.0, "Zero base weight should produce zero effective weight");
+        assert_eq!(
+            effective, 0.0,
+            "Zero base weight should produce zero effective weight"
+        );
         println!("✓ PASS: Zero input handled correctly\n");
     }
 
@@ -41,8 +44,10 @@ mod edge_case_tests {
 
         println!("STATE BEFORE:");
         println!("  base_weight = {}", base_weight);
-        println!("  excitatory = {}, inhibitory = {}, modulatory = {}",
-                 weights.excitatory, weights.inhibitory, weights.modulatory);
+        println!(
+            "  excitatory = {}, inhibitory = {}, modulatory = {}",
+            weights.excitatory, weights.inhibitory, weights.modulatory
+        );
 
         let effective = weights.compute_effective_weight(base_weight);
 
@@ -53,7 +58,10 @@ mod edge_case_tests {
         println!("  Actual formula: (base*exc - base*inh) * (1 + (mod-0.5)*0.4)");
         println!("  With zeros: 0 * 0.8 = 0.0");
 
-        assert_eq!(effective, 0.0, "Zero excitatory means zero signal regardless of base");
+        assert_eq!(
+            effective, 0.0,
+            "Zero excitatory means zero signal regardless of base"
+        );
         println!("✓ PASS: All-zero modifiers handled correctly (produces zero)\n");
     }
 
@@ -100,7 +108,10 @@ mod edge_case_tests {
         println!("  effective_weight = {}", effective);
         println!("  Formula: 0.5 × (1 + 0.0 - 1.0 + 0.5×0.0) = 0.0");
 
-        assert!(effective >= 0.0, "Effective weight must be clamped to 0.0 minimum");
+        assert!(
+            effective >= 0.0,
+            "Effective weight must be clamped to 0.0 minimum"
+        );
         println!("✓ PASS: Maximum inhibitory clamped correctly\n");
     }
 
@@ -147,7 +158,10 @@ mod edge_case_tests {
         println!("STATE AFTER:");
         println!("  Deserialization result: {:?}", result.is_err());
 
-        assert!(result.is_err(), "Invalid domain should fail deserialization");
+        assert!(
+            result.is_err(),
+            "Invalid domain should fail deserialization"
+        );
         println!("✓ PASS: Invalid domain JSON rejected correctly\n");
     }
 
@@ -166,7 +180,10 @@ mod edge_case_tests {
         println!("STATE AFTER:");
         println!("  Deserialization result: {:?}", result.is_err());
 
-        assert!(result.is_err(), "Invalid edge type should fail deserialization");
+        assert!(
+            result.is_err(),
+            "Invalid edge type should fail deserialization"
+        );
         println!("✓ PASS: Invalid edge type JSON rejected correctly\n");
     }
 
@@ -185,7 +202,10 @@ mod edge_case_tests {
         println!("STATE AFTER:");
         println!("  Deserialization result: {:?}", result.is_err());
 
-        assert!(result.is_err(), "Malformed JSON should fail deserialization");
+        assert!(
+            result.is_err(),
+            "Malformed JSON should fail deserialization"
+        );
         println!("✓ PASS: Malformed JSON rejected correctly\n");
     }
 
@@ -209,13 +229,18 @@ mod edge_case_tests {
         println!("  Validation result: {:?}", validation);
 
         // Constructor stores raw values - validate() returns false for invalid
-        assert!(!validation, "validate() should return false for out-of-range values");
+        assert!(
+            !validation,
+            "validate() should return false for out-of-range values"
+        );
 
         // But compute_effective_weight still clamps the output
         let base = 0.5;
         let effective = weights.compute_effective_weight(base);
-        assert!((0.0..=1.0).contains(&effective),
-                "compute_effective_weight must always return clamped value");
+        assert!(
+            (0.0..=1.0).contains(&effective),
+            "compute_effective_weight must always return clamped value"
+        );
 
         println!("  effective_weight (clamped output): {}", effective);
         println!("✓ PASS: Out-of-range values detected by validate(), output clamped\n");

@@ -8,9 +8,7 @@
 //! "Retrieval should leverage the FULL teleological signature -
 //! not just semantic similarity, but causal, temporal, and analogical relevance too."
 
-use crate::teleological::{
-    TeleologicalVector, GroupType,
-};
+use crate::teleological::{GroupType, TeleologicalVector};
 use crate::types::fingerprint::PurposeVector;
 
 /// Configuration for multi-space retrieval.
@@ -116,7 +114,9 @@ impl MultiSpaceRetriever {
 
         // Sort by similarity descending
         results.sort_by(|a, b| {
-            b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal)
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         // Take top-k
@@ -139,15 +139,21 @@ impl MultiSpaceRetriever {
             .enumerate()
             .map(|(idx, candidate)| {
                 self.compute_similarity_weighted(
-                    idx, query, candidate,
-                    purpose_weight, correlation_weight, group_weight,
+                    idx,
+                    query,
+                    candidate,
+                    purpose_weight,
+                    correlation_weight,
+                    group_weight,
                 )
             })
             .filter(|r| r.similarity >= self.config.min_similarity && r.passes_filter)
             .collect();
 
         results.sort_by(|a, b| {
-            b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal)
+            b.similarity
+                .partial_cmp(&a.similarity)
+                .unwrap_or(std::cmp::Ordering::Equal)
         });
 
         results.truncate(self.config.top_k);
@@ -177,7 +183,9 @@ impl MultiSpaceRetriever {
         candidate: &TeleologicalVector,
     ) -> RetrievalResult {
         self.compute_similarity_weighted(
-            index, query, candidate,
+            index,
+            query,
+            candidate,
             self.config.purpose_weight,
             self.config.correlation_weight,
             self.config.group_weight,
@@ -198,20 +206,21 @@ impl MultiSpaceRetriever {
         let purpose_sim = query.purpose_vector.similarity(&candidate.purpose_vector);
 
         // Cross-correlation similarity
-        let corr_sim = Self::correlation_similarity(
-            &query.cross_correlations,
-            &candidate.cross_correlations,
-        );
+        let corr_sim =
+            Self::correlation_similarity(&query.cross_correlations, &candidate.cross_correlations);
 
         // Group alignment similarity
-        let group_sim = query.group_alignments.similarity(&candidate.group_alignments);
+        let group_sim = query
+            .group_alignments
+            .similarity(&candidate.group_alignments);
 
         // Weighted combination
         let total_weight = purpose_weight + correlation_weight + group_weight;
         let similarity = if total_weight > f32::EPSILON {
             (purpose_weight * purpose_sim
-             + correlation_weight * corr_sim
-             + group_weight * group_sim) / total_weight
+                + correlation_weight * corr_sim
+                + group_weight * group_sim)
+                / total_weight
         } else {
             0.0
         };
@@ -285,9 +294,7 @@ impl MultiSpaceRetriever {
             .filter(|(_, sim)| *sim >= self.config.min_similarity)
             .collect();
 
-        results.sort_by(|a, b| {
-            b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal)
-        });
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         results.truncate(self.config.top_k);
         results
@@ -313,14 +320,16 @@ impl Default for MultiSpaceRetriever {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::teleological::{CROSS_CORRELATION_COUNT, GroupAlignments, NUM_EMBEDDERS};
+    use crate::teleological::{GroupAlignments, CROSS_CORRELATION_COUNT, NUM_EMBEDDERS};
 
     fn make_teleological_vector(alignment: f32) -> TeleologicalVector {
         let pv = PurposeVector::new([alignment; NUM_EMBEDDERS]);
         TeleologicalVector::with_all(
             pv,
             vec![alignment; CROSS_CORRELATION_COUNT],
-            GroupAlignments::new(alignment, alignment, alignment, alignment, alignment, alignment),
+            GroupAlignments::new(
+                alignment, alignment, alignment, alignment, alignment, alignment,
+            ),
             1.0,
         )
     }
@@ -437,16 +446,10 @@ mod tests {
         let candidates = vec![make_teleological_vector(0.7)];
 
         // All weight on purpose
-        let purpose_results = retriever.retrieve_weighted(
-            &query, &candidates,
-            1.0, 0.0, 0.0,
-        );
+        let purpose_results = retriever.retrieve_weighted(&query, &candidates, 1.0, 0.0, 0.0);
 
         // All weight on groups
-        let group_results = retriever.retrieve_weighted(
-            &query, &candidates,
-            0.0, 0.0, 1.0,
-        );
+        let group_results = retriever.retrieve_weighted(&query, &candidates, 0.0, 0.0, 1.0);
 
         // Both should find the candidate (same values in this case)
         assert!(!purpose_results.is_empty());
@@ -466,10 +469,11 @@ mod tests {
 
         let candidates = vec![
             make_teleological_vector(0.8), // Uniform
-            code_candidate,                 // Implementation-dominant
+            code_candidate,                // Implementation-dominant
         ];
 
-        let impl_results = retriever.retrieve_by_group(&query, &candidates, GroupType::Implementation);
+        let impl_results =
+            retriever.retrieve_by_group(&query, &candidates, GroupType::Implementation);
 
         // Should find the implementation-dominant one
         assert!(!impl_results.is_empty());

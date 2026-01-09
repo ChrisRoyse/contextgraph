@@ -86,10 +86,8 @@ pub fn gpu_forward(
         DType::F16,
     )?;
 
-
     // Create extended attention mask for broadcasting
     let extended_attention_mask = create_extended_attention_mask(&attention_mask_tensor)?;
-
 
     // === DECODER LAYERS ===
     let mut hidden_states = hidden_states;
@@ -102,7 +100,6 @@ pub fn gpu_forward(
             config,
             layer_idx,
         )?;
-
     }
 
     // === FINAL LAYER NORM ===

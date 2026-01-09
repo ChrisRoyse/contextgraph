@@ -20,9 +20,9 @@
 //! - RRF(d) = sum_i 1/(k + rank_i(d)) where k=60
 
 use context_graph_embeddings::{
-    StoredQuantizedFingerprint, IndexEntry, EmbedderQueryResult, MultiSpaceQueryResult,
-    QuantizedEmbedding, QuantizationMethod, QuantizationMetadata,
-    STORAGE_VERSION, RRF_K, MAX_QUANTIZED_SIZE_BYTES, ModelId,
+    EmbedderQueryResult, IndexEntry, ModelId, MultiSpaceQueryResult, QuantizationMetadata,
+    QuantizationMethod, QuantizedEmbedding, StoredQuantizedFingerprint, MAX_QUANTIZED_SIZE_BYTES,
+    RRF_K, STORAGE_VERSION,
 };
 use std::collections::HashMap;
 use uuid::Uuid;
@@ -44,7 +44,9 @@ fn create_test_embeddings_with_deterministic_data(seed: u8) -> HashMap<u8, Quant
         let (dim, data, metadata) = match method {
             QuantizationMethod::PQ8 => {
                 // PQ8: 8 bytes of centroid indices
-                let data: Vec<u8> = (0..8u8).map(|j| seed.wrapping_add(i).wrapping_add(j)).collect();
+                let data: Vec<u8> = (0..8u8)
+                    .map(|j| seed.wrapping_add(i).wrapping_add(j))
+                    .collect();
                 let dim = model_id.dimension();
                 let metadata = QuantizationMetadata::PQ8 {
                     codebook_id: i as u32 + seed as u32 * 100,
@@ -55,7 +57,11 @@ fn create_test_embeddings_with_deterministic_data(seed: u8) -> HashMap<u8, Quant
             QuantizationMethod::Float8E4M3 => {
                 // Float8: 1 byte per dimension (compressed from f32)
                 let dim = model_id.dimension();
-                let data: Vec<u8> = (0..dim).map(|j| ((seed as usize).wrapping_add(i as usize).wrapping_add(j) & 0xFF) as u8).collect();
+                let data: Vec<u8> = (0..dim)
+                    .map(|j| {
+                        ((seed as usize).wrapping_add(i as usize).wrapping_add(j) & 0xFF) as u8
+                    })
+                    .collect();
                 let metadata = QuantizationMetadata::Float8 {
                     scale: 1.0 + (seed as f32 * 0.1),
                     bias: seed as f32 * 0.01,
@@ -65,7 +71,11 @@ fn create_test_embeddings_with_deterministic_data(seed: u8) -> HashMap<u8, Quant
             QuantizationMethod::Binary => {
                 // Binary: 10000 bits = 1250 bytes for E9 HDC
                 let dim = 10000;
-                let data: Vec<u8> = (0..1250).map(|j| ((seed as usize).wrapping_add(i as usize).wrapping_add(j) & 0xFF) as u8).collect();
+                let data: Vec<u8> = (0..1250)
+                    .map(|j| {
+                        ((seed as usize).wrapping_add(i as usize).wrapping_add(j) & 0xFF) as u8
+                    })
+                    .collect();
                 let metadata = QuantizationMetadata::Binary {
                     threshold: 0.0 + seed as f32 * 0.001,
                 };
@@ -75,7 +85,11 @@ fn create_test_embeddings_with_deterministic_data(seed: u8) -> HashMap<u8, Quant
                 // Sparse: Variable size based on nnz (100 entries typical for test)
                 let nnz = 100;
                 // Each sparse entry: 4 bytes index + 4 bytes value = 8 bytes
-                let data: Vec<u8> = (0..(nnz * 8)).map(|j| ((seed as usize).wrapping_add(i as usize).wrapping_add(j) & 0xFF) as u8).collect();
+                let data: Vec<u8> = (0..(nnz * 8))
+                    .map(|j| {
+                        ((seed as usize).wrapping_add(i as usize).wrapping_add(j) & 0xFF) as u8
+                    })
+                    .collect();
                 let metadata = QuantizationMetadata::Sparse {
                     vocab_size: 30522,
                     nnz,
@@ -85,7 +99,11 @@ fn create_test_embeddings_with_deterministic_data(seed: u8) -> HashMap<u8, Quant
             QuantizationMethod::TokenPruning => {
                 // TokenPruning: ~50% of tokens kept, 128D per token, ~64 tokens
                 let kept_tokens = 64;
-                let data: Vec<u8> = (0..(kept_tokens * 128)).map(|j| ((seed as usize).wrapping_add(i as usize).wrapping_add(j) & 0xFF) as u8).collect();
+                let data: Vec<u8> = (0..(kept_tokens * 128))
+                    .map(|j| {
+                        ((seed as usize).wrapping_add(i as usize).wrapping_add(j) & 0xFF) as u8
+                    })
+                    .collect();
                 let metadata = QuantizationMetadata::TokenPruning {
                     original_tokens: 128,
                     kept_tokens,
@@ -95,12 +113,15 @@ fn create_test_embeddings_with_deterministic_data(seed: u8) -> HashMap<u8, Quant
             }
         };
 
-        map.insert(i, QuantizedEmbedding {
-            method,
-            original_dim: dim,
-            data,
-            metadata,
-        });
+        map.insert(
+            i,
+            QuantizedEmbedding {
+                method,
+                original_dim: dim,
+                data,
+                metadata,
+            },
+        );
     }
 
     map
@@ -109,9 +130,9 @@ fn create_test_embeddings_with_deterministic_data(seed: u8) -> HashMap<u8, Quant
 /// Create deterministic purpose vector based on seed.
 fn create_purpose_vector(seed: u8) -> [f32; 13] {
     let mut pv = [0.0f32; 13];
-    for i in 0..13 {
+    for (i, val) in pv.iter_mut().enumerate() {
         // Generate values in [0.3, 0.9] range
-        pv[i] = 0.3 + ((seed as f32 + i as f32 * 0.05) % 0.6);
+        *val = 0.3 + ((seed as f32 + i as f32 * 0.05) % 0.6);
     }
     pv
 }
@@ -132,8 +153,8 @@ fn create_johari_quadrants(seed: u8) -> [f32; 4] {
 /// Create deterministic content hash based on seed.
 fn create_content_hash(seed: u8) -> [u8; 32] {
     let mut hash = [0u8; 32];
-    for i in 0..32 {
-        hash[i] = seed.wrapping_add(i as u8).wrapping_mul(17);
+    for (i, byte) in hash.iter_mut().enumerate() {
+        *byte = seed.wrapping_add(i as u8).wrapping_mul(17);
     }
     hash
 }
@@ -165,13 +186,27 @@ mod fingerprint_creation_tests {
 
         // Verify all fields
         assert_eq!(fp.id, id, "ID must match");
-        assert_eq!(fp.version, STORAGE_VERSION, "Version must match STORAGE_VERSION");
+        assert_eq!(
+            fp.version, STORAGE_VERSION,
+            "Version must match STORAGE_VERSION"
+        );
         assert_eq!(fp.embeddings.len(), 13, "Must have exactly 13 embeddings");
-        assert_eq!(fp.purpose_vector.len(), 13, "Purpose vector must have 13 dimensions");
-        assert_eq!(fp.johari_quadrants.len(), 4, "Johari quadrants must have 4 values");
+        assert_eq!(
+            fp.purpose_vector.len(),
+            13,
+            "Purpose vector must have 13 dimensions"
+        );
+        assert_eq!(
+            fp.johari_quadrants.len(),
+            4,
+            "Johari quadrants must have 4 values"
+        );
         assert_eq!(fp.content_hash, content_hash, "Content hash must match");
         assert!(!fp.deleted, "New fingerprint should not be deleted");
-        assert_eq!(fp.access_count, 0, "New fingerprint should have zero access count");
+        assert_eq!(
+            fp.access_count, 0,
+            "New fingerprint should have zero access count"
+        );
 
         println!("[PASS] Created fingerprint with all 13 embeddings");
     }
@@ -247,7 +282,10 @@ mod fingerprint_creation_tests {
             );
         }
 
-        assert!(fp.validate_quantization_methods(), "All quantization methods should be valid");
+        assert!(
+            fp.validate_quantization_methods(),
+            "All quantization methods should be valid"
+        );
         println!("[PASS] All 13 embeddings have correct quantization methods");
     }
 
@@ -286,7 +324,10 @@ mod fingerprint_creation_tests {
             create_content_hash(1),
         );
         assert_eq!(fp1.dominant_quadrant, 0, "Open should be dominant");
-        assert!((fp1.johari_confidence - 0.6).abs() < f32::EPSILON, "Confidence should be 0.6");
+        assert!(
+            (fp1.johari_confidence - 0.6).abs() < f32::EPSILON,
+            "Confidence should be 0.6"
+        );
 
         // Hidden dominant
         let fp2 = StoredQuantizedFingerprint::new(
@@ -328,7 +369,8 @@ mod fingerprint_creation_tests {
         assert!(
             size < MAX_QUANTIZED_SIZE_BYTES,
             "Estimated size {} exceeds maximum {} bytes",
-            size, MAX_QUANTIZED_SIZE_BYTES
+            size,
+            MAX_QUANTIZED_SIZE_BYTES
         );
 
         // Should be reasonable (> 1KB for all that data)
@@ -376,23 +418,50 @@ mod serialization_roundtrip_tests {
 
         // Verify all fields match exactly
         assert_eq!(restored.id, original.id, "ID mismatch after roundtrip");
-        assert_eq!(restored.version, original.version, "Version mismatch after roundtrip");
-        assert_eq!(restored.embeddings.len(), original.embeddings.len(), "Embeddings count mismatch");
+        assert_eq!(
+            restored.version, original.version,
+            "Version mismatch after roundtrip"
+        );
+        assert_eq!(
+            restored.embeddings.len(),
+            original.embeddings.len(),
+            "Embeddings count mismatch"
+        );
 
         for i in 0..13u8 {
             let orig_emb = original.get_embedding(i);
             let rest_emb = restored.get_embedding(i);
-            assert_eq!(orig_emb.method, rest_emb.method, "Embedder {} method mismatch", i);
-            assert_eq!(orig_emb.original_dim, rest_emb.original_dim, "Embedder {} dim mismatch", i);
+            assert_eq!(
+                orig_emb.method, rest_emb.method,
+                "Embedder {} method mismatch",
+                i
+            );
+            assert_eq!(
+                orig_emb.original_dim, rest_emb.original_dim,
+                "Embedder {} dim mismatch",
+                i
+            );
             assert_eq!(orig_emb.data, rest_emb.data, "Embedder {} data mismatch", i);
         }
 
-        assert_eq!(restored.purpose_vector, original.purpose_vector, "Purpose vector mismatch");
+        assert_eq!(
+            restored.purpose_vector, original.purpose_vector,
+            "Purpose vector mismatch"
+        );
         assert!((restored.theta_to_north_star - original.theta_to_north_star).abs() < f32::EPSILON);
-        assert_eq!(restored.johari_quadrants, original.johari_quadrants, "Johari quadrants mismatch");
-        assert_eq!(restored.dominant_quadrant, original.dominant_quadrant, "Dominant quadrant mismatch");
+        assert_eq!(
+            restored.johari_quadrants, original.johari_quadrants,
+            "Johari quadrants mismatch"
+        );
+        assert_eq!(
+            restored.dominant_quadrant, original.dominant_quadrant,
+            "Dominant quadrant mismatch"
+        );
         assert!((restored.johari_confidence - original.johari_confidence).abs() < f32::EPSILON);
-        assert_eq!(restored.content_hash, original.content_hash, "Content hash mismatch");
+        assert_eq!(
+            restored.content_hash, original.content_hash,
+            "Content hash mismatch"
+        );
 
         println!("[PASS] JSON roundtrip preserves all fingerprint data");
     }
@@ -416,31 +485,42 @@ mod serialization_roundtrip_tests {
             bincode::deserialize(&bytes).expect("Bincode deserialization failed");
 
         // Verify critical fields
-        assert_eq!(restored.id, original.id, "ID mismatch after bincode roundtrip");
+        assert_eq!(
+            restored.id, original.id,
+            "ID mismatch after bincode roundtrip"
+        );
         assert_eq!(restored.version, original.version, "Version mismatch");
         assert_eq!(restored.embeddings.len(), 13, "Must have 13 embeddings");
-        assert_eq!(restored.purpose_vector, original.purpose_vector, "Purpose vector mismatch");
-        assert_eq!(restored.content_hash, original.content_hash, "Content hash mismatch");
+        assert_eq!(
+            restored.purpose_vector, original.purpose_vector,
+            "Purpose vector mismatch"
+        );
+        assert_eq!(
+            restored.content_hash, original.content_hash,
+            "Content hash mismatch"
+        );
 
         // Verify embedding data integrity
         for i in 0..13u8 {
             let orig_data = &original.get_embedding(i).data;
             let rest_data = &restored.get_embedding(i).data;
-            assert_eq!(orig_data, rest_data, "Embedder {} data corrupted after bincode roundtrip", i);
+            assert_eq!(
+                orig_data, rest_data,
+                "Embedder {} data corrupted after bincode roundtrip",
+                i
+            );
         }
 
-        println!("[PASS] Bincode roundtrip preserves all fingerprint data ({} bytes)", bytes.len());
+        println!(
+            "[PASS] Bincode roundtrip preserves all fingerprint data ({} bytes)",
+            bytes.len()
+        );
     }
 
     /// Test EmbedderQueryResult serde roundtrip.
     #[test]
     fn test_embedder_query_result_roundtrip() {
-        let original = EmbedderQueryResult::from_similarity(
-            Uuid::new_v4(),
-            5,
-            0.876_543_2,
-            42,
-        );
+        let original = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 5, 0.876_543_2, 42);
 
         let json = serde_json::to_string(&original).expect("Serialize");
         let restored: EmbedderQueryResult = serde_json::from_str(&json).expect("Deserialize");
@@ -483,7 +563,11 @@ mod serialization_roundtrip_tests {
             if orig.is_nan() {
                 assert!(rest.is_nan(), "Embedder {} should be NaN", i);
             } else {
-                assert!((rest - orig).abs() < f32::EPSILON, "Embedder {} similarity mismatch", i);
+                assert!(
+                    (rest - orig).abs() < f32::EPSILON,
+                    "Embedder {} similarity mismatch",
+                    i
+                );
             }
         }
 
@@ -505,7 +589,10 @@ mod index_entry_tests {
         // Classic 3-4-5 right triangle
         let entry = IndexEntry::new(Uuid::new_v4(), 0, vec![3.0, 4.0]);
 
-        assert!((entry.norm - 5.0).abs() < f32::EPSILON, "Norm should be 5.0");
+        assert!(
+            (entry.norm - 5.0).abs() < f32::EPSILON,
+            "Norm should be 5.0"
+        );
         assert_eq!(entry.vector.len(), 2, "Vector should have 2 dimensions");
         assert_eq!(entry.embedder_idx, 0, "Embedder index should be 0");
 
@@ -518,12 +605,21 @@ mod index_entry_tests {
         let entry = IndexEntry::new(Uuid::new_v4(), 0, vec![3.0, 4.0]);
         let normalized = entry.normalized();
 
-        assert!((normalized[0] - 0.6).abs() < f32::EPSILON, "First component should be 0.6");
-        assert!((normalized[1] - 0.8).abs() < f32::EPSILON, "Second component should be 0.8");
+        assert!(
+            (normalized[0] - 0.6).abs() < f32::EPSILON,
+            "First component should be 0.6"
+        );
+        assert!(
+            (normalized[1] - 0.8).abs() < f32::EPSILON,
+            "Second component should be 0.8"
+        );
 
         // Verify unit norm
         let unit_norm: f32 = normalized.iter().map(|x| x * x).sum::<f32>().sqrt();
-        assert!((unit_norm - 1.0).abs() < 1e-6, "Normalized vector should have unit norm");
+        assert!(
+            (unit_norm - 1.0).abs() < 1e-6,
+            "Normalized vector should have unit norm"
+        );
 
         println!("[PASS] Normalized vector computed correctly");
     }
@@ -535,7 +631,11 @@ mod index_entry_tests {
         let query = vec![1.0, 2.0, 3.0];
 
         let sim = entry.cosine_similarity(&query);
-        assert!((sim - 1.0).abs() < 1e-6, "Identical vectors should have similarity 1.0, got {}", sim);
+        assert!(
+            (sim - 1.0).abs() < 1e-6,
+            "Identical vectors should have similarity 1.0, got {}",
+            sim
+        );
 
         println!("[PASS] Cosine similarity for identical vectors = 1.0");
     }
@@ -547,7 +647,11 @@ mod index_entry_tests {
         let query = vec![-1.0, 0.0, 0.0];
 
         let sim = entry.cosine_similarity(&query);
-        assert!((sim - (-1.0)).abs() < 1e-6, "Opposite vectors should have similarity -1.0, got {}", sim);
+        assert!(
+            (sim - (-1.0)).abs() < 1e-6,
+            "Opposite vectors should have similarity -1.0, got {}",
+            sim
+        );
 
         println!("[PASS] Cosine similarity for opposite vectors = -1.0");
     }
@@ -559,7 +663,11 @@ mod index_entry_tests {
         let query = vec![0.0, 1.0];
 
         let sim = entry.cosine_similarity(&query);
-        assert!(sim.abs() < 1e-6, "Perpendicular vectors should have similarity 0.0, got {}", sim);
+        assert!(
+            sim.abs() < 1e-6,
+            "Perpendicular vectors should have similarity 0.0, got {}",
+            sim
+        );
 
         println!("[PASS] Cosine similarity for perpendicular vectors = 0.0");
     }
@@ -608,8 +716,14 @@ mod index_entry_tests {
         let entry = IndexEntry::new(Uuid::new_v4(), 0, vec![0.0, 0.0, 0.0]);
         let normalized = entry.normalized();
 
-        assert!(normalized.iter().all(|&x| x == 0.0), "Zero vector should normalize to zero vector");
-        assert!(entry.norm.abs() < f32::EPSILON, "Zero vector should have zero norm");
+        assert!(
+            normalized.iter().all(|&x| x == 0.0),
+            "Zero vector should normalize to zero vector"
+        );
+        assert!(
+            entry.norm.abs() < f32::EPSILON,
+            "Zero vector should have zero norm"
+        );
 
         println!("[PASS] Zero vector normalized correctly to zero vector");
     }
@@ -621,7 +735,10 @@ mod index_entry_tests {
         let query = vec![1.0, 2.0, 3.0];
 
         let sim = entry.cosine_similarity(&query);
-        assert_eq!(sim, 0.0, "Zero vector should have 0.0 similarity with any vector");
+        assert_eq!(
+            sim, 0.0,
+            "Zero vector should have 0.0 similarity with any vector"
+        );
 
         println!("[PASS] Zero vector cosine similarity = 0.0");
     }
@@ -638,7 +755,10 @@ mod rrf_formula_tests {
     /// Verify RRF_K constant matches Constitution k=60.
     #[test]
     fn test_rrf_k_constant() {
-        assert!((RRF_K - 60.0).abs() < f32::EPSILON, "RRF_K must be 60.0 per Constitution");
+        assert!(
+            (RRF_K - 60.0).abs() < f32::EPSILON,
+            "RRF_K must be 60.0 per Constitution"
+        );
         println!("[PASS] RRF_K = 60.0 matches Constitution");
     }
 
@@ -651,7 +771,8 @@ mod rrf_formula_tests {
         assert!(
             (result_rank_0.rrf_contribution() - expected_0).abs() < f32::EPSILON,
             "Rank 0 RRF should be 1/60 = {}, got {}",
-            expected_0, result_rank_0.rrf_contribution()
+            expected_0,
+            result_rank_0.rrf_contribution()
         );
 
         // Rank 1: 1/(60+1) = 1/61
@@ -660,7 +781,8 @@ mod rrf_formula_tests {
         assert!(
             (result_rank_1.rrf_contribution() - expected_1).abs() < f32::EPSILON,
             "Rank 1 RRF should be 1/61 = {}, got {}",
-            expected_1, result_rank_1.rrf_contribution()
+            expected_1,
+            result_rank_1.rrf_contribution()
         );
 
         // Rank 10: 1/(60+10) = 1/70
@@ -669,7 +791,8 @@ mod rrf_formula_tests {
         assert!(
             (result_rank_10.rrf_contribution() - expected_10).abs() < f32::EPSILON,
             "Rank 10 RRF should be 1/70 = {}, got {}",
-            expected_10, result_rank_10.rrf_contribution()
+            expected_10,
+            result_rank_10.rrf_contribution()
         );
 
         println!("[PASS] RRF contribution formula 1/(60+rank) verified");
@@ -688,7 +811,10 @@ mod rrf_formula_tests {
             assert!(
                 rrf < prev_rrf,
                 "RRF should decrease: rank {} ({}) >= rank {} ({})",
-                rank, rrf, rank - 1, prev_rrf
+                rank,
+                rrf,
+                rank - 1,
+                prev_rrf
             );
 
             prev_rrf = rrf;
@@ -704,22 +830,26 @@ mod rrf_formula_tests {
 
         // Create results for 3 embedders with different ranks
         let results = vec![
-            EmbedderQueryResult::from_similarity(id, 0, 0.9, 0),  // rank 0: 1/60
-            EmbedderQueryResult::from_similarity(id, 1, 0.8, 1),  // rank 1: 1/61
-            EmbedderQueryResult::from_similarity(id, 2, 0.7, 2),  // rank 2: 1/62
+            EmbedderQueryResult::from_similarity(id, 0, 0.9, 0), // rank 0: 1/60
+            EmbedderQueryResult::from_similarity(id, 1, 0.8, 1), // rank 1: 1/61
+            EmbedderQueryResult::from_similarity(id, 2, 0.7, 2), // rank 2: 1/62
         ];
 
         let multi = MultiSpaceQueryResult::from_embedder_results(id, &results, 0.75);
 
         // Expected RRF = 1/60 + 1/61 + 1/62
-        let expected_rrf = 1.0/60.0 + 1.0/61.0 + 1.0/62.0;
+        let expected_rrf = 1.0 / 60.0 + 1.0 / 61.0 + 1.0 / 62.0;
         assert!(
             (multi.rrf_score - expected_rrf).abs() < 1e-6,
             "RRF score should be {} (sum of contributions), got {}",
-            expected_rrf, multi.rrf_score
+            expected_rrf,
+            multi.rrf_score
         );
 
-        println!("[PASS] RRF aggregation: sum of 1/(60+rank_i) = {}", multi.rrf_score);
+        println!(
+            "[PASS] RRF aggregation: sum of 1/(60+rank_i) = {}",
+            multi.rrf_score
+        );
     }
 
     /// Test RRF at extreme ranks.
@@ -732,21 +862,25 @@ mod rrf_formula_tests {
         assert!(
             (rrf_high - expected_high).abs() < f32::EPSILON,
             "Rank 10000 RRF should be {}, got {}",
-            expected_high, rrf_high
+            expected_high,
+            rrf_high
         );
 
         // Verify it's still positive
         assert!(rrf_high > 0.0, "RRF should always be positive");
 
-        println!("[PASS] RRF at extreme ranks verified (rank 10000 = {})", rrf_high);
+        println!(
+            "[PASS] RRF at extreme ranks verified (rank 10000 = {})",
+            rrf_high
+        );
     }
 
     /// Test that rank 0 has much higher RRF contribution than high ranks.
     #[test]
     fn test_rrf_rank_dominance() {
-        let rrf_0 = 1.0 / 60.0;       // ~0.0167
-        let rrf_100 = 1.0 / 160.0;    // ~0.00625
-        let rrf_1000 = 1.0 / 1060.0;  // ~0.00094
+        let rrf_0 = 1.0 / 60.0; // ~0.0167
+        let rrf_100 = 1.0 / 160.0; // ~0.00625
+        let rrf_1000 = 1.0 / 1060.0; // ~0.00094
 
         // Rank 0 should be ~2.67x rank 100
         assert!(rrf_0 > rrf_100 * 2.0, "Rank 0 should be >2x rank 100");
@@ -771,15 +905,24 @@ mod query_result_tests {
     fn test_embedder_query_result_distance() {
         // Similarity 0.9 -> distance 0.1
         let result = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 0);
-        assert!((result.distance - 0.1).abs() < f32::EPSILON, "Distance should be 1-similarity");
+        assert!(
+            (result.distance - 0.1).abs() < f32::EPSILON,
+            "Distance should be 1-similarity"
+        );
 
         // Similarity 1.0 -> distance 0.0
         let result2 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 1.0, 0);
-        assert!((result2.distance - 0.0).abs() < f32::EPSILON, "Distance for similarity 1.0 should be 0");
+        assert!(
+            (result2.distance - 0.0).abs() < f32::EPSILON,
+            "Distance for similarity 1.0 should be 0"
+        );
 
         // Similarity 0.0 -> distance 1.0
         let result3 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.0, 0);
-        assert!((result3.distance - 1.0).abs() < f32::EPSILON, "Distance for similarity 0.0 should be 1.0");
+        assert!(
+            (result3.distance - 1.0).abs() < f32::EPSILON,
+            "Distance for similarity 0.0 should be 1.0"
+        );
 
         println!("[PASS] EmbedderQueryResult distance = 1 - similarity");
     }
@@ -789,11 +932,17 @@ mod query_result_tests {
     fn test_similarity_clamping_in_distance() {
         // Similarity > 1.0 should clamp to 1.0
         let result = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 1.5, 0);
-        assert!((result.distance - 0.0).abs() < f32::EPSILON, "Clamped similarity 1.5->1.0 means distance 0");
+        assert!(
+            (result.distance - 0.0).abs() < f32::EPSILON,
+            "Clamped similarity 1.5->1.0 means distance 0"
+        );
 
         // Similarity < -1.0 should clamp to -1.0
         let result2 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, -1.5, 0);
-        assert!((result2.distance - 2.0).abs() < f32::EPSILON, "Clamped similarity -1.5->-1.0 means distance 2.0");
+        assert!(
+            (result2.distance - 2.0).abs() < f32::EPSILON,
+            "Clamped similarity -1.5->-1.0 means distance 2.0"
+        );
 
         println!("[PASS] Similarity clamping in distance calculation verified");
     }
@@ -820,15 +969,22 @@ mod query_result_tests {
         assert!((multi.embedder_similarities[12] - 0.7).abs() < f32::EPSILON);
 
         // Verify non-searched embedders are NaN
-        assert!(multi.embedder_similarities[1].is_nan(), "Non-searched embedder should be NaN");
-        assert!(multi.embedder_similarities[6].is_nan(), "Non-searched embedder should be NaN");
+        assert!(
+            multi.embedder_similarities[1].is_nan(),
+            "Non-searched embedder should be NaN"
+        );
+        assert!(
+            multi.embedder_similarities[6].is_nan(),
+            "Non-searched embedder should be NaN"
+        );
 
         // Verify weighted similarity = mean
         let expected_weighted = (0.9 + 0.8 + 0.7) / 3.0;
         assert!(
             (multi.weighted_similarity - expected_weighted).abs() < f32::EPSILON,
             "Weighted similarity should be mean: {}, got {}",
-            expected_weighted, multi.weighted_similarity
+            expected_weighted,
+            multi.weighted_similarity
         );
 
         println!("[PASS] MultiSpaceQueryResult aggregation verified");
@@ -853,15 +1009,24 @@ mod query_result_tests {
 
         // Above threshold
         let multi_high = MultiSpaceQueryResult::from_embedder_results(id, &results, 0.60);
-        assert!(multi_high.passes_alignment_filter(0.55), "0.60 >= 0.55 should pass");
+        assert!(
+            multi_high.passes_alignment_filter(0.55),
+            "0.60 >= 0.55 should pass"
+        );
 
         // At threshold
         let multi_at = MultiSpaceQueryResult::from_embedder_results(id, &results, 0.55);
-        assert!(multi_at.passes_alignment_filter(0.55), "0.55 >= 0.55 should pass");
+        assert!(
+            multi_at.passes_alignment_filter(0.55),
+            "0.55 >= 0.55 should pass"
+        );
 
         // Below threshold
         let multi_low = MultiSpaceQueryResult::from_embedder_results(id, &results, 0.50);
-        assert!(!multi_low.passes_alignment_filter(0.55), "0.50 < 0.55 should fail");
+        assert!(
+            !multi_low.passes_alignment_filter(0.55),
+            "0.50 < 0.55 should fail"
+        );
 
         println!("[PASS] Purpose alignment filter at 0.55 threshold verified");
     }
@@ -952,7 +1117,10 @@ mod edge_case_tests {
         );
 
         assert_eq!(fp.dominant_quadrant, 0, "Open should be dominant");
-        assert!((fp.johari_confidence - 1.0).abs() < f32::EPSILON, "Confidence should be 1.0");
+        assert!(
+            (fp.johari_confidence - 1.0).abs() < f32::EPSILON,
+            "Confidence should be 1.0"
+        );
 
         println!("[PASS] Extreme johari quadrants handled correctly");
     }
@@ -969,8 +1137,14 @@ mod edge_case_tests {
         );
 
         // Should default to quadrant 0 with zero confidence
-        assert_eq!(fp.dominant_quadrant, 0, "Should default to Open with zero input");
-        assert!((fp.johari_confidence - 0.0).abs() < f32::EPSILON, "Confidence should be 0.0");
+        assert_eq!(
+            fp.dominant_quadrant, 0,
+            "Should default to Open with zero input"
+        );
+        assert!(
+            (fp.johari_confidence - 0.0).abs() < f32::EPSILON,
+            "Confidence should be 0.0"
+        );
 
         println!("[PASS] Zero johari quadrants handled correctly");
     }
@@ -995,13 +1169,23 @@ mod edge_case_tests {
 
         // Verify no drift
         assert_eq!(current.id, original.id, "ID drifted after 10 roundtrips");
-        assert_eq!(current.content_hash, original.content_hash, "Content hash drifted");
-        assert_eq!(current.purpose_vector, original.purpose_vector, "Purpose vector drifted");
+        assert_eq!(
+            current.content_hash, original.content_hash,
+            "Content hash drifted"
+        );
+        assert_eq!(
+            current.purpose_vector, original.purpose_vector,
+            "Purpose vector drifted"
+        );
 
         for i in 0..13u8 {
             let orig_data = &original.get_embedding(i).data;
             let curr_data = &current.get_embedding(i).data;
-            assert_eq!(orig_data, curr_data, "Embedder {} data drifted after 10 roundtrips", i);
+            assert_eq!(
+                orig_data, curr_data,
+                "Embedder {} data drifted after 10 roundtrips",
+                i
+            );
         }
 
         println!("[PASS] 10 roundtrips with no data drift");
@@ -1041,16 +1225,24 @@ mod comprehensive_validation {
 
         // 2. Verify JSON roundtrip
         let json = serde_json::to_string(&original).expect("JSON serialize");
-        let from_json: StoredQuantizedFingerprint = serde_json::from_str(&json).expect("JSON deserialize");
+        let from_json: StoredQuantizedFingerprint =
+            serde_json::from_str(&json).expect("JSON deserialize");
         assert_eq!(from_json.id, original.id);
         assert_eq!(from_json.content_hash, original.content_hash);
-        println!("[2/7] JSON roundtrip preserves data (size: {} bytes)", json.len());
+        println!(
+            "[2/7] JSON roundtrip preserves data (size: {} bytes)",
+            json.len()
+        );
 
         // 3. Verify bincode roundtrip
         let bincode_bytes = bincode::serialize(&original).expect("Bincode serialize");
-        let from_bincode: StoredQuantizedFingerprint = bincode::deserialize(&bincode_bytes).expect("Bincode deserialize");
+        let from_bincode: StoredQuantizedFingerprint =
+            bincode::deserialize(&bincode_bytes).expect("Bincode deserialize");
         assert_eq!(from_bincode.id, original.id);
-        println!("[3/7] Bincode roundtrip preserves data (size: {} bytes)", bincode_bytes.len());
+        println!(
+            "[3/7] Bincode roundtrip preserves data (size: {} bytes)",
+            bincode_bytes.len()
+        );
 
         // 4. Verify IndexEntry operations
         let index_entry = IndexEntry::new(id, 0, vec![3.0, 4.0]);
@@ -1061,7 +1253,7 @@ mod comprehensive_validation {
 
         // 5. Verify RRF formula
         let rrf_0 = EmbedderQueryResult::from_similarity(id, 0, 0.9, 0).rrf_contribution();
-        assert!((rrf_0 - 1.0/60.0).abs() < f32::EPSILON);
+        assert!((rrf_0 - 1.0 / 60.0).abs() < f32::EPSILON);
         println!("[5/7] RRF formula 1/(60+rank) verified");
 
         // 6. Verify MultiSpaceQueryResult aggregation
@@ -1071,7 +1263,7 @@ mod comprehensive_validation {
         ];
         let multi = MultiSpaceQueryResult::from_embedder_results(id, &results, 0.6);
         assert_eq!(multi.embedder_count, 2);
-        let expected_rrf = 1.0/60.0 + 1.0/61.0;
+        let expected_rrf = 1.0 / 60.0 + 1.0 / 61.0;
         assert!((multi.rrf_score - expected_rrf).abs() < 1e-6);
         println!("[6/7] MultiSpaceQueryResult RRF aggregation verified");
 

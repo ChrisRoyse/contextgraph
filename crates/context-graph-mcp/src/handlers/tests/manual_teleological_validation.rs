@@ -7,8 +7,8 @@
 //! exact inputs and validate outputs against expected values.
 //! NO MOCKS. NO FALLBACKS. FAIL FAST if something doesn't work.
 
+use super::{create_test_handlers, extract_mcp_tool_data, make_request};
 use crate::protocol::JsonRpcId;
-use super::{create_test_handlers, make_request, extract_mcp_tool_data};
 use serde_json::json;
 
 // =============================================================================
@@ -100,7 +100,11 @@ async fn test_val_001_search_teleological_identical_vectors_similarity_1() {
     let response = handlers.dispatch(request).await;
 
     // FAIL FAST: No error allowed
-    assert!(response.error.is_none(), "search_teleological MUST NOT error: {:?}", response.error);
+    assert!(
+        response.error.is_none(),
+        "search_teleological MUST NOT error: {:?}",
+        response.error
+    );
 
     let result = response.result.expect("MUST have result");
     let parsed = extract_mcp_tool_data(&result);
@@ -114,7 +118,9 @@ async fn test_val_001_search_teleological_identical_vectors_similarity_1() {
     assert_eq!(parsed["num_results"].as_u64(), Some(1));
 
     // Get results array
-    let results = parsed["results"].as_array().expect("MUST have results array");
+    let results = parsed["results"]
+        .as_array()
+        .expect("MUST have results array");
     assert!(!results.is_empty(), "MUST have at least one result");
 
     // CRITICAL: Similarity for identical vectors MUST be ≈ 1.0
@@ -136,7 +142,11 @@ async fn test_val_001_search_teleological_identical_vectors_similarity_1() {
         "Identical vectors MUST have similarity >= 0.999, got {}",
         similarity
     );
-    assert_eq!(first["rank"].as_u64(), Some(0), "First result MUST have rank 0");
+    assert_eq!(
+        first["rank"].as_u64(),
+        Some(0),
+        "First result MUST have rank 0"
+    );
     assert_eq!(first["vector_id"].as_str(), Some("identical-candidate"));
 }
 
@@ -181,7 +191,11 @@ async fn test_val_002_search_teleological_orthogonal_vectors_similarity_0() {
     );
 
     let response = handlers.dispatch(request).await;
-    assert!(response.error.is_none(), "MUST NOT error: {:?}", response.error);
+    assert!(
+        response.error.is_none(),
+        "MUST NOT error: {:?}",
+        response.error
+    );
 
     let result = response.result.expect("MUST have result");
     let parsed = extract_mcp_tool_data(&result);
@@ -193,7 +207,10 @@ async fn test_val_002_search_teleological_orthogonal_vectors_similarity_0() {
     let similarity = first["similarity"].as_f64().expect("MUST have similarity");
 
     // Verify breakdown is included
-    assert!(first.get("breakdown").is_some(), "MUST include breakdown when requested");
+    assert!(
+        first.get("breakdown").is_some(),
+        "MUST include breakdown when requested"
+    );
 
     let breakdown = &first["breakdown"];
     let pv_sim = breakdown["purpose_vector"].as_f64().unwrap_or(-1.0);
@@ -222,9 +239,21 @@ async fn test_val_002_search_teleological_orthogonal_vectors_similarity_0() {
     );
 
     // Individual components should be near-zero for orthogonal one-hot vectors
-    assert!(pv_sim <= 0.05, "PV similarity for orthogonal: {} (expected <= 0.05)", pv_sim);
-    assert!(cc_sim <= 0.05, "CC similarity for orthogonal: {} (expected <= 0.05)", cc_sim);
-    assert!(ga_sim <= 0.05, "GA similarity for orthogonal: {} (expected <= 0.05)", ga_sim);
+    assert!(
+        pv_sim <= 0.05,
+        "PV similarity for orthogonal: {} (expected <= 0.05)",
+        pv_sim
+    );
+    assert!(
+        cc_sim <= 0.05,
+        "CC similarity for orthogonal: {} (expected <= 0.05)",
+        cc_sim
+    );
+    assert!(
+        ga_sim <= 0.05,
+        "GA similarity for orthogonal: {} (expected <= 0.05)",
+        ga_sim
+    );
 }
 
 // =============================================================================
@@ -236,7 +265,9 @@ async fn test_val_003_search_teleological_ranking_order_descending() {
     let handlers = create_test_handlers();
 
     // Query vector
-    let query_pv = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.1, 0.2, 0.3];
+    let query_pv = [
+        0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, 0.1, 0.2, 0.3,
+    ];
     let query = json!({
         "purpose_vector": query_pv,
         "cross_correlations": uniform_cc(0.5),
@@ -317,11 +348,25 @@ async fn test_val_003_search_teleological_ranking_order_descending() {
     let sim2 = results[2]["similarity"].as_f64().unwrap();
 
     // CRITICAL: Results MUST be in descending order by similarity
-    assert!(sim0 >= sim1, "Result[0] sim {} MUST >= Result[1] sim {}", sim0, sim1);
-    assert!(sim1 >= sim2, "Result[1] sim {} MUST >= Result[2] sim {}", sim1, sim2);
+    assert!(
+        sim0 >= sim1,
+        "Result[0] sim {} MUST >= Result[1] sim {}",
+        sim0,
+        sim1
+    );
+    assert!(
+        sim1 >= sim2,
+        "Result[1] sim {} MUST >= Result[2] sim {}",
+        sim1,
+        sim2
+    );
 
     // Best match should have ~1.0 similarity
-    assert!(sim0 >= 0.99, "Best match should have similarity >= 0.99, got {}", sim0);
+    assert!(
+        sim0 >= 0.99,
+        "Best match should have similarity >= 0.99, got {}",
+        sim0
+    );
 }
 
 // =============================================================================
@@ -357,7 +402,11 @@ async fn test_val_004_fuse_embeddings_uniform_fusion() {
     );
 
     let response = handlers.dispatch(request).await;
-    assert!(response.error.is_none(), "fuse_embeddings MUST NOT error: {:?}", response.error);
+    assert!(
+        response.error.is_none(),
+        "fuse_embeddings MUST NOT error: {:?}",
+        response.error
+    );
 
     let result = response.result.expect("result");
     let parsed = extract_mcp_tool_data(&result);
@@ -367,19 +416,33 @@ async fn test_val_004_fuse_embeddings_uniform_fusion() {
     // Validate vector structure
     let vector = &parsed["vector"];
 
-    let pv = vector["purpose_vector"].as_array().expect("purpose_vector array");
-    let cc = vector["cross_correlations"].as_array().expect("cross_correlations array");
-    let ga = vector["group_alignments"].as_array().expect("group_alignments array");
+    let pv = vector["purpose_vector"]
+        .as_array()
+        .expect("purpose_vector array");
+    let cc = vector["cross_correlations"]
+        .as_array()
+        .expect("cross_correlations array");
+    let ga = vector["group_alignments"]
+        .as_array()
+        .expect("group_alignments array");
 
     // Log physical evidence
     eprintln!("=== PHYSICAL EVIDENCE: fuse_embeddings uniform fusion ===");
     eprintln!("Vector dimensions:");
     eprintln!("  - purpose_vector: {} elements (expected 13)", pv.len());
-    eprintln!("  - cross_correlations: {} elements (expected 78)", cc.len());
+    eprintln!(
+        "  - cross_correlations: {} elements (expected 78)",
+        cc.len()
+    );
     eprintln!("  - group_alignments: {} elements (expected 6)", ga.len());
-    eprintln!("Confidence: {}", parsed["confidence"].as_f64().unwrap_or(-1.0));
-    eprintln!("Metadata active_embedders: {}",
-        parsed["metadata"]["active_embedders"].as_u64().unwrap_or(0));
+    eprintln!(
+        "Confidence: {}",
+        parsed["confidence"].as_f64().unwrap_or(-1.0)
+    );
+    eprintln!(
+        "Metadata active_embedders: {}",
+        parsed["metadata"]["active_embedders"].as_u64().unwrap_or(0)
+    );
     eprintln!("NOTE: Explicit alignments [0.8; 13] provided (all > 0.1 threshold)");
     eprintln!("==========================================================");
 
@@ -413,9 +476,7 @@ async fn test_val_005_fuse_embeddings_wrong_count_error() {
     let handlers = create_test_handlers();
 
     // Only 5 embeddings instead of 13
-    let embeddings: Vec<Vec<f32>> = (0..5)
-        .map(|_| vec![0.5; 1024])
-        .collect();
+    let embeddings: Vec<Vec<f32>> = (0..5).map(|_| vec![0.5; 1024]).collect();
 
     let request = make_request(
         "tools/call",
@@ -432,20 +493,30 @@ async fn test_val_005_fuse_embeddings_wrong_count_error() {
     let result = response.result.expect("Result");
 
     // Check for MCP error format
-    let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     // Log physical evidence
     eprintln!("=== PHYSICAL EVIDENCE: fuse_embeddings wrong count error ===");
     eprintln!("isError: {}", is_error);
     if let Some(content) = result.get("content").and_then(|v| v.as_array()) {
-        if let Some(text) = content.first().and_then(|c| c.get("text")).and_then(|t| t.as_str()) {
+        if let Some(text) = content
+            .first()
+            .and_then(|c| c.get("text"))
+            .and_then(|t| t.as_str())
+        {
             eprintln!("Error message: {}", text);
         }
     }
     eprintln!("=============================================================");
 
     // CRITICAL: Must return error for wrong embedding count
-    assert!(is_error, "MUST return isError=true for wrong embedding count");
+    assert!(
+        is_error,
+        "MUST return isError=true for wrong embedding count"
+    );
 }
 
 // =============================================================================
@@ -481,8 +552,14 @@ async fn test_val_006_update_synergy_positive_feedback() {
     eprintln!("=== PHYSICAL EVIDENCE: update_synergy_matrix positive ===");
     eprintln!("success: {}", parsed["success"].as_bool().unwrap_or(false));
     eprintln!("vector_id: {}", parsed["vector_id"].as_str().unwrap_or("?"));
-    eprintln!("feedback_type: {}", parsed["feedback_type"].as_str().unwrap_or("?"));
-    eprintln!("learning_triggered: {}", parsed["learning_triggered"].as_bool().unwrap_or(false));
+    eprintln!(
+        "feedback_type: {}",
+        parsed["feedback_type"].as_str().unwrap_or("?")
+    );
+    eprintln!(
+        "learning_triggered: {}",
+        parsed["learning_triggered"].as_bool().unwrap_or(false)
+    );
     eprintln!("==========================================================");
 
     assert!(parsed["success"].as_bool().unwrap_or(false), "MUST succeed");
@@ -518,7 +595,10 @@ async fn test_val_007_update_synergy_negative_feedback() {
 
     eprintln!("=== PHYSICAL EVIDENCE: update_synergy_matrix negative ===");
     eprintln!("success: {}", parsed["success"].as_bool().unwrap_or(false));
-    eprintln!("feedback_type: {}", parsed["feedback_type"].as_str().unwrap_or("?"));
+    eprintln!(
+        "feedback_type: {}",
+        parsed["feedback_type"].as_str().unwrap_or("?")
+    );
     eprintln!("==========================================================");
 
     assert!(parsed["success"].as_bool().unwrap_or(false));
@@ -548,12 +628,19 @@ async fn test_val_008_update_synergy_invalid_uuid_error() {
     let response = handlers.dispatch(request).await;
     let result = response.result.expect("Result");
 
-    let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     eprintln!("=== PHYSICAL EVIDENCE: update_synergy_matrix invalid UUID ===");
     eprintln!("isError: {}", is_error);
     if let Some(content) = result.get("content").and_then(|v| v.as_array()) {
-        if let Some(text) = content.first().and_then(|c| c.get("text")).and_then(|t| t.as_str()) {
+        if let Some(text) = content
+            .first()
+            .and_then(|c| c.get("text"))
+            .and_then(|t| t.as_str())
+        {
             eprintln!("Error message: {}", text);
         }
     }
@@ -571,7 +658,7 @@ async fn test_val_009_manage_profile_create() {
     let handlers = create_test_handlers();
 
     let weights: [f32; 13] = [
-        0.20, 0.10, 0.05, 0.15, 0.05, 0.05, 0.10, 0.08, 0.05, 0.05, 0.04, 0.05, 0.03
+        0.20, 0.10, 0.05, 0.15, 0.05, 0.05, 0.10, 0.08, 0.05, 0.05, 0.04, 0.05, 0.03,
     ];
 
     let request = make_request(
@@ -596,7 +683,10 @@ async fn test_val_009_manage_profile_create() {
     eprintln!("=== PHYSICAL EVIDENCE: manage_teleological_profile create ===");
     eprintln!("success: {}", parsed["success"].as_bool().unwrap_or(false));
     eprintln!("action: {}", parsed["action"].as_str().unwrap_or("?"));
-    eprintln!("profile_id: {}", parsed["profile_id"].as_str().unwrap_or("?"));
+    eprintln!(
+        "profile_id: {}",
+        parsed["profile_id"].as_str().unwrap_or("?")
+    );
     if let Some(w) = parsed["weights"].as_array() {
         eprintln!("weights count: {} (expected 13)", w.len());
     }
@@ -712,12 +802,19 @@ async fn test_val_012_manage_profile_invalid_action_error() {
     let response = handlers.dispatch(request).await;
     let result = response.result.expect("Result");
 
-    let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
+    let is_error = result
+        .get("isError")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
 
     eprintln!("=== PHYSICAL EVIDENCE: manage_teleological_profile invalid action ===");
     eprintln!("isError: {}", is_error);
     if let Some(content) = result.get("content").and_then(|v| v.as_array()) {
-        if let Some(text) = content.first().and_then(|c| c.get("text")).and_then(|t| t.as_str()) {
+        if let Some(text) = content
+            .first()
+            .and_then(|c| c.get("text"))
+            .and_then(|t| t.as_str())
+        {
             eprintln!("Error message: {}", text);
             assert!(
                 text.contains("Unknown action") || text.contains("invalid_action"),

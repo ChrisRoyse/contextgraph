@@ -19,8 +19,7 @@ fn test_config_serialization() {
     println!("Config JSON:\n{}", json);
 
     // Deserialize back
-    let config2: GpuMemoryConfig =
-        serde_json::from_str(&json).expect("Deserialization failed");
+    let config2: GpuMemoryConfig = serde_json::from_str(&json).expect("Deserialization failed");
 
     assert_eq!(config.total_budget, config2.total_budget);
     assert_eq!(

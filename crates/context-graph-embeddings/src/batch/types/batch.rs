@@ -173,7 +173,8 @@ impl Batch {
                     content,
                     instruction,
                 } => {
-                    let total_len = content.len() + instruction.as_ref().map_or(0, |s: &String| s.len());
+                    let total_len =
+                        content.len() + instruction.as_ref().map_or(0, |s: &String| s.len());
                     (total_len / 4).max(1)
                 }
                 ModelInput::Code { content, .. } => (content.len() / 3).max(1),

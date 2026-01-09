@@ -14,24 +14,23 @@
 //! - MetaCognitiveProviderImpl -> MetaCognitiveLoop (from context-graph-core)
 //! - SelfEgoProviderImpl -> SelfEgoNode + IdentityContinuity (from context-graph-core)
 
-use std::time::Duration;
 use std::sync::RwLock;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use context_graph_core::error::CoreResult;
 use context_graph_core::gwt::{
-    ConsciousnessCalculator, ConsciousnessMetrics, ConsciousnessState,
-    GlobalWorkspace, MetaCognitiveLoop, MetaCognitiveState, SelfEgoNode,
-    StateMachineManager, StateTransition,
     ego_node::{IdentityContinuity, IdentityStatus},
+    ConsciousnessCalculator, ConsciousnessMetrics, ConsciousnessState, GlobalWorkspace,
+    MetaCognitiveLoop, MetaCognitiveState, SelfEgoNode, StateMachineManager, StateTransition,
 };
 use context_graph_utl::phase::KuramotoNetwork;
 use tokio::sync::RwLock as TokioRwLock;
 use uuid::Uuid;
 
 use super::gwt_traits::{
-    GwtSystemProvider, KuramotoProvider, MetaCognitiveProvider, SelfEgoProvider,
-    WorkspaceProvider, NUM_OSCILLATORS,
+    GwtSystemProvider, KuramotoProvider, MetaCognitiveProvider, SelfEgoProvider, WorkspaceProvider,
+    NUM_OSCILLATORS,
 };
 
 // ============================================================================
@@ -169,7 +168,8 @@ impl GwtSystemProvider for GwtSystemProviderImpl {
         meta_accuracy: f32,
         purpose_vector: &[f32; 13],
     ) -> CoreResult<f32> {
-        self.calculator.compute_consciousness(kuramoto_r, meta_accuracy, purpose_vector)
+        self.calculator
+            .compute_consciousness(kuramoto_r, meta_accuracy, purpose_vector)
     }
 
     fn compute_metrics(
@@ -178,7 +178,8 @@ impl GwtSystemProvider for GwtSystemProviderImpl {
         meta_accuracy: f32,
         purpose_vector: &[f32; 13],
     ) -> CoreResult<ConsciousnessMetrics> {
-        self.calculator.compute_metrics(kuramoto_r, meta_accuracy, purpose_vector)
+        self.calculator
+            .compute_metrics(kuramoto_r, meta_accuracy, purpose_vector)
     }
 
     fn current_state(&self) -> ConsciousnessState {
@@ -327,7 +328,9 @@ impl MetaCognitiveProvider for MetaCognitiveProviderImpl {
         actual_learning: f32,
     ) -> CoreResult<MetaCognitiveState> {
         let mut meta_cognitive = self.meta_cognitive.write().await;
-        meta_cognitive.evaluate(predicted_learning, actual_learning).await
+        meta_cognitive
+            .evaluate(predicted_learning, actual_learning)
+            .await
     }
 
     fn acetylcholine(&self) -> f32 {
@@ -379,7 +382,11 @@ impl SelfEgoProviderImpl {
     ///
     /// Call this after purpose vector changes to update identity coherence
     #[allow(dead_code)]
-    pub fn update_continuity(&mut self, pv_cosine: f32, kuramoto_r: f32) -> CoreResult<IdentityStatus> {
+    pub fn update_continuity(
+        &mut self,
+        pv_cosine: f32,
+        kuramoto_r: f32,
+    ) -> CoreResult<IdentityStatus> {
         self.identity_continuity.update(pv_cosine, kuramoto_r)
     }
 
@@ -438,7 +445,11 @@ mod tests {
 
         // Verify real data is returned
         let (r, psi) = provider.order_parameter();
-        assert!((0.0..=1.0).contains(&r), "Order parameter r out of range: {}", r);
+        assert!(
+            (0.0..=1.0).contains(&r),
+            "Order parameter r out of range: {}",
+            r
+        );
         assert!(psi >= 0.0, "Mean phase psi should be non-negative: {}", psi);
 
         let phases = provider.phases();
@@ -456,8 +467,15 @@ mod tests {
         let provider = KuramotoProviderImpl::synchronized();
 
         let r = provider.synchronization();
-        assert!(r > 0.99, "Synchronized network should have r ≈ 1, got {}", r);
-        assert!(provider.is_conscious(), "Synchronized network should be conscious");
+        assert!(
+            r > 0.99,
+            "Synchronized network should have r ≈ 1, got {}",
+            r
+        );
+        assert!(
+            provider.is_conscious(),
+            "Synchronized network should be conscious"
+        );
     }
 
     #[test]
@@ -466,7 +484,10 @@ mod tests {
 
         let r = provider.synchronization();
         assert!(r < 0.1, "Incoherent network should have r ≈ 0, got {}", r);
-        assert!(provider.is_fragmented(), "Incoherent network should be fragmented");
+        assert!(
+            provider.is_fragmented(),
+            "Incoherent network should be fragmented"
+        );
     }
 
     #[test]
@@ -483,7 +504,12 @@ mod tests {
 
         let final_r = provider.synchronization();
         // With high coupling, synchronization should increase
-        assert!(final_r > initial_r, "High coupling should increase sync: {} vs {}", final_r, initial_r);
+        assert!(
+            final_r > initial_r,
+            "High coupling should increase sync: {} vs {}",
+            final_r,
+            initial_r
+        );
     }
 
     #[test]
@@ -495,11 +521,18 @@ mod tests {
             .compute_consciousness(0.85, 0.9, &purpose_vector)
             .expect("Consciousness computation failed");
 
-        assert!(consciousness > 0.0 && consciousness <= 1.0,
-            "Consciousness should be in (0,1]: {}", consciousness);
+        assert!(
+            consciousness > 0.0 && consciousness <= 1.0,
+            "Consciousness should be in (0,1]: {}",
+            consciousness
+        );
 
         // High inputs should yield reasonable consciousness
-        assert!(consciousness > 0.4, "High inputs should yield consciousness > 0.4: {}", consciousness);
+        assert!(
+            consciousness > 0.4,
+            "High inputs should yield consciousness > 0.4: {}",
+            consciousness
+        );
     }
 
     #[test]
@@ -513,8 +546,14 @@ mod tests {
 
         assert!(metrics.integration > 0.0, "Integration should be positive");
         assert!(metrics.reflection > 0.0, "Reflection should be positive");
-        assert!(metrics.differentiation > 0.0, "Differentiation should be positive");
-        assert!(metrics.consciousness > 0.0, "Consciousness should be positive");
+        assert!(
+            metrics.differentiation > 0.0,
+            "Differentiation should be positive"
+        );
+        assert!(
+            metrics.consciousness > 0.0,
+            "Consciousness should be positive"
+        );
     }
 
     #[test]
@@ -535,7 +574,7 @@ mod tests {
         let id2 = Uuid::new_v4();
 
         let candidates = vec![
-            (id1, 0.85, 0.9, 0.88), // score ≈ 0.67
+            (id1, 0.85, 0.9, 0.88),  // score ≈ 0.67
             (id2, 0.88, 0.95, 0.92), // score ≈ 0.77 (winner)
         ];
 
@@ -555,10 +594,7 @@ mod tests {
         let id2 = Uuid::new_v4();
 
         // Both below coherence threshold (0.8)
-        let candidates = vec![
-            (id1, 0.5, 0.9, 0.88),
-            (id2, 0.6, 0.95, 0.92),
-        ];
+        let candidates = vec![(id1, 0.5, 0.9, 0.88), (id2, 0.6, 0.95, 0.92)];
 
         let winner = provider
             .select_winning_memory(candidates)
@@ -573,7 +609,11 @@ mod tests {
         let provider = WorkspaceProviderImpl::new();
 
         let threshold = provider.coherence_threshold();
-        assert!((threshold - 0.8).abs() < 0.01, "Threshold should be 0.8: {}", threshold);
+        assert!(
+            (threshold - 0.8).abs() < 0.01,
+            "Threshold should be 0.8: {}",
+            threshold
+        );
     }
 
     #[tokio::test]
@@ -586,8 +626,11 @@ mod tests {
             .expect("Evaluation failed");
 
         // Perfect prediction should have meta_score around 0.5 (σ(0))
-        assert!(state.meta_score >= 0.4 && state.meta_score <= 0.6,
-            "Perfect prediction should give meta_score ≈ 0.5: {}", state.meta_score);
+        assert!(
+            state.meta_score >= 0.4 && state.meta_score <= 0.6,
+            "Perfect prediction should give meta_score ≈ 0.5: {}",
+            state.meta_score
+        );
         assert!(!state.dream_triggered);
     }
 
@@ -597,11 +640,19 @@ mod tests {
 
         // Default acetylcholine is 0.001
         let ach = provider.acetylcholine();
-        assert!((ach - 0.001).abs() < 0.0001, "Initial ACh should be 0.001: {}", ach);
+        assert!(
+            (ach - 0.001).abs() < 0.0001,
+            "Initial ACh should be 0.001: {}",
+            ach
+        );
 
         // Default monitoring frequency is 1.0 Hz
         let freq = provider.monitoring_frequency();
-        assert!((freq - 1.0).abs() < 0.01, "Initial freq should be 1.0: {}", freq);
+        assert!(
+            (freq - 1.0).abs() < 0.01,
+            "Initial freq should be 1.0: {}",
+            freq
+        );
 
         // No recent scores initially
         let scores = provider.get_recent_scores();
@@ -633,7 +684,9 @@ mod tests {
         let mut provider = SelfEgoProviderImpl::new();
 
         // Update with high values - should be Healthy
-        let status = provider.update_continuity(0.95, 0.95).expect("Update failed");
+        let status = provider
+            .update_continuity(0.95, 0.95)
+            .expect("Update failed");
         assert_eq!(status, IdentityStatus::Healthy);
         assert!(provider.identity_coherence() > 0.9);
 

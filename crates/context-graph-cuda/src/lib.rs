@@ -44,19 +44,17 @@ pub mod poincare;
 #[cfg(test)]
 pub mod stub;
 
-pub use error::{CudaError, CudaResult};
-pub use ops::VectorOps;
-pub use poincare::{PoincareCudaConfig, poincare_distance_cpu, poincare_distance_batch_cpu};
-#[cfg(feature = "cuda")]
-pub use poincare::{poincare_distance_batch_gpu, poincare_distance_single_gpu};
 pub use cone::{
-    ConeCudaConfig, ConeData, ConeKernelInfo,
-    cone_check_batch_cpu, cone_membership_score_cpu,
-    is_cone_gpu_available, get_cone_kernel_info,
-    CONE_DATA_DIM, POINT_DIM,
+    cone_check_batch_cpu, cone_membership_score_cpu, get_cone_kernel_info, is_cone_gpu_available,
+    ConeCudaConfig, ConeData, ConeKernelInfo, CONE_DATA_DIM, POINT_DIM,
 };
 #[cfg(feature = "cuda")]
 pub use cone::{cone_check_batch_gpu, cone_check_single_gpu};
+pub use error::{CudaError, CudaResult};
+pub use ops::VectorOps;
+pub use poincare::{poincare_distance_batch_cpu, poincare_distance_cpu, PoincareCudaConfig};
+#[cfg(feature = "cuda")]
+pub use poincare::{poincare_distance_batch_gpu, poincare_distance_single_gpu};
 // AP-007: StubVectorOps export is gated to test-only builds
 // Allow deprecated usage in tests - the deprecation warning is intentional for production
 #[cfg(test)]

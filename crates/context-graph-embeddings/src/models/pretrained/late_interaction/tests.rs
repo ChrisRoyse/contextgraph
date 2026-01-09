@@ -1,6 +1,5 @@
 //! Core tests for LateInteractionModel.
 
-
 use super::*;
 use crate::error::EmbeddingError;
 use crate::traits::{EmbeddingModel, SingleModelConfig};

@@ -1,6 +1,5 @@
 //! Batch, validation, concurrency and constants tests for LateInteractionModel.
 
-
 use super::tests::{create_and_load_model, create_test_model};
 use super::*;
 use crate::error::EmbeddingError;

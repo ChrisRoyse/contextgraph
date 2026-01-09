@@ -9,8 +9,7 @@ use context_graph_graph::index::gpu_memory::{GpuMemoryConfig, GpuMemoryManager, 
 fn test_category_budget() {
     println!("\n=== TEST: Category Budget ===");
 
-    let config =
-        GpuMemoryConfig::default().category_budget(MemoryCategory::FaissIndex, 1024);
+    let config = GpuMemoryConfig::default().category_budget(MemoryCategory::FaissIndex, 1024);
 
     let manager = GpuMemoryManager::new(config).expect("Manager creation failed");
 
@@ -74,25 +73,18 @@ fn test_low_memory_detection() {
 fn test_category_available() {
     println!("\n=== TEST: Category Available ===");
 
-    let config =
-        GpuMemoryConfig::default().category_budget(MemoryCategory::FaissIndex, 1000);
+    let config = GpuMemoryConfig::default().category_budget(MemoryCategory::FaissIndex, 1000);
 
     let manager = GpuMemoryManager::new(config).expect("Manager creation failed");
 
     // Initial available
-    assert_eq!(
-        manager.category_available(MemoryCategory::FaissIndex),
-        1000
-    );
+    assert_eq!(manager.category_available(MemoryCategory::FaissIndex), 1000);
 
     // After allocation
     let _h = manager
         .allocate(400, MemoryCategory::FaissIndex)
         .expect("Allocation failed");
-    assert_eq!(
-        manager.category_available(MemoryCategory::FaissIndex),
-        600
-    );
+    assert_eq!(manager.category_available(MemoryCategory::FaissIndex), 600);
 
     println!("=== PASSED ===\n");
 }
@@ -122,9 +114,18 @@ fn test_multiple_allocations_different_categories() {
 
     let stats = manager.stats();
     println!("AFTER: total_allocated={}", stats.total_allocated);
-    println!("  FaissIndex: {:?}", stats.category_usage.get(&MemoryCategory::FaissIndex));
-    println!("  HyperbolicCoords: {:?}", stats.category_usage.get(&MemoryCategory::HyperbolicCoords));
-    println!("  EntailmentCones: {:?}", stats.category_usage.get(&MemoryCategory::EntailmentCones));
+    println!(
+        "  FaissIndex: {:?}",
+        stats.category_usage.get(&MemoryCategory::FaissIndex)
+    );
+    println!(
+        "  HyperbolicCoords: {:?}",
+        stats.category_usage.get(&MemoryCategory::HyperbolicCoords)
+    );
+    println!(
+        "  EntailmentCones: {:?}",
+        stats.category_usage.get(&MemoryCategory::EntailmentCones)
+    );
 
     assert_eq!(stats.total_allocated, 3_000_000);
     assert_eq!(stats.allocation_count, 3);
@@ -186,8 +187,18 @@ fn test_allocation_handle_properties() {
     // IDs should be different
     assert_ne!(h1.id(), h2.id());
 
-    println!("Handle 1: id={}, size={}, category={:?}", h1.id(), h1.size(), h1.category());
-    println!("Handle 2: id={}, size={}, category={:?}", h2.id(), h2.size(), h2.category());
+    println!(
+        "Handle 1: id={}, size={}, category={:?}",
+        h1.id(),
+        h1.size(),
+        h1.category()
+    );
+    println!(
+        "Handle 2: id={}, size={}, category={:?}",
+        h2.id(),
+        h2.size(),
+        h2.category()
+    );
 
     println!("=== PASSED ===\n");
 }

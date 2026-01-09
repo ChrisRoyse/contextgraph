@@ -3,11 +3,11 @@
 use crate::traits::EmbeddingModel;
 use crate::types::{InputType, ModelId};
 
-use super::helpers::create_test_model;
 use super::super::{
     PASSAGE_PREFIX, QUERY_PREFIX, SEMANTIC_DIMENSION, SEMANTIC_LATENCY_BUDGET_MS,
     SEMANTIC_MAX_TOKENS,
 };
+use super::helpers::create_test_model;
 
 #[tokio::test]
 async fn test_model_id_is_semantic() {

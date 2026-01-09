@@ -160,7 +160,8 @@ fn test_cpu_score_is_bounded() {
 
         // Deterministic "random" values
         apex[seed % 64] = ((seed as f32 * 0.07) % 0.9) * if seed % 2 == 0 { 1.0 } else { -1.0 };
-        point[(seed + 7) % 64] = ((seed as f32 * 0.11) % 0.9) * if seed % 3 == 0 { 1.0 } else { -1.0 };
+        point[(seed + 7) % 64] =
+            ((seed as f32 * 0.11) % 0.9) * if seed % 3 == 0 { 1.0 } else { -1.0 };
 
         let score = cone_membership_score_cpu(&apex, 0.5, &point, -1.0);
         assert!(
@@ -189,7 +190,10 @@ fn test_cpu_canonical_formula_verified() {
 
     // Score should be exp(-2 * (angle - aperture)) if angle > aperture
     // Just verify it's a reasonable value
-    println!("CANONICAL FORMULA TEST: aperture={}, score={}", aperture, score);
+    println!(
+        "CANONICAL FORMULA TEST: aperture={}, score={}",
+        aperture, score
+    );
     assert!((0.0..=1.0).contains(&score), "Score must be in [0,1]");
 }
 
@@ -333,7 +337,10 @@ fn test_gpu_availability_check() {
     println!("Cone GPU available: {}", available);
 
     #[cfg(not(feature = "cuda"))]
-    assert!(!available, "Without cuda feature, GPU should not be available");
+    assert!(
+        !available,
+        "Without cuda feature, GPU should not be available"
+    );
 }
 
 // ========== Constants Verification ==========
@@ -342,6 +349,12 @@ fn test_gpu_availability_check() {
 fn test_constants() {
     assert_eq!(CONE_DATA_DIM, 65, "CONE_DATA_DIM should be 65");
     assert_eq!(POINT_DIM, 64, "POINT_DIM should be 64");
-    assert!((DEFAULT_CURVATURE - (-1.0)).abs() < 1e-10, "DEFAULT_CURVATURE should be -1.0");
-    assert!(CONE_EPS > 0.0 && CONE_EPS < 1e-5, "CONE_EPS should be small positive");
+    assert!(
+        (DEFAULT_CURVATURE - (-1.0)).abs() < 1e-10,
+        "DEFAULT_CURVATURE should be -1.0"
+    );
+    assert!(
+        CONE_EPS > 0.0 && CONE_EPS < 1e-5,
+        "CONE_EPS should be small positive"
+    );
 }

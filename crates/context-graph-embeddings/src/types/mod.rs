@@ -3,7 +3,7 @@
 //! All embeddings are stored as SEPARATE arrays - the 13-embedding array IS the
 //! teleological vector. Per-space indexing with RRF score fusion.
 
-mod concatenated;  // Module name kept for file system, exports MultiArrayEmbedding
+mod concatenated; // Module name kept for file system, exports MultiArrayEmbedding
 pub mod dimensions;
 mod embedding;
 mod input;

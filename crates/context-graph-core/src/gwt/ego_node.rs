@@ -9,10 +9,10 @@
 //! - Identity history (trajectory of purpose evolution)
 //! - Alignment between actions and self-model
 
-use uuid::Uuid;
-use chrono::{DateTime, Utc};
-use crate::types::fingerprint::TeleologicalFingerprint;
 use crate::error::CoreResult;
+use crate::types::fingerprint::TeleologicalFingerprint;
+use chrono::{DateTime, Utc};
+use uuid::Uuid;
 
 /// Special memory node representing the system's identity
 #[derive(Debug, Clone)]
@@ -168,11 +168,7 @@ impl IdentityContinuity {
     }
 
     /// Update identity coherence: IC = cos(PV_t, PV_{t-1}) × r(t)
-    pub fn update(
-        &mut self,
-        pv_cosine: f32,
-        kuramoto_r: f32,
-    ) -> CoreResult<IdentityStatus> {
+    pub fn update(&mut self, pv_cosine: f32, kuramoto_r: f32) -> CoreResult<IdentityStatus> {
         self.recent_continuity = pv_cosine.clamp(-1.0, 1.0);
         self.kuramoto_order_parameter = kuramoto_r.clamp(0.0, 1.0);
 
@@ -322,8 +318,11 @@ mod tests {
         let continuity = IdentityContinuity::new();
 
         // Per constitution: IC < 0.5 should be Critical, not Healthy
-        assert_eq!(continuity.status, IdentityStatus::Critical,
-            "Initial identity coherence 0.0 must result in Critical status, not Healthy");
+        assert_eq!(
+            continuity.status,
+            IdentityStatus::Critical,
+            "Initial identity coherence 0.0 must result in Critical status, not Healthy"
+        );
         assert_eq!(continuity.identity_coherence, 0.0);
     }
 

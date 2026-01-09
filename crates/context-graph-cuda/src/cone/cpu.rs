@@ -39,7 +39,11 @@ fn mobius_add_cpu(x: &[f32; 64], y: &[f32; 64], c: f32) -> [f32; 64] {
     let denom = 1.0 + 2.0 * c * xy_dot + c * c * x_norm_sq * y_norm_sq;
 
     let safe_denom = if denom.abs() < CONE_EPS {
-        if denom < 0.0 { -CONE_EPS } else { CONE_EPS }
+        if denom < 0.0 {
+            -CONE_EPS
+        } else {
+            CONE_EPS
+        }
     } else {
         denom
     };

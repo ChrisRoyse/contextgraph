@@ -202,7 +202,10 @@ impl DriftState {
 
     /// Check if drift requires attention (moderate or severe)
     pub fn requires_attention(&self) -> bool {
-        matches!(self.severity, DriftSeverity::Moderate | DriftSeverity::Severe)
+        matches!(
+            self.severity,
+            DriftSeverity::Moderate | DriftSeverity::Severe
+        )
     }
 
     /// Check if drift is severe enough to require user intervention

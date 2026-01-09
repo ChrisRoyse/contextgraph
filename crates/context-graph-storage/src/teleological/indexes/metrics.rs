@@ -242,7 +242,10 @@ mod tests {
         let distance = compute_distance(&a, &b, DistanceMetric::Cosine);
         println!("AFTER: distance={}", distance);
 
-        assert!(distance.abs() < 1e-6, "Identical vectors should have distance 0");
+        assert!(
+            distance.abs() < 1e-6,
+            "Identical vectors should have distance 0"
+        );
         println!("RESULT: PASS");
     }
 
@@ -345,7 +348,10 @@ mod tests {
         let sim_0 = distance_to_similarity(0.0, DistanceMetric::Cosine);
         println!("BEFORE: distance=0.0");
         println!("AFTER: similarity={}", sim_0);
-        assert!((sim_0 - 1.0).abs() < 1e-6, "Distance 0 should give similarity 1");
+        assert!(
+            (sim_0 - 1.0).abs() < 1e-6,
+            "Distance 0 should give similarity 1"
+        );
 
         // Distance 2 -> similarity 0
         let sim_2 = distance_to_similarity(2.0, DistanceMetric::Cosine);
@@ -373,7 +379,10 @@ mod tests {
         let sim_0 = distance_to_similarity(0.0, DistanceMetric::Euclidean);
         println!("BEFORE: distance=0.0");
         println!("AFTER: similarity={}", sim_0);
-        assert!((sim_0 - 1.0).abs() < 1e-6, "Distance 0 should give similarity 1");
+        assert!(
+            (sim_0 - 1.0).abs() < 1e-6,
+            "Distance 0 should give similarity 1"
+        );
 
         // Distance 1 -> similarity ~0.368 (exp(-1))
         let sim_1 = distance_to_similarity(1.0, DistanceMetric::Euclidean);
@@ -406,7 +415,10 @@ mod tests {
         let sim = cosine_similarity(&a, &b);
         println!("AFTER: similarity={}", sim);
 
-        assert!((sim - 1.0).abs() < 1e-6, "Identical vectors should have similarity 1.0");
+        assert!(
+            (sim - 1.0).abs() < 1e-6,
+            "Identical vectors should have similarity 1.0"
+        );
         println!("RESULT: PASS");
     }
 
@@ -507,7 +519,10 @@ mod tests {
         let sim_high = distance_to_similarity(-10.0, DistanceMetric::DotProduct);
         println!("BEFORE: distance=-10.0 (high positive dot)");
         println!("AFTER: similarity={}", sim_high);
-        assert!(sim_high > 0.99, "High positive dot should give near 1 similarity");
+        assert!(
+            sim_high > 0.99,
+            "High positive dot should give near 1 similarity"
+        );
 
         // Zero distance -> similarity 0.5 (sigmoid(0) = 0.5)
         let sim_zero = distance_to_similarity(0.0, DistanceMetric::DotProduct);
@@ -533,7 +548,10 @@ mod tests {
         println!("AFTER: similarity={}", sim);
 
         // Should be very close to 1 since vectors are nearly parallel
-        assert!(sim > 0.99, "Nearly parallel vectors should have high similarity");
+        assert!(
+            sim > 0.99,
+            "Nearly parallel vectors should have high similarity"
+        );
         println!("RESULT: PASS");
     }
 

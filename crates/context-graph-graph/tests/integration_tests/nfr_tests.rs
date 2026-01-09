@@ -4,7 +4,7 @@
 
 use context_graph_graph::storage::NodeId;
 
-use crate::common::fixtures::{generate_poincare_point, generate_entailment_cone};
+use crate::common::fixtures::{generate_entailment_cone, generate_poincare_point};
 use crate::common::helpers::{create_test_storage, measure_latency, TimingBatch};
 
 /// Aggregate timing test for all NFR targets.
@@ -20,7 +20,9 @@ fn test_nfr_timing_summary() {
     let (_, storage_write) = measure_latency("storage_write_100", 50_000, || {
         for i in 0..100 {
             let point = generate_poincare_point(i, 0.9);
-            storage.put_hyperbolic(i as NodeId, &point).expect("Put failed");
+            storage
+                .put_hyperbolic(i as NodeId, &point)
+                .expect("Put failed");
         }
     });
     batch.add(storage_write);
@@ -47,12 +49,19 @@ fn test_nfr_timing_summary() {
 
     // Cone membership (CPU)
     use context_graph_cuda::cone::cone_membership_score_cpu;
-    let cones: Vec<_> = (0..100).map(|i| generate_entailment_cone(i, 0.8, (0.2, 0.6))).collect();
+    let cones: Vec<_> = (0..100)
+        .map(|i| generate_entailment_cone(i, 0.8, (0.2, 0.6)))
+        .collect();
 
     let (_, cone_timing) = measure_latency("cone_membership_100x100_cpu", 100_000, || {
         for cone in &cones {
             for point in &points {
-                let _ = cone_membership_score_cpu(&cone.apex.coords, cone.aperture, &point.coords, -1.0);
+                let _ = cone_membership_score_cpu(
+                    &cone.apex.coords,
+                    cone.aperture,
+                    &point.coords,
+                    -1.0,
+                );
             }
         }
     });

@@ -2,7 +2,7 @@
 //!
 //! Tests for batch vs single formula comparison and exponential decay verification.
 
-use crate::common::fixtures::{generate_poincare_point, generate_entailment_cone};
+use crate::common::fixtures::{generate_entailment_cone, generate_poincare_point};
 
 /// M04-T27: Batch comparison test for statistical validation.
 ///
@@ -13,12 +13,19 @@ use crate::common::fixtures::{generate_poincare_point, generate_entailment_cone}
 fn test_m04_t27_batch_formula_comparison() {
     println!("\n=== TEST: M04-T27 Batch Formula Comparison ===");
 
-    use context_graph_cuda::cone::{cone_membership_score_cpu, cone_check_batch_cpu, CONE_DATA_DIM};
+    use context_graph_cuda::cone::{
+        cone_check_batch_cpu, cone_membership_score_cpu, CONE_DATA_DIM,
+    };
 
     let n_cones = 50;
     let n_points = 50;
 
-    println!("  Testing {}x{} = {} membership scores...", n_cones, n_points, n_cones * n_points);
+    println!(
+        "  Testing {}x{} = {} membership scores...",
+        n_cones,
+        n_points,
+        n_cones * n_points
+    );
 
     // Generate cones (use storage format directly to ensure consistency)
     let cones_storage: Vec<_> = (0..n_cones)
@@ -31,7 +38,8 @@ fn test_m04_t27_batch_formula_comparison() {
         .collect();
 
     // Prepare batch data for cuda crate batch function
-    let cones_flat: Vec<f32> = cones_storage.iter()
+    let cones_flat: Vec<f32> = cones_storage
+        .iter()
         .flat_map(|c| {
             let mut data = [0.0f32; CONE_DATA_DIM];
             data[..64].copy_from_slice(&c.apex.coords);
@@ -40,7 +48,8 @@ fn test_m04_t27_batch_formula_comparison() {
         })
         .collect();
 
-    let points_flat: Vec<f32> = points_storage.iter()
+    let points_flat: Vec<f32> = points_storage
+        .iter()
         .flat_map(|p| p.coords.to_vec())
         .collect();
 
@@ -87,17 +96,15 @@ fn test_m04_t27_batch_formula_comparison() {
     println!("    Avg diff: {:.2e}", avg_diff);
 
     // Assert batch is internally consistent
-    assert_eq!(
-        mismatches, 0,
-        "Batch function should match single function"
-    );
+    assert_eq!(mismatches, 0, "Batch function should match single function");
 
     // Assert batch scores are all valid
     for (idx, &score) in batch_scores.iter().enumerate() {
         assert!(
             (0.0..=1.0).contains(&score) && score.is_finite(),
             "Invalid batch score at index {}: {}",
-            idx, score
+            idx,
+            score
         );
     }
 
@@ -109,10 +116,10 @@ fn test_m04_t27_batch_formula_comparison() {
 fn test_m04_t27_exponential_decay_verification() {
     println!("\n=== TEST: M04-T27 Exponential Decay Verification ===");
 
+    use context_graph_cuda::cone::cone_membership_score_cpu;
+    use context_graph_graph::config::{ConeConfig, HyperbolicConfig};
     use context_graph_graph::entailment::cones::EntailmentCone;
     use context_graph_graph::hyperbolic::{PoincareBall, PoincarePoint as HyperbolicPoint};
-    use context_graph_graph::config::{HyperbolicConfig, ConeConfig};
-    use context_graph_cuda::cone::cone_membership_score_cpu;
 
     let ball = PoincareBall::new(HyperbolicConfig::default());
     let cone_config = ConeConfig::default();
@@ -122,13 +129,16 @@ fn test_m04_t27_exponential_decay_verification() {
     apex_coords[0] = 0.4;
     let apex = HyperbolicPoint::from_coords(apex_coords);
 
-    let mut cone = EntailmentCone::new(apex.clone(), 0, &cone_config)
-        .expect("Cone creation should succeed");
+    let mut cone =
+        EntailmentCone::new(apex.clone(), 0, &cone_config).expect("Cone creation should succeed");
     // Set aperture_factor to 1.0 for predictable aperture
     cone.aperture_factor = 1.0;
     let aperture = cone.effective_aperture();
 
-    println!("  Testing exponential decay with aperture = {:.4}", aperture);
+    println!(
+        "  Testing exponential decay with aperture = {:.4}",
+        aperture
+    );
 
     // Test multiple points at different angles
     for i in 0..5 {
@@ -139,18 +149,16 @@ fn test_m04_t27_exponential_decay_verification() {
         let point = HyperbolicPoint::from_coords(point_coords);
 
         let score_graph = cone.membership_score(&point, &ball);
-        let score_cuda_cpu = cone_membership_score_cpu(
-            &apex_coords,
-            aperture,
-            &point_coords,
-            -1.0,
-        );
+        let score_cuda_cpu = cone_membership_score_cpu(&apex_coords, aperture, &point_coords, -1.0);
 
         let diff = (score_graph - score_cuda_cpu).abs();
         assert!(
             diff < 1e-4,
             "Decay test {}: implementations differ by {} (graph={:.6}, cuda={:.6})",
-            i, diff, score_graph, score_cuda_cpu
+            i,
+            diff,
+            score_graph,
+            score_cuda_cpu
         );
 
         println!(

@@ -150,10 +150,19 @@ mod tests {
     #[test]
     fn test_utl_state_from_signal() {
         let signal = LearningSignal::new(
-            0.7, 0.6, 0.8, 1.2, 0.5, None,
-            JohariQuadrant::Blind, SuggestedAction::TriggerDream,
-            true, true, 2000,
-        ).unwrap();
+            0.7,
+            0.6,
+            0.8,
+            1.2,
+            0.5,
+            None,
+            JohariQuadrant::Blind,
+            SuggestedAction::TriggerDream,
+            true,
+            true,
+            2000,
+        )
+        .unwrap();
 
         let state = UtlState::from_signal(&signal);
 
@@ -187,7 +196,10 @@ mod tests {
         assert_eq!(default_state.delta_c, empty_state.delta_c);
         assert_eq!(default_state.w_e, empty_state.w_e);
         assert_eq!(default_state.phi, empty_state.phi);
-        assert_eq!(default_state.learning_magnitude, empty_state.learning_magnitude);
+        assert_eq!(
+            default_state.learning_magnitude,
+            empty_state.learning_magnitude
+        );
         assert_eq!(default_state.quadrant, empty_state.quadrant);
     }
 

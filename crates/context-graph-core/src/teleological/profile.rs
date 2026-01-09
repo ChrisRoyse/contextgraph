@@ -19,8 +19,7 @@ use super::types::{ProfileId, NUM_EMBEDDERS};
 /// Fusion strategy for combining embeddings in a teleological profile.
 ///
 /// Different strategies optimize for different use cases.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, Default)]
 pub enum FusionStrategy {
     /// Simple weighted average of all embeddings.
     #[default]
@@ -48,7 +47,6 @@ pub enum FusionStrategy {
     /// Use only primary embeddings (fast path).
     PrimaryOnly,
 }
-
 
 impl FusionStrategy {
     /// Default Tucker ranks from teleoplan.md.
@@ -102,8 +100,7 @@ impl FusionStrategy {
 /// - "How do I implement X?" -> Code search
 /// - "Why did X happen?" -> Causal search
 /// - "What is similar to X?" -> Semantic search
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum TaskType {
     /// Code implementation tasks.
     /// Primary: E6 (Code), E7 (Procedural)
@@ -138,7 +135,6 @@ pub enum TaskType {
     General,
 }
 
-
 impl TaskType {
     /// All task types.
     pub const ALL: [TaskType; 8] = [
@@ -171,14 +167,14 @@ impl TaskType {
     /// Get secondary embedder indices for this task type.
     pub fn secondary_embedders(self) -> &'static [usize] {
         match self {
-            TaskType::CodeSearch => &[3, 11],        // E4, E12
-            TaskType::SemanticSearch => &[10, 7],    // E11, E8
-            TaskType::TemporalSearch => &[11, 8],    // E12, E9
-            TaskType::CausalSearch => &[11, 8],      // E12, E9
-            TaskType::FactualSearch => &[0, 3],      // E1, E4
-            TaskType::SocialSearch => &[0, 1],       // E1, E2
-            TaskType::AbstractSearch => &[0, 3],     // E1, E4
-            TaskType::General => &[4, 5, 6, 7, 8],   // Middle embedders
+            TaskType::CodeSearch => &[3, 11],      // E4, E12
+            TaskType::SemanticSearch => &[10, 7],  // E11, E8
+            TaskType::TemporalSearch => &[11, 8],  // E12, E9
+            TaskType::CausalSearch => &[11, 8],    // E12, E9
+            TaskType::FactualSearch => &[0, 3],    // E1, E4
+            TaskType::SocialSearch => &[0, 1],     // E1, E2
+            TaskType::AbstractSearch => &[0, 3],   // E1, E4
+            TaskType::General => &[4, 5, 6, 7, 8], // Middle embedders
         }
     }
 

@@ -4,11 +4,11 @@
 
 #![allow(clippy::field_reassign_with_default)]
 
-use std::sync::Arc;
 use crate::config::IndexConfig;
 use crate::error::GraphError;
-use crate::index::gpu_index::{FaissGpuIndex, GpuResources};
 use crate::index::faiss_ffi::gpu_available;
+use crate::index::gpu_index::{FaissGpuIndex, GpuResources};
+use std::sync::Arc;
 
 #[test]
 fn test_index_creation_valid_config() {
@@ -34,7 +34,10 @@ fn test_index_creation_valid_config() {
             assert!(!idx.is_trained());
             assert!(idx.is_empty());
             assert_eq!(idx.config().nlist, 16384);
-            println!("Index created with factory: {}", idx.config().factory_string());
+            println!(
+                "Index created with factory: {}",
+                idx.config().factory_string()
+            );
         }
         Err(e) => panic!("Index creation failed: {}", e),
     }

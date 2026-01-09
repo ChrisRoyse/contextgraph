@@ -41,9 +41,33 @@ pub fn self_attention(
         })?;
 
     // Q, K, V projections with flatten/reshape pattern
-    let q = project_qkv(&hidden_flat, q_weight, q_bias, batch, seq_len, hidden_size, "Q")?;
-    let k = project_qkv(&hidden_flat, k_weight, k_bias, batch, seq_len, hidden_size, "K")?;
-    let v = project_qkv(&hidden_flat, v_weight, v_bias, batch, seq_len, hidden_size, "V")?;
+    let q = project_qkv(
+        &hidden_flat,
+        q_weight,
+        q_bias,
+        batch,
+        seq_len,
+        hidden_size,
+        "Q",
+    )?;
+    let k = project_qkv(
+        &hidden_flat,
+        k_weight,
+        k_bias,
+        batch,
+        seq_len,
+        hidden_size,
+        "K",
+    )?;
+    let v = project_qkv(
+        &hidden_flat,
+        v_weight,
+        v_bias,
+        batch,
+        seq_len,
+        hidden_size,
+        "V",
+    )?;
 
     // Reshape for multi-head: [batch, seq, heads, head_dim]
     let q = reshape_for_heads(&q, batch, seq_len, num_heads, head_dim, "Q")?;

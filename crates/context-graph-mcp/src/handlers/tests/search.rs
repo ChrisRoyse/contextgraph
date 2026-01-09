@@ -53,7 +53,11 @@ async fn test_search_multi_semantic_preset() {
         "content": "Machine learning enables computers to learn from data",
         "importance": 0.9
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // Now search with semantic_search preset
@@ -63,7 +67,11 @@ async fn test_search_multi_semantic_preset() {
         "topK": 10,
         "minSimilarity": 0.0  // P1-FIX-1: Required parameter for fail-fast
     });
-    let search_request = make_request("search/multi", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
     assert!(response.error.is_none(), "search/multi should succeed");
@@ -72,7 +80,10 @@ async fn test_search_multi_semantic_preset() {
     // Verify results structure
     assert!(result.get("results").is_some(), "Should have results array");
     assert!(result.get("count").is_some(), "Should have count");
-    assert!(result.get("query_metadata").is_some(), "Should have query_metadata");
+    assert!(
+        result.get("query_metadata").is_some(),
+        "Should have query_metadata"
+    );
 
     // Verify query_metadata structure
     let metadata = result.get("query_metadata").unwrap();
@@ -81,9 +92,18 @@ async fn test_search_multi_semantic_preset() {
         Some("semantic_search"),
         "Should use semantic_search preset"
     );
-    assert!(metadata.get("weights_applied").is_some(), "Should show weights applied");
-    assert!(metadata.get("aggregation_strategy").is_some(), "Should show aggregation strategy");
-    assert!(metadata.get("search_time_ms").is_some(), "Should report search time");
+    assert!(
+        metadata.get("weights_applied").is_some(),
+        "Should show weights applied"
+    );
+    assert!(
+        metadata.get("aggregation_strategy").is_some(),
+        "Should show aggregation strategy"
+    );
+    assert!(
+        metadata.get("search_time_ms").is_some(),
+        "Should report search time"
+    );
 }
 
 /// Test search/multi with custom 13-element weight array.
@@ -96,7 +116,11 @@ async fn test_search_multi_custom_weights_13_spaces() {
         "content": "Graph neural networks for knowledge representation",
         "importance": 0.8
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // Custom weights for 13 spaces (must sum to 1.0)
@@ -124,16 +148,26 @@ async fn test_search_multi_custom_weights_13_spaces() {
         "minSimilarity": 0.0,  // P1-FIX-1: Required parameter for fail-fast
         "include_per_embedder_scores": true
     });
-    let search_request = make_request("search/multi", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
-    assert!(response.error.is_none(), "search/multi with custom weights should succeed");
+    assert!(
+        response.error.is_none(),
+        "search/multi with custom weights should succeed"
+    );
     let result = response.result.expect("Should have result");
 
     // Verify custom weights were applied
     let metadata = result.get("query_metadata").unwrap();
     let weights_applied = metadata.get("weights_applied").and_then(|v| v.as_array());
-    assert!(weights_applied.is_some(), "Should have weights_applied array");
+    assert!(
+        weights_applied.is_some(),
+        "Should have weights_applied array"
+    );
     assert_eq!(
         weights_applied.unwrap().len(),
         NUM_EMBEDDERS,
@@ -156,12 +190,22 @@ async fn test_search_multi_invalid_weights_12_spaces_fails() {
         "query_type": "custom",
         "weights": invalid_weights
     });
-    let search_request = make_request("search/multi", Some(JsonRpcId::Number(1)), Some(search_params));
+    let search_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(1)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
-    assert!(response.error.is_some(), "search/multi must fail with 12 weights");
+    assert!(
+        response.error.is_some(),
+        "search/multi must fail with 12 weights"
+    );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
         error.message.contains("13") || error.message.contains("weight"),
         "Error should mention weight count issue"
@@ -177,12 +221,22 @@ async fn test_search_multi_missing_query_fails() {
         "query_type": "semantic_search",
         "topK": 10
     });
-    let search_request = make_request("search/multi", Some(JsonRpcId::Number(1)), Some(search_params));
+    let search_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(1)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
-    assert!(response.error.is_some(), "search/multi must fail without query");
+    assert!(
+        response.error.is_some(),
+        "search/multi must fail without query"
+    );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
         error.message.contains("query"),
         "Error should mention missing query"
@@ -198,12 +252,22 @@ async fn test_search_multi_unknown_query_type_fails() {
         "query": "test query",
         "query_type": "nonexistent_type"
     });
-    let search_request = make_request("search/multi", Some(JsonRpcId::Number(1)), Some(search_params));
+    let search_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(1)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
-    assert!(response.error.is_some(), "search/multi must fail with unknown query_type");
+    assert!(
+        response.error.is_some(),
+        "search/multi must fail with unknown query_type"
+    );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
         error.message.contains("query_type") || error.message.contains("Available"),
         "Error should mention valid query types"
@@ -220,7 +284,11 @@ async fn test_search_multi_active_spaces_array() {
         "content": "Rust programming language with memory safety",
         "importance": 0.8
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // Only search in spaces 0, 6, 7 (Semantic, Code, Graph)
@@ -231,10 +299,17 @@ async fn test_search_multi_active_spaces_array() {
         "topK": 5,
         "minSimilarity": 0.0  // P1-FIX-1: Required parameter for fail-fast
     });
-    let search_request = make_request("search/multi", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
-    assert!(response.error.is_none(), "search/multi with active_spaces should succeed");
+    assert!(
+        response.error.is_none(),
+        "search/multi with active_spaces should succeed"
+    );
     let result = response.result.expect("Should have result");
 
     let metadata = result.get("query_metadata").unwrap();
@@ -254,12 +329,22 @@ async fn test_search_multi_invalid_aggregation_fails() {
         "query": "test query",
         "aggregation": "invalid_strategy"
     });
-    let search_request = make_request("search/multi", Some(JsonRpcId::Number(1)), Some(search_params));
+    let search_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(1)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
-    assert!(response.error.is_some(), "search/multi must fail with invalid aggregation");
+    assert!(
+        response.error.is_some(),
+        "search/multi must fail with invalid aggregation"
+    );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
 }
 
 /// Test search/multi with include_pipeline_breakdown=true returns PIPELINE_METRICS_UNAVAILABLE.
@@ -275,7 +360,11 @@ async fn test_search_multi_pipeline_breakdown() {
         "content": "Neural network training techniques",
         "importance": 0.9
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     let search_params = json!({
@@ -283,7 +372,11 @@ async fn test_search_multi_pipeline_breakdown() {
         "include_pipeline_breakdown": true,
         "minSimilarity": 0.0  // P1-FIX-1: Required parameter (test expects pipeline breakdown error)
     });
-    let search_request = make_request("search/multi", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
     // VERIFY FAIL-FAST BEHAVIOR
@@ -300,7 +393,8 @@ async fn test_search_multi_pipeline_breakdown() {
         "Should return PIPELINE_METRICS_UNAVAILABLE (-32052)"
     );
     assert!(
-        error.message.contains("Pipeline breakdown") || error.message.contains("not yet implemented"),
+        error.message.contains("Pipeline breakdown")
+            || error.message.contains("not yet implemented"),
         "Error message should indicate feature is not implemented"
     );
 }
@@ -319,7 +413,11 @@ async fn test_search_single_space_semantic() {
         "content": "Transformers revolutionized natural language processing",
         "importance": 0.9
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // Search in semantic space only (index 0)
@@ -329,11 +427,17 @@ async fn test_search_single_space_semantic() {
         "topK": 5,
         "minSimilarity": 0.0  // P1-FIX-1: Required parameter for fail-fast
     });
-    let search_request =
-        make_request("search/single_space", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/single_space",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
-    assert!(response.error.is_none(), "search/single_space should succeed");
+    assert!(
+        response.error.is_none(),
+        "search/single_space should succeed"
+    );
     let result = response.result.expect("Should have result");
 
     // Verify space info
@@ -348,7 +452,10 @@ async fn test_search_single_space_semantic() {
         "Should return space_name E1_Semantic"
     );
     assert!(result.get("results").is_some(), "Should have results");
-    assert!(result.get("search_time_ms").is_some(), "Should report search time");
+    assert!(
+        result.get("search_time_ms").is_some(),
+        "Should report search time"
+    );
 }
 
 /// Test search/single_space for code space (index 6).
@@ -361,7 +468,11 @@ async fn test_search_single_space_code() {
         "content": "fn main() { println!(\"Hello, world!\"); }",
         "importance": 0.8
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // Search in code space (index 6)
@@ -371,11 +482,17 @@ async fn test_search_single_space_code() {
         "topK": 10,
         "minSimilarity": 0.0  // P1-FIX-1: Required parameter for fail-fast
     });
-    let search_request =
-        make_request("search/single_space", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/single_space",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
-    assert!(response.error.is_none(), "search/single_space for code should succeed");
+    assert!(
+        response.error.is_none(),
+        "search/single_space for code should succeed"
+    );
     let result = response.result.expect("Should have result");
 
     assert_eq!(
@@ -400,7 +517,11 @@ async fn test_search_single_space_splade() {
         "content": "Sparse lexical and semantic pre-computed embeddings",
         "importance": 0.7
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // Search in SPLADE space (index 12)
@@ -410,11 +531,17 @@ async fn test_search_single_space_splade() {
         "topK": 5,
         "minSimilarity": 0.0  // P1-FIX-1: Required parameter for fail-fast
     });
-    let search_request =
-        make_request("search/single_space", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/single_space",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
-    assert!(response.error.is_none(), "search/single_space for SPLADE should succeed");
+    assert!(
+        response.error.is_none(),
+        "search/single_space for SPLADE should succeed"
+    );
     let result = response.result.expect("Should have result");
 
     assert_eq!(
@@ -438,8 +565,11 @@ async fn test_search_single_space_invalid_index_13_fails() {
         "query": "test query",
         "space_index": 13
     });
-    let search_request =
-        make_request("search/single_space", Some(JsonRpcId::Number(1)), Some(search_params));
+    let search_request = make_request(
+        "search/single_space",
+        Some(JsonRpcId::Number(1)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
     assert!(
@@ -447,7 +577,10 @@ async fn test_search_single_space_invalid_index_13_fails() {
         "search/single_space must fail with space_index 13"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
         error.message.contains("13") || error.message.contains("0-12"),
         "Error should mention valid range 0-12"
@@ -462,8 +595,11 @@ async fn test_search_single_space_missing_index_fails() {
     let search_params = json!({
         "query": "test query"
     });
-    let search_request =
-        make_request("search/single_space", Some(JsonRpcId::Number(1)), Some(search_params));
+    let search_request = make_request(
+        "search/single_space",
+        Some(JsonRpcId::Number(1)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
     assert!(
@@ -471,7 +607,10 @@ async fn test_search_single_space_missing_index_fails() {
         "search/single_space must fail without space_index"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
         error.message.contains("space_index"),
         "Error should mention missing space_index"
@@ -488,7 +627,11 @@ async fn test_search_single_space_query_text_alias() {
         "content": "Alternative parameter naming test",
         "importance": 0.5
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // Use query_text instead of query
@@ -497,8 +640,11 @@ async fn test_search_single_space_query_text_alias() {
         "space_index": 0,
         "minSimilarity": 0.0  // P1-FIX-1: Required parameter for fail-fast
     });
-    let search_request =
-        make_request("search/single_space", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/single_space",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
     assert!(
@@ -521,7 +667,11 @@ async fn test_search_by_purpose_custom_vector() {
         "content": "Purpose-driven content for alignment testing",
         "importance": 0.8
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // Custom 13D purpose vector
@@ -533,8 +683,11 @@ async fn test_search_by_purpose_custom_vector() {
         "purpose_vector": purpose_vector,
         "topK": 5
     });
-    let search_request =
-        make_request("search/by_purpose", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/by_purpose",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
     assert!(response.error.is_none(), "search/by_purpose should succeed");
@@ -542,7 +695,10 @@ async fn test_search_by_purpose_custom_vector() {
 
     assert!(result.get("results").is_some(), "Should have results array");
     assert!(result.get("count").is_some(), "Should have count");
-    assert!(result.get("search_time_ms").is_some(), "Should report search time");
+    assert!(
+        result.get("search_time_ms").is_some(),
+        "Should report search time"
+    );
 }
 
 /// Test search/by_purpose without purpose_vector uses default.
@@ -555,15 +711,22 @@ async fn test_search_by_purpose_default_vector() {
         "content": "Content for default purpose search",
         "importance": 0.6
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     // No purpose_vector provided - uses default
     let search_params = json!({
         "topK": 10
     });
-    let search_request =
-        make_request("search/by_purpose", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/by_purpose",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
     assert!(
@@ -596,8 +759,11 @@ async fn test_search_by_purpose_min_alignment() {
         "min_alignment": 0.5,
         "topK": 10
     });
-    let search_request =
-        make_request("search/by_purpose", Some(JsonRpcId::Number(10)), Some(search_params));
+    let search_request = make_request(
+        "search/by_purpose",
+        Some(JsonRpcId::Number(10)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
     assert!(response.error.is_none(), "search/by_purpose should succeed");
@@ -619,8 +785,11 @@ async fn test_search_by_purpose_wrong_size_vector_fails() {
     let search_params = json!({
         "purpose_vector": wrong_vector
     });
-    let search_request =
-        make_request("search/by_purpose", Some(JsonRpcId::Number(1)), Some(search_params));
+    let search_request = make_request(
+        "search/by_purpose",
+        Some(JsonRpcId::Number(1)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
     assert!(
@@ -628,7 +797,10 @@ async fn test_search_by_purpose_wrong_size_vector_fails() {
         "search/by_purpose must fail with 12-element vector"
     );
     let error = response.error.unwrap();
-    assert_eq!(error.code, -32602, "Should return INVALID_PARAMS error code");
+    assert_eq!(
+        error.code, -32602,
+        "Should return INVALID_PARAMS error code"
+    );
     assert!(
         error.message.contains("13") || error.message.contains("elements"),
         "Error should mention 13 elements required"
@@ -645,14 +817,21 @@ async fn test_search_by_purpose_result_structure() {
         "content": "Result structure verification content",
         "importance": 0.8
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     handlers.dispatch(store_request).await;
 
     let search_params = json!({
         "topK": 5
     });
-    let search_request =
-        make_request("search/by_purpose", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/by_purpose",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let response = handlers.dispatch(search_request).await;
 
     assert!(response.error.is_none(), "search/by_purpose should succeed");
@@ -664,7 +843,10 @@ async fn test_search_by_purpose_result_structure() {
     if let Some(results) = results {
         if !results.is_empty() {
             let first = &results[0];
-            assert!(first.get("fingerprintId").is_some(), "Result should have fingerprintId");
+            assert!(
+                first.get("fingerprintId").is_some(),
+                "Result should have fingerprintId"
+            );
             assert!(
                 first.get("purpose_alignment").is_some(),
                 "Result should have purpose_alignment"
@@ -717,7 +899,10 @@ async fn test_weight_profiles_returns_all() {
     // Verify each profile has required fields
     for profile in profiles {
         assert!(profile.get("name").is_some(), "Profile must have name");
-        assert!(profile.get("weights").is_some(), "Profile must have weights");
+        assert!(
+            profile.get("weights").is_some(),
+            "Profile must have weights"
+        );
         assert!(
             profile.get("primary_spaces").is_some(),
             "Profile must have primary_spaces"
@@ -873,8 +1058,11 @@ async fn test_full_state_verification_search_workflow() {
         "minSimilarity": 0.0,  // P1-FIX-1: Required parameter for fail-fast
         "include_per_embedder_scores": true
     });
-    let multi_preset_request =
-        make_request("search/multi", Some(JsonRpcId::Number(10)), Some(multi_preset_params));
+    let multi_preset_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(10)),
+        Some(multi_preset_params),
+    );
     let multi_preset_response = handlers.dispatch(multi_preset_request).await;
 
     assert!(
@@ -888,14 +1076,21 @@ async fn test_full_state_verification_search_workflow() {
         .get("results")
         .and_then(|v| v.as_array())
         .expect("Must have results array");
-    assert!(!results.is_empty(), "search/multi must find at least one result");
+    assert!(
+        !results.is_empty(),
+        "search/multi must find at least one result"
+    );
 
     // Verify per-embedder scores present (13 scores)
     if !results.is_empty() {
-        let per_scores = results[0].get("per_embedder_scores").and_then(|v| v.as_object());
+        let per_scores = results[0]
+            .get("per_embedder_scores")
+            .and_then(|v| v.as_object());
         assert!(per_scores.is_some(), "Must have per_embedder_scores");
         // The scores use space_json_key which may have different naming
-        let top_contrib = results[0].get("top_contributing_spaces").and_then(|v| v.as_array());
+        let top_contrib = results[0]
+            .get("top_contributing_spaces")
+            .and_then(|v| v.as_array());
         assert!(top_contrib.is_some(), "Must have top_contributing_spaces");
     }
 
@@ -912,8 +1107,11 @@ async fn test_full_state_verification_search_workflow() {
         "topK": 5,
         "minSimilarity": 0.0  // P1-FIX-1: Required parameter for fail-fast
     });
-    let multi_custom_request =
-        make_request("search/multi", Some(JsonRpcId::Number(11)), Some(multi_custom_params));
+    let multi_custom_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(11)),
+        Some(multi_custom_params),
+    );
     let multi_custom_response = handlers.dispatch(multi_custom_request).await;
 
     assert!(
@@ -952,12 +1150,16 @@ async fn test_full_state_verification_search_workflow() {
     );
     let single_space_result = single_space_response.result.expect("Must have result");
     assert_eq!(
-        single_space_result.get("space_index").and_then(|v| v.as_u64()),
+        single_space_result
+            .get("space_index")
+            .and_then(|v| v.as_u64()),
         Some(6),
         "Must target space index 6"
     );
     assert_eq!(
-        single_space_result.get("space_name").and_then(|v| v.as_str()),
+        single_space_result
+            .get("space_name")
+            .and_then(|v| v.as_str()),
         Some("E7_Code"),
         "Space 6 must be named E7_Code"
     );
@@ -1023,9 +1225,7 @@ async fn test_full_state_verification_search_workflow() {
         );
     }
 
-    let total_spaces = profiles_result
-        .get("total_spaces")
-        .and_then(|v| v.as_u64());
+    let total_spaces = profiles_result.get("total_spaces").and_then(|v| v.as_u64());
     assert_eq!(total_spaces, Some(13), "total_spaces must be 13");
 
     // =========================================================================
@@ -1153,7 +1353,11 @@ async fn test_rocksdb_integration_search_multi() {
         "minSimilarity": 0.0,  // P1-FIX-1: Required parameter for fail-fast
         "include_per_embedder_scores": true
     });
-    let search_request = make_request("search/multi", Some(JsonRpcId::Number(10)), Some(search_params));
+    let search_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(10)),
+        Some(search_params),
+    );
     let search_response = handlers.dispatch(search_request).await;
 
     assert!(
@@ -1172,11 +1376,17 @@ async fn test_rocksdb_integration_search_multi() {
         .get("count")
         .and_then(|v| v.as_u64())
         .expect("Must have count");
-    assert_eq!(count as usize, results.len(), "Count must match results length");
+    assert_eq!(
+        count as usize,
+        results.len(),
+        "Count must match results length"
+    );
     assert!(!results.is_empty(), "Must find at least one result");
 
     // Verify query_metadata
-    let metadata = search_result.get("query_metadata").expect("Must have query_metadata");
+    let metadata = search_result
+        .get("query_metadata")
+        .expect("Must have query_metadata");
     assert_eq!(
         metadata.get("query_type_used").and_then(|v| v.as_str()),
         Some("semantic_search"),
@@ -1184,15 +1394,31 @@ async fn test_rocksdb_integration_search_multi() {
     );
     let weights_applied = metadata.get("weights_applied").and_then(|v| v.as_array());
     assert!(weights_applied.is_some(), "Must have weights_applied");
-    assert_eq!(weights_applied.unwrap().len(), NUM_EMBEDDERS, "Must have 13 weights");
+    assert_eq!(
+        weights_applied.unwrap().len(),
+        NUM_EMBEDDERS,
+        "Must have 13 weights"
+    );
 
     // Verify per-embedder scores in first result
     if !results.is_empty() {
         let first = &results[0];
-        assert!(first.get("fingerprintId").is_some(), "Result must have fingerprintId");
-        assert!(first.get("aggregate_similarity").is_some(), "Result must have aggregate_similarity");
-        assert!(first.get("per_embedder_scores").is_some(), "Result must have per_embedder_scores");
-        assert!(first.get("top_contributing_spaces").is_some(), "Result must have top_contributing_spaces");
+        assert!(
+            first.get("fingerprintId").is_some(),
+            "Result must have fingerprintId"
+        );
+        assert!(
+            first.get("aggregate_similarity").is_some(),
+            "Result must have aggregate_similarity"
+        );
+        assert!(
+            first.get("per_embedder_scores").is_some(),
+            "Result must have per_embedder_scores"
+        );
+        assert!(
+            first.get("top_contributing_spaces").is_some(),
+            "Result must have top_contributing_spaces"
+        );
     }
 }
 
@@ -1208,7 +1434,11 @@ async fn test_rocksdb_integration_search_multi_custom_weights() {
         "content": "Rust programming language with ownership and borrowing",
         "importance": 0.8
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     let store_response = handlers.dispatch(store_request).await;
     assert!(store_response.error.is_none(), "STORE must succeed");
 
@@ -1236,7 +1466,11 @@ async fn test_rocksdb_integration_search_multi_custom_weights() {
         "topK": 5,
         "minSimilarity": 0.0  // P1-FIX-1: Required parameter for fail-fast
     });
-    let search_request = make_request("search/multi", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/multi",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let search_response = handlers.dispatch(search_request).await;
 
     assert!(
@@ -1247,8 +1481,13 @@ async fn test_rocksdb_integration_search_multi_custom_weights() {
     let search_result = search_response.result.expect("Must have result");
 
     // Verify custom weights were applied
-    let metadata = search_result.get("query_metadata").expect("Must have metadata");
-    let applied = metadata.get("weights_applied").and_then(|v| v.as_array()).expect("Must have weights");
+    let metadata = search_result
+        .get("query_metadata")
+        .expect("Must have metadata");
+    let applied = metadata
+        .get("weights_applied")
+        .and_then(|v| v.as_array())
+        .expect("Must have weights");
     assert_eq!(applied.len(), 13, "Must have exactly 13 weights");
 
     // Verify code weight (index 6) is 0.40
@@ -1272,7 +1511,11 @@ async fn test_rocksdb_integration_search_single_space() {
         "content": "Knowledge graphs for entity relationship modeling",
         "importance": 0.75
     });
-    let store_request = make_request("memory/store", Some(JsonRpcId::Number(1)), Some(store_params));
+    let store_request = make_request(
+        "memory/store",
+        Some(JsonRpcId::Number(1)),
+        Some(store_params),
+    );
     let store_response = handlers.dispatch(store_request).await;
     assert!(store_response.error.is_none(), "STORE must succeed");
 
@@ -1283,7 +1526,11 @@ async fn test_rocksdb_integration_search_single_space() {
         "topK": 5,
         "minSimilarity": 0.0  // P1-FIX-1: Required parameter for fail-fast
     });
-    let search_request = make_request("search/single_space", Some(JsonRpcId::Number(2)), Some(search_params));
+    let search_request = make_request(
+        "search/single_space",
+        Some(JsonRpcId::Number(2)),
+        Some(search_params),
+    );
     let search_response = handlers.dispatch(search_request).await;
 
     assert!(
@@ -1350,7 +1597,11 @@ async fn test_rocksdb_integration_search_by_purpose() {
         "topK": 10,
         "threshold": 0.1
     });
-    let search_request = make_request("search/by_purpose", Some(JsonRpcId::Number(10)), Some(search_params));
+    let search_request = make_request(
+        "search/by_purpose",
+        Some(JsonRpcId::Number(10)),
+        Some(search_params),
+    );
     let search_response = handlers.dispatch(search_request).await;
 
     assert!(
@@ -1363,7 +1614,10 @@ async fn test_rocksdb_integration_search_by_purpose() {
     // Verify results structure
     assert!(search_result.get("results").is_some(), "Must have results");
     assert!(search_result.get("count").is_some(), "Must have count");
-    assert!(search_result.get("search_time_ms").is_some(), "Must have search_time_ms");
+    assert!(
+        search_result.get("search_time_ms").is_some(),
+        "Must have search_time_ms"
+    );
     // min_alignment_filter may be None if no threshold provided
 }
 
@@ -1385,7 +1639,10 @@ async fn test_rocksdb_integration_weight_profiles() {
     let result = response.result.expect("Must have result");
 
     // Verify profiles array - use WEIGHT_PROFILES.len() for actual count
-    let profiles = result.get("profiles").and_then(|v| v.as_array()).expect("Must have profiles");
+    let profiles = result
+        .get("profiles")
+        .and_then(|v| v.as_array())
+        .expect("Must have profiles");
     assert_eq!(
         profiles.len(),
         WEIGHT_PROFILES.len(),
@@ -1405,14 +1662,26 @@ async fn test_rocksdb_integration_weight_profiles() {
             i
         );
         // Verify profile has name and description
-        assert!(profile.get("name").is_some(), "Profile {} must have name", i);
-        assert!(profile.get("primary_spaces").is_some(), "Profile {} must have primary_spaces", i);
+        assert!(
+            profile.get("name").is_some(),
+            "Profile {} must have name",
+            i
+        );
+        assert!(
+            profile.get("primary_spaces").is_some(),
+            "Profile {} must have primary_spaces",
+            i
+        );
     }
 
     // Verify embedding spaces
     let spaces = result.get("embedding_spaces").and_then(|v| v.as_array());
     assert!(spaces.is_some(), "Must have embedding_spaces");
-    assert_eq!(spaces.unwrap().len(), NUM_EMBEDDERS, "Must have 13 embedding spaces");
+    assert_eq!(
+        spaces.unwrap().len(),
+        NUM_EMBEDDERS,
+        "Must have 13 embedding spaces"
+    );
 
     // Verify total_spaces
     assert_eq!(
@@ -1498,7 +1767,9 @@ async fn test_rocksdb_integration_search_error_handling() {
 #[cfg(feature = "cuda")]
 mod real_embedding_tests {
     use super::*;
-    use crate::handlers::tests::{create_test_handlers_with_real_embeddings, extract_mcp_tool_data};
+    use crate::handlers::tests::{
+        create_test_handlers_with_real_embeddings, extract_mcp_tool_data,
+    };
     use std::time::Instant;
 
     /// FSV: Verify search/multi with REAL GPU embeddings returns semantically relevant results.
@@ -1513,9 +1784,18 @@ mod real_embedding_tests {
 
         // Store diverse content: 2 ML-related, 1 unrelated
         let contents = [
-            ("Machine learning algorithms can classify images using neural networks", 0.9),
-            ("Deep learning models like transformers revolutionized NLP tasks", 0.8),
-            ("The weather forecast predicts rain tomorrow afternoon in Seattle", 0.7),
+            (
+                "Machine learning algorithms can classify images using neural networks",
+                0.9,
+            ),
+            (
+                "Deep learning models like transformers revolutionized NLP tasks",
+                0.8,
+            ),
+            (
+                "The weather forecast predicts rain tomorrow afternoon in Seattle",
+                0.7,
+            ),
         ];
 
         let mut stored_ids = Vec::new();
@@ -1534,7 +1814,8 @@ mod real_embedding_tests {
 
             if let Some(result) = response.result {
                 let data = extract_mcp_tool_data(&result);
-                if let Some(id) = data.get("fingerprintId")
+                if let Some(id) = data
+                    .get("fingerprintId")
                     .or_else(|| data.get("fingerprint_id"))
                     .and_then(|v| v.as_str())
                 {
@@ -1559,11 +1840,17 @@ mod real_embedding_tests {
         );
         let response = handlers.dispatch(search_request).await;
 
-        assert!(response.error.is_none(), "Search should succeed with real embeddings");
+        assert!(
+            response.error.is_none(),
+            "Search should succeed with real embeddings"
+        );
         let result = response.result.expect("Should have result");
 
         // Verify results structure
-        let results = result.get("results").and_then(|v| v.as_array()).expect("Should have results");
+        let results = result
+            .get("results")
+            .and_then(|v| v.as_array())
+            .expect("Should have results");
         assert!(!results.is_empty(), "Should have at least one result");
 
         // With real embeddings, ML content should have higher similarity
@@ -1574,12 +1861,12 @@ mod real_embedding_tests {
         // Verify per-embedder scores are returned (13 embedders)
         if let Some(first) = results.first() {
             if let Some(per_scores) = first.get("per_embedder_scores").and_then(|v| v.as_object()) {
-                println!("Per-embedder scores for top result: {} embedders", per_scores.len());
-                // Should have scores for all 13 embedding spaces
-                assert!(
-                    !per_scores.is_empty(),
-                    "Should have per-embedder scores"
+                println!(
+                    "Per-embedder scores for top result: {} embedders",
+                    per_scores.len()
                 );
+                // Should have scores for all 13 embedding spaces
+                assert!(!per_scores.is_empty(), "Should have per-embedder scores");
             }
 
             // Verify top result has reasonable similarity
@@ -1641,11 +1928,17 @@ mod real_embedding_tests {
         );
         let response = handlers.dispatch(search_request).await;
 
-        assert!(response.error.is_none(), "Single-space search should succeed");
+        assert!(
+            response.error.is_none(),
+            "Single-space search should succeed"
+        );
         let result = response.result.expect("Should have result");
 
         // Verify single-space search structure
-        let results = result.get("results").and_then(|v| v.as_array()).expect("Should have results");
+        let results = result
+            .get("results")
+            .and_then(|v| v.as_array())
+            .expect("Should have results");
 
         // With real embeddings, the quantum content should be found
         if !results.is_empty() {
@@ -1703,19 +1996,19 @@ mod real_embedding_tests {
         // Search by purpose with a 13D purpose vector
         // This simulates aligning to a "beneficial AI" goal
         let purpose_vector: Vec<f64> = vec![
-            0.8,  // E1: Semantic - high weight for meaning
-            0.3,  // E2: Temporal-cyclic
-            0.3,  // E3: Temporal-decay
-            0.3,  // E4: Temporal-contextual
-            0.7,  // E5: Causal - important for ethics
-            0.2,  // E6: Sparse (SPLADE)
-            0.4,  // E7: Code
-            0.3,  // E8: Graph
-            0.2,  // E9: HDC
-            0.3,  // E10: Multimodal
-            0.5,  // E11: Entity
-            0.2,  // E12: Late-interaction
-            0.2,  // E13: Sparse
+            0.8, // E1: Semantic - high weight for meaning
+            0.3, // E2: Temporal-cyclic
+            0.3, // E3: Temporal-decay
+            0.3, // E4: Temporal-contextual
+            0.7, // E5: Causal - important for ethics
+            0.2, // E6: Sparse (SPLADE)
+            0.4, // E7: Code
+            0.3, // E8: Graph
+            0.2, // E9: HDC
+            0.3, // E10: Multimodal
+            0.5, // E11: Entity
+            0.2, // E12: Late-interaction
+            0.2, // E13: Sparse
         ];
 
         let search_params = json!({
@@ -1734,7 +2027,10 @@ mod real_embedding_tests {
         let result = response.result.expect("Should have result");
 
         // Verify results
-        let results = result.get("results").and_then(|v| v.as_array()).expect("Should have results");
+        let results = result
+            .get("results")
+            .and_then(|v| v.as_array())
+            .expect("Should have results");
         println!("By-purpose search returned {} results", results.len());
 
         // Verify alignment scores are in expected range
@@ -1820,7 +2116,10 @@ mod real_embedding_tests {
         // Report but don't fail - actual threshold depends on hardware
         // The constitution says 25ms for inject_context which is more complex
         if p95 > 100 {
-            println!("WARNING: P95 search latency {}ms may be high for real-time use", p95);
+            println!(
+                "WARNING: P95 search latency {}ms may be high for real-time use",
+                p95
+            );
         }
     }
 
@@ -1844,19 +2143,19 @@ mod real_embedding_tests {
 
         // Search each of the 13 embedding spaces
         let space_names = [
-            "semantic",      // E1
-            "temporal_cyclic", // E2
-            "temporal_decay",  // E3
+            "semantic",            // E1
+            "temporal_cyclic",     // E2
+            "temporal_decay",      // E3
             "temporal_contextual", // E4
-            "causal",        // E5
-            "sparse",        // E6 (SPLADE)
-            "code",          // E7
-            "graph",         // E8
-            "hdc",           // E9
-            "multimodal",    // E10
-            "entity",        // E11
-            "late_interaction", // E12 (ColBERT)
-            "sparse_2",      // E13
+            "causal",              // E5
+            "sparse",              // E6 (SPLADE)
+            "code",                // E7
+            "graph",               // E8
+            "hdc",                 // E9
+            "multimodal",          // E10
+            "entity",              // E11
+            "late_interaction",    // E12 (ColBERT)
+            "sparse_2",            // E13
         ];
 
         for (space_index, space_name) in space_names.iter().enumerate() {

@@ -3,8 +3,7 @@
 //! Tests for parameter validation and error handling
 
 use context_graph_utl::{
-    compute_learning_magnitude, compute_learning_magnitude_validated,
-    UtlError,
+    compute_learning_magnitude, compute_learning_magnitude_validated, UtlError,
 };
 
 // =============================================================================
@@ -18,7 +17,10 @@ fn test_nan_infinity_prevention_edge_cases() {
     assert!(result.is_ok(), "zero inputs should not error");
     let value = result.unwrap();
     assert!(!value.is_nan(), "zero inputs should not produce NaN");
-    assert!(!value.is_infinite(), "zero inputs should not produce Infinity");
+    assert!(
+        !value.is_infinite(),
+        "zero inputs should not produce Infinity"
+    );
 
     // Boundary values
     for &val in &[0.0_f32, 0.5, 1.0] {

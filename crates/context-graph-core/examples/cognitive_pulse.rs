@@ -17,7 +17,10 @@ fn main() {
     println!("  Entropy: {:.2}", crisis.entropy);
     println!("  Coherence: {:.2}", crisis.coherence);
     println!("  Suggested Action: {:?}", crisis.suggested_action);
-    println!("  Action Description: {}", crisis.suggested_action.description());
+    println!(
+        "  Action Description: {}",
+        crisis.suggested_action.description()
+    );
     println!("  Is Healthy: {}", crisis.is_healthy());
     assert_eq!(crisis.suggested_action, SuggestedAction::Stabilize);
     println!("  ✓ Correctly identified as Stabilize action\n");
@@ -40,7 +43,10 @@ fn main() {
     println!("  Entropy: {:.2}", explore.entropy);
     println!("  Coherence: {:.2}", explore.coherence);
     println!("  Suggested Action: {:?}", explore.suggested_action);
-    println!("  Action Description: {}", explore.suggested_action.description());
+    println!(
+        "  Action Description: {}",
+        explore.suggested_action.description()
+    );
     assert_eq!(explore.suggested_action, SuggestedAction::Explore);
     println!("  ✓ Correctly identified as Explore action\n");
 
@@ -58,9 +64,18 @@ fn main() {
     println!("--- Example 5: Blending Pulses ---");
     let blended = crisis.blend(&ready, 0.5);
     println!("Blended State (50/50 crisis + ready):");
-    println!("  Original Crisis: entropy={:.2}, coherence={:.2}", crisis.entropy, crisis.coherence);
-    println!("  Original Ready:  entropy={:.2}, coherence={:.2}", ready.entropy, ready.coherence);
-    println!("  Blended Result:  entropy={:.2}, coherence={:.2}", blended.entropy, blended.coherence);
+    println!(
+        "  Original Crisis: entropy={:.2}, coherence={:.2}",
+        crisis.entropy, crisis.coherence
+    );
+    println!(
+        "  Original Ready:  entropy={:.2}, coherence={:.2}",
+        ready.entropy, ready.coherence
+    );
+    println!(
+        "  Blended Result:  entropy={:.2}, coherence={:.2}",
+        blended.entropy, blended.coherence
+    );
     println!("  Suggested Action: {:?}", blended.suggested_action);
     // Midpoint values: (0.85+0.2)/2 = 0.525 entropy, (0.25+0.85)/2 = 0.55 coherence
     assert!((blended.entropy - 0.525).abs() < 0.01);
@@ -94,7 +109,10 @@ fn main() {
     println!("Pulse with Focused emotional state:");
     println!("  Entropy: {:.2}", focused.entropy);
     println!("  Coherence: {:.2}", focused.coherence);
-    println!("  Emotional Weight: {:.2} (Focused = 1.3x)", focused.emotional_weight);
+    println!(
+        "  Emotional Weight: {:.2} (Focused = 1.3x)",
+        focused.emotional_weight
+    );
     println!("  Suggested Action: {:?}", focused.suggested_action);
     assert_eq!(focused.emotional_weight, 1.3);
     println!("  ✓ Emotional weight correctly derived from EmotionalState\n");
@@ -136,7 +154,11 @@ fn main() {
         ("Consolidate", consolidate.is_healthy()),
     ];
     for (name, healthy) in states {
-        let status = if healthy { "✓ Healthy" } else { "✗ Unhealthy" };
+        let status = if healthy {
+            "✓ Healthy"
+        } else {
+            "✗ Unhealthy"
+        };
         println!("  {}: {}", name, status);
     }
 

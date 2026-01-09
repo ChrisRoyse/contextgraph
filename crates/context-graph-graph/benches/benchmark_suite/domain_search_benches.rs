@@ -99,9 +99,8 @@ pub fn bench_domain_search_modulation(c: &mut Criterion) {
             |b, _| {
                 b.iter(|| {
                     let mut items_clone = items.clone();
-                    items_clone.sort_by(|a, b| {
-                        b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal)
-                    });
+                    items_clone
+                        .sort_by(|a, b| b.2.partial_cmp(&a.2).unwrap_or(std::cmp::Ordering::Equal));
                     black_box(items_clone)
                 })
             },

@@ -62,10 +62,7 @@ fn test_budget_enforcement() {
     let _h1 = manager
         .allocate(512, MemoryCategory::WorkingMemory)
         .expect("First allocation should succeed");
-    println!(
-        "AFTER: First allocation succeeded, used={}",
-        manager.used()
-    );
+    println!("AFTER: First allocation succeeded, used={}", manager.used());
 
     // Second allocation exceeds budget
     println!("BEFORE: Attempting 1024 byte allocation (exceeds remaining)");

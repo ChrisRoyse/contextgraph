@@ -52,9 +52,7 @@ extern "C" {
     ///
     /// # Returns
     /// 0 on success, non-zero on failure
-    pub fn faiss_StandardGpuResources_new(
-        p_res: *mut *mut FaissStandardGpuResources,
-    ) -> c_int;
+    pub fn faiss_StandardGpuResources_new(p_res: *mut *mut FaissStandardGpuResources) -> c_int;
 
     /// Free GPU resources.
     ///
@@ -96,11 +94,7 @@ extern "C" {
     /// - `index`: Target index
     /// - `n`: Number of training vectors
     /// - `x`: Training vectors (n * d floats, row-major)
-    pub fn faiss_Index_train(
-        index: *mut FaissIndex,
-        n: c_long,
-        x: *const c_float,
-    ) -> c_int;
+    pub fn faiss_Index_train(index: *mut FaissIndex, n: c_long, x: *const c_float) -> c_int;
 
     /// Check if index is trained.
     ///
@@ -147,10 +141,7 @@ extern "C" {
     ///
     /// Note: FAISS_DECLARE_SETTER macro generates `faiss_IndexIVF_set_nprobe`
     /// with void return type (not c_int).
-    pub fn faiss_IndexIVF_set_nprobe(
-        index: *mut FaissIndex,
-        nprobe: usize,
-    );
+    pub fn faiss_IndexIVF_set_nprobe(index: *mut FaissIndex, nprobe: usize);
 
     /// Get total number of vectors in index.
     pub fn faiss_Index_ntotal(index: *const FaissIndex) -> c_long;
@@ -162,10 +153,7 @@ extern "C" {
     /// # Arguments
     /// - `index`: Source index
     /// - `fname`: Output file path (C string)
-    pub fn faiss_write_index(
-        index: *const FaissIndex,
-        fname: *const c_char,
-    ) -> c_int;
+    pub fn faiss_write_index(index: *const FaissIndex, fname: *const c_char) -> c_int;
 
     /// Read index from file.
     ///

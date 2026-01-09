@@ -32,38 +32,38 @@ pub const NUM_OSCILLATORS: usize = 13;
 
 /// Names of the 13 embedding spaces corresponding to each oscillator.
 pub const EMBEDDER_NAMES: [&str; NUM_OSCILLATORS] = [
-    "E1_Semantic",      // e5-large-v2
-    "E2_TempRecent",    // exponential decay
-    "E3_TempPeriodic",  // Fourier
+    "E1_Semantic",       // e5-large-v2
+    "E2_TempRecent",     // exponential decay
+    "E3_TempPeriodic",   // Fourier
     "E4_TempPositional", // sinusoidal PE
-    "E5_Causal",        // Longformer SCM
-    "E6_SparseLex",     // SPLADE
-    "E7_Code",          // Qodo-Embed-1-1.5B
-    "E8_Graph",         // MiniLM structure
-    "E9_HDC",           // 10K-bit hyperdimensional
-    "E10_Multimodal",   // CLIP
-    "E11_Entity",       // MiniLM facts
-    "E12_LateInteract", // ColBERT
-    "E13_SPLADE",       // SPLADE v3
+    "E5_Causal",         // Longformer SCM
+    "E6_SparseLex",      // SPLADE
+    "E7_Code",           // Qodo-Embed-1-1.5B
+    "E8_Graph",          // MiniLM structure
+    "E9_HDC",            // 10K-bit hyperdimensional
+    "E10_Multimodal",    // CLIP
+    "E11_Entity",        // MiniLM facts
+    "E12_LateInteract",  // ColBERT
+    "E13_SPLADE",        // SPLADE v3
 ];
 
 /// Brain wave frequency bands for reference (from Constitution v4.0.0).
 /// These define the RELATIVE frequencies; actual values are normalized.
 #[allow(dead_code)] // Reference data for documentation and future frequency-based analysis
 pub const BRAIN_WAVE_FREQUENCIES_HZ: [f64; NUM_OSCILLATORS] = [
-    40.0,  // E1_Semantic - gamma band (conscious binding)
-    8.0,   // E2_TempRecent - alpha band (temporal integration)
-    8.0,   // E3_TempPeriodic - alpha band (temporal integration)
-    8.0,   // E4_TempPositional - alpha band (temporal integration)
-    25.0,  // E5_Causal - beta band (causal reasoning)
-    4.0,   // E6_SparseLex - theta band (sparse activations)
-    25.0,  // E7_Code - beta band (structured thinking)
-    12.0,  // E8_Graph - alpha-beta transition
-    80.0,  // E9_HDC - high-gamma band (holographic)
-    40.0,  // E10_Multimodal - gamma band (cross-modal binding)
-    15.0,  // E11_Entity - beta band (factual grounding)
-    60.0,  // E12_LateInteract - high-gamma band (token precision)
-    4.0,   // E13_SPLADE - theta band (keyword sparse)
+    40.0, // E1_Semantic - gamma band (conscious binding)
+    8.0,  // E2_TempRecent - alpha band (temporal integration)
+    8.0,  // E3_TempPeriodic - alpha band (temporal integration)
+    8.0,  // E4_TempPositional - alpha band (temporal integration)
+    25.0, // E5_Causal - beta band (causal reasoning)
+    4.0,  // E6_SparseLex - theta band (sparse activations)
+    25.0, // E7_Code - beta band (structured thinking)
+    12.0, // E8_Graph - alpha-beta transition
+    80.0, // E9_HDC - high-gamma band (holographic)
+    40.0, // E10_Multimodal - gamma band (cross-modal binding)
+    15.0, // E11_Entity - beta band (factual grounding)
+    60.0, // E12_LateInteract - high-gamma band (token precision)
+    4.0,  // E13_SPLADE - theta band (keyword sparse)
 ];
 
 /// Default natural frequencies for each embedder (normalized Hz).
@@ -84,19 +84,19 @@ pub const BRAIN_WAVE_FREQUENCIES_HZ: [f64; NUM_OSCILLATORS] = [
 /// Normalized formula: normalized_freq = actual_freq / mean(all_freqs)
 /// Mean of brain wave freqs = (40+8+8+8+25+4+25+12+80+40+15+60+4)/13 ≈ 25.3
 pub const DEFAULT_NATURAL_FREQUENCIES: [f64; NUM_OSCILLATORS] = [
-    1.58,  // E1_Semantic - gamma band (40/25.3)
-    0.32,  // E2_TempRecent - alpha band (8/25.3)
-    0.32,  // E3_TempPeriodic - alpha band (8/25.3)
-    0.32,  // E4_TempPositional - alpha band (8/25.3)
-    0.99,  // E5_Causal - beta band (25/25.3)
-    0.16,  // E6_SparseLex - theta band (4/25.3)
-    0.99,  // E7_Code - beta band (25/25.3)
-    0.47,  // E8_Graph - alpha-beta transition (12/25.3)
-    3.16,  // E9_HDC - high-gamma band (80/25.3)
-    1.58,  // E10_Multimodal - gamma band (40/25.3)
-    0.59,  // E11_Entity - beta band (15/25.3)
-    2.37,  // E12_LateInteract - high-gamma band (60/25.3)
-    0.16,  // E13_SPLADE - theta band (4/25.3)
+    1.58, // E1_Semantic - gamma band (40/25.3)
+    0.32, // E2_TempRecent - alpha band (8/25.3)
+    0.32, // E3_TempPeriodic - alpha band (8/25.3)
+    0.32, // E4_TempPositional - alpha band (8/25.3)
+    0.99, // E5_Causal - beta band (25/25.3)
+    0.16, // E6_SparseLex - theta band (4/25.3)
+    0.99, // E7_Code - beta band (25/25.3)
+    0.47, // E8_Graph - alpha-beta transition (12/25.3)
+    3.16, // E9_HDC - high-gamma band (80/25.3)
+    1.58, // E10_Multimodal - gamma band (40/25.3)
+    0.59, // E11_Entity - beta band (15/25.3)
+    2.37, // E12_LateInteract - high-gamma band (60/25.3)
+    0.16, // E13_SPLADE - theta band (4/25.3)
 ];
 
 /// Kuramoto Oscillator Network for Global Workspace synchronization.
@@ -491,8 +491,7 @@ impl KuramotoNetwork {
                 embedder_idx, NUM_OSCILLATORS
             )));
         }
-        self.phases[embedder_idx] =
-            (self.phases[embedder_idx] + delta_phase).rem_euclid(2.0 * PI);
+        self.phases[embedder_idx] = (self.phases[embedder_idx] + delta_phase).rem_euclid(2.0 * PI);
         Ok(())
     }
 }
@@ -518,7 +517,11 @@ mod tests {
     fn test_synchronized_network_has_r_near_1() {
         let network = KuramotoNetwork::synchronized();
         let (r, _) = network.order_parameter();
-        assert!(r > 0.99, "Synchronized network should have r ≈ 1, got {}", r);
+        assert!(
+            r > 0.99,
+            "Synchronized network should have r ≈ 1, got {}",
+            r
+        );
     }
 
     #[test]
@@ -569,33 +572,75 @@ mod tests {
         let freqs = network.natural_frequencies();
 
         // E9 (HDC) should be highest (high-gamma 80Hz scaled)
-        assert!(freqs[8] > freqs[0], "E9 (high-gamma) should be > E1 (gamma)");
+        assert!(
+            freqs[8] > freqs[0],
+            "E9 (high-gamma) should be > E1 (gamma)"
+        );
         // E12 (Late) should be second highest (high-gamma 60Hz scaled)
-        assert!(freqs[11] > freqs[0], "E12 (high-gamma) should be > E1 (gamma)");
+        assert!(
+            freqs[11] > freqs[0],
+            "E12 (high-gamma) should be > E1 (gamma)"
+        );
         // E1, E10 (gamma 40Hz) should be higher than E5, E7 (beta 25Hz)
-        assert!(freqs[0] > freqs[4], "E1 (gamma 40Hz) should be > E5 (beta 25Hz)");
+        assert!(
+            freqs[0] > freqs[4],
+            "E1 (gamma 40Hz) should be > E5 (beta 25Hz)"
+        );
         assert!(freqs[9] > freqs[6], "E10 (gamma) should be > E7 (beta)");
         // Alpha (E2-E4) should be lower than beta (E5, E7)
-        assert!(freqs[1] < freqs[4], "E2 (alpha 8Hz) should be < E5 (beta 25Hz)");
+        assert!(
+            freqs[1] < freqs[4],
+            "E2 (alpha 8Hz) should be < E5 (beta 25Hz)"
+        );
         // Theta (E6, E13) should be lowest
-        assert!(freqs[5] < freqs[1], "E6 (theta 4Hz) should be < E2 (alpha 8Hz)");
+        assert!(
+            freqs[5] < freqs[1],
+            "E6 (theta 4Hz) should be < E2 (alpha 8Hz)"
+        );
         assert!(freqs[12] < freqs[1], "E13 (theta) should be < E2 (alpha)");
         // E6 and E13 should be equal (both theta 4Hz)
-        assert!((freqs[5] - freqs[12]).abs() < 0.001, "E6 and E13 should both be theta");
+        assert!(
+            (freqs[5] - freqs[12]).abs() < 0.001,
+            "E6 and E13 should both be theta"
+        );
         // E2, E3, E4 should be equal (all alpha 8Hz)
-        assert!((freqs[1] - freqs[2]).abs() < 0.001, "E2, E3 should both be alpha");
-        assert!((freqs[2] - freqs[3]).abs() < 0.001, "E3, E4 should both be alpha");
+        assert!(
+            (freqs[1] - freqs[2]).abs() < 0.001,
+            "E2, E3 should both be alpha"
+        );
+        assert!(
+            (freqs[2] - freqs[3]).abs() < 0.001,
+            "E3, E4 should both be alpha"
+        );
     }
 
     #[test]
     fn test_brain_wave_reference_frequencies_match_constitution() {
         // Verify the reference (non-normalized) frequencies match Constitution v4.0.0 exactly
-        assert!((BRAIN_WAVE_FREQUENCIES_HZ[0] - 40.0).abs() < 0.001, "E1 should be 40Hz gamma");
-        assert!((BRAIN_WAVE_FREQUENCIES_HZ[1] - 8.0).abs() < 0.001, "E2 should be 8Hz alpha");
-        assert!((BRAIN_WAVE_FREQUENCIES_HZ[4] - 25.0).abs() < 0.001, "E5 should be 25Hz beta");
-        assert!((BRAIN_WAVE_FREQUENCIES_HZ[5] - 4.0).abs() < 0.001, "E6 should be 4Hz theta");
-        assert!((BRAIN_WAVE_FREQUENCIES_HZ[8] - 80.0).abs() < 0.001, "E9 should be 80Hz high-gamma");
-        assert!((BRAIN_WAVE_FREQUENCIES_HZ[11] - 60.0).abs() < 0.001, "E12 should be 60Hz high-gamma");
+        assert!(
+            (BRAIN_WAVE_FREQUENCIES_HZ[0] - 40.0).abs() < 0.001,
+            "E1 should be 40Hz gamma"
+        );
+        assert!(
+            (BRAIN_WAVE_FREQUENCIES_HZ[1] - 8.0).abs() < 0.001,
+            "E2 should be 8Hz alpha"
+        );
+        assert!(
+            (BRAIN_WAVE_FREQUENCIES_HZ[4] - 25.0).abs() < 0.001,
+            "E5 should be 25Hz beta"
+        );
+        assert!(
+            (BRAIN_WAVE_FREQUENCIES_HZ[5] - 4.0).abs() < 0.001,
+            "E6 should be 4Hz theta"
+        );
+        assert!(
+            (BRAIN_WAVE_FREQUENCIES_HZ[8] - 80.0).abs() < 0.001,
+            "E9 should be 80Hz high-gamma"
+        );
+        assert!(
+            (BRAIN_WAVE_FREQUENCIES_HZ[11] - 60.0).abs() < 0.001,
+            "E12 should be 60Hz high-gamma"
+        );
     }
 
     #[test]

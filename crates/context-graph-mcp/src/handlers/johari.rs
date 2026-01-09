@@ -21,9 +21,7 @@ use serde_json::json;
 use tracing::{debug, error, instrument};
 use uuid::Uuid;
 
-use context_graph_core::johari::{
-    QuadrantPattern, NUM_EMBEDDERS,
-};
+use context_graph_core::johari::{QuadrantPattern, NUM_EMBEDDERS};
 use context_graph_core::types::{JohariQuadrant, TransitionTrigger};
 
 use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
@@ -231,10 +229,11 @@ impl Handlers {
         let mut unknown_count = 0;
         let mut confidence_sum = 0.0f32;
 
-        for idx in 0..NUM_EMBEDDERS {
+        for (idx, &name) in EMBEDDER_NAMES.iter().enumerate().take(NUM_EMBEDDERS) {
             let quadrant = johari.dominant_quadrant(idx);
             let weights = johari.quadrants[idx];
             let confidence = johari.confidence[idx];
+            let _ = name; // Used below in embedder_name field
 
             // Count quadrants
             match quadrant {
@@ -369,10 +368,7 @@ impl Handlers {
         );
 
         // Create pattern for specific embedder in specific quadrant
-        let pattern = QuadrantPattern::AtLeast {
-            quadrant,
-            count: 1,
-        };
+        let pattern = QuadrantPattern::AtLeast { quadrant, count: 1 };
 
         // Search using JohariTransitionManager
         let results = match self
@@ -494,7 +490,10 @@ impl Handlers {
         let to_quadrant = match parse_quadrant(&params.to_quadrant) {
             Some(q) => q,
             None => {
-                error!("johari/transition: Invalid quadrant: {}", params.to_quadrant);
+                error!(
+                    "johari/transition: Invalid quadrant: {}",
+                    params.to_quadrant
+                );
                 return JsonRpcResponse::error(
                     id,
                     error_codes::JOHARI_INVALID_QUADRANT,
@@ -671,10 +670,7 @@ impl Handlers {
                     return JsonRpcResponse::error(
                         id,
                         error_codes::JOHARI_BATCH_ERROR,
-                        format!(
-                            "Invalid to_quadrant at index {}: {}",
-                            idx, item.to_quadrant
-                        ),
+                        format!("Invalid to_quadrant at index {}: {}", idx, item.to_quadrant),
                     );
                 }
             };
@@ -1058,7 +1054,10 @@ mod tests {
             parse_trigger("external_observation"),
             Some(TransitionTrigger::ExternalObservation)
         );
-        assert_eq!(parse_trigger("privatize"), Some(TransitionTrigger::Privatize));
+        assert_eq!(
+            parse_trigger("privatize"),
+            Some(TransitionTrigger::Privatize)
+        );
         assert_eq!(parse_trigger("invalid"), None);
 
         println!("[VERIFIED] test_parse_trigger: All trigger parsing works correctly");

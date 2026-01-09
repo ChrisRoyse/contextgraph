@@ -105,10 +105,7 @@ impl PurposeQueryTarget {
     /// Returns `PurposeIndexError::InvalidQuery` if:
     /// - `min_cluster_size` is 0
     /// - `coherence_threshold` is not in [0.0, 1.0]
-    pub fn pattern(
-        min_cluster_size: usize,
-        coherence_threshold: f32,
-    ) -> PurposeIndexResult<Self> {
+    pub fn pattern(min_cluster_size: usize, coherence_threshold: f32) -> PurposeIndexResult<Self> {
         if min_cluster_size == 0 {
             return Err(PurposeIndexError::invalid_query(
                 "min_cluster_size must be > 0",
@@ -455,17 +452,17 @@ impl PurposeQueryBuilder {
     /// - `limit` is not set or is 0
     /// - `min_similarity` is not set or not in [0.0, 1.0]
     pub fn build(self) -> PurposeIndexResult<PurposeQuery> {
-        let target = self.target.ok_or_else(|| {
-            PurposeIndexError::invalid_query("target is required")
-        })?;
+        let target = self
+            .target
+            .ok_or_else(|| PurposeIndexError::invalid_query("target is required"))?;
 
-        let limit = self.limit.ok_or_else(|| {
-            PurposeIndexError::invalid_query("limit is required")
-        })?;
+        let limit = self
+            .limit
+            .ok_or_else(|| PurposeIndexError::invalid_query("limit is required"))?;
 
-        let min_similarity = self.min_similarity.ok_or_else(|| {
-            PurposeIndexError::invalid_query("min_similarity is required")
-        })?;
+        let min_similarity = self
+            .min_similarity
+            .ok_or_else(|| PurposeIndexError::invalid_query("min_similarity is required"))?;
 
         let mut query = PurposeQuery::new(target, limit, min_similarity)?;
 
@@ -623,7 +620,9 @@ mod tests {
             _ => panic!("Expected Pattern variant"),
         }
 
-        println!("[VERIFIED] PurposeQueryTarget::pattern creates Pattern variant with valid params");
+        println!(
+            "[VERIFIED] PurposeQueryTarget::pattern creates Pattern variant with valid params"
+        );
     }
 
     #[test]
@@ -732,8 +731,7 @@ mod tests {
     #[test]
     fn test_purpose_query_new_valid() {
         let pv = create_purpose_vector(0.5);
-        let query =
-            PurposeQuery::new(PurposeQueryTarget::Vector(pv), 10, 0.7).unwrap();
+        let query = PurposeQuery::new(PurposeQueryTarget::Vector(pv), 10, 0.7).unwrap();
 
         assert_eq!(query.limit, 10);
         assert!((query.min_similarity - 0.7).abs() < f32::EPSILON);
@@ -852,8 +850,7 @@ mod tests {
     #[test]
     fn test_purpose_query_validate() {
         let pv = create_purpose_vector(0.5);
-        let query =
-            PurposeQuery::new(PurposeQueryTarget::Vector(pv), 10, 0.5).unwrap();
+        let query = PurposeQuery::new(PurposeQueryTarget::Vector(pv), 10, 0.5).unwrap();
 
         assert!(query.validate().is_ok());
 

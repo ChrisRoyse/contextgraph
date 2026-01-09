@@ -155,12 +155,15 @@ impl AmortizedLearner {
             .copied()
             .fold(f32::INFINITY, f32::min);
 
-        let entry = self.path_counts.entry(signature).or_insert_with(|| PathInfo {
-            nodes: nodes.to_vec(),
-            count: 0,
-            weight: combined_weight,
-            min_confidence,
-        });
+        let entry = self
+            .path_counts
+            .entry(signature)
+            .or_insert_with(|| PathInfo {
+                nodes: nodes.to_vec(),
+                count: 0,
+                weight: combined_weight,
+                min_confidence,
+            });
 
         entry.count += 1;
         // Update weight and confidence (take the latest values)
@@ -275,7 +278,10 @@ impl AmortizedLearner {
             }
         }
 
-        info!("Processed {} candidates, created {} shortcuts", candidate_count, created);
+        info!(
+            "Processed {} candidates, created {} shortcuts",
+            candidate_count, created
+        );
 
         Ok(created)
     }
@@ -347,7 +353,10 @@ mod tests {
         // Constitution mandates: 3 hops, 5 traversals, 0.7 confidence
         assert_eq!(learner.min_hops, constants::MIN_SHORTCUT_HOPS);
         assert_eq!(learner.min_traversals, constants::MIN_SHORTCUT_TRAVERSALS);
-        assert_eq!(learner.confidence_threshold, constants::SHORTCUT_CONFIDENCE_THRESHOLD);
+        assert_eq!(
+            learner.confidence_threshold,
+            constants::SHORTCUT_CONFIDENCE_THRESHOLD
+        );
     }
 
     #[test]
@@ -371,7 +380,12 @@ mod tests {
     fn test_record_traversal() {
         let mut learner = AmortizedLearner::new();
 
-        let nodes = vec![Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4(), Uuid::new_v4()];
+        let nodes = vec![
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        ];
         let weights = vec![0.8, 0.9, 0.7];
         let confidences = vec![0.9, 0.8, 0.75];
 
@@ -395,7 +409,10 @@ mod tests {
         }
 
         let candidates = learner.get_candidates();
-        assert!(candidates.is_empty(), "2-hop paths should not be candidates");
+        assert!(
+            candidates.is_empty(),
+            "2-hop paths should not be candidates"
+        );
     }
 
     #[test]

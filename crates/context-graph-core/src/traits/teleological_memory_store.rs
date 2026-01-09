@@ -585,26 +585,22 @@ pub trait TeleologicalMemoryStoreExt: TeleologicalMemoryStore {
     /// store.validate_for_storage(&fingerprint)?;
     /// let id = store.store(fingerprint).await?;
     /// ```
-    fn validate_for_storage(
-        &self,
-        fingerprint: &TeleologicalFingerprint,
-    ) -> CoreResult<()> {
-        fingerprint.semantic.validate().map_err(|msg| {
-            crate::error::CoreError::ValidationError {
+    fn validate_for_storage(&self, fingerprint: &TeleologicalFingerprint) -> CoreResult<()> {
+        fingerprint
+            .semantic
+            .validate()
+            .map_err(|msg| crate::error::CoreError::ValidationError {
                 field: "semantic".to_string(),
                 message: msg,
-            }
-        })
+            })
     }
 
     /// Get fingerprints with optimal alignment (θ ≥ alignment::OPTIMAL).
     ///
     /// Constitution: `teleological.thresholds.optimal`
-    async fn get_optimal_aligned(
-        &self,
-        top_k: usize,
-    ) -> CoreResult<Vec<TeleologicalSearchResult>> {
-        let options = TeleologicalSearchOptions::quick(top_k).with_min_alignment(alignment::OPTIMAL);
+    async fn get_optimal_aligned(&self, top_k: usize) -> CoreResult<Vec<TeleologicalSearchResult>> {
+        let options =
+            TeleologicalSearchOptions::quick(top_k).with_min_alignment(alignment::OPTIMAL);
         let query = PurposeVector::default();
         self.search_purpose(&query, options).await
     }

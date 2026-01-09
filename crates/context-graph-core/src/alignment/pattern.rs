@@ -308,10 +308,24 @@ mod tests {
         assert!(critical > 0);
 
         println!("[VERIFIED] EmbedderBreakdown computes correctly");
-        println!("  - best_embedder: {} ({})", breakdown.best_embedder, EmbedderBreakdown::embedder_name(breakdown.best_embedder));
-        println!("  - worst_embedder: {} ({})", breakdown.worst_embedder, EmbedderBreakdown::embedder_name(breakdown.worst_embedder));
-        println!("  - mean: {:.3}, std_dev: {:.3}", breakdown.mean, breakdown.std_dev);
-        println!("  - thresholds: optimal={}, acceptable={}, warning={}, critical={}", optimal, acceptable, warning, critical);
+        println!(
+            "  - best_embedder: {} ({})",
+            breakdown.best_embedder,
+            EmbedderBreakdown::embedder_name(breakdown.best_embedder)
+        );
+        println!(
+            "  - worst_embedder: {} ({})",
+            breakdown.worst_embedder,
+            EmbedderBreakdown::embedder_name(breakdown.worst_embedder)
+        );
+        println!(
+            "  - mean: {:.3}, std_dev: {:.3}",
+            breakdown.mean, breakdown.std_dev
+        );
+        println!(
+            "  - thresholds: optimal={}, acceptable={}, warning={}, critical={}",
+            optimal, acceptable, warning, critical
+        );
     }
 
     #[test]

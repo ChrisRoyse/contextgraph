@@ -64,7 +64,12 @@ impl Gardener {
     ///
     /// # Returns
     /// GardenerFeedback with pruning recommendations and health metrics.
-    pub fn evaluate(&self, _edge_count: usize, orphan_count: usize, connectivity: f32) -> GardenerFeedback {
+    pub fn evaluate(
+        &self,
+        _edge_count: usize,
+        orphan_count: usize,
+        connectivity: f32,
+    ) -> GardenerFeedback {
         // Note: In a real implementation, edges_pruned would be computed
         // by analyzing actual edge weights. Here we report the orphan count
         // as a proxy for maintenance needs.
@@ -154,7 +159,10 @@ impl Gardener {
         let mut recommendations = Vec::new();
 
         if connectivity < 0.5 {
-            recommendations.push("Graph connectivity is low. Consider strengthening important connections.".to_string());
+            recommendations.push(
+                "Graph connectivity is low. Consider strengthening important connections."
+                    .to_string(),
+            );
         }
 
         if orphan_count > 10 {

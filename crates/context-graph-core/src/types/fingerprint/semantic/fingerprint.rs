@@ -85,7 +85,9 @@ pub enum ValidationError {
     },
 
     /// A token in the late-interaction embedding has wrong dimensions.
-    #[error("Token {token_index} dimension mismatch for {embedder}: expected {expected}, got {actual}")]
+    #[error(
+        "Token {token_index} dimension mismatch for {embedder}: expected {expected}, got {actual}"
+    )]
     TokenDimensionMismatch {
         /// The embedder (always LateInteraction)
         embedder: Embedder,

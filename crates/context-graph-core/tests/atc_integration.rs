@@ -44,7 +44,9 @@ mod atc_integration_tests {
 
         // Verify Level 2 trigger
         if drift_shifted > 2.0 {
-            assert!(tracker.get_level2_triggers().contains(&"theta_opt".to_string()));
+            assert!(tracker
+                .get_level2_triggers()
+                .contains(&"theta_opt".to_string()));
         }
     }
 
@@ -207,7 +209,10 @@ mod atc_integration_tests {
         );
 
         // Should still be valid
-        assert!(code_after.is_valid(), "Transferred thresholds must be valid");
+        assert!(
+            code_after.is_valid(),
+            "Transferred thresholds must be valid"
+        );
     }
 
     /// Test 6: Calibration Quality Monitoring
@@ -226,10 +231,15 @@ mod atc_integration_tests {
         }
 
         let metrics_good = computer.compute_all();
-        println!("Well-calibrated: ECE={}, MCE={}, Brier={}, Status={:?}",
-            metrics_good.ece, metrics_good.mce, metrics_good.brier, metrics_good.quality_status);
+        println!(
+            "Well-calibrated: ECE={}, MCE={}, Brier={}, Status={:?}",
+            metrics_good.ece, metrics_good.mce, metrics_good.brier, metrics_good.quality_status
+        );
 
-        assert!(metrics_good.ece < 0.25, "Well-calibrated should have reasonable ECE");
+        assert!(
+            metrics_good.ece < 0.25,
+            "Well-calibrated should have reasonable ECE"
+        );
         assert!(
             !metrics_good.quality_status.should_recalibrate(),
             "Good calibration should not trigger recalibration"
@@ -245,8 +255,10 @@ mod atc_integration_tests {
         }
 
         let metrics_bad = computer.compute_all();
-        println!("Poorly-calibrated: ECE={}, MCE={}, Brier={}, Status={:?}",
-            metrics_bad.ece, metrics_bad.mce, metrics_bad.brier, metrics_bad.quality_status);
+        println!(
+            "Poorly-calibrated: ECE={}, MCE={}, Brier={}, Status={:?}",
+            metrics_bad.ece, metrics_bad.mce, metrics_bad.brier, metrics_bad.quality_status
+        );
 
         assert!(metrics_bad.ece > 0.3, "Overconfident should have high ECE");
         assert!(
@@ -274,8 +286,8 @@ mod atc_integration_tests {
 
         // Invalid: violates monotonicity
         let mut invalid = HashMap::new();
-        invalid.insert("theta_opt".to_string(), 0.70);  // Should be > acc
-        invalid.insert("theta_acc".to_string(), 0.75);  // Wrong
+        invalid.insert("theta_opt".to_string(), 0.70); // Should be > acc
+        invalid.insert("theta_acc".to_string(), 0.75); // Wrong
         invalid.insert("theta_warn".to_string(), 0.55);
 
         assert!(
@@ -332,14 +344,22 @@ mod atc_integration_tests {
 
         // Monitor calibration
         let predictions = vec![
-            Prediction { confidence: 0.8, is_correct: true },
-            Prediction { confidence: 0.7, is_correct: true },
+            Prediction {
+                confidence: 0.8,
+                is_correct: true,
+            },
+            Prediction {
+                confidence: 0.7,
+                is_correct: true,
+            },
         ];
         atc.update_calibration_metrics(predictions);
 
         let quality = atc.get_calibration_quality();
-        println!("System calibration quality: ECE={}, MCE={}, Brier={}",
-            quality.ece, quality.mce, quality.brier);
+        println!(
+            "System calibration quality: ECE={}, MCE={}, Brier={}",
+            quality.ece, quality.mce, quality.brier
+        );
 
         assert_eq!(quality.sample_count, 2);
     }

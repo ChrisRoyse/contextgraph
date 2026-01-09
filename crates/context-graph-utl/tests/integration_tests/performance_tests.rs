@@ -5,7 +5,7 @@
 use context_graph_utl::processor::UtlProcessor;
 use std::time::Instant;
 
-use super::helpers::{generate_embedding, generate_context};
+use super::helpers::{generate_context, generate_embedding};
 
 // =============================================================================
 // PERFORMANCE TESTS

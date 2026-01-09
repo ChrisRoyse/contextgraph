@@ -111,7 +111,12 @@ impl AstarResult {
 
     /// Create result with found path.
     #[must_use]
-    pub fn found(path: Vec<NodeId>, total_cost: f32, nodes_explored: usize, open_set_size: usize) -> Self {
+    pub fn found(
+        path: Vec<NodeId>,
+        total_cost: f32,
+        nodes_explored: usize,
+        open_set_size: usize,
+    ) -> Self {
         Self {
             path,
             total_cost,

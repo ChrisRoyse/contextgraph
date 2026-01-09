@@ -81,7 +81,6 @@ mod tests {
         assert_eq!(TOTAL_DIMENSION, 10624);
     }
 
-
     #[test]
     fn test_model_count() {
         assert_eq!(MODEL_COUNT, 13);
@@ -119,7 +118,10 @@ mod tests {
         // E5 starts after all temporals
         assert_eq!(offset_by_index(4), 1024 + 512 + 512 + 512);
         // E13 (Splade) offset + dimension should equal TOTAL
-        assert_eq!(offset_by_index(12) + super::constants::SPLADE, TOTAL_DIMENSION);
+        assert_eq!(
+            offset_by_index(12) + super::constants::SPLADE,
+            TOTAL_DIMENSION
+        );
     }
 
     #[test]

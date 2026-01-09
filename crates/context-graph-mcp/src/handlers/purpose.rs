@@ -108,8 +108,8 @@ impl Handlers {
 
                 // Compute coherence (inverse of standard deviation)
                 let mean: f32 = alignments.iter().sum::<f32>() / NUM_EMBEDDERS as f32;
-                let variance: f32 =
-                    alignments.iter().map(|&x| (x - mean).powi(2)).sum::<f32>() / NUM_EMBEDDERS as f32;
+                let variance: f32 = alignments.iter().map(|&x| (x - mean).powi(2)).sum::<f32>()
+                    / NUM_EMBEDDERS as f32;
                 let coherence = 1.0 / (1.0 + variance.sqrt());
 
                 PurposeVector {
@@ -274,10 +274,8 @@ impl Handlers {
 
         match operation {
             "get_all" => {
-                let goals: Vec<serde_json::Value> = hierarchy
-                    .iter()
-                    .map(|g| self.goal_to_json(g))
-                    .collect();
+                let goals: Vec<serde_json::Value> =
+                    hierarchy.iter().map(|g| self.goal_to_json(g)).collect();
 
                 let stats = self.compute_hierarchy_stats(&hierarchy);
 
@@ -485,7 +483,10 @@ impl Handlers {
             }
 
             _ => {
-                error!(operation = operation, "goal/hierarchy_query: Unknown operation");
+                error!(
+                    operation = operation,
+                    "goal/hierarchy_query: Unknown operation"
+                );
                 JsonRpcResponse::error(
                     id,
                     error_codes::INVALID_PARAMS,
@@ -535,16 +536,16 @@ impl Handlers {
         // Extract goal_id (required)
         let goal_id = match params.get("goal_id").and_then(|v| v.as_str()) {
             Some(gid) => match Uuid::parse_str(gid) {
-                        Ok(uuid) => uuid,
-                        Err(_) => {
-                            error!("goal/hierarchy_query: Invalid goal_id UUID format: {}", gid);
-                            return JsonRpcResponse::error(
-                                id,
-                                error_codes::INVALID_PARAMS,
-                                format!("Invalid goal_id UUID format: {}", gid),
-                            );
-                        }
-                    },
+                Ok(uuid) => uuid,
+                Err(_) => {
+                    error!("goal/hierarchy_query: Invalid goal_id UUID format: {}", gid);
+                    return JsonRpcResponse::error(
+                        id,
+                        error_codes::INVALID_PARAMS,
+                        format!("Invalid goal_id UUID format: {}", gid),
+                    );
+                }
+            },
             None => {
                 error!("goal/aligned_memories: Missing 'goal_id' parameter");
                 return JsonRpcResponse::error(
@@ -612,7 +613,8 @@ impl Handlers {
                     "Missing required parameter 'minAlignment' (or 'min_alignment'). \
                      You must explicitly specify the alignment threshold for filtering results. \
                      Reference thresholds: 0.75 (Perfect), 0.70 (Strong), 0.55 (Warning), \
-                     below 0.55 (Misaligned). Example: \"minAlignment\": 0.55".to_string(),
+                     below 0.55 (Misaligned). Example: \"minAlignment\": 0.55"
+                        .to_string(),
                 );
             }
         };
@@ -734,10 +736,7 @@ impl Handlers {
                                 return JsonRpcResponse::error(
                                     id,
                                     error_codes::INVALID_PARAMS,
-                                    format!(
-                                        "Invalid UUID at fingerprint_ids[{}]",
-                                        i
-                                    ),
+                                    format!("Invalid UUID at fingerprint_ids[{}]", i),
                                 );
                             }
                         }
@@ -779,8 +778,8 @@ impl Handlers {
             );
         }
 
-        let config = AlignmentConfig::with_hierarchy(hierarchy.clone())
-            .with_pattern_detection(true);
+        let config =
+            AlignmentConfig::with_hierarchy(hierarchy.clone()).with_pattern_detection(true);
         drop(hierarchy);
 
         let check_start = std::time::Instant::now();
@@ -956,10 +955,11 @@ mod tests {
             GoalLevel::NorthStar,
             SemanticFingerprint::zeroed(),
             discovery,
-        ).expect("Failed to create test goal");
+        )
+        .expect("Failed to create test goal");
 
         // Verify GoalNode structure (id is now Uuid, not custom GoalId)
-        assert!(!goal.id.is_nil());  // UUID should not be nil
+        assert!(!goal.id.is_nil()); // UUID should not be nil
         assert_eq!(goal.level, GoalLevel::NorthStar);
         assert!(goal.is_north_star());
 

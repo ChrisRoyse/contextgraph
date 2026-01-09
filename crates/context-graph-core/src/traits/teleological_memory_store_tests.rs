@@ -139,7 +139,10 @@ async fn test_soft_delete() {
 
     // Verify not retrievable
     let retrieved = store.retrieve(id).await.unwrap();
-    assert!(retrieved.is_none(), "soft-deleted should not be retrievable");
+    assert!(
+        retrieved.is_none(),
+        "soft-deleted should not be retrievable"
+    );
 
     // Count should exclude soft-deleted
     let count = store.count().await.unwrap();
@@ -170,7 +173,10 @@ async fn test_hard_delete() {
 
     // Size should decrease
     let final_size = store.storage_size_bytes();
-    assert!(final_size < initial_size, "hard delete should reduce storage size");
+    assert!(
+        final_size < initial_size,
+        "hard delete should reduce storage size"
+    );
 
     println!("[VERIFIED] test_hard_delete: Hard delete removes data and frees memory");
 }
@@ -216,27 +222,37 @@ async fn test_search_purpose() {
 
     // Create purpose vectors with varying patterns (not uniform) so cosine similarity differs
     // Query will be similar to high-alignment pattern
-    let query_pattern: [f32; NUM_EMBEDDERS] = [0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3];
+    let query_pattern: [f32; NUM_EMBEDDERS] = [
+        0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3,
+    ];
 
     // Create fingerprints with purpose vectors at varying distances from query
     // fp1: Very similar to query (high cosine similarity)
     let mut fp1 = create_real_fingerprint();
-    fp1.purpose_vector = PurposeVector::new([0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3]);
+    fp1.purpose_vector = PurposeVector::new([
+        0.9, 0.85, 0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3,
+    ]);
     fp1.theta_to_north_star = 0.95; // High alignment
 
     // fp2: Moderately similar
     let mut fp2 = create_real_fingerprint();
-    fp2.purpose_vector = PurposeVector::new([0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2]);
+    fp2.purpose_vector = PurposeVector::new([
+        0.8, 0.75, 0.7, 0.65, 0.6, 0.55, 0.5, 0.45, 0.4, 0.35, 0.3, 0.25, 0.2,
+    ]);
     fp2.theta_to_north_star = 0.7;
 
     // fp3: Less similar (reversed pattern)
     let mut fp3 = create_real_fingerprint();
-    fp3.purpose_vector = PurposeVector::new([0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9]);
+    fp3.purpose_vector = PurposeVector::new([
+        0.3, 0.35, 0.4, 0.45, 0.5, 0.55, 0.6, 0.65, 0.7, 0.75, 0.8, 0.85, 0.9,
+    ]);
     fp3.theta_to_north_star = 0.4;
 
     // fp4: Orthogonal pattern
     let mut fp4 = create_real_fingerprint();
-    fp4.purpose_vector = PurposeVector::new([0.5, 0.6, 0.7, 0.8, 0.7, 0.6, 0.5, 0.6, 0.7, 0.8, 0.7, 0.6, 0.5]);
+    fp4.purpose_vector = PurposeVector::new([
+        0.5, 0.6, 0.7, 0.8, 0.7, 0.6, 0.5, 0.6, 0.7, 0.8, 0.7, 0.6, 0.5,
+    ]);
     fp4.theta_to_north_star = 0.55;
 
     store.store(fp1).await.unwrap();
@@ -315,7 +331,10 @@ async fn test_search_empty_store() {
     let options = TeleologicalSearchOptions::quick(10);
     let results = store.search_semantic(&query, options).await.unwrap();
 
-    assert!(results.is_empty(), "empty store should return empty results");
+    assert!(
+        results.is_empty(),
+        "empty store should return empty results"
+    );
 
     println!("[VERIFIED] test_search_empty_store: Search on empty store returns empty vec");
 }

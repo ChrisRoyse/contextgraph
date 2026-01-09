@@ -11,11 +11,9 @@ mod full_state_verification {
 
     use crate::error::EmbeddingError;
     use crate::storage::multi_space::{
-        MultiSpaceSearchEngine, MultiSpaceIndexProvider, QuantizedFingerprintRetriever,
+        MultiSpaceIndexProvider, MultiSpaceSearchEngine, QuantizedFingerprintRetriever,
     };
-    use crate::storage::types::{
-        StoredQuantizedFingerprint, RRF_K,
-    };
+    use crate::storage::types::{StoredQuantizedFingerprint, RRF_K};
 
     // =========================================================================
     // TEST FIXTURES
@@ -27,12 +25,17 @@ mod full_state_verification {
 
     impl VerificationStorage {
         fn new() -> Self {
-            Self { purpose_vectors: HashMap::new() }
+            Self {
+                purpose_vectors: HashMap::new(),
+            }
         }
     }
 
     impl QuantizedFingerprintRetriever for VerificationStorage {
-        fn get_fingerprint(&self, _id: Uuid) -> Result<Option<StoredQuantizedFingerprint>, EmbeddingError> {
+        fn get_fingerprint(
+            &self,
+            _id: Uuid,
+        ) -> Result<Option<StoredQuantizedFingerprint>, EmbeddingError> {
             Ok(None)
         }
 
@@ -47,7 +50,9 @@ mod full_state_verification {
 
     impl VerificationHnswManager {
         fn new() -> Self {
-            Self { results: HashMap::new() }
+            Self {
+                results: HashMap::new(),
+            }
         }
 
         fn set_results(&mut self, embedder_idx: u8, results: Vec<(Uuid, f32)>) {
@@ -62,7 +67,8 @@ mod full_state_verification {
             _query: &[f32],
             k: usize,
         ) -> Result<Vec<(Uuid, f32)>, EmbeddingError> {
-            Ok(self.results
+            Ok(self
+                .results
                 .get(&embedder_idx)
                 .cloned()
                 .unwrap_or_default()
@@ -82,9 +88,13 @@ mod full_state_verification {
 
     #[test]
     fn full_state_verify_edge_case_1_single_embedder_rrf() {
-        eprintln!("\n================================================================================");
+        eprintln!(
+            "\n================================================================================"
+        );
         eprintln!("FULL STATE VERIFICATION - EDGE CASE 1: Single Embedder RRF");
-        eprintln!("================================================================================\n");
+        eprintln!(
+            "================================================================================\n"
+        );
 
         // Create known UUIDs for tracking
         let id_rank0 = Uuid::parse_str("00000000-0000-0000-0000-000000000001").unwrap();
@@ -109,11 +119,10 @@ mod full_state_verification {
         // Setup
         let storage = Arc::new(VerificationStorage::new());
         let mut hnsw = VerificationHnswManager::new();
-        hnsw.set_results(0, vec![
-            (id_rank0, 0.95),
-            (id_rank1, 0.80),
-            (id_rank2, 0.65),
-        ]);
+        hnsw.set_results(
+            0,
+            vec![(id_rank0, 0.95), (id_rank1, 0.80), (id_rank2, 0.65)],
+        );
 
         let engine = MultiSpaceSearchEngine::new(storage, Arc::new(hnsw));
 
@@ -133,30 +142,47 @@ mod full_state_verification {
             eprintln!("      - ID: {}", result.id);
             eprintln!("      - Computed RRF score: {:.10}", result.rrf_score);
             eprintln!("      - Embedder count: {}", result.embedder_count);
-            eprintln!("      - Embedder similarities[0]: {:.4}", result.embedder_similarities[0]);
+            eprintln!(
+                "      - Embedder similarities[0]: {:.4}",
+                result.embedder_similarities[0]
+            );
 
             // Verify against expected
             let expected = 1.0 / (RRF_K + i as f32);
             let diff = (result.rrf_score - expected).abs();
             eprintln!("      - Expected RRF: {:.10}", expected);
             eprintln!("      - Difference: {:.15}", diff);
-            eprintln!("      - MATCH: {}", if diff < 0.0001 { "YES" } else { "NO" });
+            eprintln!(
+                "      - MATCH: {}",
+                if diff < 0.0001 { "YES" } else { "NO" }
+            );
 
             assert!(diff < 0.0001, "RRF mismatch at rank {}", i);
         }
 
         // Verify ordering
         eprintln!("\n>>> VERIFICATION:");
-        eprintln!("    Result[0].id == id_rank0: {}", results[0].id == id_rank0);
-        eprintln!("    Result[1].id == id_rank1: {}", results[1].id == id_rank1);
-        eprintln!("    Result[2].id == id_rank2: {}", results[2].id == id_rank2);
+        eprintln!(
+            "    Result[0].id == id_rank0: {}",
+            results[0].id == id_rank0
+        );
+        eprintln!(
+            "    Result[1].id == id_rank1: {}",
+            results[1].id == id_rank1
+        );
+        eprintln!(
+            "    Result[2].id == id_rank2: {}",
+            results[2].id == id_rank2
+        );
 
         assert_eq!(results[0].id, id_rank0, "Rank 0 ID mismatch");
         assert_eq!(results[1].id, id_rank1, "Rank 1 ID mismatch");
         assert_eq!(results[2].id, id_rank2, "Rank 2 ID mismatch");
 
         eprintln!("\n>>> EDGE CASE 1: VERIFIED");
-        eprintln!("================================================================================\n");
+        eprintln!(
+            "================================================================================\n"
+        );
     }
 
     // =========================================================================
@@ -165,16 +191,23 @@ mod full_state_verification {
 
     #[test]
     fn full_state_verify_edge_case_2_partial_coverage() {
-        eprintln!("\n================================================================================");
+        eprintln!(
+            "\n================================================================================"
+        );
         eprintln!("FULL STATE VERIFICATION - EDGE CASE 2: Partial Space Coverage");
-        eprintln!("================================================================================\n");
+        eprintln!(
+            "================================================================================\n"
+        );
 
         let doc_partial = Uuid::parse_str("aaaa0000-0000-0000-0000-000000000001").unwrap();
         let doc_full = Uuid::parse_str("bbbb0000-0000-0000-0000-000000000002").unwrap();
 
         // BEFORE STATE
         eprintln!(">>> BEFORE STATE:");
-        eprintln!("    doc_partial ({}): appears ONLY in E1 (embedder 0)", doc_partial);
+        eprintln!(
+            "    doc_partial ({}): appears ONLY in E1 (embedder 0)",
+            doc_partial
+        );
         eprintln!("    doc_full ({}): appears in BOTH E1 and E2", doc_full);
         eprintln!("    Expected behavior:");
         eprintln!("      - doc_partial.embedder_similarities[0] = 0.90 (present)");
@@ -206,16 +239,27 @@ mod full_state_verification {
         let full = results.iter().find(|r| r.id == doc_full).unwrap();
 
         eprintln!("\n    doc_partial inspection:");
-        eprintln!("      - embedder_similarities[0]: {:.4}", partial.embedder_similarities[0]);
-        eprintln!("      - embedder_similarities[1]: {} (is_nan={})",
+        eprintln!(
+            "      - embedder_similarities[0]: {:.4}",
+            partial.embedder_similarities[0]
+        );
+        eprintln!(
+            "      - embedder_similarities[1]: {} (is_nan={})",
             partial.embedder_similarities[1],
-            partial.embedder_similarities[1].is_nan());
+            partial.embedder_similarities[1].is_nan()
+        );
         eprintln!("      - embedder_count: {}", partial.embedder_count);
         eprintln!("      - rrf_score: {:.10}", partial.rrf_score);
 
         eprintln!("\n    doc_full inspection:");
-        eprintln!("      - embedder_similarities[0]: {:.4}", full.embedder_similarities[0]);
-        eprintln!("      - embedder_similarities[1]: {:.4}", full.embedder_similarities[1]);
+        eprintln!(
+            "      - embedder_similarities[0]: {:.4}",
+            full.embedder_similarities[0]
+        );
+        eprintln!(
+            "      - embedder_similarities[1]: {:.4}",
+            full.embedder_similarities[1]
+        );
         eprintln!("      - embedder_count: {}", full.embedder_count);
         eprintln!("      - rrf_score: {:.10}", full.rrf_score);
 
@@ -224,9 +268,18 @@ mod full_state_verification {
         let full_expected_rrf = 1.0 / (RRF_K + 1.0) + 1.0 / (RRF_K + 0.0); // rank 1 in E1, rank 0 in E2
 
         eprintln!("\n>>> VERIFICATION:");
-        eprintln!("    partial.embedder_similarities[0] is NOT NaN: {}", !partial.embedder_similarities[0].is_nan());
-        eprintln!("    partial.embedder_similarities[1] IS NaN: {}", partial.embedder_similarities[1].is_nan());
-        eprintln!("    partial.embedder_count == 1: {}", partial.embedder_count == 1);
+        eprintln!(
+            "    partial.embedder_similarities[0] is NOT NaN: {}",
+            !partial.embedder_similarities[0].is_nan()
+        );
+        eprintln!(
+            "    partial.embedder_similarities[1] IS NaN: {}",
+            partial.embedder_similarities[1].is_nan()
+        );
+        eprintln!(
+            "    partial.embedder_count == 1: {}",
+            partial.embedder_count == 1
+        );
         eprintln!("    full.embedder_count == 2: {}", full.embedder_count == 2);
         eprintln!("    Expected partial RRF: {:.10}", partial_expected_rrf);
         eprintln!("    Expected full RRF: {:.10}", full_expected_rrf);
@@ -237,7 +290,9 @@ mod full_state_verification {
         assert_eq!(full.embedder_count, 2);
 
         eprintln!("\n>>> EDGE CASE 2: VERIFIED");
-        eprintln!("================================================================================\n");
+        eprintln!(
+            "================================================================================\n"
+        );
     }
 
     // =========================================================================
@@ -246,9 +301,13 @@ mod full_state_verification {
 
     #[test]
     fn full_state_verify_edge_case_3_tied_similarities() {
-        eprintln!("\n================================================================================");
+        eprintln!(
+            "\n================================================================================"
+        );
         eprintln!("FULL STATE VERIFICATION - EDGE CASE 3: Tied Similarities");
-        eprintln!("================================================================================\n");
+        eprintln!(
+            "================================================================================\n"
+        );
 
         let id_0 = Uuid::parse_str("cccc0000-0000-0000-0000-000000000001").unwrap();
         let id_1 = Uuid::parse_str("cccc0000-0000-0000-0000-000000000002").unwrap();
@@ -266,11 +325,14 @@ mod full_state_verification {
         // Setup
         let storage = Arc::new(VerificationStorage::new());
         let mut hnsw = VerificationHnswManager::new();
-        hnsw.set_results(0, vec![
-            (id_0, 0.80),  // All same similarity
-            (id_1, 0.80),
-            (id_2, 0.80),
-        ]);
+        hnsw.set_results(
+            0,
+            vec![
+                (id_0, 0.80), // All same similarity
+                (id_1, 0.80),
+                (id_2, 0.80),
+            ],
+        );
 
         let engine = MultiSpaceSearchEngine::new(storage, Arc::new(hnsw));
 
@@ -287,31 +349,57 @@ mod full_state_verification {
             eprintln!("    Result[{}]:", i);
             eprintln!("      - ID: {}", result.id);
             eprintln!("      - RRF score: {:.10}", result.rrf_score);
-            eprintln!("      - similarity[0]: {:.4}", result.embedder_similarities[0]);
+            eprintln!(
+                "      - similarity[0]: {:.4}",
+                result.embedder_similarities[0]
+            );
         }
 
         // Physical verification of ordering
         eprintln!("\n>>> VERIFICATION OF TIE-BREAKING:");
-        eprintln!("    results[0].rrf_score ({:.10}) > results[1].rrf_score ({:.10}): {}",
-            results[0].rrf_score, results[1].rrf_score,
-            results[0].rrf_score > results[1].rrf_score);
-        eprintln!("    results[1].rrf_score ({:.10}) > results[2].rrf_score ({:.10}): {}",
-            results[1].rrf_score, results[2].rrf_score,
-            results[1].rrf_score > results[2].rrf_score);
+        eprintln!(
+            "    results[0].rrf_score ({:.10}) > results[1].rrf_score ({:.10}): {}",
+            results[0].rrf_score,
+            results[1].rrf_score,
+            results[0].rrf_score > results[1].rrf_score
+        );
+        eprintln!(
+            "    results[1].rrf_score ({:.10}) > results[2].rrf_score ({:.10}): {}",
+            results[1].rrf_score,
+            results[2].rrf_score,
+            results[1].rrf_score > results[2].rrf_score
+        );
 
         eprintln!("\n>>> VERIFICATION OF DETERMINISTIC ORDER:");
-        eprintln!("    results[0].id == id_0: {} (expected: true)", results[0].id == id_0);
-        eprintln!("    results[1].id == id_1: {} (expected: true)", results[1].id == id_1);
-        eprintln!("    results[2].id == id_2: {} (expected: true)", results[2].id == id_2);
+        eprintln!(
+            "    results[0].id == id_0: {} (expected: true)",
+            results[0].id == id_0
+        );
+        eprintln!(
+            "    results[1].id == id_1: {} (expected: true)",
+            results[1].id == id_1
+        );
+        eprintln!(
+            "    results[2].id == id_2: {} (expected: true)",
+            results[2].id == id_2
+        );
 
-        assert!(results[0].rrf_score > results[1].rrf_score, "RRF should decrease with rank");
-        assert!(results[1].rrf_score > results[2].rrf_score, "RRF should decrease with rank");
+        assert!(
+            results[0].rrf_score > results[1].rrf_score,
+            "RRF should decrease with rank"
+        );
+        assert!(
+            results[1].rrf_score > results[2].rrf_score,
+            "RRF should decrease with rank"
+        );
         assert_eq!(results[0].id, id_0);
         assert_eq!(results[1].id, id_1);
         assert_eq!(results[2].id, id_2);
 
         eprintln!("\n>>> EDGE CASE 3: VERIFIED");
-        eprintln!("================================================================================\n");
+        eprintln!(
+            "================================================================================\n"
+        );
     }
 
     // =========================================================================
@@ -320,9 +408,13 @@ mod full_state_verification {
 
     #[test]
     fn full_state_verify_rrf_formula_physical_proof() {
-        eprintln!("\n================================================================================");
+        eprintln!(
+            "\n================================================================================"
+        );
         eprintln!("FULL STATE VERIFICATION - RRF FORMULA PHYSICAL PROOF");
-        eprintln!("================================================================================\n");
+        eprintln!(
+            "================================================================================\n"
+        );
 
         let target_id = Uuid::parse_str("dddd0000-0000-0000-0000-000000000001").unwrap();
 
@@ -340,19 +432,28 @@ mod full_state_verification {
         let contrib_e1 = 1.0 / (60.0 + 0.0);
         let contrib_e2 = 1.0 / (60.0 + 2.0);
         let expected_total = contrib_e1 + contrib_e2;
-        eprintln!("      - E1 contribution: 1.0 / (60 + 0) = {:.15}", contrib_e1);
-        eprintln!("      - E2 contribution: 1.0 / (60 + 2) = {:.15}", contrib_e2);
+        eprintln!(
+            "      - E1 contribution: 1.0 / (60 + 0) = {:.15}",
+            contrib_e1
+        );
+        eprintln!(
+            "      - E2 contribution: 1.0 / (60 + 2) = {:.15}",
+            contrib_e2
+        );
         eprintln!("      - Expected total RRF: {:.15}", expected_total);
 
         // Setup
         let storage = Arc::new(VerificationStorage::new());
         let mut hnsw = VerificationHnswManager::new();
-        hnsw.set_results(0, vec![(target_id, 0.90)]);  // rank 0
-        hnsw.set_results(1, vec![
-            (Uuid::new_v4(), 0.95),  // rank 0 (different doc)
-            (Uuid::new_v4(), 0.85),  // rank 1 (different doc)
-            (target_id, 0.75),       // rank 2
-        ]);
+        hnsw.set_results(0, vec![(target_id, 0.90)]); // rank 0
+        hnsw.set_results(
+            1,
+            vec![
+                (Uuid::new_v4(), 0.95), // rank 0 (different doc)
+                (Uuid::new_v4(), 0.85), // rank 1 (different doc)
+                (target_id, 0.75),      // rank 2
+            ],
+        );
 
         let engine = MultiSpaceSearchEngine::new(storage, Arc::new(hnsw));
 
@@ -378,15 +479,30 @@ mod full_state_verification {
         eprintln!("    Within tolerance: {}", diff < 0.0001);
 
         eprintln!("\n>>> BREAKDOWN:");
-        eprintln!("    embedder_similarities[0] (E1): {:.4}", target_result.embedder_similarities[0]);
-        eprintln!("    embedder_similarities[1] (E2): {:.4}", target_result.embedder_similarities[1]);
+        eprintln!(
+            "    embedder_similarities[0] (E1): {:.4}",
+            target_result.embedder_similarities[0]
+        );
+        eprintln!(
+            "    embedder_similarities[1] (E2): {:.4}",
+            target_result.embedder_similarities[1]
+        );
         eprintln!("    embedder_count: {}", target_result.embedder_count);
 
-        assert!(diff < 0.0001, "RRF formula mismatch! Expected {}, got {}", expected_total, target_result.rrf_score);
+        assert!(
+            diff < 0.0001,
+            "RRF formula mismatch! Expected {}, got {}",
+            expected_total,
+            target_result.rrf_score
+        );
 
         eprintln!("\n>>> RRF FORMULA: VERIFIED");
-        eprintln!("    1/(60+0) + 1/(60+2) = {:.15} matches computed {:.15}",
-            expected_total, target_result.rrf_score);
-        eprintln!("================================================================================\n");
+        eprintln!(
+            "    1/(60+0) + 1/(60+2) = {:.15} matches computed {:.15}",
+            expected_total, target_result.rrf_score
+        );
+        eprintln!(
+            "================================================================================\n"
+        );
     }
 }

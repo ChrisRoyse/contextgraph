@@ -3,14 +3,14 @@
 //! Tests for complete workflow: storage -> index -> query -> verify.
 
 use context_graph_graph::{
+    storage::{LegacyGraphEdge, NodeId},
     Domain,
-    storage::{NodeId, LegacyGraphEdge},
 };
 
-use crate::common::fixtures::{generate_test_nodes, generate_test_edges};
+use crate::common::fixtures::{generate_test_edges, generate_test_nodes};
 use crate::common::helpers::{
-    create_test_storage, verify_storage_state, verify_hyperbolic_point,
-    verify_entailment_cone, StateLog,
+    create_test_storage, verify_entailment_cone, verify_hyperbolic_point, verify_storage_state,
+    StateLog,
 };
 
 /// Test complete workflow: storage -> index -> query -> verify.
@@ -25,14 +25,18 @@ fn test_end_to_end_workflow() {
     let nodes = generate_test_nodes(42, 50, 1536);
 
     for node in &nodes {
-        storage.put_hyperbolic(node.id, &node.point).expect("Put hyperbolic failed");
+        storage
+            .put_hyperbolic(node.id, &node.point)
+            .expect("Put hyperbolic failed");
     }
     log1.after("50");
 
     // Step 2: Create entailment cones
     let log2 = StateLog::new("entailment_cones", "0");
     for node in &nodes {
-        storage.put_cone(node.id, &node.cone).expect("Put cone failed");
+        storage
+            .put_cone(node.id, &node.cone)
+            .expect("Put cone failed");
     }
     log2.after("50");
 
@@ -51,10 +55,15 @@ fn test_end_to_end_workflow() {
             Domain::Research => 4,
             Domain::General => 5,
         };
-        storage.add_edge(edge.source_id, LegacyGraphEdge {
-            target: edge.target_id,
-            edge_type: edge_type_u8,
-        }).expect("Add edge failed");
+        storage
+            .add_edge(
+                edge.source_id,
+                LegacyGraphEdge {
+                    target: edge.target_id,
+                    edge_type: edge_type_u8,
+                },
+            )
+            .expect("Add edge failed");
     }
     log3.after(&edges.len().to_string());
 
@@ -65,7 +74,8 @@ fn test_end_to_end_workflow() {
     let first_node = &nodes[0];
 
     // Read back hyperbolic point
-    let _retrieved_point = storage.get_hyperbolic(first_node.id)
+    let _retrieved_point = storage
+        .get_hyperbolic(first_node.id)
         .expect("Get hyperbolic failed")
         .expect("Point should exist");
 
@@ -73,7 +83,8 @@ fn test_end_to_end_workflow() {
         .expect("Point verification failed");
 
     // Read back cone
-    let _retrieved_cone = storage.get_cone(first_node.id)
+    let _retrieved_cone = storage
+        .get_cone(first_node.id)
         .expect("Get cone failed")
         .expect("Cone should exist");
 
@@ -81,9 +92,15 @@ fn test_end_to_end_workflow() {
         .expect("Cone verification failed");
 
     // Step 6: Test adjacency traversal
-    let adjacency = storage.get_adjacency(first_node.id).expect("Get adjacency failed");
+    let adjacency = storage
+        .get_adjacency(first_node.id)
+        .expect("Get adjacency failed");
     assert!(!adjacency.is_empty(), "First node should have edges");
-    println!("  Node {} has {} outgoing edges", first_node.id, adjacency.len());
+    println!(
+        "  Node {} has {} outgoing edges",
+        first_node.id,
+        adjacency.len()
+    );
 
     println!("=== PASSED: End-to-End Workflow ===\n");
 }

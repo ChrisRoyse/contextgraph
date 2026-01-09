@@ -433,9 +433,11 @@ mod tests {
     #[tokio::test]
     async fn test_embed_batch_relation_encodings() {
         let model = create_and_load_model().await;
-        let relations = [GraphModel::encode_relation("Alice", "works_at", "Anthropic"),
+        let relations = [
+            GraphModel::encode_relation("Alice", "works_at", "Anthropic"),
             GraphModel::encode_relation("Bob", "knows", "Charlie"),
-            GraphModel::encode_relation("Document", "authored_by", "Alice")];
+            GraphModel::encode_relation("Document", "authored_by", "Alice"),
+        ];
         let inputs: Vec<ModelInput> = relations
             .iter()
             .map(|r| ModelInput::text(r).expect("Input"))

@@ -56,18 +56,18 @@ pub mod error;
 pub mod gpu;
 pub mod models;
 pub mod provider;
+pub mod quantization;
 pub mod storage;
 pub mod traits;
 pub mod types;
 pub mod warm;
-pub mod quantization;
 
 // Cache re-exports
 pub use cache::{CacheKey, CacheStats, EmbeddingCache};
 
 pub use config::{
-    BatchConfig, CacheConfig, EmbeddingConfig, EvictionPolicy, GpuConfig,
-    ModelPathConfig, PaddingStrategy,
+    BatchConfig, CacheConfig, EmbeddingConfig, EvictionPolicy, GpuConfig, ModelPathConfig,
+    PaddingStrategy,
 };
 pub use error::{EmbeddingError, EmbeddingResult};
 pub use provider::{EmbeddingProvider, ProductionMultiArrayProvider};
@@ -78,8 +78,8 @@ pub use traits::{
 
 // Type re-exports for public API
 pub use types::{
-    ImageFormat, InputType, ModelEmbedding, ModelId, ModelInput,
-    MultiArrayEmbedding, TokenizerFamily,
+    ImageFormat, InputType, ModelEmbedding, ModelId, ModelInput, MultiArrayEmbedding,
+    TokenizerFamily,
 };
 
 // Re-export dimensions module for constant access
@@ -88,7 +88,7 @@ pub use types::dimensions;
 // Quantization re-exports
 pub use quantization::{
     BinaryEncoder, Float8Encoder, PQ8Codebook, QuantizationMetadata, QuantizationMethod,
-    QuantizedEmbedding, QuantizationRouter,
+    QuantizationRouter, QuantizedEmbedding,
 };
 
 // Model registry re-exports
@@ -96,6 +96,6 @@ pub use models::{MemoryTracker, ModelRegistry, ModelRegistryConfig, RegistryStat
 
 // Storage re-exports
 pub use storage::{
-    StoredQuantizedFingerprint, IndexEntry, EmbedderQueryResult, MultiSpaceQueryResult,
-    EXPECTED_QUANTIZED_SIZE_BYTES, MAX_QUANTIZED_SIZE_BYTES, STORAGE_VERSION, RRF_K,
+    EmbedderQueryResult, IndexEntry, MultiSpaceQueryResult, StoredQuantizedFingerprint,
+    EXPECTED_QUANTIZED_SIZE_BYTES, MAX_QUANTIZED_SIZE_BYTES, RRF_K, STORAGE_VERSION,
 };

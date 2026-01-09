@@ -101,7 +101,7 @@ pub use index::{
 };
 pub use search::{
     semantic_search, semantic_search_batch, semantic_search_batch_simple, semantic_search_simple,
-    BatchSemanticSearchResult, NodeMetadataProvider, NoMetadataProvider, SearchFilters,
+    BatchSemanticSearchResult, NoMetadataProvider, NodeMetadataProvider, SearchFilters,
     SearchStats, SemanticSearchResult, SemanticSearchResultItem,
 };
 pub use storage::{

@@ -74,10 +74,10 @@ impl MeaningExtractionConfig {
     /// Create a config optimized for code search.
     pub fn code_search() -> Self {
         Self {
-            attention_top_k: 256,      // More focused attention
-            contrast_alpha: 0.3,       // Higher contrast
-            sparsity_threshold: 0.15,  // More aggressive sparsification
-            min_agreement: 4,          // Lower agreement threshold (code-specific)
+            attention_top_k: 256,     // More focused attention
+            contrast_alpha: 0.3,      // Higher contrast
+            sparsity_threshold: 0.15, // More aggressive sparsification
+            min_agreement: 4,         // Lower agreement threshold (code-specific)
             disagreement_threshold: 0.25,
             normalize: true,
             agreement_value_threshold: 0.4,
@@ -89,8 +89,8 @@ impl MeaningExtractionConfig {
         Self {
             attention_top_k: 128,
             contrast_alpha: 0.15,
-            sparsity_threshold: 0.05,  // Less aggressive (preserve nuance)
-            min_agreement: 7,          // Higher agreement for semantic
+            sparsity_threshold: 0.05, // Less aggressive (preserve nuance)
+            min_agreement: 7,         // Higher agreement for semantic
             disagreement_threshold: 0.35,
             normalize: true,
             agreement_value_threshold: 0.5,
@@ -100,10 +100,10 @@ impl MeaningExtractionConfig {
     /// Create a config optimized for high precision.
     pub fn high_precision() -> Self {
         Self {
-            attention_top_k: 64,        // Very focused
-            contrast_alpha: 0.4,        // High contrast
-            sparsity_threshold: 0.2,    // Aggressive sparsification
-            min_agreement: 8,           // High agreement required
+            attention_top_k: 64,     // Very focused
+            contrast_alpha: 0.4,     // High contrast
+            sparsity_threshold: 0.2, // Aggressive sparsification
+            min_agreement: 8,        // High agreement required
             disagreement_threshold: 0.2,
             normalize: true,
             agreement_value_threshold: 0.6,
@@ -209,7 +209,11 @@ impl ExtractedMeaning {
         if self.sparse.is_empty() {
             return 0.0;
         }
-        let zero_count = self.sparse.iter().filter(|&&v| v.abs() < f32::EPSILON).count();
+        let zero_count = self
+            .sparse
+            .iter()
+            .filter(|&&v| v.abs() < f32::EPSILON)
+            .count();
         zero_count as f32 / self.sparse.len() as f32
     }
 
@@ -333,8 +337,7 @@ impl NuanceDimension {
 }
 
 /// Fusion method for combining extracted meanings.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize, Default)]
 pub enum FusionMethod {
     /// Simple weighted average.
     #[default]
@@ -352,7 +355,6 @@ pub enum FusionMethod {
     /// Use agreement dimensions only (high consensus).
     ConsensusOnly,
 }
-
 
 impl FusionMethod {
     /// All available fusion methods.
@@ -413,7 +415,7 @@ mod tests {
         let config = MeaningExtractionConfig::semantic_search();
 
         assert!(config.sparsity_threshold < 0.1); // Less aggressive
-        assert!(config.min_agreement > 6);         // Higher agreement
+        assert!(config.min_agreement > 6); // Higher agreement
 
         println!("[PASS] semantic_search config preserves nuance");
     }
@@ -422,8 +424,8 @@ mod tests {
     fn test_config_high_precision() {
         let config = MeaningExtractionConfig::high_precision();
 
-        assert!(config.attention_top_k < 128);     // Very focused
-        assert!(config.contrast_alpha > 0.3);      // High contrast
+        assert!(config.attention_top_k < 128); // Very focused
+        assert!(config.contrast_alpha > 0.3); // High contrast
         assert!(config.sparsity_threshold > 0.15); // Aggressive
 
         println!("[PASS] high_precision config is aggressive");
@@ -579,7 +581,10 @@ mod tests {
         let json = serde_json::to_string(&cea).unwrap();
         let deserialized: CrossEmbeddingAnalysis = serde_json::from_str(&json).unwrap();
 
-        assert_eq!(cea.triangulated_dimensions, deserialized.triangulated_dimensions);
+        assert_eq!(
+            cea.triangulated_dimensions,
+            deserialized.triangulated_dimensions
+        );
         assert!((cea.coherence_score - deserialized.coherence_score).abs() < f32::EPSILON);
 
         println!("[PASS] CrossEmbeddingAnalysis serialization works");
@@ -645,11 +650,17 @@ mod tests {
 
     #[test]
     fn test_fusion_method_description() {
-        assert!(FusionMethod::WeightedAverage.description().contains("weighted"));
+        assert!(FusionMethod::WeightedAverage
+            .description()
+            .contains("weighted"));
         assert!(FusionMethod::Attention.description().contains("Attention"));
         assert!(FusionMethod::FocusOnly.description().contains("focus"));
-        assert!(FusionMethod::Hierarchical.description().contains("Hierarchical"));
-        assert!(FusionMethod::ConsensusOnly.description().contains("agreement"));
+        assert!(FusionMethod::Hierarchical
+            .description()
+            .contains("Hierarchical"));
+        assert!(FusionMethod::ConsensusOnly
+            .description()
+            .contains("agreement"));
 
         println!("[PASS] FusionMethod descriptions are informative");
     }

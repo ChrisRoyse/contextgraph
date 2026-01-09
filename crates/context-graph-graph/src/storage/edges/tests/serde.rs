@@ -16,8 +16,7 @@ fn test_bincode_roundtrip() {
     );
 
     let serialized = bincode::serialize(&edge).expect("serialize failed");
-    let deserialized: GraphEdge =
-        bincode::deserialize(&serialized).expect("deserialize failed");
+    let deserialized: GraphEdge = bincode::deserialize(&serialized).expect("deserialize failed");
 
     assert_eq!(edge.id, deserialized.id);
     assert_eq!(edge.source, deserialized.source);

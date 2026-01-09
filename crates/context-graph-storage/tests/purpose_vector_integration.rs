@@ -11,17 +11,19 @@
 //! - Indexed for O(log n) purpose-based search
 
 use context_graph_core::purpose::{
-    DefaultPurposeComputer, GoalDiscoveryMetadata, GoalHierarchy, GoalLevel, GoalNode, PurposeComputeConfig,
-    PurposeVectorComputer,
+    DefaultPurposeComputer, GoalDiscoveryMetadata, GoalHierarchy, GoalLevel, GoalNode,
+    PurposeComputeConfig, PurposeVectorComputer,
 };
 use context_graph_core::types::fingerprint::{
-    SemanticFingerprint, TeleologicalFingerprint, PurposeVector, NUM_EMBEDDERS,
+    PurposeVector, SemanticFingerprint, TeleologicalFingerprint, NUM_EMBEDDERS,
 };
 
 /// Test that purpose vectors have correct structure (13 elements, range [-1, 1]).
 #[tokio::test]
 async fn test_purpose_vector_structure() {
-    let alignments = [0.8, 0.7, 0.9, 0.6, 0.75, 0.65, 0.85, 0.72, 0.78, 0.68, 0.82, 0.71, 0.76];
+    let alignments = [
+        0.8, 0.7, 0.9, 0.6, 0.75, 0.65, 0.85, 0.72, 0.78, 0.68, 0.82, 0.71, 0.76,
+    ];
 
     let pv = PurposeVector::new(alignments);
 
@@ -58,8 +60,11 @@ async fn test_purpose_computation_with_real_goal_hierarchy() {
         GoalLevel::NorthStar,
         SemanticFingerprint::zeroed(),
         discovery,
-    ).expect("Failed to create North Star");
-    hierarchy.add_goal(north_star).expect("Failed to add North Star");
+    )
+    .expect("Failed to create North Star");
+    hierarchy
+        .add_goal(north_star)
+        .expect("Failed to add North Star");
 
     let config = PurposeComputeConfig::with_hierarchy(hierarchy);
     let computer = DefaultPurposeComputer::new();
@@ -102,7 +107,9 @@ async fn test_purpose_computation_with_real_goal_hierarchy() {
 #[test]
 fn test_purpose_vector_serialization() {
     // Create purpose vector with known alignments
-    let alignments = [0.75, 0.8, 0.7, 0.65, 0.85, 0.6, 0.9, 0.72, 0.78, 0.68, 0.82, 0.71, 0.76];
+    let alignments = [
+        0.75, 0.8, 0.7, 0.65, 0.85, 0.6, 0.9, 0.72, 0.78, 0.68, 0.82, 0.71, 0.76,
+    ];
     let purpose_vector = PurposeVector::new(alignments);
 
     // Verify all properties are set correctly
@@ -116,7 +123,10 @@ fn test_purpose_vector_serialization() {
     println!("[PASS] Purpose vector serialization/structure correct");
     println!("  - Alignments: {:?}", purpose_vector.alignments);
     println!("  - Aggregate: {:.4}", purpose_vector.aggregate_alignment());
-    println!("  - Dominant embedder: {}", purpose_vector.dominant_embedder);
+    println!(
+        "  - Dominant embedder: {}",
+        purpose_vector.dominant_embedder
+    );
     println!("  - Coherence: {:.4}", purpose_vector.coherence);
 }
 
@@ -134,7 +144,12 @@ fn test_multiple_purpose_vectors() {
         let purpose_vector = PurposeVector::new(alignments);
         let semantic = SemanticFingerprint::zeroed();
 
-        let fp = TeleologicalFingerprint::new(semantic, purpose_vector, Default::default(), [i as u8; 32]);
+        let fp = TeleologicalFingerprint::new(
+            semantic,
+            purpose_vector,
+            Default::default(),
+            [i as u8; 32],
+        );
 
         fingerprints.push(fp.clone());
 
@@ -146,11 +161,14 @@ fn test_multiple_purpose_vectors() {
     }
 
     println!("[PASS] Multiple purpose vectors created and verified");
-    println!("  - Created {} fingerprints with varying purpose vectors", fingerprints.len());
+    println!(
+        "  - Created {} fingerprints with varying purpose vectors",
+        fingerprints.len()
+    );
 
     // Verify they're all different
     for (i, fp1) in fingerprints.iter().enumerate() {
-        for fp2 in &fingerprints[i+1..] {
+        for fp2 in &fingerprints[i + 1..] {
             let similarity = fp1.purpose_vector.similarity(&fp2.purpose_vector);
             assert!(similarity <= 0.9999, "Expected different purpose vectors");
         }
@@ -208,7 +226,10 @@ fn test_purpose_vector_alignment_ranges() {
             aggregate
         );
 
-        println!("[PASS] Test case '{}': aggregate = {:.4}", description, aggregate);
+        println!(
+            "[PASS] Test case '{}': aggregate = {:.4}",
+            description, aggregate
+        );
     }
 }
 
@@ -222,7 +243,8 @@ async fn test_purpose_vectors_differentiate_semantics() {
         GoalLevel::NorthStar,
         SemanticFingerprint::zeroed(),
         discovery,
-    ).expect("Failed to create goal");
+    )
+    .expect("Failed to create goal");
     hierarchy.add_goal(north_star).expect("Failed to add goal");
 
     let config = PurposeComputeConfig::with_hierarchy(hierarchy);

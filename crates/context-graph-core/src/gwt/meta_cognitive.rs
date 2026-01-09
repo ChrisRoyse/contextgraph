@@ -17,9 +17,9 @@
 //! - Low MetaScore (<0.5) for 5+ consecutive operations → increase Acetylcholine, trigger dream
 //! - High MetaScore (>0.9) → reduce meta-monitoring frequency
 
+use crate::error::CoreResult;
 use chrono::{DateTime, Utc};
 use std::collections::VecDeque;
-use crate::error::CoreResult;
 
 /// Acetylcholine baseline level (minimum learning rate)
 /// Constitution v4.0.0: neuromod.Acetylcholine.range = "[0.001, 0.002]"
@@ -91,7 +91,7 @@ impl MetaCognitiveLoop {
             consecutive_low_scores: 0,
             consecutive_high_scores: 0,
             acetylcholine_level: ACH_BASELINE, // Default learning rate (baseline)
-            monitoring_frequency: 1.0,   // 1 Hz by default
+            monitoring_frequency: 1.0,         // 1 Hz by default
             last_update: Utc::now(),
         }
     }
@@ -151,16 +151,14 @@ impl MetaCognitiveLoop {
         let dream_triggered = self.consecutive_low_scores >= 5;
         if dream_triggered {
             // Increase ACh on dream trigger (learning rate boost)
-            self.acetylcholine_level = (self.acetylcholine_level * 1.5).clamp(ACH_BASELINE, ACH_MAX);
+            self.acetylcholine_level =
+                (self.acetylcholine_level * 1.5).clamp(ACH_BASELINE, ACH_MAX);
             self.consecutive_low_scores = 0; // Reset after triggering
         } else {
             // Decay ACh toward baseline when not triggered (homeostatic regulation)
             // Per constitution spec: neuromodulators must decay toward baseline
-            self.acetylcholine_level = self.decay_toward(
-                self.acetylcholine_level,
-                ACH_BASELINE,
-                ACH_DECAY_RATE,
-            );
+            self.acetylcholine_level =
+                self.decay_toward(self.acetylcholine_level, ACH_BASELINE, ACH_DECAY_RATE);
         }
 
         // Check for frequency adjustment
@@ -236,14 +234,10 @@ impl MetaCognitiveLoop {
         }
 
         let len = self.recent_scores.len();
-        let first_half: f32 = self.recent_scores.iter().take(len / 2).sum::<f32>()
-            / (len / 2) as f32;
-        let second_half: f32 = self
-            .recent_scores
-            .iter()
-            .skip(len / 2)
-            .sum::<f32>()
-            / (len - len / 2) as f32;
+        let first_half: f32 =
+            self.recent_scores.iter().take(len / 2).sum::<f32>() / (len / 2) as f32;
+        let second_half: f32 =
+            self.recent_scores.iter().skip(len / 2).sum::<f32>() / (len - len / 2) as f32;
 
         let delta = second_half - first_half;
 
@@ -343,7 +337,10 @@ mod tests {
             loop_mgr.evaluate(0.1, 0.9).await.unwrap();
         }
         let elevated_ach = loop_mgr.acetylcholine();
-        assert!(elevated_ach > ACH_BASELINE, "ACh should be elevated after dream trigger");
+        assert!(
+            elevated_ach > ACH_BASELINE,
+            "ACh should be elevated after dream trigger"
+        );
 
         // Now make several evaluations that DON'T trigger dream (good predictions)
         // ACh should decay toward baseline

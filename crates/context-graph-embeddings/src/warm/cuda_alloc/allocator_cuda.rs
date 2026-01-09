@@ -103,7 +103,10 @@ impl WarmCudaAllocator {
                     "cuDeviceGet failed - no device at ordinal"
                 );
                 return Err(WarmError::CudaInitFailed {
-                    cuda_error: format!("cuDeviceGet failed with error code {} for device {}", get_result, device_id),
+                    cuda_error: format!(
+                        "cuDeviceGet failed with error code {} for device {}",
+                        get_result, device_id
+                    ),
                     driver_version: String::new(),
                     gpu_name: String::new(),
                 });
@@ -143,7 +146,7 @@ impl WarmCudaAllocator {
             let major_result = cuDeviceGetAttribute(
                 &mut cc_major,
                 CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
-                device_handle
+                device_handle,
             );
             if major_result != CUDA_SUCCESS {
                 tracing::error!(
@@ -152,7 +155,10 @@ impl WarmCudaAllocator {
                     "cuDeviceGetAttribute(COMPUTE_CAPABILITY_MAJOR) failed"
                 );
                 return Err(WarmError::CudaQueryFailed {
-                    error: format!("Failed to query compute capability major: error {}", major_result),
+                    error: format!(
+                        "Failed to query compute capability major: error {}",
+                        major_result
+                    ),
                 });
             }
 
@@ -161,7 +167,7 @@ impl WarmCudaAllocator {
             let minor_result = cuDeviceGetAttribute(
                 &mut cc_minor,
                 CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
-                device_handle
+                device_handle,
             );
             if minor_result != CUDA_SUCCESS {
                 tracing::error!(
@@ -170,7 +176,10 @@ impl WarmCudaAllocator {
                     "cuDeviceGetAttribute(COMPUTE_CAPABILITY_MINOR) failed"
                 );
                 return Err(WarmError::CudaQueryFailed {
-                    error: format!("Failed to query compute capability minor: error {}", minor_result),
+                    error: format!(
+                        "Failed to query compute capability minor: error {}",
+                        minor_result
+                    ),
                 });
             }
 
@@ -440,7 +449,10 @@ impl WarmCudaAllocator {
             return Err(WarmError::FakeAllocationDetected {
                 detected_address: ptr,
                 tensor_name: tensor_name.to_string(),
-                expected_pattern: format!("Real CUDA pointer, not matching 0x{:016x}", FAKE_ALLOCATION_BASE_PATTERN),
+                expected_pattern: format!(
+                    "Real CUDA pointer, not matching 0x{:016x}",
+                    FAKE_ALLOCATION_BASE_PATTERN
+                ),
             });
         }
 

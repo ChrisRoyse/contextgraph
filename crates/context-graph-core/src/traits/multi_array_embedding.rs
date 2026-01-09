@@ -205,11 +205,7 @@ impl MultiArrayEmbeddingOutput {
 
     /// Calculate average latency across all embedders.
     pub fn average_embedder_latency(&self) -> Duration {
-        let total_nanos: u128 = self
-            .per_embedder_latency
-            .iter()
-            .map(|d| d.as_nanos())
-            .sum();
+        let total_nanos: u128 = self.per_embedder_latency.iter().map(|d| d.as_nanos()).sum();
         Duration::from_nanos((total_nanos / NUM_EMBEDDERS as u128) as u64)
     }
 }
@@ -328,19 +324,19 @@ pub trait MultiArrayEmbeddingProvider: Send + Sync {
     /// Returns the standard dimensions from the teleological architecture spec.
     fn dimensions(&self) -> [usize; NUM_EMBEDDERS] {
         [
-            1024,  // E1: Semantic (e5-large-v2)
-            512,   // E2: Temporal-Recent
-            512,   // E3: Temporal-Periodic
-            512,   // E4: Temporal-Positional
-            768,   // E5: Causal (Longformer)
-            0,     // E6: Sparse (SPLADE) - variable
-            1536,  // E7: Code (Qodo-Embed-1-1.5B)
-            384,   // E8: Graph (MiniLM)
-            1024,  // E9: HDC (projected)
-            768,   // E10: Multimodal (CLIP)
-            384,   // E11: Entity (MiniLM)
-            128,   // E12: Late-Interaction (ColBERT per-token)
-            0,     // E13: SPLADE v3 - variable
+            1024, // E1: Semantic (e5-large-v2)
+            512,  // E2: Temporal-Recent
+            512,  // E3: Temporal-Periodic
+            512,  // E4: Temporal-Positional
+            768,  // E5: Causal (Longformer)
+            0,    // E6: Sparse (SPLADE) - variable
+            1536, // E7: Code (Qodo-Embed-1-1.5B)
+            384,  // E8: Graph (MiniLM)
+            1024, // E9: HDC (projected)
+            768,  // E10: Multimodal (CLIP)
+            384,  // E11: Entity (MiniLM)
+            128,  // E12: Late-Interaction (ColBERT per-token)
+            0,    // E13: SPLADE v3 - variable
         ]
     }
 
@@ -655,7 +651,10 @@ mod tests {
         assert_eq!(dims[8], 1024, "E9 HDC should be 1024D (projected)");
         assert_eq!(dims[9], 768, "E10 multimodal should be 768D");
         assert_eq!(dims[10], 384, "E11 entity should be 384D");
-        assert_eq!(dims[11], 128, "E12 late-interaction should be 128D per token");
+        assert_eq!(
+            dims[11], 128,
+            "E12 late-interaction should be 128D per token"
+        );
         assert_eq!(dims[12], 0, "E13 SPLADE should be 0 (variable)");
     }
 

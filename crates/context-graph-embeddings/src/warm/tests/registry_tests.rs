@@ -1,11 +1,9 @@
 //! Tests for WarmModelRegistry with all 12 models.
 
-use crate::warm::error::WarmError;
-use crate::warm::registry::{
-    WarmModelRegistry, EMBEDDING_MODEL_IDS, TOTAL_MODEL_COUNT,
-};
-use crate::warm::state::WarmModelState;
 use super::helpers::{test_handle, MB};
+use crate::warm::error::WarmError;
+use crate::warm::registry::{WarmModelRegistry, EMBEDDING_MODEL_IDS, TOTAL_MODEL_COUNT};
+use crate::warm::state::WarmModelState;
 
 use std::sync::{Arc, RwLock};
 
@@ -39,7 +37,9 @@ fn test_register_all_12_models() {
 #[test]
 fn test_register_duplicate_fails() {
     let mut registry = WarmModelRegistry::new();
-    registry.register_model("E1_Semantic", 512 * MB, 768).unwrap();
+    registry
+        .register_model("E1_Semantic", 512 * MB, 768)
+        .unwrap();
 
     let err = registry
         .register_model("E1_Semantic", 256 * MB, 512)
@@ -56,7 +56,9 @@ fn test_register_duplicate_fails() {
 #[test]
 fn test_full_state_transition_pending_to_warm() {
     let mut registry = WarmModelRegistry::new();
-    registry.register_model("E1_Semantic", 512 * MB, 768).unwrap();
+    registry
+        .register_model("E1_Semantic", 512 * MB, 768)
+        .unwrap();
 
     // Pending -> Loading
     assert!(matches!(
@@ -71,7 +73,9 @@ fn test_full_state_transition_pending_to_warm() {
     ));
 
     // Update progress
-    registry.update_progress("E1_Semantic", 50, 256 * MB).unwrap();
+    registry
+        .update_progress("E1_Semantic", 50, 256 * MB)
+        .unwrap();
     if let Some(WarmModelState::Loading {
         progress_percent,
         bytes_loaded,
@@ -102,7 +106,9 @@ fn test_full_state_transition_pending_to_warm() {
 #[test]
 fn test_invalid_transition_pending_to_validating() {
     let mut registry = WarmModelRegistry::new();
-    registry.register_model("E1_Semantic", 512 * MB, 768).unwrap();
+    registry
+        .register_model("E1_Semantic", 512 * MB, 768)
+        .unwrap();
 
     let err = registry.mark_validating("E1_Semantic").unwrap_err();
     assert!(matches!(err, WarmError::ModelValidationFailed { .. }));
@@ -111,7 +117,9 @@ fn test_invalid_transition_pending_to_validating() {
 #[test]
 fn test_invalid_transition_pending_to_warm() {
     let mut registry = WarmModelRegistry::new();
-    registry.register_model("E1_Semantic", 512 * MB, 768).unwrap();
+    registry
+        .register_model("E1_Semantic", 512 * MB, 768)
+        .unwrap();
 
     let err = registry
         .mark_warm("E1_Semantic", test_handle(512 * MB))
@@ -122,7 +130,9 @@ fn test_invalid_transition_pending_to_warm() {
 #[test]
 fn test_mark_failed_from_loading() {
     let mut registry = WarmModelRegistry::new();
-    registry.register_model("E1_Semantic", 512 * MB, 768).unwrap();
+    registry
+        .register_model("E1_Semantic", 512 * MB, 768)
+        .unwrap();
     registry.start_loading("E1_Semantic").unwrap();
 
     registry

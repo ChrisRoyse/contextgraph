@@ -325,8 +325,7 @@ mod tests {
     #[test]
     fn test_cognitive_pulse_johari_action_mapping() {
         // constitution.yaml:159-163 compliance
-        let open =
-            CognitivePulse::from_values(0.3, 0.7, 0.5, JohariQuadrant::Open).expect("valid");
+        let open = CognitivePulse::from_values(0.3, 0.7, 0.5, JohariQuadrant::Open).expect("valid");
         assert_eq!(open.suggested_action, SuggestedAction::DirectRecall);
 
         let blind =
