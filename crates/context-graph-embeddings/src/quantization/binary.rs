@@ -117,7 +117,7 @@ impl BinaryEncoder {
         let original_dim = embedding.len();
 
         // Calculate packed size: ceil(dim / 8)
-        let packed_len = (original_dim + 7) / 8;
+        let packed_len = original_dim.div_ceil(8);
         let mut packed = vec![0u8; packed_len];
 
         // Pack bits: MSB first within each byte
@@ -190,7 +190,7 @@ impl BinaryEncoder {
         };
 
         // Validate data length
-        let expected_bytes = (quantized.original_dim + 7) / 8;
+        let expected_bytes = quantized.original_dim.div_ceil(8);
         if quantized.data.len() != expected_bytes {
             error!(
                 target: "quantization::binary",

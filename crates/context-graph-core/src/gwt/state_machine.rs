@@ -103,16 +103,16 @@ impl StateMachineManager {
         let new_state = ConsciousnessState::from_level(consciousness_level);
 
         // Check for inactivity-driven transition to dormant
-        if self.time_in_state().num_seconds() > self.inactivity_timeout_secs as i64 {
-            if self.current_state != ConsciousnessState::Dormant {
-                self.transition_to(
-                    ConsciousnessState::Dormant,
-                    consciousness_level,
-                    "inactivity_timeout",
-                )
-                .await?;
-                return Ok(self.current_state);
-            }
+        if self.time_in_state().num_seconds() > self.inactivity_timeout_secs as i64
+            && self.current_state != ConsciousnessState::Dormant
+        {
+            self.transition_to(
+                ConsciousnessState::Dormant,
+                consciousness_level,
+                "inactivity_timeout",
+            )
+            .await?;
+            return Ok(self.current_state);
         }
 
         // Check if state changed

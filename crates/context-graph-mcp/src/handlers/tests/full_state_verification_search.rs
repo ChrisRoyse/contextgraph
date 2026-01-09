@@ -261,7 +261,7 @@ async fn test_full_state_verification_store_search_delete_cycle() {
     println!("======================================================================");
     println!("Source of Truth: InMemoryTeleologicalStore (DashMap<Uuid, TeleologicalFingerprint>)");
     println!("Test Scenario: Store → Search → Delete Cycle");
-    println!("");
+    println!();
     println!("Operations Verified:");
     println!("  1. Initial state verified empty (count=0)");
     println!("  2. memory/store executed - fingerprint ID: {}", fingerprint_id);
@@ -271,7 +271,7 @@ async fn test_full_state_verification_store_search_delete_cycle() {
     println!("  6. search/multi found the fingerprint");
     println!("  7. Per-embedder scores (13) verified");
     println!("  8. memory/delete (soft) executed");
-    println!("");
+    println!();
     println!("Physical Evidence:");
     println!("  - Fingerprint UUID: {}", fingerprint_id);
     println!("  - Content hash: {} bytes (SHA-256 verified)", retrieved_fp.content_hash.len());

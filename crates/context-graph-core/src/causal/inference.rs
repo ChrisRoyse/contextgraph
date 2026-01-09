@@ -49,17 +49,6 @@ impl InferenceDirection {
         }
     }
 
-    /// Parse from string (MCP/JSON input).
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "forward" => Some(InferenceDirection::Forward),
-            "backward" => Some(InferenceDirection::Backward),
-            "bidirectional" => Some(InferenceDirection::Bidirectional),
-            "bridge" => Some(InferenceDirection::Bridge),
-            "abduction" => Some(InferenceDirection::Abduction),
-            _ => None,
-        }
-    }
 
     /// Check if this direction requires a target node.
     pub fn requires_target(&self) -> bool {
@@ -79,6 +68,21 @@ impl InferenceDirection {
             InferenceDirection::Bidirectional => "Bidirectional inference: How do source and target influence each other?",
             InferenceDirection::Bridge => "Bridge inference: Cross-domain causal relationships",
             InferenceDirection::Abduction => "Abduction: Best hypothesis to explain the observation",
+        }
+    }
+}
+
+impl std::str::FromStr for InferenceDirection {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "forward" => Ok(InferenceDirection::Forward),
+            "backward" => Ok(InferenceDirection::Backward),
+            "bidirectional" => Ok(InferenceDirection::Bidirectional),
+            "bridge" => Ok(InferenceDirection::Bridge),
+            "abduction" => Ok(InferenceDirection::Abduction),
+            _ => Err(()),
         }
     }
 }
@@ -395,9 +399,9 @@ mod tests {
 
     #[test]
     fn test_inference_direction_from_str() {
-        assert_eq!(InferenceDirection::from_str("forward"), Some(InferenceDirection::Forward));
-        assert_eq!(InferenceDirection::from_str("BACKWARD"), Some(InferenceDirection::Backward));
-        assert_eq!(InferenceDirection::from_str("invalid"), None);
+        assert_eq!("forward".parse::<InferenceDirection>(), Ok(InferenceDirection::Forward));
+        assert_eq!("BACKWARD".parse::<InferenceDirection>(), Ok(InferenceDirection::Backward));
+        assert_eq!("invalid".parse::<InferenceDirection>(), Err(()));
     }
 
     #[test]

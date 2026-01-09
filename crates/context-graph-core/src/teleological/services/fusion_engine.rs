@@ -71,6 +71,7 @@ pub struct ComponentScores {
 
 /// Metadata about the fusion process.
 #[derive(Clone, Debug)]
+#[derive(Default)]
 pub struct FusionMetadata {
     /// Number of active embedders (alignment > threshold)
     pub active_embedders: usize,
@@ -82,16 +83,6 @@ pub struct FusionMetadata {
     pub profile_id: Option<ProfileId>,
 }
 
-impl Default for FusionMetadata {
-    fn default() -> Self {
-        Self {
-            active_embedders: 0,
-            strongest_pair: None,
-            dominant_group: None,
-            profile_id: None,
-        }
-    }
-}
 
 /// TELEO-012: Orchestrates multi-embedding fusion.
 ///

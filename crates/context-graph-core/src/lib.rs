@@ -71,3 +71,6 @@ pub use teleological::{
     GroupAlignments, GroupType, MultiResolutionHierarchy, ProfileId, ProfileMetrics, SynergyMatrix,
     TaskType, TeleologicalProfile, TeleologicalVector, TuckerCore,
 };
+
+// Purpose module re-exports (goal hierarchy types) - TASK-CORE-010
+pub use purpose::{GoalLevel, GoalNode};

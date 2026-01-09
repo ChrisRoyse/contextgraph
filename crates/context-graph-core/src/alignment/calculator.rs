@@ -250,18 +250,10 @@ impl TeleologicalWeights {
 /// ```text
 /// A_multi = SUM_i(w_i * A(E_i, V)) where SUM(w_i) = 1
 /// ```
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct DefaultAlignmentCalculator {
     /// Teleological weights for multi-space alignment.
     teleological_weights: TeleologicalWeights,
-}
-
-impl Default for DefaultAlignmentCalculator {
-    fn default() -> Self {
-        Self {
-            teleological_weights: TeleologicalWeights::default(),
-        }
-    }
 }
 
 impl DefaultAlignmentCalculator {
@@ -1414,7 +1406,7 @@ mod tests {
         // All alignments should be in [0, 1] range (normalized)
         for (i, &alignment) in alignments.iter().enumerate() {
             assert!(
-                alignment >= 0.0 && alignment <= 1.0,
+                (0.0..=1.0).contains(&alignment),
                 "Alignment {} should be in [0,1], got {}",
                 i, alignment
             );

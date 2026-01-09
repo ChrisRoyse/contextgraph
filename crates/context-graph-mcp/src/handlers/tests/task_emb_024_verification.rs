@@ -46,6 +46,7 @@ fn create_handlers_with_stub_monitors() -> Handlers {
 }
 
 /// Create test handlers with shared MetaUtlTracker for direct verification.
+#[allow(dead_code)]
 fn create_handlers_with_tracker() -> (Handlers, Arc<RwLock<MetaUtlTracker>>) {
     let store = Arc::new(InMemoryTeleologicalStore::new());
     let utl_processor = Arc::new(StubUtlProcessor::new());

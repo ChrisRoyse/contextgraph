@@ -193,8 +193,8 @@ graph TD
 | 6 | TASK-CORE-006 | Storage Trait Definition | CORE-004 | 1.5 | :white_circle: todo |
 | 7 | TASK-CORE-007 | Per-Embedder Index Structure | CORE-006 | 2 | :white_check_mark: done |
 | 8 | TASK-CORE-008 | RocksDB Schema Migration | CORE-007 | 3 | :white_check_mark: done |
-| 9 | TASK-CORE-009 | Remove Projection Code | CORE-001 | 1 | :white_circle: todo |
-| 10 | TASK-CORE-010 | Module Integration | CORE-005, CORE-008, CORE-009 | 1 | :white_circle: todo |
+| 9 | TASK-CORE-009 | Remove Projection Code | CORE-001 | 1 | :white_check_mark: done |
+| 10 | TASK-CORE-010 | Module Integration | CORE-005, CORE-008, CORE-009 | 1 | :white_check_mark: done |
 | 11 | TASK-CORE-011 | GPU Memory Management Infrastructure | - | 2 | :white_circle: todo |
 | 12 | TASK-CORE-012 | Embedding Model Loading Infrastructure | CORE-011 | 2 | :white_circle: todo |
 | 13 | TASK-CORE-013 | Embedding Quantization Infrastructure | CORE-012 | 2 | :white_circle: todo |
@@ -274,7 +274,7 @@ graph TD
 | TASK-CORE-007 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES (12 HNSW indexes, 104 tests pass) |
 | TASK-CORE-008 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES (EmbedderIndexRegistry integrated) |
 | TASK-CORE-009 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES (project_embedding removed, 2759 tests pass) |
-| TASK-CORE-010 | :white_circle: todo | - | - | - |
+| TASK-CORE-010 | :white_check_mark: completed | 2026-01-09 | 2026-01-09 | YES (GoalNode/GoalLevel re-exported, 2759 tests pass) |
 | TASK-CORE-011 | :white_circle: todo | - | - | - |
 | TASK-CORE-012 | :white_circle: todo | - | - | - |
 | TASK-CORE-013 | :white_circle: todo | - | - | - |
@@ -334,7 +334,7 @@ graph TD
 | TASK-PERF-003 | :white_circle: todo | - | - | - |
 | TASK-PERF-004 | :white_circle: todo | - | - | - |
 
-**Progress: 8/52 tasks completed (15%): CORE-001, CORE-002, CORE-003, CORE-004, CORE-005, CORE-007, CORE-008, CORE-009**
+**Progress: 9/52 tasks completed (17%): CORE-001, CORE-002, CORE-003, CORE-004, CORE-005, CORE-007, CORE-008, CORE-009, CORE-010 done**
 
 ---
 

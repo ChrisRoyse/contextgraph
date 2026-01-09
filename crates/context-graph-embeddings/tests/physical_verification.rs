@@ -20,7 +20,7 @@ fn physical_verification_checksum_matches_external_tool() {
         .expect("load_weights should succeed");
 
     // Convert checksum to hex string
-    let rust_hex = hex::encode(&checksum);
+    let rust_hex = hex::encode(checksum);
 
     // Expected from external sha256sum
     let expected_hex = "ff0b41a49a541d2383b963663323322c4cd8506aed85e1d955a848dfcac6de46";

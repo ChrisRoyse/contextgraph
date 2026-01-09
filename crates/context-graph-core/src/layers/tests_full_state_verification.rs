@@ -466,13 +466,13 @@ mod full_state_verification {
 
         // Verify resonance is in valid range
         assert!(
-            resonance >= 0.0 && resonance <= 1.0,
+            (0.0..=1.0).contains(&resonance),
             "R(t) should be in [0,1], got {}",
             resonance
         );
         assert!(!consciousness.is_nan(), "C(t) should not be NaN");
         assert!(
-            consciousness >= 0.0 && consciousness <= 1.0,
+            (0.0..=1.0).contains(&consciousness),
             "C(t) should be in [0,1], got {}",
             consciousness
         );
@@ -511,7 +511,7 @@ mod full_state_verification {
         println!("Mean phase psi = {:.4}", network.mean_phase());
 
         assert!(
-            r_final >= 0.0 && r_final <= 1.0,
+            (0.0..=1.0).contains(&r_final),
             "Final R should be in [0,1]"
         );
 

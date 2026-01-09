@@ -386,7 +386,7 @@ async fn test_sparse_search() {
     let fp3 = create_fingerprint_with_sparse(vec![600, 700, 800], vec![0.9, 0.9, 0.9]);
 
     let id1 = fp1.id;
-    let id2 = fp2.id;
+    let _id2 = fp2.id;
 
     store.store(fp1).await.unwrap();
     store.store(fp2).await.unwrap();

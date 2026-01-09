@@ -330,12 +330,12 @@ mod full_state_verification {
         eprintln!(">>> BEFORE STATE (Mathematical Expectation):");
         eprintln!("    Constitution RRF formula: RRF(d) = Si wi / (k + ranki(d))");
         eprintln!("    Constitution k value: {} (from RRF_K constant)", RRF_K);
-        eprintln!("");
+        eprintln!();
         eprintln!("    Test scenario:");
         eprintln!("      - target_id appears at rank 0 in E1 (embedder 0)");
         eprintln!("      - target_id appears at rank 2 in E2 (embedder 1)");
         eprintln!("      - All weights = 1.0 (default)");
-        eprintln!("");
+        eprintln!();
         eprintln!("    Manual calculation:");
         let contrib_e1 = 1.0 / (60.0 + 0.0);
         let contrib_e2 = 1.0 / (60.0 + 2.0);

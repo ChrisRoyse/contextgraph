@@ -16,7 +16,7 @@
 //! All methods fail immediately on invalid input rather than returning
 //! partial results or silently ignoring errors.
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -522,6 +522,7 @@ impl Default for PruningService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::Duration;
 
     // Helper to create test metadata
     fn make_metadata(
@@ -639,7 +640,7 @@ mod tests {
     fn test_memory_metadata_age_days() {
         let meta = make_metadata(0.75, 45, 0, 0);
         let age = meta.age_days();
-        assert!(age >= 44 && age <= 46); // Allow for timing variance
+        assert!((44..=46).contains(&age)); // Allow for timing variance
         println!("[PASS] MemoryMetadata::age_days = {}", age);
     }
 
@@ -649,7 +650,7 @@ mod tests {
         let days = meta.days_since_access();
         assert!(days.is_some());
         let d = days.unwrap();
-        assert!(d >= 29 && d <= 31);
+        assert!((29..=31).contains(&d));
         println!("[PASS] MemoryMetadata::days_since_access = {}", d);
     }
 

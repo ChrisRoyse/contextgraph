@@ -512,11 +512,11 @@ fn compute_centroids(
     }
 
     sums.into_iter()
-        .zip(counts.into_iter())
+        .zip(counts)
         .map(|(mut sum, count)| {
             if count > 0 {
-                for d in 0..PURPOSE_VECTOR_DIM {
-                    sum[d] /= count as f32;
+                for elem in sum.iter_mut() {
+                    *elem /= count as f32;
                 }
             }
             sum
@@ -635,8 +635,8 @@ mod tests {
     /// Create a purpose vector with deterministic values based on base and variation.
     fn create_purpose_vector(base: f32, variation: f32) -> PurposeVector {
         let mut alignments = [0.0f32; PURPOSE_VECTOR_DIM];
-        for i in 0..PURPOSE_VECTOR_DIM {
-            alignments[i] = (base + (i as f32 * variation)).clamp(0.0, 1.0);
+        for (i, alignment) in alignments.iter_mut().enumerate() {
+            *alignment = (base + (i as f32 * variation)).clamp(0.0, 1.0);
         }
         PurposeVector::new(alignments)
     }

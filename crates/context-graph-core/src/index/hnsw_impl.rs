@@ -46,6 +46,9 @@ use super::status::IndexStatus;
 // Real HNSW Index Implementation using hnsw_rs
 // ============================================================================
 
+/// Type alias for HNSW persistence data to reduce type complexity.
+type HnswPersistenceData = (HnswConfig, DistanceMetric, usize, Vec<(Uuid, usize, Vec<f32>)>);
+
 /// Real HNSW index using hnsw_rs library.
 ///
 /// # CRITICAL: NO FALLBACKS
@@ -614,13 +617,9 @@ impl RealHnswIndex {
         let reader = BufReader::new(file);
 
         // Deserialize: (config, active_metric, next_data_id, data)
-        let (config, active_metric, next_data_id, data): (
-            HnswConfig,
-            DistanceMetric,
-            usize,
-            Vec<(Uuid, usize, Vec<f32>)>,
-        ) = bincode::deserialize_from(reader)
-            .map_err(|e| IndexError::serialization("deserializing RealHnswIndex", e))?;
+        let (config, active_metric, next_data_id, data): HnswPersistenceData =
+            bincode::deserialize_from(reader)
+                .map_err(|e| IndexError::serialization("deserializing RealHnswIndex", e))?;
 
         // Create a new index with the loaded config
         let mut index = Self::new(config)?;
@@ -1606,7 +1605,7 @@ mod tests {
     #[tokio::test]
     async fn test_multi_space_not_initialized_error() {
         let manager = HnswMultiSpaceIndex::new();
-        let id = Uuid::new_v4();
+        let _id = Uuid::new_v4();
         let v = random_vector(1024);
 
         println!("[BEFORE] Attempting add without initialization");

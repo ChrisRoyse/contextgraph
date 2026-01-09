@@ -134,7 +134,7 @@ async fn get_warm_loaded_provider() -> Arc<dyn MultiArrayEmbeddingProvider> {
 
             let provider = ProductionMultiArrayProvider::new(models_dir.clone(), GpuConfig::default())
                 .await
-                .expect(&format!(
+                .unwrap_or_else(|_| panic!(
                     "WARM LOAD FAILED: Could not create ProductionMultiArrayProvider. \
                      Ensure models exist at {:?} and RTX 5090 GPU is available with CUDA.",
                     models_dir
@@ -329,6 +329,7 @@ pub(crate) async fn create_test_handlers_with_rocksdb() -> (Handlers, TempDir) {
 ///     assert!(result.error.is_some());
 /// }
 /// ```
+#[allow(dead_code)]
 pub(crate) async fn create_test_handlers_with_rocksdb_no_north_star() -> (Handlers, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for RocksDB test");
     let db_path = tempdir.path().join("test_rocksdb");
@@ -597,6 +598,7 @@ pub(crate) async fn create_test_handlers_with_real_embeddings() -> (Handlers, Te
 /// - Direct reference to the store for FSV assertions (verify data was persisted)
 /// - TempDir that MUST be kept alive for the duration of the test
 #[cfg(feature = "cuda")]
+#[allow(dead_code)]
 pub(crate) async fn create_test_handlers_with_real_embeddings_store_access() -> (
     Handlers,
     Arc<dyn TeleologicalMemoryStore>,

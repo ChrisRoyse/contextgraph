@@ -473,7 +473,7 @@ mod tests {
         // Test all space weights are valid
         for i in 0..NUM_EMBEDDING_SPACES {
             let weight = state.get_space_weight(i);
-            assert!(weight >= 0.0 && weight <= 1.0);
+            assert!((0.0..=1.0).contains(&weight));
         }
 
         // Invalid index should return 0

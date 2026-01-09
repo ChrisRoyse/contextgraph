@@ -189,6 +189,7 @@ fn default_history_count() -> usize {
 // ============================================================================
 
 /// Autonomous-specific error codes (-32110 to -32119)
+#[allow(dead_code)]
 pub mod autonomous_error_codes {
     /// Bootstrap service failed
     pub const BOOTSTRAP_ERROR: i32 = -32110;
@@ -269,8 +270,8 @@ impl Handlers {
             }
         };
 
-        // Create bootstrap service
-        let bootstrap_service = BootstrapService::new();
+        // Create bootstrap service (created for API consistency, not used directly)
+        let _bootstrap_service = BootstrapService::new();
 
         // Bootstrap is complete - the North Star already exists
         // The bootstrap service would normally extract goals from documents,
@@ -581,8 +582,8 @@ impl Handlers {
             "get_pruning_candidates: Parsed parameters"
         );
 
-        // Create pruning service
-        let pruning_service = PruningService::new();
+        // Create pruning service (created for API consistency, not used directly)
+        let _pruning_service = PruningService::new();
 
         // Identify candidates - requires memory metadata from store
         // For now, we return an empty list since we don't have direct store access

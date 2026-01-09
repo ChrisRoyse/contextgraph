@@ -16,6 +16,7 @@ pub struct StubLayerConfig {
 ///
 /// # Returns
 /// A deterministic u64 hash value
+#[allow(dead_code)] // Reserved for future deterministic stub implementations
 pub fn compute_input_hash(input: &str) -> u64 {
     let mut hash: u64 = 0;
     for (i, byte) in input.bytes().enumerate() {

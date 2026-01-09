@@ -20,8 +20,10 @@ use super::types::{ProfileId, NUM_EMBEDDERS};
 ///
 /// Different strategies optimize for different use cases.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum FusionStrategy {
     /// Simple weighted average of all embeddings.
+    #[default]
     WeightedAverage,
 
     /// Cross-correlation matrix fusion (captures inter-embedding relationships).
@@ -47,11 +49,6 @@ pub enum FusionStrategy {
     PrimaryOnly,
 }
 
-impl Default for FusionStrategy {
-    fn default() -> Self {
-        Self::WeightedAverage
-    }
-}
 
 impl FusionStrategy {
     /// Default Tucker ranks from teleoplan.md.
@@ -106,6 +103,7 @@ impl FusionStrategy {
 /// - "Why did X happen?" -> Causal search
 /// - "What is similar to X?" -> Semantic search
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum TaskType {
     /// Code implementation tasks.
     /// Primary: E6 (Code), E7 (Procedural)
@@ -136,14 +134,10 @@ pub enum TaskType {
     AbstractSearch,
 
     /// General balanced search.
+    #[default]
     General,
 }
 
-impl Default for TaskType {
-    fn default() -> Self {
-        Self::General
-    }
-}
 
 impl TaskType {
     /// All task types.

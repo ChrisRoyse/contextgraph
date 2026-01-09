@@ -132,7 +132,7 @@ impl PQ8Encoder {
     #[must_use]
     pub fn new(embedding_dim: usize) -> Self {
         assert!(
-            embedding_dim % NUM_SUBVECTORS == 0,
+            embedding_dim.is_multiple_of(NUM_SUBVECTORS),
             "Embedding dimension {} must be divisible by {}",
             embedding_dim,
             NUM_SUBVECTORS
@@ -227,7 +227,7 @@ impl PQ8Encoder {
 
         // Validate dimension
         let dim = embedding.len();
-        if dim % NUM_SUBVECTORS != 0 {
+        if !dim.is_multiple_of(NUM_SUBVECTORS) {
             return Err(PQ8QuantizationError::DimensionNotDivisible { dim });
         }
 
@@ -572,7 +572,7 @@ mod tests {
             let encoder = PQ8Encoder::new(dim);
             let embedding: Vec<f32> = (0..dim).map(|i| (i as f32 / dim as f32) * 2.0 - 1.0).collect();
 
-            let quantized = encoder.quantize(&embedding).expect(&format!("quantize {}D", dim));
+            let quantized = encoder.quantize(&embedding).unwrap_or_else(|e| panic!("quantize {}D: {:?}", dim, e));
             let reconstructed = encoder.dequantize(&quantized).expect("dequantize");
 
             assert_eq!(reconstructed.len(), dim);

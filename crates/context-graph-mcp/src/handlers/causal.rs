@@ -83,9 +83,9 @@ impl Handlers {
             .and_then(|v| v.as_str())
             .unwrap_or("forward");
 
-        let direction = match InferenceDirection::from_str(direction_str) {
-            Some(d) => d,
-            None => {
+        let direction = match direction_str.parse::<InferenceDirection>() {
+            Ok(d) => d,
+            Err(_) => {
                 return self.tool_error_with_pulse(
                     id,
                     &format!(

@@ -58,7 +58,6 @@ mod tests;
 
 // Re-export used public types
 pub use model::SparseModel;
-pub use projection::{ProjectionError, ProjectionMatrix, PROJECTION_TENSOR_NAME, PROJECTION_WEIGHT_FILE};
 #[allow(unused_imports)]
 pub use types::{
     SparseVector, SPARSE_EXPECTED_SPARSITY, SPARSE_HIDDEN_SIZE, SPARSE_LATENCY_BUDGET_MS,

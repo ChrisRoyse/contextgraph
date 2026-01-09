@@ -90,10 +90,10 @@ impl DefaultCrossSpaceEngine {
         let mut norm_a = 0.0f32;
         let mut norm_b = 0.0f32;
 
-        for i in 0..a.len() {
-            dot += a[i] * b[i];
-            norm_a += a[i] * a[i];
-            norm_b += b[i] * b[i];
+        for (ai, bi) in a.iter().zip(b.iter()) {
+            dot += ai * bi;
+            norm_a += ai * ai;
+            norm_b += bi * bi;
         }
 
         let denom = norm_a.sqrt() * norm_b.sqrt();
@@ -271,7 +271,7 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
         let mut active_count: usize = 0;
 
         // Step 1: Compute per-space similarities
-        for i in 0..NUM_EMBEDDERS {
+        for (i, score) in space_scores.iter_mut().enumerate() {
             let slice1_opt = fp1.semantic.get_embedding(i);
             let slice2_opt = fp2.semantic.get_embedding(i);
 
@@ -291,7 +291,7 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
 
                         // Normalize cosine to [0, 1] range: (cos + 1) / 2
                         let normalized = (sim + 1.0) / 2.0;
-                        space_scores[i] = Some(normalized.clamp(0.0, 1.0));
+                        *score = Some(normalized.clamp(0.0, 1.0));
                         active_spaces |= 1 << i;
                         active_count += 1;
                     }
@@ -303,7 +303,7 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
                             // Already None, skip
                         }
                         MissingSpaceHandling::ZeroFill => {
-                            space_scores[i] = Some(0.0);
+                            *score = Some(0.0);
                             // Don't count as active
                         }
                         MissingSpaceHandling::AverageFill => {
@@ -336,9 +336,9 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
                 .sum::<f32>()
                 / active_count as f32;
 
-            for i in 0..NUM_EMBEDDERS {
-                if space_scores[i].is_none() {
-                    space_scores[i] = Some(avg);
+            for score in space_scores.iter_mut() {
+                if score.is_none() {
+                    *score = Some(avg);
                 }
             }
         }
@@ -348,8 +348,8 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
 
         // Apply purpose weighting if enabled
         if config.use_purpose_weighting {
-            for i in 0..NUM_EMBEDDERS {
-                weights[i] *= fp1.purpose_vector.alignments[i].abs();
+            for (weight, alignment) in weights.iter_mut().zip(fp1.purpose_vector.alignments.iter()) {
+                *weight *= alignment.abs();
             }
             Self::normalize_weights(&mut weights);
         }

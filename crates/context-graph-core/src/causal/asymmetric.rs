@@ -45,13 +45,14 @@ pub mod direction_mod {
 /// Causal direction for asymmetric similarity computation.
 ///
 /// Simplified direction enum specifically for similarity computation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum CausalDirection {
     /// Entity is a cause (produces effects)
     Cause,
     /// Entity is an effect (produced by causes)
     Effect,
     /// Direction unknown or bidirectional
+    #[default]
     Unknown,
 }
 
@@ -87,12 +88,6 @@ impl CausalDirection {
             (Self::Unknown, _) => direction_mod::UNKNOWN,
             (_, Self::Unknown) => direction_mod::UNKNOWN,
         }
-    }
-}
-
-impl Default for CausalDirection {
-    fn default() -> Self {
-        Self::Unknown
     }
 }
 

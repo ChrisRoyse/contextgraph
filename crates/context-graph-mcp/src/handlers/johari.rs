@@ -105,6 +105,7 @@ struct TransitionBatchParams {
 struct CrossSpaceAnalysisParams {
     memory_ids: Vec<String>,
     #[serde(default = "default_analysis_type")]
+    #[allow(dead_code)]
     analysis_type: String,
 }
 

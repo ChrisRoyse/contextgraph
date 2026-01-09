@@ -244,7 +244,7 @@ pub struct GoalNode {
     /// - Goal.E1 vs Memory.E1 (semantic)
     /// - Goal.E5 vs Memory.E5 (causal)
     /// - Goal.E7 vs Memory.E7 (code)
-    /// etc.
+    ///   etc.
     pub teleological_array: TeleologicalArray,
 
     /// Parent goal (None for NorthStar).

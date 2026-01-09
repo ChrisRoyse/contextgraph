@@ -94,8 +94,8 @@ mod integration_tests {
         let key = drift_history_key(mid_ts, &uuid);
 
         // Key should be within the prefix range
-        assert!(&key[..8] >= &start_prefix[..]);
-        assert!(&key[..8] < &end_prefix[..]);
+        assert!(key[..8] >= start_prefix[..]);
+        assert!(key[..8] < end_prefix[..]);
     }
 
     #[test]
@@ -219,15 +219,13 @@ mod cf_descriptor_tests {
         let cache = Cache::new_lru_cache(256 * 1024 * 1024);
         let descriptors = get_autonomous_cf_descriptors(&cache);
 
-        let expected_names = vec![
-            CF_AUTONOMOUS_CONFIG,
+        let expected_names = [CF_AUTONOMOUS_CONFIG,
             CF_ADAPTIVE_THRESHOLD_STATE,
             CF_DRIFT_HISTORY,
             CF_GOAL_ACTIVITY_METRICS,
             CF_AUTONOMOUS_LINEAGE,
             CF_CONSOLIDATION_HISTORY,
-            CF_MEMORY_CURATION,
-        ];
+            CF_MEMORY_CURATION];
 
         for (i, expected) in expected_names.iter().enumerate() {
             assert_eq!(

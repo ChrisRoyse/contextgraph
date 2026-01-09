@@ -98,7 +98,7 @@ impl Handlers {
 
         // Add embedder-specific info if requested
         if let Some(emb_id) = embedder_id {
-            if emb_id >= 1 && emb_id <= 13 {
+            if (1..=13).contains(&emb_id) {
                 // Get poorly calibrated embedders to check if this one is among them
                 let poorly_calibrated = atc_guard.get_poorly_calibrated_embedders();
                 // Use canonical Embedder::from_index (0-based internally, but API uses 1-based for user-facing)
@@ -234,7 +234,7 @@ impl Handlers {
             .and_then(|p| p.get("level"))
             .and_then(|v| v.as_u64())
         {
-            Some(l) if l >= 1 && l <= 4 => l as u32,
+            Some(l) if (1..=4).contains(&l) => l as u32,
             Some(l) => {
                 error!(level = l, "Invalid ATC level");
                 return JsonRpcResponse::error(

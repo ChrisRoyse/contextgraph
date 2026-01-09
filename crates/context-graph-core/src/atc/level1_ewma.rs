@@ -90,6 +90,12 @@ pub struct DriftTracker {
     states: HashMap<String, EwmaState>,
 }
 
+impl Default for DriftTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DriftTracker {
     /// Create new drift tracker
     pub fn new() -> Self {

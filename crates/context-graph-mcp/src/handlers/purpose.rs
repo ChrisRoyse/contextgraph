@@ -465,12 +465,12 @@ impl Handlers {
 
                 // Collect subtree using BFS
                 let mut subtree = vec![self.goal_to_json(root)];
-                let mut queue = vec![goal_id.clone()];
+                let mut queue = vec![goal_id];
 
                 while let Some(current_id) = queue.pop() {
                     for child in hierarchy.children(&current_id) {
                         subtree.push(self.goal_to_json(child));
-                        queue.push(child.id.clone());
+                        queue.push(child.id);
                     }
                 }
 

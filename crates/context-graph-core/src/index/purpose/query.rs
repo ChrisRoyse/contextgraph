@@ -578,8 +578,8 @@ mod tests {
     /// Create a purpose vector with deterministic values based on a base value.
     fn create_purpose_vector(base: f32) -> PurposeVector {
         let mut alignments = [0.0f32; PURPOSE_VECTOR_DIM];
-        for i in 0..PURPOSE_VECTOR_DIM {
-            alignments[i] = (base + i as f32 * 0.05).clamp(0.0, 1.0);
+        for (i, alignment) in alignments.iter_mut().enumerate() {
+            *alignment = (base + i as f32 * 0.05).clamp(0.0, 1.0);
         }
         PurposeVector::new(alignments)
     }

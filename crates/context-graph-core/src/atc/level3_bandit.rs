@@ -32,6 +32,12 @@ pub struct ArmStats {
     pub mean_reward: f32,
 }
 
+impl Default for ArmStats {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ArmStats {
     pub fn new() -> Self {
         Self {
@@ -467,7 +473,7 @@ mod tests {
         for arm in &arms {
             let count = *selected_counts.get(&ordered_float(arm.value)).unwrap_or(&0);
             assert!(
-                count >= 600 && count <= 1400,
+                (600..=1400).contains(&count),
                 "With uniform priors, arm {} should be selected ~1000 times but got {}",
                 arm.value, count
             );

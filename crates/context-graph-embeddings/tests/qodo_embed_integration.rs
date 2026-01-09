@@ -363,12 +363,12 @@ async fn test_qodo_embed_batch_inference() -> EmbeddingResult<()> {
     // Verify each embedding
     for (i, (emb, (code, _))) in embeddings.iter().zip(code_samples.iter()).enumerate() {
         let vector = &emb.vector;
-        verify_non_trivial_embedding(&vector, &format!("Sample {}", i + 1));
+        verify_non_trivial_embedding(vector, &format!("Sample {}", i + 1));
         println!(
             "Sample {}: {} chars, norm={:.4}",
             i + 1,
             code.len(),
-            l2_norm(&vector)
+            l2_norm(vector)
         );
     }
 

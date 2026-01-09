@@ -328,7 +328,7 @@ mod atc_integration_tests {
         atc.record_threshold_outcome(selected.unwrap(), true);
 
         // Level 4: Verify optimizer exists
-        assert!(atc.should_optimize_level4() == false); // Just created
+        assert!(!atc.should_optimize_level4()); // Just created
 
         // Monitor calibration
         let predictions = vec![

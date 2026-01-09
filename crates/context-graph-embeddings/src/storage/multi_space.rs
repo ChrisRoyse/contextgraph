@@ -236,7 +236,7 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
             for result in space_results {
                 all_results
                     .entry(result.id)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(result);
             }
         }

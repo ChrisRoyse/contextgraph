@@ -411,7 +411,7 @@ fn fsv_all_model_ids_have_methods() {
     assert_eq!(all_models.len(), 13);
 
     println!("\nMODEL ID ASSIGNMENTS:");
-    println!("  {:<20} | {:<15} | {}", "ModelId", "Method", "Can Quantize");
+    println!("  {:<20} | {:<15} | Can Quantize", "ModelId", "Method");
     println!("  {:-<20}-+-{:-<15}-+-{:-<12}", "", "", "");
 
     for model_id in all_models {

@@ -80,18 +80,13 @@ impl Default for ConsolidationConfig {
 }
 
 /// Memory state for curation
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum MemoryCurationState {
+    #[default]
     Active,
     Dormant { since: DateTime<Utc> },
     Archived { since: DateTime<Utc> },
     PendingDeletion { scheduled: DateTime<Utc> },
-}
-
-impl Default for MemoryCurationState {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 /// Reason for pruning a memory

@@ -402,7 +402,7 @@ impl ThresholdLearner {
         // Check overall success rate drift
         let overall_success_rate =
             self.total_successes as f32 / self.total_observations.max(1) as f32;
-        if overall_success_rate < 0.5 || overall_success_rate > 0.95 {
+        if !(0.5..=0.95).contains(&overall_success_rate) {
             return true; // Extreme rates warrant recalibration
         }
 
@@ -605,7 +605,7 @@ mod tests {
         // Sample multiple times to check range
         for _ in 0..100 {
             let sample = learner.thompson_sample(0);
-            assert!(sample >= 0.5 && sample <= 0.95,
+            assert!((0.5..=0.95).contains(&sample),
                    "Sample {} out of expected range [0.5, 0.95]", sample);
         }
 
@@ -661,7 +661,7 @@ mod tests {
         // When prior=0.8, likelihood=0.5, the posterior remains relatively high
         let posterior2 = learner.bayesian_update(0.8, 0.5);
         // Posterior should be between prior and likelihood, or close to 0.5 (neutral likelihood)
-        assert!(posterior2 >= 0.4 && posterior2 <= 0.85,
+        assert!((0.4..=0.85).contains(&posterior2),
                "Posterior {} should be in reasonable range with neutral likelihood", posterior2);
 
         println!("[PASS] test_bayesian_update_basic: Bayes rule applied correctly");
@@ -689,7 +689,7 @@ mod tests {
         // All valid indices should return a threshold
         for idx in 0..NUM_EMBEDDERS {
             let threshold = learner.get_threshold(idx);
-            assert!(threshold >= 0.0 && threshold <= 1.0);
+            assert!((0.0..=1.0).contains(&threshold));
         }
 
         println!("[PASS] test_get_threshold_valid_indices: All embedder thresholds accessible");

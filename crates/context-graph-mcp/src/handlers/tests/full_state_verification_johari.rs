@@ -30,7 +30,7 @@ use context_graph_core::traits::TeleologicalMemoryStore;
 use context_graph_core::types::fingerprint::{
     JohariFingerprint, PurposeVector, SemanticFingerprint, TeleologicalFingerprint,
 };
-use context_graph_core::types::{JohariQuadrant, TransitionTrigger};
+use context_graph_core::types::JohariQuadrant;
 
 use crate::handlers::Handlers;
 use crate::protocol::{error_codes, JsonRpcId, JsonRpcRequest};
@@ -439,7 +439,7 @@ async fn edge_case_2_invalid_quadrant_string() {
 async fn edge_case_3_soft_classification_sum() {
     println!("\n========== EDGE CASE 3: Soft Classification Sum Check ==========\n");
 
-    let (handlers, store, _johari_manager) = create_verifiable_handlers();
+    let (_handlers, store, _johari_manager) = create_verifiable_handlers();
 
     // Create fingerprint with mixed quadrants
     let quadrants = [

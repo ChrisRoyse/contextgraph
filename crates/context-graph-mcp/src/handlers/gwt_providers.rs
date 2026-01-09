@@ -53,11 +53,13 @@ impl KuramotoProviderImpl {
     }
 
     /// Create from an existing KuramotoNetwork instance
+    #[allow(dead_code)]
     pub fn with_network(network: KuramotoNetwork) -> Self {
         Self { network }
     }
 
     /// Create a synchronized (r ≈ 1) network
+    #[allow(dead_code)]
     pub fn synchronized() -> Self {
         Self {
             network: KuramotoNetwork::synchronized(),
@@ -65,6 +67,7 @@ impl KuramotoProviderImpl {
     }
 
     /// Create an incoherent (r ≈ 0) network
+    #[allow(dead_code)]
     pub fn incoherent() -> Self {
         Self {
             network: KuramotoNetwork::incoherent(),
@@ -231,6 +234,7 @@ impl WorkspaceProviderImpl {
     }
 
     /// Create from an existing GlobalWorkspace
+    #[allow(dead_code)]
     pub fn with_workspace(workspace: GlobalWorkspace) -> Self {
         Self {
             workspace: TokioRwLock::new(workspace),
@@ -301,6 +305,7 @@ impl MetaCognitiveProviderImpl {
     }
 
     /// Create from existing MetaCognitiveLoop
+    #[allow(dead_code)]
     pub fn with_loop(meta_cognitive: MetaCognitiveLoop) -> Self {
         Self {
             meta_cognitive: TokioRwLock::new(meta_cognitive),
@@ -362,6 +367,7 @@ impl SelfEgoProviderImpl {
     }
 
     /// Create with specific purpose vector
+    #[allow(dead_code)]
     pub fn with_purpose_vector(purpose_vector: [f32; 13]) -> Self {
         Self {
             ego_node: SelfEgoNode::with_purpose_vector(purpose_vector),
@@ -372,16 +378,19 @@ impl SelfEgoProviderImpl {
     /// Update identity continuity metrics
     ///
     /// Call this after purpose vector changes to update identity coherence
+    #[allow(dead_code)]
     pub fn update_continuity(&mut self, pv_cosine: f32, kuramoto_r: f32) -> CoreResult<IdentityStatus> {
         self.identity_continuity.update(pv_cosine, kuramoto_r)
     }
 
     /// Get mutable access to ego node for updates
+    #[allow(dead_code)]
     pub fn ego_node_mut(&mut self) -> &mut SelfEgoNode {
         &mut self.ego_node
     }
 
     /// Get access to identity continuity for updates
+    #[allow(dead_code)]
     pub fn identity_continuity_mut(&mut self) -> &mut IdentityContinuity {
         &mut self.identity_continuity
     }
@@ -429,7 +438,7 @@ mod tests {
 
         // Verify real data is returned
         let (r, psi) = provider.order_parameter();
-        assert!(r >= 0.0 && r <= 1.0, "Order parameter r out of range: {}", r);
+        assert!((0.0..=1.0).contains(&r), "Order parameter r out of range: {}", r);
         assert!(psi >= 0.0, "Mean phase psi should be non-negative: {}", psi);
 
         let phases = provider.phases();

@@ -246,9 +246,9 @@ impl InMemoryTeleologicalStore {
     fn get_dominant_quadrant(johari: &JohariFingerprint) -> usize {
         // Aggregate quadrant weights across all embedders
         let mut totals = [0.0_f32; 4];
-        for embedder_idx in 0..NUM_EMBEDDERS {
-            for q in 0..4 {
-                totals[q] += johari.quadrants[embedder_idx][q];
+        for quadrants in &johari.quadrants {
+            for (total, quadrant) in totals.iter_mut().zip(quadrants.iter()) {
+                *total += quadrant;
             }
         }
 

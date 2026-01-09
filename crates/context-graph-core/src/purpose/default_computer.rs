@@ -9,7 +9,7 @@
 //!   - Goal.E1 vs Memory.E1 (semantic, 1024D)
 //!   - Goal.E5 vs Memory.E5 (causal, 768D)
 //!   - Goal.E7 vs Memory.E7 (code, 1536D)
-//!   etc.
+//!     etc.
 //!
 //! This implementation does NOT project embeddings between spaces.
 //! Each space is compared directly: same model to same model.
@@ -111,10 +111,10 @@ impl DefaultPurposeComputer {
         let mut norm_a = 0.0_f32;
         let mut norm_b = 0.0_f32;
 
-        for i in 0..len {
-            dot += a[i] * b[i];
-            norm_a += a[i] * a[i];
-            norm_b += b[i] * b[i];
+        for (ai, bi) in a.iter().zip(b.iter()) {
+            dot += ai * bi;
+            norm_a += ai * ai;
+            norm_b += bi * bi;
         }
 
         let denominator = norm_a.sqrt() * norm_b.sqrt();
@@ -329,16 +329,15 @@ impl DefaultPurposeComputer {
         // Compute child alignments and aggregate
         let mut child_alignments = vec![[0.0_f32; NUM_EMBEDDERS]; children.len()];
 
-        for (i, child) in children.iter().enumerate() {
-            for space_idx in 0..NUM_EMBEDDERS {
-                child_alignments[i][space_idx] =
-                    self.compute_space_alignment(space_idx, fingerprint, child);
+        for (child_alignment, child) in child_alignments.iter_mut().zip(children.iter()) {
+            for (space_idx, alignment) in child_alignment.iter_mut().enumerate() {
+                *alignment = self.compute_space_alignment(space_idx, fingerprint, child);
             }
         }
 
         // Weighted combination
-        for space_idx in 0..NUM_EMBEDDERS {
-            let base_component = base_weight * base_alignments[space_idx];
+        for (space_idx, base_alignment) in base_alignments.iter().enumerate() {
+            let base_component = base_weight * base_alignment;
 
             // Average child alignments weighted by their level weights
             let child_sum: f32 = children
@@ -394,9 +393,8 @@ impl PurposeVectorComputer for DefaultPurposeComputer {
 
         // Compute base alignments for each space (apples-to-apples)
         let mut base_alignments = [0.0_f32; NUM_EMBEDDERS];
-        for space_idx in 0..NUM_EMBEDDERS {
-            base_alignments[space_idx] =
-                self.compute_space_alignment(space_idx, fingerprint, north_star);
+        for (space_idx, alignment) in base_alignments.iter_mut().enumerate() {
+            *alignment = self.compute_space_alignment(space_idx, fingerprint, north_star);
         }
 
         // Apply hierarchical propagation if enabled

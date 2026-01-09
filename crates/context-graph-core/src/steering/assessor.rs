@@ -306,7 +306,7 @@ mod tests {
         let a = Assessor::new();
 
         // Insufficient data
-        let (trend, desc) = a.analyze_trend(&[0.5]);
+        let (_trend, desc) = a.analyze_trend(&[0.5]);
         assert_eq!(desc, "insufficient_data");
 
         // Improving trend
@@ -320,7 +320,7 @@ mod tests {
         assert_eq!(desc, "declining");
 
         // Stable trend
-        let (trend, desc) = a.analyze_trend(&[0.7, 0.7, 0.71, 0.69, 0.7]);
+        let (_trend, desc) = a.analyze_trend(&[0.7, 0.7, 0.71, 0.69, 0.7]);
         assert_eq!(desc, "stable");
     }
 

@@ -121,7 +121,7 @@ impl Embedder {
     }
 
     /// Iterate over all embedders in order (E1 through E13).
-    pub fn all() -> impl Iterator<Item = Embedder> + ExactSizeIterator {
+    pub fn all() -> impl ExactSizeIterator<Item = Embedder> {
         (0..Self::COUNT).map(|i| Self::from_index(i).expect("index in range"))
     }
 

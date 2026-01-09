@@ -336,14 +336,14 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
     println!("Source of Truth:");
     println!("  - InMemoryTeleologicalStore: 1 fingerprint");
     println!("  - GoalHierarchy: 5 goals (1 NS + 2 S + 1 T + 1 I)");
-    println!("");
+    println!();
     println!("Operations Verified:");
     println!("  1. memory/store: Created fingerprint {}", fingerprint_id);
     println!("  2. Direct store.retrieve() confirmed existence");
     println!("  3. purpose/drift_check: avg_drift={:.4}", avg_drift.unwrap_or(0.0));
-    println!("");
+    println!();
     println!("NOTE: purpose/north_star_alignment removed per TASK-CORE-001 (ARCH-03)");
-    println!("");
+    println!();
     println!("Physical Evidence:");
     println!("  - Fingerprint UUID: {}", fingerprint_id);
     println!("  - Theta to North Star: {:.4}", fp_theta);
@@ -444,16 +444,18 @@ async fn test_full_state_verification_goal_hierarchy_navigation() {
     println!("   Handler returned {} children", children.len());
 
     // Verify against Source of Truth
-    let hierarchy_guard = hierarchy.read();
-    let ns_id = hierarchy_guard.north_star().expect("Must have North Star").id;
-    let direct_children = hierarchy_guard.children(&ns_id);
+    // Extract needed data before any async calls to avoid holding guard across await
+    let direct_children_len = {
+        let hierarchy_guard = hierarchy.read();
+        let ns_id = hierarchy_guard.north_star().expect("Must have North Star").id;
+        hierarchy_guard.children(&ns_id).len()
+    }; // guard dropped here
     assert_eq!(
         children.len(),
-        direct_children.len(),
+        direct_children_len,
         "Handler children count must match Source of Truth"
     );
     println!("   ✓ VERIFIED: get_children matches Source of Truth ({})", children.len());
-    drop(hierarchy_guard);
 
     // =========================================================================
     // STEP 4: Execute get_ancestors and verify path

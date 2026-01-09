@@ -22,7 +22,7 @@ async fn test_consciousness_equation_computation() {
     let purpose_vec = [1.0; 13];
 
     let c = calc.compute_consciousness(0.9, 0.85, &purpose_vec).unwrap();
-    assert!(c >= 0.0 && c <= 1.0, "Consciousness {} not in [0,1]", c);
+    assert!((0.0..=1.0).contains(&c), "Consciousness {} not in [0,1]", c);
 
     // Test 2: All components contribute to consciousness
     let metrics = calc.compute_metrics(0.9, 0.85, &purpose_vec).unwrap();
@@ -281,11 +281,11 @@ fn test_consciousness_equation_bounds() {
 
     // Edge case: all zeros
     let c_zero = calc.compute_consciousness(0.0, 0.0, &purpose_vec).unwrap();
-    assert!(c_zero >= 0.0 && c_zero <= 1.0);
+    assert!((0.0..=1.0).contains(&c_zero));
 
     // Edge case: all ones
     let c_one = calc.compute_consciousness(1.0, 1.0, &purpose_vec).unwrap();
-    assert!(c_one >= 0.0 && c_one <= 1.0);
+    assert!((0.0..=1.0).contains(&c_one));
     assert!(c_one > c_zero);
 }
 

@@ -95,9 +95,9 @@ impl SynergyMatrix {
         let mut weights = [[1.0f32; SYNERGY_DIM]; SYNERGY_DIM];
 
         // Set diagonal to 1.0
-        for i in 0..SYNERGY_DIM {
-            values[i][i] = 1.0;
-            weights[i][i] = 1.0;
+        for (i, (val_row, wgt_row)) in values.iter_mut().zip(weights.iter_mut()).enumerate() {
+            val_row[i] = 1.0;
+            wgt_row[i] = 1.0;
         }
 
         Self {
@@ -310,8 +310,8 @@ impl SynergyMatrix {
         let mut values = [[0.6f32; SYNERGY_DIM]; SYNERGY_DIM];
 
         // Set diagonal to 1.0
-        for i in 0..SYNERGY_DIM {
-            values[i][i] = 1.0;
+        for (i, row) in values.iter_mut().enumerate() {
+            row[i] = 1.0;
         }
 
         Self {
@@ -450,9 +450,9 @@ impl SynergyMatrix {
 
     /// Check if the matrix is symmetric within tolerance.
     pub fn is_symmetric(&self, tolerance: f32) -> bool {
-        for i in 0..SYNERGY_DIM {
-            for j in (i + 1)..SYNERGY_DIM {
-                if (self.values[i][j] - self.values[j][i]).abs() > tolerance {
+        for (i, row) in self.values.iter().enumerate() {
+            for (j, &value) in row.iter().enumerate().skip(i + 1) {
+                if (value - self.values[j][i]).abs() > tolerance {
                     return false;
                 }
             }
@@ -462,8 +462,8 @@ impl SynergyMatrix {
 
     /// Check if diagonal values are all 1.0 within tolerance.
     pub fn has_unit_diagonal(&self, tolerance: f32) -> bool {
-        for i in 0..SYNERGY_DIM {
-            if (self.values[i][i] - 1.0).abs() > tolerance {
+        for (i, row) in self.values.iter().enumerate() {
+            if (row[i] - 1.0).abs() > tolerance {
                 return false;
             }
         }
@@ -583,9 +583,9 @@ impl SynergyMatrix {
         let mut sum = 0.0f32;
         let mut count = 0;
 
-        for i in 0..SYNERGY_DIM {
-            for j in (i + 1)..SYNERGY_DIM {
-                sum += self.values[i][j];
+        for (i, row) in self.values.iter().enumerate() {
+            for &value in row.iter().skip(i + 1) {
+                sum += value;
                 count += 1;
             }
         }
@@ -600,9 +600,9 @@ impl SynergyMatrix {
     /// Get indices of high synergy pairs (value >= threshold).
     pub fn high_synergy_pairs(&self, threshold: f32) -> Vec<(usize, usize)> {
         let mut pairs = Vec::new();
-        for i in 0..SYNERGY_DIM {
-            for j in (i + 1)..SYNERGY_DIM {
-                if self.values[i][j] >= threshold {
+        for (i, row) in self.values.iter().enumerate() {
+            for (j, &value) in row.iter().enumerate().skip(i + 1) {
+                if value >= threshold {
                     pairs.push((i, j));
                 }
             }
@@ -618,9 +618,9 @@ impl SynergyMatrix {
         let mut result = [0.0f32; CROSS_CORRELATION_COUNT];
         let mut idx = 0;
 
-        for i in 0..SYNERGY_DIM {
-            for j in (i + 1)..SYNERGY_DIM {
-                result[idx] = self.values[i][j];
+        for (i, row) in self.values.iter().enumerate() {
+            for &value in row.iter().skip(i + 1) {
+                result[idx] = value;
                 idx += 1;
             }
         }

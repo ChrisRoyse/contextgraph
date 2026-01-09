@@ -230,7 +230,7 @@ impl Handlers {
         let mut worst_space = 0usize;
         let mut worst_accuracy = 1.0f32;
         let mut spaces_above_target = 0usize;
-        let spaces_below_target;
+        
 
         for &idx in &embedder_indices {
             let current_weight = tracker.current_weights[idx];
@@ -241,11 +241,7 @@ impl Handlers {
             let history_len = count.min(4);
             let mut accuracy_history = Vec::with_capacity(history_len);
             if count > 0 {
-                let start_idx = if count >= history_len {
-                    count - history_len
-                } else {
-                    0
-                };
+                let start_idx = count.saturating_sub(history_len);
                 for i in start_idx..count {
                     accuracy_history.push(tracker.embedder_accuracy[idx][i]);
                 }
@@ -287,7 +283,7 @@ impl Handlers {
             }));
         }
 
-        spaces_below_target = embedder_indices.len() - spaces_above_target;
+        let spaces_below_target = embedder_indices.len() - spaces_above_target;
 
         let overall_accuracy = if accuracy_count > 0 {
             total_accuracy / accuracy_count as f32
@@ -630,7 +626,7 @@ impl Handlers {
         });
 
         let stored_prediction = StoredPrediction {
-            created_at: Instant::now(),
+            _created_at: Instant::now(),
             prediction_type: PredictionType::Storage,
             predicted_values: predicted_values.clone(),
             fingerprint_id,
@@ -794,7 +790,7 @@ impl Handlers {
         });
 
         let stored_prediction = StoredPrediction {
-            created_at: Instant::now(),
+            _created_at: Instant::now(),
             prediction_type: PredictionType::Retrieval,
             predicted_values: predicted_values.clone(),
             fingerprint_id: query_fingerprint_id,
@@ -999,7 +995,7 @@ impl Handlers {
             .map(|i| tracker.get_embedder_accuracy(i))
             .collect();
 
-        let accuracy_updated = tracker.validation_count % 100 == 0;
+        let accuracy_updated = tracker.validation_count.is_multiple_of(100);
 
         debug!(
             "meta_utl/validate_prediction: validated {} prediction {} with accuracy {}",

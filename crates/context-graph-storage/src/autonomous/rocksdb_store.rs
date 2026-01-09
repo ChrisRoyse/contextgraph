@@ -613,7 +613,7 @@ impl RocksDbAutonomousStore {
         let key = drift_history_key(point.timestamp.timestamp_millis(), &id);
         let data = Self::serialize_with_version(point)?;
 
-        self.db.put_cf(cf, &key, &data).map_err(|e| {
+        self.db.put_cf(cf, key, &data).map_err(|e| {
             AutonomousStoreError::rocksdb_op("put", CF_DRIFT_HISTORY, Some(&id.to_string()), e)
         })?;
 
@@ -695,7 +695,7 @@ impl RocksDbAutonomousStore {
         let key = goal_activity_metrics_key(&goal_id);
         let data = Self::serialize_with_version(metrics)?;
 
-        self.db.put_cf(cf, &key, &data).map_err(|e| {
+        self.db.put_cf(cf, key, &data).map_err(|e| {
             AutonomousStoreError::rocksdb_op(
                 "put",
                 CF_GOAL_ACTIVITY_METRICS,
@@ -726,7 +726,7 @@ impl RocksDbAutonomousStore {
         let cf = self.get_cf(CF_GOAL_ACTIVITY_METRICS)?;
         let key = goal_activity_metrics_key(&goal_id);
 
-        match self.db.get_cf(cf, &key) {
+        match self.db.get_cf(cf, key) {
             Ok(Some(data)) => {
                 let metrics = Self::deserialize_with_version(
                     &data,
@@ -792,7 +792,7 @@ impl RocksDbAutonomousStore {
         let key = autonomous_lineage_key(event.timestamp_ms(), &event.id);
         let data = Self::serialize_with_version(event)?;
 
-        self.db.put_cf(cf, &key, &data).map_err(|e| {
+        self.db.put_cf(cf, key, &data).map_err(|e| {
             AutonomousStoreError::rocksdb_op(
                 "put",
                 CF_AUTONOMOUS_LINEAGE,
@@ -874,7 +874,7 @@ impl RocksDbAutonomousStore {
         let key = consolidation_history_key(record.timestamp_ms(), &record.id);
         let data = Self::serialize_with_version(record)?;
 
-        self.db.put_cf(cf, &key, &data).map_err(|e| {
+        self.db.put_cf(cf, key, &data).map_err(|e| {
             AutonomousStoreError::rocksdb_op(
                 "put",
                 CF_CONSOLIDATION_HISTORY,
@@ -967,7 +967,7 @@ impl RocksDbAutonomousStore {
         let key = memory_curation_key(&memory_id);
         let data = Self::serialize_with_version(state)?;
 
-        self.db.put_cf(cf, &key, &data).map_err(|e| {
+        self.db.put_cf(cf, key, &data).map_err(|e| {
             AutonomousStoreError::rocksdb_op("put", CF_MEMORY_CURATION, Some(&memory_id.to_string()), e)
         })?;
 
@@ -997,7 +997,7 @@ impl RocksDbAutonomousStore {
         let cf = self.get_cf(CF_MEMORY_CURATION)?;
         let key = memory_curation_key(&memory_id);
 
-        match self.db.get_cf(cf, &key) {
+        match self.db.get_cf(cf, key) {
             Ok(Some(data)) => {
                 let state =
                     Self::deserialize_with_version(&data, CF_MEMORY_CURATION, &memory_id.to_string())?;

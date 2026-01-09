@@ -226,7 +226,7 @@ async fn test_rocksdb_store_roundtrip_real_data() {
     for (i, &id) in stored_ids.iter().enumerate() {
         let retrieved = store.retrieve(id).await
             .expect("Failed to retrieve")
-            .expect(&format!("Fingerprint {} not found", id));
+            .unwrap_or_else(|| panic!("Fingerprint {} not found", id));
 
         // Verify data integrity
         assert_eq!(retrieved.id, id, "ID mismatch");
@@ -401,7 +401,7 @@ async fn test_physical_persistence_across_restart() {
         for (i, &id) in test_ids.iter().enumerate() {
             let retrieved = store.retrieve(id).await
                 .expect("Retrieve failed")
-                .expect(&format!("Fingerprint {} not found after reopen", id));
+                .unwrap_or_else(|| panic!("Fingerprint {} not found after reopen", id));
 
             assert_eq!(retrieved.id, id, "ID mismatch at index {}", i);
 
@@ -542,16 +542,22 @@ async fn test_all_column_families_populated() {
     // 5. Verify all teleological CFs are accessible
     println!("[VERIFYING] All {} teleological CFs accessible...", TELEOLOGICAL_CFS.len());
     for cf_name in TELEOLOGICAL_CFS {
-        let cf = db.cf_handle(cf_name).expect(&format!("Missing CF: {}", cf_name));
-        assert!(cf as *const _ != std::ptr::null(), "CF handle should be valid");
+        let cf = db.cf_handle(cf_name).unwrap_or_else(|| panic!("Missing CF: {}", cf_name));
+        #[allow(clippy::cmp_null)]
+        {
+            assert!(cf as *const _ != std::ptr::null(), "CF handle should be valid");
+        }
         println!("  {} OK", cf_name);
     }
 
     // 6. Verify all quantized embedder CFs are accessible
     println!("[VERIFYING] All {} quantized embedder CFs accessible...", QUANTIZED_EMBEDDER_CFS.len());
     for cf_name in QUANTIZED_EMBEDDER_CFS {
-        let cf = db.cf_handle(cf_name).expect(&format!("Missing CF: {}", cf_name));
-        assert!(cf as *const _ != std::ptr::null(), "CF handle should be valid");
+        let cf = db.cf_handle(cf_name).unwrap_or_else(|| panic!("Missing CF: {}", cf_name));
+        #[allow(clippy::cmp_null)]
+        {
+            assert!(cf as *const _ != std::ptr::null(), "CF handle should be valid");
+        }
         println!("  {} OK", cf_name);
     }
 
@@ -621,7 +627,7 @@ async fn test_batch_store_retrieve_performance() {
 
     // Verify data integrity on sample
     for (i, opt) in retrieved.iter().enumerate().take(10) {
-        let fp = opt.as_ref().expect(&format!("Fingerprint {} missing", i));
+        let fp = opt.as_ref().unwrap_or_else(|| panic!("Fingerprint {} missing", i));
         assert_eq!(fp.semantic.e1_semantic.len(), 1024, "E1 dimension mismatch");
     }
 

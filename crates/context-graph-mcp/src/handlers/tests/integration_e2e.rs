@@ -61,6 +61,7 @@ struct TestContext {
     handlers: Handlers,
     store: Arc<InMemoryTeleologicalStore>,
     hierarchy: Arc<RwLock<GoalHierarchy>>,
+    #[allow(dead_code)]
     johari_manager: Arc<dyn JohariTransitionManager>,
     meta_utl_tracker: Arc<RwLock<MetaUtlTracker>>,
 }
@@ -414,7 +415,7 @@ async fn test_fsv_complete_memory_lifecycle() {
     println!("EVIDENCE OF SUCCESS - Memory Lifecycle Verification");
     println!("======================================================================");
     println!("Source of Truth: InMemoryTeleologicalStore (DashMap<Uuid, TeleologicalFingerprint>)");
-    println!("");
+    println!();
     println!("Operations Verified:");
     println!("  1. memory/store: Created fingerprint {}", fingerprint_id);
     println!("  2. Direct store.retrieve() confirmed existence");
@@ -422,7 +423,7 @@ async fn test_fsv_complete_memory_lifecycle() {
     println!("  4. search/multi: Found fingerprint in search");
     println!("  5. memory/delete: Removed fingerprint");
     println!("  6. Direct store.retrieve() confirmed deletion");
-    println!("");
+    println!();
     println!("Physical Evidence:");
     println!("  - Initial count: 0 → After store: 1 → After delete: 0");
     println!("  - Content hash: 32 bytes (SHA-256 verified)");
@@ -587,7 +588,7 @@ async fn test_fsv_multi_embedding_search_comprehensive() {
     println!("EVIDENCE OF SUCCESS - Multi-Embedding Search Verification");
     println!("======================================================================");
     println!("Source of Truth: InMemoryTeleologicalStore with {} fingerprints", count);
-    println!("");
+    println!();
     println!("Search Operations Verified:");
     println!("  1. semantic_search: Found results with 13 per-embedder scores");
     println!("  2. custom weights (13): Correctly weighted search");
@@ -735,7 +736,7 @@ async fn test_fsv_purpose_alignment_with_hierarchy() {
     println!("EVIDENCE OF SUCCESS - Purpose Alignment Verification");
     println!("======================================================================");
     println!("Source of Truth: GoalHierarchy + InMemoryTeleologicalStore");
-    println!("");
+    println!();
     println!("Operations Verified:");
     println!("  1. Goal hierarchy: 5 goals (1 NS + 2 S + 1 T + 1 I)");
     println!("  2. North Star alignment: Returns METHOD_NOT_FOUND (deprecated per TASK-CORE-001)");
@@ -896,13 +897,13 @@ async fn test_fsv_johari_quadrant_operations() {
     println!("EVIDENCE OF SUCCESS - Johari Quadrant Verification");
     println!("======================================================================");
     println!("Source of Truth: InMemoryTeleologicalStore");
-    println!("");
+    println!();
     println!("Operations Verified:");
     println!("  1. get_distribution: 13 embedder quadrants returned");
     println!("  2. transition: E7 Unknown -> Open (persisted)");
     println!("  3. transition_batch: E8, E9 Unknown -> Hidden (persisted)");
     println!("  4. cross_space_analysis: {} blind spots, {} opportunities", blind_spots, opportunities);
-    println!("");
+    println!();
     println!("Physical Evidence:");
     println!("  - Memory ID: {}", memory_id);
     println!("  - All transitions verified in store via retrieve()");
@@ -1080,13 +1081,13 @@ async fn test_fsv_meta_utl_prediction_validation_cycle() {
     println!("EVIDENCE OF SUCCESS - Meta-UTL Verification");
     println!("======================================================================");
     println!("Source of Truth: MetaUtlTracker");
-    println!("");
+    println!();
     println!("Operations Verified:");
     println!("  1. learning_trajectory: 13 embedder trajectories");
     println!("  2. predict_storage: Prediction stored in tracker");
     println!("  3. validate_prediction: Prediction removed, count incremented");
     println!("  4. health_metrics: Correctly fails with StubSystemMonitor (TASK-EMB-024)");
-    println!("");
+    println!();
     println!("Physical Evidence:");
     println!("  - Prediction ID: {}", prediction_id);
     println!("  - Validation count increased: {} -> {}",
@@ -1135,7 +1136,7 @@ async fn test_fsv_cross_handler_integration() {
     let fp_uuid = Uuid::parse_str(&fingerprint_id).unwrap();
 
     // Verify in store
-    let stored = ctx.store.retrieve(fp_uuid).await.unwrap().expect("MUST exist");
+    let _stored = ctx.store.retrieve(fp_uuid).await.unwrap().expect("MUST exist");
     println!("   - Created: {} (verified in store)", fingerprint_id);
 
     // =========================================================================
@@ -1596,7 +1597,7 @@ mod real_embedding_integration_tests {
             for (i, dim) in pv.iter().enumerate() {
                 if let Some(val) = dim.as_f64() {
                     assert!(
-                        val >= -1.0 && val <= 1.0,
+                        (-1.0..=1.0).contains(&val),
                         "PV[{}] should be in [-1, 1]: {}",
                         i, val
                     );
@@ -1792,7 +1793,7 @@ mod real_embedding_integration_tests {
                 println!("  [{}] {}: {:.4}", i, name, val);
                 // Verify each dimension is in valid range [-1, 1]
                 assert!(
-                    val >= -1.0 && val <= 1.0,
+                    (-1.0..=1.0).contains(&val),
                     "PV dimension {} ({}) should be in [-1, 1]: {}",
                     i, name, val
                 );
@@ -1822,7 +1823,7 @@ mod real_embedding_integration_tests {
             let alignment = results[0].get("alignment_score").and_then(|v| v.as_f64()).unwrap_or(0.0);
             println!("\nTop alignment score: {:.4}", alignment);
             assert!(
-                alignment >= -1.0 && alignment <= 1.0,
+                (-1.0..=1.0).contains(&alignment),
                 "Alignment should be in [-1, 1]"
             );
         }

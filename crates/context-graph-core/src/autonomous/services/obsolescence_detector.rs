@@ -317,7 +317,7 @@ mod tests {
         // Exactly at threshold should not trigger (need to exceed)
         let at_threshold = (Utc::now() - Duration::days(60)).timestamp() as u64;
         // This is at the boundary, not exceeding
-        let result = detector.detect_inactivity(at_threshold, 60);
+        let _result = detector.detect_inactivity(at_threshold, 60);
         // Due to timing, this may be at or just past boundary
         // The important thing is just past triggers, just before does not
         let just_before = (Utc::now() - Duration::days(59)).timestamp() as u64;

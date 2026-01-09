@@ -11,7 +11,7 @@ use crate::warm::error::{WarmError, WarmResult};
 
 use super::allocation::VramAllocation;
 use super::allocator::WarmCudaAllocator;
-use super::constants::{FAKE_ALLOCATION_BASE_PATTERN, GB, MAX_ALLOCATION_HISTORY};
+use super::constants::{FAKE_ALLOCATION_BASE_PATTERN, MAX_ALLOCATION_HISTORY};
 use super::gpu_info::GpuInfo;
 use super::helpers::format_bytes;
 

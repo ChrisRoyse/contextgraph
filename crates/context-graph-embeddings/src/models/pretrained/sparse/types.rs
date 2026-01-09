@@ -17,6 +17,7 @@ use super::projection::ProjectionMatrix;
 pub const SPARSE_VOCAB_SIZE: usize = 30522;
 
 /// Hidden size for SPLADE's BERT backbone.
+#[allow(dead_code)]
 pub const SPARSE_HIDDEN_SIZE: usize = 768;
 
 /// Maximum tokens for SPLADE model.

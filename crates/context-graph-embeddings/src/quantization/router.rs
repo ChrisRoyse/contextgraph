@@ -23,7 +23,7 @@
 use super::binary::BinaryQuantizationError;
 use super::float8::{Float8E4M3Encoder, Float8QuantizationError};
 use super::pq8::{PQ8Encoder, PQ8QuantizationError};
-use super::types::{BinaryEncoder, QuantizationMetadata, QuantizationMethod, QuantizedEmbedding};
+use super::types::{BinaryEncoder, QuantizationMethod, QuantizedEmbedding};
 use crate::error::EmbeddingError;
 use crate::types::ModelId;
 use std::collections::HashMap;
@@ -259,7 +259,7 @@ impl QuantizationRouter {
         match method {
             QuantizationMethod::Binary => {
                 // Binary: ceil(dim / 8) bytes
-                (original_dim + 7) / 8
+                original_dim.div_ceil(8)
             }
             QuantizationMethod::Float8E4M3 => {
                 // Float8: 1 byte per element
@@ -475,6 +475,7 @@ impl QuantizationRouter {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use super::super::types::QuantizationMetadata;
 
     // =========================================================================
     // Router initialization tests

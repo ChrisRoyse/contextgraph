@@ -31,18 +31,6 @@ impl Domain {
         }
     }
 
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "code" => Some(Domain::Code),
-            "medical" => Some(Domain::Medical),
-            "legal" => Some(Domain::Legal),
-            "creative" => Some(Domain::Creative),
-            "research" => Some(Domain::Research),
-            "general" => Some(Domain::General),
-            _ => None,
-        }
-    }
-
     /// Get description from constitution
     pub fn description(&self) -> &str {
         match self {
@@ -76,6 +64,22 @@ impl Domain {
             Domain::Creative => Domain::Research,
             Domain::Research => Domain::General,
             Domain::General => Domain::General,
+        }
+    }
+}
+
+impl std::str::FromStr for Domain {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "code" => Ok(Domain::Code),
+            "medical" => Ok(Domain::Medical),
+            "legal" => Ok(Domain::Legal),
+            "creative" => Ok(Domain::Creative),
+            "research" => Ok(Domain::Research),
+            "general" => Ok(Domain::General),
+            _ => Err(()),
         }
     }
 }
@@ -166,6 +170,12 @@ impl DomainThresholds {
 #[derive(Debug)]
 pub struct DomainManager {
     thresholds: HashMap<Domain, DomainThresholds>,
+}
+
+impl Default for DomainManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl DomainManager {

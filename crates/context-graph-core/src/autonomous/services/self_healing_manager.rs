@@ -115,9 +115,10 @@ impl SystemHealthState {
 }
 
 /// System operational status for self-healing
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SystemOperationalStatus {
     /// System is running normally
+    #[default]
     Running,
     /// System is paused
     Paused,
@@ -127,12 +128,6 @@ pub enum SystemOperationalStatus {
     Failed,
     /// System is recovering from a failure
     Recovering,
-}
-
-impl Default for SystemOperationalStatus {
-    fn default() -> Self {
-        Self::Running
-    }
 }
 
 /// Severity level for health issues

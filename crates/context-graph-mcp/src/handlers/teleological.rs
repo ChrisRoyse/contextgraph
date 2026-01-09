@@ -122,6 +122,7 @@ pub struct ComputeTeleologicalVectorParams {
     #[serde(default)]
     pub compute_tucker: bool,
     /// Profile ID for weighted computation (optional)
+    #[allow(dead_code)]
     pub profile_id: Option<String>,
 }
 
@@ -133,8 +134,10 @@ pub struct FuseEmbeddingsParams {
     /// 13D alignment scores for purpose vector
     pub alignments: Option<[f32; 13]>,
     /// Profile ID for fusion weights (optional)
+    #[allow(dead_code)]
     pub profile_id: Option<String>,
     /// Custom synergy matrix (optional, uses default if omitted)
+    #[allow(dead_code)]
     pub synergy_matrix: Option<SynergyMatrixJson>,
     /// Fusion method (default: "weighted_average")
     #[serde(default = "default_fusion_method")]

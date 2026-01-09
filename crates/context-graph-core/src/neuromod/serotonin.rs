@@ -117,8 +117,8 @@ impl SerotoninModulator {
     pub fn get_all_space_weights(&self) -> [f32; NUM_EMBEDDING_SPACES] {
         let scaling = 0.5 + 0.5 * self.level.value;
         let mut weights = [0.0; NUM_EMBEDDING_SPACES];
-        for i in 0..NUM_EMBEDDING_SPACES {
-            weights[i] = self.level.space_weights[i] * scaling;
+        for (i, weight) in weights.iter_mut().enumerate() {
+            *weight = self.level.space_weights[i] * scaling;
         }
         weights
     }

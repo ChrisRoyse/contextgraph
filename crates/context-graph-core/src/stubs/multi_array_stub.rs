@@ -219,7 +219,7 @@ impl StubMultiArrayProvider {
     fn generate_token_embeddings(content: &str) -> Vec<Vec<f32>> {
         let base = Self::content_hash(content);
         // Generate ~1 token per 5 characters, minimum 1
-        let num_tokens = ((content.len() / 5).max(1)).min(64);
+        let num_tokens = (content.len() / 5).clamp(1, 64);
 
         (0..num_tokens)
             .map(|token_idx| {

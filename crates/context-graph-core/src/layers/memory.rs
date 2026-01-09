@@ -1048,7 +1048,7 @@ mod tests {
         let content = MemoryContent::new("Stored content".to_string(), serde_json::json!({"test": true}))
             .with_importance(0.9);
 
-        let id = layer.store_memory(&pattern, content).unwrap();
+        let _id = layer.store_memory(&pattern, content).unwrap();
         assert_eq!(layer.memory_count(), 1);
 
         // Create input with the same pattern as embedding

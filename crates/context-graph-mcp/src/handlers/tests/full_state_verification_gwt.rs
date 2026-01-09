@@ -503,26 +503,19 @@ async fn test_get_workspace_status_returns_real_workspace_data() {
     let content = extract_tool_content(&response_json)
         .expect("Tool response must have content");
 
-    // FSV-1: is_broadcasting must be boolean
+    // FSV-1: is_broadcasting must be boolean - as_bool() already validates type
     let is_broadcasting = content["is_broadcasting"]
         .as_bool()
         .expect("is_broadcasting must be bool");
-    // Initially should not be broadcasting
-    assert!(
-        !is_broadcasting || is_broadcasting,
-        "is_broadcasting must be a boolean (got {})",
-        is_broadcasting
-    );
+    // Initially should not be broadcasting (verify we got a valid boolean value)
+    let _ = is_broadcasting; // Type is bool, validation passed via as_bool()
 
-    // FSV-2: has_conflict must be boolean
+    // FSV-2: has_conflict must be boolean - as_bool() already validates type
     let has_conflict = content["has_conflict"]
         .as_bool()
         .expect("has_conflict must be bool");
-    assert!(
-        !has_conflict || has_conflict,
-        "has_conflict must be a boolean (got {})",
-        has_conflict
-    );
+    // Verify we got a valid boolean value
+    let _ = has_conflict; // Type is bool, validation passed via as_bool()
 
     // FSV-3: coherence_threshold must be ~0.8 (constitution default)
     let coherence_threshold = content["coherence_threshold"]
@@ -834,7 +827,7 @@ async fn test_gwt_with_real_rocksdb_storage() {
         );
 
         let content = extract_tool_content(&json)
-            .expect(&format!("{} content must exist", name));
+            .unwrap_or_else(|| panic!("{} content must exist", name));
         assert!(
             !content.is_null(),
             "{} content must not be null",
@@ -1234,7 +1227,7 @@ async fn test_trigger_recalibration_performs_real_calibration() {
         );
 
         let content = extract_tool_content(&response_json)
-            .expect(&format!("trigger_recalibration level {} must return content", level));
+            .unwrap_or_else(|| panic!("trigger_recalibration level {} must return content", level));
 
         // FSV-1: Must have success flag
         let success = content["success"]
@@ -2189,7 +2182,7 @@ async fn test_rocksdb_column_families_and_gwt_integration() {
     let r = kuramoto_content["r"]
         .as_f64()
         .expect("kuramoto r must be f64");
-    assert!(r >= 0.0 && r <= 1.0, "r must be in [0, 1]");
+    assert!((0.0..=1.0).contains(&r), "r must be in [0, 1]");
     println!("✓ FSV: get_kuramoto_sync works with RocksDB (r={})", r);
 
     // PART 2: Verify workspace status works with RocksDB backend

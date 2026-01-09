@@ -14,12 +14,9 @@ use context_graph_core::purpose::{
     DefaultPurposeComputer, GoalDiscoveryMetadata, GoalHierarchy, GoalLevel, GoalNode, PurposeComputeConfig,
     PurposeVectorComputer,
 };
-use context_graph_core::traits::TeleologicalMemoryStore;
 use context_graph_core::types::fingerprint::{
     SemanticFingerprint, TeleologicalFingerprint, PurposeVector, NUM_EMBEDDERS,
 };
-use context_graph_storage::teleological::RocksDbTeleologicalStore;
-use tempfile::TempDir;
 
 /// Test that purpose vectors have correct structure (13 elements, range [-1, 1]).
 #[tokio::test]
@@ -35,7 +32,7 @@ async fn test_purpose_vector_structure() {
     // Verify all elements are in cosine range [-1, 1]
     for (i, &alignment) in pv.alignments.iter().enumerate() {
         assert!(
-            alignment >= -1.0 && alignment <= 1.0,
+            (-1.0..=1.0).contains(&alignment),
             "Alignment[{}] = {} out of range [-1, 1]",
             i,
             alignment
@@ -87,7 +84,7 @@ async fn test_purpose_computation_with_real_goal_hierarchy() {
     // Verify all values are in valid range
     for (i, &alignment) in pv.alignments.iter().enumerate() {
         assert!(
-            alignment >= -1.0 && alignment <= 1.0,
+            (-1.0..=1.0).contains(&alignment),
             "Alignment[{}] out of range: {}",
             i,
             alignment
@@ -144,7 +141,7 @@ fn test_multiple_purpose_vectors() {
         // Verify all properties are correct
         assert_eq!(fp.purpose_vector.alignments.len(), 13);
         for &alignment in &fp.purpose_vector.alignments {
-            assert!(alignment >= -1.0 && alignment <= 1.0);
+            assert!((-1.0..=1.0).contains(&alignment));
         }
     }
 
@@ -195,7 +192,7 @@ fn test_purpose_vector_alignment_ranges() {
 
         for (i, &val) in pv.alignments.iter().enumerate() {
             assert!(
-                val >= -1.0 && val <= 1.0,
+                (-1.0..=1.0).contains(&val),
                 "Test '{}': alignment[{}] = {} out of range",
                 description,
                 i,
@@ -205,7 +202,7 @@ fn test_purpose_vector_alignment_ranges() {
 
         let aggregate = pv.aggregate_alignment();
         assert!(
-            aggregate >= -1.0 && aggregate <= 1.0,
+            (-1.0..=1.0).contains(&aggregate),
             "Test '{}': aggregate {:.4} out of range",
             description,
             aggregate
@@ -251,7 +248,7 @@ async fn test_purpose_vectors_differentiate_semantics() {
 
     // Both should be valid
     for &val in pv1.alignments.iter().chain(pv2.alignments.iter()) {
-        assert!(val >= -1.0 && val <= 1.0);
+        assert!((-1.0..=1.0).contains(&val));
     }
 
     println!("[PASS] Purpose vectors correctly computed for different semantics");

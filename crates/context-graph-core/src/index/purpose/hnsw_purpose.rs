@@ -271,7 +271,7 @@ impl HnswPurposeIndex {
 
     /// Get all goals present in the index.
     pub fn goals(&self) -> Vec<GoalId> {
-        self.goal_index.keys().map(|s| GoalId::new(s)).collect()
+        self.goal_index.keys().map(GoalId::new).collect()
     }
 
     /// Update secondary indexes when inserting an entry.
@@ -643,8 +643,8 @@ mod tests {
     /// Create a purpose vector with deterministic values.
     fn create_purpose_vector(base: f32, variation: f32) -> PurposeVector {
         let mut alignments = [0.0f32; PURPOSE_VECTOR_DIM];
-        for i in 0..PURPOSE_VECTOR_DIM {
-            alignments[i] = (base + (i as f32 * variation)).clamp(0.0, 1.0);
+        for (i, alignment) in alignments.iter_mut().enumerate() {
+            *alignment = (base + (i as f32 * variation)).clamp(0.0, 1.0);
         }
         PurposeVector::new(alignments)
     }

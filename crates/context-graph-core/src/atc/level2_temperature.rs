@@ -173,6 +173,12 @@ pub struct TemperatureScaler {
     last_calibration: DateTime<Utc>,
 }
 
+impl Default for TemperatureScaler {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TemperatureScaler {
     /// Create new temperature scaler with all embedders
     pub fn new() -> Self {
@@ -296,7 +302,7 @@ mod tests {
 
         // Scale a confidence value
         let scaled = scaler.scale(Embedder::Causal, 0.8);
-        assert!(scaled >= 0.0 && scaled <= 1.0);
+        assert!((0.0..=1.0).contains(&scaled));
     }
 
     #[test]

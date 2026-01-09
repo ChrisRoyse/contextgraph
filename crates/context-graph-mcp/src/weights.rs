@@ -165,7 +165,7 @@ pub fn get_profile_names() -> Vec<&'static str> {
 pub fn validate_weights(weights: &[f32; NUM_EMBEDDERS]) -> Result<(), WeightValidationError> {
     // Check each weight is in range
     for (i, &w) in weights.iter().enumerate() {
-        if w < 0.0 || w > 1.0 {
+        if !(0.0..=1.0).contains(&w) {
             return Err(WeightValidationError::OutOfRange {
                 space_index: i,
                 space_name: space_name(i),

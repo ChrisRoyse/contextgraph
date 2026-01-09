@@ -257,7 +257,7 @@ async fn test_fuse_embeddings_basic() {
 
     // Verify confidence in valid range
     let confidence = parsed["confidence"].as_f64().expect("confidence");
-    assert!(confidence >= 0.0 && confidence <= 1.0, "Confidence should be [0,1]");
+    assert!((0.0..=1.0).contains(&confidence), "Confidence should be [0,1]");
 }
 
 #[tokio::test]
@@ -322,7 +322,7 @@ async fn test_fuse_embeddings_wrong_count_fails() {
 
     // Should fail with error
     let result = response.result.expect("Result");
-    let content = result["content"].as_array().expect("content");
+    let _content = result["content"].as_array().expect("content");
     let is_error = result.get("isError").and_then(|v| v.as_bool()).unwrap_or(false);
 
     assert!(is_error, "Should return error for wrong embedding count");

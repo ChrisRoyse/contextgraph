@@ -20,9 +20,10 @@ pub use super::config::EmbedderIndex;
 /// - `Healthy`: Index operating normally, all operations available
 /// - `Failed`: Index corrupted or inconsistent, must rebuild
 /// - `Rebuilding`: Index being reconstructed, read operations may return stale data
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum IndexHealth {
     /// Index is operating normally
+    #[default]
     Healthy,
     /// Index has failed and must be rebuilt
     Failed,
@@ -41,12 +42,6 @@ impl IndexHealth {
     #[inline]
     pub fn can_write(&self) -> bool {
         matches!(self, Self::Healthy)
-    }
-}
-
-impl Default for IndexHealth {
-    fn default() -> Self {
-        Self::Healthy
     }
 }
 

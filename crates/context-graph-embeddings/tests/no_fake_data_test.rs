@@ -441,7 +441,7 @@ fn test_missing_embedder_panics() {
     embeddings.remove(&5); // Remove one embedder
 
     // This MUST panic
-    StoredQuantizedFingerprint::new(
+    let _ = StoredQuantizedFingerprint::new(
         Uuid::new_v4(),
         embeddings,
         [0.5f32; 13],
@@ -467,7 +467,7 @@ fn test_invalid_embedder_index_panics() {
     });
 
     // This MUST panic
-    StoredQuantizedFingerprint::new(
+    let _ = StoredQuantizedFingerprint::new(
         Uuid::new_v4(),
         embeddings,
         [0.5f32; 13],

@@ -32,7 +32,7 @@ use context_graph_storage::teleological::{
     deserialize_e1_matryoshka_128, deserialize_purpose_vector,
     deserialize_teleological_fingerprint, e1_matryoshka_128_key, fingerprint_key,
     purpose_vector_key, RocksDbTeleologicalStore,
-    CF_E1_MATRYOSHKA_128, CF_E13_SPLADE_INVERTED,
+    CF_E1_MATRYOSHKA_128,
     CF_FINGERPRINTS, CF_PURPOSE_VECTORS, QUANTIZED_EMBEDDER_CFS, TELEOLOGICAL_CFS,
 };
 use chrono::Utc;
@@ -498,9 +498,9 @@ async fn test_edge_case_concurrent_access() {
             for i in 0..writes_per_task {
                 let id = Uuid::new_v4();
                 let fingerprint = generate_real_teleological_fingerprint(id);
-                store.store(fingerprint).await.expect(&format!(
-                    "Task {} write {} failed", task_id, i
-                ));
+                store.store(fingerprint).await.unwrap_or_else(|e| {
+                    panic!("Task {} write {} failed: {:?}", task_id, i, e)
+                });
                 ids.push(id);
             }
             ids
@@ -548,7 +548,7 @@ async fn test_update_delete_physical_verification() {
     let mut fingerprint = generate_real_teleological_fingerprint(id);
 
     // Initial store
-    let original_alignments = fingerprint.purpose_vector.alignments.clone();
+    let original_alignments = fingerprint.purpose_vector.alignments;
     store.store(fingerprint.clone()).await.expect("Initial store failed");
 
     println!("[1] Initial store:");
@@ -712,7 +712,7 @@ async fn test_persistence_across_reopen() {
 
     let id = Uuid::new_v4();
     let fingerprint = generate_real_teleological_fingerprint(id);
-    let original_alignments = fingerprint.purpose_vector.alignments.clone();
+    let original_alignments = fingerprint.purpose_vector.alignments;
 
     // First session: store data
     {

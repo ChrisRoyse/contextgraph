@@ -365,7 +365,7 @@ impl Handlers {
                     "within_latency_target": query_latency_ms < 60
                 });
 
-                let mut response = json!({
+                let response = json!({
                     "results": results_json,
                     "count": results_json.len(),
                     "query_metadata": metadata

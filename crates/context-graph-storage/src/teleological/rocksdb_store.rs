@@ -361,13 +361,13 @@ impl RocksDbTeleologicalStore {
         // 1. Store full fingerprint
         let cf_fingerprints = self.get_cf(CF_FINGERPRINTS)?;
         let serialized = serialize_teleological_fingerprint(fp);
-        batch.put_cf(cf_fingerprints, &key, &serialized);
+        batch.put_cf(cf_fingerprints, key, &serialized);
 
         // 2. Store purpose vector
         let cf_purpose = self.get_cf(CF_PURPOSE_VECTORS)?;
         let purpose_key = purpose_vector_key(&id);
         let purpose_bytes = serialize_purpose_vector(&fp.purpose_vector.alignments);
-        batch.put_cf(cf_purpose, &purpose_key, &purpose_bytes);
+        batch.put_cf(cf_purpose, purpose_key, purpose_bytes);
 
         // 3. Store E1 Matryoshka 128D truncated vector
         let cf_matryoshka = self.get_cf(CF_E1_MATRYOSHKA_128)?;
@@ -378,7 +378,7 @@ impl RocksDbTeleologicalStore {
         let copy_len = std::cmp::min(e1.len(), 128);
         truncated[..copy_len].copy_from_slice(&e1[..copy_len]);
         let matryoshka_bytes = serialize_e1_matryoshka_128(&truncated);
-        batch.put_cf(cf_matryoshka, &matryoshka_key, &matryoshka_bytes);
+        batch.put_cf(cf_matryoshka, matryoshka_key, matryoshka_bytes);
 
         // 4. Update E13 SPLADE inverted index
         // For each active term in the E13 sparse vector, add this fingerprint's ID to the posting list
@@ -415,7 +415,7 @@ impl RocksDbTeleologicalStore {
             // Read existing posting list
             let existing = self
                 .db
-                .get_cf(cf_inverted, &term_key)
+                .get_cf(cf_inverted, term_key)
                 .map_err(|e| {
                     TeleologicalStoreError::rocksdb_op(
                         "get",
@@ -434,7 +434,7 @@ impl RocksDbTeleologicalStore {
             if !ids.contains(id) {
                 ids.push(*id);
                 let serialized = serialize_memory_id_list(&ids);
-                batch.put_cf(cf_inverted, &term_key, &serialized);
+                batch.put_cf(cf_inverted, term_key, &serialized);
             }
         }
 
@@ -453,7 +453,7 @@ impl RocksDbTeleologicalStore {
         for &term_id in &sparse.indices {
             let term_key = e13_splade_inverted_key(term_id);
 
-            let existing = self.db.get_cf(cf_inverted, &term_key).map_err(|e| {
+            let existing = self.db.get_cf(cf_inverted, term_key).map_err(|e| {
                 TeleologicalStoreError::rocksdb_op("get", CF_E13_SPLADE_INVERTED, None, e)
             })?;
 
@@ -462,10 +462,10 @@ impl RocksDbTeleologicalStore {
                 ids.retain(|&i| i != *id);
 
                 if ids.is_empty() {
-                    batch.delete_cf(cf_inverted, &term_key);
+                    batch.delete_cf(cf_inverted, term_key);
                 } else {
                     let serialized = serialize_memory_id_list(&ids);
-                    batch.put_cf(cf_inverted, &term_key, &serialized);
+                    batch.put_cf(cf_inverted, term_key, &serialized);
                 }
             }
         }
@@ -598,7 +598,7 @@ impl RocksDbTeleologicalStore {
         let key = fingerprint_key(&id);
 
         self.db
-            .get_cf(cf, &key)
+            .get_cf(cf, key)
             .map_err(|e| TeleologicalStoreError::rocksdb_op("get", CF_FINGERPRINTS, Some(id), e))
     }
 
@@ -762,15 +762,15 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
 
             // Remove from fingerprints
             let cf_fp = self.get_cf(CF_FINGERPRINTS)?;
-            batch.delete_cf(cf_fp, &key);
+            batch.delete_cf(cf_fp, key);
 
             // Remove from purpose_vectors
             let cf_pv = self.get_cf(CF_PURPOSE_VECTORS)?;
-            batch.delete_cf(cf_pv, &purpose_vector_key(&id));
+            batch.delete_cf(cf_pv, purpose_vector_key(&id));
 
             // Remove from e1_matryoshka_128
             let cf_mat = self.get_cf(CF_E1_MATRYOSHKA_128)?;
-            batch.delete_cf(cf_mat, &e1_matryoshka_128_key(&id));
+            batch.delete_cf(cf_mat, e1_matryoshka_128_key(&id));
 
             // Remove from inverted index
             self.remove_from_splade_inverted_index(&mut batch, &id, &old_fp.semantic.e13_splade)?;
@@ -979,7 +979,7 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
             let term_key = e13_splade_inverted_key(term_id);
             let query_weight = sparse_query.values[i];
 
-            if let Some(data) = self.db.get_cf(cf, &term_key).map_err(|e| {
+            if let Some(data) = self.db.get_cf(cf, term_key).map_err(|e| {
                 TeleologicalStoreError::rocksdb_op("get", CF_E13_SPLADE_INVERTED, None, e)
             })? {
                 let doc_ids = deserialize_memory_id_list(&data);

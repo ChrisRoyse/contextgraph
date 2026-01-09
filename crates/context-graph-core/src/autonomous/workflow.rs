@@ -253,20 +253,15 @@ impl OptimizationEvent {
 }
 
 /// Autonomous system health status
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 pub enum AutonomousHealth {
     /// System is operating normally
+    #[default]
     Healthy,
     /// System has warnings but is operational
     Warning { message: String },
     /// System has errors
     Error { message: String, recoverable: bool },
-}
-
-impl Default for AutonomousHealth {
-    fn default() -> Self {
-        Self::Healthy
-    }
 }
 
 impl AutonomousHealth {

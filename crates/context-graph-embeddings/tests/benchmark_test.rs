@@ -26,7 +26,7 @@ use context_graph_embeddings::types::dimensions::{
 };
 use context_graph_embeddings::types::ModelId;
 use std::collections::HashMap;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use uuid::Uuid;
 
 // =============================================================================
@@ -179,7 +179,7 @@ fn test_memory_estimates_reasonable() {
     // Each model should fit within a few GB
 
     let max_single_model_vram_gb = 4.0; // No single model should exceed 4GB
-    let min_single_model_vram_mb = 100.0; // Each model should be at least 100MB
+    let _min_single_model_vram_mb = 100.0; // Each model should be at least 100MB
 
     // Check dimension-based estimate (rough: dim * 4 bytes * batch_overhead)
     for i in 0..MODEL_COUNT {
@@ -198,7 +198,7 @@ fn test_memory_estimates_reasonable() {
 fn test_total_vram_estimate() {
     // Constitution: stack.gpu.total_vram = 32GB
     // All 13 models should fit within 28GB (leave 4GB for ops)
-    let max_total_vram_gb = 28.0;
+    let _max_total_vram_gb = 28.0;
 
     // Rough estimate: sum of dimensions * 4 bytes * overhead
     let dim_sum: usize = PROJECTED_DIMENSIONS.iter().sum();

@@ -438,7 +438,7 @@ mod serialization_roundtrip_tests {
         let original = EmbedderQueryResult::from_similarity(
             Uuid::new_v4(),
             5,
-            0.87654321,
+            0.876_543_2,
             42,
         );
 
@@ -583,7 +583,7 @@ mod index_entry_tests {
             let sim = entry.cosine_similarity(&v2);
 
             assert!(
-                sim >= -1.0 - EPSILON && sim <= 1.0 + EPSILON,
+                (-1.0 - EPSILON..=1.0 + EPSILON).contains(&sim),
                 "Cosine similarity {} out of range [-1, 1] with epsilon tolerance",
                 sim
             );

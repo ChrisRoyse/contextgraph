@@ -218,7 +218,7 @@ impl CalibrationComputer {
             let bin_idx = (pred.confidence * self.num_bins as f32).floor() as u32;
             let bin_idx = bin_idx.min(self.num_bins as u32 - 1);
             bins.entry(bin_idx)
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(*pred);
         }
 

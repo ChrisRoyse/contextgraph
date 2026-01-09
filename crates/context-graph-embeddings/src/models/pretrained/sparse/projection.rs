@@ -58,6 +58,7 @@ pub struct ProjectionMatrix {
     weight_checksum: [u8; 32],
 }
 
+#[allow(dead_code)]
 impl ProjectionMatrix {
     /// Expected weight matrix shape: [vocab_size, projected_dim]
     /// Shape: [30522, 1536] per Constitution E6_Sparse
@@ -659,6 +660,7 @@ pub enum ProjectionError {
   Actual checksum: {actual}
   File: {path}
   Remediation: Re-download weight file from trusted source")]
+    #[allow(dead_code)]
     ChecksumMismatch {
         path: PathBuf,
         expected: String,
@@ -687,6 +689,7 @@ pub enum ProjectionError {
     /// Projection weights not loaded (must call load() first).
     #[error("[EMB-E008] NOT_INITIALIZED: Projection weights not loaded
   Remediation: Call ProjectionMatrix::load() before calling project()")]
+    #[allow(dead_code)]
     NotInitialized,
 }
 
@@ -923,7 +926,6 @@ mod tests {
     /// - Actual dimensions are reported correctly
     #[test]
     fn test_load_wrong_shape() {
-        use safetensors::serialize;
         use std::collections::HashMap;
 
         println!("\n========================================");

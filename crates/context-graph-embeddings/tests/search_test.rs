@@ -98,11 +98,9 @@ fn test_rrf_constant_value() {
 #[test]
 fn test_rrf_sum_multiple_ranks() {
     // Document appears at ranks 0, 5, 15 across 3 embedders
-    let results = vec![
-        EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.90, 0),
+    let results = [EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.90, 0),
         EmbedderQueryResult::from_similarity(Uuid::new_v4(), 1, 0.85, 5),
-        EmbedderQueryResult::from_similarity(Uuid::new_v4(), 2, 0.70, 15),
-    ];
+        EmbedderQueryResult::from_similarity(Uuid::new_v4(), 2, 0.70, 15)];
 
     let total_rrf: f32 = results.iter().map(|r| r.rrf_contribution()).sum();
     let expected = 1.0/60.0 + 1.0/65.0 + 1.0/75.0;
@@ -576,7 +574,7 @@ fn test_panic_empty_results() {
     let empty: Vec<EmbedderQueryResult> = vec![];
 
     // This must panic with "AGGREGATION ERROR"
-    MultiSpaceQueryResult::from_embedder_results(id, &empty, 0.75);
+    let _ = MultiSpaceQueryResult::from_embedder_results(id, &empty, 0.75);
 }
 
 // =============================================================================
@@ -677,7 +675,7 @@ fn test_simulated_search_flow() {
         }
 
         // E7 (Code) - appears for different subset
-        if doc_rank >= 5 && doc_rank < 18 {
+        if (5..18).contains(&doc_rank) {
             doc_results.push(EmbedderQueryResult::from_similarity(
                 *doc_id, 6, 0.75 - (doc_rank - 5) as f32 * 0.02, doc_rank - 5
             ));

@@ -868,7 +868,7 @@ async fn test_rocksdb_integration_crud_cycle() {
 
     // Verify all 13 purpose values are valid floats in [0, 1]
     for (i, val) in pv.iter().enumerate() {
-        let f = val.as_f64().expect(&format!("purposeVector[{}] must be float", i));
+        let f = val.as_f64().unwrap_or_else(|| panic!("purposeVector[{}] must be float", i));
         assert!(
             (0.0..=1.0).contains(&f),
             "purposeVector[{}] must be in [0, 1], got: {}",
@@ -1308,7 +1308,7 @@ mod real_embedding_tests {
 
         // Verify each purpose dimension is in valid range [-1, 1]
         for (i, dim) in pv.iter().enumerate() {
-            let value = dim.as_f64().expect(&format!("PV[{}] must be f64", i));
+            let value = dim.as_f64().unwrap_or_else(|| panic!("PV[{}] must be f64", i));
             assert!(
                 (-1.0..=1.0).contains(&value),
                 "PV[{}] must be in [-1, 1], got {}",
@@ -1387,7 +1387,7 @@ mod real_embedding_tests {
             let sim = result.get("similarity").and_then(|v| v.as_f64());
             if let Some(s) = sim {
                 assert!(
-                    s >= 0.0 && s <= 1.0,
+                    (0.0..=1.0).contains(&s),
                     "Similarity[{}] must be in [0, 1], got {}",
                     i, s
                 );

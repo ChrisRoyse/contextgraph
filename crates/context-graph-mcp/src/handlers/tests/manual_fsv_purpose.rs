@@ -118,20 +118,21 @@ async fn manual_fsv_purpose_handlers() {
     assert_eq!(initial_store_count, 0, "Store should be empty initially");
 
     // Direct query to GoalHierarchy
-    let hierarchy_read = hierarchy.read();
-    let initial_goal_count = hierarchy_read.len();
-    let has_north_star = hierarchy_read.has_north_star();
-    let north_star = hierarchy_read.north_star();
+    // Extract all needed data in a block to ensure guard is dropped before any await calls
+    let (initial_goal_count, has_north_star, north_star_info) = {
+        let hierarchy_read = hierarchy.read();
+        let ns_info = hierarchy_read.north_star().map(|ns| (ns.id, ns.description.clone()));
+        (hierarchy_read.len(), hierarchy_read.has_north_star(), ns_info)
+    }; // guard dropped here
     println!();
     println!("🎯 GoalHierarchy (Source of Truth #2):");
     println!("   ├─ Type: HashMap<GoalId, GoalNode>");
     println!("   ├─ Goal count: {}", initial_goal_count);
     println!("   ├─ Has North Star: {}", has_north_star);
-    if let Some(ns) = north_star {
-        println!("   ├─ North Star ID: {}", ns.id);
-        println!("   └─ North Star description: {}", ns.description);
+    if let Some((ns_id, ns_desc)) = north_star_info {
+        println!("   ├─ North Star ID: {}", ns_id);
+        println!("   └─ North Star description: {}", ns_desc);
     }
-    drop(hierarchy_read);
 
     println!();
     println!("   ✅ VERIFIED: Initial state confirmed via direct Source of Truth queries");
@@ -246,10 +247,33 @@ async fn manual_fsv_purpose_handlers() {
     println!("   Handler returned {} goals", goals_from_handler.len());
 
     // PHYSICAL VERIFICATION: Query GoalHierarchy directly
+    // Extract all needed data in a block to ensure guard is dropped before any await calls
     println!();
     println!("🔍 PHYSICAL VERIFICATION - Querying GoalHierarchy directly:");
-    let hierarchy_read = hierarchy.read();
-    let direct_goal_count = hierarchy_read.len();
+
+    // Collect goal IDs from handler response for verification
+    let goal_ids_from_handler: Vec<(String, String, Uuid)> = goals_from_handler
+        .iter()
+        .map(|goal| {
+            let goal_id = goal.get("id").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+            let level = goal.get("level").and_then(|v| v.as_str()).unwrap_or("?").to_string();
+            let _desc = goal.get("description").and_then(|v| v.as_str()).unwrap_or("?");
+            let goal_uuid = Uuid::parse_str(&goal_id).expect("Goal ID must be valid UUID");
+            (goal_id, level, goal_uuid)
+        })
+        .collect();
+
+    // Extract data from hierarchy in a block
+    let (direct_goal_count, goal_exists_map, ns_info) = {
+        let hierarchy_read = hierarchy.read();
+        let count = hierarchy_read.len();
+        let exists_map: Vec<bool> = goal_ids_from_handler
+            .iter()
+            .map(|(_, _, uuid)| hierarchy_read.get(uuid).is_some())
+            .collect();
+        let ns = hierarchy_read.north_star().map(|ns| (ns.id, ns.description.clone()));
+        (count, exists_map, ns)
+    }; // guard dropped here
 
     println!("   ├─ hierarchy.len() = {}", direct_goal_count);
     assert_eq!(goals_from_handler.len(), direct_goal_count,
@@ -257,22 +281,14 @@ async fn manual_fsv_purpose_handlers() {
 
     // List all goals from Source of Truth
     println!("   ├─ Goals in Source of Truth:");
-    for (i, goal) in goals_from_handler.iter().enumerate() {
-        let goal_id = goal.get("id").and_then(|v| v.as_str()).unwrap_or("?");
-        let level = goal.get("level").and_then(|v| v.as_str()).unwrap_or("?");
-        let desc = goal.get("description").and_then(|v| v.as_str()).unwrap_or("?");
-
-        // Verify goal exists in hierarchy by parsing UUID from response
-        let goal_uuid = Uuid::parse_str(goal_id).expect("Goal ID must be valid UUID");
-        let exists_in_sot = hierarchy_read.get(&goal_uuid).is_some();
+    for (i, ((goal_id, level, _), exists_in_sot)) in goal_ids_from_handler.iter().zip(goal_exists_map.iter()).enumerate() {
         println!("   │   [{}] {} ({}) - exists in SoT: {}", i, goal_id, level, exists_in_sot);
-        assert!(exists_in_sot, "Goal {} must exist in Source of Truth", goal_id);
+        assert!(*exists_in_sot, "Goal {} must exist in Source of Truth", goal_id);
     }
 
     // Verify North Star specifically
-    let ns_from_sot = hierarchy_read.north_star().expect("Must have North Star");
-    println!("   └─ North Star from SoT: {} - {}", ns_from_sot.id, ns_from_sot.description);
-    drop(hierarchy_read);
+    let (ns_id, ns_desc) = ns_info.expect("Must have North Star");
+    println!("   └─ North Star from SoT: {} - {}", ns_id, ns_desc);
 
     println!();
     println!("   ✅ VERIFIED: All goals exist in Source of Truth");
@@ -325,11 +341,13 @@ async fn manual_fsv_purpose_handlers() {
     let nonexistent_uuid = Uuid::new_v4();
     let nonexistent_goal = nonexistent_uuid.to_string();
 
+    // Check if goal exists - extract data before await
+    let exists = {
+        let hierarchy_read = hierarchy.read();
+        hierarchy_read.get(&nonexistent_uuid).is_some()
+    }; // guard dropped here
     println!("📊 BEFORE STATE:");
-    let hierarchy_read = hierarchy.read();
-    let exists = hierarchy_read.get(&nonexistent_uuid).is_some();
     println!("   └─ Goal '{}' exists in SoT: {}", nonexistent_goal, exists);
-    drop(hierarchy_read);
 
     println!();
     println!("📝 Executing: goal/hierarchy_query get_goal (nonexistent)");
@@ -344,13 +362,14 @@ async fn manual_fsv_purpose_handlers() {
     println!("   ├─ Error code: {} (expected: -32020 GOAL_NOT_FOUND)", error.code);
     println!("   └─ Error message: {}", error.message);
 
-    // VERIFY: Goal still doesn't exist (no side effects)
+    // VERIFY: Goal still doesn't exist (no side effects) - extract data before next await
+    let still_not_exists = {
+        let hierarchy_read = hierarchy.read();
+        hierarchy_read.get(&nonexistent_uuid).is_none()
+    }; // guard dropped here
     println!();
     println!("📊 AFTER STATE:");
-    let hierarchy_read = hierarchy.read();
-    let still_not_exists = hierarchy_read.get(&nonexistent_uuid).is_none();
     println!("   └─ Goal '{}' still not in SoT: {}", nonexistent_goal, still_not_exists);
-    drop(hierarchy_read);
 
     assert!(still_not_exists, "Nonexistent goal should still not exist");
     assert_eq!(error.code, -32020, "Should return GOAL_NOT_FOUND");

@@ -872,8 +872,8 @@ mod tests {
         let surprise = data["surprise"].as_f64().unwrap() as f32;
         let coherence = data["coherence_w"].as_f64().unwrap() as f32;
 
-        assert!(surprise >= 0.0 && surprise <= 1.0);
-        assert!(coherence >= 0.0 && coherence <= 1.0);
+        assert!((0.0..=1.0).contains(&surprise));
+        assert!((0.0..=1.0).contains(&coherence));
         assert!(delta.abs() <= GRADIENT_CLIP);
 
         println!("[VERIFIED] Full pipeline context processed correctly");

@@ -42,9 +42,10 @@ pub enum PredictionType {
 /// TASK-S005: Stores predicted values for later validation against actual outcomes.
 #[derive(Clone, Debug)]
 pub struct StoredPrediction {
-    pub created_at: Instant,
+    pub _created_at: Instant,
     pub prediction_type: PredictionType,
     pub predicted_values: serde_json::Value,
+    #[allow(dead_code)]
     pub fingerprint_id: Uuid,
 }
 
@@ -102,6 +103,7 @@ impl MetaUtlTracker {
     }
 
     /// Get a pending prediction by ID
+    #[allow(dead_code)]
     pub fn get_prediction(&self, prediction_id: &Uuid) -> Option<&StoredPrediction> {
         self.pending_predictions.get(prediction_id)
     }
@@ -140,14 +142,14 @@ impl MetaUtlTracker {
             return None;
         }
         let count = self.accuracy_counts[embedder_index];
-        let recent_start = if count >= 10 { count - 10 } else { 0 };
+        let recent_start = count.saturating_sub(10);
         let recent_sum: f32 = self.embedder_accuracy[embedder_index][recent_start..count]
             .iter()
             .sum();
         let recent_avg = recent_sum / 10.0;
 
         let older_end = if count >= 20 { count - 10 } else { count - (count / 2) };
-        let older_start = if older_end >= 10 { older_end - 10 } else { 0 };
+        let older_start = older_end.saturating_sub(10);
         let older_sum: f32 = self.embedder_accuracy[embedder_index][older_start..older_end]
             .iter()
             .sum();
@@ -190,7 +192,7 @@ impl MetaUtlTracker {
     /// Increment validation count and check if weights need update
     pub fn record_validation(&mut self) {
         self.validation_count += 1;
-        if self.validation_count % 100 == 0 {
+        if self.validation_count.is_multiple_of(100) {
             self.update_weights();
         }
     }
@@ -311,6 +313,7 @@ impl Handlers {
     ///
     /// This constructor uses StubSystemMonitor and StubLayerStatusProvider as defaults.
     /// For production use with real metrics, use `with_full_monitoring()`.
+    #[allow(dead_code)]
     pub fn new(
         teleological_store: Arc<dyn TeleologicalMemoryStore>,
         utl_processor: Arc<dyn UtlProcessor>,
@@ -371,6 +374,7 @@ impl Handlers {
     /// # TASK-EMB-024 Note
     ///
     /// This constructor uses StubSystemMonitor and StubLayerStatusProvider as defaults.
+    #[allow(dead_code)]
     pub fn with_shared_hierarchy(
         teleological_store: Arc<dyn TeleologicalMemoryStore>,
         utl_processor: Arc<dyn UtlProcessor>,
@@ -431,6 +435,7 @@ impl Handlers {
     /// # TASK-EMB-024 Note
     ///
     /// This constructor uses StubSystemMonitor and StubLayerStatusProvider as defaults.
+    #[allow(dead_code)]
     pub fn with_johari_manager(
         teleological_store: Arc<dyn TeleologicalMemoryStore>,
         utl_processor: Arc<dyn UtlProcessor>,
@@ -482,6 +487,7 @@ impl Handlers {
     /// # TASK-EMB-024 Note
     ///
     /// This constructor uses StubSystemMonitor and StubLayerStatusProvider as defaults.
+    #[allow(dead_code)]
     pub fn with_meta_utl_tracker(
         teleological_store: Arc<dyn TeleologicalMemoryStore>,
         utl_processor: Arc<dyn UtlProcessor>,
@@ -536,6 +542,7 @@ impl Handlers {
     /// * `meta_utl_tracker` - Shared Meta-UTL tracker (TASK-S005)
     /// * `system_monitor` - Real system monitor for health metrics
     /// * `layer_status_provider` - Real layer status provider
+    #[allow(dead_code)]
     pub fn with_full_monitoring(
         teleological_store: Arc<dyn TeleologicalMemoryStore>,
         utl_processor: Arc<dyn UtlProcessor>,
@@ -596,6 +603,7 @@ impl Handlers {
     /// * `meta_cognitive` - Meta-cognitive loop provider (TASK-GWT-001)
     /// * `self_ego` - Self-ego node provider (TASK-GWT-001)
     #[allow(clippy::too_many_arguments)]
+    #[allow(dead_code)]
     pub fn with_gwt(
         teleological_store: Arc<dyn TeleologicalMemoryStore>,
         utl_processor: Arc<dyn UtlProcessor>,

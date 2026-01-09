@@ -391,7 +391,7 @@ async fn test_val_004_fuse_embeddings_uniform_fusion() {
     // Confidence must be in [0, 1]
     let confidence = parsed["confidence"].as_f64().expect("confidence");
     assert!(
-        confidence >= 0.0 && confidence <= 1.0,
+        (0.0..=1.0).contains(&confidence),
         "Confidence {} MUST be in [0.0, 1.0]",
         confidence
     );

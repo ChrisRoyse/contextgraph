@@ -1577,7 +1577,7 @@ mod real_embedding_tests {
                 println!("Per-embedder scores for top result: {} embedders", per_scores.len());
                 // Should have scores for all 13 embedding spaces
                 assert!(
-                    per_scores.len() >= 1,
+                    !per_scores.is_empty(),
                     "Should have per-embedder scores"
                 );
             }
@@ -1743,7 +1743,7 @@ mod real_embedding_tests {
                 println!("Result {} alignment_score: {}", i, alignment);
                 // Alignment scores should be in [-1, 1] per constitution
                 assert!(
-                    alignment >= -1.0 && alignment <= 1.0,
+                    (-1.0..=1.0).contains(&alignment),
                     "Alignment score should be in [-1, 1]: {}",
                     alignment
                 );

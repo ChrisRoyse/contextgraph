@@ -1401,7 +1401,7 @@ impl Handlers {
         }
 
         // Acquire write lock and trigger selection
-        let mut ws = workspace.write().await;
+        let ws = workspace.write().await;
 
         // Create candidate and trigger WTA selection
         let candidates = vec![(memory_id, r, importance, alignment)];

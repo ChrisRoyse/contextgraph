@@ -182,7 +182,7 @@ fn test_hierarchy_duplicate_id() {
     let result = hierarchy.add_goal(child);
 
     // The current implementation allows this (overwrites)
-    assert!(result.is_ok() || matches!(result, Err(_)));
+    assert!(result.is_ok() || result.is_err());
     println!("[VERIFIED] Duplicate ID handling documented");
 }
 

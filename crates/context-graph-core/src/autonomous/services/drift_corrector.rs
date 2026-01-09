@@ -515,9 +515,11 @@ mod tests {
     #[test]
     fn test_select_strategy_mild_declining() {
         let corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.severity = DriftSeverity::Mild;
-        state.trend = DriftTrend::Declining;
+        let state = DriftState {
+            severity: DriftSeverity::Mild,
+            trend: DriftTrend::Declining,
+            ..Default::default()
+        };
 
         let strategy = corrector.select_strategy(&state);
         if let CorrectionStrategy::GoalReinforcement { emphasis_factor } = strategy {
@@ -531,9 +533,11 @@ mod tests {
     #[test]
     fn test_select_strategy_mild_stable() {
         let corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.severity = DriftSeverity::Mild;
-        state.trend = DriftTrend::Stable;
+        let state = DriftState {
+            severity: DriftSeverity::Mild,
+            trend: DriftTrend::Stable,
+            ..Default::default()
+        };
 
         let strategy = corrector.select_strategy(&state);
         assert_eq!(strategy, CorrectionStrategy::NoAction);
@@ -543,9 +547,11 @@ mod tests {
     #[test]
     fn test_select_strategy_moderate_declining() {
         let corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.severity = DriftSeverity::Moderate;
-        state.trend = DriftTrend::Declining;
+        let state = DriftState {
+            severity: DriftSeverity::Moderate,
+            trend: DriftTrend::Declining,
+            ..Default::default()
+        };
 
         let strategy = corrector.select_strategy(&state);
         if let CorrectionStrategy::ThresholdAdjustment { delta } = strategy {
@@ -559,9 +565,11 @@ mod tests {
     #[test]
     fn test_select_strategy_moderate_stable() {
         let corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.severity = DriftSeverity::Moderate;
-        state.trend = DriftTrend::Stable;
+        let state = DriftState {
+            severity: DriftSeverity::Moderate,
+            trend: DriftTrend::Stable,
+            ..Default::default()
+        };
 
         let strategy = corrector.select_strategy(&state);
         if let CorrectionStrategy::GoalReinforcement { emphasis_factor } = strategy {
@@ -575,9 +583,11 @@ mod tests {
     #[test]
     fn test_select_strategy_moderate_improving() {
         let corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.severity = DriftSeverity::Moderate;
-        state.trend = DriftTrend::Improving;
+        let state = DriftState {
+            severity: DriftSeverity::Moderate,
+            trend: DriftTrend::Improving,
+            ..Default::default()
+        };
 
         let strategy = corrector.select_strategy(&state);
         assert_eq!(strategy, CorrectionStrategy::NoAction);
@@ -587,10 +597,12 @@ mod tests {
     #[test]
     fn test_select_strategy_severe_declining() {
         let corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.severity = DriftSeverity::Severe;
-        state.trend = DriftTrend::Declining;
-        state.drift = 0.15;
+        let state = DriftState {
+            severity: DriftSeverity::Severe,
+            trend: DriftTrend::Declining,
+            drift: 0.15,
+            ..Default::default()
+        };
 
         let strategy = corrector.select_strategy(&state);
         if let CorrectionStrategy::EmergencyIntervention { reason } = strategy {
@@ -605,9 +617,11 @@ mod tests {
     #[test]
     fn test_select_strategy_severe_stable() {
         let corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.severity = DriftSeverity::Severe;
-        state.trend = DriftTrend::Stable;
+        let state = DriftState {
+            severity: DriftSeverity::Severe,
+            trend: DriftTrend::Stable,
+            ..Default::default()
+        };
 
         let strategy = corrector.select_strategy(&state);
         if let CorrectionStrategy::ThresholdAdjustment { delta } = strategy {
@@ -621,9 +635,11 @@ mod tests {
     #[test]
     fn test_select_strategy_severe_improving() {
         let corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.severity = DriftSeverity::Severe;
-        state.trend = DriftTrend::Improving;
+        let state = DriftState {
+            severity: DriftSeverity::Severe,
+            trend: DriftTrend::Improving,
+            ..Default::default()
+        };
 
         let strategy = corrector.select_strategy(&state);
         if let CorrectionStrategy::GoalReinforcement { emphasis_factor } = strategy {
@@ -637,8 +653,10 @@ mod tests {
     #[test]
     fn test_apply_correction_no_action() {
         let mut corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.rolling_mean = 0.75;
+        let mut state = DriftState {
+            rolling_mean: 0.75,
+            ..Default::default()
+        };
 
         let strategy = CorrectionStrategy::NoAction;
         let result = corrector.apply_correction(&mut state, &strategy);
@@ -652,8 +670,10 @@ mod tests {
     #[test]
     fn test_apply_correction_threshold_adjustment() {
         let mut corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.rolling_mean = 0.70;
+        let mut state = DriftState {
+            rolling_mean: 0.70,
+            ..Default::default()
+        };
 
         let strategy = CorrectionStrategy::ThresholdAdjustment { delta: 0.05 };
         let result = corrector.apply_correction(&mut state, &strategy);
@@ -667,8 +687,10 @@ mod tests {
     #[test]
     fn test_apply_correction_weight_rebalance() {
         let mut corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.rolling_mean = 0.70;
+        let mut state = DriftState {
+            rolling_mean: 0.70,
+            ..Default::default()
+        };
 
         let strategy = CorrectionStrategy::WeightRebalance {
             adjustments: vec![(0, 0.1), (1, 0.1)],
@@ -684,8 +706,10 @@ mod tests {
     #[test]
     fn test_apply_correction_goal_reinforcement() {
         let mut corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.rolling_mean = 0.70;
+        let mut state = DriftState {
+            rolling_mean: 0.70,
+            ..Default::default()
+        };
 
         let strategy = CorrectionStrategy::GoalReinforcement {
             emphasis_factor: 1.3,
@@ -701,8 +725,10 @@ mod tests {
     #[test]
     fn test_apply_correction_emergency() {
         let mut corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.rolling_mean = 0.60;
+        let mut state = DriftState {
+            rolling_mean: 0.60,
+            ..Default::default()
+        };
 
         let strategy = CorrectionStrategy::EmergencyIntervention {
             reason: "Test emergency".to_string(),
@@ -840,8 +866,10 @@ mod tests {
         assert!((rate - 0.0).abs() < f32::EPSILON);
 
         // Apply some corrections
-        let mut state = DriftState::default();
-        state.rolling_mean = 0.70;
+        let mut state = DriftState {
+            rolling_mean: 0.70,
+            ..Default::default()
+        };
 
         let strategy = CorrectionStrategy::ThresholdAdjustment { delta: 0.05 };
         corrector.apply_correction(&mut state, &strategy);
@@ -882,10 +910,12 @@ mod tests {
     fn test_auto_correct() {
         let mut corrector = DriftCorrector::new();
         let config = DriftConfig::default();
-        let mut state = DriftState::default();
-        state.severity = DriftSeverity::Moderate;
-        state.trend = DriftTrend::Declining;
-        state.rolling_mean = 0.70;
+        let mut state = DriftState {
+            severity: DriftSeverity::Moderate,
+            trend: DriftTrend::Declining,
+            rolling_mean: 0.70,
+            ..Default::default()
+        };
 
         let result = corrector.auto_correct(&mut state, &config);
 
@@ -955,8 +985,10 @@ mod tests {
     #[test]
     fn test_alignment_clamping() {
         let mut corrector = DriftCorrector::new();
-        let mut state = DriftState::default();
-        state.rolling_mean = 0.98;
+        let mut state = DriftState {
+            rolling_mean: 0.98,
+            ..Default::default()
+        };
 
         // Large adjustment that would push past 1.0
         let strategy = CorrectionStrategy::ThresholdAdjustment { delta: 0.10 };

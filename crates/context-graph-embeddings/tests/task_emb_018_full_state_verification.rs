@@ -14,8 +14,7 @@
 //! 4. Print hex dumps of actual data
 
 use context_graph_embeddings::quantization::{
-    BinaryEncoder, BinaryQuantizationError, QuantizationMetadata, QuantizationMethod,
-    QuantizedEmbedding,
+    BinaryEncoder, BinaryQuantizationError, QuantizationMetadata,
 };
 
 /// Helper to print hex dump of raw bytes with addresses
@@ -426,7 +425,7 @@ fn edge_case_audit_maximum_dimension() {
     println!("  Memory address: {:p}", quantized.data.as_ptr());
 
     // Verify size
-    let expected_size = (100_000 + 7) / 8;
+    let expected_size = 100_000_usize.div_ceil(8);
     assert_eq!(quantized.data.len(), expected_size, "Size must match");
 
     // Physical spot checks

@@ -20,7 +20,7 @@
 
 use super::types::{QuantizationMetadata, QuantizationMethod, QuantizedEmbedding};
 use std::fmt;
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Errors specific to Float8 quantization operations.
 #[derive(Debug, Clone)]
@@ -283,8 +283,8 @@ impl Float8E4M3Encoder {
         let e4m3_exp = (exp - 127 + 7).clamp(0, 15) as u8;
 
         // Combine into E4M3 byte
-        let result = ((sign as u8) << 7) | (e4m3_exp << 3) | (mantissa as u8);
-        result
+        
+        ((sign as u8) << 7) | (e4m3_exp << 3) | (mantissa as u8)
     }
 
     /// Convert E4M3 byte to f32 (in [0, 1] range).

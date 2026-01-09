@@ -128,10 +128,10 @@ impl InMemoryMultiEmbeddingExecutor {
                     .await;
             }
             _ => {
-                return SpaceSearchResult::failure(
+                SpaceSearchResult::failure(
                     space_idx,
                     format!("Invalid space index: {}", space_idx),
-                );
+                )
             }
         }
     }

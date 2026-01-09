@@ -23,7 +23,7 @@
 #![cfg(feature = "cuda")]
 
 use context_graph_embeddings::warm::{
-    GpuInfo, VramAllocation, WarmCudaAllocator, WarmConfig,
+    VramAllocation, WarmCudaAllocator,
     MINIMUM_VRAM_BYTES, REQUIRED_COMPUTE_MAJOR, REQUIRED_COMPUTE_MINOR,
 };
 
@@ -37,7 +37,7 @@ const MB: usize = 1024 * 1024;
 const RTX_5090_VRAM_BYTES: usize = 32 * GB;
 
 /// Tolerance for VRAM reporting (allow 1GB variance for driver overhead)
-const VRAM_TOLERANCE_BYTES: usize = 1 * GB;
+const VRAM_TOLERANCE_BYTES: usize = GB;
 
 // ============================================================================
 // Test 1: CUDA Allocator Creation
@@ -284,7 +284,7 @@ fn test_large_vram_allocation() {
     println!("Available VRAM before allocation: {:.2} GB", vram_before as f64 / GB as f64);
 
     // Allocate 1GB of protected VRAM
-    let allocation_size = 1 * GB;
+    let allocation_size = GB;
     println!("Attempting to allocate {} bytes (1 GB) of protected VRAM...", allocation_size);
 
     let result = allocator.allocate_protected_with_verification(
@@ -551,7 +551,7 @@ fn test_multiple_allocations() {
     println!("\nFreeing all allocations...");
     for (i, allocation) in allocations.iter().enumerate() {
         allocator.free_protected(allocation)
-            .expect(&format!("Failed to free allocation {}", i));
+            .unwrap_or_else(|_| panic!("Failed to free allocation {}", i));
         println!("Freed allocation {}", i);
     }
 

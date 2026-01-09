@@ -803,7 +803,7 @@ fn test_model_weight_loading_summary() {
 
     // 5. Metadata extraction
     let tensor = parsed.tensor("test").expect("Tensor not found");
-    let shape_valid = tensor.shape() == &[1536];
+    let shape_valid = tensor.shape() == [1536];
     let dtype_valid = tensor.dtype() == Dtype::F32;
     println!("  [{}] Shape extracted correctly: {:?}",
              if shape_valid { "PASS" } else { "FAIL" }, tensor.shape());

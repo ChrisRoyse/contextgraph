@@ -297,15 +297,13 @@ impl SimilarityExplanation {
             } else {
                 "Moderate confidence: some variance in per-space scores".to_string()
             }
+        } else if active_count < 5 {
+            format!(
+                "Low confidence: only {} spaces active (insufficient data)",
+                active_count
+            )
         } else {
-            if active_count < 5 {
-                format!(
-                    "Low confidence: only {} spaces active (insufficient data)",
-                    active_count
-                )
-            } else {
-                "Low confidence: high variance in per-space scores".to_string()
-            }
+            "Low confidence: high variance in per-space scores".to_string()
         }
     }
 

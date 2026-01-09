@@ -4,7 +4,7 @@
 //! with BEFORE/AFTER logging for Full State Verification.
 
 use super::*;
-use crate::purpose::{DiscoveryMethod, GoalDiscoveryMetadata, GoalHierarchy, GoalLevel, GoalNode};
+use crate::purpose::{GoalDiscoveryMetadata, GoalHierarchy, GoalLevel, GoalNode};
 use crate::types::fingerprint::{
     AlignmentThreshold, JohariFingerprint, PurposeVector, SemanticFingerprint,
     TeleologicalFingerprint, NUM_EMBEDDERS,

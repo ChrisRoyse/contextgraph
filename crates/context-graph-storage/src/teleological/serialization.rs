@@ -42,6 +42,7 @@ const MIN_FINGERPRINT_SIZE: usize = 5_000;
 /// - 1500 E13 SPLADE entries: ~9KB (1500 * 6 bytes)
 /// - 100 E12 tokens: ~51KB (100 * 128 * 4 bytes)
 /// - Dense embeddings: ~30KB
+///
 /// Total maximum: ~102-110KB
 /// Allowing up to 150KB for edge cases with heavy sparse/token usage.
 const MAX_FINGERPRINT_SIZE: usize = 150_000;

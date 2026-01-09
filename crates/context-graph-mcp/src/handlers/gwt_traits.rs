@@ -35,12 +35,15 @@ pub trait KuramotoProvider: Send + Sync {
     fn synchronization(&self) -> f64;
 
     /// Check if network is in CONSCIOUS state (r >= 0.8).
+    #[allow(dead_code)]
     fn is_conscious(&self) -> bool;
 
     /// Check if network is FRAGMENTED (r < 0.5).
+    #[allow(dead_code)]
     fn is_fragmented(&self) -> bool;
 
     /// Check if network is HYPERSYNC (r > 0.95) - warning state.
+    #[allow(dead_code)]
     fn is_hypersync(&self) -> bool;
 
     /// Get all 13 oscillator phases.
@@ -53,15 +56,18 @@ pub trait KuramotoProvider: Send + Sync {
     fn coupling_strength(&self) -> f64;
 
     /// Step the network forward by elapsed duration.
+    #[allow(dead_code)]
     fn step(&mut self, elapsed: Duration);
 
     /// Set coupling strength K (clamped to [0, 10]).
     fn set_coupling_strength(&mut self, k: f64);
 
     /// Reset network to initial incoherent state.
+    #[allow(dead_code)]
     fn reset(&mut self);
 
     /// Reset network to synchronized state (all phases = 0).
+    #[allow(dead_code)]
     fn reset_synchronized(&mut self);
 
     /// Get elapsed time since creation/reset.
@@ -82,6 +88,7 @@ pub trait GwtSystemProvider: Send + Sync {
     ///
     /// # Returns
     /// Consciousness level in [0, 1]
+    #[allow(dead_code)]
     fn compute_consciousness(
         &self,
         kuramoto_r: f32,
@@ -101,9 +108,11 @@ pub trait GwtSystemProvider: Send + Sync {
     fn current_state(&self) -> ConsciousnessState;
 
     /// Check if system is in a conscious state (CONSCIOUS or HYPERSYNC).
+    #[allow(dead_code)]
     fn is_conscious(&self) -> bool;
 
     /// Get the last state transition if any.
+    #[allow(dead_code)]
     fn last_transition(&self) -> Option<StateTransition>;
 
     /// Get time spent in current state.
@@ -155,6 +164,7 @@ pub trait MetaCognitiveProvider: Send + Sync {
     /// # Arguments
     /// - predicted_learning: L_predicted in [0, 1]
     /// - actual_learning: L_actual in [0, 1]
+    #[allow(dead_code)]
     async fn evaluate(
         &self,
         predicted_learning: f32,
@@ -165,9 +175,11 @@ pub trait MetaCognitiveProvider: Send + Sync {
     fn acetylcholine(&self) -> f32;
 
     /// Get current monitoring frequency (Hz).
+    #[allow(dead_code)]
     fn monitoring_frequency(&self) -> f32;
 
     /// Get recent meta-scores for trend analysis.
+    #[allow(dead_code)]
     fn get_recent_scores(&self) -> Vec<f32>;
 }
 

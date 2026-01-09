@@ -279,7 +279,7 @@ mod tests {
         atc.record_prediction(Embedder::Semantic, 0.8, true);
         let scaled = atc.get_scaled_confidence(Embedder::Semantic, 0.8);
 
-        assert!(scaled >= 0.0 && scaled <= 1.0);
+        assert!((0.0..=1.0).contains(&scaled));
     }
 
     #[test]

@@ -75,7 +75,7 @@ impl ScheduledTask {
 }
 
 /// Result of executing scheduled tasks
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct ScheduleResult {
     /// Tasks that were executed
     pub executed_tasks: Vec<SchedulerCheckType>,
@@ -85,20 +85,11 @@ pub struct ScheduleResult {
     pub next_scheduled: Option<DateTime<Utc>>,
 }
 
-impl Default for ScheduleResult {
-    fn default() -> Self {
-        Self {
-            executed_tasks: Vec::new(),
-            skipped_tasks: Vec::new(),
-            next_scheduled: None,
-        }
-    }
-}
-
 /// Daily scheduler service for autonomous task management
 #[derive(Clone, Debug)]
 pub struct DailyScheduler {
-    /// Configured daily schedule
+    /// Configured daily schedule (reserved for future runtime schedule modification)
+    #[allow(dead_code)]
     schedule: DailySchedule,
     /// All registered tasks
     tasks: HashMap<SchedulerCheckType, ScheduledTask>,

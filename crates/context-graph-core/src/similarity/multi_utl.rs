@@ -546,8 +546,8 @@ mod tests {
         let alignments = [0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2, -0.3];
         let params = MultiUtlParams::from_purpose_alignments(alignments);
 
-        for i in 0..NUM_EMBEDDERS {
-            assert!((params.tau_weights[i] - alignments[i]).abs() < 1e-6);
+        for (i, &alignment) in alignments.iter().enumerate().take(NUM_EMBEDDERS) {
+            assert!((params.tau_weights[i] - alignment).abs() < 1e-6);
         }
 
         println!("[PASS] from_purpose_alignments sets tau_weights correctly");

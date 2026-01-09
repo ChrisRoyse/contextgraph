@@ -114,6 +114,7 @@ pub fn validate_ach_value(value: f32) -> Result<f32, &'static str> {
 }
 
 #[cfg(test)]
+#[allow(clippy::assertions_on_constants)]
 mod tests {
     use super::*;
 

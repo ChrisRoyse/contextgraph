@@ -792,8 +792,8 @@ mod tests {
             gradient[0]
         );
         // Other embedders should have zero gradient
-        for i in 1..NUM_EMBEDDERS {
-            assert!((gradient[i] - 0.0).abs() < f32::EPSILON);
+        for grad in gradient.iter().skip(1) {
+            assert!((*grad - 0.0).abs() < f32::EPSILON);
         }
 
         println!("[PASS] compute_gradient produces positive gradient for positive feedback");

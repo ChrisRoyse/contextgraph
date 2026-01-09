@@ -31,9 +31,10 @@ use super::WakeReason;
 use crate::error::{CoreError, CoreResult};
 
 /// Current state of the dream system
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub enum DreamState {
     /// System is awake and processing queries normally
+    #[default]
     Awake,
 
     /// Transitioning into dream state
@@ -77,12 +78,6 @@ impl DreamState {
             DreamState::Rem { .. } => "rem",
             DreamState::Waking => "waking",
         }
-    }
-}
-
-impl Default for DreamState {
-    fn default() -> Self {
-        DreamState::Awake
     }
 }
 

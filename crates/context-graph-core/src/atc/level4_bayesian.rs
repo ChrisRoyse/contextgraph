@@ -41,6 +41,12 @@ pub struct GaussianProcessTracker {
     variance: f32,
 }
 
+impl Default for GaussianProcessTracker {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl GaussianProcessTracker {
     /// Signal variance for the RBF kernel (controls amplitude of function variation)
     const SIGNAL_VARIANCE: f64 = 1.0;

@@ -180,15 +180,15 @@ impl KuramotoNetwork {
         let mut deltas = vec![0.0f32; self.oscillators.len()];
 
         // Compute phase derivatives for all oscillators
-        for i in 0..self.oscillators.len() {
-            let theta_i = self.oscillators[i].phase;
-            let omega_i = self.oscillators[i].frequency;
+        for (i, osc) in self.oscillators.iter().enumerate() {
+            let theta_i = osc.phase;
+            let omega_i = osc.frequency;
 
             // Coupling sum: Σ_j sin(θ_j - θ_i)
             let coupling_sum: f32 = self
                 .oscillators
                 .iter()
-                .map(|osc| (osc.phase - theta_i).sin())
+                .map(|other| (other.phase - theta_i).sin())
                 .sum();
 
             // dθ_i/dt = ω_i + (K/N) × Σ_j sin(θ_j - θ_i)
@@ -715,7 +715,7 @@ mod tests {
     fn test_order_parameter_range() {
         let net = KuramotoNetwork::new(8, 2.0);
         let r = net.order_parameter();
-        assert!(r >= 0.0 && r <= 1.0);
+        assert!((0.0..=1.0).contains(&r));
         println!("[VERIFIED] Order parameter r ∈ [0, 1]: r = {}", r);
     }
 
@@ -899,7 +899,7 @@ mod tests {
 
         let resonance = result.result.data["resonance"].as_f64().unwrap() as f32;
         assert!(
-            resonance >= 0.0 && resonance <= 1.0,
+            (0.0..=1.0).contains(&resonance),
             "Resonance should be in [0,1], got {}",
             resonance
         );
@@ -915,7 +915,7 @@ mod tests {
 
         let consciousness = result.result.data["consciousness"].as_f64().unwrap() as f32;
         assert!(
-            consciousness >= 0.0 && consciousness <= 1.0,
+            (0.0..=1.0).contains(&consciousness),
             "Consciousness should be in [0,1], got {}",
             consciousness
         );
@@ -1186,8 +1186,8 @@ mod tests {
         let learning_signal = data["learning_signal"].as_f64().unwrap() as f32;
 
         // Verify values are in expected ranges
-        assert!(resonance >= 0.0 && resonance <= 1.0);
-        assert!(consciousness >= 0.0 && consciousness <= 1.0);
+        assert!((0.0..=1.0).contains(&resonance));
+        assert!((0.0..=1.0).contains(&consciousness));
         assert!((learning_signal - 0.3).abs() < 1e-6);
 
         println!("[VERIFIED] Full pipeline context processed correctly");

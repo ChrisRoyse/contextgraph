@@ -38,6 +38,7 @@ use uuid::Uuid;
 /// - Sparse embeddings (E6, E13): ~10KB combined (variable)
 /// - Token pruning (E12): ~2KB (50% of original)
 /// - Metadata: ~1KB
+///
 /// Total: ~17KB
 pub const EXPECTED_QUANTIZED_SIZE_BYTES: usize = 17_000;
 

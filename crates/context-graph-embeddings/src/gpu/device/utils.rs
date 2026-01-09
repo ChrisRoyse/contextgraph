@@ -88,7 +88,7 @@ pub(crate) fn query_gpu_info(_device: &Device) -> GpuInfo {
 /// This ensures the system continues with best-effort info rather than failing entirely.
 fn query_gpu_info_real(device_ordinal: u32) -> GpuInfo {
     // Default values in case of query failures (to detect partial success)
-    let mut name;
+    let name;
     let mut total_vram: usize = 0;
     let mut compute_major: u32 = 0;
     let mut compute_minor: u32 = 0;

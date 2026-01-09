@@ -231,7 +231,7 @@ mod tests {
         let purpose_vec = [1.0; 13];
 
         let c = calc.compute_consciousness(1.0, 1.0, &purpose_vec).unwrap();
-        assert!(c >= 0.0 && c <= 1.0);
+        assert!((0.0..=1.0).contains(&c));
         assert!(c > 0.8); // Should be quite high
     }
 

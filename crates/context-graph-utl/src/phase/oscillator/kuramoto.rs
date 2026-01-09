@@ -49,6 +49,7 @@ pub const EMBEDDER_NAMES: [&str; NUM_OSCILLATORS] = [
 
 /// Brain wave frequency bands for reference (from Constitution v4.0.0).
 /// These define the RELATIVE frequencies; actual values are normalized.
+#[allow(dead_code)] // Reference data for documentation and future frequency-based analysis
 pub const BRAIN_WAVE_FREQUENCIES_HZ: [f64; NUM_OSCILLATORS] = [
     40.0,  // E1_Semantic - gamma band (conscious binding)
     8.0,   // E2_TempRecent - alpha band (temporal integration)
@@ -154,15 +155,15 @@ impl KuramotoNetwork {
         // Initialize with slightly different phases based on embedder index
         // to create realistic initial conditions
         let mut phases = [0.0; NUM_OSCILLATORS];
-        for i in 0..NUM_OSCILLATORS {
+        for (i, phase) in phases.iter_mut().enumerate() {
             // Spread initial phases across [0, 2π] with some structure
-            phases[i] = (i as f64 / NUM_OSCILLATORS as f64) * 2.0 * PI;
+            *phase = (i as f64 / NUM_OSCILLATORS as f64) * 2.0 * PI;
         }
 
         // Convert Hz to radians/second
         let mut natural_frequencies = [0.0; NUM_OSCILLATORS];
-        for i in 0..NUM_OSCILLATORS {
-            natural_frequencies[i] = DEFAULT_NATURAL_FREQUENCIES[i] * 2.0 * PI;
+        for (i, freq) in natural_frequencies.iter_mut().enumerate() {
+            *freq = DEFAULT_NATURAL_FREQUENCIES[i] * 2.0 * PI;
         }
 
         Self {
@@ -220,7 +221,7 @@ impl KuramotoNetwork {
         // Compute phase derivatives
         let mut d_phases = [0.0; NUM_OSCILLATORS];
 
-        for i in 0..NUM_OSCILLATORS {
+        for (i, d_phase) in d_phases.iter_mut().enumerate() {
             // Natural frequency term
             let mut d_theta = self.natural_frequencies[i];
 
@@ -233,15 +234,15 @@ impl KuramotoNetwork {
             }
             d_theta += (k / n) * coupling_sum;
 
-            d_phases[i] = d_theta;
+            *d_phase = d_theta;
         }
 
         // Update phases (Euler integration)
-        for i in 0..NUM_OSCILLATORS {
-            self.phases[i] += d_phases[i] * dt;
+        for (phase, d_phase) in self.phases.iter_mut().zip(d_phases.iter()) {
+            *phase += d_phase * dt;
 
             // Wrap to [0, 2π]
-            self.phases[i] = self.phases[i].rem_euclid(2.0 * PI);
+            *phase = phase.rem_euclid(2.0 * PI);
         }
     }
 
@@ -373,8 +374,8 @@ impl KuramotoNetwork {
     /// Get all natural frequencies as Hz.
     pub fn natural_frequencies(&self) -> [f64; NUM_OSCILLATORS] {
         let mut hz = [0.0; NUM_OSCILLATORS];
-        for i in 0..NUM_OSCILLATORS {
-            hz[i] = self.natural_frequencies[i] / (2.0 * PI);
+        for (hz_val, freq) in hz.iter_mut().zip(self.natural_frequencies.iter()) {
+            *hz_val = freq / (2.0 * PI);
         }
         hz
     }
@@ -443,7 +444,7 @@ impl KuramotoNetwork {
     /// This is equivalent to cos(φ) in the UTL formula,
     /// measuring overall phase alignment.
     pub fn cos_phase(&self) -> f64 {
-        let (r, psi) = self.order_parameter();
+        let (r, _psi) = self.order_parameter();
         // The effective phase alignment is r * cos(ψ),
         // but for UTL we just need r as the coherence measure
         // since ψ is the collective mean phase
@@ -639,7 +640,7 @@ mod tests {
 
         // Should wrap to [0, 2π]
         let phase = network.phase(0).unwrap();
-        assert!(phase >= 0.0 && phase < 2.0 * PI);
+        assert!((0.0..2.0 * PI).contains(&phase));
     }
 
     #[test]

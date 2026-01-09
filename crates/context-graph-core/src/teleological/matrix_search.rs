@@ -52,8 +52,10 @@ pub enum SearchStrategy {
 
 /// Which components of the teleological vector to compare.
 #[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum ComparisonScope {
     /// Compare all components: purpose + correlations + groups
+    #[default]
     Full,
     /// Compare only the 13D purpose vector
     PurposeVectorOnly,
@@ -69,11 +71,6 @@ pub enum ComparisonScope {
     SingleEmbedderPattern(usize),
 }
 
-impl Default for ComparisonScope {
-    fn default() -> Self {
-        Self::Full
-    }
-}
 
 /// Weights for different comparison components in Full scope.
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -403,18 +400,21 @@ impl TeleologicalMatrixSearch {
         a: &TeleologicalVector,
         b: &TeleologicalVector,
     ) -> SimilarityBreakdown {
-        let mut breakdown = SimilarityBreakdown::default();
-        breakdown.strategy_used = self.config.strategy;
+        let mut breakdown = SimilarityBreakdown {
+            strategy_used: self.config.strategy,
+            ..Default::default()
+        };
 
         // Purpose vector similarity
         breakdown.purpose_vector = self.compute_purpose_similarity(a, b);
 
         // Per-embedder purpose similarity
-        for i in 0..NUM_EMBEDDERS {
-            let av = a.purpose_vector.alignments[i];
-            let bv = b.purpose_vector.alignments[i];
+        for ((out, &av), &bv) in breakdown.per_embedder_purpose.iter_mut()
+            .zip(a.purpose_vector.alignments.iter())
+            .zip(b.purpose_vector.alignments.iter())
+        {
             // Product similarity for aligned values
-            breakdown.per_embedder_purpose[i] = if av.signum() == bv.signum() {
+            *out = if av.signum() == bv.signum() {
                 1.0 - (av - bv).abs() / 2.0
             } else {
                 0.0
@@ -426,10 +426,11 @@ impl TeleologicalMatrixSearch {
 
         // Find top contributing pairs
         let mut pairs_with_sim: Vec<((usize, usize), f32)> = Vec::with_capacity(CROSS_CORRELATION_COUNT);
-        for flat_idx in 0..CROSS_CORRELATION_COUNT {
+        for (flat_idx, (&av, &bv)) in a.cross_correlations.iter()
+            .zip(b.cross_correlations.iter())
+            .enumerate()
+        {
             let (i, j) = SynergyMatrix::flat_to_indices(flat_idx);
-            let av = a.cross_correlations[flat_idx];
-            let bv = b.cross_correlations[flat_idx];
             // Contribution = product (high if both agree)
             let contrib = av * bv;
             pairs_with_sim.push(((i, j), contrib));
@@ -489,22 +490,22 @@ impl TeleologicalMatrixSearch {
         let mut sum_sq = 0.0f32;
 
         // Purpose vector distance
-        for i in 0..NUM_EMBEDDERS {
-            let diff = a.purpose_vector.alignments[i] - b.purpose_vector.alignments[i];
+        for (&av, &bv) in a.purpose_vector.alignments.iter().zip(b.purpose_vector.alignments.iter()) {
+            let diff = av - bv;
             sum_sq += diff * diff;
         }
 
         // Cross-correlation distance
-        for i in 0..CROSS_CORRELATION_COUNT {
-            let diff = a.cross_correlations[i] - b.cross_correlations[i];
+        for (&av, &bv) in a.cross_correlations.iter().zip(b.cross_correlations.iter()) {
+            let diff = av - bv;
             sum_sq += diff * diff;
         }
 
         // Group alignment distance
         let ga = a.group_alignments.as_array();
         let gb = b.group_alignments.as_array();
-        for i in 0..NUM_GROUPS {
-            let diff = ga[i] - gb[i];
+        for (&av, &bv) in ga.iter().zip(gb.iter()) {
+            let diff = av - bv;
             sum_sq += diff * diff;
         }
 
@@ -524,12 +525,12 @@ impl TeleologicalMatrixSearch {
         let mut weighted_norm_a = 0.0f32;
         let mut weighted_norm_b = 0.0f32;
 
-        for flat_idx in 0..CROSS_CORRELATION_COUNT {
+        for (flat_idx, (&av, &bv)) in a.cross_correlations.iter()
+            .zip(b.cross_correlations.iter())
+            .enumerate()
+        {
             let (i, j) = SynergyMatrix::flat_to_indices(flat_idx);
             let weight = synergy.get_weighted_synergy(i, j);
-
-            let av = a.cross_correlations[flat_idx];
-            let bv = b.cross_correlations[flat_idx];
 
             weighted_dot += weight * av * bv;
             weighted_norm_a += weight * av * av;
@@ -567,11 +568,9 @@ impl TeleologicalMatrixSearch {
             let mut group_corr_sim = 0.0f32;
             let mut pair_count = 0;
 
-            for k in 0..indices.len() {
-                for l in (k + 1)..indices.len() {
-                    let i = indices[k];
-                    let j = indices[l];
-                    let (lo, hi) = if i < j { (i, j) } else { (j, i) };
+            for (k, &idx_k) in indices.iter().enumerate() {
+                for &idx_l in indices.iter().skip(k + 1) {
+                    let (lo, hi) = if idx_k < idx_l { (idx_k, idx_l) } else { (idx_l, idx_k) };
 
                     let av = a.get_correlation(lo, hi);
                     let bv = b.get_correlation(lo, hi);
@@ -620,10 +619,10 @@ impl TeleologicalMatrixSearch {
                 let mut norm_a = 0.0f32;
                 let mut norm_b = 0.0f32;
 
-                for i in 0..ta.data.len() {
-                    dot += ta.data[i] * tb.data[i];
-                    norm_a += ta.data[i] * ta.data[i];
-                    norm_b += tb.data[i] * tb.data[i];
+                for (&av, &bv) in ta.data.iter().zip(tb.data.iter()) {
+                    dot += av * bv;
+                    norm_a += av * av;
+                    norm_b += bv * bv;
                 }
 
                 if norm_a > f32::EPSILON && norm_b > f32::EPSILON {
@@ -674,10 +673,10 @@ impl TeleologicalMatrixSearch {
         let mut norm_a = 0.0f32;
         let mut norm_b = 0.0f32;
 
-        for i in 0..CROSS_CORRELATION_COUNT {
-            dot += a.cross_correlations[i] * b.cross_correlations[i];
-            norm_a += a.cross_correlations[i] * a.cross_correlations[i];
-            norm_b += b.cross_correlations[i] * b.cross_correlations[i];
+        for (&av, &bv) in a.cross_correlations.iter().zip(b.cross_correlations.iter()) {
+            dot += av * bv;
+            norm_a += av * av;
+            norm_b += bv * bv;
         }
 
         if norm_a > f32::EPSILON && norm_b > f32::EPSILON {
@@ -829,6 +828,7 @@ impl TeleologicalMatrixSearch {
     /// Compute pairwise similarity matrix for a collection.
     ///
     /// Returns N×N matrix where [i][j] = similarity(vectors[i], vectors[j]).
+    #[allow(clippy::needless_range_loop)]
     pub fn pairwise_similarity_matrix(&self, vectors: &[TeleologicalVector]) -> Vec<Vec<f32>> {
         let n = vectors.len();
         let mut matrix = vec![vec![0.0f32; n]; n];
@@ -848,6 +848,7 @@ impl TeleologicalMatrixSearch {
     /// Find clusters of similar vectors.
     ///
     /// Returns groups of vector indices that are mutually similar (above threshold).
+    #[allow(clippy::needless_range_loop)]
     pub fn find_clusters(
         &self,
         vectors: &[TeleologicalVector],
@@ -871,9 +872,9 @@ impl TeleologicalMatrixSearch {
             // Find all vectors similar to any in the cluster
             let mut frontier = vec![i];
             while let Some(current) = frontier.pop() {
-                for j in 0..n {
-                    if !visited[j] && sim_matrix[current][j] >= similarity_threshold {
-                        visited[j] = true;
+                for (j, v) in visited.iter_mut().enumerate() {
+                    if !*v && sim_matrix[current][j] >= similarity_threshold {
+                        *v = true;
                         cluster.push(j);
                         frontier.push(j);
                     }
@@ -897,35 +898,35 @@ impl TeleologicalMatrixSearch {
         // Average purpose vectors
         let mut avg_alignments = [0.0f32; NUM_EMBEDDERS];
         for v in vectors {
-            for i in 0..NUM_EMBEDDERS {
-                avg_alignments[i] += v.purpose_vector.alignments[i];
+            for (avg, &val) in avg_alignments.iter_mut().zip(v.purpose_vector.alignments.iter()) {
+                *avg += val;
             }
         }
-        for i in 0..NUM_EMBEDDERS {
-            avg_alignments[i] /= n;
+        for avg in avg_alignments.iter_mut() {
+            *avg /= n;
         }
 
         // Average cross-correlations
         let mut avg_correlations = vec![0.0f32; CROSS_CORRELATION_COUNT];
         for v in vectors {
-            for i in 0..CROSS_CORRELATION_COUNT {
-                avg_correlations[i] += v.cross_correlations[i];
+            for (avg, &val) in avg_correlations.iter_mut().zip(v.cross_correlations.iter()) {
+                *avg += val;
             }
         }
-        for i in 0..CROSS_CORRELATION_COUNT {
-            avg_correlations[i] /= n;
+        for avg in avg_correlations.iter_mut() {
+            *avg /= n;
         }
 
         // Average group alignments
         let mut avg_groups = [0.0f32; NUM_GROUPS];
         for v in vectors {
             let ga = v.group_alignments.as_array();
-            for i in 0..NUM_GROUPS {
-                avg_groups[i] += ga[i];
+            for (avg, &val) in avg_groups.iter_mut().zip(ga.iter()) {
+                *avg += val;
             }
         }
-        for i in 0..NUM_GROUPS {
-            avg_groups[i] /= n;
+        for avg in avg_groups.iter_mut() {
+            *avg /= n;
         }
 
         // Average confidence
@@ -946,54 +947,76 @@ impl TeleologicalMatrixSearch {
         a: &TeleologicalVector,
         b: &TeleologicalVector,
     ) -> ComprehensiveComparison {
-        let mut comparison = ComprehensiveComparison::default();
-
         // Full comparison
-        comparison.full = self.similarity_with_breakdown(a, b);
+        let full = self.similarity_with_breakdown(a, b);
 
         // Purpose vector only
-        let mut pv_config = MatrixSearchConfig::default();
-        pv_config.scope = ComparisonScope::PurposeVectorOnly;
+        let pv_config = MatrixSearchConfig {
+            scope: ComparisonScope::PurposeVectorOnly,
+            ..Default::default()
+        };
         let pv_search = TeleologicalMatrixSearch::with_config(pv_config);
-        comparison.purpose_only = pv_search.similarity(a, b);
+        let purpose_only = pv_search.similarity(a, b);
 
         // Cross-correlations only
-        let mut cc_config = MatrixSearchConfig::default();
-        cc_config.scope = ComparisonScope::CrossCorrelationsOnly;
+        let cc_config = MatrixSearchConfig {
+            scope: ComparisonScope::CrossCorrelationsOnly,
+            ..Default::default()
+        };
         let cc_search = TeleologicalMatrixSearch::with_config(cc_config);
-        comparison.correlations_only = cc_search.similarity(a, b);
+        let correlations_only = cc_search.similarity(a, b);
 
         // Group alignments only
-        let mut ga_config = MatrixSearchConfig::default();
-        ga_config.scope = ComparisonScope::GroupAlignmentsOnly;
+        let ga_config = MatrixSearchConfig {
+            scope: ComparisonScope::GroupAlignmentsOnly,
+            ..Default::default()
+        };
         let ga_search = TeleologicalMatrixSearch::with_config(ga_config);
-        comparison.groups_only = ga_search.similarity(a, b);
+        let groups_only = ga_search.similarity(a, b);
 
         // Per-group comparisons
+        let mut per_group = HashMap::new();
         for group in GroupType::ALL {
-            let mut group_config = MatrixSearchConfig::default();
-            group_config.scope = ComparisonScope::SpecificGroups(vec![group]);
+            let group_config = MatrixSearchConfig {
+                scope: ComparisonScope::SpecificGroups(vec![group]),
+                ..Default::default()
+            };
             let group_search = TeleologicalMatrixSearch::with_config(group_config);
-            comparison.per_group.insert(group, group_search.similarity(a, b));
+            per_group.insert(group, group_search.similarity(a, b));
         }
 
         // Per-embedder pattern comparisons
-        for embedder in 0..NUM_EMBEDDERS {
-            let mut emb_config = MatrixSearchConfig::default();
-            emb_config.scope = ComparisonScope::SingleEmbedderPattern(embedder);
+        let mut per_embedder_pattern = [0.0; NUM_EMBEDDERS];
+        for (embedder, pattern) in per_embedder_pattern.iter_mut().enumerate() {
+            let emb_config = MatrixSearchConfig {
+                scope: ComparisonScope::SingleEmbedderPattern(embedder),
+                ..Default::default()
+            };
             let emb_search = TeleologicalMatrixSearch::with_config(emb_config);
-            comparison.per_embedder_pattern[embedder] = emb_search.similarity(a, b);
+            *pattern = emb_search.similarity(a, b);
         }
 
         // Tucker comparison (if available)
-        if a.has_tucker_core() && b.has_tucker_core() {
-            let mut tucker_config = MatrixSearchConfig::default();
-            tucker_config.strategy = SearchStrategy::TuckerCompressed;
+        let tucker = if a.has_tucker_core() && b.has_tucker_core() {
+            let tucker_config = MatrixSearchConfig {
+                strategy: SearchStrategy::TuckerCompressed,
+                ..Default::default()
+            };
             let tucker_search = TeleologicalMatrixSearch::with_config(tucker_config);
-            comparison.tucker = Some(tucker_search.similarity(a, b));
-        }
+            Some(tucker_search.similarity(a, b))
+        } else {
+            None
+        };
 
-        comparison
+        ComprehensiveComparison {
+            full,
+            purpose_only,
+            correlations_only,
+            groups_only,
+            per_group,
+            per_embedder_pattern,
+            tucker,
+        }
     }
 }
 
@@ -1085,8 +1108,8 @@ mod tests {
     fn make_test_vector(purpose_val: f32, corr_val: f32) -> TeleologicalVector {
         let pv = PurposeVector::new([purpose_val; NUM_EMBEDDERS]);
         let mut tv = TeleologicalVector::new(pv);
-        for i in 0..CROSS_CORRELATION_COUNT {
-            tv.cross_correlations[i] = corr_val;
+        for corr in tv.cross_correlations.iter_mut() {
+            *corr = corr_val;
         }
         tv.group_alignments = GroupAlignments::new(
             purpose_val, purpose_val, purpose_val,
@@ -1101,16 +1124,16 @@ mod tests {
         // Use a simple pseudo-random approach
         let mut alignments = [0.0f32; NUM_EMBEDDERS];
         let mut state = seed;
-        for i in 0..NUM_EMBEDDERS {
+        for alignment in alignments.iter_mut() {
             // Simple LCG for pseudo-random
             state = state.wrapping_mul(1103515245).wrapping_add(12345);
-            alignments[i] = (state as f32 / u32::MAX as f32).max(0.05);
+            *alignment = (state as f32 / u32::MAX as f32).max(0.05);
         }
         let pv = PurposeVector::new(alignments);
         let mut tv = TeleologicalVector::new(pv);
-        for i in 0..CROSS_CORRELATION_COUNT {
+        for corr in tv.cross_correlations.iter_mut() {
             state = state.wrapping_mul(1103515245).wrapping_add(12345);
-            tv.cross_correlations[i] = (state as f32 / u32::MAX as f32).max(0.05);
+            *corr = (state as f32 / u32::MAX as f32).max(0.05);
         }
         tv.group_alignments = GroupAlignments::from_alignments(&alignments, None);
         tv.confidence = 1.0;
@@ -1220,8 +1243,10 @@ mod tests {
 
     #[test]
     fn test_matrix_search_euclidean() {
-        let mut config = MatrixSearchConfig::default();
-        config.strategy = SearchStrategy::Euclidean;
+        let config = MatrixSearchConfig {
+            strategy: SearchStrategy::Euclidean,
+            ..Default::default()
+        };
         let search = TeleologicalMatrixSearch::with_config(config);
 
         let tv1 = make_test_vector(0.8, 0.6);
@@ -1238,8 +1263,10 @@ mod tests {
 
     #[test]
     fn test_matrix_search_specific_pairs() {
-        let mut config = MatrixSearchConfig::default();
-        config.scope = ComparisonScope::SpecificPairs(vec![(0, 1), (0, 2), (1, 2)]);
+        let config = MatrixSearchConfig {
+            scope: ComparisonScope::SpecificPairs(vec![(0, 1), (0, 2), (1, 2)]),
+            ..Default::default()
+        };
         let search = TeleologicalMatrixSearch::with_config(config);
 
         let tv1 = make_test_vector(0.7, 0.5);
@@ -1257,8 +1284,10 @@ mod tests {
 
     #[test]
     fn test_matrix_search_single_embedder_pattern() {
-        let mut config = MatrixSearchConfig::default();
-        config.scope = ComparisonScope::SingleEmbedderPattern(0); // E1_Semantic
+        let config = MatrixSearchConfig {
+            scope: ComparisonScope::SingleEmbedderPattern(0), // E1_Semantic
+            ..Default::default()
+        };
         let search = TeleologicalMatrixSearch::with_config(config);
 
         let tv = make_test_vector(0.7, 0.5);
@@ -1294,8 +1323,10 @@ mod tests {
 
     #[test]
     fn test_matrix_search_with_threshold() {
-        let mut config = MatrixSearchConfig::default();
-        config.min_similarity = 0.5;
+        let config = MatrixSearchConfig {
+            min_similarity: 0.5,
+            ..Default::default()
+        };
         let search = TeleologicalMatrixSearch::with_config(config);
 
         let query = make_test_vector(0.8, 0.7);
@@ -1306,7 +1337,7 @@ mod tests {
 
         let results = search.search(&query, &candidates);
 
-        assert!(results.len() >= 1);
+        assert!(!results.is_empty());
         for (_, sim) in &results {
             assert!(*sim >= 0.5, "All results should be above threshold");
         }
@@ -1329,14 +1360,14 @@ mod tests {
         assert_eq!(matrix[0].len(), 3);
 
         // Diagonal should be 1.0
-        for i in 0..3 {
-            assert!((matrix[i][i] - 1.0).abs() < 0.01);
+        for (i, row) in matrix.iter().enumerate() {
+            assert!((row[i] - 1.0).abs() < 0.01);
         }
 
         // Should be symmetric
-        for i in 0..3 {
-            for j in 0..3 {
-                assert!((matrix[i][j] - matrix[j][i]).abs() < 0.001);
+        for (i, row_i) in matrix.iter().enumerate() {
+            for (j, &val) in row_i.iter().enumerate() {
+                assert!((val - matrix[j][i]).abs() < 0.001);
             }
         }
 
@@ -1437,8 +1468,10 @@ mod tests {
         assert!(weights.is_valid(), "Normalized weights should be valid");
 
         // Test out-of-range weight
-        let mut bad_weights = ComponentWeights::default();
-        bad_weights.confidence = -0.5;
+        let bad_weights = ComponentWeights {
+            confidence: -0.5,
+            ..Default::default()
+        };
         let range_err = bad_weights.validate();
         assert!(range_err.is_err(), "Negative weight should fail validation");
         match range_err {

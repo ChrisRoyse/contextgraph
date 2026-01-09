@@ -869,7 +869,7 @@ async fn test_rocksdb_fsv_multiple_fingerprints() {
 
     let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
 
-    let contents = vec![
+    let contents = [
         "First document about machine learning",
         "Second document about neural networks",
         "Third document about deep learning",
@@ -979,7 +979,7 @@ mod real_embedding_fsv_tests {
             for (i, dim) in pv.iter().enumerate() {
                 if let Some(val) = dim.as_f64() {
                     assert!(
-                        val >= -1.0 && val <= 1.0,
+                        (-1.0..=1.0).contains(&val),
                         "PV[{}] must be in [-1, 1]: {}",
                         i, val
                     );

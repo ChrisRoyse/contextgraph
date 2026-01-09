@@ -334,8 +334,10 @@ impl NuanceDimension {
 
 /// Fusion method for combining extracted meanings.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Default)]
 pub enum FusionMethod {
     /// Simple weighted average.
+    #[default]
     WeightedAverage,
 
     /// Attention-weighted combination.
@@ -351,11 +353,6 @@ pub enum FusionMethod {
     ConsensusOnly,
 }
 
-impl Default for FusionMethod {
-    fn default() -> Self {
-        Self::WeightedAverage
-    }
-}
 
 impl FusionMethod {
     /// All available fusion methods.
@@ -443,32 +440,40 @@ mod tests {
     #[test]
     #[should_panic(expected = "FAIL FAST")]
     fn test_config_validate_invalid_top_k_zero() {
-        let mut config = MeaningExtractionConfig::default();
-        config.attention_top_k = 0;
+        let config = MeaningExtractionConfig {
+            attention_top_k: 0,
+            ..Default::default()
+        };
         config.validate();
     }
 
     #[test]
     #[should_panic(expected = "FAIL FAST")]
     fn test_config_validate_invalid_top_k_too_large() {
-        let mut config = MeaningExtractionConfig::default();
-        config.attention_top_k = EMBEDDING_DIM + 1;
+        let config = MeaningExtractionConfig {
+            attention_top_k: EMBEDDING_DIM + 1,
+            ..Default::default()
+        };
         config.validate();
     }
 
     #[test]
     #[should_panic(expected = "FAIL FAST")]
     fn test_config_validate_invalid_alpha() {
-        let mut config = MeaningExtractionConfig::default();
-        config.contrast_alpha = 1.5;
+        let config = MeaningExtractionConfig {
+            contrast_alpha: 1.5,
+            ..Default::default()
+        };
         config.validate();
     }
 
     #[test]
     #[should_panic(expected = "FAIL FAST")]
     fn test_config_validate_invalid_agreement() {
-        let mut config = MeaningExtractionConfig::default();
-        config.min_agreement = 0;
+        let config = MeaningExtractionConfig {
+            min_agreement: 0,
+            ..Default::default()
+        };
         config.validate();
     }
 

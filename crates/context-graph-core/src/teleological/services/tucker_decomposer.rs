@@ -141,11 +141,11 @@ impl TuckerDecomposer {
         // Build tensor: T[i,j,k] = embedding[i][k] * embedding[j][k] (outer product-ish)
         let mut tensor = vec![0.0f32; SYNERGY_DIM * SYNERGY_DIM * EMBEDDING_DIM];
 
-        for i in 0..SYNERGY_DIM {
-            for j in 0..SYNERGY_DIM {
-                for k in 0..EMBEDDING_DIM {
+        for (i, emb_i) in embeddings.iter().enumerate().take(SYNERGY_DIM) {
+            for (j, emb_j) in embeddings.iter().enumerate().take(SYNERGY_DIM) {
+                for (k, (&val_i, &val_j)) in emb_i.iter().zip(emb_j.iter()).enumerate().take(EMBEDDING_DIM) {
                     let idx = i * SYNERGY_DIM * EMBEDDING_DIM + j * EMBEDDING_DIM + k;
-                    tensor[idx] = embeddings[i][k] * embeddings[j][k];
+                    tensor[idx] = val_i * val_j;
                 }
             }
         }
@@ -369,7 +369,7 @@ mod tests {
 
     #[test]
     fn test_compression_ratio() {
-        let decomposer = TuckerDecomposer::new();
+        let _decomposer = TuckerDecomposer::new();
 
         let ratio = TuckerDecomposer::estimate_compression_ratio(TuckerCore::DEFAULT_RANKS);
 

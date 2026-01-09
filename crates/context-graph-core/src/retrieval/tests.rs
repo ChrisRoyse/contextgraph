@@ -226,7 +226,7 @@ async fn test_execute_empty_store() {
 
 #[tokio::test]
 async fn test_execute_with_data() {
-    let (executor, ids) = create_populated_executor(10).await;
+    let (executor, _ids) = create_populated_executor(10).await;
 
     let query = MultiEmbeddingQuery {
         query_text: "test query".to_string(),

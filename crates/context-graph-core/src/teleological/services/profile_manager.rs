@@ -354,7 +354,7 @@ impl ProfileManager {
         let creative_keywords = ["write", "creative", "story", "poem", "artistic", "express", "imagine", "narrative", "prose", "fiction"];
 
         // Score each profile
-        for (id, _profile) in &self.profiles {
+        for id in self.profiles.keys() {
             let id_str = id.as_str();
             let mut score = 0.0f32;
             let mut reason = String::new();
@@ -458,7 +458,7 @@ impl ProfileManager {
             id
         );
         assert!(
-            effectiveness >= 0.0 && effectiveness <= 1.0,
+            (0.0..=1.0).contains(&effectiveness),
             "FAIL FAST: Effectiveness must be in [0.0, 1.0], got {}",
             effectiveness
         );

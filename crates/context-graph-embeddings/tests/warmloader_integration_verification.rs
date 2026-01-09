@@ -475,20 +475,20 @@ fn test_state_transitions_via_registry() {
         for (i, model_id) in EMBEDDING_MODEL_IDS.iter().enumerate() {
             // Pending -> Loading
             registry.start_loading(model_id)
-                .expect(&format!("Failed to start loading {}", model_id));
+                .unwrap_or_else(|_| panic!("Failed to start loading {}", model_id));
 
             // Update progress
             registry.update_progress(model_id, 50, 250 * MB)
-                .expect(&format!("Failed to update progress for {}", model_id));
+                .unwrap_or_else(|_| panic!("Failed to update progress for {}", model_id));
 
             // Loading -> Validating
             registry.mark_validating(model_id)
-                .expect(&format!("Failed to mark validating {}", model_id));
+                .unwrap_or_else(|_| panic!("Failed to mark validating {}", model_id));
 
             // Validating -> Warm
             let handle = create_handle(i as u32);
             registry.mark_warm(model_id, handle)
-                .expect(&format!("Failed to mark warm {}", model_id));
+                .unwrap_or_else(|_| panic!("Failed to mark warm {}", model_id));
         }
     }
 

@@ -419,7 +419,7 @@ mod tests {
         // All correlations should be in [-1, 1]
         for &corr in &result.correlations {
             assert!(
-                corr >= -1.0 && corr <= 1.0,
+                (-1.0..=1.0).contains(&corr),
                 "Correlation {} out of range [-1, 1]", corr
             );
         }

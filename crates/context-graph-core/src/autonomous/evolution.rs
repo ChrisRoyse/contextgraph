@@ -94,17 +94,12 @@ impl GoalActivityMetrics {
 }
 
 /// Goal state for lifecycle
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq)]
 pub enum GoalState {
+    #[default]
     Active,
     Sunset { since: DateTime<Utc> },
     Archived { since: DateTime<Utc> },
-}
-
-impl Default for GoalState {
-    fn default() -> Self {
-        Self::Active
-    }
 }
 
 /// Reasons for goal obsolescence

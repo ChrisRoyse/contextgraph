@@ -200,7 +200,7 @@ impl ModernHopfieldCache {
 
     /// Create a cache with custom beta (inverse temperature).
     pub fn with_beta(mut self, beta: f32) -> Self {
-        self.beta = beta.max(0.1).min(10.0); // Clamp to reasonable range
+        self.beta = beta.clamp(0.1, 10.0); // Clamp to reasonable range
         self
     }
 

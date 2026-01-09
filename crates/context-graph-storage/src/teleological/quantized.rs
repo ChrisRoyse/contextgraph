@@ -339,7 +339,7 @@ impl QuantizedFingerprintStorage for RocksDbMemex {
                 })?;
 
             let serialized = serialize_quantized_embedding(fingerprint.id, *embedder_idx, embedding)?;
-            batch.put_cf(cf, &key, &serialized);
+            batch.put_cf(cf, key, &serialized);
         }
 
         // Atomic write of all embedders
@@ -370,12 +370,12 @@ impl QuantizedFingerprintStorage for RocksDbMemex {
 
             let data = self
                 .db()
-                .get_cf(cf, &key)
+                .get_cf(cf, key)
                 .map_err(|e| QuantizedStorageError::ReadFailed {
                     fingerprint_id: id,
                     reason: e.to_string(),
                 })?
-                .ok_or_else(|| {
+                .ok_or({
                     // First embedder missing = fingerprint doesn't exist
                     if embedder_idx == 0 {
                         QuantizedStorageError::NotFound { fingerprint_id: id }
@@ -409,7 +409,7 @@ impl QuantizedFingerprintStorage for RocksDbMemex {
         let purpose_vector = match self.get_cf(CF_PURPOSE_VECTORS) {
             Ok(cf_purpose) => {
                 let pv_key = purpose_vector_key(&id);
-                match self.db().get_cf(cf_purpose, &pv_key) {
+                match self.db().get_cf(cf_purpose, pv_key) {
                     Ok(Some(data)) => deserialize_purpose_vector(&data),
                     Ok(None) => {
                         // Purpose vector missing - this is a data integrity issue
@@ -484,7 +484,7 @@ impl QuantizedFingerprintStorage for RocksDbMemex {
 
         let data = self
             .db()
-            .get_cf(cf, &key)
+            .get_cf(cf, key)
             .map_err(|e| QuantizedStorageError::ReadFailed {
                 fingerprint_id,
                 reason: e.to_string(),
@@ -505,7 +505,7 @@ impl QuantizedFingerprintStorage for RocksDbMemex {
                 .map_err(|_| QuantizedStorageError::ColumnFamilyNotFound {
                     cf_name: cf_name.to_string(),
                 })?;
-            batch.delete_cf(cf, &key);
+            batch.delete_cf(cf, key);
         }
 
         // Atomic delete
@@ -530,7 +530,7 @@ impl QuantizedFingerprintStorage for RocksDbMemex {
 
         let exists = self
             .db()
-            .get_cf(cf, &key)
+            .get_cf(cf, key)
             .map_err(|e| QuantizedStorageError::ReadFailed {
                 fingerprint_id: id,
                 reason: e.to_string(),
@@ -849,7 +849,7 @@ mod tests {
             let cf = memex.get_cf(cf_name).unwrap();
             let raw_data = memex
                 .db()
-                .get_cf(cf, &key)
+                .get_cf(cf, key)
                 .expect("raw read should succeed")
                 .expect("data should exist");
 

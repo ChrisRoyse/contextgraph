@@ -23,11 +23,11 @@
 
 #[cfg(test)]
 mod tests {
-    use super::super::clustering::{ClusteringResult, KMeansConfig, KMeansPurposeClustering, PurposeCluster, StandardKMeans};
+    use super::super::clustering::{KMeansConfig, KMeansPurposeClustering, StandardKMeans};
     use super::super::entry::{PurposeIndexEntry, PurposeMetadata};
     use super::super::error::{PurposeIndexError, PurposeIndexResult};
     use super::super::hnsw_purpose::{HnswPurposeIndex, PurposeIndexOps};
-    use super::super::query::{PurposeQuery, PurposeQueryBuilder, PurposeQueryTarget, PurposeSearchResult};
+    use super::super::query::{PurposeQuery, PurposeQueryTarget, PurposeSearchResult};
 
     use crate::index::config::{DistanceMetric, HnswConfig, PURPOSE_VECTOR_DIM};
     use crate::index::error::IndexError;
@@ -47,8 +47,8 @@ mod tests {
     /// Uses REAL alignment values in range [0.0, 1.0].
     fn create_purpose_vector(base: f32, variation: f32) -> PurposeVector {
         let mut alignments = [0.0f32; PURPOSE_VECTOR_DIM];
-        for i in 0..PURPOSE_VECTOR_DIM {
-            alignments[i] = (base + (i as f32 * variation)).clamp(0.0, 1.0);
+        for (i, alignment) in alignments.iter_mut().enumerate() {
+            *alignment = (base + (i as f32 * variation)).clamp(0.0, 1.0);
         }
         PurposeVector::new(alignments)
     }
