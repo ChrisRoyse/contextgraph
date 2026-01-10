@@ -79,6 +79,7 @@
 //! ```
 
 mod error;
+mod matrix;
 mod multi;
 mod result;
 mod single;
@@ -106,4 +107,19 @@ pub use multi::{
     AggregatedHit,
     PerEmbedderResults,
     MultiEmbedderSearchResults,
+};
+
+// Re-export matrix strategy search types
+pub use matrix::{
+    // Matrix types
+    SearchMatrix,
+    MatrixAnalysis,
+    // Correlation types
+    CorrelationAnalysis,
+    CorrelationPattern,
+    // Search struct and builder
+    MatrixStrategySearch,
+    MatrixSearchBuilder,
+    // Result types
+    MatrixSearchResults,
 };
