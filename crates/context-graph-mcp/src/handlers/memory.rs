@@ -22,7 +22,7 @@
 
 use serde_json::json;
 use sha2::{Digest, Sha256};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 // TASK-INTEG-001: Import comparator types for memory/compare and batch operations
@@ -234,6 +234,24 @@ impl Handlers {
             Ok(stored_id) => {
                 debug_assert_eq!(stored_id, fingerprint_id, "Store should return same ID");
                 let store_latency_ms = store_start.elapsed().as_millis();
+
+                // TASK-CONTENT-010: Store content text alongside fingerprint
+                // Content storage failure is non-fatal - fingerprint is primary data
+                if let Err(e) = self.teleological_store.store_content(fingerprint_id, &content).await {
+                    warn!(
+                        fingerprint_id = %fingerprint_id,
+                        error = %e,
+                        content_size = content.len(),
+                        "Failed to store content text (fingerprint saved successfully). \
+                         Content retrieval will return None for this fingerprint."
+                    );
+                } else {
+                    debug!(
+                        fingerprint_id = %fingerprint_id,
+                        content_size = content.len(),
+                        "Content text stored successfully (LZ4 compressed)"
+                    );
+                }
 
                 let pulse =
                     CognitivePulse::new(0.6, 0.75, 0.0, 1.0, SuggestedAction::Continue, None);

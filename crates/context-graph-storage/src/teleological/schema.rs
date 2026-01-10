@@ -3,13 +3,14 @@
 //! All keys use fixed-size formats for efficient range scans.
 //! No variable-length prefixes (except teleological_profiles which uses string keys).
 //!
-//! # Key Formats (TASK-TELEO-006)
+//! # Key Formats (TASK-TELEO-006, TASK-CONTENT-001)
 //!
 //! | CF | Key Format | Size |
 //! |----|------------|------|
 //! | synergy_matrix | "synergy" (singleton) | 7 bytes |
 //! | teleological_profiles | profile_id string | variable (1-255 bytes) |
 //! | teleological_vectors | memory_id UUID | 16 bytes |
+//! | content | fingerprint_id UUID | 16 bytes |
 //!
 //! # FAIL FAST Policy
 //!
@@ -297,6 +298,54 @@ pub fn parse_teleological_vector_key(key: &[u8]) -> Uuid {
     Uuid::from_slice(key).unwrap_or_else(|e| {
         panic!(
             "STORAGE ERROR: Invalid UUID bytes in teleological_vector key. \
+             Error: {}. Key data: {:02x?}.",
+            e, key
+        );
+    })
+}
+
+// =============================================================================
+// TASK-CONTENT-002: CONTENT KEYS (UUID = 16 bytes)
+// =============================================================================
+
+/// Key for content CF: fingerprint_id UUID as 16 bytes.
+///
+/// Used to store original text content associated with a fingerprint.
+/// Same key format as fingerprint_key for consistency.
+///
+/// # Arguments
+/// * `id` - The fingerprint's UUID
+///
+/// # Returns
+/// Exactly 16 bytes (UUID in big-endian format)
+#[inline]
+pub fn content_key(id: &Uuid) -> [u8; 16] {
+    *id.as_bytes()
+}
+
+/// Parse content key back to fingerprint UUID.
+///
+/// # Arguments
+/// * `key` - Exactly 16 bytes
+///
+/// # Returns
+/// The parsed UUID
+///
+/// # Panics
+/// Panics if key is not exactly 16 bytes (FAIL FAST).
+#[inline]
+pub fn parse_content_key(key: &[u8]) -> Uuid {
+    if key.len() != 16 {
+        panic!(
+            "STORAGE ERROR: content key must be 16 bytes, got {} bytes. \
+             Key data: {:02x?}. This indicates corrupted storage or wrong CF access.",
+            key.len(),
+            key
+        );
+    }
+    Uuid::from_slice(key).unwrap_or_else(|e| {
+        panic!(
+            "STORAGE ERROR: Invalid UUID bytes in content key. \
              Error: {}. Key data: {:02x?}.",
             e, key
         );

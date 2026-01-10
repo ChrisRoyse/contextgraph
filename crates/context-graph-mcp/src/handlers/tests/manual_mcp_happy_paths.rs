@@ -31,7 +31,7 @@ async fn test_01_memory_store() {
     println!("TEST 01: memory/store");
     println!("========================================================================================================");
 
-    let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
+    let (handlers, _store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
 
     let params = json!({
         "content": "Test memory for happy path validation",
@@ -46,17 +46,19 @@ async fn test_01_memory_store() {
     assert!(response.error.is_none(), "Should not have error: {:?}", response.error);
     let result = response.result.expect("Should have result");
 
-    // Verify non-zero values
+    // Verify required fields from memory/store response
+    // API returns: fingerprintId, embeddingLatencyMs, storageLatencyMs, embedderCount
     let fingerprint_id = result.get("fingerprintId").expect("Should have fingerprintId");
-    let theta = result.get("thetaToNorthStar").expect("Should have theta");
-    let coherence = result.get("coherence").expect("Should have coherence");
+    let embedder_count = result.get("embedderCount").expect("Should have embedderCount");
 
     println!("\n[VERIFICATION]");
     println!("  fingerprintId: {}", fingerprint_id);
-    println!("  thetaToNorthStar: {}", theta);
-    println!("  coherence: {}", coherence);
+    println!("  embedderCount: {}", embedder_count);
+    println!("  embeddingLatencyMs: {}", result.get("embeddingLatencyMs").unwrap_or(&json!(0)));
+    println!("  storageLatencyMs: {}", result.get("storageLatencyMs").unwrap_or(&json!(0)));
 
     assert!(fingerprint_id.is_string(), "fingerprintId should be string");
+    assert_eq!(embedder_count.as_u64().unwrap(), 13, "Should have 13 embedders");
     println!("\n[PASSED] memory/store works correctly");
 }
 
@@ -125,10 +127,11 @@ async fn test_03_memory_search() {
         handlers.dispatch(make_request("memory/store", i as i64, Some(params))).await;
     }
 
-    // Search
+    // Search - MUST include minSimilarity per constitution FAIL FAST policy
     let search_params = json!({
         "query": "neural network",
-        "limit": 5
+        "topK": 5,
+        "minSimilarity": 0.0  // Required: use 0.0 to include all results
     });
     let request = make_request("memory/search", 10, Some(search_params));
     let response = handlers.dispatch(request).await;
@@ -143,10 +146,10 @@ async fn test_03_memory_search() {
     if let Some(arr) = results.as_array() {
         println!("  Found {} results", arr.len());
         for (i, r) in arr.iter().take(3).enumerate() {
-            println!("  [{}] id={}, score={}",
+            println!("  [{}] id={}, similarity={}",
                 i,
-                r.get("id").unwrap_or(&json!("?")),
-                r.get("score").unwrap_or(&json!(0))
+                r.get("fingerprintId").unwrap_or(&json!("?")),
+                r.get("similarity").unwrap_or(&json!(0))
             );
         }
     }
@@ -179,9 +182,11 @@ async fn test_04_memory_delete() {
     let count_before = store.count().await.unwrap();
     println!("Count before delete: {}", count_before);
 
-    // Delete it
+    // Hard delete (soft=false) to actually remove from count
+    // Soft delete is default and marks as deleted but doesn't remove from count
     let delete_params = json!({
-        "fingerprintId": fingerprint_id
+        "fingerprintId": fingerprint_id,
+        "soft": false  // Hard delete to actually remove from storage
     });
     let request = make_request("memory/delete", 2, Some(delete_params));
     let response = handlers.dispatch(request).await;
@@ -196,9 +201,12 @@ async fn test_04_memory_delete() {
 
     println!("\n[VERIFICATION]");
     println!("  deleted: {}", result.get("deleted").unwrap_or(&json!(false)));
+    println!("  deleteType: {}", result.get("deleteType").unwrap_or(&json!("?")));
     println!("  count decreased: {} -> {}", count_before, count_after);
 
-    assert!(count_after < count_before, "Count should decrease after delete");
+    assert!(result.get("deleted").and_then(|v| v.as_bool()).unwrap_or(false), "Delete should return true");
+    assert_eq!(result.get("deleteType").and_then(|v| v.as_str()).unwrap_or("?"), "hard", "Should be hard delete");
+    assert!(count_after < count_before, "Count should decrease after hard delete");
     println!("\n[PASSED] memory/delete works correctly");
 }
 
@@ -217,9 +225,11 @@ async fn test_05_search_multi() {
         handlers.dispatch(make_request("memory/store", 1, Some(params))).await;
     }
 
+    // Search - MUST include minSimilarity per constitution FAIL FAST policy
     let search_params = json!({
         "query": "vector similarity search",
-        "limit": 5,
+        "topK": 5,
+        "minSimilarity": 0.0,  // Required: use 0.0 to include all results
         "weights": {
             "semantic": 1.0,
             "sparse": 0.5,
@@ -280,19 +290,19 @@ async fn test_07_purpose_query() {
 
     let (handlers, _store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
 
-    // Store a memory first
+    // Store some memories first so there's data to search
     let store_params = json!({
         "content": "Purpose-aligned memory for testing goal alignment",
         "importance": 0.9
     });
-    let store_response = handlers.dispatch(make_request("memory/store", 1, Some(store_params))).await;
-    let fingerprint_id = store_response.result.unwrap()
-        .get("fingerprintId").unwrap()
-        .as_str().unwrap()
-        .to_string();
+    handlers.dispatch(make_request("memory/store", 1, Some(store_params))).await;
 
+    // purpose/query requires a 13-element purpose_vector array
+    // Each element is a float in [0.0, 1.0] representing alignment per embedder
     let query_params = json!({
-        "fingerprintId": fingerprint_id
+        "purpose_vector": [0.8, 0.7, 0.6, 0.5, 0.9, 0.4, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 0.5],
+        "topK": 10,
+        "minAlignment": 0.0
     });
     let request = make_request("purpose/query", 2, Some(query_params));
     let response = handlers.dispatch(request).await;
@@ -303,13 +313,22 @@ async fn test_07_purpose_query() {
     let result = response.result.expect("Should have result");
 
     println!("\n[VERIFICATION]");
-    println!("  fingerprintId: {}", result.get("fingerprintId").unwrap_or(&json!("?")));
-    println!("  theta: {}", result.get("theta").unwrap_or(&json!("?")));
-    println!("  thresholdStatus: {}", result.get("thresholdStatus").unwrap_or(&json!("?")));
+    // purpose/query returns: results, query_metadata
+    if let Some(results) = result.get("results") {
+        if let Some(arr) = results.as_array() {
+            println!("  Found {} results matching purpose vector", arr.len());
+            for (i, r) in arr.iter().take(3).enumerate() {
+                println!("  [{}] id={}, alignment={}",
+                    i,
+                    r.get("id").unwrap_or(&json!("?")),
+                    r.get("purpose_alignment").unwrap_or(&json!("?"))
+                );
+            }
+        }
+    }
 
-    if let Some(pv) = result.get("purposeVector") {
-        println!("  purposeVector.coherence: {}", pv.get("coherence").unwrap_or(&json!("?")));
-        println!("  purposeVector.dominantEmbedder: {}", pv.get("dominantEmbedder").unwrap_or(&json!("?")));
+    if let Some(meta) = result.get("query_metadata") {
+        println!("  search_time_ms: {}", meta.get("search_time_ms").unwrap_or(&json!("?")));
     }
 
     println!("\n[PASSED] purpose/query works correctly");
@@ -324,19 +343,9 @@ async fn test_08_utl_compute() {
 
     let (handlers, _store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
 
-    // Store a memory first
-    let store_params = json!({
-        "content": "Memory for UTL computation testing",
-        "importance": 0.85
-    });
-    let store_response = handlers.dispatch(make_request("memory/store", 1, Some(store_params))).await;
-    let fingerprint_id = store_response.result.unwrap()
-        .get("fingerprintId").unwrap()
-        .as_str().unwrap()
-        .to_string();
-
+    // utl/compute requires 'input' parameter (text string to compute UTL score for)
     let compute_params = json!({
-        "fingerprintId": fingerprint_id
+        "input": "Memory for UTL computation testing - analyzing learning patterns and knowledge integration"
     });
     let request = make_request("utl/compute", 2, Some(compute_params));
     let response = handlers.dispatch(request).await;
@@ -347,11 +356,12 @@ async fn test_08_utl_compute() {
     let result = response.result.expect("Should have result");
 
     println!("\n[VERIFICATION]");
-    println!("  fingerprintId: {}", result.get("fingerprintId").unwrap_or(&json!("?")));
-    println!("  utlScore: {}", result.get("utlScore").unwrap_or(&json!("?")));
-    println!("  recency: {}", result.get("recency").unwrap_or(&json!("?")));
-    println!("  frequency: {}", result.get("frequency").unwrap_or(&json!("?")));
-    println!("  importance: {}", result.get("importance").unwrap_or(&json!("?")));
+    println!("  learningScore: {}", result.get("learningScore").unwrap_or(&json!("?")));
+
+    // Verify learning score is in valid range [0.0, 1.0]
+    if let Some(score) = result.get("learningScore").and_then(|v| v.as_f64()) {
+        assert!(score >= 0.0 && score <= 1.0, "Learning score should be in [0.0, 1.0]");
+    }
 
     println!("\n[PASSED] utl/compute works correctly");
 }
@@ -365,13 +375,11 @@ async fn test_09_utl_metrics() {
 
     let (handlers, _store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
 
-    // Store some memories first
-    for content in ["UTL metrics test 1", "UTL metrics test 2"] {
-        let params = json!({ "content": content, "importance": 0.7 });
-        handlers.dispatch(make_request("memory/store", 1, Some(params))).await;
-    }
-
-    let request = make_request("utl/metrics", 10, None);
+    // utl/metrics requires 'input' parameter (text string to compute metrics for)
+    let metrics_params = json!({
+        "input": "UTL metrics test content - learning patterns and knowledge synthesis"
+    });
+    let request = make_request("utl/metrics", 10, Some(metrics_params));
     let response = handlers.dispatch(request).await;
 
     println!("Response: {}", serde_json::to_string_pretty(&response).unwrap());
@@ -380,8 +388,10 @@ async fn test_09_utl_metrics() {
     let result = response.result.expect("Should have result");
 
     println!("\n[VERIFICATION]");
-    println!("  totalFingerprints: {}", result.get("totalFingerprints").unwrap_or(&json!("?")));
-    println!("  averageUtl: {}", result.get("averageUtl").unwrap_or(&json!("?")));
+    println!("  entropy: {}", result.get("entropy").unwrap_or(&json!("?")));
+    println!("  coherence: {}", result.get("coherence").unwrap_or(&json!("?")));
+    println!("  learningScore: {}", result.get("learningScore").unwrap_or(&json!("?")));
+    println!("  surprise: {}", result.get("surprise").unwrap_or(&json!("?")));
 
     println!("\n[PASSED] utl/metrics works correctly");
 }
@@ -450,13 +460,22 @@ async fn test_12_johari_get_distribution() {
 
     let (handlers, _store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
 
-    // Store some memories first
-    for content in ["Johari test memory 1", "Johari test memory 2"] {
-        let params = json!({ "content": content, "importance": 0.8 });
-        handlers.dispatch(make_request("memory/store", 1, Some(params))).await;
-    }
+    // Store a memory first to get its ID
+    let store_params = json!({
+        "content": "Johari test memory for distribution analysis",
+        "importance": 0.8
+    });
+    let store_response = handlers.dispatch(make_request("memory/store", 1, Some(store_params))).await;
+    let fingerprint_id = store_response.result.unwrap()
+        .get("fingerprintId").unwrap()
+        .as_str().unwrap()
+        .to_string();
 
-    let request = make_request("johari/get_distribution", 10, None);
+    // johari/get_distribution requires memory_id
+    let distribution_params = json!({
+        "memory_id": fingerprint_id
+    });
+    let request = make_request("johari/get_distribution", 10, Some(distribution_params));
     let response = handlers.dispatch(request).await;
 
     println!("Response: {}", serde_json::to_string_pretty(&response).unwrap());
@@ -465,11 +484,24 @@ async fn test_12_johari_get_distribution() {
     let result = response.result.expect("Should have result");
 
     println!("\n[VERIFICATION]");
-    println!("  open: {}", result.get("open").unwrap_or(&json!("?")));
-    println!("  blind: {}", result.get("blind").unwrap_or(&json!("?")));
-    println!("  hidden: {}", result.get("hidden").unwrap_or(&json!("?")));
-    println!("  unknown: {}", result.get("unknown").unwrap_or(&json!("?")));
-    println!("  total: {}", result.get("total").unwrap_or(&json!("?")));
+    // Response contains per-embedder quadrant distribution
+    if let Some(embedders) = result.get("embedders") {
+        if let Some(arr) = embedders.as_array() {
+            println!("  Found {} embedder distributions", arr.len());
+            for (i, e) in arr.iter().take(3).enumerate() {
+                println!("  [{}] {}: quadrant={}",
+                    i,
+                    e.get("embedder_name").unwrap_or(&json!("?")),
+                    e.get("quadrant").unwrap_or(&json!("?"))
+                );
+            }
+        }
+    }
+
+    if let Some(summary) = result.get("summary") {
+        println!("  summary.open_count: {}", summary.get("open_count").unwrap_or(&json!("?")));
+        println!("  summary.unknown_count: {}", summary.get("unknown_count").unwrap_or(&json!("?")));
+    }
 
     println!("\n[PASSED] johari/get_distribution works correctly");
 }
@@ -489,10 +521,11 @@ async fn test_13_johari_find_by_quadrant() {
         handlers.dispatch(make_request("memory/store", 1, Some(params))).await;
     }
 
-    // Search in Unknown quadrant (where new memories go)
+    // johari/find_by_quadrant requires embedder_index and quadrant
     let search_params = json!({
+        "embedder_index": 0,  // E1_semantic (first embedder)
         "quadrant": "Unknown",
-        "limit": 10
+        "top_k": 10
     });
     let request = make_request("johari/find_by_quadrant", 10, Some(search_params));
     let response = handlers.dispatch(request).await;
@@ -505,7 +538,7 @@ async fn test_13_johari_find_by_quadrant() {
     println!("\n[VERIFICATION]");
     if let Some(fingerprints) = result.get("fingerprints") {
         if let Some(arr) = fingerprints.as_array() {
-            println!("  Found {} fingerprints in Unknown quadrant", arr.len());
+            println!("  Found {} fingerprints in Unknown quadrant (E1_semantic)", arr.len());
             for (i, fp) in arr.iter().take(3).enumerate() {
                 println!("  [{}] id={}", i, fp.get("id").unwrap_or(&json!("?")));
             }
@@ -643,7 +676,7 @@ async fn test_all_happy_paths_summary() {
     println!("COMPREHENSIVE MCP HAPPY PATH TEST SUMMARY");
     println!("========================================================================================================");
 
-    let (handlers, store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
+    let (handlers, _store, _tempdir) = create_test_handlers_with_rocksdb_store_access().await;
 
     let mut passed = 0;
     let mut total = 0;
@@ -704,34 +737,41 @@ async fn test_all_happy_paths_summary() {
 
     run_test(&handlers, "Memory Search", "memory/search", Some(json!({
         "query": "test",
-        "limit": 5
+        "topK": 5,
+        "minSimilarity": 0.0
     })), &mut passed, &mut total).await;
 
     run_test(&handlers, "Search Multi", "search/multi", Some(json!({
         "query": "test",
-        "limit": 5
+        "topK": 5,
+        "minSimilarity": 0.0
     })), &mut passed, &mut total).await;
 
     run_test(&handlers, "Search Weight Profiles", "search/weight_profiles", None, &mut passed, &mut total).await;
 
     run_test(&handlers, "Purpose Query", "purpose/query", Some(json!({
-        "fingerprintId": fingerprint_id
+        "purpose_vector": [0.8, 0.7, 0.6, 0.5, 0.9, 0.4, 0.3, 0.5, 0.6, 0.7, 0.8, 0.9, 0.5]
     })), &mut passed, &mut total).await;
 
     run_test(&handlers, "UTL Compute", "utl/compute", Some(json!({
-        "fingerprintId": fingerprint_id
+        "input": "Test content for UTL computation to calculate universal truth likelihood"
     })), &mut passed, &mut total).await;
 
-    run_test(&handlers, "UTL Metrics", "utl/metrics", None, &mut passed, &mut total).await;
+    run_test(&handlers, "UTL Metrics", "utl/metrics", Some(json!({
+        "input": "Test content for UTL metrics to analyze universal truth likelihood"
+    })), &mut passed, &mut total).await;
 
     run_test(&handlers, "System Status", "system/status", None, &mut passed, &mut total).await;
 
     run_test(&handlers, "System Health", "system/health", None, &mut passed, &mut total).await;
 
-    run_test(&handlers, "Johari Distribution", "johari/get_distribution", None, &mut passed, &mut total).await;
+    run_test(&handlers, "Johari Distribution", "johari/get_distribution", Some(json!({
+        "memory_id": fingerprint_id
+    })), &mut passed, &mut total).await;
 
     run_test(&handlers, "Johari Find by Quadrant", "johari/find_by_quadrant", Some(json!({
         "quadrant": "Unknown",
+        "embedder_index": 0,
         "limit": 5
     })), &mut passed, &mut total).await;
 

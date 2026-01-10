@@ -27,11 +27,14 @@
 //! HNSW indexes are protected by `RwLock` for concurrent query access.
 
 use std::collections::HashMap;
+use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
 use async_trait::async_trait;
 use rocksdb::{Cache, ColumnFamily, Options, WriteBatch, DB};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -50,12 +53,12 @@ use context_graph_core::types::fingerprint::{
 };
 
 use super::column_families::{
-    get_all_teleological_cf_descriptors, CF_E13_SPLADE_INVERTED, CF_E1_MATRYOSHKA_128,
+    get_all_teleological_cf_descriptors, CF_CONTENT, CF_E13_SPLADE_INVERTED, CF_E1_MATRYOSHKA_128,
     CF_FINGERPRINTS, CF_PURPOSE_VECTORS, QUANTIZED_EMBEDDER_CFS, TELEOLOGICAL_CFS,
 };
 use super::schema::{
-    e13_splade_inverted_key, e1_matryoshka_128_key, fingerprint_key, parse_fingerprint_key,
-    purpose_vector_key,
+    content_key, e13_splade_inverted_key, e1_matryoshka_128_key, fingerprint_key,
+    parse_fingerprint_key, purpose_vector_key,
 };
 use super::serialization::{
     deserialize_memory_id_list, deserialize_teleological_fingerprint, serialize_e1_matryoshka_128,
@@ -116,6 +119,10 @@ pub enum TeleologicalStoreError {
     /// Restore operation failed.
     #[error("Restore operation failed from '{path}': {message}")]
     RestoreFailed { path: String, message: String },
+
+    /// Stale lock detected and could not be cleaned.
+    #[error("Stale lock detected at '{path}' but cleanup failed: {message}")]
+    StaleLockCleanupFailed { path: String, message: String },
 
     /// Internal error (should never happen).
     #[error("Internal error: {0}")]
@@ -232,9 +239,142 @@ pub struct RocksDbTeleologicalStore {
 }
 
 impl RocksDbTeleologicalStore {
+    /// Detect and remove stale RocksDB lock files.
+    ///
+    /// RocksDB creates a LOCK file when opening a database. If the process crashes
+    /// or is killed without cleanly closing the database, this LOCK file remains
+    /// ("stale lock"). This function detects and removes such stale locks.
+    ///
+    /// # Detection Algorithm
+    ///
+    /// 1. Check if LOCK file exists
+    /// 2. If it exists, attempt to acquire an exclusive file lock on it
+    /// 3. If we CAN acquire the lock, no other process holds it (stale)
+    /// 4. Remove the stale LOCK file
+    ///
+    /// # Arguments
+    ///
+    /// * `path` - Path to the database directory
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` - Stale lock was detected and removed
+    /// * `Ok(false)` - No stale lock (either no lock file or lock is held by active process)
+    /// * `Err(...)` - Lock file exists but couldn't be removed
+    ///
+    /// # FAIL FAST
+    ///
+    /// If the lock file exists but cannot be removed (permissions, etc.), this
+    /// returns an error rather than silently proceeding.
+    fn detect_and_remove_stale_lock<P: AsRef<Path>>(path: P) -> TeleologicalStoreResult<bool> {
+        let lock_path = path.as_ref().join("LOCK");
+        let lock_path_str = lock_path.to_string_lossy().to_string();
+
+        // Check if LOCK file exists
+        if !lock_path.exists() {
+            debug!("No LOCK file at '{}' - database not previously opened", lock_path_str);
+            return Ok(false);
+        }
+
+        info!("LOCK file exists at '{}' - checking if stale", lock_path_str);
+
+        // Try to open the lock file with exclusive access
+        // On Unix, we use flock-style locking; on Windows, LockFile
+        #[cfg(unix)]
+        {
+            use std::os::unix::io::AsRawFd;
+
+            let file = match fs::OpenOptions::new().read(true).write(true).open(&lock_path) {
+                Ok(f) => f,
+                Err(e) => {
+                    // Can't even open the file - might be permissions issue
+                    warn!("Cannot open LOCK file for inspection: {}", e);
+                    // Try to remove it anyway
+                    return Self::try_remove_lock_file(&lock_path, &lock_path_str);
+                }
+            };
+
+            // Try non-blocking exclusive lock
+            let fd = file.as_raw_fd();
+            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+
+            if result == 0 {
+                // Successfully acquired lock - no other process holds it (stale)
+                info!(
+                    "Acquired exclusive lock - LOCK file at '{}' is STALE (no process holds it)",
+                    lock_path_str
+                );
+
+                // Release the lock before removing
+                unsafe { libc::flock(fd, libc::LOCK_UN) };
+                drop(file);
+
+                return Self::try_remove_lock_file(&lock_path, &lock_path_str);
+            } else {
+                let errno = std::io::Error::last_os_error();
+                if errno.raw_os_error() == Some(libc::EWOULDBLOCK) {
+                    // Lock is held by another process - NOT stale
+                    info!(
+                        "LOCK file at '{}' is held by another process - NOT stale",
+                        lock_path_str
+                    );
+                    return Ok(false);
+                } else {
+                    // Other error (shouldn't happen)
+                    warn!("flock() failed with unexpected error: {}", errno);
+                    // Try to remove it anyway - might be a corrupted lock
+                    return Self::try_remove_lock_file(&lock_path, &lock_path_str);
+                }
+            }
+        }
+
+        #[cfg(windows)]
+        {
+            // On Windows, just try to delete the lock file
+            // If another process holds it, the delete will fail
+            Self::try_remove_lock_file(&lock_path, &lock_path_str)
+        }
+
+        #[cfg(not(any(unix, windows)))]
+        {
+            // For other platforms, just try to remove the lock file
+            Self::try_remove_lock_file(&lock_path, &lock_path_str)
+        }
+    }
+
+    /// Attempt to remove a stale lock file.
+    fn try_remove_lock_file(lock_path: &Path, lock_path_str: &str) -> TeleologicalStoreResult<bool> {
+        match fs::remove_file(lock_path) {
+            Ok(()) => {
+                info!("Successfully removed stale LOCK file at '{}'", lock_path_str);
+                Ok(true)
+            }
+            Err(e) if e.kind() == io::ErrorKind::NotFound => {
+                // File was already removed (race condition, but OK)
+                debug!("LOCK file at '{}' was already removed", lock_path_str);
+                Ok(true)
+            }
+            Err(e) => {
+                error!(
+                    "FAIL FAST: Cannot remove stale LOCK file at '{}': {}",
+                    lock_path_str, e
+                );
+                Err(TeleologicalStoreError::StaleLockCleanupFailed {
+                    path: lock_path_str.to_string(),
+                    message: format!(
+                        "Lock file exists but cannot be removed: {}. \
+                        Manual intervention required: check permissions or remove '{}'",
+                        e, lock_path_str
+                    ),
+                })
+            }
+        }
+    }
+
     /// Open a teleological store at the specified path with default configuration.
     ///
     /// Creates the database and all 17 column families if they don't exist.
+    /// **Automatically detects and removes stale lock files.**
     ///
     /// # Arguments
     ///
@@ -248,6 +388,7 @@ impl RocksDbTeleologicalStore {
     /// # Errors
     ///
     /// - `TeleologicalStoreError::OpenFailed` - Path invalid, permissions denied, or DB locked
+    /// - `TeleologicalStoreError::StaleLockCleanupFailed` - Stale lock detected but couldn't be removed
     pub fn open<P: AsRef<Path>>(path: P) -> TeleologicalStoreResult<Self> {
         Self::open_with_config(path, TeleologicalStoreConfig::default())
     }
@@ -275,6 +416,24 @@ impl RocksDbTeleologicalStore {
             path_str,
             config.block_cache_size / (1024 * 1024)
         );
+
+        // STALE LOCK DETECTION: Check for and remove stale lock files before opening.
+        // This prevents "Resource temporarily unavailable" errors from orphaned locks.
+        // FAIL FAST: If we can't clean up a stale lock, fail immediately with clear error.
+        if path_buf.exists() {
+            match Self::detect_and_remove_stale_lock(&path_buf) {
+                Ok(true) => {
+                    info!("Removed stale lock at '{}', proceeding with open", path_str);
+                }
+                Ok(false) => {
+                    debug!("No stale lock detected at '{}'", path_str);
+                }
+                Err(e) => {
+                    error!("FAIL FAST: Stale lock cleanup failed at '{}': {}", path_str, e);
+                    return Err(e);
+                }
+            }
+        }
 
         // Create shared block cache
         let cache = Cache::new_lru_cache(config.block_cache_size);
@@ -336,6 +495,22 @@ impl RocksDbTeleologicalStore {
             .ok_or_else(|| TeleologicalStoreError::ColumnFamilyNotFound {
                 name: name.to_string(),
             })
+    }
+
+    /// Get the content column family handle.
+    ///
+    /// # FAIL FAST
+    ///
+    /// Panics if CF_CONTENT doesn't exist. This indicates database initialization
+    /// failed and is an invariant violation that cannot be recovered from.
+    /// CF_CONTENT must be present in any valid database opened by this store.
+    ///
+    /// TASK-CONTENT-006: Content storage CF handle.
+    #[inline]
+    fn cf_content(&self) -> &ColumnFamily {
+        self.db
+            .cf_handle(CF_CONTENT)
+            .expect("CF_CONTENT must exist - database initialization failed")
     }
 
     /// Store a fingerprint in all relevant column families.
@@ -788,6 +963,10 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
             // Remove from inverted index
             self.remove_from_splade_inverted_index(&mut batch, &id, &old_fp.semantic.e13_splade)?;
 
+            // Remove content (TASK-CONTENT-009: cascade content deletion)
+            let cf_content = self.cf_content();
+            batch.delete_cf(cf_content, content_key(&id));
+
             // Remove from soft-deleted tracking
             if let Ok(mut deleted) = self.soft_deleted.write() {
                 deleted.remove(&id);
@@ -936,7 +1115,23 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
                     }
                 }
 
-                let embedder_scores = [0.0f32; 13]; // Purpose search doesn't compute embedder scores
+                // Compute embedder scores:
+                // If semantic_query is provided, compute actual cosine similarities per embedder
+                // Otherwise, return zeros (backward compatible fallback with warning)
+                let embedder_scores = match &options.semantic_query {
+                    Some(query_semantic) => {
+                        // Compute actual per-embedder cosine similarities
+                        self.compute_embedder_scores(query_semantic, &fp.semantic)
+                    }
+                    None => {
+                        // Fallback: zeros (less useful but backward compatible)
+                        tracing::warn!(
+                            "search_purpose: No semantic_query provided - embedder_scores will be zeros. \
+                             Pass semantic_query in options for meaningful per-embedder scores."
+                        );
+                        [0.0f32; 13]
+                    }
+                };
                 results.push(TeleologicalSearchResult::new(
                     fp,
                     similarity,
@@ -1345,6 +1540,262 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
 
         debug!("list_all_johari returned {} results", results.len());
         Ok(results)
+    }
+
+    // ==================== Content Storage Operations ====================
+
+    /// Store content text for a fingerprint (TASK-CONTENT-007).
+    ///
+    /// # Validation
+    /// - Content must be <= 1MB (1,048,576 bytes)
+    /// - If fingerprint exists, SHA-256 hash must match content_hash
+    ///
+    /// # Errors
+    /// - Returns error if content exceeds size limit (FAIL FAST)
+    /// - Returns error if hash mismatch with existing fingerprint (FAIL FAST)
+    /// - Returns error if RocksDB write fails
+    async fn store_content(&self, id: Uuid, content: &str) -> CoreResult<()> {
+        const MAX_CONTENT_SIZE: usize = 1_048_576; // 1MB
+
+        // 1. Validate size - FAIL FAST
+        let content_bytes = content.as_bytes();
+        if content_bytes.len() > MAX_CONTENT_SIZE {
+            error!(
+                "CONTENT ERROR: Content size {} bytes exceeds max {} bytes for fingerprint {}",
+                content_bytes.len(),
+                MAX_CONTENT_SIZE,
+                id
+            );
+            return Err(CoreError::Internal(format!(
+                "Content size {} bytes exceeds maximum {} bytes for fingerprint {}",
+                content_bytes.len(),
+                MAX_CONTENT_SIZE,
+                id
+            )));
+        }
+
+        // 2. Compute SHA-256 hash of content
+        let mut hasher = Sha256::new();
+        hasher.update(content_bytes);
+        let computed_hash: [u8; 32] = hasher.finalize().into();
+
+        // 3. Verify hash matches if fingerprint exists
+        if let Some(data) = self.get_fingerprint_raw(id)? {
+            let fp = deserialize_teleological_fingerprint(&data);
+            if fp.content_hash != computed_hash {
+                error!(
+                    "CONTENT ERROR: Hash mismatch for fingerprint {}. \
+                     Expected: {:02x?}, Computed: {:02x?}. \
+                     Content length: {} bytes.",
+                    id,
+                    &fp.content_hash[..8], // First 8 bytes for log
+                    &computed_hash[..8],
+                    content_bytes.len()
+                );
+                return Err(CoreError::Internal(format!(
+                    "Content hash mismatch for fingerprint {}. Expected hash does not match provided content.",
+                    id
+                )));
+            }
+            debug!(
+                "Content hash verified for fingerprint {} ({} bytes)",
+                id,
+                content_bytes.len()
+            );
+        } else {
+            // No fingerprint exists - store content anyway for pre-storage scenarios
+            debug!(
+                "Storing content for non-existent fingerprint {} ({} bytes). \
+                 Hash verification will occur when fingerprint is created.",
+                id,
+                content_bytes.len()
+            );
+        }
+
+        // 4. Store content using cf_content() and content_key()
+        let cf = self.cf_content();
+        let key = content_key(&id);
+
+        self.db.put_cf(cf, key, content_bytes).map_err(|e| {
+            error!(
+                "ROCKSDB ERROR: Failed to store content for fingerprint {}: {}",
+                id, e
+            );
+            TeleologicalStoreError::rocksdb_op("put_content", CF_CONTENT, Some(id), e)
+        })?;
+
+        info!(
+            "Stored content for fingerprint {} ({} bytes, LZ4 compressed)",
+            id,
+            content_bytes.len()
+        );
+        Ok(())
+    }
+
+    /// Retrieve content text for a fingerprint (TASK-CONTENT-008).
+    ///
+    /// # Returns
+    /// - Ok(Some(content)) if content exists
+    /// - Ok(None) if no content stored for this fingerprint
+    ///
+    /// # Errors
+    /// - Returns error if stored bytes are not valid UTF-8 (FAIL FAST - data corruption)
+    /// - Returns error if RocksDB read fails
+    async fn get_content(&self, id: Uuid) -> CoreResult<Option<String>> {
+        let key = content_key(&id);
+        let cf = self.cf_content();
+
+        match self.db.get_cf(cf, key) {
+            Ok(Some(bytes)) => {
+                // Decode UTF-8 - FAIL FAST on corruption
+                String::from_utf8(bytes).map(Some).map_err(|e| {
+                    error!(
+                        "CONTENT ERROR: Invalid UTF-8 in stored content for fingerprint {}. \
+                         This indicates data corruption. Error: {}. Bytes length: {}",
+                        id,
+                        e,
+                        e.as_bytes().len()
+                    );
+                    CoreError::Internal(format!(
+                        "Invalid UTF-8 in content for {}: {}. Data corruption detected.",
+                        id, e
+                    ))
+                })
+            }
+            Ok(None) => {
+                debug!("No content found for fingerprint {}", id);
+                Ok(None)
+            }
+            Err(e) => {
+                error!(
+                    "ROCKSDB ERROR: Failed to read content for fingerprint {}: {}",
+                    id, e
+                );
+                Err(CoreError::StorageError(format!(
+                    "Failed to read content for {}: {}",
+                    id, e
+                )))
+            }
+        }
+    }
+
+    /// Batch retrieve content for multiple fingerprints (TASK-CONTENT-008).
+    ///
+    /// Uses RocksDB multi_get_cf for efficient batch retrieval.
+    /// Results maintain the same order as input IDs.
+    ///
+    /// # Returns
+    /// - Vec<Option<String>> with None for missing content entries
+    ///
+    /// # Errors
+    /// - Returns error if any stored bytes are not valid UTF-8 (FAIL FAST)
+    /// - Returns error if RocksDB batch read fails
+    async fn get_content_batch(&self, ids: &[Uuid]) -> CoreResult<Vec<Option<String>>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        debug!("Batch retrieving content for {} fingerprints", ids.len());
+
+        let cf = self.cf_content();
+
+        // Prepare keys for batch read - multi_get_cf needs (&CF, key)
+        let keys: Vec<_> = ids
+            .iter()
+            .map(|id| (cf, content_key(id).to_vec()))
+            .collect();
+
+        // Batch read from RocksDB
+        let results = self.db.multi_get_cf(keys);
+
+        // Process results maintaining order
+        let mut contents = Vec::with_capacity(ids.len());
+        for (i, result) in results.into_iter().enumerate() {
+            match result {
+                Ok(Some(bytes)) => {
+                    let content = String::from_utf8(bytes).map_err(|e| {
+                        error!(
+                            "CONTENT ERROR: Invalid UTF-8 in batch content for fingerprint {}. \
+                             Index: {}, Error: {}",
+                            ids[i], i, e
+                        );
+                        CoreError::Internal(format!(
+                            "Invalid UTF-8 in content for {}: {}. Data corruption detected.",
+                            ids[i], e
+                        ))
+                    })?;
+                    contents.push(Some(content));
+                }
+                Ok(None) => contents.push(None),
+                Err(e) => {
+                    error!(
+                        "ROCKSDB ERROR: Batch read failed at index {} (fingerprint {}): {}",
+                        i, ids[i], e
+                    );
+                    return Err(CoreError::StorageError(format!(
+                        "Failed to read content batch at index {}: {}",
+                        i, e
+                    )));
+                }
+            }
+        }
+
+        let found_count = contents.iter().filter(|c| c.is_some()).count();
+        debug!(
+            "Batch content retrieval complete: {} requested, {} found",
+            ids.len(),
+            found_count
+        );
+        Ok(contents)
+    }
+
+    /// Delete content for a fingerprint (TASK-CONTENT-009).
+    ///
+    /// This is a standalone method for deleting content without deleting the
+    /// associated fingerprint. For most use cases, use the `delete` method
+    /// with `soft=false` which cascades to content deletion atomically.
+    ///
+    /// # Returns
+    /// - Ok(true) if content existed and was deleted
+    /// - Ok(false) if no content existed for this fingerprint
+    ///
+    /// # Errors
+    /// - Returns error if RocksDB operation fails
+    async fn delete_content(&self, id: Uuid) -> CoreResult<bool> {
+        let key = content_key(&id);
+        let cf = self.cf_content();
+
+        // Check if content exists first
+        let exists = match self.db.get_cf(cf, &key) {
+            Ok(Some(_)) => true,
+            Ok(None) => {
+                debug!("No content to delete for fingerprint {}", id);
+                return Ok(false);
+            }
+            Err(e) => {
+                error!(
+                    "ROCKSDB ERROR: Failed to check content existence for fingerprint {}: {}",
+                    id, e
+                );
+                return Err(CoreError::StorageError(format!(
+                    "Failed to check content existence for {}: {}",
+                    id, e
+                )));
+            }
+        };
+
+        if exists {
+            self.db.delete_cf(cf, key).map_err(|e| {
+                error!(
+                    "ROCKSDB ERROR: Failed to delete content for fingerprint {}: {}",
+                    id, e
+                );
+                CoreError::StorageError(format!("Failed to delete content for {}: {}", id, e))
+            })?;
+            info!("Deleted content for fingerprint {}", id);
+        }
+
+        Ok(exists)
     }
 }
 

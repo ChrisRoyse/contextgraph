@@ -20,6 +20,8 @@ use context_graph_core::teleological::services::feedback_learner::{
 };
 // ISSUE-1 FIX: Import TeleologicalSearchOptions for store search
 use context_graph_core::traits::TeleologicalSearchOptions;
+// Import SemanticFingerprint for embedder score computation
+use context_graph_core::types::fingerprint::SemanticFingerprint;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info, warn};
@@ -91,6 +93,11 @@ pub struct SearchTeleologicalParams {
     /// Include per-component similarity breakdown in results (default: true)
     #[serde(default = "default_include_breakdown")]
     pub include_breakdown: bool,
+
+    /// Include original content text in results (default: false).
+    /// TASK-CONTENT-011: When true, content is hydrated from CF_CONTENT.
+    #[serde(default)]
+    pub include_content: bool,
 }
 
 fn default_strategy() -> String {
@@ -494,8 +501,10 @@ impl Handlers {
 
         // =====================================================================
         // FAIL FAST: Require exactly one of query_content or query_vector_id
+        // Track both TeleologicalVector and SemanticFingerprint for embedder scores
         // =====================================================================
-        let query_vector: TeleologicalVector = match (&params.query_content, &params.query_vector_id) {
+        let (query_vector, semantic_query): (TeleologicalVector, Option<SemanticFingerprint>) =
+            match (&params.query_content, &params.query_vector_id) {
             (None, None) => {
                 error!("search_teleological: Neither query_content nor query_vector_id provided");
                 return self.tool_error_with_pulse(
@@ -507,7 +516,7 @@ impl Handlers {
                 warn!("search_teleological: Both query_content and query_vector_id provided, using query_content");
                 // Fall through to query_content path
                 match self.compute_query_vector_from_content(params.query_content.as_ref().unwrap()).await {
-                    Ok(v) => v,
+                    Ok((v, sem)) => (v, Some(sem)),
                     Err(e) => return self.tool_error_with_pulse(id, &e),
                 }
             }
@@ -517,7 +526,7 @@ impl Handlers {
                     return self.tool_error_with_pulse(id, "FAIL FAST: query_content cannot be empty string");
                 }
                 match self.compute_query_vector_from_content(content).await {
-                    Ok(v) => v,
+                    Ok((v, sem)) => (v, Some(sem)),
                     Err(e) => return self.tool_error_with_pulse(id, &e),
                 }
             }
@@ -540,6 +549,9 @@ impl Handlers {
                         // TeleologicalVector requires purpose_vector, cross_correlations, group_alignments
                         use context_graph_core::teleological::groups::GroupAlignments;
 
+                        // Keep semantic fingerprint for embedder score computation
+                        let semantic_fp = fingerprint.semantic.clone();
+
                         // Create a basic TeleologicalVector from the stored fingerprint's purpose_vector
                         let purpose_vector = fingerprint.purpose_vector.clone();
 
@@ -557,12 +569,13 @@ impl Handlers {
                             purpose_vector.alignments[5], // implementation
                         );
 
-                        TeleologicalVector::with_all(
+                        let tv = TeleologicalVector::with_all(
                             purpose_vector,
                             cross_correlations,
                             group_alignments,
                             1.0, // confidence
-                        )
+                        );
+                        (tv, Some(semantic_fp))
                     }
                     Ok(None) => {
                         return self.tool_error_with_pulse(
@@ -583,6 +596,7 @@ impl Handlers {
 
         // =====================================================================
         // Search stored vectors using TeleologicalMemoryStore.search_purpose()
+        // Pass semantic_query for computing per-embedder similarity scores
         // =====================================================================
         let search_options = TeleologicalSearchOptions {
             top_k: params.max_results,
@@ -591,6 +605,8 @@ impl Handlers {
             johari_quadrant_filter: None,
             min_alignment: Some(params.min_similarity),
             embedder_indices: Vec::new(),
+            semantic_query, // Pass semantic fingerprint for embedder score computation
+            include_content: params.include_content, // TASK-CONTENT-011: Hydrate from CF_CONTENT if requested
         };
 
         let search_start = std::time::Instant::now();
@@ -611,7 +627,34 @@ impl Handlers {
         let search_duration = search_start.elapsed();
 
         // =====================================================================
-        // Build response with optional breakdown
+        // TASK-CONTENT-011: Hydrate content if requested
+        // =====================================================================
+        let mut search_results = search_results;
+        if params.include_content && !search_results.is_empty() {
+            let ids: Vec<uuid::Uuid> = search_results.iter().map(|r| r.fingerprint.id).collect();
+            match self.teleological_store.get_content_batch(&ids).await {
+                Ok(contents) => {
+                    for (result, content) in search_results.iter_mut().zip(contents.into_iter()) {
+                        result.content = content;
+                    }
+                    debug!(
+                        result_count = search_results.len(),
+                        with_content = search_results.iter().filter(|r| r.content.is_some()).count(),
+                        "Content hydrated for search results"
+                    );
+                }
+                Err(e) => {
+                    // Log warning but don't fail - content is optional enhancement
+                    warn!(
+                        error = %e,
+                        "Failed to hydrate content for search results (results still valid without content)"
+                    );
+                }
+            }
+        }
+
+        // =====================================================================
+        // Build response with optional breakdown and content
         // =====================================================================
         let results_json: Vec<serde_json::Value> = search_results
             .iter()
@@ -632,6 +675,14 @@ impl Handlers {
                         "embedder_scores": result.embedder_scores,
                         "stage_scores": result.stage_scores,
                     });
+                }
+
+                // TASK-CONTENT-011: Include content in response if requested
+                if params.include_content {
+                    entry["content"] = match &result.content {
+                        Some(c) => json!(c),
+                        None => serde_json::Value::Null,
+                    };
                 }
 
                 entry
@@ -660,10 +711,17 @@ impl Handlers {
         )
     }
 
-    /// Helper: Compute TeleologicalVector from content string using multi_array_provider.
+    /// Helper: Compute TeleologicalVector and SemanticFingerprint from content string.
+    ///
+    /// Returns both the fused TeleologicalVector and the SemanticFingerprint.
+    /// The SemanticFingerprint is needed for computing per-embedder similarity scores
+    /// in search_purpose() - without it, embedder_scores would be all zeros.
     ///
     /// Shared logic between search_teleological and compute_teleological_vector.
-    async fn compute_query_vector_from_content(&self, content: &str) -> Result<TeleologicalVector, String> {
+    async fn compute_query_vector_from_content(
+        &self,
+        content: &str,
+    ) -> Result<(TeleologicalVector, SemanticFingerprint), String> {
         // Use multi_array_provider to get all 13 embeddings
         let embedding_result = match self.multi_array_provider.embed_all(content).await {
             Ok(r) => r,
@@ -677,6 +735,10 @@ impl Handlers {
             }
         };
 
+        // Keep the semantic fingerprint for embedder score computation
+        // Note: MultiArrayEmbeddingOutput.fingerprint IS the SemanticFingerprint
+        let semantic_fingerprint = embedding_result.fingerprint.clone();
+
         // CONSTITUTION COMPLIANT: Extract embeddings using helper
         let embeddings = extract_embeddings_from_fingerprint(&embedding_result.fingerprint)
             .map_err(|e| e.to_error_string())?;
@@ -686,7 +748,7 @@ impl Handlers {
         let fusion_engine = FusionEngine::new();
         let fusion_result = fusion_engine.fuse_from_alignments(&alignments);
 
-        Ok(fusion_result.vector)
+        Ok((fusion_result.vector, semantic_fingerprint))
     }
 
     // ========================================================================

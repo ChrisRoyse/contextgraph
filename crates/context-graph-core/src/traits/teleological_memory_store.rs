@@ -102,6 +102,25 @@ pub struct TeleologicalSearchOptions {
     /// Embedder indices to use for search (0-12).
     /// Empty = use all embedders.
     pub embedder_indices: Vec<usize>,
+
+    /// Optional semantic fingerprint for computing per-embedder scores.
+    /// When provided in search_purpose(), enables computation of actual
+    /// cosine similarity scores for each embedder instead of returning zeros.
+    /// This is essential for search_teleological to return meaningful embedder_scores.
+    #[serde(skip)]
+    pub semantic_query: Option<SemanticFingerprint>,
+
+    /// Whether to include original content text in search results.
+    ///
+    /// When `true`, the `content` field of `TeleologicalSearchResult` will be
+    /// populated with the original text (if available). When `false` (default),
+    /// the `content` field will be `None` for better performance.
+    ///
+    /// Default: `false` (opt-in for performance reasons)
+    ///
+    /// TASK-CONTENT-005: Added for content hydration in search results.
+    #[serde(default)]
+    pub include_content: bool,
 }
 
 impl Default for TeleologicalSearchOptions {
@@ -113,6 +132,8 @@ impl Default for TeleologicalSearchOptions {
             johari_quadrant_filter: None,
             min_alignment: None,
             embedder_indices: Vec::new(),
+            semantic_query: None,
+            include_content: false, // TASK-CONTENT-005: Opt-in for performance
         }
     }
 }
@@ -147,6 +168,27 @@ impl TeleologicalSearchOptions {
         self.embedder_indices = indices;
         self
     }
+
+    /// Attach semantic fingerprint for computing per-embedder similarity scores.
+    /// When provided, search_purpose() will compute actual cosine similarities
+    /// between query and stored semantic fingerprints instead of returning zeros.
+    #[inline]
+    pub fn with_semantic_query(mut self, semantic: SemanticFingerprint) -> Self {
+        self.semantic_query = Some(semantic);
+        self
+    }
+
+    /// Set whether to include original content text in search results.
+    ///
+    /// When `true`, content will be fetched and included in results.
+    /// Default is `false` for better performance.
+    ///
+    /// TASK-CONTENT-005: Builder method for content inclusion.
+    #[inline]
+    pub fn with_include_content(mut self, include: bool) -> Self {
+        self.include_content = include;
+        self
+    }
 }
 
 /// Search result from teleological memory queries.
@@ -172,6 +214,17 @@ pub struct TeleologicalSearchResult {
     /// Stage scores from the 5-stage retrieval pipeline.
     /// [sparse_recall, semantic_ann, precision, rerank, teleological]
     pub stage_scores: [f32; 5],
+
+    /// Original content text (if requested and available).
+    ///
+    /// This field is `None` when:
+    /// - `include_content=false` in search options (default)
+    /// - Content was never stored for this fingerprint
+    /// - Backend doesn't support content storage
+    ///
+    /// TASK-CONTENT-004: Added for content hydration in search results.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
 }
 
 impl TeleologicalSearchResult {
@@ -188,6 +241,7 @@ impl TeleologicalSearchResult {
             embedder_scores,
             purpose_alignment,
             stage_scores: [0.0; 5], // Populated by pipeline stages
+            content: None,          // Populated by content hydration
         }
     }
 
@@ -540,6 +594,102 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         &self,
         limit: usize,
     ) -> CoreResult<Vec<(Uuid, crate::types::fingerprint::JohariFingerprint)>>;
+
+    // ==================== Content Storage (TASK-CONTENT-003) ====================
+
+    /// Store content text associated with a fingerprint.
+    ///
+    /// Content is stored separately from the fingerprint for efficiency.
+    /// This allows large text content to be optionally retrieved without
+    /// loading it for every search result.
+    ///
+    /// # Arguments
+    /// * `id` - Fingerprint UUID
+    /// * `content` - Original text content (max 1MB)
+    ///
+    /// # Errors
+    /// - `CoreError::ValidationError` - Content exceeds 1MB size limit
+    /// - `CoreError::ValidationError` - Hash mismatch with existing fingerprint
+    /// - `CoreError::StorageError` - Write failure
+    ///
+    /// # Default Implementation
+    /// Returns error indicating content storage is not supported.
+    /// Backends that support content storage must override this method.
+    async fn store_content(&self, id: Uuid, content: &str) -> CoreResult<()> {
+        let _ = (id, content); // Suppress unused warnings
+        Err(crate::error::CoreError::Internal(format!(
+            "Content storage not supported by {} backend",
+            self.backend_type()
+        )))
+    }
+
+    /// Retrieve content text for a fingerprint.
+    ///
+    /// Returns the original text content that was stored with the fingerprint.
+    /// Returns None if content was never stored or backend doesn't support it.
+    ///
+    /// # Arguments
+    /// * `id` - Fingerprint UUID
+    ///
+    /// # Returns
+    /// `Some(content)` if content exists, `None` otherwise.
+    ///
+    /// # Errors
+    /// - `CoreError::StorageError` - Read failure
+    ///
+    /// # Default Implementation
+    /// Returns Ok(None) for graceful degradation when content storage
+    /// is not supported by the backend.
+    async fn get_content(&self, id: Uuid) -> CoreResult<Option<String>> {
+        let _ = id; // Suppress unused warnings
+        Ok(None)
+    }
+
+    /// Delete content for a fingerprint.
+    ///
+    /// Called automatically when fingerprint is deleted (cascade delete).
+    /// Can also be called directly to remove content while keeping the fingerprint.
+    ///
+    /// # Arguments
+    /// * `id` - Fingerprint UUID
+    ///
+    /// # Returns
+    /// `true` if content was deleted, `false` if no content existed.
+    ///
+    /// # Errors
+    /// - `CoreError::StorageError` - Delete failure
+    ///
+    /// # Default Implementation
+    /// Returns Ok(false) indicating no content to delete.
+    async fn delete_content(&self, id: Uuid) -> CoreResult<bool> {
+        let _ = id; // Suppress unused warnings
+        Ok(false)
+    }
+
+    /// Batch retrieve content for multiple fingerprints.
+    ///
+    /// More efficient than individual `get_content` calls for bulk retrieval.
+    /// Returns Vec with Some for found content, None for not found.
+    ///
+    /// # Arguments
+    /// * `ids` - Slice of fingerprint UUIDs
+    ///
+    /// # Returns
+    /// Vector of `Option<String>` in same order as input IDs.
+    ///
+    /// # Errors
+    /// - `CoreError::StorageError` - Read failure
+    ///
+    /// # Default Implementation
+    /// Calls get_content sequentially. Backends should override for
+    /// batch-optimized retrieval.
+    async fn get_content_batch(&self, ids: &[Uuid]) -> CoreResult<Vec<Option<String>>> {
+        let mut results = Vec::with_capacity(ids.len());
+        for id in ids {
+            results.push(self.get_content(*id).await?);
+        }
+        Ok(results)
+    }
 }
 
 /// Extension trait for convenient TeleologicalMemoryStore operations.
@@ -690,6 +840,7 @@ mod tests {
             embedder_scores: scores,
             purpose_alignment: 0.7,
             stage_scores: [0.0; 5],
+            content: None,
         };
 
         assert_eq!(result.dominant_embedder(), 5);

@@ -70,7 +70,7 @@ fn test_teleological_cf_names_count() {
         "Must have exactly {} teleological column families",
         TELEOLOGICAL_CF_COUNT
     );
-    assert_eq!(TELEOLOGICAL_CF_COUNT, 7);
+    assert_eq!(TELEOLOGICAL_CF_COUNT, 8); // TASK-CONTENT-001: +1 for CF_CONTENT
 }
 
 #[test]
@@ -798,11 +798,11 @@ fn test_get_all_teleological_cf_descriptors_returns_20() {
     let cache = Cache::new_lru_cache(256 * 1024 * 1024);
     let descriptors = get_all_teleological_cf_descriptors(&cache);
 
-    // 7 teleological + 13 quantized embedder = 20
+    // 8 teleological + 13 quantized embedder = 21 (TASK-CONTENT-001: +1 for CF_CONTENT)
     assert_eq!(
         descriptors.len(),
-        20,
-        "Must return 7 teleological + 13 quantized = 20 CFs"
+        21,
+        "Must return 8 teleological + 13 quantized = 21 CFs"
     );
 }
 
@@ -866,4 +866,589 @@ fn edge_case_deterministic_key_generation_new_keys() {
     assert_eq!(vec_key1, vec_key2, "Vector keys must be deterministic");
     assert_eq!(prof_key1, prof_key2, "Profile keys must be deterministic");
     println!("RESULT: PASS - All keys deterministic");
+}
+
+// =========================================================================
+// Stale Lock Detection Tests
+// =========================================================================
+// These tests verify that the RocksDB store correctly handles stale LOCK files
+// that can be left behind when a process crashes or is killed.
+
+#[test]
+fn test_stale_lock_detection_opens_after_stale_lock() {
+    use tempfile::TempDir;
+    use std::fs;
+
+    println!("=== STALE LOCK TEST: Database opens after stale LOCK file ===");
+
+    // Create a temporary directory
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let db_path = temp_dir.path().join("stale_lock_test");
+    fs::create_dir_all(&db_path).expect("Failed to create db dir");
+
+    // Step 1: Create a stale LOCK file (simulating crashed process)
+    let lock_path = db_path.join("LOCK");
+    fs::write(&lock_path, "").expect("Failed to create stale LOCK file");
+    println!("BEFORE: Created stale LOCK file at {:?}", lock_path);
+    assert!(lock_path.exists(), "LOCK file should exist");
+
+    // Step 2: Open the database - this should detect and remove the stale lock
+    println!("OPENING: Attempting to open database with stale LOCK...");
+    let store = RocksDbTeleologicalStore::open(&db_path)
+        .expect("Should open successfully after stale lock removal");
+
+    println!("AFTER: Database opened successfully");
+
+    // Step 3: Verify the database is usable by performing a basic operation
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let count = rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+        store.count().await.expect("Should be able to count")
+    });
+    println!("VERIFY: Database count = {} (expected 0 for new DB)", count);
+    assert_eq!(count, 0, "New database should have 0 entries");
+
+    println!("RESULT: PASS - Stale lock detected and database opened successfully");
+}
+
+#[test]
+fn test_stale_lock_detection_fresh_database() {
+    use tempfile::TempDir;
+    use std::fs;
+
+    println!("=== STALE LOCK TEST: Fresh database opens without LOCK file ===");
+
+    // Create a temporary directory with no LOCK file
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let db_path = temp_dir.path().join("fresh_db_test");
+    fs::create_dir_all(&db_path).expect("Failed to create db dir");
+
+    let lock_path = db_path.join("LOCK");
+    println!("BEFORE: No LOCK file exists at {:?}", lock_path);
+    assert!(!lock_path.exists(), "LOCK file should NOT exist");
+
+    // Open the database - should work normally
+    println!("OPENING: Opening fresh database...");
+    let store = RocksDbTeleologicalStore::open(&db_path)
+        .expect("Should open fresh database successfully");
+
+    println!("AFTER: Database opened successfully");
+
+    // Verify the database is usable
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let count = rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+        store.count().await.expect("Should be able to count")
+    });
+    println!("VERIFY: Database count = {} (expected 0 for new DB)", count);
+    assert_eq!(count, 0, "New database should have 0 entries");
+
+    println!("RESULT: PASS - Fresh database opened without issues");
+}
+
+#[test]
+fn test_stale_lock_detection_reopen_after_close() {
+    use tempfile::TempDir;
+    use std::fs;
+
+    println!("=== STALE LOCK TEST: Database reopens after clean close ===");
+
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let db_path = temp_dir.path().join("reopen_test");
+    fs::create_dir_all(&db_path).expect("Failed to create db dir");
+
+    // Step 1: Open, write, and close the database
+    println!("STEP 1: Opening database and writing data...");
+    {
+        let store = RocksDbTeleologicalStore::open(&db_path)
+            .expect("Should open database");
+
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        rt.block_on(async {
+            use context_graph_core::traits::TeleologicalMemoryStore;
+            let fp = create_real_fingerprint();
+            store.store(fp).await.expect("Should store fingerprint");
+        });
+        println!("STEP 1: Stored 1 fingerprint, dropping database handle...");
+    } // Database should be closed here, releasing the LOCK
+
+    // Step 2: Verify LOCK file doesn't exist (or will be cleaned if stale)
+    let lock_path = db_path.join("LOCK");
+    println!("STEP 2: LOCK file exists = {} (may or may not based on RocksDB behavior)", lock_path.exists());
+
+    // Step 3: Reopen the database
+    println!("STEP 3: Reopening database...");
+    let store = RocksDbTeleologicalStore::open(&db_path)
+        .expect("Should reopen database successfully");
+
+    // Step 4: Verify data persisted
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let count = rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+        store.count().await.expect("Should be able to count")
+    });
+    println!("VERIFY: Database count = {} (expected 1)", count);
+    assert_eq!(count, 1, "Reopened database should have 1 entry");
+
+    println!("RESULT: PASS - Database reopened and data persisted");
+}
+
+#[test]
+fn test_stale_lock_multiple_stale_lock_files() {
+    use tempfile::TempDir;
+    use std::fs;
+
+    println!("=== STALE LOCK TEST: Multiple operations with simulated stale locks ===");
+
+    let temp_dir = TempDir::new().expect("Failed to create temp dir");
+    let db_path = temp_dir.path().join("multi_stale_test");
+    fs::create_dir_all(&db_path).expect("Failed to create db dir");
+
+    // Iteration 1: Create stale lock, open, close
+    println!("ITERATION 1: Creating stale lock and opening...");
+    let lock_path = db_path.join("LOCK");
+    fs::write(&lock_path, "").expect("Failed to create stale LOCK");
+    {
+        let _store = RocksDbTeleologicalStore::open(&db_path)
+            .expect("Iteration 1: Should open");
+    }
+    println!("ITERATION 1: Closed database");
+
+    // Iteration 2: Simulate another crash (create stale lock), reopen
+    println!("ITERATION 2: Simulating crash, creating new stale lock...");
+    // Note: In real scenario, the LOCK might be released on close.
+    // We simulate a crash by re-creating the LOCK file.
+    if !lock_path.exists() {
+        fs::write(&lock_path, "").expect("Failed to create stale LOCK");
+    }
+    {
+        let _store = RocksDbTeleologicalStore::open(&db_path)
+            .expect("Iteration 2: Should open after stale lock");
+    }
+    println!("ITERATION 2: Closed database");
+
+    // Iteration 3: One more time
+    println!("ITERATION 3: Final stale lock test...");
+    if !lock_path.exists() {
+        fs::write(&lock_path, "").expect("Failed to create stale LOCK");
+    }
+    let store = RocksDbTeleologicalStore::open(&db_path)
+        .expect("Iteration 3: Should open after stale lock");
+
+    // Verify database is functional
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    let count = rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+        store.count().await.expect("Should be able to count")
+    });
+    println!("VERIFY: Database opened {} times with stale locks, count = {}", 3, count);
+
+    println!("RESULT: PASS - Multiple stale lock scenarios handled");
+}
+
+// =========================================================================
+// TASK-CONTENT: Content Storage Tests (Happy Path with Real Data)
+// =========================================================================
+
+/// Create a TeleologicalFingerprint with the correct content hash for the given content.
+/// This is needed because store_content() validates the hash.
+fn create_fingerprint_for_content(content: &str) -> TeleologicalFingerprint {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(content.as_bytes());
+    let content_hash: [u8; 32] = hasher.finalize().into();
+
+    TeleologicalFingerprint::new(
+        create_real_semantic(),
+        create_real_purpose(0.8),
+        create_real_johari(),
+        content_hash,
+    )
+}
+
+#[test]
+fn test_content_key_format() {
+    println!("=== TEST: content_key format (TASK-CONTENT-002) ===");
+
+    let id = Uuid::new_v4();
+    let key = schema::content_key(&id);
+
+    println!("UUID: {}", id);
+    println!("Key: {:02x?}", key);
+    println!("Key length: {} bytes", key.len());
+
+    assert_eq!(key.len(), 16, "Content key must be 16 bytes (UUID)");
+    assert_eq!(key, *id.as_bytes(), "Key must equal UUID bytes");
+}
+
+#[test]
+fn test_content_key_roundtrip() {
+    println!("=== TEST: content_key roundtrip ===");
+
+    let test_uuids = vec![
+        Uuid::nil(),
+        Uuid::max(),
+        Uuid::new_v4(),
+        Uuid::new_v4(),
+    ];
+
+    for id in test_uuids {
+        let key = schema::content_key(&id);
+        let parsed = schema::parse_content_key(&key);
+        assert_eq!(id, parsed, "Round-trip failed for UUID {}", id);
+    }
+
+    println!("RESULT: PASS - All content key round-trips successful");
+}
+
+#[test]
+#[should_panic(expected = "STORAGE ERROR")]
+fn test_content_key_parse_invalid_length_panics() {
+    let invalid_key = [0u8; 8]; // Only 8 bytes, should be 16
+    schema::parse_content_key(&invalid_key);
+}
+
+#[test]
+fn test_content_store_retrieve_happy_path() {
+    println!("=== TEST: store_content / get_content happy path (TASK-CONTENT-007/008) ===");
+
+    let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path())
+        .expect("Failed to open store");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+
+        // Define content first (hash must be computed before fingerprint creation)
+        let content = "This is test content for happy path validation. \
+                       It contains multiple sentences and special characters: \
+                       @#$%^&*() äöü 日本語 🦀";
+
+        // Create fingerprint with correct content hash
+        let fingerprint = create_fingerprint_for_content(content);
+        let fingerprint_id = fingerprint.id;
+
+        // Store the fingerprint
+        let stored_id = store.store(fingerprint).await
+            .expect("Should store fingerprint");
+        assert_eq!(stored_id, fingerprint_id);
+
+        println!("BEFORE: Storing content ({} bytes)", content.len());
+
+        store.store_content(fingerprint_id, content).await
+            .expect("Should store content");
+
+        // Retrieve and verify
+        let retrieved = store.get_content(fingerprint_id).await
+            .expect("Should retrieve content")
+            .expect("Content should exist");
+
+        println!("AFTER: Retrieved content ({} bytes)", retrieved.len());
+
+        assert_eq!(content, retrieved, "Content should match exactly");
+
+        println!("RESULT: PASS - Content store/retrieve happy path successful");
+    });
+}
+
+#[test]
+fn test_content_batch_retrieval() {
+    println!("=== TEST: get_content_batch happy path (TASK-CONTENT-008) ===");
+
+    let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path())
+        .expect("Failed to open store");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+
+        // Store multiple fingerprints with content
+        let mut ids = Vec::new();
+        let mut expected_contents = Vec::new();
+
+        for i in 0..5 {
+            let content = format!("Batch content item {} with unique text: {}", i, Uuid::new_v4());
+            let fingerprint = create_fingerprint_for_content(&content);
+            let id = fingerprint.id;
+
+            store.store(fingerprint).await.expect("Should store fingerprint");
+            store.store_content(id, &content).await.expect("Should store content");
+
+            ids.push(id);
+            expected_contents.push(content);
+        }
+
+        // Add one ID that has no content (use any hash since we won't store content)
+        let fp_no_content = create_real_fingerprint();
+        store.store(fp_no_content.clone()).await.expect("Should store fingerprint without content");
+        ids.push(fp_no_content.id);
+        expected_contents.push(String::new()); // Placeholder for None
+
+        // Batch retrieve
+        let results = store.get_content_batch(&ids).await
+            .expect("Should batch retrieve content");
+
+        assert_eq!(results.len(), ids.len(), "Result count should match ID count");
+
+        // Verify first 5 have content
+        for i in 0..5 {
+            assert!(results[i].is_some(), "Content {} should exist", i);
+            assert_eq!(
+                results[i].as_ref().unwrap(),
+                &expected_contents[i],
+                "Content {} should match", i
+            );
+        }
+
+        // Last one should be None
+        assert!(results[5].is_none(), "Fingerprint without content should return None");
+
+        println!("RESULT: PASS - Batch content retrieval successful (5 with content, 1 without)");
+    });
+}
+
+#[test]
+fn test_content_delete_cascade() {
+    println!("=== TEST: delete cascade removes content (TASK-CONTENT-009) ===");
+
+    let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path())
+        .expect("Failed to open store");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+
+        // Create content and fingerprint with matching hash
+        let content = "Content that will be deleted via cascade";
+        let fingerprint = create_fingerprint_for_content(content);
+        let id = fingerprint.id;
+
+        store.store(fingerprint).await.expect("Should store fingerprint");
+        store.store_content(id, content).await.expect("Should store content");
+
+        // Verify content exists
+        let before = store.get_content(id).await
+            .expect("Should get content")
+            .expect("Content should exist before delete");
+        assert_eq!(before, content);
+
+        println!("BEFORE: Content exists ({} bytes)", before.len());
+
+        // Hard delete fingerprint (should cascade to content)
+        let deleted = store.delete(id, false).await.expect("Should delete");
+        assert!(deleted, "Delete should return true");
+
+        // Content should be gone
+        let after = store.get_content(id).await.expect("Should query content");
+        assert!(after.is_none(), "Content should be deleted via cascade");
+
+        println!("AFTER: Content deleted via cascade");
+        println!("RESULT: PASS - Delete cascade removes content");
+    });
+}
+
+#[test]
+fn test_content_soft_delete_preserves_content() {
+    println!("=== TEST: soft delete preserves content (TASK-CONTENT-009) ===");
+
+    let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path())
+        .expect("Failed to open store");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+
+        // Create content and fingerprint with matching hash
+        let content = "Content preserved during soft delete";
+        let fingerprint = create_fingerprint_for_content(content);
+        let id = fingerprint.id;
+
+        store.store(fingerprint).await.expect("Should store fingerprint");
+        store.store_content(id, content).await.expect("Should store content");
+
+        // Soft delete fingerprint
+        let deleted = store.delete(id, true).await.expect("Should soft delete");
+        assert!(deleted, "Soft delete should return true");
+
+        // Content should still exist (only hard delete cascades)
+        let after = store.get_content(id).await.expect("Should query content");
+        assert!(after.is_some(), "Content should be preserved after soft delete");
+        assert_eq!(after.unwrap(), content);
+
+        println!("RESULT: PASS - Soft delete preserves content");
+    });
+}
+
+#[test]
+fn test_content_max_size_boundary() {
+    println!("=== TEST: content max size boundary (1MB) ===");
+
+    let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path())
+        .expect("Failed to open store");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+
+        // Test at exactly 1MB (maximum allowed)
+        let max_content = "x".repeat(1_048_576);
+        assert_eq!(max_content.len(), 1_048_576, "Should be exactly 1MB");
+
+        // Create fingerprint with correct hash for max content
+        let fingerprint = create_fingerprint_for_content(&max_content);
+        let id = fingerprint.id;
+        store.store(fingerprint).await.expect("Should store fingerprint");
+
+        let result = store.store_content(id, &max_content).await;
+        assert!(result.is_ok(), "1MB content should be accepted");
+
+        // Verify retrieval
+        let retrieved = store.get_content(id).await
+            .expect("Should retrieve")
+            .expect("Should exist");
+        assert_eq!(retrieved.len(), 1_048_576, "Retrieved size should match");
+
+        println!("RESULT: PASS - 1MB content (max boundary) accepted and retrieved");
+    });
+}
+
+#[test]
+fn test_content_over_max_size_rejected() {
+    println!("=== TEST: content over max size rejected ===");
+
+    let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path())
+        .expect("Failed to open store");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+
+        // Test over 1MB (should fail at size check before hash check)
+        let over_max_content = "x".repeat(1_048_577);
+        assert_eq!(over_max_content.len(), 1_048_577, "Should be 1 byte over 1MB");
+
+        // Create fingerprint with correct hash (not that it matters - size check comes first)
+        let fingerprint = create_fingerprint_for_content(&over_max_content);
+        let id = fingerprint.id;
+        store.store(fingerprint).await.expect("Should store fingerprint");
+
+        let result = store.store_content(id, &over_max_content).await;
+        assert!(result.is_err(), "Content over 1MB should be rejected");
+
+        let err_msg = result.unwrap_err().to_string();
+        assert!(
+            err_msg.contains("exceeds maximum") || err_msg.contains("1048576"),
+            "Error should mention size limit: {}", err_msg
+        );
+
+        println!("RESULT: PASS - Content over 1MB correctly rejected");
+    });
+}
+
+#[test]
+fn test_content_nonexistent_fingerprint() {
+    println!("=== TEST: get_content for non-existent fingerprint returns None ===");
+
+    let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path())
+        .expect("Failed to open store");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+
+        let nonexistent_id = Uuid::new_v4();
+        let result = store.get_content(nonexistent_id).await
+            .expect("Should not error, just return None");
+
+        assert!(result.is_none(), "Non-existent fingerprint should return None");
+
+        println!("RESULT: PASS - Non-existent fingerprint returns None (not error)");
+    });
+}
+
+#[test]
+fn test_content_empty_string_allowed() {
+    println!("=== TEST: empty string content ===");
+
+    let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path())
+        .expect("Failed to open store");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+
+        // Create fingerprint with hash of empty string
+        let fingerprint = create_fingerprint_for_content("");
+        let id = fingerprint.id;
+        store.store(fingerprint).await.expect("Should store fingerprint");
+
+        // Store empty string - allowed (size 0 < max 1MB, and hash matches)
+        let result = store.store_content(id, "").await;
+        assert!(result.is_ok(), "Empty content should be allowed (size validation passes)");
+
+        // Verify retrieval
+        let retrieved = store.get_content(id).await.expect("Should retrieve").expect("Should exist");
+        assert_eq!(retrieved, "", "Empty string should round-trip correctly");
+
+        println!("RESULT: PASS - Empty string allowed and retrieved correctly");
+    });
+}
+
+#[test]
+fn test_content_unicode_comprehensive() {
+    println!("=== TEST: Unicode content comprehensive ===");
+
+    let temp_dir = tempfile::TempDir::new().expect("Failed to create temp dir");
+    let store = RocksDbTeleologicalStore::open(temp_dir.path())
+        .expect("Failed to open store");
+
+    let rt = tokio::runtime::Runtime::new().unwrap();
+    rt.block_on(async {
+        use context_graph_core::traits::TeleologicalMemoryStore;
+
+        let test_cases = vec![
+            "Simple ASCII",
+            "Latin-1: café résumé naïve",
+            "Greek: Ελληνικά",
+            "Russian: Русский",
+            "Chinese: 中文测试",
+            "Japanese: 日本語テスト",
+            "Korean: 한국어 테스트",
+            "Arabic: العربية",
+            "Hebrew: עברית",
+            "Emoji: 🦀🚀💾🔥",
+            "Math: ∑∫∂∇∏√",
+            "Mixed: Hello 世界 🌍 Привет",
+        ];
+
+        for (i, content) in test_cases.iter().enumerate() {
+            // Create fingerprint with correct hash for this content
+            let fingerprint = create_fingerprint_for_content(content);
+            let id = fingerprint.id;
+            store.store(fingerprint).await.expect("Should store fingerprint");
+
+            store.store_content(id, content).await
+                .expect(&format!("Should store Unicode content case {}", i));
+
+            let retrieved = store.get_content(id).await
+                .expect("Should retrieve")
+                .expect("Should exist");
+
+            assert_eq!(
+                *content, retrieved,
+                "Unicode case {} should round-trip correctly", i
+            );
+        }
+
+        println!("RESULT: PASS - All {} Unicode test cases passed", test_cases.len());
+    });
 }

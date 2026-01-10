@@ -250,7 +250,15 @@ fn create_synthetic_purpose_vector(topic: &str) -> PurposeVector {
 }
 
 /// Inject synthetic data into the PRODUCTION database.
+///
+/// This test is ignored by default because:
+/// 1. It writes to production data
+/// 2. Requires exclusive database access (can't run concurrently)
+/// 3. Is meant to be run manually when needed
+///
+/// Run with: cargo test -p context-graph-mcp inject_synthetic_production -- --ignored --nocapture
 #[tokio::test]
+#[ignore = "Production database injection - run manually with --ignored"]
 async fn inject_synthetic_production() {
     println!("\n================================================================================");
     println!("PRODUCTION DATABASE INJECTION: Injecting Synthetic Data");

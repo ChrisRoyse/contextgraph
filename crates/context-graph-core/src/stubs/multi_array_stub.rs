@@ -167,21 +167,51 @@ impl StubMultiArrayProvider {
         (sum % 256) as f32 / 255.0
     }
 
-    /// Generate a deterministic value for a specific dimension.
+    /// Generate a deterministic value for a specific dimension and embedder.
     ///
-    /// Combines content hash with dimension index for variety.
+    /// Combines content hash with dimension index AND embedder index for variety.
+    /// Each embedder uses a different multiplier to ensure distinct patterns across
+    /// the 13 embedding spaces.
     #[inline]
-    fn deterministic_value(base: f32, dim_idx: usize) -> f32 {
-        // Create variation across dimensions while remaining deterministic
-        let offset = ((dim_idx as f32 * 0.0173) % 1.0) - 0.5;
-        (base + offset).clamp(0.0, 1.0)
+    fn deterministic_value(base: f32, dim_idx: usize, embedder_idx: usize) -> f32 {
+        // Use prime multipliers per embedder to create distinct patterns
+        // These primes ensure each embedder has a unique dimensional variation
+        const EMBEDDER_PRIMES: [f32; 13] = [
+            0.0173, // E1: semantic
+            0.0237, // E2: temporal-recent
+            0.0311, // E3: temporal-periodic
+            0.0419, // E4: temporal-positional
+            0.0523, // E5: causal
+            0.0631, // E6: sparse (not used for dense)
+            0.0739, // E7: code
+            0.0853, // E8: graph
+            0.0967, // E9: hdc
+            0.1087, // E10: multimodal
+            0.1193, // E11: entity
+            0.1301, // E12: late-interaction
+            0.1409, // E13: splade (not used for dense)
+        ];
+
+        // Add embedder-specific phase shift and frequency variation
+        let prime = EMBEDDER_PRIMES[embedder_idx % 13];
+        let embedder_phase = (embedder_idx as f32 * 0.0769) % 1.0; // Different starting phase
+        let offset = ((dim_idx as f32 * prime + embedder_phase) % 1.0) - 0.5;
+
+        // Apply a non-linear transformation per embedder to increase variety
+        let embedder_scale = 0.7 + (embedder_idx as f32 * 0.023) % 0.3;
+        let value = base * embedder_scale + offset * (1.0 - embedder_scale);
+
+        value.clamp(0.0, 1.0)
     }
 
-    /// Fill a dense embedding vector deterministically.
-    fn fill_dense_embedding(content: &str, dim: usize) -> Vec<f32> {
+    /// Fill a dense embedding vector deterministically with embedder-specific variation.
+    ///
+    /// Each embedder index produces a distinctly different embedding pattern,
+    /// ensuring that similarity scores vary across the 13 embedding spaces.
+    fn fill_dense_embedding(content: &str, dim: usize, embedder_idx: usize) -> Vec<f32> {
         let base = Self::content_hash(content);
         (0..dim)
-            .map(|i| Self::deterministic_value(base, i))
+            .map(|i| Self::deterministic_value(base, i, embedder_idx))
             .collect()
     }
 
@@ -218,7 +248,7 @@ impl StubMultiArrayProvider {
         SparseVector::new(indices, values).unwrap_or_else(|_| SparseVector::empty())
     }
 
-    /// Generate deterministic token embeddings.
+    /// Generate deterministic token embeddings for E12 (late-interaction).
     fn generate_token_embeddings(content: &str) -> Vec<Vec<f32>> {
         let base = Self::content_hash(content);
         // Generate ~1 token per 5 characters, minimum 1
@@ -227,7 +257,7 @@ impl StubMultiArrayProvider {
         (0..num_tokens)
             .map(|token_idx| {
                 (0..128) // E12 has 128D per token
-                    .map(|dim| Self::deterministic_value(base, dim + token_idx * 128))
+                    .map(|dim| Self::deterministic_value(base, dim + token_idx * 128, 11)) // E12 = index 11
                     .collect()
             })
             .collect()
@@ -248,17 +278,18 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
         // Generate deterministic fingerprint
         let mut fingerprint = SemanticFingerprint::zeroed();
 
-        // Fill dense embeddings
-        fingerprint.e1_semantic = Self::fill_dense_embedding(content, 1024);
-        fingerprint.e2_temporal_recent = Self::fill_dense_embedding(content, 512);
-        fingerprint.e3_temporal_periodic = Self::fill_dense_embedding(content, 512);
-        fingerprint.e4_temporal_positional = Self::fill_dense_embedding(content, 512);
-        fingerprint.e5_causal = Self::fill_dense_embedding(content, 768);
-        fingerprint.e7_code = Self::fill_dense_embedding(content, 1536);
-        fingerprint.e8_graph = Self::fill_dense_embedding(content, 384);
-        fingerprint.e9_hdc = Self::fill_dense_embedding(content, 1024); // HDC projected
-        fingerprint.e10_multimodal = Self::fill_dense_embedding(content, 768);
-        fingerprint.e11_entity = Self::fill_dense_embedding(content, 384);
+        // Fill dense embeddings with embedder-specific patterns
+        // Each embedder uses a different index to produce distinct vectors
+        fingerprint.e1_semantic = Self::fill_dense_embedding(content, 1024, 0);
+        fingerprint.e2_temporal_recent = Self::fill_dense_embedding(content, 512, 1);
+        fingerprint.e3_temporal_periodic = Self::fill_dense_embedding(content, 512, 2);
+        fingerprint.e4_temporal_positional = Self::fill_dense_embedding(content, 512, 3);
+        fingerprint.e5_causal = Self::fill_dense_embedding(content, 768, 4);
+        fingerprint.e7_code = Self::fill_dense_embedding(content, 1536, 6);
+        fingerprint.e8_graph = Self::fill_dense_embedding(content, 384, 7);
+        fingerprint.e9_hdc = Self::fill_dense_embedding(content, 1024, 8); // HDC projected
+        fingerprint.e10_multimodal = Self::fill_dense_embedding(content, 768, 9);
+        fingerprint.e11_entity = Self::fill_dense_embedding(content, 384, 10);
 
         // Fill sparse embeddings
         fingerprint.e6_sparse = Self::generate_sparse_vector(content);

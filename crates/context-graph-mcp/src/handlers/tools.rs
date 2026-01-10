@@ -539,14 +539,34 @@ impl Handlers {
         let fingerprint_id = fingerprint.id;
 
         match self.teleological_store.store(fingerprint).await {
-            Ok(_) => self.tool_result_with_pulse(
-                id,
-                json!({
-                    "fingerprintId": fingerprint_id.to_string(),
-                    "embedderCount": NUM_EMBEDDERS,
-                    "embeddingLatencyMs": embedding_output.total_latency.as_millis()
-                }),
-            ),
+            Ok(_) => {
+                // TASK-CONTENT-010: Store content text alongside fingerprint
+                // Content storage failure is non-fatal - fingerprint is primary data
+                if let Err(e) = self.teleological_store.store_content(fingerprint_id, &content).await {
+                    warn!(
+                        fingerprint_id = %fingerprint_id,
+                        error = %e,
+                        content_size = content.len(),
+                        "store_memory: Failed to store content text (fingerprint saved successfully). \
+                         Content retrieval will return None for this fingerprint."
+                    );
+                } else {
+                    debug!(
+                        fingerprint_id = %fingerprint_id,
+                        content_size = content.len(),
+                        "store_memory: Content text stored successfully"
+                    );
+                }
+
+                self.tool_result_with_pulse(
+                    id,
+                    json!({
+                        "fingerprintId": fingerprint_id.to_string(),
+                        "embedderCount": NUM_EMBEDDERS,
+                        "embeddingLatencyMs": embedding_output.total_latency.as_millis()
+                    }),
+                )
+            }
             Err(e) => {
                 error!(error = %e, "store_memory: Storage FAILED");
                 self.tool_error_with_pulse(id, &format!("Storage failed: {}", e))

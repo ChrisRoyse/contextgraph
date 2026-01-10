@@ -475,8 +475,23 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
                 }
             }
 
-            // Use purpose alignment as the main similarity
-            let embedder_scores = [purpose_alignment; NUM_EMBEDDERS];
+            // Compute embedder scores:
+            // If semantic_query is provided, compute actual cosine similarities per embedder
+            // Otherwise, use purpose_alignment for all (backward compatible fallback)
+            let embedder_scores = match &options.semantic_query {
+                Some(query_semantic) => {
+                    // Compute actual per-embedder cosine similarities
+                    Self::compute_semantic_scores(query_semantic, &fp.semantic)
+                }
+                None => {
+                    // Fallback: replicate purpose alignment (less useful but backward compatible)
+                    warn!(
+                        "search_purpose: No semantic_query provided - embedder_scores will be uniform. \
+                         Pass semantic_query in options for meaningful per-embedder scores."
+                    );
+                    [purpose_alignment; NUM_EMBEDDERS]
+                }
+            };
 
             results.push(TeleologicalSearchResult::new(
                 fp.clone(),
