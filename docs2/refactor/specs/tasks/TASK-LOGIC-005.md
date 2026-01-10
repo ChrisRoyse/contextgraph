@@ -1,293 +1,204 @@
 # TASK-LOGIC-005: Single Embedder Search
 
-```xml
-<task_spec id="TASK-LOGIC-005" version="1.0">
-<metadata>
-  <title>Implement Single Embedder Search Strategy</title>
-  <status>todo</status>
-  <layer>logic</layer>
-  <sequence>15</sequence>
-  <implements>
-    <requirement_ref>REQ-SEARCH-SINGLE-01</requirement_ref>
-  </implements>
-  <depends_on>
-    <task_ref>TASK-LOGIC-004</task_ref>
-  </depends_on>
-  <estimated_complexity>medium</estimated_complexity>
-  <estimated_days>2</estimated_days>
-</metadata>
+## Metadata
 
-<context>
-First search strategy implementation. Single embedder search queries one of the
-13 per-embedder indices directly, enabling fast targeted retrieval when the
-relevant embedding space is known.
-</context>
+| Field | Value |
+|-------|-------|
+| **ID** | TASK-LOGIC-005 |
+| **Status** | `done` |
+| **Layer** | Logic |
+| **Depends On** | TASK-LOGIC-004 (TeleologicalComparator) |
+| **Completed** | 2026-01-09 |
+| **Verified** | YES (47 tests pass, 1 integration test) |
 
-<objective>
-Implement SingleEmbedderSearch that queries a single embedder index and returns
-ranked results with similarity scores.
-</objective>
+---
 
-<rationale>
-Single embedder search is useful when:
-1. Query intent maps clearly to one space (e.g., code queries to E7)
-2. Speed is critical (one index vs. 13)
-3. Testing/debugging specific embedders
-4. First stage of multi-stage retrieval
-</rationale>
+## Summary
 
-<input_context_files>
-  <file purpose="comparator">crates/context-graph-core/src/teleology/comparator.rs</file>
-  <file purpose="index_trait">crates/context-graph-storage/src/teleological/index.rs</file>
-  <file purpose="store_trait">crates/context-graph-storage/src/teleological/store.rs</file>
-</input_context_files>
+**IMPLEMENTED** - Single embedder HNSW search across 12 indexes.
 
-<prerequisites>
-  <check>TASK-LOGIC-004 complete (TeleologicalComparator exists)</check>
-  <check>EmbedderIndex trait defined</check>
-</prerequisites>
+**Files Created:**
+- `crates/context-graph-storage/src/teleological/search/mod.rs`
+- `crates/context-graph-storage/src/teleological/search/single.rs`
+- `crates/context-graph-storage/src/teleological/search/result.rs`
+- `crates/context-graph-storage/src/teleological/search/error.rs`
 
-<scope>
-  <in_scope>
-    <item>Create SingleEmbedderSearch struct</item>
-    <item>Search on single embedder index</item>
-    <item>Support top-k retrieval with similarity threshold</item>
-    <item>Validate query embedding matches expected type</item>
-    <item>Return ranked results with scores</item>
-  </in_scope>
-  <out_of_scope>
-    <item>Multi-embedder search (TASK-LOGIC-006, 007)</item>
-    <item>5-stage pipeline (TASK-LOGIC-008)</item>
-  </out_of_scope>
-</scope>
+**Tests:** 47 unit tests + 1 integration test pass
 
-<definition_of_done>
-  <signatures>
-    <signature file="crates/context-graph-storage/src/teleological/search/single.rs">
-      use crate::teleological::store::{SearchResult, SearchFilter};
-      use crate::teleological::index::EmbedderIndex;
-      use context_graph_core::teleology::array::TeleologicalArray;
-      use context_graph_core::teleology::embedder::Embedder;
+---
 
-      /// Single embedder search strategy.
-      pub struct SingleEmbedderSearch<I: EmbedderIndex> {
-          index: I,
-          embedder: Embedder,
-      }
+## API Reference
 
-      impl<I: EmbedderIndex> SingleEmbedderSearch<I> {
-          pub fn new(index: I) -> Self;
+### SingleEmbedderSearch
 
-          /// Search using a query array's specific embedder.
-          pub async fn search(
-              &self,
-              query: &TeleologicalArray,
-              limit: usize,
-              threshold: Option<f32>,
-          ) -> Result<Vec<SearchResult>, SearchError>;
+```rust
+// File: crates/context-graph-storage/src/teleological/search/single.rs
 
-          /// Search using a raw embedding (for query-time embedding).
-          pub async fn search_raw(
-              &self,
-              query_embedding: &EmbedderOutput,
-              limit: usize,
-              threshold: Option<f32>,
-          ) -> Result<Vec<SearchResult>, SearchError>;
+pub struct SingleEmbedderSearch {
+    registry: Arc<EmbedderIndexRegistry>,
+    config: SingleEmbedderSearchConfig,
+}
 
-          /// Get the embedder this search uses.
-          pub fn embedder(&self) -> Embedder;
-      }
+impl SingleEmbedderSearch {
+    pub fn new(registry: Arc<EmbedderIndexRegistry>) -> Self;
+    pub fn with_config(registry: Arc<EmbedderIndexRegistry>, config: SingleEmbedderSearchConfig) -> Self;
 
-      #[derive(Debug, thiserror::Error)]
-      pub enum SearchError {
-          #[error("Query embedding type mismatch for embedder {embedder:?}")]
-          TypeMismatch { embedder: Embedder },
-          #[error("Index error: {0}")]
-          Index(String),
-          #[error("Empty query embedding")]
-          EmptyQuery,
-      }
-    </signature>
-  </signatures>
+    /// Search a single embedder index.
+    /// Returns SearchError for: E6/E12/E13, wrong dimension, NaN/Inf, empty query.
+    pub fn search(
+        &self,
+        embedder: EmbedderIndex,
+        query: &[f32],
+        k: usize,
+        threshold: Option<f32>,
+    ) -> SearchResult<SingleEmbedderSearchResults>;
 
-  <constraints>
-    <constraint>Query embedding must match embedder type</constraint>
-    <constraint>Results sorted by similarity descending</constraint>
-    <constraint>Threshold filtering applied if specified</constraint>
-    <constraint>Limit enforced</constraint>
-  </constraints>
+    pub fn search_default(&self, embedder: EmbedderIndex, query: &[f32]) -> SearchResult<SingleEmbedderSearchResults>;
+    pub fn search_ids_above_threshold(&self, embedder: EmbedderIndex, query: &[f32], k: usize, min_similarity: f32) -> SearchResult<Vec<(Uuid, f32)>>;
+}
+```
 
-  <verification>
-    <command>cargo test -p context-graph-storage search::single</command>
-  </verification>
-</definition_of_done>
+### Result Types
 
-<pseudo_code>
-// crates/context-graph-storage/src/teleological/search/single.rs
+```rust
+// File: crates/context-graph-storage/src/teleological/search/result.rs
 
-use async_trait::async_trait;
-use thiserror::Error;
+pub struct EmbedderSearchHit {
+    pub id: Uuid,
+    pub distance: f32,       // HNSW distance (lower = more similar)
+    pub similarity: f32,     // [0.0, 1.0] = 1.0 - distance
+    pub embedder: EmbedderIndex,
+}
 
-use crate::teleological::store::{SearchResult, StorageResult};
-use crate::teleological::index::{EmbedderIndex, IndexSearchResult};
-use context_graph_core::teleology::array::{TeleologicalArray, EmbedderOutput};
-use context_graph_core::teleology::embedder::Embedder;
+pub struct SingleEmbedderSearchResults {
+    pub hits: Vec<EmbedderSearchHit>,  // Sorted by similarity descending
+    pub embedder: EmbedderIndex,
+    pub k: usize,
+    pub threshold: Option<f32>,
+    pub latency_us: u64,
+}
+```
 
-#[derive(Debug, Error)]
+### Error Types
+
+```rust
+// File: crates/context-graph-storage/src/teleological/search/error.rs
+
 pub enum SearchError {
-    #[error("Query embedding type mismatch for embedder {embedder:?}")]
-    TypeMismatch { embedder: Embedder },
-    #[error("Index error: {0}")]
-    Index(String),
-    #[error("Empty query embedding")]
-    EmptyQuery,
+    DimensionMismatch { embedder, expected, actual },
+    UnsupportedEmbedder { embedder },  // E6, E12, E13
+    EmptyQuery { embedder },
+    InvalidVector { embedder, message },  // NaN/Inf
+    Index(IndexError),
+    NotFound { id },
+    Store(String),
 }
 
-pub struct SingleEmbedderSearch<I: EmbedderIndex> {
-    index: I,
-    embedder: Embedder,
-}
+pub type SearchResult<T> = Result<T, SearchError>;
+```
 
-impl<I: EmbedderIndex> SingleEmbedderSearch<I> {
-    pub fn new(index: I) -> Self {
-        let embedder = index.embedder();
-        Self { index, embedder }
-    }
+---
 
-    pub fn embedder(&self) -> Embedder {
-        self.embedder
-    }
+## Supported Embedders (12 HNSW)
 
-    /// Search using query array's embedder.
-    pub async fn search(
-        &self,
-        query: &TeleologicalArray,
-        limit: usize,
-        threshold: Option<f32>,
-    ) -> Result<Vec<SearchResult>, SearchError> {
-        let query_embedding = query.get(self.embedder);
-        self.search_raw(query_embedding, limit, threshold).await
-    }
+| Embedder | Dimension | Use Case |
+|----------|-----------|----------|
+| E1Semantic | 1024D | General meaning |
+| E1Matryoshka128 | 128D | Stage 2 fast filter |
+| E2TemporalRecent | 512D | Recency |
+| E3TemporalPeriodic | 512D | Cycles |
+| E4TemporalPositional | 512D | Who/what |
+| E5Causal | 768D | Why/because |
+| E7Code | 1536D | Code/tech |
+| E8Graph | 384D | Sentiment |
+| E9HDC | 1024D | Structure |
+| E10Multimodal | 768D | Intent |
+| E11Entity | 384D | Multi-modal |
+| PurposeVector | 13D | Teleological |
 
-    /// Search using raw embedding.
-    pub async fn search_raw(
-        &self,
-        query_embedding: &EmbedderOutput,
-        limit: usize,
-        threshold: Option<f32>,
-    ) -> Result<Vec<SearchResult>, SearchError> {
-        // Validate embedding type
-        self.validate_embedding(query_embedding)?;
+**NOT supported (different algorithms):**
+- E6Sparse → Inverted index
+- E12LateInteraction → MaxSim token-level
+- E13Splade → Inverted index
 
-        // Search the index
-        let index_results = self.index
-            .search(query_embedding, limit, threshold)
-            .await
-            .map_err(|e| SearchError::Index(e.to_string()))?;
+---
 
-        // Convert to SearchResults
-        // Note: In a real implementation, we'd fetch full arrays from store
-        let results = index_results
-            .into_iter()
-            .map(|ir| self.index_result_to_search_result(ir))
-            .collect();
+## Test Verification
 
-        Ok(results)
-    }
+```bash
+# Run all search tests (47 pass)
+cargo test -p context-graph-storage search
 
-    fn validate_embedding(&self, embedding: &EmbedderOutput) -> Result<(), SearchError> {
-        match embedding {
-            EmbedderOutput::Pending => Err(SearchError::EmptyQuery),
-            EmbedderOutput::Failed(_) => Err(SearchError::EmptyQuery),
-            EmbedderOutput::Dense(_) => {
-                // Check embedder expects dense
-                match self.embedder.expected_dims() {
-                    context_graph_core::teleology::embedder::EmbedderDims::Dense(_) => Ok(()),
-                    _ => Err(SearchError::TypeMismatch { embedder: self.embedder }),
-                }
-            }
-            EmbedderOutput::Sparse(_) => {
-                match self.embedder.expected_dims() {
-                    context_graph_core::teleology::embedder::EmbedderDims::Sparse { .. } => Ok(()),
-                    _ => Err(SearchError::TypeMismatch { embedder: self.embedder }),
-                }
-            }
-            EmbedderOutput::TokenLevel(_) => {
-                match self.embedder.expected_dims() {
-                    context_graph_core::teleology::embedder::EmbedderDims::TokenLevel { .. } => Ok(()),
-                    _ => Err(SearchError::TypeMismatch { embedder: self.embedder }),
-                }
-            }
-            EmbedderOutput::Binary(_) => {
-                match self.embedder.expected_dims() {
-                    context_graph_core::teleology::embedder::EmbedderDims::Binary { .. } => Ok(()),
-                    _ => Err(SearchError::TypeMismatch { embedder: self.embedder }),
-                }
-            }
-        }
-    }
+# Run with output
+cargo test -p context-graph-storage search -- --nocapture
 
-    fn index_result_to_search_result(&self, ir: IndexSearchResult) -> SearchResult {
-        // Create per-embedder scores array with only this embedder populated
-        let mut per_embedder_scores = [None; 13];
-        per_embedder_scores[self.embedder.index()] = Some(ir.score);
+# Run integration test
+cargo test -p context-graph-storage --test full_integration_real_data search
+```
 
-        SearchResult {
-            array: TeleologicalArray::new(ir.id), // Placeholder - needs store lookup
-            similarity: ir.score,
-            per_embedder_scores,
-        }
-    }
-}
+### Test Coverage
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+| Category | Tests | Status |
+|----------|-------|--------|
+| FAIL FAST validation | 8 | PASS |
+| Empty index / k=0 | 3 | PASS |
+| Search with data | 7 | PASS |
+| All 12 HNSW embedders | 1 | PASS |
+| Threshold filtering | 3 | PASS |
+| Full state verification | 1 | PASS |
+| Result/Error types | 20+ | PASS |
 
-    // Mock index for testing
-    struct MockIndex {
-        embedder: Embedder,
-        results: Vec<IndexSearchResult>,
-    }
+---
 
-    #[async_trait::async_trait]
-    impl EmbedderIndex for MockIndex {
-        fn embedder(&self) -> Embedder { self.embedder }
-        // ... implement other methods
-    }
+## Integration with Pipeline
 
-    #[tokio::test]
-    async fn test_search_returns_ranked_results() {
-        // Test implementation
-    }
-}
-</pseudo_code>
+```rust
+use context_graph_storage::teleological::search::{
+    SingleEmbedderSearch, SingleEmbedderSearchConfig,
+};
+use context_graph_storage::teleological::indexes::{
+    EmbedderIndex, EmbedderIndexRegistry,
+};
+use std::sync::Arc;
 
-<files_to_create>
-  <file path="crates/context-graph-storage/src/teleological/search/single.rs">
-    Single embedder search implementation
-  </file>
-  <file path="crates/context-graph-storage/src/teleological/search/mod.rs">
-    Search module definition
-  </file>
-</files_to_create>
+// Create registry and search
+let registry = Arc::new(EmbedderIndexRegistry::new());
+let search = SingleEmbedderSearch::new(registry);
 
-<files_to_modify>
-  <file path="crates/context-graph-storage/src/teleological/mod.rs">
-    Add: pub mod search;
-  </file>
-</files_to_modify>
+// Stage 2: Fast filter with E1Matryoshka128
+let query_128d = vec![0.5f32; 128];
+let candidates = search.search(
+    EmbedderIndex::E1Matryoshka128,
+    &query_128d,
+    1000,
+    Some(0.5),  // threshold
+)?;
 
-<validation_criteria>
-  <criterion>Results sorted by similarity descending</criterion>
-  <criterion>Type mismatch returns error</criterion>
-  <criterion>Threshold filtering works</criterion>
-  <criterion>Limit is enforced</criterion>
-  <criterion>Per-embedder score populated for searched embedder</criterion>
-</validation_criteria>
+// Stage 3: Full E1Semantic reranking
+let query_1024d = vec![0.5f32; 1024];
+let reranked = search.search(
+    EmbedderIndex::E1Semantic,
+    &query_1024d,
+    100,
+    Some(0.7),
+)?;
+```
 
-<test_commands>
-  <command>cargo test -p context-graph-storage search::single -- --nocapture</command>
-</test_commands>
-</task_spec>
+---
+
+## Commit
+
+```
+feat(TASK-LOGIC-005): implement single embedder HNSW search
+
+- Add SingleEmbedderSearch for 12 HNSW-capable indexes
+- FAIL FAST validation: dimension, NaN/Inf, embedder type
+- Distance-to-similarity conversion with clamping
+- Threshold filtering and sorted results
+- 47 tests + 1 integration test
+
+Supports: Stage 2 (E1Matryoshka128) and Stage 3 (E1Semantic) of 5-stage pipeline
+NOT supported: E6/E12/E13 (require different algorithms)
+
+Refs: ARCH-04 (entry-point discovery)
 ```

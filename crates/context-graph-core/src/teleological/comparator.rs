@@ -608,8 +608,8 @@ impl BatchComparator {
 
         // Initialize matrix with 1.0 on diagonal
         let mut matrix: Vec<Vec<f32>> = vec![vec![0.0; n]; n];
-        for i in 0..n {
-            matrix[i][i] = 1.0;
+        for (i, row) in matrix.iter_mut().enumerate() {
+            row[i] = 1.0;
         }
 
         // Compute upper triangle in parallel, then mirror
@@ -814,7 +814,7 @@ mod tests {
         for strategy in strategies {
             let result = comparator
                 .compare_with_strategy(&fp_a, &fp_b, strategy)
-                .expect(&format!("Strategy {:?} should succeed", strategy));
+                .unwrap_or_else(|_| panic!("Strategy {:?} should succeed", strategy));
 
             assert!(
                 (0.0..=1.0).contains(&result.overall),
@@ -893,8 +893,10 @@ mod tests {
     fn test_breakdown_generation() {
         let fp = create_test_fingerprint(1.0);
 
-        let mut config = MatrixSearchConfig::default();
-        config.compute_breakdown = true;
+        let config = MatrixSearchConfig {
+            compute_breakdown: true,
+            ..Default::default()
+        };
 
         let comparator = TeleologicalComparator::with_config(config);
         let result = comparator.compare(&fp, &fp).expect("comparison should succeed");
@@ -967,18 +969,18 @@ mod tests {
         }
 
         // Diagonal should be 1.0
-        for i in 0..5 {
+        for (i, row) in matrix.iter().enumerate() {
             assert!(
-                (matrix[i][i] - 1.0).abs() < 0.01,
+                (row[i] - 1.0).abs() < 0.01,
                 "Diagonal element should be ~1.0"
             );
         }
 
         // Matrix should be symmetric
-        for i in 0..5 {
-            for j in 0..5 {
+        for (i, row_i) in matrix.iter().enumerate() {
+            for (j, &val) in row_i.iter().enumerate() {
                 assert!(
-                    (matrix[i][j] - matrix[j][i]).abs() < f32::EPSILON,
+                    (val - matrix[j][i]).abs() < f32::EPSILON,
                     "Matrix should be symmetric"
                 );
             }
@@ -991,8 +993,10 @@ mod tests {
         let fp_a = create_test_fingerprint(1.0);
         let fp_b = create_test_fingerprint(0.8);
 
-        let mut config = MatrixSearchConfig::default();
-        config.compute_breakdown = true;
+        let config = MatrixSearchConfig {
+            compute_breakdown: true,
+            ..Default::default()
+        };
 
         let comparator = TeleologicalComparator::with_config(config);
         let result = comparator.compare(&fp_a, &fp_b).expect("comparison should succeed");

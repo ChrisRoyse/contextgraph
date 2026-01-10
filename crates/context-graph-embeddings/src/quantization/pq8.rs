@@ -692,8 +692,9 @@ impl PQ8Codebook {
             let mut max_movement = 0.0f32;
             for j in 0..k {
                 if counts[j] > 0 {
-                    for d in 0..dim {
-                        new_centroids[j][d] /= counts[j] as f32;
+                    let divisor = counts[j] as f32;
+                    for val in &mut new_centroids[j] {
+                        *val /= divisor;
                     }
                 } else {
                     // Handle empty cluster: reinitialize from random point
@@ -1004,7 +1005,7 @@ pub fn generate_realistic_embeddings(num_samples: usize, dim: usize, seed: u64) 
         let mut centroid: Vec<f32> = (0..dim)
             .map(|d| {
                 // Create structured centroids with varying activation patterns
-                let base = ((d as f32 / dim as f32) * 6.28).sin();
+                let base = ((d as f32 / dim as f32) * std::f32::consts::TAU).sin();
                 let noise = (rng.next_f32() - 0.5) * 0.5;
                 base * 0.7 + noise
             })

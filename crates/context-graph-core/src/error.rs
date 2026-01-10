@@ -201,14 +201,14 @@ impl ContextGraphError {
     /// ```
     #[inline]
     pub fn is_recoverable(&self) -> bool {
-        match self {
-            Self::Embedding(EmbeddingError::ModelNotLoaded(_)) => true,
-            Self::Storage(StorageError::Transaction(_)) => true,
-            Self::Index(IndexError::Timeout(_)) => true,
-            Self::Mcp(McpError::RateLimited(_)) => true,
-            Self::Gpu(GpuError::OutOfMemory { .. }) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::Embedding(EmbeddingError::ModelNotLoaded(_))
+                | Self::Storage(StorageError::Transaction(_))
+                | Self::Index(IndexError::Timeout(_))
+                | Self::Mcp(McpError::RateLimited(_))
+                | Self::Gpu(GpuError::OutOfMemory { .. })
+        )
     }
 
     /// Check if this error indicates a critical system issue.
@@ -243,13 +243,13 @@ impl ContextGraphError {
     /// ```
     #[inline]
     pub fn is_critical(&self) -> bool {
-        match self {
-            Self::Storage(StorageError::Corruption(_)) => true,
-            Self::Index(IndexError::Corruption(_, _)) => true,
-            Self::Gpu(GpuError::NotAvailable) => true,
-            Self::Internal(_) => true,
-            _ => false,
-        }
+        matches!(
+            self,
+            Self::Storage(StorageError::Corruption(_))
+                | Self::Index(IndexError::Corruption(_, _))
+                | Self::Gpu(GpuError::NotAvailable)
+                | Self::Internal(_)
+        )
     }
 
     /// Create an internal error from a message.

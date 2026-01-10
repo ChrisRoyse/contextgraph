@@ -46,6 +46,7 @@ pub mod indexes;
 pub mod quantized;
 pub mod rocksdb_store;
 pub mod schema;
+pub mod search;
 pub mod serialization;
 
 #[cfg(test)]
@@ -160,4 +161,10 @@ pub use indexes::{
 pub use rocksdb_store::{
     RocksDbTeleologicalStore, TeleologicalStoreConfig, TeleologicalStoreError,
     TeleologicalStoreResult,
+};
+
+// Re-export search types (TASK-LOGIC-005)
+pub use search::{
+    EmbedderSearchHit, SearchError, SearchResult, SingleEmbedderSearch,
+    SingleEmbedderSearchConfig, SingleEmbedderSearchResults,
 };

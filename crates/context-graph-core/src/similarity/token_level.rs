@@ -481,7 +481,7 @@ mod tests {
         let score = max_sim(&query, &document);
 
         assert!(
-            score >= 0.0 && score <= 1.0,
+            (0.0..=1.0).contains(&score),
             "MaxSim score {} should be in [0.0, 1.0]",
             score
         );

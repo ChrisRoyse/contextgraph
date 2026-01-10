@@ -595,7 +595,7 @@ mod tests {
         let b: Vec<f32> = (0..1024).map(|i| ((i as f32) * 0.001).sin()).collect();
         let sim = cosine_similarity(&a, &b).unwrap();
         assert!(
-            sim >= -1.0 && sim <= 1.0,
+            (-1.0..=1.0).contains(&sim),
             "Similarity out of range: {}",
             sim
         );
@@ -609,7 +609,7 @@ mod tests {
         let a: Vec<f32> = (0..512).map(|i| (i as f32) * 0.002).collect();
         let b: Vec<f32> = (0..512).map(|i| ((i as f32) * 0.002).cos()).collect();
         let sim = cosine_similarity(&a, &b).unwrap();
-        assert!(sim >= -1.0 && sim <= 1.0);
+        assert!((-1.0..=1.0).contains(&sim));
         assert!(!sim.is_nan() && !sim.is_infinite());
         println!("[PASS] 512D cosine similarity = {:.6}", sim);
     }
@@ -620,7 +620,7 @@ mod tests {
         let a: Vec<f32> = (0..768).map(|i| (i as f32) * 0.001 + 0.1).collect();
         let b: Vec<f32> = (0..768).map(|i| ((i as f32) * 0.001).tan().clamp(-10.0, 10.0)).collect();
         let sim = cosine_similarity(&a, &b).unwrap();
-        assert!(sim >= -1.0 && sim <= 1.0);
+        assert!((-1.0..=1.0).contains(&sim));
         assert!(!sim.is_nan() && !sim.is_infinite());
         println!("[PASS] 768D cosine similarity = {:.6}", sim);
     }
@@ -631,7 +631,7 @@ mod tests {
         let a: Vec<f32> = (0..1536).map(|i| (i as f32) * 0.0005).collect();
         let b: Vec<f32> = (0..1536).map(|i| ((i as f32) * 0.0005).exp().min(10.0)).collect();
         let sim = cosine_similarity(&a, &b).unwrap();
-        assert!(sim >= -1.0 && sim <= 1.0);
+        assert!((-1.0..=1.0).contains(&sim));
         assert!(!sim.is_nan() && !sim.is_infinite());
         println!("[PASS] 1536D cosine similarity = {:.6}", sim);
     }
@@ -642,7 +642,7 @@ mod tests {
         let a: Vec<f32> = (0..384).map(|i| (i as f32) * 0.003).collect();
         let b: Vec<f32> = (0..384).map(|i| ((i as f32) * 0.003).sin()).collect();
         let sim = cosine_similarity(&a, &b).unwrap();
-        assert!(sim >= -1.0 && sim <= 1.0);
+        assert!((-1.0..=1.0).contains(&sim));
         assert!(!sim.is_nan() && !sim.is_infinite());
         println!("[PASS] 384D cosine similarity = {:.6}", sim);
     }
