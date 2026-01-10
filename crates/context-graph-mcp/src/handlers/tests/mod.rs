@@ -41,6 +41,7 @@
 
 mod causal;
 mod cognitive_pulse;
+mod consciousness_dispatch;
 mod error_codes;
 mod full_state_verification;
 mod full_state_verification_gwt;

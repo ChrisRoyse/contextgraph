@@ -231,6 +231,8 @@ pub struct Handlers {
 
     /// Goal alignment calculator - computes alignment between fingerprints and goal hierarchy.
     /// TASK-S003: Required for purpose/north_star_alignment and purpose/drift_check.
+    /// TASK-INTEG-005: Will be used for cross-goal alignment calculations.
+    #[allow(dead_code)]
     pub(super) alignment_calculator: Arc<dyn GoalAlignmentCalculator>,
 
     /// Goal hierarchy - defines North Star and sub-goals.
@@ -888,6 +890,17 @@ impl Handlers {
             methods::META_UTL_OPTIMIZED_WEIGHTS => {
                 self.handle_meta_utl_optimized_weights(request.id, request.params)
                     .await
+            }
+
+            // Consciousness JSON-RPC methods (TASK-INTEG-003)
+            // These delegate to existing tool implementations for hook integration.
+            methods::CONSCIOUSNESS_GET_STATE => {
+                // Delegate to existing get_consciousness_state tool implementation
+                self.call_get_consciousness_state(request.id).await
+            }
+            methods::CONSCIOUSNESS_SYNC_LEVEL => {
+                // Delegate to existing get_kuramoto_sync tool implementation
+                self.call_get_kuramoto_sync(request.id).await
             }
 
             methods::SYSTEM_STATUS => self.handle_system_status(request.id).await,

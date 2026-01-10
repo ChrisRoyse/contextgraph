@@ -322,29 +322,37 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
     );
     let drift_result = drift_response.result.expect("Must have result");
 
-    let summary = drift_result.get("summary").expect("Must have summary");
-    let total_checked = summary.get("total_checked").and_then(|v| v.as_u64());
-    let drifted_count = summary.get("drifted_count").and_then(|v| v.as_u64());
-    let avg_drift = summary.get("average_drift").and_then(|v| v.as_f64());
+    // TASK-INTEG-002: Verify NEW response structure with TeleologicalDriftDetector
+    let overall_drift = drift_result.get("overall_drift").expect("Must have overall_drift");
+    let drift_level = overall_drift.get("level").and_then(|v| v.as_str());
+    let drift_score = overall_drift.get("drift_score").and_then(|v| v.as_f64());
+    let has_drifted = overall_drift.get("has_drifted").and_then(|v| v.as_bool());
+    let analyzed_count = drift_result.get("analyzed_count").and_then(|v| v.as_u64());
+    let check_time_ms = drift_result.get("check_time_ms").and_then(|v| v.as_u64());
 
-    println!("   Handler returned:");
-    println!("   - total_checked: {}", total_checked.unwrap_or(0));
-    println!("   - drifted_count: {}", drifted_count.unwrap_or(0));
-    println!("   - average_drift: {:.4}", avg_drift.unwrap_or(0.0));
+    println!("   Handler returned (TASK-INTEG-002 TeleologicalDriftDetector format):");
+    println!("   - overall_drift.level: {}", drift_level.unwrap_or("?"));
+    println!("   - overall_drift.drift_score: {:.4}", drift_score.unwrap_or(0.0));
+    println!("   - overall_drift.has_drifted: {}", has_drifted.unwrap_or(false));
+    println!("   - analyzed_count: {}", analyzed_count.unwrap_or(0));
+    println!("   - check_time_ms: {}ms", check_time_ms.unwrap_or(0));
 
-    assert_eq!(total_checked, Some(1), "Must check 1 fingerprint");
+    assert_eq!(analyzed_count, Some(1), "Must analyze 1 fingerprint");
 
-    let drift_analysis = drift_result
-        .get("drift_analysis")
+    // Verify per_embedder_drift has exactly 13 entries
+    let per_embedder = drift_result
+        .get("per_embedder_drift")
         .and_then(|v| v.as_array())
-        .expect("Must have drift_analysis");
-    assert_eq!(drift_analysis.len(), 1, "Must have 1 drift analysis result");
+        .expect("Must have per_embedder_drift");
+    assert_eq!(per_embedder.len(), 13, "Must have 13 per-embedder drift entries");
 
-    let first_analysis = &drift_analysis[0];
-    let status = first_analysis.get("status").and_then(|v| v.as_str());
-    assert_eq!(status, Some("analyzed"), "Must be analyzed status");
+    // Verify most_drifted_embedders exists
+    assert!(
+        drift_result.get("most_drifted_embedders").is_some(),
+        "Must have most_drifted_embedders"
+    );
 
-    println!("   ✓ VERIFIED: Drift check completed successfully\n");
+    println!("   ✓ VERIFIED: Drift check completed with per-embedder analysis\n");
 
     // =========================================================================
     // STEP 5: AFTER STATE - Final verification
@@ -375,8 +383,9 @@ async fn test_full_state_verification_store_alignment_drift_cycle() {
     println!("  1. memory/store: Created fingerprint {}", fingerprint_id);
     println!("  2. Direct store.retrieve() confirmed existence");
     println!(
-        "  3. purpose/drift_check: avg_drift={:.4}",
-        avg_drift.unwrap_or(0.0)
+        "  3. purpose/drift_check: drift_score={:.4}, level={}",
+        drift_score.unwrap_or(0.0),
+        drift_level.unwrap_or("?")
     );
     println!();
     println!("NOTE: purpose/north_star_alignment removed per TASK-CORE-001 (ARCH-03)");

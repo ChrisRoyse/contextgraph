@@ -979,33 +979,33 @@ async fn test_drift_check_valid_fingerprints() {
     );
     let result = response.result.expect("Should have result");
 
-    // Verify response structure
-    let drift_analysis = result.get("drift_analysis").and_then(|v| v.as_array());
-    assert!(drift_analysis.is_some(), "Should have drift_analysis array");
-    assert_eq!(
-        drift_analysis.unwrap().len(),
-        3,
-        "Should have 3 drift results"
-    );
+    // TASK-INTEG-002: Verify NEW response structure with TeleologicalDriftDetector
+    // Response now includes: overall_drift, per_embedder_drift, most_drifted_embedders, recommendations, trend
 
-    let summary = result.get("summary").expect("Should have summary");
-    assert_eq!(
-        summary.get("total_checked").and_then(|v| v.as_u64()),
-        Some(3),
-        "Should report total_checked"
-    );
-    assert!(
-        summary.get("drifted_count").is_some(),
-        "Should report drifted_count"
-    );
-    assert!(
-        summary.get("average_drift").is_some(),
-        "Should report average_drift"
-    );
-    assert!(
-        summary.get("check_time_ms").is_some(),
-        "Should report check_time_ms"
-    );
+    // Verify overall_drift (5-level classification: None, Low, Medium, High, Critical)
+    let overall_drift = result.get("overall_drift").expect("Must have overall_drift");
+    assert!(overall_drift.get("level").is_some(), "Must have drift level");
+    assert!(overall_drift.get("similarity").is_some(), "Must have similarity");
+    assert!(overall_drift.get("drift_score").is_some(), "Must have drift_score");
+    assert!(overall_drift.get("has_drifted").is_some(), "Must have has_drifted");
+
+    // Verify per_embedder_drift (exactly 13 entries, one per embedder E1-E13)
+    let per_embedder = result.get("per_embedder_drift").and_then(|v| v.as_array());
+    assert!(per_embedder.is_some(), "Must have per_embedder_drift array");
+    assert_eq!(per_embedder.unwrap().len(), 13, "Must have exactly 13 embedder entries");
+
+    // Verify most_drifted_embedders (top 5, sorted worst-first)
+    let most_drifted = result.get("most_drifted_embedders").and_then(|v| v.as_array());
+    assert!(most_drifted.is_some(), "Must have most_drifted_embedders");
+    assert!(most_drifted.unwrap().len() <= 5, "Must have at most 5 most drifted");
+
+    // Verify recommendations array
+    assert!(result.get("recommendations").and_then(|v| v.as_array()).is_some(), "Must have recommendations");
+
+    // Verify analyzed_count and check_time_ms
+    assert!(result.get("analyzed_count").is_some(), "Must have analyzed_count");
+    assert!(result.get("check_time_ms").is_some(), "Must have check_time_ms");
+    assert!(result.get("timestamp").is_some(), "Must have timestamp");
 }
 
 /// Test purpose/drift_check fails with missing fingerprint_ids.
@@ -1112,7 +1112,8 @@ async fn test_store_autonomous_operation_for_drift() {
     );
 }
 
-/// Test purpose/drift_check handles not-found fingerprints gracefully.
+/// TASK-INTEG-002: Test purpose/drift_check FAILS FAST on not-found fingerprints.
+/// Per FAIL FAST design, missing fingerprints should return an error, not succeed.
 #[tokio::test]
 async fn test_drift_check_not_found_fingerprints() {
     let handlers = create_test_handlers();
@@ -1130,25 +1131,22 @@ async fn test_drift_check_not_found_fingerprints() {
     );
     let response = handlers.dispatch(drift_request).await;
 
-    // Should succeed but report not_found status for each fingerprint
+    // FAIL FAST: Not-found fingerprints should return error
     assert!(
-        response.error.is_none(),
-        "purpose/drift_check should succeed even with not-found fingerprints"
+        response.error.is_some(),
+        "purpose/drift_check must FAIL FAST when fingerprints not found"
     );
-    let result = response.result.expect("Should have result");
+    let error = response.error.unwrap();
 
-    let drift_analysis = result
-        .get("drift_analysis")
-        .and_then(|v| v.as_array())
-        .expect("Should have drift_analysis");
-
-    for analysis in drift_analysis {
-        assert_eq!(
-            analysis.get("status").and_then(|v| v.as_str()),
-            Some("not_found"),
-            "Should report not_found status"
-        );
-    }
+    // Verify error code is FINGERPRINT_NOT_FOUND (-32010)
+    assert_eq!(
+        error.code, -32010,
+        "Must return FINGERPRINT_NOT_FOUND error code"
+    );
+    assert!(
+        error.message.contains("not found") || error.message.contains("No fingerprint"),
+        "Error message must indicate fingerprint not found"
+    );
 }
 
 // =============================================================================

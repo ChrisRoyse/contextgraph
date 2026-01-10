@@ -345,6 +345,15 @@ pub mod methods {
     pub const GWT_META_COGNITIVE_STATUS: &str = "gwt/meta_cognitive_status";
     /// Get self-ego node status
     pub const GWT_SELF_EGO_STATUS: &str = "gwt/self_ego_status";
+
+    // Consciousness JSON-RPC methods (TASK-INTEG-003)
+    // These methods provide hook integration per MCP spec (docs2/refactor/08-MCP-TOOLS.md)
+    /// Get full consciousness state (GWT + Kuramoto + Workspace + Identity)
+    /// Triggered by SessionStart hooks for full system status.
+    pub const CONSCIOUSNESS_GET_STATE: &str = "consciousness/get_state";
+    /// Get lightweight sync level for health checks
+    /// Triggered by Notification hooks for periodic health monitoring.
+    pub const CONSCIOUSNESS_SYNC_LEVEL: &str = "consciousness/sync_level";
 }
 
 #[cfg(test)]

@@ -28,6 +28,14 @@ use context_graph_core::autonomous::{
     BootstrapService, ConsolidationService, DriftCorrector, DriftDetector, DriftSeverity,
     PruningService, ServiceDiscoveryConfig, SubGoalDiscovery,
 };
+// TASK-INTEG-002: Import new TASK-LOGIC-009/010 types for enhanced integration
+use context_graph_core::autonomous::discovery::{
+    ClusteringAlgorithm, DiscoveryConfig, GoalDiscoveryPipeline, NumClusters,
+};
+use context_graph_core::autonomous::drift::{
+    DriftError, DriftLevel, DriftResult, TeleologicalDriftDetector,
+};
+use context_graph_core::teleological::{SearchStrategy, TeleologicalComparator};
 
 use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
 
@@ -317,17 +325,22 @@ impl Handlers {
 
     /// get_alignment_drift tool implementation.
     ///
-    /// TASK-AUTONOMOUS-MCP: Get current drift state and history.
-    /// Uses DriftDetector to analyze alignment trends.
+    /// TASK-AUTONOMOUS-MCP + TASK-INTEG-002: Get current drift state with per-embedder analysis.
+    /// Uses TeleologicalDriftDetector (TASK-LOGIC-010) for 5-level per-embedder drift detection.
     ///
     /// Arguments:
     /// - timeframe (optional): "1h", "24h", "7d", "30d" (default: "24h")
     /// - include_history (optional): Include full drift history (default: false)
+    /// - memory_ids (optional): Specific memories to analyze (default: recent memories)
+    /// - strategy (optional): Comparison strategy - "cosine", "euclidean", "synergy" (default: "cosine")
     ///
     /// Returns:
-    /// - current_state: Current drift severity, trend, and metrics
-    /// - recommendation: Suggested action based on drift analysis
-    /// - history (optional): Recent drift data points
+    /// - overall_drift: 5-level drift classification (Critical, High, Medium, Low, None)
+    /// - per_embedder_drift: Array of 13 embedder-specific drift results
+    /// - most_drifted_embedders: Top 5 most drifted embedders sorted worst-first
+    /// - recommendations: Action recommendations based on drift levels
+    /// - trend (optional): Trend analysis if history available
+    /// - legacy_state: Legacy DriftSeverity for backwards compatibility
     pub(super) async fn call_get_alignment_drift(
         &self,
         id: Option<JsonRpcId>,
@@ -335,7 +348,8 @@ impl Handlers {
     ) -> JsonRpcResponse {
         debug!("Handling get_alignment_drift tool call");
 
-        // Parse parameters
+        // Parse parameters - clone arguments first since we need to access it again below
+        let arguments_clone = arguments.clone();
         let params: GetAlignmentDriftParams = match serde_json::from_value(arguments) {
             Ok(p) => p,
             Err(e) => {
@@ -366,40 +380,226 @@ impl Handlers {
             }
         };
 
-        // Create drift detector and get state
-        let detector = DriftDetector::new();
-        let severity = detector.detect_drift();
-        let trend = detector.compute_trend();
-        let recommendation = detector.get_recommendation();
+        // Parse optional memory_ids from cloned arguments
+        let memory_ids: Option<Vec<uuid::Uuid>> =
+            arguments_clone.get("memory_ids").and_then(|v| v.as_array()).and_then(|arr| {
+                let ids: Result<Vec<_>, _> = arr
+                    .iter()
+                    .map(|v| {
+                        v.as_str()
+                            .ok_or("not a string")
+                            .and_then(|s| uuid::Uuid::parse_str(s).map_err(|_| "invalid uuid"))
+                    })
+                    .collect();
+                ids.ok()
+            });
 
-        // Build response
-        let current_state = json!({
-            "severity": format!("{:?}", severity),
-            "trend": format!("{:?}", trend),
-            "observation_count": 0, // Fresh detector has no observations
-            "goal_id": north_star.id.to_string(),
-            "note": "Drift detection requires historical observations. Add observations via memory operations."
-        });
-
-        let recommendation_json = json!({
-            "action": format!("{:?}", recommendation),
-            "urgency": match severity {
-                DriftSeverity::None => "none",
-                DriftSeverity::Mild => "low",
-                DriftSeverity::Moderate => "medium",
-                DriftSeverity::Severe => "high",
-            },
-            "description": match severity {
-                DriftSeverity::None => "No drift detected. System is well-aligned.",
-                DriftSeverity::Mild => "Minor drift detected. Consider monitoring more closely.",
-                DriftSeverity::Moderate => "Moderate drift detected. Consider running trigger_drift_correction.",
-                DriftSeverity::Severe => "Severe drift detected. Immediate correction recommended.",
+        // Parse comparison strategy (default: Cosine, FAIL FAST on invalid)
+        let strategy_str = arguments_clone
+            .get("strategy")
+            .and_then(|v| v.as_str())
+            .unwrap_or("cosine");
+        let strategy = match strategy_str {
+            "cosine" => SearchStrategy::Cosine,
+            "euclidean" => SearchStrategy::Euclidean,
+            "synergy" | "synergy_weighted" => SearchStrategy::SynergyWeighted,
+            "group" | "hierarchical" => SearchStrategy::GroupHierarchical,
+            "cross_correlation" | "dominant" => SearchStrategy::CrossCorrelationDominant,
+            unknown => {
+                // FAIL FAST: Invalid strategy
+                error!(strategy = %unknown, "get_alignment_drift: Unknown strategy");
+                return JsonRpcResponse::error(
+                    id,
+                    error_codes::INVALID_PARAMS,
+                    format!(
+                        "Unknown search strategy '{}'. Valid: cosine, euclidean, synergy, group, cross_correlation - FAIL FAST",
+                        unknown
+                    ),
+                );
             }
+        };
+
+        // Collect memories to analyze
+        let memories: Vec<context_graph_core::types::SemanticFingerprint> =
+            if let Some(ids) = memory_ids {
+                // FAIL FAST: Load specific memories
+                let mut mems = Vec::with_capacity(ids.len());
+                for mem_id in &ids {
+                    match self.teleological_store.retrieve(*mem_id).await {
+                        Ok(Some(fp)) => mems.push(fp.semantic),
+                        Ok(None) => {
+                            error!(memory_id = %mem_id, "get_alignment_drift: Memory not found");
+                            return JsonRpcResponse::error(
+                                id,
+                                error_codes::FINGERPRINT_NOT_FOUND,
+                                format!("Memory {} not found - FAIL FAST", mem_id),
+                            );
+                        }
+                        Err(e) => {
+                            error!(memory_id = %mem_id, error = %e, "get_alignment_drift: Storage error");
+                            return JsonRpcResponse::error(
+                                id,
+                                error_codes::INTERNAL_ERROR,
+                                format!("Storage error retrieving {}: {} - FAIL FAST", mem_id, e),
+                            );
+                        }
+                    }
+                }
+                mems
+            } else {
+                // No specific memories - return guidance on how to use the tool
+                // Instead of returning empty, provide legacy state for backwards compatibility
+                let detector = DriftDetector::new();
+                let severity = detector.detect_drift();
+                let trend = detector.compute_trend();
+
+                let current_state = json!({
+                    "severity": format!("{:?}", severity),
+                    "trend": format!("{:?}", trend),
+                    "observation_count": 0,
+                    "goal_id": north_star.id.to_string(),
+                    "note": "No memory_ids provided. Pass memory_ids array for per-embedder TeleologicalDriftDetector analysis."
+                });
+
+                return self.tool_result_with_pulse(
+                    id,
+                    json!({
+                        "legacy_state": current_state,
+                        "timeframe": params.timeframe,
+                        "north_star_id": north_star.id.to_string(),
+                        "usage_hint": "Provide 'memory_ids' parameter with fingerprint UUIDs for per-embedder drift analysis"
+                    }),
+                );
+            };
+
+        // FAIL FAST: Must have memories to analyze
+        if memories.is_empty() {
+            error!("get_alignment_drift: Empty memories array");
+            return JsonRpcResponse::error(
+                id,
+                error_codes::INVALID_PARAMS,
+                "memory_ids array cannot be empty - FAIL FAST",
+            );
+        }
+
+        // Create TeleologicalDriftDetector (TASK-LOGIC-010)
+        let comparator = TeleologicalComparator::new();
+        let detector = TeleologicalDriftDetector::new(comparator);
+
+        // Execute drift check - FAIL FAST on any error
+        let goal_fingerprint = north_star.teleological_array.clone();
+        let drift_result: DriftResult = match detector.check_drift(&memories, &goal_fingerprint, strategy) {
+            Ok(result) => result,
+            Err(e) => {
+                let (code, message) = match &e {
+                    DriftError::EmptyMemories => (
+                        error_codes::INVALID_PARAMS,
+                        "Empty memories slice - cannot check drift".to_string(),
+                    ),
+                    DriftError::InvalidGoal { reason } => (
+                        error_codes::INVALID_PARAMS,
+                        format!("Invalid goal fingerprint: {}", reason),
+                    ),
+                    DriftError::ComparisonFailed { embedder, reason } => (
+                        error_codes::ALIGNMENT_COMPUTATION_ERROR,
+                        format!("Comparison failed for {:?}: {}", embedder, reason),
+                    ),
+                    DriftError::InvalidThresholds { reason } => (
+                        error_codes::ALIGNMENT_COMPUTATION_ERROR,
+                        format!("Invalid thresholds: {}", reason),
+                    ),
+                    DriftError::ComparisonValidationFailed { reason } => (
+                        error_codes::ALIGNMENT_COMPUTATION_ERROR,
+                        format!("Comparison validation failed: {}", reason),
+                    ),
+                };
+                error!(error = %e, "get_alignment_drift: FAILED");
+                return JsonRpcResponse::error(id, code, format!("{} - FAIL FAST", message));
+            }
+        };
+
+        // Build per-embedder drift response (exactly 13 entries)
+        let per_embedder_drift: Vec<serde_json::Value> = drift_result
+            .per_embedder_drift
+            .embedder_drift
+            .iter()
+            .map(|info| {
+                json!({
+                    "embedder": format!("{:?}", info.embedder),
+                    "embedder_index": info.embedder.index(),
+                    "similarity": info.similarity,
+                    "drift_score": info.drift_score,
+                    "drift_level": format!("{:?}", info.drift_level)
+                })
+            })
+            .collect();
+
+        // Build most drifted embedders (top 5, sorted worst-first)
+        let most_drifted: Vec<serde_json::Value> = drift_result
+            .most_drifted_embedders
+            .iter()
+            .take(5)
+            .map(|info| {
+                json!({
+                    "embedder": format!("{:?}", info.embedder),
+                    "embedder_index": info.embedder.index(),
+                    "similarity": info.similarity,
+                    "drift_score": info.drift_score,
+                    "drift_level": format!("{:?}", info.drift_level)
+                })
+            })
+            .collect();
+
+        // Build recommendations
+        let recommendations: Vec<serde_json::Value> = drift_result
+            .recommendations
+            .iter()
+            .map(|rec| {
+                json!({
+                    "embedder": format!("{:?}", rec.embedder),
+                    "priority": format!("{:?}", rec.priority),
+                    "issue": rec.issue,
+                    "suggestion": rec.suggestion
+                })
+            })
+            .collect();
+
+        // Build trend response if available
+        let trend_response = drift_result.trend.as_ref().map(|trend| {
+            json!({
+                "direction": format!("{:?}", trend.direction),
+                "velocity": trend.velocity,
+                "samples": trend.samples,
+                "projected_critical_in": trend.projected_critical_in
+            })
         });
+
+        // Map new DriftLevel to legacy DriftSeverity for backwards compatibility
+        let legacy_severity = match drift_result.overall_drift.drift_level {
+            DriftLevel::Critical => DriftSeverity::Severe,
+            DriftLevel::High => DriftSeverity::Severe,
+            DriftLevel::Medium => DriftSeverity::Moderate,
+            DriftLevel::Low => DriftSeverity::Mild,
+            DriftLevel::None => DriftSeverity::None,
+        };
 
         let mut response = json!({
-            "current_state": current_state,
-            "recommendation": recommendation_json,
+            "overall_drift": {
+                "level": format!("{:?}", drift_result.overall_drift.drift_level),
+                "similarity": drift_result.overall_drift.similarity,
+                "drift_score": drift_result.overall_drift.drift_score,
+                "has_drifted": drift_result.overall_drift.has_drifted
+            },
+            "per_embedder_drift": per_embedder_drift,
+            "most_drifted_embedders": most_drifted,
+            "recommendations": recommendations,
+            "trend": trend_response,
+            "analyzed_count": drift_result.analyzed_count,
+            "timestamp": drift_result.timestamp.to_rfc3339(),
+            "legacy_state": {
+                "severity": format!("{:?}", legacy_severity),
+                "goal_id": north_star.id.to_string()
+            },
             "timeframe": params.timeframe,
             "north_star_id": north_star.id.to_string()
         });
@@ -407,16 +607,16 @@ impl Handlers {
         // Optionally include history
         if params.include_history {
             response["history"] = json!({
-                "note": "History requires storage integration",
+                "note": "History tracking requires stateful detector with check_drift_with_history",
                 "data_points": [],
                 "available": false
             });
         }
 
-        debug!(
-            severity = ?severity,
-            trend = ?trend,
-            "get_alignment_drift: Analysis complete"
+        info!(
+            overall_level = ?drift_result.overall_drift.drift_level,
+            analyzed_count = drift_result.analyzed_count,
+            "get_alignment_drift: Per-embedder analysis complete"
         );
 
         self.tool_result_with_pulse(id, response)
@@ -705,23 +905,29 @@ impl Handlers {
 
     /// discover_sub_goals tool implementation.
     ///
-    /// TASK-AUTONOMOUS-MCP: Discover potential sub-goals from memory clusters.
-    /// Uses SubGoalDiscovery to identify emergent themes.
+    /// TASK-AUTONOMOUS-MCP + TASK-INTEG-002: Discover potential sub-goals from memory clusters.
+    /// Uses GoalDiscoveryPipeline (TASK-LOGIC-009) with K-means clustering for enhanced goal discovery.
     ///
     /// Arguments:
-    /// - min_confidence (optional): Minimum confidence for sub-goal (default: 0.6)
+    /// - min_confidence (optional): Minimum confidence/coherence for sub-goal (default: 0.6)
     /// - max_goals (optional): Maximum sub-goals to discover (default: 5)
     /// - parent_goal_id (optional): Parent goal (default: North Star)
+    /// - memory_ids (optional): Specific memory IDs to analyze (default: all recent memories)
+    /// - algorithm (optional): Clustering algorithm - "kmeans", "hdbscan", "spectral" (default: "kmeans")
     ///
     /// Returns:
-    /// - discovered_goals: List of potential sub-goals with confidence
+    /// - discovered_goals: List of discovered goals with coherence_score, dominant_embedders, level
     /// - cluster_analysis: Information about memory clusters analyzed
+    /// - discovery_metadata: total_arrays_analyzed, clusters_found, algorithm_used
     pub(super) async fn call_discover_sub_goals(
         &self,
         id: Option<JsonRpcId>,
         arguments: serde_json::Value,
     ) -> JsonRpcResponse {
         debug!("Handling discover_sub_goals tool call");
+
+        // Clone arguments for additional parameter extraction
+        let arguments_clone = arguments.clone();
 
         // Parse parameters
         let params: DiscoverSubGoalsParams = match serde_json::from_value(arguments) {
@@ -786,44 +992,221 @@ impl Handlers {
             }
         };
 
-        // Create discovery service with config
-        let config = ServiceDiscoveryConfig {
-            min_cluster_size: 3,
-            min_coherence: params.min_confidence,
-            emergence_threshold: params.min_confidence,
-            max_candidates: params.max_goals,
-            min_confidence: params.min_confidence,
-        };
-        let _discovery_service = SubGoalDiscovery::with_config(config);
+        // Parse optional memory_ids
+        let memory_ids: Option<Vec<uuid::Uuid>> =
+            arguments_clone.get("memory_ids").and_then(|v| v.as_array()).and_then(|arr| {
+                let ids: Result<Vec<_>, _> = arr
+                    .iter()
+                    .map(|v| {
+                        v.as_str()
+                            .ok_or("not a string")
+                            .and_then(|s| uuid::Uuid::parse_str(s).map_err(|_| "invalid uuid"))
+                    })
+                    .collect();
+                ids.ok()
+            });
 
-        // Discover sub-goals - requires memory clusters from storage
-        // For now, we return empty since we don't have direct store access
-        let discovered_goals: Vec<serde_json::Value> = vec![];
+        // Parse clustering algorithm
+        let clustering_algorithm = match arguments_clone
+            .get("algorithm")
+            .and_then(|v| v.as_str())
+            .unwrap_or("kmeans")
+        {
+            "kmeans" => ClusteringAlgorithm::KMeans,
+            "hdbscan" => ClusteringAlgorithm::HDBSCAN { min_samples: 5 },
+            "spectral" => ClusteringAlgorithm::Spectral { n_neighbors: 10 },
+            _ => ClusteringAlgorithm::KMeans, // Default
+        };
+
+        // Collect memories to analyze
+        let arrays: Vec<context_graph_core::types::SemanticFingerprint> =
+            if let Some(ids) = memory_ids {
+                // FAIL FAST: Load specific memories
+                let mut mems = Vec::with_capacity(ids.len());
+                for mem_id in &ids {
+                    match self.teleological_store.retrieve(*mem_id).await {
+                        Ok(Some(fp)) => mems.push(fp.semantic),
+                        Ok(None) => {
+                            error!(memory_id = %mem_id, "discover_sub_goals: Memory not found");
+                            return JsonRpcResponse::error(
+                                id,
+                                error_codes::FINGERPRINT_NOT_FOUND,
+                                format!("Memory {} not found - FAIL FAST", mem_id),
+                            );
+                        }
+                        Err(e) => {
+                            error!(memory_id = %mem_id, error = %e, "discover_sub_goals: Storage error");
+                            return JsonRpcResponse::error(
+                                id,
+                                error_codes::INTERNAL_ERROR,
+                                format!("Storage error retrieving {}: {} - FAIL FAST", mem_id, e),
+                            );
+                        }
+                    }
+                }
+                mems
+            } else {
+                // No specific memories - legacy behavior returns guidance
+                // Create legacy discovery service for backwards compatibility
+                let legacy_config = ServiceDiscoveryConfig {
+                    min_cluster_size: 3,
+                    min_coherence: params.min_confidence,
+                    emergence_threshold: params.min_confidence,
+                    max_candidates: params.max_goals,
+                    min_confidence: params.min_confidence,
+                };
+                let _discovery_service = SubGoalDiscovery::with_config(legacy_config);
+
+                let cluster_analysis = json!({
+                    "parent_goal_id": parent_goal.id.to_string(),
+                    "parent_goal_description": parent_goal.description,
+                    "clusters_analyzed": 0,
+                    "memory_count_analyzed": 0,
+                    "discovery_parameters": {
+                        "min_confidence": params.min_confidence,
+                        "max_goals": params.max_goals
+                    },
+                    "note": "No memory_ids provided. Pass memory_ids array for GoalDiscoveryPipeline K-means clustering."
+                });
+
+                return self.tool_result_with_pulse(
+                    id,
+                    json!({
+                        "discovered_goals": [],
+                        "cluster_analysis": cluster_analysis,
+                        "parent_goal_id": parent_goal.id.to_string(),
+                        "discovery_count": 0,
+                        "usage_hint": "Provide 'memory_ids' parameter with fingerprint UUIDs for K-means goal discovery"
+                    }),
+                );
+            };
+
+        // FAIL FAST: Must have minimum data for clustering
+        let min_cluster_size = 3;
+        if arrays.len() < min_cluster_size {
+            error!(
+                count = arrays.len(),
+                min = min_cluster_size,
+                "discover_sub_goals: Insufficient data for clustering"
+            );
+            return JsonRpcResponse::error(
+                id,
+                error_codes::INVALID_PARAMS,
+                format!(
+                    "Insufficient data for clustering: got {} arrays, need at least {} - FAIL FAST",
+                    arrays.len(),
+                    min_cluster_size
+                ),
+            );
+        }
+
+        // Create GoalDiscoveryPipeline (TASK-LOGIC-009)
+        let comparator = TeleologicalComparator::new();
+        let pipeline = GoalDiscoveryPipeline::new(comparator);
+
+        // Configure discovery
+        let discovery_config = DiscoveryConfig {
+            sample_size: std::cmp::min(arrays.len(), params.max_goals * 20),
+            min_cluster_size,
+            min_coherence: params.min_confidence,
+            clustering_algorithm,
+            num_clusters: NumClusters::Auto,
+            max_iterations: 100,
+            convergence_tolerance: 1e-4,
+        };
+
+        // Execute discovery - note: TASK-LOGIC-009 panics on failure (FAIL FAST)
+        // We need to catch_unwind or handle gracefully
+        let discovery_result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                pipeline.discover(&arrays, &discovery_config)
+            }));
+
+        let discovery_result = match discovery_result {
+            Ok(result) => result,
+            Err(panic_info) => {
+                let panic_msg = if let Some(s) = panic_info.downcast_ref::<&str>() {
+                    s.to_string()
+                } else if let Some(s) = panic_info.downcast_ref::<String>() {
+                    s.clone()
+                } else {
+                    "Unknown panic in GoalDiscoveryPipeline".to_string()
+                };
+                error!(panic = %panic_msg, "discover_sub_goals: PANIC in discovery pipeline");
+                return JsonRpcResponse::error(
+                    id,
+                    error_codes::INTERNAL_ERROR,
+                    format!("Goal discovery failed: {} - FAIL FAST", panic_msg),
+                );
+            }
+        };
+
+        // Build discovered goals response
+        let discovered_goals: Vec<serde_json::Value> = discovery_result
+            .discovered_goals
+            .iter()
+            .take(params.max_goals)
+            .map(|goal| {
+                json!({
+                    "goal_id": goal.goal_id,
+                    "description": goal.description,
+                    "level": format!("{:?}", goal.level),
+                    "confidence": goal.confidence,
+                    "member_count": goal.member_count,
+                    "coherence_score": goal.coherence_score,
+                    "dominant_embedders": goal.dominant_embedders.iter().map(|e| format!("{:?}", e)).collect::<Vec<_>>()
+                })
+            })
+            .collect();
+
+        // Build hierarchy relationships
+        let hierarchy_relationships: Vec<serde_json::Value> = discovery_result
+            .hierarchy
+            .iter()
+            .map(|rel| {
+                json!({
+                    "parent_id": rel.parent_id,
+                    "child_id": rel.child_id,
+                    "similarity": rel.similarity
+                })
+            })
+            .collect();
 
         // Build cluster analysis
         let cluster_analysis = json!({
             "parent_goal_id": parent_goal.id.to_string(),
             "parent_goal_description": parent_goal.description,
-            "clusters_analyzed": 0,
-            "memory_count_analyzed": 0,
+            "clusters_found": discovery_result.clusters_found,
+            "total_arrays_analyzed": discovery_result.total_arrays_analyzed,
             "discovery_parameters": {
                 "min_confidence": params.min_confidence,
-                "max_goals": params.max_goals
-            },
-            "note": "Sub-goal discovery requires memory clusters from storage. Use with storage integration for real results."
+                "max_goals": params.max_goals,
+                "algorithm": format!("{:?}", discovery_config.clustering_algorithm)
+            }
+        });
+
+        // Build metadata
+        let discovery_metadata = json!({
+            "total_arrays_analyzed": discovery_result.total_arrays_analyzed,
+            "clusters_found": discovery_result.clusters_found,
+            "algorithm_used": format!("{:?}", discovery_config.clustering_algorithm),
+            "num_clusters_setting": format!("{:?}", discovery_config.num_clusters)
         });
 
         info!(
             discovered_count = discovered_goals.len(),
+            clusters_found = discovery_result.clusters_found,
             parent_goal = %parent_goal.id,
-            "discover_sub_goals: Discovery complete"
+            "discover_sub_goals: GoalDiscoveryPipeline analysis complete"
         );
 
         self.tool_result_with_pulse(
             id,
             json!({
                 "discovered_goals": discovered_goals,
+                "hierarchy_relationships": hierarchy_relationships,
                 "cluster_analysis": cluster_analysis,
+                "discovery_metadata": discovery_metadata,
                 "parent_goal_id": parent_goal.id.to_string(),
                 "discovery_count": discovered_goals.len()
             }),

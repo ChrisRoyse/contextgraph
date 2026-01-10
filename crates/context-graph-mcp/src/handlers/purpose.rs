@@ -20,13 +20,17 @@
 //! NO fallbacks, NO default values, NO mock data.
 
 use serde_json::json;
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, info, instrument};
 use uuid::Uuid;
 
-use context_graph_core::alignment::AlignmentConfig;
 use context_graph_core::purpose::{GoalHierarchy, GoalLevel, GoalNode};
 use context_graph_core::traits::TeleologicalSearchOptions;
 use context_graph_core::types::fingerprint::{AlignmentThreshold, PurposeVector, NUM_EMBEDDERS};
+// TASK-INTEG-002: Import TeleologicalDriftDetector for per-embedder drift analysis
+use context_graph_core::autonomous::drift::{
+    DriftError, DriftResult, TeleologicalDriftDetector,
+};
+use context_graph_core::teleological::{SearchStrategy, TeleologicalComparator};
 
 use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
 
@@ -692,20 +696,31 @@ impl Handlers {
 
     /// Handle purpose/drift_check request.
     ///
-    /// Detect alignment drift in specified memories.
+    /// TASK-INTEG-002: Integrates TeleologicalDriftDetector (TASK-LOGIC-010) for
+    /// per-embedder drift analysis with 5-level DriftLevel classification.
     ///
     /// # Request Parameters
     /// - `fingerprint_ids` (required): Array of fingerprint UUIDs to check
-    /// - `threshold` (optional): Drift threshold, default 0.1 (10% drift)
+    /// - `goal_id` (optional): Goal to check drift against (default: North Star)
+    /// - `strategy` (optional): Comparison strategy - "quick", "balanced", "exhaustive" (default: "balanced")
     ///
     /// # Response
-    /// - `drift_analysis`: Analysis results for each fingerprint
-    /// - `summary`: Overall drift statistics
+    /// - `overall_drift`: Overall drift level, similarity, score, has_drifted flag
+    /// - `per_embedder_drift`: Array of 13 embedder-specific drift results
+    /// - `most_drifted_embedders`: Top 5 most drifted embedders sorted worst-first
+    /// - `recommendations`: Action recommendations based on drift levels
+    /// - `analyzed_count`: Number of memories analyzed
+    /// - `timestamp`: RFC3339 formatted timestamp
     ///
     /// # Error Codes
-    /// - INVALID_PARAMS (-32602): Invalid fingerprint IDs
+    /// - INVALID_PARAMS (-32602): Invalid fingerprint IDs or parameters
     /// - NORTH_STAR_NOT_CONFIGURED (-32021): No North Star goal
-    /// - ALIGNMENT_COMPUTATION_ERROR (-32022): Computation failed
+    /// - ALIGNMENT_COMPUTATION_ERROR (-32022): Drift check failed
+    ///
+    /// # FAIL FAST
+    /// - Empty fingerprint_ids returns error (not empty result)
+    /// - Invalid goal returns error with clear reason
+    /// - All DriftError variants propagate immediately
     #[instrument(skip(self, params), fields(method = "purpose/drift_check"))]
     pub(super) async fn handle_purpose_drift_check(
         &self,
@@ -724,10 +739,19 @@ impl Handlers {
             }
         };
 
-        // Extract fingerprint_ids (required)
+        // FAIL FAST: Extract fingerprint_ids (required, cannot be empty)
         let fingerprint_ids: Vec<uuid::Uuid> =
             match params.get("fingerprint_ids").and_then(|v| v.as_array()) {
                 Some(arr) => {
+                    // FAIL FAST: Empty array is an error
+                    if arr.is_empty() {
+                        error!("purpose/drift_check: Empty fingerprint_ids array");
+                        return JsonRpcResponse::error(
+                            id,
+                            error_codes::INVALID_PARAMS,
+                            "fingerprint_ids array cannot be empty - FAIL FAST",
+                        );
+                    }
                     let mut ids = Vec::with_capacity(arr.len());
                     for (i, v) in arr.iter().enumerate() {
                         match v.as_str().and_then(|s| uuid::Uuid::parse_str(s).ok()) {
@@ -742,14 +766,6 @@ impl Handlers {
                             }
                         }
                     }
-                    if ids.is_empty() {
-                        error!("purpose/drift_check: Empty fingerprint_ids array");
-                        return JsonRpcResponse::error(
-                            id,
-                            error_codes::INVALID_PARAMS,
-                            "fingerprint_ids array cannot be empty",
-                        );
-                    }
                     ids
                 }
                 None => {
@@ -762,15 +778,36 @@ impl Handlers {
                 }
             };
 
-        let drift_threshold = params
-            .get("threshold")
-            .and_then(|v| v.as_f64())
-            .map(|v| v as f32)
-            .unwrap_or(0.1);
+        // Parse comparison strategy (default: Cosine)
+        // SearchStrategy variants: Cosine, Euclidean, SynergyWeighted, GroupHierarchical, CrossCorrelation
+        let strategy = match params
+            .get("strategy")
+            .and_then(|v| v.as_str())
+            .unwrap_or("cosine")
+        {
+            "cosine" => SearchStrategy::Cosine,
+            "euclidean" => SearchStrategy::Euclidean,
+            "synergy" | "synergy_weighted" => SearchStrategy::SynergyWeighted,
+            "group" | "hierarchical" => SearchStrategy::GroupHierarchical,
+            "cross_correlation" => SearchStrategy::CrossCorrelationDominant,
+            other => {
+                error!(strategy = other, "purpose/drift_check: Invalid strategy");
+                return JsonRpcResponse::error(
+                    id,
+                    error_codes::INVALID_PARAMS,
+                    format!(
+                        "Invalid strategy '{}'. Valid: cosine, euclidean, synergy, group, cross_correlation",
+                        other
+                    ),
+                );
+            }
+        };
 
-        // Check North Star is configured (scoped block ensures lock is released before await)
-        let config = {
+        // Get goal fingerprint (North Star by default, or specified goal_id)
+        let goal_fingerprint = {
             let hierarchy = self.goal_hierarchy.read();
+
+            // Check North Star exists
             if !hierarchy.has_north_star() {
                 error!("purpose/drift_check: No North Star goal configured");
                 return JsonRpcResponse::error(
@@ -779,114 +816,186 @@ impl Handlers {
                     "No North Star goal configured. Use auto_bootstrap_north_star tool for autonomous goal discovery.",
                 );
             }
-            AlignmentConfig::with_hierarchy(hierarchy.clone()).with_pattern_detection(true)
+
+            // Get goal (North Star or specified)
+            let goal = if let Some(goal_id_str) = params.get("goal_id").and_then(|v| v.as_str()) {
+                let goal_id = match Uuid::parse_str(goal_id_str) {
+                    Ok(uuid) => uuid,
+                    Err(_) => {
+                        error!(goal_id = goal_id_str, "purpose/drift_check: Invalid goal UUID");
+                        return JsonRpcResponse::error(
+                            id,
+                            error_codes::INVALID_PARAMS,
+                            format!("Invalid goal_id UUID format: {}", goal_id_str),
+                        );
+                    }
+                };
+                match hierarchy.get(&goal_id) {
+                    Some(g) => g.clone(),
+                    None => {
+                        error!(goal_id = %goal_id, "purpose/drift_check: Goal not found");
+                        return JsonRpcResponse::error(
+                            id,
+                            error_codes::GOAL_NOT_FOUND,
+                            format!("Goal {} not found in hierarchy", goal_id),
+                        );
+                    }
+                }
+            } else {
+                // Use North Star
+                hierarchy.north_star().unwrap().clone()
+            };
+
+            // GoalNode.teleological_array is a TeleologicalArray which is SemanticFingerprint
+            goal.teleological_array.clone()
         };
 
         let check_start = std::time::Instant::now();
 
-        // Process each fingerprint
-        let mut drift_results = Vec::with_capacity(fingerprint_ids.len());
-        let mut total_drift = 0.0f32;
-        let mut drifted_count = 0;
-        let mut critical_drift_count = 0;
-
+        // Collect all fingerprints - FAIL FAST on any error
+        // Extract SemanticFingerprint (.semantic) from each TeleologicalFingerprint
+        let mut memories = Vec::with_capacity(fingerprint_ids.len());
         for fp_id in &fingerprint_ids {
-            // Get fingerprint
             let fingerprint = match self.teleological_store.retrieve(*fp_id).await {
                 Ok(Some(fp)) => fp,
                 Ok(None) => {
-                    drift_results.push(json!({
-                        "fingerprint_id": fp_id.to_string(),
-                        "status": "not_found",
-                        "error": "Fingerprint not found"
-                    }));
-                    continue;
+                    error!(fingerprint_id = %fp_id, "purpose/drift_check: Fingerprint not found");
+                    return JsonRpcResponse::error(
+                        id,
+                        error_codes::FINGERPRINT_NOT_FOUND,
+                        format!("Fingerprint {} not found - FAIL FAST", fp_id),
+                    );
                 }
                 Err(e) => {
-                    drift_results.push(json!({
-                        "fingerprint_id": fp_id.to_string(),
-                        "status": "error",
-                        "error": format!("Storage error: {}", e)
-                    }));
-                    continue;
+                    error!(fingerprint_id = %fp_id, error = %e, "purpose/drift_check: Storage error");
+                    return JsonRpcResponse::error(
+                        id,
+                        error_codes::ALIGNMENT_COMPUTATION_ERROR,
+                        format!("Storage error retrieving {}: {} - FAIL FAST", fp_id, e),
+                    );
                 }
             };
-
-            // Compute current alignment
-            let result = match self
-                .alignment_calculator
-                .compute_alignment(&fingerprint, &config)
-                .await
-            {
-                Ok(r) => r,
-                Err(e) => {
-                    drift_results.push(json!({
-                        "fingerprint_id": fp_id.to_string(),
-                        "status": "error",
-                        "error": format!("Alignment computation failed: {}", e)
-                    }));
-                    continue;
-                }
-            };
-
-            // Compare with stored theta_to_north_star
-            let stored_alignment = fingerprint.theta_to_north_star;
-            let current_alignment = result.score.north_star_alignment;
-            let drift = (current_alignment - stored_alignment).abs();
-
-            let has_drifted = drift > drift_threshold;
-            let is_critical_drift = drift > drift_threshold * 2.0; // Critical if drift is 2x threshold
-
-            if has_drifted {
-                drifted_count += 1;
-                if is_critical_drift {
-                    critical_drift_count += 1;
-                }
-            }
-            total_drift += drift;
-
-            drift_results.push(json!({
-                "fingerprint_id": fp_id.to_string(),
-                "status": "analyzed",
-                "stored_alignment": stored_alignment,
-                "current_alignment": current_alignment,
-                "drift": drift,
-                "drift_percentage": drift * 100.0,
-                "has_drifted": has_drifted,
-                "is_critical_drift": is_critical_drift,
-                "direction": if current_alignment > stored_alignment { "improved" } else { "degraded" },
-                "current_threshold": format!("{:?}", result.score.threshold)
-            }));
+            // Extract the SemanticFingerprint from TeleologicalFingerprint
+            memories.push(fingerprint.semantic);
         }
 
-        let check_time_ms = check_start.elapsed().as_millis();
-        let avg_drift = if !fingerprint_ids.is_empty() {
-            total_drift / fingerprint_ids.len() as f32
-        } else {
-            0.0
+        // Create TeleologicalDriftDetector (TASK-LOGIC-010)
+        let comparator = TeleologicalComparator::new();
+        let detector = TeleologicalDriftDetector::new(comparator);
+
+        // Execute drift check - FAIL FAST on any error
+        let drift_result: DriftResult = match detector.check_drift(&memories, &goal_fingerprint, strategy) {
+            Ok(result) => result,
+            Err(e) => {
+                // Map DriftError to appropriate handler error
+                let (code, message) = match &e {
+                    DriftError::EmptyMemories => (
+                        error_codes::INVALID_PARAMS,
+                        "Empty memories slice - cannot check drift".to_string(),
+                    ),
+                    DriftError::InvalidGoal { reason } => (
+                        error_codes::INVALID_PARAMS,
+                        format!("Invalid goal fingerprint: {}", reason),
+                    ),
+                    DriftError::ComparisonFailed { embedder, reason } => (
+                        error_codes::ALIGNMENT_COMPUTATION_ERROR,
+                        format!("Comparison failed for {:?}: {}", embedder, reason),
+                    ),
+                    DriftError::InvalidThresholds { reason } => (
+                        error_codes::ALIGNMENT_COMPUTATION_ERROR,
+                        format!("Invalid thresholds: {}", reason),
+                    ),
+                    DriftError::ComparisonValidationFailed { reason } => (
+                        error_codes::ALIGNMENT_COMPUTATION_ERROR,
+                        format!("Comparison validation failed: {}", reason),
+                    ),
+                };
+                error!(error = %e, "purpose/drift_check: FAILED");
+                return JsonRpcResponse::error(id, code, format!("{} - FAIL FAST", message));
+            }
         };
 
-        debug!(
-            count = fingerprint_ids.len(),
-            drifted_count = drifted_count,
-            avg_drift = avg_drift,
+        let check_time_ms = check_start.elapsed().as_millis();
+
+        // Build per-embedder drift response (exactly 13 entries)
+        let per_embedder_drift: Vec<serde_json::Value> = drift_result
+            .per_embedder_drift
+            .embedder_drift
+            .iter()
+            .map(|info| {
+                json!({
+                    "embedder": format!("{:?}", info.embedder),
+                    "embedder_index": info.embedder.index(),
+                    "similarity": info.similarity,
+                    "drift_score": info.drift_score,
+                    "drift_level": format!("{:?}", info.drift_level)
+                })
+            })
+            .collect();
+
+        // Build most drifted embedders (top 5, sorted worst-first)
+        let most_drifted: Vec<serde_json::Value> = drift_result
+            .most_drifted_embedders
+            .iter()
+            .take(5)
+            .map(|info| {
+                json!({
+                    "embedder": format!("{:?}", info.embedder),
+                    "embedder_index": info.embedder.index(),
+                    "similarity": info.similarity,
+                    "drift_score": info.drift_score,
+                    "drift_level": format!("{:?}", info.drift_level)
+                })
+            })
+            .collect();
+
+        // Build recommendations (fields: embedder, issue, suggestion, priority)
+        let recommendations: Vec<serde_json::Value> = drift_result
+            .recommendations
+            .iter()
+            .map(|rec| {
+                json!({
+                    "embedder": format!("{:?}", rec.embedder),
+                    "priority": format!("{:?}", rec.priority),
+                    "issue": rec.issue,
+                    "suggestion": rec.suggestion
+                })
+            })
+            .collect();
+
+        // Build trend response if available (fields: direction, velocity, samples, projected_critical_in)
+        let trend_response = drift_result.trend.as_ref().map(|trend| {
+            json!({
+                "direction": format!("{:?}", trend.direction),
+                "velocity": trend.velocity,
+                "samples": trend.samples,
+                "projected_critical_in": trend.projected_critical_in
+            })
+        });
+
+        info!(
+            overall_level = ?drift_result.overall_drift.drift_level,
+            analyzed_count = drift_result.analyzed_count,
             check_time_ms = check_time_ms,
-            "purpose/drift_check: Completed"
+            "purpose/drift_check: Completed with per-embedder analysis"
         );
 
         JsonRpcResponse::success(
             id,
             json!({
-                "drift_analysis": drift_results,
-                "summary": {
-                    "total_checked": fingerprint_ids.len(),
-                    "drifted_count": drifted_count,
-                    "critical_drift_count": critical_drift_count,
-                    "average_drift": avg_drift,
-                    "average_drift_percentage": avg_drift * 100.0,
-                    "drift_threshold_used": drift_threshold,
-                    "check_time_ms": check_time_ms
-                }
+                "overall_drift": {
+                    "level": format!("{:?}", drift_result.overall_drift.drift_level),
+                    "similarity": drift_result.overall_drift.similarity,
+                    "drift_score": drift_result.overall_drift.drift_score,
+                    "has_drifted": drift_result.overall_drift.has_drifted
+                },
+                "per_embedder_drift": per_embedder_drift,
+                "most_drifted_embedders": most_drifted,
+                "recommendations": recommendations,
+                "trend": trend_response,
+                "analyzed_count": drift_result.analyzed_count,
+                "timestamp": drift_result.timestamp.to_rfc3339(),
+                "check_time_ms": check_time_ms
             }),
         )
     }

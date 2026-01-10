@@ -1,550 +1,647 @@
-# TASK-INTEG-003: Consciousness MCP Handlers
+# TASK-INTEG-003: Consciousness MCP Method Integration
 
 ```xml
-<task_spec id="TASK-INTEG-003" version="1.0">
+<task_spec id="TASK-INTEG-003" version="5.0">
 <metadata>
-  <title>Implement Consciousness MCP Tool Handlers</title>
-  <status>todo</status>
+  <title>Integrate Consciousness JSON-RPC Methods with Existing GWT Tools</title>
+  <status>DONE</status>
   <layer>integration</layer>
   <sequence>23</sequence>
   <implements>
     <requirement_ref>REQ-MCP-CONSCIOUSNESS-01</requirement_ref>
   </implements>
   <depends_on>
-    <task_ref>TASK-INTEG-001</task_ref>
+    <task_ref status="DONE">TASK-GWT-001</task_ref>
+    <task_ref status="DONE">TASK-INTEG-001</task_ref>
   </depends_on>
-  <estimated_complexity>medium</estimated_complexity>
-  <estimated_days>2</estimated_days>
+  <estimated_complexity>low</estimated_complexity>
+  <estimated_hours>4-8</estimated_hours>
+  <last_audit>2026-01-10</last_audit>
 </metadata>
 
-<context>
-Consciousness handlers expose the Global Workspace Theory (GWT) and Kuramoto oscillator
-state of the teleological memory system. These provide system health and synchronization
-metrics.
-</context>
+<critical_context>
+## EXISTING INFRASTRUCTURE (Verified 2026-01-10)
+
+### GWT TOOLS ALREADY FULLY IMPLEMENTED
+
+The consciousness/GWT functionality is **100% COMPLETE** as MCP tools. This task only adds
+JSON-RPC method aliases to enable hook integration per the MCP spec (docs2/refactor/08-MCP-TOOLS.md).
+
+| Tool Name | Location | Lines | Status |
+|-----------|----------|-------|--------|
+| `get_consciousness_state` | handlers/tools.rs | 960-1113 | **DONE** |
+| `get_kuramoto_sync` | handlers/tools.rs | 1133-1201 | **DONE** |
+| `get_workspace_status` | handlers/tools.rs | 1203+ | **DONE** |
+| `get_ego_state` | handlers/tools.rs | ~1300 | **DONE** |
+| `trigger_workspace_broadcast` | handlers/tools.rs | ~1400 | **DONE** |
+| `adjust_coupling` | handlers/tools.rs | ~1500 | **DONE** |
+
+### GWT PROVIDER INFRASTRUCTURE (TASK-GWT-001 COMPLETE)
+
+| Component | Location | Purpose |
+|-----------|----------|---------|
+| KuramotoProvider trait | handlers/gwt_traits.rs:28-75 | Kuramoto oscillator interface |
+| GwtSystemProvider trait | handlers/gwt_traits.rs:81-120 | Consciousness computation interface |
+| WorkspaceProvider trait | handlers/gwt_traits.rs:126-154 | Global workspace interface |
+| MetaCognitiveProvider trait | handlers/gwt_traits.rs:159-184 | Meta-cognitive loop interface |
+| SelfEgoProvider trait | handlers/gwt_traits.rs:188-203 | Self-ego node interface |
+| KuramotoProviderImpl | handlers/gwt_providers.rs:42-135 | Real KuramotoNetwork wrapper |
+| GwtSystemProviderImpl | handlers/gwt_providers.rs:143-217 | Real ConsciousnessCalculator wrapper |
+| WorkspaceProviderImpl | handlers/gwt_providers.rs:225-288 | Real GlobalWorkspace wrapper |
+| MetaCognitiveProviderImpl | handlers/gwt_providers.rs:296-350 | Real MetaCognitiveLoop wrapper |
+| SelfEgoProviderImpl | handlers/gwt_providers.rs:358-431 | Real SelfEgoNode wrapper |
+
+### CORE GWT COMPONENTS (context-graph-core/src/gwt/)
+
+| File | Purpose |
+|------|---------|
+| consciousness.rs | ConsciousnessCalculator - C(t) = I(t) x R(t) x D(t) |
+| state_machine.rs | StateMachineManager - 5 states (DORMANT/FRAGMENTED/EMERGING/CONSCIOUS/HYPERSYNC) |
+| workspace.rs | GlobalWorkspace - Winner-take-all memory selection |
+| meta_cognitive.rs | MetaCognitiveLoop - Learning rate modulation |
+| ego_node.rs | SelfEgoNode + IdentityContinuity |
+| mod.rs | Module exports |
+
+### KURAMOTO NETWORK (context-graph-utl/src/phase/)
+
+| Component | Description |
+|-----------|-------------|
+| KuramotoNetwork | 13 coupled oscillators (one per embedder) |
+| Natural frequencies | E1=40Hz, E2-4=8Hz, E5=25Hz, E6=4Hz, E7=25Hz, E8=12Hz, E9=80Hz, E10=40Hz, E11=15Hz, E12=60Hz, E13=4Hz |
+| Coupling strength K | Range [0, 10], default configurable |
+| Order parameter r | Synchronization level in [0, 1] |
+
+### EXISTING TOOL_NAMES CONSTANTS (tools.rs:1046-1066)
+
+```rust
+pub mod tool_names {
+    pub const INJECT_CONTEXT: &str = "inject_context";
+    pub const STORE_MEMORY: &str = "store_memory";
+    pub const GET_MEMETIC_STATUS: &str = "get_memetic_status";
+    pub const GET_GRAPH_MANIFEST: &str = "get_graph_manifest";
+    pub const SEARCH_GRAPH: &str = "search_graph";
+    pub const UTL_STATUS: &str = "utl_status";
+    pub const GET_CONSCIOUSNESS_STATE: &str = "get_consciousness_state";
+    pub const GET_KURAMOTO_SYNC: &str = "get_kuramoto_sync";
+    pub const GET_WORKSPACE_STATUS: &str = "get_workspace_status";
+    pub const GET_EGO_STATE: &str = "get_ego_state";
+    pub const TRIGGER_WORKSPACE_BROADCAST: &str = "trigger_workspace_broadcast";
+    pub const ADJUST_COUPLING: &str = "adjust_coupling";
+    // ... more tools
+}
+```
+
+### EXISTING PROTOCOL CONSTANTS (protocol.rs:335-348)
+
+```rust
+// GWT/Consciousness operations (TASK-GWT-001)
+pub const GWT_KURAMOTO_STATUS: &str = "gwt/kuramoto_status";
+pub const GWT_CONSCIOUSNESS_LEVEL: &str = "gwt/consciousness_level";
+pub const GWT_WORKSPACE_STATUS: &str = "gwt/workspace_status";
+pub const GWT_STATE_STATUS: &str = "gwt/state_status";
+pub const GWT_META_COGNITIVE_STATUS: &str = "gwt/meta_cognitive_status";
+pub const GWT_SELF_EGO_STATUS: &str = "gwt/self_ego_status";
+```
+</critical_context>
 
 <objective>
-Implement MCP handlers for consciousness/get_state and consciousness/sync_level tools
-that expose the GWT workspace and Kuramoto synchronization state.
+**ADD JSON-RPC method dispatch routes** for MCP spec-defined consciousness methods:
+
+1. Add `consciousness/get_state` method -> delegates to existing `call_get_consciousness_state`
+2. Add `consciousness/sync_level` method -> delegates to existing `call_get_kuramoto_sync`
+3. Add protocol constants for these methods
+4. Add dispatch cases in core.rs
+5. Write Full State Verification tests
+
+**THIS IS NOT A CREATION TASK** - all logic already exists. This is pure wiring.
 </objective>
 
 <rationale>
-Consciousness tools enable:
-1. System health monitoring via sync level
-2. Attention distribution analysis
-3. Coalition formation tracking
-4. Phase coherence metrics for debugging
+Per docs2/refactor/08-MCP-TOOLS.md Section 5:
+- `consciousness/get_state` is triggered by SessionStart hooks
+- `consciousness/sync_level` is triggered by Notification hooks (periodic health checks)
+- Current tools work via tools/call but hooks need direct JSON-RPC method access
 </rationale>
 
-<input_context_files>
-  <file purpose="mcp_spec">docs2/refactor/08-MCP-TOOLS.md#5-consciousness-tools</file>
-</input_context_files>
+<architecture_constraints>
+## From constitution.yaml (MUST NOT VIOLATE)
 
-<prerequisites>
-  <check>TASK-INTEG-001 complete (MemoryHandler exists)</check>
-</prerequisites>
+- **AP-007 FAIL FAST**: All errors are FATAL. No fallbacks. No `unwrap_or_default()`. No mock data.
+- **ARCH-01**: TeleologicalArray is atomic - all 13 embeddings stored/retrieved together
+- **ARCH-02**: Apples-to-apples comparison - E1 compares with E1 ONLY
+- **Kuramoto r thresholds** (lines 394-408):
+  - DORMANT: r &lt; 0.3
+  - FRAGMENTED: 0.3 &lt;= r &lt; 0.5
+  - EMERGING: 0.5 &lt;= r &lt; 0.8
+  - CONSCIOUS: 0.8 &lt;= r &lt;= 0.95
+  - HYPERSYNC: r &gt; 0.95
 
-<scope>
-  <in_scope>
-    <item>Implement consciousness/get_state handler</item>
-    <item>Implement consciousness/sync_level handler</item>
-    <item>Model Global Workspace Theory state</item>
-    <item>Model Kuramoto oscillator synchronization</item>
-    <item>Compute attention distribution across embedders</item>
-  </in_scope>
-  <out_of_scope>
-    <item>Full GWT implementation (simplified model)</item>
-    <item>Full Kuramoto dynamics (approximation)</item>
-  </out_of_scope>
-</scope>
+## Error Codes (protocol.rs)
 
-<definition_of_done>
-  <signatures>
-    <signature file="crates/context-graph-mcp/src/handlers/consciousness.rs">
-      use crate::protocol::{HandlerError, ErrorCode};
+| Code | Name | When |
+|------|------|------|
+| -32062 | CONSCIOUSNESS_COMPUTATION_FAILED | ConsciousnessCalculator error |
+| -32063 | GWT_NOT_INITIALIZED | GWT providers not wired |
+</architecture_constraints>
 
-      /// Consciousness state model (GWT + Kuramoto).
-      pub struct ConsciousnessState {
-          workspace: GlobalWorkspace,
-          kuramoto: KuramotoState,
-          attention: AttentionDistribution,
-      }
+<implementation_requirements>
+## 1. ADD PROTOCOL CONSTANTS (protocol.rs)
 
-      /// Consciousness MCP handler.
-      pub struct ConsciousnessHandler {
-          state: Arc<RwLock<ConsciousnessState>>,
-          search_engine: Arc<TeleologicalSearchEngine>,
-      }
+Location: `crates/context-graph-mcp/src/protocol.rs` after line 348
 
-      impl ConsciousnessHandler {
-          pub fn new(
-              search_engine: Arc<TeleologicalSearchEngine>,
-          ) -> Self;
+```rust
+// Consciousness JSON-RPC methods (TASK-INTEG-003)
+/// Get full consciousness state (GWT + Kuramoto + Workspace + Identity)
+pub const CONSCIOUSNESS_GET_STATE: &amp;str = "consciousness/get_state";
+/// Get lightweight sync level for health checks
+pub const CONSCIOUSNESS_SYNC_LEVEL: &amp;str = "consciousness/sync_level";
+```
 
-          /// Handle consciousness/get_state request.
-          pub async fn handle_get_state(
-              &self,
-              params: GetStateParams,
-          ) -> Result<GetStateResponse, HandlerError>;
+## 2. ADD DISPATCH ROUTES (core.rs)
 
-          /// Handle consciousness/sync_level request.
-          pub async fn handle_sync_level(
-              &self,
-              params: SyncLevelParams,
-          ) -> Result<SyncLevelResponse, HandlerError>;
+Location: `crates/context-graph-mcp/src/handlers/core.rs` in dispatch_request() match block
 
-          /// Update consciousness state (called periodically).
-          pub async fn update_state(&self);
-      }
+Find the method dispatch section (look for pattern like `methods::PURPOSE_QUERY =>`).
+Add after existing method dispatches:
 
-      // Response types
-      #[derive(Debug, Serialize)]
-      pub struct GetStateResponse {
-          pub global_workspace: GlobalWorkspaceInfo,
-          pub kuramoto_state: KuramotoStateInfo,
-          pub attention_distribution: AttentionInfo,
-          pub consciousness_metrics: ConsciousnessMetrics,
-          pub timestamp: DateTime<Utc>,
-      }
+```rust
+// Consciousness methods (TASK-INTEG-003)
+methods::CONSCIOUSNESS_GET_STATE => {
+    // Delegate to existing get_consciousness_state tool implementation
+    self.call_get_consciousness_state(request.id).await
+}
+methods::CONSCIOUSNESS_SYNC_LEVEL => {
+    // Delegate to existing get_kuramoto_sync tool implementation
+    self.call_get_kuramoto_sync(request.id).await
+}
+```
 
-      #[derive(Debug, Serialize)]
-      pub struct SyncLevelResponse {
-          pub sync_level: f32,
-          pub phase_coherence: f32,
-          pub status: String,
-          pub status_interpretation: StatusInterpretation,
-          pub thresholds: SyncThresholds,
-          pub trend: Option<SyncTrend>,
-      }
-    </signature>
-  </signatures>
+## 3. NO NEW FILES REQUIRED
 
-  <constraints>
-    <constraint>get_state returns full consciousness model</constraint>
-    <constraint>sync_level is lightweight health check</constraint>
-    <constraint>Kuramoto phases map to 13 embedders</constraint>
-    <constraint>State updates periodically</constraint>
-  </constraints>
+**DO NOT** create `handlers/consciousness.rs` - all logic exists in:
+- `handlers/tools.rs:960-1201` (tool implementations)
+- `handlers/gwt_traits.rs` (provider traits)
+- `handlers/gwt_providers.rs` (real implementations)
 
-  <verification>
-    <command>cargo test -p context-graph-mcp handlers::consciousness</command>
-  </verification>
-</definition_of_done>
+## 4. VERIFICATION COMMANDS
 
-<pseudo_code>
-// crates/context-graph-mcp/src/handlers/consciousness.rs
+```bash
+# Run existing GWT tests to ensure nothing breaks
+cargo test -p context-graph-mcp handlers::tests::gwt -- --nocapture
 
-use std::sync::Arc;
-use tokio::sync::RwLock;
-use serde::{Deserialize, Serialize};
-use chrono::{DateTime, Utc};
+# Run tools tests
+cargo test -p context-graph-mcp handlers::tests::tools_call -- --nocapture
 
-use crate::protocol::{HandlerError, ErrorCode};
-use context_graph_storage::teleological::search::TeleologicalSearchEngine;
-use context_graph_core::teleology::embedder::Embedder;
+# Run new dispatch tests after implementation
+cargo test -p context-graph-mcp handlers::tests::consciousness_dispatch -- --nocapture
+```
+</implementation_requirements>
 
-/// Global Workspace Theory model.
-#[derive(Debug, Default)]
-pub struct GlobalWorkspace {
-    active_coalitions: Vec<Coalition>,
-    broadcast_queue: Vec<BroadcastItem>,
-    workspace_capacity: WorkspaceCapacity,
+<full_state_verification status="REQUIRED">
+## Source of Truth
+
+| Data | Location | Verification Method |
+|------|----------|---------------------|
+| Kuramoto r (sync level) | KuramotoNetwork in memory | kuramoto.read().order_parameter() |
+| Consciousness state | StateMachineManager | gwt_system.current_state() |
+| Workspace active memory | GlobalWorkspace | workspace.get_active_memory() |
+| Identity coherence | SelfEgoNode | self_ego.identity_coherence() |
+
+## Execute &amp; Inspect Protocol
+
+After calling `consciousness/get_state`:
+
+1. **Read the source of truth** directly via provider traits:
+   ```rust
+   let (r, _psi) = kuramoto.read().order_parameter();
+   let state = gwt_system.current_state();
+   let active = workspace.read().await.get_active_memory();
+   let coherence = self_ego.read().await.identity_coherence();
+   ```
+
+2. **Compare response to source**:
+   - Response `r` must equal `kuramoto.order_parameter().0`
+   - Response `state` must equal `ConsciousnessState::from_level(r as f32).name()`
+   - Response `workspace.active_memory` must equal `workspace.get_active_memory()`
+   - Response `identity.coherence` must equal `self_ego.identity_coherence()`
+
+3. **Log evidence**:
+   ```
+   [FSV] consciousness/get_state verification:
+   [FSV]   Kuramoto r: source=0.847, response=0.847 OK
+   [FSV]   State: source=CONSCIOUS, response=CONSCIOUS OK
+   [FSV]   Workspace: source=Some(uuid), response=Some(uuid) OK
+   [FSV]   Identity: source=0.92, response=0.92 OK
+   ```
+
+## Boundary &amp; Edge Case Audit
+
+### Edge Case 1: GWT Not Initialized
+**Input**: Call `consciousness/get_state` when Handlers created WITHOUT `with_default_gwt()`
+**Expected**: Error code -32063 (GWT_NOT_INITIALIZED)
+**Before State**: kuramoto_network = None
+**After State**: kuramoto_network = None (unchanged)
+**Evidence**: Response contains `{"error": {"code": -32063, "message": "...not initialized..."}}`
+
+### Edge Case 2: Synchronized Network (r >= 0.8)
+**Setup**: Use `KuramotoProviderImpl::synchronized()` which sets all phases to 0
+**Input**: Call `consciousness/sync_level`
+**Expected**: r > 0.99, state = "CONSCIOUS" or "HYPERSYNC"
+**Before State**: phases = [0.0; 13]
+**After State**: phases = [0.0; 13] (read-only call)
+**Evidence**: Response contains `{"sync_level": 0.99+, "state": "CONSCIOUS"|"HYPERSYNC"}`
+
+### Edge Case 3: Fragmented Network (r &lt; 0.5)
+**Setup**: Use `KuramotoProviderImpl::incoherent()` with random phases
+**Input**: Call `consciousness/sync_level`
+**Expected**: r &lt; 0.1, state = "DORMANT" or "FRAGMENTED"
+**Before State**: phases = random distribution
+**After State**: phases unchanged (read-only call)
+**Evidence**: Response contains `{"sync_level": &lt;0.5, "state": "DORMANT"|"FRAGMENTED"}`
+
+### Edge Case 4: Hypersync Warning (r > 0.95)
+**Input**: Network with very high coupling (K=10) after evolution
+**Expected**: r > 0.95, state = "HYPERSYNC"
+**Before State**: K = 10, phases evolving toward sync
+**After State**: Same state (read-only)
+**Evidence**: Response contains `{"state": "HYPERSYNC"}` - warning condition
+</full_state_verification>
+
+<manual_testing_protocol>
+## Synthetic Test Data
+
+### Test 1: Fresh Handler (No GWT)
+**Setup**: `Handlers::new(...)` without GWT providers
+**Command**: `{"jsonrpc":"2.0","id":1,"method":"consciousness/get_state","params":{}}`
+**Expected Output**:
+```json
+{"jsonrpc":"2.0","id":1,"error":{"code":-32063,"message":"Kuramoto network not initialized - use with_gwt() constructor"}}
+```
+**Verification**: Check error code is exactly -32063
+
+### Test 2: Initialized Handler (With GWT)
+**Setup**: `Handlers::with_default_gwt(...)` creates all real providers
+**Command**: `{"jsonrpc":"2.0","id":1,"method":"consciousness/get_state","params":{}}`
+**Expected Output Structure**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "C": "[f32 in [0,1]]",
+    "r": "[f64 in [0,1]]",
+    "psi": "[f64 in [0, 2*PI]]",
+    "meta_score": "[f32]",
+    "differentiation": "[f32]",
+    "integration": "[f32]",
+    "reflection": "[f32]",
+    "state": "DORMANT|FRAGMENTED|EMERGING|CONSCIOUS|HYPERSYNC",
+    "gwt_state": "...",
+    "time_in_state_ms": "[u128]",
+    "workspace": {
+      "active_memory": "null|[uuid string]",
+      "is_broadcasting": "[bool]",
+      "has_conflict": "[bool]",
+      "coherence_threshold": 0.8
+    },
+    "identity": {
+      "coherence": "[f32]",
+      "status": "Healthy|Warning|Critical",
+      "trajectory_length": "[usize]",
+      "purpose_vector": "[[13 f32 values]]"
+    },
+    "component_analysis": {
+      "integration_sufficient": "[bool]",
+      "reflection_sufficient": "[bool]",
+      "differentiation_sufficient": "[bool]",
+      "limiting_factor": "None|Integration|Reflection|Differentiation"
+    }
+  }
+}
+```
+**Verification**:
+1. `r` is between 0.0 and 1.0
+2. `psi` is between 0.0 and 2*PI
+3. `workspace.coherence_threshold` is exactly 0.8
+4. `identity.purpose_vector` has exactly 13 elements
+5. `state` matches `ConsciousnessState::from_level(r as f32).name()`
+
+### Test 3: Sync Level (Lightweight Check)
+**Setup**: `Handlers::with_default_gwt(...)`
+**Command**: `{"jsonrpc":"2.0","id":2,"method":"consciousness/sync_level","params":{}}`
+**Expected Output Structure**:
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "r": "[f64]",
+    "psi": "[f64]",
+    "synchronization": "[f64]",
+    "state": "...",
+    "phases": "[[13 f64 values]]",
+    "natural_freqs": "[[13 f64 values]]",
+    "coupling": "[f64]",
+    "elapsed_seconds": "[f64]",
+    "embedding_labels": ["E1_semantic", "E2_temporal_recent", "E3_temporal_periodic", "E4_temporal_positional", "E5_causal", "E6_sparse", "E7_code", "E8_graph", "E9_hdc", "E10_multimodal", "E11_entity", "E12_late_interaction", "E13_splade"],
+    "thresholds": {
+      "conscious": 0.8,
+      "fragmented": 0.5,
+      "hypersync": 0.95
+    }
+  }
+}
+```
+**Verification**:
+1. `r` equals `synchronization`
+2. `phases` has exactly 13 elements
+3. `natural_freqs` has exactly 13 elements (Hz values: 40, 8, 8, 8, 25, 4, 25, 12, 80, 40, 15, 60, 4)
+4. `thresholds.conscious` is exactly 0.8
+5. `thresholds.fragmented` is exactly 0.5
+6. `thresholds.hypersync` is exactly 0.95
+</manual_testing_protocol>
+
+<test_implementation>
+## Tests to Add (handlers/tests/consciousness_dispatch.rs)
+
+```rust
+//! Consciousness JSON-RPC method dispatch tests.
+//!
+//! TASK-INTEG-003: Tests that consciousness/* methods dispatch correctly
+//! and return REAL data from the GWT provider infrastructure.
+//!
+//! NO MOCK DATA. All tests use real providers via with_default_gwt().
+
+use serde_json::json;
+use crate::protocol::{methods, JsonRpcRequest, JsonRpcId, JsonRpcResponse};
+use crate::handlers::Handlers;
+use super::test_utils::{create_test_handlers_with_gwt, create_test_handlers_no_gwt};
+
+/// FSV Test: consciousness/get_state with GWT initialized
+#[tokio::test]
+async fn test_consciousness_get_state_returns_real_data() {
+    // Setup: Create handlers with real GWT providers
+    let handlers = create_test_handlers_with_gwt().await;
+
+    // Execute
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(JsonRpcId::Number(1)),
+        method: methods::CONSCIOUSNESS_GET_STATE.to_string(),
+        params: Some(json!({})),
+    };
+    let response = handlers.dispatch_request(request).await;
+
+    // Verify: Response has real data, not mocks
+    assert!(response.error.is_none(), "Should not error with GWT initialized");
+    let result = response.result.expect("Should have result");
+
+    // FSV: Check source of truth matches response
+    let r_response = result.get("r").and_then(|v| v.as_f64()).expect("r must exist");
+    assert!((0.0..=1.0).contains(&amp;r_response), "r must be in [0,1], got {}", r_response);
+
+    let state = result.get("state").and_then(|v| v.as_str()).expect("state must exist");
+    assert!(["DORMANT", "FRAGMENTED", "EMERGING", "CONSCIOUS", "HYPERSYNC"].contains(&amp;state));
+
+    // FSV: Verify workspace data is real
+    let workspace = result.get("workspace").expect("workspace must exist");
+    let threshold = workspace.get("coherence_threshold").and_then(|v| v.as_f64()).expect("threshold exists");
+    assert!((threshold - 0.8).abs() &lt; 0.001, "Coherence threshold must be 0.8, got {}", threshold);
+
+    // FSV: Verify identity has 13-element purpose vector
+    let identity = result.get("identity").expect("identity must exist");
+    let pv = identity.get("purpose_vector").and_then(|v| v.as_array()).expect("purpose_vector exists");
+    assert_eq!(pv.len(), 13, "Purpose vector must have 13 elements");
+
+    println!("[FSV] consciousness/get_state verification PASSED");
+    println!("[FSV]   r={}, state={}", r_response, state);
 }
 
-#[derive(Debug)]
-pub struct Coalition {
-    coalition_id: String,
-    strength: f32,
-    members: Vec<String>,
-    dominant_theme: String,
+/// FSV Test: consciousness/get_state fails fast without GWT
+#[tokio::test]
+async fn test_consciousness_get_state_fails_without_gwt() {
+    // Setup: Create handlers WITHOUT GWT (using basic new())
+    let handlers = create_test_handlers_no_gwt().await;
+
+    // Execute
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(JsonRpcId::Number(1)),
+        method: methods::CONSCIOUSNESS_GET_STATE.to_string(),
+        params: Some(json!({})),
+    };
+    let response = handlers.dispatch_request(request).await;
+
+    // Verify: Must FAIL FAST with correct error code
+    assert!(response.result.is_none(), "Should not have result without GWT");
+    let error = response.error.expect("Should have error");
+    assert_eq!(error.code, -32063, "Error code must be GWT_NOT_INITIALIZED (-32063)");
+    assert!(error.message.contains("not initialized"), "Error message must mention initialization");
+
+    println!("[FSV] consciousness/get_state FAIL FAST verification PASSED");
 }
 
-#[derive(Debug)]
-pub struct BroadcastItem {
-    content_summary: String,
-    priority: f32,
-    awaiting_broadcast: bool,
+/// FSV Test: consciousness/sync_level returns lightweight data
+#[tokio::test]
+async fn test_consciousness_sync_level_lightweight_check() {
+    let handlers = create_test_handlers_with_gwt().await;
+
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(JsonRpcId::Number(2)),
+        method: methods::CONSCIOUSNESS_SYNC_LEVEL.to_string(),
+        params: Some(json!({})),
+    };
+    let response = handlers.dispatch_request(request).await;
+
+    assert!(response.error.is_none());
+    let result = response.result.expect("Should have result");
+
+    // FSV: Verify phases array has 13 elements
+    let phases = result.get("phases").and_then(|v| v.as_array()).expect("phases exists");
+    assert_eq!(phases.len(), 13, "Must have 13 oscillator phases");
+
+    // FSV: Verify natural frequencies are correct Hz values
+    let freqs = result.get("natural_freqs").and_then(|v| v.as_array()).expect("natural_freqs exists");
+    assert_eq!(freqs.len(), 13, "Must have 13 natural frequencies");
+    // E1=40Hz, E2-4=8Hz, E5=25Hz, E6=4Hz, E7=25Hz, E8=12Hz, E9=80Hz, E10=40Hz, E11=15Hz, E12=60Hz, E13=4Hz
+    let expected_freqs = [40.0, 8.0, 8.0, 8.0, 25.0, 4.0, 25.0, 12.0, 80.0, 40.0, 15.0, 60.0, 4.0];
+    for (i, (actual, expected)) in freqs.iter().zip(expected_freqs.iter()).enumerate() {
+        let actual_val = actual.as_f64().expect("freq is f64");
+        assert!((actual_val - expected).abs() &lt; 0.01, "Freq[{}] should be {}, got {}", i, expected, actual_val);
+    }
+
+    // FSV: Verify thresholds are constitution-mandated values
+    let thresholds = result.get("thresholds").expect("thresholds exists");
+    assert_eq!(thresholds.get("conscious").and_then(|v| v.as_f64()), Some(0.8));
+    assert_eq!(thresholds.get("fragmented").and_then(|v| v.as_f64()), Some(0.5));
+    assert_eq!(thresholds.get("hypersync").and_then(|v| v.as_f64()), Some(0.95));
+
+    println!("[FSV] consciousness/sync_level verification PASSED");
 }
 
-#[derive(Debug, Default)]
-pub struct WorkspaceCapacity {
-    current: usize,
-    max: usize,
-    utilization: f32,
+/// Edge case: Synchronized network returns high r
+#[tokio::test]
+async fn test_synchronized_network_high_r() {
+    // Setup with synchronized Kuramoto network
+    let handlers = create_test_handlers_synchronized().await;
+
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(JsonRpcId::Number(3)),
+        method: methods::CONSCIOUSNESS_SYNC_LEVEL.to_string(),
+        params: Some(json!({})),
+    };
+    let response = handlers.dispatch_request(request).await;
+
+    let result = response.result.expect("Should have result");
+    let r = result.get("r").and_then(|v| v.as_f64()).expect("r exists");
+
+    // Synchronized network should have r > 0.99
+    assert!(r > 0.99, "Synchronized network should have r > 0.99, got {}", r);
+
+    let state = result.get("state").and_then(|v| v.as_str()).expect("state exists");
+    assert!(["CONSCIOUS", "HYPERSYNC"].contains(&amp;state), "State should be CONSCIOUS or HYPERSYNC, got {}", state);
+
+    println!("[FSV] Synchronized network edge case PASSED: r={}, state={}", r, state);
 }
 
-/// Kuramoto oscillator model for 13 embedders.
-#[derive(Debug)]
-pub struct KuramotoState {
-    sync_level: f32,
-    phase_coherence: f32,
-    coupling_strength: f32,
-    oscillator_count: usize,
-    oscillator_phases: [f32; 13],
-    order_parameter: OrderParameter,
+/// Edge case: Incoherent network returns low r
+#[tokio::test]
+async fn test_incoherent_network_low_r() {
+    // Setup with incoherent Kuramoto network
+    let handlers = create_test_handlers_incoherent().await;
+
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        id: Some(JsonRpcId::Number(4)),
+        method: methods::CONSCIOUSNESS_SYNC_LEVEL.to_string(),
+        params: Some(json!({})),
+    };
+    let response = handlers.dispatch_request(request).await;
+
+    let result = response.result.expect("Should have result");
+    let r = result.get("r").and_then(|v| v.as_f64()).expect("r exists");
+
+    // Incoherent network should have r &lt; 0.1
+    assert!(r &lt; 0.1, "Incoherent network should have r &lt; 0.1, got {}", r);
+
+    let state = result.get("state").and_then(|v| v.as_str()).expect("state exists");
+    assert!(["DORMANT", "FRAGMENTED"].contains(&amp;state), "State should be DORMANT or FRAGMENTED, got {}", state);
+
+    println!("[FSV] Incoherent network edge case PASSED: r={}, state={}", r, state);
+}
+```
+
+## Test Utility Functions Needed
+
+Add to `handlers/tests/test_utils.rs`:
+
+```rust
+/// Create handlers with default GWT providers (REAL, not mock)
+pub async fn create_test_handlers_with_gwt() -> Handlers {
+    // Use the actual with_default_gwt() constructor
+    Handlers::with_default_gwt(/* required params */)
 }
 
-#[derive(Debug, Default)]
-pub struct OrderParameter {
-    r: f32,
-    psi: f32,
+/// Create handlers without GWT (for FAIL FAST testing)
+pub async fn create_test_handlers_no_gwt() -> Handlers {
+    // Use basic new() without GWT providers
+    Handlers::new(/* required params */)
 }
 
-impl Default for KuramotoState {
-    fn default() -> Self {
-        // Initialize with random phases
-        let mut phases = [0.0f32; 13];
-        for i in 0..13 {
-            phases[i] = (i as f32 * std::f32::consts::PI * 2.0) / 13.0;
-        }
-
-        Self {
-            sync_level: 0.5,
-            phase_coherence: 0.5,
-            coupling_strength: 0.5,
-            oscillator_count: 13,
-            oscillator_phases: phases,
-            order_parameter: OrderParameter::default(),
-        }
-    }
+/// Create handlers with synchronized Kuramoto network (all phases = 0)
+pub async fn create_test_handlers_synchronized() -> Handlers {
+    // Create with KuramotoProviderImpl::synchronized()
+    let kuramoto = KuramotoProviderImpl::synchronized();
+    Handlers::with_custom_gwt(kuramoto, /* ... */)
 }
 
-impl KuramotoState {
-    fn compute_order_parameter(&mut self) {
-        // r * e^(i*psi) = (1/N) * sum(e^(i*theta_j))
-        let mut sum_cos = 0.0f32;
-        let mut sum_sin = 0.0f32;
-
-        for phase in &self.oscillator_phases {
-            sum_cos += phase.cos();
-            sum_sin += phase.sin();
-        }
-
-        let n = self.oscillator_count as f32;
-        let r = ((sum_cos / n).powi(2) + (sum_sin / n).powi(2)).sqrt();
-        let psi = (sum_sin / n).atan2(sum_cos / n);
-
-        self.order_parameter = OrderParameter { r, psi };
-        self.sync_level = r;
-    }
+/// Create handlers with incoherent Kuramoto network (random phases)
+pub async fn create_test_handlers_incoherent() -> Handlers {
+    // Create with KuramotoProviderImpl::incoherent()
+    let kuramoto = KuramotoProviderImpl::incoherent();
+    Handlers::with_custom_gwt(kuramoto, /* ... */)
 }
-
-/// Attention distribution across embedders.
-#[derive(Debug, Default)]
-pub struct AttentionDistribution {
-    focused_embedders: Vec<Embedder>,
-    attention_weights: [f32; 13],
-    attention_entropy: f32,
-}
-
-impl AttentionDistribution {
-    fn compute_entropy(&self) -> f32 {
-        let mut entropy = 0.0f32;
-        for &w in &self.attention_weights {
-            if w > 0.0 {
-                entropy -= w * w.ln();
-            }
-        }
-        entropy
-    }
-}
-
-/// Full consciousness state.
-#[derive(Debug, Default)]
-pub struct ConsciousnessState {
-    workspace: GlobalWorkspace,
-    kuramoto: KuramotoState,
-    attention: AttentionDistribution,
-    last_updated: Option<DateTime<Utc>>,
-}
-
-pub struct ConsciousnessHandler {
-    state: Arc<RwLock<ConsciousnessState>>,
-    search_engine: Arc<TeleologicalSearchEngine>,
-}
-
-impl ConsciousnessHandler {
-    pub fn new(search_engine: Arc<TeleologicalSearchEngine>) -> Self {
-        Self {
-            state: Arc::new(RwLock::new(ConsciousnessState::default())),
-            search_engine,
-        }
-    }
-
-    pub async fn handle_get_state(
-        &self,
-        params: GetStateParams,
-    ) -> Result<GetStateResponse, HandlerError> {
-        // Update state if needed
-        self.update_state().await;
-
-        let state = self.state.read().await;
-
-        // Build response
-        let workspace = if params.include_workspace.unwrap_or(true) {
-            Some(GlobalWorkspaceInfo {
-                active_coalitions: state.workspace.active_coalitions.iter()
-                    .map(|c| CoalitionInfo {
-                        coalition_id: c.coalition_id.clone(),
-                        strength: c.strength,
-                        members: c.members.clone(),
-                        dominant_theme: c.dominant_theme.clone(),
-                    })
-                    .collect(),
-                broadcast_queue: state.workspace.broadcast_queue.iter()
-                    .map(|b| BroadcastInfo {
-                        content_summary: b.content_summary.clone(),
-                        priority: b.priority,
-                        awaiting_broadcast: b.awaiting_broadcast,
-                    })
-                    .collect(),
-                workspace_capacity: CapacityInfo {
-                    current: state.workspace.workspace_capacity.current,
-                    max: state.workspace.workspace_capacity.max,
-                    utilization: state.workspace.workspace_capacity.utilization,
-                },
-            })
-        } else {
-            None
-        };
-
-        let kuramoto = if params.include_oscillators.unwrap_or(true) {
-            Some(KuramotoStateInfo {
-                sync_level: state.kuramoto.sync_level,
-                phase_coherence: state.kuramoto.phase_coherence,
-                coupling_strength: state.kuramoto.coupling_strength,
-                oscillator_count: state.kuramoto.oscillator_count,
-                oscillator_phases: Embedder::all()
-                    .map(|e| (format!("{:?}", e).to_lowercase(), state.kuramoto.oscillator_phases[e.index()]))
-                    .collect(),
-                order_parameter: OrderParameterInfo {
-                    r: state.kuramoto.order_parameter.r,
-                    psi: state.kuramoto.order_parameter.psi,
-                },
-            })
-        } else {
-            None
-        };
-
-        let attention = if params.include_attention_distribution.unwrap_or(true) {
-            Some(AttentionInfo {
-                focused_embedders: state.attention.focused_embedders.iter()
-                    .map(|e| format!("{:?}", e).to_lowercase())
-                    .collect(),
-                attention_weights: Embedder::all()
-                    .map(|e| (format!("{:?}", e).to_lowercase(), state.attention.attention_weights[e.index()]))
-                    .collect(),
-                attention_entropy: state.attention.attention_entropy,
-            })
-        } else {
-            None
-        };
-
-        let metrics = ConsciousnessMetrics {
-            integration_phi: self.compute_phi(&state),
-            complexity: self.compute_complexity(&state),
-            global_availability: self.compute_availability(&state),
-        };
-
-        Ok(GetStateResponse {
-            global_workspace: workspace,
-            kuramoto_state: kuramoto,
-            attention_distribution: attention,
-            consciousness_metrics: metrics,
-            timestamp: Utc::now(),
-        })
-    }
-
-    pub async fn handle_sync_level(
-        &self,
-        _params: SyncLevelParams,
-    ) -> Result<SyncLevelResponse, HandlerError> {
-        let state = self.state.read().await;
-
-        let status = if state.kuramoto.sync_level >= 0.7 {
-            "synchronized"
-        } else if state.kuramoto.sync_level >= 0.5 {
-            "partially_synchronized"
-        } else if state.kuramoto.sync_level >= 0.3 {
-            "desynchronizing"
-        } else {
-            "desynchronized"
-        };
-
-        let interpretation = StatusInterpretation {
-            level: if state.kuramoto.sync_level >= 0.7 { "good" }
-                   else if state.kuramoto.sync_level >= 0.5 { "warning" }
-                   else { "critical" }.to_string(),
-            description: self.get_status_description(&state),
-            recommendation: if state.kuramoto.sync_level < 0.5 {
-                Some("Consider consolidating memories to improve coherence".to_string())
-            } else {
-                None
-            },
-        };
-
-        let thresholds = SyncThresholds {
-            critical_low: 0.3,
-            warning_low: 0.5,
-            optimal_min: 0.7,
-            current_zone: if state.kuramoto.sync_level >= 0.7 { "optimal" }
-                         else if state.kuramoto.sync_level >= 0.5 { "warning" }
-                         else if state.kuramoto.sync_level >= 0.3 { "low" }
-                         else { "critical" }.to_string(),
-        };
-
-        Ok(SyncLevelResponse {
-            sync_level: state.kuramoto.sync_level,
-            phase_coherence: state.kuramoto.phase_coherence,
-            status: status.to_string(),
-            status_interpretation: interpretation,
-            thresholds,
-            trend: None, // TODO: track trend
-        })
-    }
-
-    pub async fn update_state(&self) {
-        let mut state = self.state.write().await;
-
-        // Update Kuramoto phases based on recent activity
-        self.update_kuramoto_phases(&mut state).await;
-
-        // Update attention distribution
-        self.update_attention(&mut state).await;
-
-        // Update workspace coalitions
-        self.update_coalitions(&mut state).await;
-
-        state.last_updated = Some(Utc::now());
-    }
-
-    async fn update_kuramoto_phases(&self, state: &mut ConsciousnessState) {
-        // Simplified: compute phases from recent search patterns
-        // In reality, would use proper Kuramoto dynamics
-
-        // Simulate phase evolution
-        for i in 0..13 {
-            state.kuramoto.oscillator_phases[i] += 0.1 * (i as f32 / 13.0);
-            state.kuramoto.oscillator_phases[i] %= std::f32::consts::PI * 2.0;
-        }
-
-        state.kuramoto.compute_order_parameter();
-        state.kuramoto.phase_coherence = state.kuramoto.sync_level;
-    }
-
-    async fn update_attention(&self, state: &mut ConsciousnessState) {
-        // Update based on recent query patterns
-        // Simplified: uniform attention
-        for i in 0..13 {
-            state.attention.attention_weights[i] = 1.0 / 13.0;
-        }
-        state.attention.attention_entropy = state.attention.compute_entropy();
-
-        // Top 3 embedders
-        let mut indexed: Vec<_> = Embedder::all()
-            .map(|e| (e, state.attention.attention_weights[e.index()]))
-            .collect();
-        indexed.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap());
-        state.attention.focused_embedders = indexed.into_iter()
-            .take(3)
-            .map(|(e, _)| e)
-            .collect();
-    }
-
-    async fn update_coalitions(&self, state: &mut ConsciousnessState) {
-        // Update workspace coalitions based on recent memory access
-        state.workspace.workspace_capacity = WorkspaceCapacity {
-            current: 3,
-            max: 7,
-            utilization: 3.0 / 7.0,
-        };
-    }
-
-    fn compute_phi(&self, _state: &ConsciousnessState) -> f32 {
-        0.72 // Placeholder
-    }
-
-    fn compute_complexity(&self, _state: &ConsciousnessState) -> f32 {
-        0.68 // Placeholder
-    }
-
-    fn compute_availability(&self, _state: &ConsciousnessState) -> f32 {
-        0.85 // Placeholder
-    }
-
-    fn get_status_description(&self, state: &ConsciousnessState) -> String {
-        if state.kuramoto.sync_level >= 0.7 {
-            "Embedder oscillators are well synchronized".to_string()
-        } else if state.kuramoto.sync_level >= 0.5 {
-            "Partial synchronization - some embedders diverging".to_string()
-        } else {
-            "Low synchronization - system coherence degraded".to_string()
-        }
-    }
-}
-
-// Request/Response types
-#[derive(Debug, Deserialize)]
-pub struct GetStateParams {
-    pub include_oscillators: Option<bool>,
-    pub include_workspace: Option<bool>,
-    pub include_attention_distribution: Option<bool>,
-}
-
-#[derive(Debug, Deserialize)]
-pub struct SyncLevelParams {}
-
-#[derive(Debug, Serialize)]
-pub struct GetStateResponse {
-    pub global_workspace: Option<GlobalWorkspaceInfo>,
-    pub kuramoto_state: Option<KuramotoStateInfo>,
-    pub attention_distribution: Option<AttentionInfo>,
-    pub consciousness_metrics: ConsciousnessMetrics,
-    pub timestamp: DateTime<Utc>,
-}
-
-// Additional types...
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn test_get_state() {
-        // Test consciousness state retrieval
-    }
-
-    #[tokio::test]
-    async fn test_sync_level() {
-        // Test lightweight sync check
-    }
-}
-</pseudo_code>
-
-<files_to_create>
-  <file path="crates/context-graph-mcp/src/handlers/consciousness.rs">
-    Consciousness MCP handler implementation
-  </file>
-</files_to_create>
+```
+</test_implementation>
 
 <files_to_modify>
-  <file path="crates/context-graph-mcp/src/handlers/mod.rs">
-    Add: pub mod consciousness;
+  <file path="crates/context-graph-mcp/src/protocol.rs">
+    Add after line 348:
+    pub const CONSCIOUSNESS_GET_STATE: &amp;str = "consciousness/get_state";
+    pub const CONSCIOUSNESS_SYNC_LEVEL: &amp;str = "consciousness/sync_level";
   </file>
   <file path="crates/context-graph-mcp/src/handlers/core.rs">
-    Add dispatch routes for consciousness/* tools
+    Add in dispatch_request() match block:
+    methods::CONSCIOUSNESS_GET_STATE => self.call_get_consciousness_state(request.id).await,
+    methods::CONSCIOUSNESS_SYNC_LEVEL => self.call_get_kuramoto_sync(request.id).await,
+  </file>
+  <file path="crates/context-graph-mcp/src/handlers/tests/mod.rs">
+    Add: pub mod consciousness_dispatch;
+  </file>
+  <file path="crates/context-graph-mcp/src/handlers/tests/test_utils.rs">
+    Add: create_test_handlers_with_gwt, create_test_handlers_no_gwt,
+    create_test_handlers_synchronized, create_test_handlers_incoherent
   </file>
 </files_to_modify>
 
+<files_to_create>
+  <file path="crates/context-graph-mcp/src/handlers/tests/consciousness_dispatch.rs">
+    FSV tests for consciousness/* method dispatch (code provided above)
+  </file>
+</files_to_create>
+
+<do_not_create>
+  handlers/consciousness.rs - ALL LOGIC EXISTS IN handlers/tools.rs
+</do_not_create>
+
 <validation_criteria>
-  <criterion>consciousness/get_state returns full model</criterion>
-  <criterion>consciousness/sync_level returns lightweight check</criterion>
-  <criterion>Kuramoto phases computed correctly</criterion>
-  <criterion>Attention distribution normalized</criterion>
+  <criterion>consciousness/get_state dispatches to call_get_consciousness_state</criterion>
+  <criterion>consciousness/sync_level dispatches to call_get_kuramoto_sync</criterion>
+  <criterion>Response r value matches kuramoto.order_parameter().0</criterion>
+  <criterion>Response state matches ConsciousnessState::from_level(r).name()</criterion>
+  <criterion>Response workspace.coherence_threshold is exactly 0.8</criterion>
+  <criterion>Response phases array has exactly 13 elements</criterion>
+  <criterion>Response natural_freqs matches constitution Hz values</criterion>
+  <criterion>Error -32063 when GWT not initialized (FAIL FAST)</criterion>
 </validation_criteria>
 
 <test_commands>
-  <command>cargo test -p context-graph-mcp handlers::consciousness -- --nocapture</command>
+  <command>cargo test -p context-graph-mcp handlers::tests::consciousness_dispatch -- --nocapture</command>
+  <command>cargo test -p context-graph-mcp handlers::tests::gwt -- --nocapture</command>
 </test_commands>
+
+<evidence_of_success>
+After implementation, run:
+```bash
+cargo test -p context-graph-mcp handlers::tests::consciousness_dispatch -- --nocapture 2>&amp;1
+```
+
+Expected output includes:
+```
+[FSV] consciousness/get_state verification PASSED
+[FSV]   r=0.xxx, state=EMERGING
+[FSV] consciousness/get_state FAIL FAST verification PASSED
+[FSV] consciousness/sync_level verification PASSED
+[FSV] Synchronized network edge case PASSED: r=0.99+, state=CONSCIOUS
+[FSV] Incoherent network edge case PASSED: r=0.0x, state=DORMANT
+
+test result: ok. 5 passed; 0 failed; 0 ignored
+```
+
+Also verify dispatch routes work:
+```bash
+# In a test, send raw JSON-RPC and check response structure
+echo '{"jsonrpc":"2.0","id":1,"method":"consciousness/get_state","params":{}}' | cargo run -p context-graph-mcp --bin mcp_server
+# Response must have r, state, workspace, identity, component_analysis fields
+```
+</evidence_of_success>
+
+<next_tasks>
+  After TASK-INTEG-003:
+  - TASK-INTEG-004: Hook Protocol &amp; Core Handlers (uses consciousness/* methods)
+  - TASK-INTEG-005: Edit Hooks
+</next_tasks>
 </task_spec>
 ```
