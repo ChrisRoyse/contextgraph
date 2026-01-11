@@ -49,6 +49,7 @@ pub mod controller;
 pub mod nrem;
 pub mod rem;
 pub mod scheduler;
+pub mod types;
 
 // Re-exports for convenience
 pub use amortized::{AmortizedLearner, PathSignature, ShortcutCandidate};
@@ -56,6 +57,15 @@ pub use controller::{DreamController, DreamReport, DreamState, DreamStatus};
 pub use nrem::{NremPhase, NremReport};
 pub use rem::{RemPhase, RemReport};
 pub use scheduler::DreamScheduler;
+pub use types::{
+    EntropyWindow,
+    ExtendedTriggerReason,
+    GpuTriggerState,
+    HebbianConfig,
+    HyperbolicWalkConfig,
+    NodeActivation,
+    WalkStep,
+};
 
 use serde::{Deserialize, Serialize};
 use std::time::Duration;
