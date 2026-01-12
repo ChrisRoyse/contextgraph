@@ -33,6 +33,7 @@
 //! ```
 
 mod asymmetric_knn;
+mod cross_modal;
 mod default_knn;
 mod factory;
 mod gmm_mahalanobis;
@@ -41,6 +42,7 @@ mod hybrid_gmm_knn;
 mod jaccard_active;
 
 pub use asymmetric_knn::AsymmetricKnnEntropy;
+pub use cross_modal::CrossModalEntropy;
 pub use default_knn::DefaultKnnEntropy;
 pub use factory::EmbedderEntropyFactory;
 pub use gmm_mahalanobis::GmmMahalanobisEntropy;

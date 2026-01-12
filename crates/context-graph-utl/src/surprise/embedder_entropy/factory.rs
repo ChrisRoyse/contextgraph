@@ -15,8 +15,8 @@
 //! - E9: "Hamming: ΔS=min_hamming/dim"
 
 use super::{
-    AsymmetricKnnEntropy, DefaultKnnEntropy, EmbedderEntropy, GmmMahalanobisEntropy,
-    HammingPrototypeEntropy, HybridGmmKnnEntropy, JaccardActiveEntropy,
+    AsymmetricKnnEntropy, CrossModalEntropy, DefaultKnnEntropy, EmbedderEntropy,
+    GmmMahalanobisEntropy, HammingPrototypeEntropy, HybridGmmKnnEntropy, JaccardActiveEntropy,
 };
 use crate::config::SurpriseConfig;
 use context_graph_core::teleological::Embedder;
@@ -42,6 +42,7 @@ impl EmbedderEntropyFactory {
     /// - E5 (Causal) → AsymmetricKnnEntropy
     /// - E7 (Code) → HybridGmmKnnEntropy (GMM+KNN hybrid per constitution)
     /// - E9 (Hdc) → HammingPrototypeEntropy
+    /// - E10 (Multimodal) → CrossModalEntropy (Cross-modal KNN per constitution)
     /// - E13 (KeywordSplade) → JaccardActiveEntropy
     /// - All others → DefaultKnnEntropy
     pub fn create(embedder: Embedder, config: &SurpriseConfig) -> Box<dyn EmbedderEntropy> {
@@ -74,13 +75,15 @@ impl EmbedderEntropyFactory {
             // E7 (Code): Hybrid GMM+KNN per constitution.yaml delta_methods.ΔS E7
             Embedder::Code => Box::new(HybridGmmKnnEntropy::from_config(config)),
 
-            // E2-E4, E6, E8, E10-E12: Default KNN-based entropy
+            // E10 (Multimodal): Cross-modal KNN per constitution.yaml delta_methods.ΔS E10
+            Embedder::Multimodal => Box::new(CrossModalEntropy::from_config(config)),
+
+            // E2-E4, E6, E8, E11-E12: Default KNN-based entropy
             Embedder::TemporalRecent
             | Embedder::TemporalPeriodic
             | Embedder::TemporalPositional
             | Embedder::Sparse
             | Embedder::Graph
-            | Embedder::Multimodal
             | Embedder::Entity
             | Embedder::LateInteraction => {
                 Box::new(DefaultKnnEntropy::from_config(embedder, config))
@@ -154,14 +157,16 @@ mod tests {
     fn test_factory_creates_fallback_types() {
         let config = SurpriseConfig::default();
 
+        // Note: E7 (Code) and E10 (Multimodal) have specialized implementations
+        // but should still return the correct embedder_type
         let fallback_embedders = [
             Embedder::TemporalRecent,
             Embedder::TemporalPeriodic,
             Embedder::TemporalPositional,
             Embedder::Sparse,
-            Embedder::Code,
+            Embedder::Code,       // Uses HybridGmmKnnEntropy
             Embedder::Graph,
-            Embedder::Multimodal,
+            Embedder::Multimodal, // Uses CrossModalEntropy
             Embedder::Entity,
             Embedder::LateInteraction,
         ];
@@ -177,6 +182,34 @@ mod tests {
         }
 
         println!("[PASS] factory_creates_fallback_types");
+    }
+
+    #[test]
+    fn test_factory_routes_multimodal_to_cross_modal() {
+        let config = SurpriseConfig::default();
+        let calculator = EmbedderEntropyFactory::create(Embedder::Multimodal, &config);
+
+        assert_eq!(
+            calculator.embedder_type(),
+            Embedder::Multimodal,
+            "Factory should create CrossModalEntropy for Multimodal"
+        );
+
+        // Test that it computes correctly
+        let current = vec![0.5f32; 768]; // E10 dimension is 768 (CLIP)
+        let history: Vec<Vec<f32>> = vec![vec![0.5f32; 768]; 10];
+        let result = calculator.compute_delta_s(&current, &history, 5);
+
+        assert!(result.is_ok(), "CrossModalEntropy should compute successfully");
+        let delta_s = result.unwrap();
+        assert!(
+            (0.0..=1.0).contains(&delta_s),
+            "delta_s should be in valid range"
+        );
+        assert!(!delta_s.is_nan(), "delta_s should not be NaN");
+        assert!(!delta_s.is_infinite(), "delta_s should not be Infinite");
+
+        println!("[PASS] test_factory_routes_multimodal_to_cross_modal");
     }
 
     #[test]

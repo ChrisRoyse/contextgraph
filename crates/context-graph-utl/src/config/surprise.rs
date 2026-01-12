@@ -116,6 +116,22 @@ pub struct SurpriseConfig {
     /// k for KNN component in Code entropy.
     /// Range: `[1, 20]`
     pub code_k_neighbors: usize,
+
+    // --- Cross-Modal (E10 Multimodal) ---
+
+    /// Weight for intra-modal comparisons (same modality).
+    /// Constitution: 0.7 (prefer same-modality similarity)
+    /// Range: `[0.0, 1.0]`
+    pub multimodal_intra_weight: f32,
+
+    /// Weight for cross-modal comparisons (different modality).
+    /// Constitution: 0.3 (still consider cross-modal alignment)
+    /// Range: `[0.0, 1.0]`
+    pub multimodal_cross_weight: f32,
+
+    /// k neighbors for multimodal KNN entropy.
+    /// Range: `[1, 20]`
+    pub multimodal_k_neighbors: usize,
 }
 
 impl Default for SurpriseConfig {
@@ -146,6 +162,11 @@ impl Default for SurpriseConfig {
             code_knn_weight: 0.5,
             code_n_components: 5,
             code_k_neighbors: 5,
+
+            // Cross-Modal (E10 Multimodal) - per constitution.yaml delta_methods.ΔS E10
+            multimodal_intra_weight: 0.7,
+            multimodal_cross_weight: 0.3,
+            multimodal_k_neighbors: 5,
         }
     }
 }
