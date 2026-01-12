@@ -17,7 +17,7 @@
 use super::{
     AsymmetricKnnEntropy, CrossModalEntropy, DefaultKnnEntropy, EmbedderEntropy,
     GmmMahalanobisEntropy, HammingPrototypeEntropy, HybridGmmKnnEntropy, JaccardActiveEntropy,
-    TransEEntropy,
+    MaxSimTokenEntropy, TransEEntropy,
 };
 use crate::config::SurpriseConfig;
 use context_graph_core::teleological::Embedder;
@@ -44,6 +44,8 @@ impl EmbedderEntropyFactory {
     /// - E7 (Code) → HybridGmmKnnEntropy (GMM+KNN hybrid per constitution)
     /// - E9 (Hdc) → HammingPrototypeEntropy
     /// - E10 (Multimodal) → CrossModalEntropy (Cross-modal KNN per constitution)
+    /// - E11 (Entity) → TransEEntropy (TransE ||h+r-t|| per constitution)
+    /// - E12 (LateInteraction) → MaxSimTokenEntropy (Token KNN per constitution)
     /// - E13 (KeywordSplade) → JaccardActiveEntropy
     /// - All others → DefaultKnnEntropy
     pub fn create(embedder: Embedder, config: &SurpriseConfig) -> Box<dyn EmbedderEntropy> {
@@ -82,13 +84,15 @@ impl EmbedderEntropyFactory {
             // E11 (Entity): TransE distance per constitution.yaml delta_methods.ΔS E11
             Embedder::Entity => Box::new(TransEEntropy::from_config(config)),
 
-            // E2-E4, E6, E8, E12: Default KNN-based entropy
+            // E12 (LateInteraction): MaxSim token-level entropy per constitution.yaml
+            Embedder::LateInteraction => Box::new(MaxSimTokenEntropy::from_config(config)),
+
+            // E2-E4, E6, E8: Default KNN-based entropy
             Embedder::TemporalRecent
             | Embedder::TemporalPeriodic
             | Embedder::TemporalPositional
             | Embedder::Sparse
-            | Embedder::Graph
-            | Embedder::LateInteraction => {
+            | Embedder::Graph => {
                 Box::new(DefaultKnnEntropy::from_config(embedder, config))
             }
         }
@@ -406,5 +410,36 @@ mod tests {
         assert!(!delta_s.is_infinite(), "delta_s should not be Infinite");
 
         println!("[PASS] test_factory_routes_entity_to_transe");
+    }
+
+    #[test]
+    fn test_factory_routes_late_interaction_to_maxsim() {
+        let config = SurpriseConfig::default();
+        let calculator = EmbedderEntropyFactory::create(Embedder::LateInteraction, &config);
+
+        assert_eq!(
+            calculator.embedder_type(),
+            Embedder::LateInteraction,
+            "Factory should create MaxSimTokenEntropy for LateInteraction"
+        );
+
+        // Test with E12 ColBERT-style multi-token embedding (2 tokens × 128D = 256D)
+        let current = vec![0.5f32; 256];
+        let history: Vec<Vec<f32>> = vec![vec![0.5f32; 256]; 10];
+        let result = calculator.compute_delta_s(&current, &history, 5);
+
+        assert!(
+            result.is_ok(),
+            "MaxSimTokenEntropy should compute successfully"
+        );
+        let delta_s = result.unwrap();
+        assert!(
+            (0.0..=1.0).contains(&delta_s),
+            "delta_s should be in valid range"
+        );
+        assert!(!delta_s.is_nan(), "delta_s should not be NaN");
+        assert!(!delta_s.is_infinite(), "delta_s should not be Infinite");
+
+        println!("[PASS] test_factory_routes_late_interaction_to_maxsim");
     }
 }

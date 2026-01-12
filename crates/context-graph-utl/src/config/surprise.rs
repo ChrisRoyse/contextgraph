@@ -148,6 +148,21 @@ pub struct SurpriseConfig {
     /// k neighbors for TransE entropy averaging.
     /// Range: `[1, 20]`
     pub entity_k_neighbors: usize,
+
+    // --- MaxSim Token (E12 LateInteraction) ---
+
+    /// Token dimension for E12 late interaction embeddings.
+    /// Constitution: 128D per token (ColBERT standard)
+    /// Range: `[64, 256]`
+    pub late_interaction_token_dim: usize,
+
+    /// Minimum tokens required for valid E12 embedding.
+    /// Range: `[1, 10]`
+    pub late_interaction_min_tokens: usize,
+
+    /// k neighbors for MaxSim entropy averaging.
+    /// Range: `[1, 20]`
+    pub late_interaction_k_neighbors: usize,
 }
 
 impl Default for SurpriseConfig {
@@ -188,6 +203,11 @@ impl Default for SurpriseConfig {
             entity_transe_norm: 2,
             entity_split_ratio: 0.5,
             entity_k_neighbors: 5,
+
+            // MaxSim Token (E12 LateInteraction) - per constitution.yaml delta_methods.ΔS E12
+            late_interaction_token_dim: 128,
+            late_interaction_min_tokens: 1,
+            late_interaction_k_neighbors: 5,
         }
     }
 }
