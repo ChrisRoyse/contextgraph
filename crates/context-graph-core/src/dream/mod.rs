@@ -52,6 +52,7 @@ pub mod nrem;
 pub mod poincare_walk;
 pub mod rem;
 pub mod scheduler;
+pub mod thresholds;
 pub mod triggers;
 pub mod types;
 
@@ -89,6 +90,7 @@ pub use poincare_walk::{
 };
 pub use rem::{RemPhase, RemReport};
 pub use scheduler::DreamScheduler;
+pub use thresholds::DreamThresholds;
 pub use triggers::{EntropyCalculator, GpuMonitor, TriggerManager};
 pub use types::{
     EntropyWindow,
@@ -114,6 +116,7 @@ pub mod constants {
     pub const REM_DURATION: Duration = Duration::from_secs(120);
 
     /// Activity threshold for dream trigger (Constitution: 0.15)
+    #[deprecated(since = "0.5.0", note = "Use DreamThresholds.activity instead")]
     pub const ACTIVITY_THRESHOLD: f32 = 0.15;
 
     /// Idle duration before dream trigger (Constitution: 10 minutes)
@@ -123,6 +126,7 @@ pub mod constants {
     pub const MAX_REM_QUERIES: usize = 100;
 
     /// Minimum semantic leap for REM exploration (Constitution: 0.7)
+    #[deprecated(since = "0.5.0", note = "Use DreamThresholds.semantic_leap instead")]
     pub const MIN_SEMANTIC_LEAP: f32 = 0.7;
 
     /// Maximum wake latency (Constitution: <100ms)
@@ -148,6 +152,7 @@ pub mod constants {
     pub const MIN_SHORTCUT_TRAVERSALS: usize = 5;
 
     /// Confidence threshold for shortcuts (Constitution: 0.7)
+    #[deprecated(since = "0.5.0", note = "Use DreamThresholds.shortcut_confidence instead")]
     pub const SHORTCUT_CONFIDENCE_THRESHOLD: f32 = 0.7;
 }
 
@@ -210,10 +215,12 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(deprecated)]
     fn test_constants_compliance() {
         // Verify constitution-mandated values
         assert_eq!(constants::NREM_DURATION.as_secs(), 180);
         assert_eq!(constants::REM_DURATION.as_secs(), 120);
+        // Legacy constants - deprecated but must retain values for compatibility
         assert_eq!(constants::ACTIVITY_THRESHOLD, 0.15);
         assert_eq!(constants::MAX_REM_QUERIES, 100);
         assert_eq!(constants::MIN_SEMANTIC_LEAP, 0.7);

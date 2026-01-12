@@ -76,6 +76,9 @@ pub struct ShortcutCandidate {
 
 impl ShortcutCandidate {
     /// Check if this candidate meets the quality gate requirements
+    ///
+    /// NOTE: Uses legacy constants. Will be migrated to DreamThresholds in consumer update task.
+    #[allow(deprecated)]
     pub fn meets_quality_gate(&self) -> bool {
         self.hop_count >= constants::MIN_SHORTCUT_HOPS
             && self.traversal_count >= constants::MIN_SHORTCUT_TRAVERSALS
@@ -120,6 +123,9 @@ struct PathInfo {
 
 impl AmortizedLearner {
     /// Create a new AmortizedLearner with constitution-mandated defaults
+    ///
+    /// NOTE: Uses legacy constants. Will be migrated to DreamThresholds in consumer update task.
+    #[allow(deprecated)]
     pub fn new() -> Self {
         Self {
             path_counts: HashMap::new(),
@@ -347,6 +353,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_constitution_compliance() {
         let learner = AmortizedLearner::new();
 

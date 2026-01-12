@@ -121,6 +121,9 @@ pub enum BlockReason {
 
 impl DreamScheduler {
     /// Create a new DreamScheduler with constitution-mandated defaults
+    ///
+    /// NOTE: Uses legacy constants. Will be migrated to DreamThresholds in consumer update task.
+    #[allow(deprecated)]
     pub fn new() -> Self {
         Self {
             activity_threshold: constants::ACTIVITY_THRESHOLD,
@@ -314,6 +317,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_activity_threshold_constitution_compliance() {
         // Constitution mandates activity < 0.15 for 10 minutes
         let scheduler = DreamScheduler::new();

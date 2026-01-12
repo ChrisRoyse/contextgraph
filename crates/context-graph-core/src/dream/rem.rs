@@ -105,6 +105,9 @@ pub struct BlindSpot {
 
 impl BlindSpot {
     /// Check if this is a significant blind spot (high distance, good confidence)
+    ///
+    /// NOTE: Uses legacy constants. Will be migrated to DreamThresholds in consumer update task.
+    #[allow(deprecated)]
     pub fn is_significant(&self) -> bool {
         self.semantic_distance >= constants::MIN_SEMANTIC_LEAP && self.confidence >= 0.5
     }
@@ -123,6 +126,9 @@ pub struct SyntheticQuery {
 
 impl RemPhase {
     /// Create a new REM phase with constitution-mandated defaults
+    ///
+    /// NOTE: Uses legacy constants. Will be migrated to DreamThresholds in consumer update task.
+    #[allow(deprecated)]
     pub fn new() -> Self {
         Self {
             duration: constants::REM_DURATION,
@@ -305,6 +311,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(deprecated)]
     fn test_constitution_compliance() {
         let phase = RemPhase::new();
 
