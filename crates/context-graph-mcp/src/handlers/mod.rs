@@ -21,12 +21,14 @@
 //! - `causal`: Causal inference handlers (TASK-CAUSAL-001)
 //! - `teleological`: Teleological search, fusion, and profile handlers (TELEO-H1 to TELEO-H5)
 //! - `autonomous`: NORTH autonomous system handlers (TASK-AUTONOMOUS-MCP)
+//! - `epistemic`: Epistemic action handlers for GWT workspace (TASK-MCP-002)
 
 mod atc;
 mod autonomous;
 mod causal;
 mod core;
 mod dream;
+mod epistemic;
 mod johari;
 mod lifecycle;
 mod memory;

@@ -9,6 +9,7 @@ mod core;
 mod dream;
 pub mod epistemic;
 mod gwt;
+pub mod merge;
 mod meta_utl;
 mod neuromod;
 mod steering;
@@ -20,9 +21,9 @@ use crate::tools::types::ToolDefinition;
 /// Get all tool definitions for the `tools/list` response.
 ///
 /// Returns the complete list of MCP tools exposed by the Context Graph server.
-/// Currently returns 40 tools across 12 categories.
+/// Currently returns 41 tools across 13 categories.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(40);
+    let mut tools = Vec::with_capacity(41);
 
     // Core tools (6)
     tools.extend(core::definitions());
@@ -59,6 +60,9 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
 
     // Epistemic tools (1) - TASK-MCP-001
     tools.extend(epistemic::definitions());
+
+    // Merge tools (1) - TASK-MCP-003
+    tools.extend(merge::definitions());
 
     tools
 }

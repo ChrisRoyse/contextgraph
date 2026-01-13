@@ -39,9 +39,10 @@ mod tests {
         // + 2 Neuromod tools + 1 Steering + 1 Causal + 5 Teleological + 7 Autonomous = 36 total
         // + 3 Meta-UTL tools (TASK-METAUTL-P0-005) = 39 total
         // + 1 Epistemic tool (TASK-MCP-001) = 40 total
+        // + 1 Merge tool (TASK-MCP-003) = 41 total
         // NOTE: 6 manual North Star tools REMOVED (created single 1024D embeddings
         // incompatible with 13-embedder teleological arrays)
-        assert_eq!(tools.len(), 40);
+        assert_eq!(tools.len(), 41);
 
         let tool_names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
 
@@ -106,6 +107,9 @@ mod tests {
 
         // Epistemic tools (TASK-MCP-001)
         assert!(tool_names.contains(&"epistemic_action"));
+
+        // Merge tools (TASK-MCP-003)
+        assert!(tool_names.contains(&"merge_concepts"));
     }
 
     #[test]

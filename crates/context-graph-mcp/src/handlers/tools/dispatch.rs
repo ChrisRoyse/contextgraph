@@ -151,6 +151,8 @@ impl Handlers {
             tool_names::GET_META_LEARNING_LOG => {
                 self.call_get_meta_learning_log(id, arguments).await
             }
+            // TASK-MCP-002: Epistemic action for GWT workspace belief management
+            tool_names::EPISTEMIC_ACTION => self.call_epistemic_action(id, arguments).await,
             _ => JsonRpcResponse::error(
                 id,
                 error_codes::TOOL_NOT_FOUND,

@@ -24,7 +24,7 @@ async fn test_tools_list_returns_all_35_tools() {
         .as_array()
         .expect("tools must be an array");
 
-    // Verify exactly 40 tools returned:
+    // Verify exactly 41 tools returned:
     // Original 6: inject_context, store_memory, get_memetic_status, get_graph_manifest, search_graph, utl_status
     // GWT 6: get_consciousness_state, get_kuramoto_sync, get_workspace_status, get_ego_state, trigger_workspace_broadcast, adjust_coupling
     // ATC 3 (TASK-ATC-001): get_threshold_status, get_calibration_metrics, trigger_recalibration
@@ -38,10 +38,11 @@ async fn test_tools_list_returns_all_35_tools() {
     // UTL 1 (TASK-UTL-P1-001): gwt/compute_delta_sc
     // Meta-UTL 3 (TASK-METAUTL-P0-005): get_meta_learning_status, trigger_lambda_recalibration, get_meta_learning_log
     // Epistemic 1 (TASK-MCP-001): epistemic_action
+    // Merge 1 (TASK-MCP-003): merge_concepts
     assert_eq!(
         tools.len(),
-        40,
-        "Must return exactly 40 tools, got {}",
+        41,
+        "Must return exactly 41 tools, got {}",
         tools.len()
     );
 }

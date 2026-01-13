@@ -114,3 +114,9 @@ pub const GET_META_LEARNING_LOG: &str = "get_meta_learning_log";
 /// TASK-MCP-001: Perform epistemic action on GWT workspace
 /// Used when Johari quadrant is Unknown (high entropy + high coherence)
 pub const EPISTEMIC_ACTION: &str = "epistemic_action";
+
+// ========== MERGE TOOLS (TASK-MCP-003) ==========
+
+/// TASK-MCP-003: Merge related concept nodes into a unified node
+/// Returns reversal_hash for 30-day undo per SEC-06
+pub const MERGE_CONCEPTS: &str = "merge_concepts";
