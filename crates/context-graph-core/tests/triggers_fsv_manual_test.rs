@@ -9,8 +9,8 @@
 //! Run with: cargo test -p context-graph-core --test triggers_fsv_manual_test -- --nocapture
 
 use context_graph_core::dream::{
-    EntropyCalculator, EntropyWindow, ExtendedTriggerReason, GpuMonitor, GpuTriggerState,
-    TriggerManager,
+    EntropyCalculator, EntropyWindow, ExtendedTriggerReason, GpuMonitor, GpuMonitorError,
+    GpuTriggerState, StubGpuMonitor, TriggerManager, gpu_thresholds,
 };
 use std::thread;
 use std::time::Duration;
@@ -365,38 +365,87 @@ fn fsv_test_case_3_priority_order() {
 
 #[test]
 fn fsv_gpu_monitor_verification() {
-    println!("\n=== FSV GpuMonitor Verification ===\n");
+    println!("\n=== FSV GpuMonitor Trait Verification ===\n");
 
-    let mut monitor = GpuMonitor::new();
+    // Test 1: StubGpuMonitor::unavailable() returns error per AP-26
+    let mut monitor = StubGpuMonitor::unavailable();
+    println!("Test 1: StubGpuMonitor::unavailable()");
+    println!("  is_available={}", monitor.is_available());
+    assert!(!monitor.is_available(), "Unavailable monitor should return false");
+    let result = monitor.get_utilization();
+    println!("  get_utilization={:?}", result);
+    assert!(result.is_err(), "Unavailable GPU should return error, not 0.0 (AP-26)");
+    match result {
+        Err(GpuMonitorError::NvmlNotAvailable) => println!("  PASS: Got expected NvmlNotAvailable error"),
+        other => panic!("Expected NvmlNotAvailable, got {:?}", other),
+    }
 
-    // Initial state
+    // Test 2: StubGpuMonitor::with_usage() works correctly
+    let mut monitor = StubGpuMonitor::with_usage(0.75);
+    println!("\nTest 2: StubGpuMonitor::with_usage(0.75)");
+    println!("  is_available={}", monitor.is_available());
+    assert!(monitor.is_available());
+    let usage = monitor.get_utilization().expect("Should return usage");
+    println!("  get_utilization={:.2}", usage);
+    assert!((usage - 0.75).abs() < 0.001, "Usage should be 0.75");
+
+    // Test 3: set_usage() works and clamps values
+    monitor.set_usage(1.5);
+    println!("\nTest 3: set_usage(1.5) - clamping above 1.0");
+    let usage = monitor.get_utilization().unwrap();
+    println!("  get_utilization={:.2} (clamped)", usage);
+    assert_eq!(usage, 1.0, "Should clamp to 1.0");
+
+    monitor.set_usage(-0.5);
+    println!("\nTest 4: set_usage(-0.5) - clamping below 0.0");
+    let usage = monitor.get_utilization().unwrap();
+    println!("  get_utilization={:.2} (clamped)", usage);
+    assert_eq!(usage, 0.0, "Should clamp to 0.0");
+
+    // Test 5: Constitution thresholds
+    println!("\nTest 5: Constitution Threshold Verification");
     println!(
-        "Initial: get_usage={:.2}, is_available={}",
-        monitor.get_usage(),
-        monitor.is_available()
+        "  GPU_ELIGIBILITY_THRESHOLD={} (Constitution dream.trigger.gpu)",
+        gpu_thresholds::GPU_ELIGIBILITY_THRESHOLD
     );
-    assert_eq!(monitor.get_usage(), 0.0);
-    assert!(!monitor.is_available()); // Always false for stub
-
-    // Set simulated
-    monitor.set_simulated_usage(0.75);
-    println!("After set 0.75: get_usage={:.2}", monitor.get_usage());
-    assert_eq!(monitor.get_usage(), 0.75);
-
-    // Test clamping - above 1.0
-    monitor.set_simulated_usage(1.5);
-    println!("After set 1.5: get_usage={:.2} (clamped)", monitor.get_usage());
-    assert_eq!(monitor.get_usage(), 1.0);
-
-    // Test clamping - below 0.0
-    monitor.set_simulated_usage(-0.5);
     println!(
-        "After set -0.5: get_usage={:.2} (clamped)",
-        monitor.get_usage()
+        "  GPU_BUDGET_THRESHOLD={} (Constitution dream.constraints.gpu)",
+        gpu_thresholds::GPU_BUDGET_THRESHOLD
     );
-    assert_eq!(monitor.get_usage(), 0.0);
+    assert_eq!(gpu_thresholds::GPU_ELIGIBILITY_THRESHOLD, 0.80);
+    assert_eq!(gpu_thresholds::GPU_BUDGET_THRESHOLD, 0.30);
 
-    println!("\n=== GpuMonitor Verification PASSED ===\n");
+    // Test 6: is_eligible_for_dream() with boundary values
+    println!("\nTest 6: is_eligible_for_dream() boundary tests");
+    let test_cases = [
+        (0.50, true, "50% < 80% = eligible"),
+        (0.79, true, "79% < 80% = eligible"),
+        (0.80, false, "80% = 80% = NOT eligible (strict <)"),
+        (0.90, false, "90% > 80% = NOT eligible"),
+    ];
+    for (usage, expected, desc) in test_cases {
+        let mut m = StubGpuMonitor::with_usage(usage);
+        let result = m.is_eligible_for_dream().unwrap();
+        println!("  Usage {:.2}: is_eligible={} - {}", usage, result, desc);
+        assert_eq!(result, expected, "{}", desc);
+    }
+
+    // Test 7: should_abort_dream() with boundary values
+    println!("\nTest 7: should_abort_dream() boundary tests");
+    let test_cases = [
+        (0.25, false, "25% < 30% = don't abort"),
+        (0.30, false, "30% = 30% = don't abort (strict >)"),
+        (0.31, true, "31% > 30% = ABORT"),
+        (0.50, true, "50% > 30% = ABORT"),
+    ];
+    for (usage, expected, desc) in test_cases {
+        let mut m = StubGpuMonitor::with_usage(usage);
+        let result = m.should_abort_dream().unwrap();
+        println!("  Usage {:.2}: should_abort={} - {}", usage, result, desc);
+        assert_eq!(result, expected, "{}", desc);
+    }
+
+    println!("\n=== GpuMonitor Trait Verification PASSED ===\n");
 }
 
 #[test]

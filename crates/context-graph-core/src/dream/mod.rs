@@ -95,7 +95,15 @@ pub use poincare_walk::{
 pub use rem::{RemPhase, RemReport};
 pub use scheduler::DreamScheduler;
 pub use thresholds::DreamThresholds;
-pub use triggers::{EntropyCalculator, GpuMonitor, TriggerConfig, TriggerManager};
+pub use triggers::{
+    EntropyCalculator,
+    GpuMonitor,
+    GpuMonitorError,
+    StubGpuMonitor,
+    TriggerConfig,
+    TriggerManager,
+    gpu_thresholds,
+};
 pub use types::{
     EntropyWindow,
     ExtendedTriggerReason,

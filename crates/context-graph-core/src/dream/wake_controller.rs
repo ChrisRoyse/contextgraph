@@ -21,7 +21,7 @@ use tokio::sync::watch;
 use tracing::{debug, error, info, warn};
 
 use super::constants;
-use super::triggers::GpuMonitor;
+use super::triggers::{GpuMonitor, StubGpuMonitor};
 use super::WakeReason;
 
 /// Error types for wake controller operations.
@@ -108,7 +108,8 @@ pub struct WakeController {
     max_latency: Duration,
 
     /// GPU monitor for budget enforcement
-    gpu_monitor: Arc<RwLock<GpuMonitor>>,
+    /// Uses StubGpuMonitor until real NVML implementation in TASK-23
+    gpu_monitor: Arc<RwLock<StubGpuMonitor>>,
 
     /// Maximum GPU usage during dream (Constitution: 30%)
     max_gpu_usage: f32,
@@ -139,7 +140,7 @@ impl WakeController {
             wake_start: Arc::new(RwLock::new(None)),
             wake_complete: Arc::new(RwLock::new(None)),
             max_latency: constants::MAX_WAKE_LATENCY,
-            gpu_monitor: Arc::new(RwLock::new(GpuMonitor::new())),
+            gpu_monitor: Arc::new(RwLock::new(StubGpuMonitor::with_usage(0.0))),
             max_gpu_usage: constants::MAX_GPU_USAGE,
             gpu_check_interval: Duration::from_millis(100),
             last_gpu_check: Arc::new(AtomicU64::new(0)),
@@ -296,7 +297,7 @@ impl WakeController {
         }
         self.last_gpu_check.store(now_ms, Ordering::Relaxed);
 
-        let usage = self.gpu_monitor.read().get_usage();
+        let usage = self.gpu_monitor.write().get_utilization().unwrap_or(0.0);
 
         if usage > self.max_gpu_usage {
             warn!(
@@ -320,7 +321,7 @@ impl WakeController {
     /// Get current resource snapshot.
     pub fn get_resource_snapshot(&self) -> ResourceSnapshot {
         ResourceSnapshot {
-            gpu_usage: self.gpu_monitor.read().get_usage(),
+            gpu_usage: self.gpu_monitor.write().get_utilization().unwrap_or(0.0),
             memory_bytes: 0, // Future: Implement memory tracking
             cpu_usage: 0.0,  // Future: Implement CPU tracking
             timestamp: Instant::now(),
@@ -359,7 +360,7 @@ impl WakeController {
 
     /// Update GPU usage for testing.
     pub fn set_gpu_usage(&self, usage: f32) {
-        self.gpu_monitor.write().set_simulated_usage(usage);
+        self.gpu_monitor.write().set_usage(usage);
     }
 
     /// Reset the GPU check rate limiter (for testing).

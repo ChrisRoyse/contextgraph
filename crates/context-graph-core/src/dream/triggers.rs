@@ -11,9 +11,110 @@
 
 use std::time::{Duration, Instant};
 
+use thiserror::Error;
 use tracing::{debug, info};
 
 use super::types::{EntropyWindow, ExtendedTriggerReason, GpuTriggerState};
+
+/// GPU utilization thresholds per Constitution.
+///
+/// There are two DISTINCT thresholds for GPU monitoring:
+///
+/// 1. **Eligibility Threshold (80%)**: When GPU < 80%, the system has
+///    capacity to START a dream cycle. Per Constitution `dream.trigger.gpu = "<80%"`.
+///
+/// 2. **Budget Threshold (30%)**: During dream execution, GPU usage must
+///    stay < 30% or the dream aborts. Per Constitution `dream.constraints.gpu = "<30%"`.
+///
+/// # Constitution References
+///
+/// - `dream.trigger.gpu = "<80%"` (line 255) - Eligibility to start dream
+/// - `dream.constraints.gpu = "<30%"` (line 273) - Budget during dream
+pub mod gpu_thresholds {
+    /// Dream ELIGIBILITY threshold - dreams can START when GPU < 80%
+    ///
+    /// Constitution: `dream.trigger.gpu = "<80%"` (line 255)
+    ///
+    /// This threshold determines if the system is "idle enough" to begin
+    /// a dream consolidation cycle.
+    pub const GPU_ELIGIBILITY_THRESHOLD: f32 = 0.80;
+
+    /// Dream BUDGET threshold - dreams must ABORT if GPU > 30%
+    ///
+    /// Constitution: `dream.constraints.gpu = "<30%"` (line 273)
+    ///
+    /// During dream execution, if GPU usage exceeds this threshold,
+    /// the dream must abort to avoid resource contention.
+    pub const GPU_BUDGET_THRESHOLD: f32 = 0.30;
+}
+
+/// GPU monitoring error types.
+///
+/// # Constitution Compliance
+///
+/// Per AP-26: Fail-fast, no silent failures. Return explicit errors
+/// instead of returning 0.0 or other default values.
+///
+/// # Error Variants
+///
+/// Each variant represents a specific failure mode:
+/// - `NvmlInitFailed`: NVML library couldn't initialize
+/// - `NoDevices`: System has no GPUs
+/// - `DeviceAccessFailed`: Can't access a specific GPU
+/// - `UtilizationQueryFailed`: Query to GPU failed
+/// - `NvmlNotAvailable`: No GPU drivers installed
+/// - `Disabled`: GPU monitoring explicitly turned off
+#[derive(Debug, Error, Clone)]
+pub enum GpuMonitorError {
+    /// NVML library initialization failed.
+    ///
+    /// This occurs when the NVML shared library cannot be loaded or
+    /// initialized. Common causes include missing drivers or incompatible
+    /// CUDA versions.
+    #[error("NVML initialization failed: {0}")]
+    NvmlInitFailed(String),
+
+    /// No GPU devices detected in system.
+    ///
+    /// System has GPU drivers but no physical GPUs were found.
+    /// This can happen in VMs or systems with GPUs removed.
+    #[error("No GPU devices found in system")]
+    NoDevices,
+
+    /// Failed to access specific GPU device.
+    ///
+    /// The device exists but cannot be accessed, possibly due to
+    /// permissions, device busy, or hardware issues.
+    #[error("Failed to access GPU device {index}: {message}")]
+    DeviceAccessFailed {
+        /// Zero-based GPU index
+        index: u32,
+        /// Detailed error message
+        message: String,
+    },
+
+    /// GPU utilization query failed.
+    ///
+    /// The device was accessible but the utilization query returned
+    /// an error. This can happen during driver updates or GPU crashes.
+    #[error("GPU utilization query failed: {0}")]
+    UtilizationQueryFailed(String),
+
+    /// NVML drivers not installed.
+    ///
+    /// This is the most common error on systems without NVIDIA GPUs
+    /// or with GPUs from other vendors (AMD, Intel).
+    /// Per AP-26: Return this error instead of silently returning 0.0.
+    #[error("NVML not available - GPU drivers not installed")]
+    NvmlNotAvailable,
+
+    /// GPU monitoring is explicitly disabled.
+    ///
+    /// The user or system has disabled GPU monitoring.
+    /// Different from `NvmlNotAvailable` which is an environmental limitation.
+    #[error("GPU monitoring is disabled")]
+    Disabled,
+}
 
 /// Configuration for trigger manager.
 ///
@@ -581,59 +682,273 @@ impl Default for TriggerManager {
     }
 }
 
-/// GPU utilization monitor stub.
+/// Trait for GPU monitoring abstraction.
 ///
-/// Provides a placeholder for actual GPU monitoring.
-/// Real implementation would use NVML (NVIDIA) or ROCm (AMD).
+/// Allows mocking in tests while enabling real NVML integration in production.
 ///
-/// # Note
-/// This is a STUB. Production requires actual GPU monitoring integration.
-#[derive(Debug, Clone)]
-pub struct GpuMonitor {
-    /// Simulated GPU usage (for testing)
-    simulated_usage: f32,
-
-    /// Whether to use simulated values
-    use_simulated: bool,
-}
-
-impl GpuMonitor {
-    /// Create a new GPU monitor.
-    pub fn new() -> Self {
-        Self {
-            simulated_usage: 0.0,
-            use_simulated: true, // Default to simulated until real impl
-        }
-    }
-
-    /// Get current GPU utilization.
+/// # Constitution References
+///
+/// - `dream.trigger.gpu: "<80%"` - Eligibility threshold to START dream
+/// - `dream.constraints.gpu: "<30%"` - Budget threshold during dream
+/// - AP-26: "No silent failures" - Must return explicit errors
+///
+/// # Implementors
+///
+/// - [`StubGpuMonitor`]: Testing and systems without GPU
+/// - `NvmlGpuMonitor`: Production NVIDIA GPU monitoring (TASK-23)
+///
+/// # Example
+///
+/// ```
+/// use context_graph_core::dream::{GpuMonitor, StubGpuMonitor, GpuMonitorError};
+///
+/// let mut monitor = StubGpuMonitor::with_usage(0.50);
+/// let usage = monitor.get_utilization().expect("should get usage");
+/// assert!(usage < 0.80, "50% is below eligibility threshold");
+/// assert!(!monitor.should_abort_dream().unwrap(), "50% > 30%, should abort");
+/// ```
+pub trait GpuMonitor: Send + Sync + std::fmt::Debug {
+    /// Get current GPU utilization as fraction [0.0, 1.0].
     ///
-    /// Returns value in [0.0, 1.0].
-    pub fn get_usage(&self) -> f32 {
-        if self.use_simulated {
-            self.simulated_usage
-        } else {
-            // TODO(FUTURE): Implement real GPU monitoring via NVML
-            // For now, return 0.0 (no GPU usage)
-            0.0
+    /// # Returns
+    ///
+    /// - `Ok(usage)` where `usage` is in [0.0, 1.0]
+    /// - `Err(GpuMonitorError)` if query fails
+    ///
+    /// # Errors
+    ///
+    /// - [`GpuMonitorError::NvmlNotAvailable`]: No GPU drivers installed
+    /// - [`GpuMonitorError::NoDevices`]: No GPUs detected
+    /// - [`GpuMonitorError::UtilizationQueryFailed`]: Query to GPU failed
+    ///
+    /// # Constitution Compliance
+    ///
+    /// Per AP-26: Returns explicit error on failure, never returns 0.0 as a
+    /// silent failure indicator.
+    fn get_utilization(&mut self) -> Result<f32, GpuMonitorError>;
+
+    /// Check if system is eligible to START a dream (GPU < 80%).
+    ///
+    /// # Constitution
+    ///
+    /// `dream.trigger.gpu = "<80%"` (line 255)
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(true)` if GPU < 80% (can start dream)
+    /// - `Ok(false)` if GPU >= 80% (too busy for dream)
+    /// - `Err(_)` if utilization query fails
+    ///
+    /// # Note
+    ///
+    /// Uses strict less-than (`<`), not less-than-or-equal (`<=`).
+    /// 80% usage is NOT eligible.
+    fn is_eligible_for_dream(&mut self) -> Result<bool, GpuMonitorError> {
+        let usage = self.get_utilization()?;
+        Ok(usage < gpu_thresholds::GPU_ELIGIBILITY_THRESHOLD)
+    }
+
+    /// Check if dream should ABORT due to GPU budget exceeded (> 30%).
+    ///
+    /// # Constitution
+    ///
+    /// `dream.constraints.gpu = "<30%"` (line 273)
+    ///
+    /// # Returns
+    ///
+    /// - `Ok(true)` if GPU > 30% (must abort dream)
+    /// - `Ok(false)` if GPU <= 30% (can continue dream)
+    /// - `Err(_)` if utilization query fails
+    ///
+    /// # Note
+    ///
+    /// Uses strict greater-than (`>`), not greater-than-or-equal (`>=`).
+    /// 30% usage is allowed and does NOT trigger abort.
+    fn should_abort_dream(&mut self) -> Result<bool, GpuMonitorError> {
+        let usage = self.get_utilization()?;
+        Ok(usage > gpu_thresholds::GPU_BUDGET_THRESHOLD)
+    }
+
+    /// Check if GPU monitoring is available.
+    ///
+    /// # Returns
+    ///
+    /// `true` if GPU can be queried, `false` otherwise.
+    ///
+    /// # Note
+    ///
+    /// This is a non-fallible check. Use [`get_utilization`] for actual
+    /// queries which may return errors.
+    fn is_available(&self) -> bool;
+}
+
+/// Stub GPU monitor for testing and systems without GPU.
+///
+/// # Usage
+///
+/// - **Unit tests**: Use [`with_usage`] or [`set_usage`] to control behavior
+/// - **Systems without GPU**: Use [`unavailable`] to simulate missing GPU
+///
+/// # Constitution Compliance
+///
+/// Per AP-26: When `simulate_unavailable` is true,
+/// returns `Err(GpuMonitorError::NvmlNotAvailable)` - NOT 0.0.
+///
+/// # Example
+///
+/// ```
+/// use context_graph_core::dream::{StubGpuMonitor, GpuMonitor, GpuMonitorError};
+///
+/// // Testing with known usage
+/// let mut monitor = StubGpuMonitor::with_usage(0.25);
+/// assert!(!monitor.should_abort_dream().unwrap(), "25% is under budget");
+///
+/// // Simulating unavailable GPU
+/// let mut unavailable = StubGpuMonitor::unavailable();
+/// assert!(matches!(
+///     unavailable.get_utilization(),
+///     Err(GpuMonitorError::NvmlNotAvailable)
+/// ));
+/// ```
+#[derive(Debug, Clone)]
+pub struct StubGpuMonitor {
+    /// Simulated GPU usage [0.0, 1.0].
+    ///
+    /// `Some(x)` = GPU is available with usage `x`
+    /// `None` = GPU is not available (returns error)
+    simulated_usage: Option<f32>,
+
+    /// Whether to simulate NVML unavailable error.
+    ///
+    /// When `true`, all queries return `Err(NvmlNotAvailable)`.
+    simulate_unavailable: bool,
+}
+
+impl StubGpuMonitor {
+    /// Create stub that simulates NVML not available.
+    ///
+    /// Per AP-26: Returns error, not 0.0.
+    ///
+    /// Use this for testing on systems without GPUs or for testing
+    /// error handling paths.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use context_graph_core::dream::{StubGpuMonitor, GpuMonitor, GpuMonitorError};
+    ///
+    /// let mut monitor = StubGpuMonitor::unavailable();
+    /// assert!(matches!(
+    ///     monitor.get_utilization(),
+    ///     Err(GpuMonitorError::NvmlNotAvailable)
+    /// ));
+    /// ```
+    pub fn unavailable() -> Self {
+        Self {
+            simulated_usage: None,
+            simulate_unavailable: true,
         }
     }
 
-    /// Set simulated GPU usage (for testing).
-    pub fn set_simulated_usage(&mut self, usage: f32) {
-        self.simulated_usage = usage.clamp(0.0, 1.0);
+    /// Create stub with specific simulated usage.
+    ///
+    /// Use for testing specific GPU load scenarios.
+    ///
+    /// # Arguments
+    ///
+    /// * `usage` - GPU usage [0.0, 1.0]. Values outside this range are clamped.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use context_graph_core::dream::{StubGpuMonitor, GpuMonitor};
+    ///
+    /// // Test eligibility (< 80%)
+    /// let mut eligible = StubGpuMonitor::with_usage(0.50);
+    /// assert!(eligible.is_eligible_for_dream().unwrap());
+    ///
+    /// // Test budget exceeded (> 30%)
+    /// let mut over_budget = StubGpuMonitor::with_usage(0.35);
+    /// assert!(over_budget.should_abort_dream().unwrap());
+    /// ```
+    pub fn with_usage(usage: f32) -> Self {
+        Self {
+            simulated_usage: Some(usage.clamp(0.0, 1.0)),
+            simulate_unavailable: false,
+        }
     }
 
-    /// Check if GPU is available.
-    pub fn is_available(&self) -> bool {
-        // TODO(FUTURE): Check for actual GPU
-        false
+    /// Set simulated GPU usage for testing.
+    ///
+    /// Also clears `simulate_unavailable` flag.
+    ///
+    /// # Arguments
+    ///
+    /// * `usage` - GPU usage [0.0, 1.0]. Values outside this range are clamped.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use context_graph_core::dream::{StubGpuMonitor, GpuMonitor};
+    ///
+    /// let mut monitor = StubGpuMonitor::unavailable();
+    /// assert!(!monitor.is_available());
+    ///
+    /// monitor.set_usage(0.50);
+    /// assert!(monitor.is_available());
+    /// assert_eq!(monitor.get_utilization().unwrap(), 0.50);
+    /// ```
+    pub fn set_usage(&mut self, usage: f32) {
+        self.simulated_usage = Some(usage.clamp(0.0, 1.0));
+        self.simulate_unavailable = false;
+    }
+
+    /// Configure to simulate NVML unavailable error.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use context_graph_core::dream::{StubGpuMonitor, GpuMonitor, GpuMonitorError};
+    ///
+    /// let mut monitor = StubGpuMonitor::with_usage(0.50);
+    /// monitor.set_unavailable();
+    /// assert!(matches!(
+    ///     monitor.get_utilization(),
+    ///     Err(GpuMonitorError::NvmlNotAvailable)
+    /// ));
+    /// ```
+    pub fn set_unavailable(&mut self) {
+        self.simulated_usage = None;
+        self.simulate_unavailable = true;
     }
 }
 
-impl Default for GpuMonitor {
+impl Default for StubGpuMonitor {
+    /// Default: NVML not available (fail-safe per AP-26).
+    ///
+    /// The default behavior is to simulate an unavailable GPU,
+    /// which returns errors rather than silently returning 0.0.
+    ///
+    /// This is intentional per Constitution AP-26: no silent failures.
     fn default() -> Self {
-        Self::new()
+        Self::unavailable()
+    }
+}
+
+impl GpuMonitor for StubGpuMonitor {
+    fn get_utilization(&mut self) -> Result<f32, GpuMonitorError> {
+        if self.simulate_unavailable {
+            return Err(GpuMonitorError::NvmlNotAvailable);
+        }
+
+        match self.simulated_usage {
+            Some(usage) => Ok(usage),
+            None => Err(GpuMonitorError::NvmlNotAvailable),
+        }
+    }
+
+    fn is_available(&self) -> bool {
+        !self.simulate_unavailable && self.simulated_usage.is_some()
     }
 }
 
@@ -982,23 +1297,194 @@ mod tests {
         assert!(manager.entropy_window.is_empty());
     }
 
-    // ============ GpuMonitor Tests ============
+    // ============ GpuMonitor Trait Tests ============
 
     #[test]
-    fn test_gpu_monitor_simulated() {
-        let mut monitor = GpuMonitor::new();
+    fn test_gpu_thresholds_constitution_compliance() {
+        use super::gpu_thresholds::*;
 
-        assert_eq!(monitor.get_usage(), 0.0);
+        assert_eq!(
+            GPU_ELIGIBILITY_THRESHOLD, 0.80,
+            "Eligibility threshold must be 0.80 per Constitution dream.trigger.gpu"
+        );
+        assert_eq!(
+            GPU_BUDGET_THRESHOLD, 0.30,
+            "Budget threshold must be 0.30 per Constitution dream.constraints.gpu"
+        );
 
-        monitor.set_simulated_usage(0.75);
-        assert_eq!(monitor.get_usage(), 0.75);
+        // Verify eligibility > budget (makes logical sense)
+        assert!(
+            GPU_ELIGIBILITY_THRESHOLD > GPU_BUDGET_THRESHOLD,
+            "Eligibility (80%) must be greater than budget (30%)"
+        );
+    }
 
-        // Test clamping
-        monitor.set_simulated_usage(1.5);
-        assert_eq!(monitor.get_usage(), 1.0);
+    #[test]
+    fn test_stub_gpu_monitor_unavailable_returns_error() {
+        let mut monitor = StubGpuMonitor::unavailable();
 
-        monitor.set_simulated_usage(-0.5);
-        assert_eq!(monitor.get_usage(), 0.0);
+        let result = monitor.get_utilization();
+        assert!(result.is_err(), "Unavailable GPU should return error, not 0.0");
+
+        match result {
+            Err(GpuMonitorError::NvmlNotAvailable) => {}, // Expected
+            Err(other) => panic!("Expected NvmlNotAvailable, got {:?}", other),
+            Ok(val) => panic!("Expected error, got Ok({})", val),
+        }
+    }
+
+    #[test]
+    fn test_stub_gpu_monitor_with_usage() {
+        let mut monitor = StubGpuMonitor::with_usage(0.25);
+
+        let usage = monitor.get_utilization().expect("Should return usage");
+        assert!((usage - 0.25).abs() < 0.001, "Usage should be 0.25");
+        assert!(monitor.is_available(), "Should be available");
+    }
+
+    #[test]
+    fn test_stub_gpu_monitor_set_usage() {
+        let mut monitor = StubGpuMonitor::unavailable();
+
+        // Initially unavailable
+        assert!(monitor.get_utilization().is_err());
+
+        // Set usage makes it available
+        monitor.set_usage(0.50);
+        assert!(monitor.is_available());
+        assert_eq!(monitor.get_utilization().unwrap(), 0.50);
+    }
+
+    #[test]
+    fn test_stub_gpu_monitor_clamping() {
+        let mut monitor = StubGpuMonitor::with_usage(1.5);
+        assert_eq!(monitor.get_utilization().unwrap(), 1.0, "Should clamp to 1.0");
+
+        monitor.set_usage(-0.5);
+        assert_eq!(monitor.get_utilization().unwrap(), 0.0, "Should clamp to 0.0");
+    }
+
+    #[test]
+    fn test_is_eligible_for_dream_below_threshold() {
+        let mut monitor = StubGpuMonitor::with_usage(0.50); // 50% < 80%
+
+        assert!(
+            monitor.is_eligible_for_dream().unwrap(),
+            "50% usage should be eligible for dream (< 80%)"
+        );
+    }
+
+    #[test]
+    fn test_is_eligible_for_dream_at_threshold() {
+        let mut monitor = StubGpuMonitor::with_usage(0.80); // 80% = 80%
+
+        assert!(
+            !monitor.is_eligible_for_dream().unwrap(),
+            "80% usage should NOT be eligible (must be < 80%, not <= 80%)"
+        );
+    }
+
+    #[test]
+    fn test_is_eligible_for_dream_above_threshold() {
+        let mut monitor = StubGpuMonitor::with_usage(0.90); // 90% > 80%
+
+        assert!(
+            !monitor.is_eligible_for_dream().unwrap(),
+            "90% usage should NOT be eligible for dream"
+        );
+    }
+
+    #[test]
+    fn test_should_abort_dream_below_budget() {
+        let mut monitor = StubGpuMonitor::with_usage(0.25); // 25% < 30%
+
+        assert!(
+            !monitor.should_abort_dream().unwrap(),
+            "25% usage should NOT abort dream (< 30% budget)"
+        );
+    }
+
+    #[test]
+    fn test_should_abort_dream_at_budget() {
+        let mut monitor = StubGpuMonitor::with_usage(0.30); // 30% = 30%
+
+        assert!(
+            !monitor.should_abort_dream().unwrap(),
+            "30% usage should NOT abort dream (must be > 30%, not >= 30%)"
+        );
+    }
+
+    #[test]
+    fn test_should_abort_dream_above_budget() {
+        let mut monitor = StubGpuMonitor::with_usage(0.35); // 35% > 30%
+
+        assert!(
+            monitor.should_abort_dream().unwrap(),
+            "35% usage should abort dream (> 30% budget)"
+        );
+    }
+
+    #[test]
+    fn test_gpu_monitor_error_display() {
+        let errors = [
+            (GpuMonitorError::NvmlInitFailed("test".to_string()), "NVML initialization failed"),
+            (GpuMonitorError::NoDevices, "No GPU devices found"),
+            (GpuMonitorError::DeviceAccessFailed { index: 0, message: "test".to_string() }, "Failed to access GPU device"),
+            (GpuMonitorError::UtilizationQueryFailed("test".to_string()), "GPU utilization query failed"),
+            (GpuMonitorError::NvmlNotAvailable, "NVML not available"),
+            (GpuMonitorError::Disabled, "GPU monitoring is disabled"),
+        ];
+
+        for (error, expected_prefix) in errors {
+            let display = error.to_string();
+            assert!(
+                display.contains(expected_prefix.split(':').next().unwrap().trim()),
+                "Error display '{}' should contain '{}'",
+                display, expected_prefix
+            );
+        }
+    }
+
+    #[test]
+    fn test_stub_default_is_unavailable() {
+        // Per AP-26: Default should fail-safe, not return 0.0
+        let mut monitor = StubGpuMonitor::default();
+
+        assert!(!monitor.is_available(), "Default should be unavailable");
+        assert!(
+            monitor.get_utilization().is_err(),
+            "Default should return error, not 0.0"
+        );
+    }
+
+    #[test]
+    fn test_gpu_monitor_boundary_values() {
+        // Edge case: exactly at thresholds
+        let test_cases: [(f32, bool, bool); 7] = [
+            // (usage, is_eligible, should_abort)
+            (0.00, true, false),   // Minimum: eligible, don't abort
+            (0.29, true, false),   // Just under budget: eligible, don't abort
+            (0.30, true, false),   // At budget: eligible, don't abort (> not >=)
+            (0.31, true, true),    // Just over budget: eligible but should abort
+            (0.79, true, true),    // Just under eligibility: eligible but over budget
+            (0.80, false, true),   // At eligibility: NOT eligible, should abort
+            (1.00, false, true),   // Maximum: NOT eligible, should abort
+        ];
+
+        for (usage, expected_eligible, expected_abort) in test_cases {
+            let mut monitor = StubGpuMonitor::with_usage(usage);
+
+            assert_eq!(
+                monitor.is_eligible_for_dream().unwrap(),
+                expected_eligible,
+                "Usage {} eligibility mismatch", usage
+            );
+            assert_eq!(
+                monitor.should_abort_dream().unwrap(),
+                expected_abort,
+                "Usage {} abort mismatch", usage
+            );
+        }
     }
 
     // ============ EntropyCalculator Tests ============
