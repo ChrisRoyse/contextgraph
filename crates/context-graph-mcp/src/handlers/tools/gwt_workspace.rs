@@ -40,22 +40,23 @@ impl Handlers {
         };
 
         // Acquire read lock (tokio RwLock)
+        // TASK-07: WorkspaceProvider trait methods are async
         let ws = workspace.read().await;
 
         // Get active memory if broadcasting
-        let active_memory = ws.get_active_memory();
+        let active_memory = ws.get_active_memory().await;
 
         // Check broadcast state
-        let is_broadcasting = ws.is_broadcasting();
+        let is_broadcasting = ws.is_broadcasting().await;
 
         // Check for conflict
-        let has_conflict = ws.has_conflict();
+        let has_conflict = ws.has_conflict().await;
 
         // Get coherence threshold
-        let coherence_threshold = ws.coherence_threshold();
+        let coherence_threshold = ws.coherence_threshold().await;
 
         // Get conflict details if present
-        let conflict_memories = ws.get_conflict_details();
+        let conflict_memories = ws.get_conflict_details().await;
 
         self.tool_result_with_pulse(
             id,
@@ -222,7 +223,7 @@ impl Handlers {
                 "memory_id": memory_id.to_string(),
                 "new_r": r,
                 "was_selected": was_selected,
-                "is_broadcasting": ws.is_broadcasting(),
+                "is_broadcasting": ws.is_broadcasting().await,
                 "dopamine_triggered": dopamine_triggered
             }),
         )

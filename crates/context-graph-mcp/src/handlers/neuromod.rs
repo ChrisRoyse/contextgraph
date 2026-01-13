@@ -60,12 +60,10 @@ impl Handlers {
         };
 
         // Get ACh from GWT meta-cognitive if available
+        // Use async read since MetaCognitiveProvider trait methods are async (TASK-07)
         let (ach_value, ach_source) = if let Some(mc) = &self.meta_cognitive {
-            // Use try_read to avoid blocking - if lock unavailable, use default
-            match mc.try_read() {
-                Ok(guard) => (guard.acetylcholine(), "gwt"),
-                Err(_) => (DEFAULT_ACH, "default_lock_unavailable"),
-            }
+            let guard = mc.read().await;
+            (guard.acetylcholine().await, "gwt")
         } else {
             (DEFAULT_ACH, "default_no_gwt")
         };

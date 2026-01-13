@@ -105,11 +105,12 @@ impl Handlers {
         let purpose_vector = self_ego.read().await.purpose_vector();
 
         // Get meta-cognitive accuracy
+        // TASK-07: MetaCognitiveProvider trait methods are async
         let meta_accuracy = {
             let meta = meta_cognitive.read().await;
             // Use acetylcholine level as a proxy for meta-cognitive accuracy
             // Higher Ach means better learning/attention
-            meta.acetylcholine()
+            meta.acetylcholine().await
         };
 
         // Compute consciousness metrics from GWT system
@@ -126,11 +127,12 @@ impl Handlers {
         };
 
         // Get workspace status
+        // TASK-07: WorkspaceProvider trait methods are async
         let workspace_guard = workspace.read().await;
-        let active_memory = workspace_guard.get_active_memory();
-        let is_broadcasting = workspace_guard.is_broadcasting();
-        let has_conflict = workspace_guard.has_conflict();
-        let coherence_threshold = workspace_guard.coherence_threshold();
+        let active_memory = workspace_guard.get_active_memory().await;
+        let is_broadcasting = workspace_guard.is_broadcasting().await;
+        let has_conflict = workspace_guard.has_conflict().await;
+        let coherence_threshold = workspace_guard.coherence_threshold().await;
 
         // Get identity coherence from self-ego
         let identity_coherence = self_ego.read().await.identity_coherence();

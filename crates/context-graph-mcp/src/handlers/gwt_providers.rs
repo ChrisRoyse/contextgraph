@@ -337,30 +337,28 @@ impl WorkspaceProvider for WorkspaceProviderImpl {
         workspace.select_winning_memory(candidates).await
     }
 
-    fn get_active_memory(&self) -> Option<Uuid> {
-        // Use blocking read for sync accessor
-        // This is acceptable because GlobalWorkspace doesn't have long-running operations
-        let workspace = futures::executor::block_on(self.workspace.read());
+    async fn get_active_memory(&self) -> Option<Uuid> {
+        let workspace = self.workspace.read().await;
         workspace.get_active_memory()
     }
 
-    fn is_broadcasting(&self) -> bool {
-        let workspace = futures::executor::block_on(self.workspace.read());
+    async fn is_broadcasting(&self) -> bool {
+        let workspace = self.workspace.read().await;
         workspace.is_broadcasting()
     }
 
-    fn has_conflict(&self) -> bool {
-        let workspace = futures::executor::block_on(self.workspace.read());
+    async fn has_conflict(&self) -> bool {
+        let workspace = self.workspace.read().await;
         workspace.has_conflict()
     }
 
-    fn get_conflict_details(&self) -> Option<Vec<Uuid>> {
-        let workspace = futures::executor::block_on(self.workspace.read());
+    async fn get_conflict_details(&self) -> Option<Vec<Uuid>> {
+        let workspace = self.workspace.read().await;
         workspace.get_conflict_details()
     }
 
-    fn coherence_threshold(&self) -> f32 {
-        let workspace = futures::executor::block_on(self.workspace.read());
+    async fn coherence_threshold(&self) -> f32 {
+        let workspace = self.workspace.read().await;
         workspace.coherence_threshold
     }
 }
@@ -411,18 +409,18 @@ impl MetaCognitiveProvider for MetaCognitiveProviderImpl {
             .await
     }
 
-    fn acetylcholine(&self) -> f32 {
-        let meta_cognitive = futures::executor::block_on(self.meta_cognitive.read());
+    async fn acetylcholine(&self) -> f32 {
+        let meta_cognitive = self.meta_cognitive.read().await;
         meta_cognitive.acetylcholine()
     }
 
-    fn monitoring_frequency(&self) -> f32 {
-        let meta_cognitive = futures::executor::block_on(self.meta_cognitive.read());
+    async fn monitoring_frequency(&self) -> f32 {
+        let meta_cognitive = self.meta_cognitive.read().await;
         meta_cognitive.monitoring_frequency()
     }
 
-    fn get_recent_scores(&self) -> Vec<f32> {
-        let meta_cognitive = futures::executor::block_on(self.meta_cognitive.read());
+    async fn get_recent_scores(&self) -> Vec<f32> {
+        let meta_cognitive = self.meta_cognitive.read().await;
         meta_cognitive.get_recent_scores()
     }
 }
@@ -682,11 +680,11 @@ mod tests {
         assert_eq!(winner, None, "Should return None when all below threshold");
     }
 
-    #[test]
-    fn test_workspace_provider_coherence_threshold() {
+    #[tokio::test]
+    async fn test_workspace_provider_coherence_threshold() {
         let provider = WorkspaceProviderImpl::new();
 
-        let threshold = provider.coherence_threshold();
+        let threshold = provider.coherence_threshold().await;
         assert!(
             (threshold - 0.8).abs() < 0.01,
             "Threshold should be 0.8: {}",
@@ -712,12 +710,12 @@ mod tests {
         assert!(!state.dream_triggered);
     }
 
-    #[test]
-    fn test_meta_cognitive_provider_initial_state() {
+    #[tokio::test]
+    async fn test_meta_cognitive_provider_initial_state() {
         let provider = MetaCognitiveProviderImpl::new();
 
         // Default acetylcholine is 0.001
-        let ach = provider.acetylcholine();
+        let ach = provider.acetylcholine().await;
         assert!(
             (ach - 0.001).abs() < 0.0001,
             "Initial ACh should be 0.001: {}",
@@ -725,7 +723,7 @@ mod tests {
         );
 
         // Default monitoring frequency is 1.0 Hz
-        let freq = provider.monitoring_frequency();
+        let freq = provider.monitoring_frequency().await;
         assert!(
             (freq - 1.0).abs() < 0.01,
             "Initial freq should be 1.0: {}",
@@ -733,7 +731,7 @@ mod tests {
         );
 
         // No recent scores initially
-        let scores = provider.get_recent_scores();
+        let scores = provider.get_recent_scores().await;
         assert!(scores.is_empty(), "Should have no scores initially");
     }
 

@@ -330,7 +330,7 @@ mod tests {
 
         let blind =
             CognitivePulse::from_values(0.7, 0.3, 0.5, JohariQuadrant::Blind).expect("valid");
-        assert_eq!(blind.suggested_action, SuggestedAction::EpistemicAction);
+        assert_eq!(blind.suggested_action, SuggestedAction::TriggerDream); // constitution: Blind → TriggerDream
 
         let hidden =
             CognitivePulse::from_values(0.3, 0.3, 0.5, JohariQuadrant::Hidden).expect("valid");
@@ -338,7 +338,7 @@ mod tests {
 
         let unknown =
             CognitivePulse::from_values(0.7, 0.7, 0.5, JohariQuadrant::Unknown).expect("valid");
-        assert_eq!(unknown.suggested_action, SuggestedAction::TriggerDream);
+        assert_eq!(unknown.suggested_action, SuggestedAction::EpistemicAction); // constitution: Unknown → EpistemicAction
     }
 
     #[test]
