@@ -66,6 +66,10 @@ pub struct LifecycleManager {
 
     /// TASK-METAUTL-P0-006: Lambda weight override from meta-learning correction.
     /// When set, `get_effective_weights()` returns this instead of lifecycle weights.
-    #[serde(skip, default)]
+    ///
+    /// TASK-METAUTL-P2-001: Now persisted across restarts.
+    /// - Uses `skip_serializing_if` to omit None values from JSON (cleaner output)
+    /// - Uses `default` for backwards compatibility with existing serialized data
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) lambda_override: Option<LifecycleLambdaWeights>,
 }

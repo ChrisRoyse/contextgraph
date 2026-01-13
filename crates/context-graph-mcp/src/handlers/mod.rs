@@ -79,3 +79,27 @@ pub use self::gwt_providers::{
 // Note: These are public API re-exports - unused within this crate but available to consumers
 #[allow(unused_imports)]
 pub use self::kuramoto_stepper::{KuramotoStepper, KuramotoStepperConfig, KuramotoStepperError};
+
+// ============================================================================
+// Factory Functions (TASK-IDENTITY-P0-001)
+// ============================================================================
+
+/// Create GwtSystemProviderImpl sharing the listener's monitor.
+///
+/// This ensures MCP tools read from the same monitor that
+/// processes workspace events, fixing the dual monitor desync bug.
+///
+/// # Arguments
+/// * `listener` - The IdentityContinuityListener that owns the monitor
+///
+/// # Returns
+/// GwtSystemProviderImpl that shares the listener's monitor
+///
+/// # TASK-IDENTITY-P0-001
+#[allow(dead_code)]
+pub fn create_gwt_provider_with_listener(
+    listener: &context_graph_core::gwt::listeners::IdentityContinuityListener
+) -> gwt_providers::GwtSystemProviderImpl {
+    let shared_monitor = listener.monitor();
+    gwt_providers::GwtSystemProviderImpl::with_shared_monitor(shared_monitor)
+}

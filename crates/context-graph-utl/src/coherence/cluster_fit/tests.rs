@@ -726,3 +726,251 @@ fn test_compute_cluster_fit_sampling() {
     );
     assert!(result.silhouette > 0.0, "Should be well-clustered");
 }
+
+// ==========================================================================
+// TASK-UTL-P2-001: sklearn/scipy Reference Validation Tests
+// ==========================================================================
+//
+// Reference value generation script (Python - for documentation):
+// ```python
+// import numpy as np
+// from scipy.spatial.distance import euclidean, cosine, cityblock, cdist
+// from sklearn.metrics import silhouette_score, silhouette_samples
+//
+// # Test Case 1: Simple 2D Euclidean
+// query = np.array([0.0, 0.0])
+// same_cluster = np.array([[1.0, 0.0], [0.0, 1.0]])  # distance 1.0 each
+// nearest_cluster = np.array([[3.0, 0.0], [0.0, 3.0]])  # distance 3.0 each
+//
+// a = np.mean([euclidean(query, p) for p in same_cluster])  # 1.0
+// b = np.mean([euclidean(query, p) for p in nearest_cluster])  # 3.0
+// silhouette = (b - a) / max(a, b)  # (3.0 - 1.0) / 3.0 = 0.6667
+//
+// # Distance reference tests:
+// # euclidean([0,0,0], [3,4,0]) = 5.0
+// # cosine([1,0,0], [0,1,0]) = 1.0 (orthogonal)
+// # cosine([1,0,0], [1,0,0]) = 0.0 (identical)
+// # cosine([1,0,0], [-1,0,0]) = 2.0 (opposite)
+// # cityblock([0,0], [3,4]) = 7.0
+// ```
+
+#[test]
+fn test_silhouette_sklearn_reference_euclidean() {
+    // TASK-UTL-P2-001: Test against pre-computed sklearn values using Euclidean distance
+    // Reference values computed with Python sklearn/scipy (see docstring above)
+    let query = vec![0.0, 0.0];
+    let same_cluster = vec![
+        vec![1.0, 0.0],  // euclidean distance = 1.0
+        vec![0.0, 1.0],  // euclidean distance = 1.0
+    ];
+    let nearest_cluster = vec![
+        vec![3.0, 0.0],  // euclidean distance = 3.0
+        vec![0.0, 3.0],  // euclidean distance = 3.0
+    ];
+
+    // Expected values (from Python):
+    // a = mean([1.0, 1.0]) = 1.0
+    // b = mean([3.0, 3.0]) = 3.0
+    // silhouette = (3.0 - 1.0) / max(1.0, 3.0) = 2.0 / 3.0 = 0.6666667
+    let expected_silhouette: f32 = 2.0 / 3.0;
+    let expected_intra: f32 = 1.0;
+    let expected_inter: f32 = 3.0;
+
+    let context = ClusterContext::new(same_cluster, nearest_cluster);
+    let mut config = ClusterFitConfig::default();
+    config.distance_metric = DistanceMetric::Euclidean;
+
+    let result = compute_cluster_fit(&query, &context, &config);
+
+    assert!(
+        (result.silhouette - expected_silhouette).abs() < 1e-5,
+        "Silhouette mismatch: got {} expected {}",
+        result.silhouette, expected_silhouette
+    );
+    assert!(
+        (result.intra_distance - expected_intra).abs() < 1e-5,
+        "Intra distance mismatch: got {} expected {}",
+        result.intra_distance, expected_intra
+    );
+    assert!(
+        (result.inter_distance - expected_inter).abs() < 1e-5,
+        "Inter distance mismatch: got {} expected {}",
+        result.inter_distance, expected_inter
+    );
+}
+
+#[test]
+fn test_silhouette_sklearn_reference_cosine() {
+    // TASK-UTL-P2-001: Test with cosine distance against reference values
+    // Using orthogonal vectors for predictable results
+    let query = vec![1.0, 0.0, 0.0, 0.0];  // Unit vector along first axis
+
+    // Same cluster: nearly identical to query (small cosine distance)
+    let same_cluster = vec![
+        vec![1.0, 0.0, 0.0, 0.0],  // Identical = cosine distance 0
+        vec![1.0, 0.0, 0.0, 0.0],  // Identical = cosine distance 0
+    ];
+
+    // Nearest cluster: orthogonal to query (cosine distance = 1.0)
+    let nearest_cluster = vec![
+        vec![0.0, 1.0, 0.0, 0.0],  // Orthogonal = cosine distance 1.0
+        vec![0.0, 0.0, 1.0, 0.0],  // Orthogonal = cosine distance 1.0
+    ];
+
+    // Expected values:
+    // a = mean([0.0, 0.0]) = 0.0 (identical vectors)
+    // b = mean([1.0, 1.0]) = 1.0 (orthogonal vectors)
+    // silhouette = (1.0 - 0.0) / max(0.0, 1.0) = 1.0 / 1.0 = 1.0
+    let expected_silhouette: f32 = 1.0;
+    let expected_intra: f32 = 0.0;
+    let expected_inter: f32 = 1.0;
+
+    let context = ClusterContext::new(same_cluster, nearest_cluster);
+    let config = ClusterFitConfig::default(); // Uses Cosine by default
+
+    let result = compute_cluster_fit(&query, &context, &config);
+
+    assert!(
+        (result.silhouette - expected_silhouette).abs() < 1e-5,
+        "Silhouette mismatch: got {} expected {}",
+        result.silhouette, expected_silhouette
+    );
+    assert!(
+        (result.intra_distance - expected_intra).abs() < 1e-5,
+        "Intra distance mismatch: got {} expected {}",
+        result.intra_distance, expected_intra
+    );
+    assert!(
+        (result.inter_distance - expected_inter).abs() < 1e-5,
+        "Inter distance mismatch: got {} expected {}",
+        result.inter_distance, expected_inter
+    );
+}
+
+#[test]
+fn test_euclidean_distance_scipy_reference() {
+    // TASK-UTL-P2-001: Validate euclidean_distance against scipy.spatial.distance.euclidean
+    // scipy.spatial.distance.euclidean([0,0,0], [3,4,0]) = 5.0 (3-4-5 triangle)
+    let a = vec![0.0, 0.0, 0.0];
+    let b = vec![3.0, 4.0, 0.0];
+    let expected = 5.0f32;
+
+    let result = euclidean_distance(&a, &b);
+    assert!(
+        (result - expected).abs() < 1e-6,
+        "Euclidean distance mismatch: got {} expected {}",
+        result, expected
+    );
+
+    // Additional reference: scipy.spatial.distance.euclidean([1,2,3], [4,6,8]) = sqrt(50)
+    let c = vec![1.0, 2.0, 3.0];
+    let d = vec![4.0, 6.0, 8.0];
+    let expected2 = 50.0f32.sqrt(); // sqrt(9 + 16 + 25) = sqrt(50)
+
+    let result2 = euclidean_distance(&c, &d);
+    assert!(
+        (result2 - expected2).abs() < 1e-5,
+        "Euclidean distance mismatch: got {} expected {}",
+        result2, expected2
+    );
+}
+
+#[test]
+fn test_cosine_distance_scipy_reference() {
+    // TASK-UTL-P2-001: Validate cosine_distance against scipy.spatial.distance.cosine
+    // scipy.spatial.distance.cosine([1,0,0], [0,1,0]) = 1.0 (orthogonal)
+    // scipy.spatial.distance.cosine([1,0,0], [1,0,0]) = 0.0 (identical)
+    // scipy.spatial.distance.cosine([1,0,0], [-1,0,0]) = 2.0 (opposite)
+
+    let unit_x = vec![1.0, 0.0, 0.0];
+    let unit_y = vec![0.0, 1.0, 0.0];
+    let neg_x = vec![-1.0, 0.0, 0.0];
+
+    // Orthogonal: expected 1.0
+    let dist_orthogonal = cosine_distance(&unit_x, &unit_y);
+    assert!(
+        (dist_orthogonal - 1.0).abs() < 1e-6,
+        "Orthogonal cosine distance should be 1.0, got {}",
+        dist_orthogonal
+    );
+
+    // Identical: expected 0.0
+    let dist_identical = cosine_distance(&unit_x, &unit_x);
+    assert!(
+        dist_identical.abs() < 1e-6,
+        "Identical cosine distance should be 0.0, got {}",
+        dist_identical
+    );
+
+    // Opposite: expected 2.0
+    let dist_opposite = cosine_distance(&unit_x, &neg_x);
+    assert!(
+        (dist_opposite - 2.0).abs() < 1e-6,
+        "Opposite cosine distance should be 2.0, got {}",
+        dist_opposite
+    );
+}
+
+#[test]
+fn test_manhattan_distance_scipy_reference() {
+    // TASK-UTL-P2-001: Validate manhattan_distance against scipy.spatial.distance.cityblock
+    // scipy.spatial.distance.cityblock([0,0], [3,4]) = 7.0
+    let a = vec![0.0, 0.0];
+    let b = vec![3.0, 4.0];
+    let expected = 7.0f32;
+
+    let result = manhattan_distance(&a, &b);
+    assert!(
+        (result - expected).abs() < 1e-6,
+        "Manhattan distance mismatch: got {} expected {}",
+        result, expected
+    );
+
+    // Additional reference: cityblock([1,2,3,4], [5,6,7,8]) = 16
+    let c = vec![1.0, 2.0, 3.0, 4.0];
+    let d = vec![5.0, 6.0, 7.0, 8.0];
+    let expected2 = 16.0f32; // |4| + |4| + |4| + |4| = 16
+
+    let result2 = manhattan_distance(&c, &d);
+    assert!(
+        (result2 - expected2).abs() < 1e-6,
+        "Manhattan distance mismatch: got {} expected {}",
+        result2, expected2
+    );
+}
+
+#[test]
+fn test_silhouette_high_dimensional() {
+    // TASK-UTL-P2-001: Test high-dimensional case (1536-dim like real embeddings)
+    // Ensures no NaN/Inf and valid output range per AP-10
+    let dim = 1536;
+    let query: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.001).sin()).collect();
+
+    // Same cluster: small perturbations of query
+    let same_cluster: Vec<Vec<f32>> = (0..5).map(|j| {
+        query.iter().enumerate()
+            .map(|(i, &v)| v + (i as f32 * j as f32 * 0.0001).cos() * 0.01)
+            .collect()
+    }).collect();
+
+    // Nearest cluster: orthogonal-ish vectors
+    let nearest_cluster: Vec<Vec<f32>> = (0..5).map(|j| {
+        (0..dim).map(|i| ((i as f32 + j as f32 * 100.0) * 0.002).cos()).collect()
+    }).collect();
+
+    let context = ClusterContext::new(same_cluster, nearest_cluster);
+    let config = ClusterFitConfig::default();
+
+    let result = compute_cluster_fit(&query, &context, &config);
+
+    // Should produce valid results without NaN/Inf
+    assert!(!result.silhouette.is_nan(), "Silhouette should not be NaN");
+    assert!(!result.silhouette.is_infinite(), "Silhouette should not be Inf");
+    assert!((-1.0..=1.0).contains(&result.silhouette),
+        "Silhouette {} should be in [-1, 1]", result.silhouette);
+    assert!(!result.intra_distance.is_nan(), "Intra distance should not be NaN");
+    assert!(!result.inter_distance.is_nan(), "Inter distance should not be NaN");
+    assert!(result.intra_distance < result.inter_distance,
+        "Intra {} should be less than inter {} for well-clustered",
+        result.intra_distance, result.inter_distance);
+}

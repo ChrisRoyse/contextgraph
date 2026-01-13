@@ -13,6 +13,10 @@ use parking_lot::RwLock;
 use context_graph_core::alignment::GoalAlignmentCalculator;
 use context_graph_core::atc::AdaptiveThresholdCalibration;
 use context_graph_core::dream::{AmortizedLearner, DreamController, DreamScheduler};
+// TASK-IDENTITY-P0-001: Import GWT identity components for shared monitor wiring
+use context_graph_core::gwt::ego_node::SelfEgoNode;
+use context_graph_core::gwt::listeners::IdentityContinuityListener;
+use context_graph_core::gwt::workspace::WorkspaceEventBroadcaster;
 use context_graph_core::johari::{DynDefaultJohariManager, JohariTransitionManager};
 use context_graph_core::monitoring::{
     LayerStatusProvider, StubLayerStatusProvider, StubSystemMonitor, SystemMonitor,
@@ -130,6 +134,18 @@ pub struct Handlers {
     /// Uses RwLock because modulator adjustments mutate internal state.
     pub(in crate::handlers) neuromod_manager:
         Option<Arc<RwLock<context_graph_core::neuromod::NeuromodulationManager>>>,
+
+    // ========== IDENTITY CONTINUITY (TASK-IDENTITY-P0-001) ==========
+    /// Identity continuity listener - processes workspace events and updates IC state.
+    /// TASK-IDENTITY-P0-001: Required for shared monitor wiring between listener and provider.
+    /// The GwtSystemProviderImpl MUST share this listener's monitor to satisfy AP-40.
+    #[allow(dead_code)]
+    pub(in crate::handlers) identity_listener: Option<Arc<IdentityContinuityListener>>,
+
+    /// Workspace event broadcaster for identity event propagation.
+    /// TASK-IDENTITY-P0-001: Required for IdentityContinuityListener subscription.
+    #[allow(dead_code)]
+    pub(in crate::handlers) workspace_broadcaster: Option<Arc<WorkspaceEventBroadcaster>>,
 }
 
 impl Handlers {
@@ -190,6 +206,9 @@ impl Handlers {
             amortized_learner: None,
             // TASK-NEUROMOD-MCP: Neuromod defaults to None - use with_neuromod() for full support
             neuromod_manager: None,
+            // TASK-IDENTITY-P0-001: Identity fields default to None - use with_default_gwt() for full support
+            identity_listener: None,
+            workspace_broadcaster: None,
         }
     }
 
@@ -251,6 +270,9 @@ impl Handlers {
             amortized_learner: None,
             // TASK-NEUROMOD-MCP: Neuromod defaults to None
             neuromod_manager: None,
+            // TASK-IDENTITY-P0-001: Identity fields default to None
+            identity_listener: None,
+            workspace_broadcaster: None,
         }
     }
 
@@ -310,6 +332,9 @@ impl Handlers {
             amortized_learner: None,
             // TASK-NEUROMOD-MCP: Neuromod defaults to None
             neuromod_manager: None,
+            // TASK-IDENTITY-P0-001: Identity fields default to None
+            identity_listener: None,
+            workspace_broadcaster: None,
         }
     }
 
@@ -361,6 +386,9 @@ impl Handlers {
             amortized_learner: None,
             // TASK-NEUROMOD-MCP: Neuromod defaults to None
             neuromod_manager: None,
+            // TASK-IDENTITY-P0-001: Identity fields default to None
+            identity_listener: None,
+            workspace_broadcaster: None,
         }
     }
 
@@ -416,6 +444,9 @@ impl Handlers {
             amortized_learner: None,
             // TASK-NEUROMOD-MCP: Neuromod defaults to None
             neuromod_manager: None,
+            // TASK-IDENTITY-P0-001: Identity fields default to None
+            identity_listener: None,
+            workspace_broadcaster: None,
         }
     }
 
@@ -481,6 +512,9 @@ impl Handlers {
             amortized_learner: None,
             // TASK-NEUROMOD-MCP: Neuromod defaults to None
             neuromod_manager: None,
+            // TASK-IDENTITY-P0-001: Identity fields default to None
+            identity_listener: None,
+            workspace_broadcaster: None,
         }
     }
 
@@ -542,6 +576,9 @@ impl Handlers {
             dream_scheduler: Some(dream_scheduler),
             amortized_learner: Some(amortized_learner),
             neuromod_manager: Some(neuromod_manager),
+            // TASK-IDENTITY-P0-001: Identity fields default to None for this constructor
+            identity_listener: None,
+            workspace_broadcaster: None,
         }
     }
 
@@ -580,10 +617,35 @@ impl Handlers {
             SelfEgoProviderImpl, WorkspaceProviderImpl,
         };
 
+        // =====================================================================
+        // TASK-IDENTITY-P0-001: Create shared identity continuity infrastructure
+        // =====================================================================
+        // Constitution rule AP-40: MCP must read from correct monitor instance
+        // The GwtSystemProviderImpl MUST share the IdentityContinuityListener's monitor
+        // to ensure MCP tools return real IC values (not isolated defaults of 0.0).
+
+        // Step 1: Create SelfEgoNode for identity snapshot recording
+        let ego_node = Arc::new(tokio::sync::RwLock::new(SelfEgoNode::new()));
+
+        // Step 2: Create WorkspaceEventBroadcaster for event propagation
+        let workspace_broadcaster = Arc::new(WorkspaceEventBroadcaster::new());
+
+        // Step 3: Create IdentityContinuityListener with dependencies
+        // This listener owns the AUTHORITATIVE IdentityContinuityMonitor
+        let identity_listener = Arc::new(IdentityContinuityListener::new(
+            ego_node.clone(),
+            workspace_broadcaster.clone(),
+        ));
+
+        // Step 4: Create GwtSystemProviderImpl with SHARED monitor (AP-40 fix)
+        // This ensures MCP tools read from the same monitor that processes workspace events
+        let gwt_system: Arc<dyn GwtSystemProvider> = Arc::new(
+            GwtSystemProviderImpl::with_shared_monitor(identity_listener.monitor())
+        );
+
         // Create real GWT provider implementations
         let kuramoto_network: Arc<RwLock<dyn KuramotoProvider>> =
             Arc::new(RwLock::new(KuramotoProviderImpl::new()));
-        let gwt_system: Arc<dyn GwtSystemProvider> = Arc::new(GwtSystemProviderImpl::new());
         let workspace_provider: Arc<tokio::sync::RwLock<dyn WorkspaceProvider>> =
             Arc::new(tokio::sync::RwLock::new(WorkspaceProviderImpl::new()));
         let meta_cognitive: Arc<tokio::sync::RwLock<dyn MetaCognitiveProvider>> =
@@ -644,6 +706,9 @@ impl Handlers {
             amortized_learner: Some(amortized_learner),
             // TASK-NEUROMOD-MCP: REAL NeuromodulationManager wired
             neuromod_manager: Some(neuromod_manager),
+            // TASK-IDENTITY-P0-001: REAL identity continuity wiring (AP-40 fix)
+            identity_listener: Some(identity_listener),
+            workspace_broadcaster: Some(workspace_broadcaster),
         }
     }
 }

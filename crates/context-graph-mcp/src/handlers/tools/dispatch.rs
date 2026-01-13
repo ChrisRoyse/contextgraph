@@ -38,7 +38,7 @@ impl Handlers {
             }
         };
 
-        let tool_name = match params.get("name").and_then(|v| v.as_str()) {
+        let raw_tool_name = match params.get("name").and_then(|v| v.as_str()) {
             Some(n) => n,
             None => {
                 return JsonRpcResponse::error(
@@ -49,11 +49,20 @@ impl Handlers {
             }
         };
 
+        // TASK-MCP-P1-001: Resolve alias to canonical name
+        let tool_name = crate::tools::aliases::resolve_alias(raw_tool_name);
+
         let arguments = params.get("arguments").cloned().unwrap_or(json!({}));
 
         debug!(
-            "Calling tool: {} with arguments: {:?}",
-            tool_name, arguments
+            "Calling tool: {} with arguments: {:?}{}",
+            tool_name,
+            arguments,
+            if raw_tool_name != tool_name {
+                format!(" (resolved from alias '{}')", raw_tool_name)
+            } else {
+                String::new()
+            }
         );
 
         match tool_name {
@@ -131,6 +140,16 @@ impl Handlers {
             tool_names::DISCOVER_SUB_GOALS => self.call_discover_sub_goals(id, arguments).await,
             tool_names::GET_AUTONOMOUS_STATUS => {
                 self.call_get_autonomous_status(id, arguments).await
+            }
+            // TASK-MCP-P0-001: Meta-learning self-correction tools
+            tool_names::GET_META_LEARNING_STATUS => {
+                self.call_get_meta_learning_status(id, arguments).await
+            }
+            tool_names::TRIGGER_LAMBDA_RECALIBRATION => {
+                self.call_trigger_lambda_recalibration(id, arguments).await
+            }
+            tool_names::GET_META_LEARNING_LOG => {
+                self.call_get_meta_learning_log(id, arguments).await
             }
             _ => JsonRpcResponse::error(
                 id,

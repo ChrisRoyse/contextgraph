@@ -39,6 +39,63 @@ pub enum Domain {
     General,
 }
 
+/// Per-domain accuracy tracking with rolling window.
+/// TASK-METAUTL-P1-001: Enables domain-specific lambda optimization.
+#[allow(dead_code)]
+#[derive(Debug, Clone)]
+pub struct DomainAccuracyTracker {
+    /// Rolling window of accuracy samples (100 samples)
+    accuracy_history: [f32; 100],
+    /// Current index in rolling window
+    history_index: usize,
+    /// Number of samples recorded (up to 100)
+    sample_count: usize,
+    /// Total predictions in this domain
+    pub total_predictions: usize,
+    /// Consecutive low accuracy count for this domain
+    pub consecutive_low_count: usize,
+}
+
+impl Default for DomainAccuracyTracker {
+    fn default() -> Self {
+        Self {
+            accuracy_history: [0.0; 100],
+            history_index: 0,
+            sample_count: 0,
+            total_predictions: 0,
+            consecutive_low_count: 0,
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl DomainAccuracyTracker {
+    /// Record an accuracy value in the rolling window.
+    pub fn record(&mut self, accuracy: f32) {
+        let clamped = accuracy.clamp(0.0, 1.0);
+        self.accuracy_history[self.history_index] = clamped;
+        self.history_index = (self.history_index + 1) % 100;
+        if self.sample_count < 100 {
+            self.sample_count += 1;
+        }
+        self.total_predictions += 1;
+    }
+
+    /// Get average accuracy from recorded samples.
+    /// Returns None if no samples have been recorded.
+    pub fn average(&self) -> Option<f32> {
+        if self.sample_count == 0 {
+            return None;
+        }
+        let sum: f32 = self.accuracy_history[..self.sample_count].iter().sum();
+        Some(sum / self.sample_count as f32)
+    }
+
+    /// Get number of samples recorded.
+    pub fn sample_count(&self) -> usize {
+        self.sample_count
+    }
+}
 
 /// Meta-learning event types for logging and auditing.
 /// TASK-METAUTL-P0-001: Used to track significant meta-learning state changes.

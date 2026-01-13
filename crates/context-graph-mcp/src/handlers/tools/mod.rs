@@ -28,6 +28,7 @@ mod gwt_consciousness;
 mod gwt_workspace;
 mod helpers;
 mod memory_tools;
+mod meta_learning_tools;
 mod status_tools;
 
 // All implementations are on the Handlers struct, so no re-exports needed.

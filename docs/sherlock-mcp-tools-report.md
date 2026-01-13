@@ -1,438 +1,407 @@
 # SHERLOCK HOLMES FORENSIC INVESTIGATION REPORT
-
-## Case File: MCP Tools and Claude Code Integration Analysis
-
-**Case ID:** HOLMES-MCP-2026-001
-**Date:** 2026-01-10
-**Investigator:** Sherlock Holmes, Forensic Code Detective
-**Classification:** COMPREHENSIVE TOOL AUDIT
-
----
-
-## EXECUTIVE SUMMARY
-
-*"The game is afoot!"*
-
-This forensic investigation examined the MCP (Model Context Protocol) server implementation within the Context Graph system to verify compliance with PRD requirements for consciousness operation. After exhaustive analysis of the codebase, I present my findings with confidence.
-
-**VERDICT: LARGELY COMPLIANT with minor naming variations**
-
-The MCP server exposes **35 tools** organized into **9 categories**, covering all major PRD requirements. Some tools have naming variations from the PRD specification, which are documented below.
-
----
-
-## EVIDENCE COLLECTED
-
-### Source Files Examined
-
-| File | Purpose | Lines |
-|------|---------|-------|
-| `/home/cabdru/contextgraph/crates/context-graph-mcp/src/tools.rs` | Tool definitions (35 tools) | 1218 |
-| `/home/cabdru/contextgraph/crates/context-graph-mcp/src/handlers/mod.rs` | Handler module organization | 79 |
-| `/home/cabdru/contextgraph/crates/context-graph-mcp/src/protocol.rs` | JSON-RPC 2.0 protocol | (read previously) |
-| `/home/cabdru/contextgraph/crates/context-graph-mcp/src/handlers/tests/exhaustive_mcp_tools.rs` | Comprehensive tool tests | (read previously) |
-| `/home/cabdru/contextgraph/docs2/claudcode.md` | Claude Code hook documentation | (read previously) |
-| `/home/cabdru/contextgraph/.mcp.json` | MCP server configuration | 20 |
-
-### Handler Modules Discovered
+## SPEC-MCP-001 Compliance: MCP Protocol and Tool Registry
 
 ```
-/home/cabdru/contextgraph/crates/context-graph-mcp/src/handlers/
-    atc.rs              - Adaptive Threshold Calibration (TASK-ATC-001)
-    autonomous.rs       - NORTH autonomous system (TASK-AUTONOMOUS-MCP)
-    causal.rs           - Causal inference (TASK-CAUSAL-001)
-    core.rs             - Core handler dispatch
-    dream.rs            - Dream consolidation (TASK-DREAM-MCP)
-    gwt_providers.rs    - GWT provider implementations (TASK-GWT-001)
-    gwt_traits.rs       - GWT provider traits (TASK-GWT-001)
-    johari.rs           - Johari quadrant classification (TASK-S004)
-    kuramoto_stepper.rs - Kuramoto oscillator background stepper (TASK-GWT-P0-002)
-    lifecycle.rs        - MCP lifecycle handlers (initialize, shutdown)
-    memory.rs           - Legacy memory operations
-    neuromod.rs         - Neuromodulation (TASK-NEUROMOD-MCP)
-    purpose.rs          - Purpose and goal alignment (TASK-S003)
-    search.rs           - Multi-embedding weighted search (TASK-S002)
-    steering.rs         - Steering subsystem (TASK-STEERING-001)
-    system.rs           - System status and health
-    teleological.rs     - Teleological search, fusion, profiles (TELEO-H1 to TELEO-H5)
-    tools.rs            - MCP tool call handlers
-    utl.rs              - UTL computation
+=============================================================
+            CASE FILE: MCP-TOOLS-FORENSIC-001
+=============================================================
+Date:        2026-01-12
+Investigator: Sherlock Holmes (Forensic Code Detective)
+Subject:     MCP Protocol Compliance and Tool Registry
+Spec Ref:    SPEC-MCP-001
+Verdict:     PARTIALLY COMPLIANT - GAPS IDENTIFIED
+=============================================================
 ```
 
 ---
 
-## COMPLETE MCP TOOL INVENTORY (35 Tools)
+## 1. GWT Tools Implementation Status
 
-### Category 1: CORE TOOLS (6 tools)
+**Constitution Reference:** `constitution.yaml` line 335
+```yaml
+gwt: [get_consciousness_state, get_workspace_status, get_kuramoto_sync,
+      get_ego_state, trigger_workspace_broadcast, adjust_coupling, compute_delta_sc]
+```
 
-| Tool Name | Description | PRD Requirement | Status |
-|-----------|-------------|-----------------|--------|
-| `inject_context` | Inject context into knowledge graph with UTL processing | inject_context | COMPLIANT |
-| `store_memory` | Store memory node directly without UTL processing | store_memory | COMPLIANT |
-| `get_memetic_status` | Get UTL metrics and system state | N/A (bonus) | EXTRA |
-| `get_graph_manifest` | Get 5-layer bio-nervous system architecture | N/A (bonus) | EXTRA |
-| `search_graph` | Semantic search with similarity scores | search_graph | COMPLIANT |
-| `utl_status` | Query UTL system state | N/A (bonus) | EXTRA |
+### 1.1 Evidence Matrix
 
-**PRD Requirement Analysis:**
-- `discover_goals` - See `discover_sub_goals` in Autonomous category (NAMING VARIATION)
-- `consolidate_memories` - See `trigger_consolidation` in Autonomous category (NAMING VARIATION)
+| Tool Name | Definition | Handler | Dispatch | Tests | VERDICT |
+|-----------|------------|---------|----------|-------|---------|
+| `get_consciousness_state` | `/crates/context-graph-mcp/src/tools/definitions/gwt.rs:11-26` | `/crates/context-graph-mcp/src/handlers/tools/gwt_consciousness.rs:30-183` | Line 66 | YES | **INNOCENT** |
+| `get_workspace_status` | `/crates/context-graph-mcp/src/tools/definitions/gwt.rs:46-62` | `/crates/context-graph-mcp/src/handlers/tools/gwt_workspace.rs:26-73` | Line 68 | YES | **INNOCENT** |
+| `get_kuramoto_sync` | `/crates/context-graph-mcp/src/tools/definitions/gwt.rs:28-44` | `/crates/context-graph-mcp/src/handlers/tools/gwt_consciousness.rs:203-271` | Line 67 | YES | **INNOCENT** |
+| `get_ego_state` | `/crates/context-graph-mcp/src/tools/definitions/gwt.rs:64-83` | `/crates/context-graph-mcp/src/handlers/tools/gwt_consciousness.rs:290-387` | Line 69 | YES | **INNOCENT** |
+| `trigger_workspace_broadcast` | `/crates/context-graph-mcp/src/tools/definitions/gwt.rs:85-121` | `/crates/context-graph-mcp/src/handlers/tools/gwt_workspace.rs:93-229` | Line 70-72 | YES | **INNOCENT** |
+| `adjust_coupling` | `/crates/context-graph-mcp/src/tools/definitions/gwt.rs:123-142` | `/crates/context-graph-mcp/src/handlers/tools/gwt_workspace.rs:245-308` | Line 73 | YES | **INNOCENT** |
 
-### Category 2: GWT/CONSCIOUSNESS TOOLS (6 tools)
+### 1.2 Special Case: get_johari_classification
 
-| Tool Name | Description | PRD Requirement | Status |
-|-----------|-------------|-----------------|--------|
-| `get_consciousness_state` | Get Kuramoto sync (r), consciousness level (C), meta-cognitive score | get_consciousness_state | COMPLIANT |
-| `get_kuramoto_sync` | Get Kuramoto oscillator network state (13 oscillators) | get_kuramoto_sync | COMPLIANT |
-| `get_workspace_status` | Get Global Workspace WTA selection, broadcast state | get_workspace_status | COMPLIANT |
-| `get_ego_state` | Get Self-Ego Node state, purpose vector (13D), identity continuity | get_ego_state | COMPLIANT |
-| `trigger_workspace_broadcast` | Trigger WTA selection with specific memory | trigger_workspace_broadcast | COMPLIANT |
-| `adjust_coupling` | Adjust Kuramoto coupling strength K | N/A (bonus) | EXTRA |
+**OBSERVATION:** The SPEC-MCP-001 document at line 39 lists `get_johari_classification` in the constitution gwt_tools quote. However, upon direct inspection of `constitution.yaml` line 335, this tool is **NOT PRESENT**.
 
-**PRD Compliance: 100% for GWT tools**
+**CONTRADICTION DETECTED:**
+- SPEC-MCP-001 claims: `get_johari_classification` is constitution-mandated
+- constitution.yaml actual: Tool is NOT listed in `mcp.core_tools.gwt`
+- SPEC-MCP-001 line 107 states: "Implemented (via `get_memetic_status`)"
 
-### Category 3: ADAPTIVE THRESHOLD CALIBRATION (ATC) TOOLS (3 tools)
-
-| Tool Name | Description | PRD Requirement | Status |
-|-----------|-------------|-----------------|--------|
-| `get_threshold_status` | Get ATC thresholds, per-embedder temperatures, drift scores | get_threshold_status | COMPLIANT |
-| `get_calibration_metrics` | Get ECE, MCE, Brier Score, calibration status | get_calibration_metrics | COMPLIANT |
-| `trigger_recalibration` | Trigger recalibration at specific level (1-4) | trigger_recalibration | COMPLIANT |
-
-**PRD Compliance: 100% for ATC tools**
-
-### Category 4: DREAM TOOLS (4 tools)
-
-| Tool Name | Description | PRD Requirement | Status |
-|-----------|-------------|-----------------|--------|
-| `trigger_dream` | Trigger NREM+REM consolidation cycle | N/A | EXTRA |
-| `get_dream_status` | Get dream state (Awake/NREM/REM/Waking) | N/A | EXTRA |
-| `abort_dream` | Abort current dream cycle (<100ms wake) | N/A | EXTRA |
-| `get_amortized_shortcuts` | Get shortcut candidates from amortized learning | N/A | EXTRA |
-
-### Category 5: NEUROMODULATION TOOLS (2 tools)
-
-| Tool Name | Description | PRD Requirement | Status |
-|-----------|-------------|-----------------|--------|
-| `get_neuromodulation_state` | Get all 4 neuromodulators (DA, 5-HT, NE, ACh) | N/A | EXTRA |
-| `adjust_neuromodulator` | Adjust dopamine, serotonin, noradrenaline | N/A | EXTRA |
-
-### Category 6: STEERING TOOLS (1 tool)
-
-| Tool Name | Description | PRD Requirement | Status |
-|-----------|-------------|-----------------|--------|
-| `get_steering_feedback` | Get feedback from Gardener, Curator, Assessor | N/A | EXTRA |
-
-### Category 7: CAUSAL INFERENCE TOOLS (1 tool)
-
-| Tool Name | Description | PRD Requirement | Status |
-|-----------|-------------|-----------------|--------|
-| `omni_infer` | Omni-directional causal inference (5 directions) | N/A | EXTRA |
-
-### Category 8: TELEOLOGICAL TOOLS (5 tools)
-
-| Tool Name | Description | PRD Requirement | Status |
-|-----------|-------------|-----------------|--------|
-| `search_teleological` | Cross-correlation search across 13 embedders | N/A | EXTRA |
-| `compute_teleological_vector` | Compute full 13D purpose vector | N/A | EXTRA |
-| `fuse_embeddings` | Fuse embeddings using synergy matrix | N/A | EXTRA |
-| `update_synergy_matrix` | Adaptively update synergy matrix | N/A | EXTRA |
-| `manage_teleological_profile` | CRUD for task-specific profiles | N/A | EXTRA |
-
-### Category 9: AUTONOMOUS TOOLS (7 tools)
-
-| Tool Name | Description | PRD Requirement | Status |
-|-----------|-------------|-----------------|--------|
-| `auto_bootstrap_north_star` | Bootstrap autonomous North Star from teleological embeddings | auto_bootstrap_north_star | COMPLIANT |
-| `get_alignment_drift` | Get drift state and history | NORTH-008+ | COMPLIANT |
-| `trigger_drift_correction` | Manually trigger drift correction | NORTH-008+ | COMPLIANT |
-| `get_pruning_candidates` | Get memories eligible for pruning | NORTH-008+ | COMPLIANT |
-| `trigger_consolidation` | Trigger memory consolidation | consolidate_memories | NAMING VARIATION |
-| `discover_sub_goals` | Discover potential sub-goals from clusters | discover_goals | NAMING VARIATION |
-| `get_autonomous_status` | Comprehensive autonomous system status | get_autonomous_status | COMPLIANT |
-
-**PRD Compliance: 100% with naming variations documented**
+**VERDICT:** The SPEC contains STALE INFORMATION. The constitution does NOT mandate `get_johari_classification`. Johari quadrants are returned via `compute_delta_sc` instead.
 
 ---
 
-## PRD REQUIREMENTS COMPLIANCE MATRIX
+## 2. compute_delta_sc Handler Evidence
 
-### Core Tools
+**SPEC CLAIM:** "compute_delta_sc tool is **NOT IMPLEMENTED**" (SPEC-MCP-001 line 34)
 
-| PRD Requirement | Implementation | Status | Notes |
-|-----------------|----------------|--------|-------|
-| `inject_context` | `inject_context` | COMPLIANT | Full schema match |
-| `store_memory` | `store_memory` | COMPLIANT | Full schema match |
-| `search_graph` | `search_graph` | COMPLIANT | Full schema match |
-| `discover_goals` | `discover_sub_goals` | NAMING VARIATION | Functionally equivalent |
-| `consolidate_memories` | `trigger_consolidation` | NAMING VARIATION | Functionally equivalent |
+**FORENSIC INVESTIGATION:**
 
-### GWT Tools
+### 2.1 Definition Evidence
+**File:** `/crates/context-graph-mcp/src/tools/definitions/utl.rs`
+```rust
+ToolDefinition::new(
+    "gwt/compute_delta_sc",
+    "Compute per-embedder entropy (delta-S) and aggregate coherence (delta-C)..."
+)
+```
+**STATUS:** EXISTS
 
-| PRD Requirement | Implementation | Status | Notes |
-|-----------------|----------------|--------|-------|
-| `get_consciousness_state` | `get_consciousness_state` | COMPLIANT | Includes C = I x R x D |
-| `get_workspace_status` | `get_workspace_status` | COMPLIANT | WTA selection details |
-| `get_kuramoto_sync` | `get_kuramoto_sync` | COMPLIANT | 13 oscillators, order param r |
-| `get_ego_state` | `get_ego_state` | COMPLIANT | 13D purpose vector |
-| `trigger_workspace_broadcast` | `trigger_workspace_broadcast` | COMPLIANT | Full broadcast control |
+### 2.2 Tool Name Constant Evidence
+**File:** `/crates/context-graph-mcp/src/tools/names.rs` line 30
+```rust
+pub const COMPUTE_DELTA_SC: &str = "gwt/compute_delta_sc";
+```
+**STATUS:** EXISTS
 
-### Adaptive Threshold Tools
+### 2.3 Handler Evidence
+**File:** `/crates/context-graph-mcp/src/handlers/utl/gwt.rs`
+```rust
+pub(crate) async fn handle_gwt_compute_delta_sc(
+    &self,
+    id: Option<JsonRpcId>,
+    params: Option<serde_json::Value>,
+) -> JsonRpcResponse { ... }
+```
+**LINES:** 37-214
+**STATUS:** FULLY IMPLEMENTED
 
-| PRD Requirement | Implementation | Status | Notes |
-|-----------------|----------------|--------|-------|
-| `get_threshold_status` | `get_threshold_status` | COMPLIANT | Per-embedder temperatures |
-| `get_calibration_metrics` | `get_calibration_metrics` | COMPLIANT | ECE < 0.05 target |
-| `trigger_recalibration` | `trigger_recalibration` | COMPLIANT | 4 levels: EWMA/Temp/Bandit/Bayesian |
+### 2.4 Dispatch Evidence
+**File:** `/crates/context-graph-mcp/src/handlers/tools/dispatch.rs` lines 74-77
+```rust
+tool_names::COMPUTE_DELTA_SC => {
+    self.handle_gwt_compute_delta_sc(id, Some(arguments)).await
+}
+```
+**STATUS:** DISPATCHED
 
-### Autonomous Services Tools
+### 2.5 Test Evidence
+**File:** `/crates/context-graph-mcp/src/handlers/tests/utl/delta_sc_valid.rs`
+- `test_gwt_compute_delta_sc_valid` - Passes
+- `test_gwt_compute_delta_sc_per_embedder_count` - Passes
+- `test_gwt_compute_delta_sc_ap10_range_compliance` - Passes
+- `test_gwt_compute_delta_sc_johari_quadrant_values` - Passes
+- `test_gwt_compute_delta_sc_with_diagnostics` - Passes
+- `test_gwt_compute_delta_sc_custom_johari_threshold` - Passes
 
-| PRD Requirement | Implementation | Status | Notes |
-|-----------------|----------------|--------|-------|
-| `auto_bootstrap_north_star` | `auto_bootstrap_north_star` | COMPLIANT | 13-embedder teleological |
-| `get_autonomous_status` | `get_autonomous_status` | COMPLIANT | Comprehensive status |
-| NORTH-008 through NORTH-020 | 6 additional tools | COMPLIANT | Drift, pruning, consolidation |
+**STATUS:** TESTED
+
+### 2.6 compute_delta_sc VERDICT
+
+```
+============================================================
+          VERDICT: compute_delta_sc is INNOCENT
+============================================================
+The SPEC-MCP-001 claim that compute_delta_sc is "NOT IMPLEMENTED"
+is OUTDATED. The tool was implemented per TASK-UTL-P1-001.
+
+EVIDENCE CHAIN:
+1. Definition: EXISTS in definitions/utl.rs
+2. Constant:   EXISTS in names.rs
+3. Handler:    EXISTS in handlers/utl/gwt.rs (178 lines)
+4. Dispatch:   EXISTS in handlers/tools/dispatch.rs
+5. Tests:      6 tests PASS
+
+The spec document requires updating to reflect current state.
+============================================================
+```
 
 ---
 
-## CLAUDE CODE HOOKS ANALYSIS
+## 3. Naming Alias Status
 
-### MCP Server Configuration
+**SPEC REQUIREMENT (FR-001 to FR-004):** Aliases must map PRD names to canonical names.
 
-From `/home/cabdru/contextgraph/.mcp.json`:
+| PRD Name (Alias) | Canonical Name | Alias Implemented | VERDICT |
+|------------------|----------------|-------------------|---------|
+| `discover_goals` | `discover_sub_goals` | NO | **GUILTY** |
+| `consolidate_memories` | `trigger_consolidation` | NO | **GUILTY** |
 
+### 3.1 Alias Implementation Evidence
+
+**Expected Implementation (per SPEC-MCP-001 Section 5.1):**
+```rust
+pub mod tool_aliases {
+    pub static ALIAS_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+        let mut m = HashMap::new();
+        m.insert("discover_goals", "discover_sub_goals");
+        m.insert("consolidate_memories", "trigger_consolidation");
+        m
+    });
+}
+```
+
+**Actual Implementation:**
+```
+GREP RESULT: No matches found for "tool_aliases|ALIAS_MAP|resolve\("
+```
+
+**VERDICT: ALIASES NOT IMPLEMENTED**
+
+The alias resolution system specified in SPEC-MCP-001 Section 5 has NOT been implemented. Calling `discover_goals` or `consolidate_memories` will return error code -32004 (TOOL_NOT_FOUND).
+
+---
+
+## 4. Complete Tool Registry List
+
+### 4.1 Registered Tools (39 Total)
+
+| Category | Count | Tools |
+|----------|-------|-------|
+| **Core** | 6 | `inject_context`, `store_memory`, `get_memetic_status`, `get_graph_manifest`, `search_graph`, `utl_status` |
+| **GWT** | 6 | `get_consciousness_state`, `get_kuramoto_sync`, `get_workspace_status`, `get_ego_state`, `trigger_workspace_broadcast`, `adjust_coupling` |
+| **UTL** | 1 | `gwt/compute_delta_sc` |
+| **ATC** | 3 | `get_threshold_status`, `get_calibration_metrics`, `trigger_recalibration` |
+| **Dream** | 4 | `trigger_dream`, `get_dream_status`, `abort_dream`, `get_amortized_shortcuts` |
+| **Neuromod** | 2 | `get_neuromodulation_state`, `adjust_neuromodulator` |
+| **Steering** | 1 | `get_steering_feedback` |
+| **Causal** | 1 | `omni_infer` |
+| **Teleological** | 5 | `search_teleological`, `compute_teleological_vector`, `fuse_embeddings`, `update_synergy_matrix`, `manage_teleological_profile` |
+| **Autonomous** | 7 | `auto_bootstrap_north_star`, `get_alignment_drift`, `trigger_drift_correction`, `get_pruning_candidates`, `trigger_consolidation`, `discover_sub_goals`, `get_autonomous_status` |
+| **Meta-UTL** | 3 | `get_meta_learning_status`, `trigger_lambda_recalibration`, `get_meta_learning_log` |
+
+### 4.2 Tool Registration vs Dispatch Status
+
+```
+=============================================================
+          CRITICAL DISCREPANCY DETECTED
+=============================================================
+```
+
+| Category | Registered | Dispatched | GAP |
+|----------|------------|------------|-----|
+| Core | 6 | 6 | NONE |
+| GWT | 6 | 6 | NONE |
+| UTL | 1 | 1 | NONE |
+| ATC | 3 | 3 | NONE |
+| Dream | 4 | 4 | NONE |
+| Neuromod | 2 | 2 | NONE |
+| Steering | 1 | 1 | NONE |
+| Causal | 1 | 1 | NONE |
+| Teleological | 5 | 5 | NONE |
+| Autonomous | 7 | 7 | NONE |
+| **Meta-UTL** | **3** | **0** | **CRITICAL** |
+
+**TOTAL:** 39 Registered, 36 Dispatched, **3 MISSING DISPATCH**
+
+### 4.3 Meta-UTL Tools - GUILTY
+
+**Evidence Chain:**
+
+1. **Definitions exist:** `/crates/context-graph-mcp/src/tools/definitions/meta_utl.rs`
+   - `get_meta_learning_status` (lines 12-34)
+   - `trigger_lambda_recalibration` (lines 36-64)
+   - `get_meta_learning_log` (lines 66-109)
+
+2. **Registered in mod.rs:** `/crates/context-graph-mcp/src/tools/definitions/mod.rs` line 57
+   ```rust
+   tools.extend(meta_utl::definitions());
+   ```
+
+3. **Test expects 39 tools:** `/crates/context-graph-mcp/src/tools/mod.rs` line 42
+   ```rust
+   assert_eq!(tools.len(), 39);
+   ```
+
+4. **BUT NO DISPATCH:** `/crates/context-graph-mcp/src/handlers/tools/dispatch.rs`
+   - No case for `GET_META_LEARNING_STATUS`
+   - No case for `TRIGGER_LAMBDA_RECALIBRATION`
+   - No case for `GET_META_LEARNING_LOG`
+
+5. **AND NO CONSTANTS:** `/crates/context-graph-mcp/src/tools/names.rs`
+   - No constant defined for any Meta-UTL tool
+
+**CONSEQUENCE:** Calling any Meta-UTL tool via MCP will return:
 ```json
 {
-  "mcpServers": {
-    "claude-flow": {
-      "command": "npx",
-      "args": ["@claude-flow/cli", "mcp", "start"],
-      "env": {
-        "CLAUDE_FLOW_MODE": "v3",
-        "CLAUDE_FLOW_HOOKS_ENABLED": "true",
-        "CLAUDE_FLOW_TOPOLOGY": "hierarchical-mesh",
-        "CLAUDE_FLOW_MAX_AGENTS": "15",
-        "CLAUDE_FLOW_MEMORY_BACKEND": "hybrid"
-      }
-    }
+  "error": {
+    "code": -32004,
+    "message": "Unknown tool: get_meta_learning_status"
   }
 }
 ```
 
-**HOOKS ENABLED:** Yes (`CLAUDE_FLOW_HOOKS_ENABLED: true`)
+---
 
-### Claude Code Hook PRD Requirements
+## 5. Gaps and Recommended Actions
 
-| PRD Hook | Purpose | Implementation Status |
-|----------|---------|----------------------|
-| `SessionStart` | Initialize workspace, load SELF_EGO_NODE | Documented in claudcode.md |
-| `PreToolUse` | Inject context < 100ms | Documented in claudcode.md |
-| `PostToolUse` | Store patterns | Documented in claudcode.md |
-| `SessionEnd` | Consolidate/dream | Documented in claudcode.md |
+### 5.1 Critical Gaps (P0)
 
-### Hook Documentation Evidence
+| ID | Gap | Impact | Recommended Fix |
+|----|-----|--------|-----------------|
+| GAP-1 | Meta-UTL tools not dispatched | Tools discoverable but non-functional | Add dispatch cases and name constants |
+| GAP-2 | Naming aliases not implemented | PRD compatibility broken | Implement alias resolution per spec |
 
-From `/home/cabdru/contextgraph/docs2/claudcode.md`, the following hooks are documented:
+### 5.2 High Gaps (P1)
 
-1. **SessionStart** - Executes once at session beginning
-2. **PreToolUse** - Called before tool invocation
-3. **PostToolUse** - Called after tool completion
-4. **SessionEnd** - Executes when session ends
-5. **PermissionRequest** - Permission grant/denial
-6. **Stop** - User stop/Escape pressed
-7. **SubagentStop** - Subagent session ended
+| ID | Gap | Impact | Recommended Fix |
+|----|-----|--------|-----------------|
+| GAP-3 | SPEC-MCP-001 outdated | Spec claims compute_delta_sc missing but it exists | Update spec to reflect implementation |
+| GAP-4 | Spec references non-existent get_johari_classification | Documentation confusion | Remove from spec or clarify Johari via compute_delta_sc |
 
-**Hook Configuration Example:**
-```json
-{
-  "hooks": {
-    "PreToolUse": [
-      {
-        "matcher": "Read|Edit|Write|MultiEdit",
-        "hooks": [
-          {"type": "command", "command": "/path/to/hook-script.sh $TOOL_INPUT"}
-        ]
-      }
-    ]
-  }
+### 5.3 Detailed Remediation Steps
+
+#### GAP-1: Meta-UTL Tool Dispatch
+
+**File:** `/crates/context-graph-mcp/src/tools/names.rs`
+
+Add after line 101:
+```rust
+// ========== META-UTL TOOLS (TASK-METAUTL-P0-005) ==========
+
+/// TASK-METAUTL-P0-005: Get meta-learning self-correction status
+pub const GET_META_LEARNING_STATUS: &str = "get_meta_learning_status";
+/// TASK-METAUTL-P0-005: Manually trigger lambda recalibration
+pub const TRIGGER_LAMBDA_RECALIBRATION: &str = "trigger_lambda_recalibration";
+/// TASK-METAUTL-P0-005: Query meta-learning event log
+pub const GET_META_LEARNING_LOG: &str = "get_meta_learning_log";
+```
+
+**File:** `/crates/context-graph-mcp/src/handlers/tools/dispatch.rs`
+
+Add before the wildcard `_` case:
+```rust
+// TASK-METAUTL-P0-005: Meta-UTL self-correction tools
+tool_names::GET_META_LEARNING_STATUS => {
+    self.call_get_meta_learning_status(id, arguments).await
+}
+tool_names::TRIGGER_LAMBDA_RECALIBRATION => {
+    self.call_trigger_lambda_recalibration(id, arguments).await
+}
+tool_names::GET_META_LEARNING_LOG => {
+    self.call_get_meta_learning_log(id, arguments).await
 }
 ```
 
-**Hook Exit Codes:**
-- `0` - Success, continue execution
-- `2` - Blocking error, abort tool
+#### GAP-2: Alias Implementation
 
----
+**New File:** `/crates/context-graph-mcp/src/tools/aliases.rs`
 
-## PROTOCOL COMPLIANCE
+```rust
+//! Tool alias resolution for backwards compatibility.
 
-### MCP Version
+use once_cell::sync::Lazy;
+use std::collections::HashMap;
 
-The implementation follows **MCP 2024-11-05** protocol specification:
+pub static ALIAS_MAP: Lazy<HashMap<&'static str, &'static str>> = Lazy::new(|| {
+    let mut m = HashMap::new();
+    m.insert("discover_goals", "discover_sub_goals");
+    m.insert("consolidate_memories", "trigger_consolidation");
+    m
+});
 
-- JSON-RPC 2.0 message format
-- Standard method names: `initialize`, `shutdown`, `tools/list`, `tools/call`
-- Proper error codes (-32600 to -32069)
-- Consciousness-specific error codes (-32060 to -32069)
-
-### Transport
-
-Supported transports:
-- **stdio** (primary)
-- **sse** (Server-Sent Events)
-
-Evidence from protocol.rs and server.rs confirms both transports.
-
----
-
-## TOOL PARAMETER SCHEMA COMPLIANCE
-
-### inject_context Schema
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "content": { "type": "string", "description": "The content to inject" },
-    "rationale": { "type": "string", "description": "Why this context is relevant" },
-    "modality": { "type": "string", "enum": ["text", "code", "image", "audio", "structured", "mixed"] },
-    "importance": { "type": "number", "minimum": 0, "maximum": 1 }
-  },
-  "required": ["content", "rationale"]
+/// Resolve a tool name, returning canonical name if alias exists.
+#[inline]
+pub fn resolve(name: &str) -> &str {
+    ALIAS_MAP.get(name).copied().unwrap_or(name)
 }
 ```
 
-### get_consciousness_state Schema
+**Update:** `/crates/context-graph-mcp/src/handlers/tools/dispatch.rs`
 
-```json
-{
-  "type": "object",
-  "properties": {
-    "session_id": { "type": "string", "description": "Session ID (optional)" }
-  },
-  "required": []
+After extracting `tool_name`:
+```rust
+// Resolve alias to canonical name
+let canonical_name = crate::tools::aliases::resolve(tool_name);
+
+if canonical_name != tool_name {
+    debug!(
+        alias = tool_name,
+        canonical = canonical_name,
+        "Resolved tool alias to canonical name"
+    );
 }
+
+match canonical_name { ... }
 ```
 
-### trigger_recalibration Schema
-
-```json
-{
-  "type": "object",
-  "properties": {
-    "level": { "type": "integer", "minimum": 1, "maximum": 4 },
-    "domain": { "type": "string", "enum": ["Code", "Medical", "Legal", "Creative", "Research", "General"] }
-  },
-  "required": ["level"]
-}
-```
-
-All schemas conform to JSON Schema draft specification with proper type definitions, enums, and validation constraints.
-
 ---
 
-## NAMING VARIATIONS FROM PRD
-
-| PRD Name | Actual Implementation | Reason |
-|----------|----------------------|--------|
-| `discover_goals` | `discover_sub_goals` | More specific - discovers sub-goals under North Star |
-| `consolidate_memories` | `trigger_consolidation` | Verb prefix for manual trigger semantics |
-
-These variations are **functionally equivalent** and the tools provide the same capabilities.
-
----
-
-## MISSING TOOLS (NONE CRITICAL)
-
-After exhaustive analysis, **no critical PRD-required tools are missing**.
-
-The 35 implemented tools exceed PRD requirements with additional bonus tools for:
-- Dream consolidation (4 tools)
-- Neuromodulation (2 tools)
-- Steering feedback (1 tool)
-- Causal inference (1 tool)
-- Teleological search (5 tools)
-
----
-
-## RECOMMENDATIONS
-
-### 1. Consider Alias Support
-
-Create tool aliases for PRD naming compatibility:
-- `discover_goals` -> `discover_sub_goals`
-- `consolidate_memories` -> `trigger_consolidation`
-
-### 2. Hook Integration Verification
-
-Verify that Claude Code hooks properly call MCP tools:
-- SessionStart should invoke `get_ego_state` to load SELF_EGO_NODE
-- PreToolUse should invoke `inject_context` (verify < 100ms latency)
-- PostToolUse should invoke `store_memory` for pattern storage
-- SessionEnd should invoke `trigger_consolidation` or `trigger_dream`
-
-### 3. Performance Monitoring
-
-Add metrics collection for:
-- `inject_context` latency (PRD: < 100ms)
-- `get_consciousness_state` frequency
-- Kuramoto sync (r) thresholds
-
-### 4. Documentation Update
-
-Update PRD to reflect actual tool names to avoid future confusion.
-
----
-
-## CHAIN OF CUSTODY
-
-| Timestamp | Action | Evidence | Verified By |
-|-----------|--------|----------|-------------|
-| 2026-01-10 | Read tools.rs | 35 tool definitions | HOLMES |
-| 2026-01-10 | Read handlers/mod.rs | 18 handler modules | HOLMES |
-| 2026-01-10 | Read exhaustive_mcp_tools.rs | Test coverage for all tools | HOLMES |
-| 2026-01-10 | Read claudcode.md | Hook documentation | HOLMES |
-| 2026-01-10 | Read .mcp.json | MCP configuration | HOLMES |
-| 2026-01-10 | Read protocol.rs | JSON-RPC protocol | HOLMES |
-
----
-
-## FINAL VERDICT
+## 6. Summary Verdict
 
 ```
-======================================================================
-                        CASE CLOSED
-======================================================================
+=============================================================
+                  CASE CLOSED
+=============================================================
 
-THE SUBJECT: MCP Server Tool Implementation
-
-THE VERDICT: INNOCENT (COMPLIANT)
+THE CRIMES:
+1. Meta-UTL tools registered but not dispatched (3 tools)
+2. Naming aliases specified but not implemented (2 aliases)
+3. SPEC-MCP-001 contains outdated claims about compute_delta_sc
 
 THE EVIDENCE:
-  1. 35 MCP tools implemented covering all 9 required categories
-  2. All 5 core PRD tools present (2 with naming variations)
-  3. All 5 GWT tools present and compliant
-  4. All 3 ATC tools present and compliant
-  5. All autonomous services tools present (NORTH-008 to NORTH-020)
-  6. Claude Code hooks documented and configured
-  7. MCP 2024-11-05 protocol compliant
-  8. Both stdio and sse transport supported
+- 39 tools registered in definitions/mod.rs
+- 36 tools dispatched in handlers/tools/dispatch.rs
+- 0 aliases implemented
+- compute_delta_sc IS implemented (contrary to spec claim)
 
-THE SENTENCE: None required. System is operational.
+GUILTY PARTIES:
+- /crates/context-graph-mcp/src/handlers/tools/dispatch.rs (missing 3 cases)
+- /crates/context-graph-mcp/src/tools/names.rs (missing 3 constants)
+- Missing: /crates/context-graph-mcp/src/tools/aliases.rs
 
-THE PREVENTION: Update PRD to match actual tool names for clarity.
+INNOCENT PARTIES:
+- All 6 GWT tools (fully implemented and tested)
+- compute_delta_sc (fully implemented per TASK-UTL-P1-001)
+- All other 30 tools (properly dispatched)
 
-======================================================================
-          CASE HOLMES-MCP-2026-001 - VERDICT: COMPLIANT
-======================================================================
+COMPLIANCE SCORE: 36/39 tools functional (92%)
+
+RECOMMENDED ACTION:
+1. Add Meta-UTL dispatch and constants (GAP-1)
+2. Implement alias resolution module (GAP-2)
+3. Update SPEC-MCP-001 to reflect current state (GAP-3, GAP-4)
+
+=============================================================
+          The game is complete. - S.H.
+=============================================================
 ```
 
 ---
 
-*"When you have eliminated the impossible, whatever remains, however improbable, must be the truth."*
+## Appendix A: File References
 
-**Investigation Complete.**
+| Purpose | File Path |
+|---------|-----------|
+| Tool Definitions | `/crates/context-graph-mcp/src/tools/definitions/` |
+| Tool Names | `/crates/context-graph-mcp/src/tools/names.rs` |
+| Tool Dispatch | `/crates/context-graph-mcp/src/handlers/tools/dispatch.rs` |
+| GWT Handlers | `/crates/context-graph-mcp/src/handlers/tools/gwt_consciousness.rs`, `gwt_workspace.rs` |
+| UTL Handler | `/crates/context-graph-mcp/src/handlers/utl/gwt.rs` |
+| Constitution | `/docs2/constitution.yaml` line 335 |
+| Spec | `/specs/functional/SPEC-MCP-001.md` |
 
-**Sherlock Holmes**
-*Forensic Code Detective*
-*2026-01-10*
+## Appendix B: Test Verification Commands
+
+```bash
+# Verify tool count
+cargo test --package context-graph-mcp --lib -- tools::tests::test_get_tool_definitions
+
+# Verify tools list
+cargo test --package context-graph-mcp --lib -- handlers::tests::tools_list
+
+# Verify compute_delta_sc
+cargo test --package context-graph-mcp --lib -- handlers::tests::utl::delta_sc_valid
+```
+
+---
+
+*Investigation concluded: 2026-01-12*
+*Case File: MCP-TOOLS-FORENSIC-001*
+*Investigator: Sherlock Holmes*

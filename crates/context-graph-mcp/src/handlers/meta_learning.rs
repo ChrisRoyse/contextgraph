@@ -24,9 +24,11 @@ pub enum MetaLearningMcpError {
     #[error("Invalid timestamp format '{value}'. Expected ISO 8601 (e.g., 2024-01-15T10:30:00Z)")]
     InvalidTimestamp { value: String },
 
+    #[allow(dead_code)]
     #[error("Pagination offset {offset} exceeds total count {total}")]
     InvalidPaginationOffset { offset: usize, total: usize },
 
+    #[allow(dead_code)]
     #[error("Service unavailable: {reason}")]
     ServiceUnavailable { reason: String },
 

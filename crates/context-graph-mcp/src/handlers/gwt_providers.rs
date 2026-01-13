@@ -14,6 +14,7 @@
 //! - MetaCognitiveProviderImpl -> MetaCognitiveLoop (from context-graph-core)
 //! - SelfEgoProviderImpl -> SelfEgoNode + IdentityContinuity (from context-graph-core)
 
+use std::sync::Arc;
 use std::sync::RwLock;
 use std::time::Duration;
 
@@ -141,27 +142,66 @@ impl KuramotoProvider for KuramotoProviderImpl {
 /// Wrapper implementing GwtSystemProvider using real GWT components
 ///
 /// TASK-IDENTITY-P0-007: Added identity_monitor for identity continuity exposure.
+///
+/// # Monitor Sharing (TASK-IDENTITY-P0-001)
+///
+/// The `identity_monitor` field should reference the SAME monitor instance used by
+/// `IdentityContinuityListener` to ensure MCP tools read accurate IC values.
+/// Use `with_shared_monitor()` for production, `new()` only for isolated tests.
 #[derive(Debug)]
 pub struct GwtSystemProviderImpl {
     calculator: ConsciousnessCalculator,
     state_machine: RwLock<StateMachineManager>,
-    /// Identity continuity monitor for IC tracking (TASK-IDENTITY-P0-007)
-    identity_monitor: TokioRwLock<IdentityContinuityMonitor>,
+    /// SHARED identity continuity monitor - references listener's monitor (TASK-IDENTITY-P0-001)
+    identity_monitor: Arc<TokioRwLock<IdentityContinuityMonitor>>,
 }
 
 impl GwtSystemProviderImpl {
-    /// Create a new GwtSystemProvider with fresh components
+    /// Create with shared monitor reference (PREFERRED for production)
     ///
-    /// TASK-IDENTITY-P0-007: Initializes identity_monitor for IC tracking.
-    pub fn new() -> Self {
+    /// Use this constructor when integrating with IdentityContinuityListener
+    /// to ensure MCP tools read from the same monitor that receives events.
+    ///
+    /// # Arguments
+    /// * `monitor` - Shared monitor from IdentityContinuityListener::monitor()
+    ///
+    /// # TASK-IDENTITY-P0-001
+    #[allow(dead_code)]
+    pub fn with_shared_monitor(
+        monitor: Arc<TokioRwLock<IdentityContinuityMonitor>>
+    ) -> Self {
         Self {
             calculator: ConsciousnessCalculator::new(),
             state_machine: RwLock::new(StateMachineManager::new()),
-            identity_monitor: TokioRwLock::new(IdentityContinuityMonitor::new()),
+            identity_monitor: monitor,
+        }
+    }
+
+    /// Create with isolated monitor (for testing only)
+    ///
+    /// WARNING: This creates a separate monitor instance that will NOT
+    /// receive updates from IdentityContinuityListener. Use only for
+    /// unit tests that don't require listener integration.
+    ///
+    /// # TASK-IDENTITY-P0-001: FORBIDDEN in production
+    /// This method is only available in test builds. Production code MUST use
+    /// `with_shared_monitor()` to share the IdentityContinuityListener's monitor.
+    /// This ensures AP-40 compliance: MCP tools read from the correct monitor.
+    #[cfg(test)]
+    pub fn new() -> Self {
+        tracing::warn!(
+            "GwtSystemProviderImpl::new() creates isolated monitor - \
+             use with_shared_monitor() for production"
+        );
+        Self {
+            calculator: ConsciousnessCalculator::new(),
+            state_machine: RwLock::new(StateMachineManager::new()),
+            identity_monitor: Arc::new(TokioRwLock::new(IdentityContinuityMonitor::new())),
         }
     }
 }
 
+#[cfg(test)]
 impl Default for GwtSystemProviderImpl {
     fn default() -> Self {
         Self::new()

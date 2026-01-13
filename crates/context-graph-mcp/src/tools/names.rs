@@ -99,3 +99,12 @@ pub const TRIGGER_CONSOLIDATION: &str = "trigger_consolidation";
 pub const DISCOVER_SUB_GOALS: &str = "discover_sub_goals";
 /// TASK-AUTONOMOUS-MCP: Get comprehensive autonomous system status
 pub const GET_AUTONOMOUS_STATUS: &str = "get_autonomous_status";
+
+// ========== META-UTL TOOLS (TASK-MCP-P0-001) ==========
+
+/// TASK-MCP-P0-001: Get current self-correction status
+pub const GET_META_LEARNING_STATUS: &str = "get_meta_learning_status";
+/// TASK-MCP-P0-001: Manually trigger lambda recalibration
+pub const TRIGGER_LAMBDA_RECALIBRATION: &str = "trigger_lambda_recalibration";
+/// TASK-MCP-P0-001: Query meta-learning event log
+pub const GET_META_LEARNING_LOG: &str = "get_meta_learning_log";

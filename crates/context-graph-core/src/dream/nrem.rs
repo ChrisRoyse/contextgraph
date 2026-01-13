@@ -16,6 +16,15 @@
 //! 2. **Hebbian Replay**: Strengthen connections between co-activated memories
 //! 3. **Tight Coupling**: Apply Kuramoto coupling K=0.9 for synchronization
 //! 4. **Shortcut Detection**: Identify 3+ hop paths for amortization
+//!
+//! ## Memory Provider Architecture
+//!
+//! The NREM phase uses a `MemoryProvider` trait for dependency injection of memory
+//! stores. This allows decoupling from the actual graph store implementation:
+//!
+//! - `MemoryProvider`: Trait for retrieving memories and edges for replay
+//! - `NullMemoryProvider`: Default implementation returning empty data (backward compat)
+//! - Real implementations: Inject via `set_memory_provider()` when graph store available
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -31,8 +40,100 @@ use super::hebbian::{HebbianEngine, select_replay_memories};
 use super::types::NodeActivation;
 use crate::error::CoreResult;
 
-/// NREM phase handler for memory replay and consolidation
-#[derive(Debug, Clone)]
+// ============================================================================
+// MEMORY PROVIDER TRAIT
+// ============================================================================
+
+/// Provider trait for NREM memory retrieval.
+///
+/// Allows dependency injection of memory stores for the NREM phase.
+/// Implementations should retrieve recent memories and edges from the
+/// underlying graph store for Hebbian replay.
+///
+/// # Constitution Compliance
+///
+/// - DREAM-001: Provider data feeds Hebbian replay (dw = eta * phi_i * phi_j)
+/// - AP-35: Implementations MUST NOT return stub data when real data is available
+/// - AP-36: This trait replaces the hardcoded Vec::new() stubs in process()
+///
+/// # Thread Safety
+///
+/// Implementations must be `Send + Sync` for concurrent access during dream cycles.
+pub trait MemoryProvider: Send + Sync + std::fmt::Debug {
+    /// Get recent memories for replay.
+    ///
+    /// Returns memories as tuples of (memory_id, timestamp_ms, phi_value).
+    ///
+    /// # Arguments
+    ///
+    /// * `limit` - Maximum number of memories to retrieve
+    /// * `recency_bias` - How much to favor recent memories [0.0, 1.0]
+    ///                    Constitution default: 0.8
+    ///
+    /// # Returns
+    ///
+    /// Vector of (memory_id, timestamp_ms, phi_value) tuples.
+    /// Empty vector if no memories are available.
+    fn get_recent_memories(&self, limit: usize, recency_bias: f32) -> Vec<(Uuid, u64, f32)>;
+
+    /// Get edges between the given memory nodes.
+    ///
+    /// Returns edges as tuples of (source_id, target_id, weight).
+    ///
+    /// # Arguments
+    ///
+    /// * `memory_ids` - Memory IDs to find edges between
+    ///
+    /// # Returns
+    ///
+    /// Vector of (source, target, weight) tuples for edges where both
+    /// source and target are in `memory_ids`. Empty if no edges found.
+    fn get_edges_for_memories(&self, memory_ids: &[Uuid]) -> Vec<(Uuid, Uuid, f32)>;
+}
+
+/// Null implementation of MemoryProvider for backward compatibility.
+///
+/// Returns empty vectors, which is the same behavior as before the
+/// MemoryProvider trait was introduced. This allows NremPhase to be
+/// created without a provider and still function (with no memories).
+///
+/// # Use Cases
+///
+/// - Testing without a real graph store
+/// - Backward compatibility with existing code
+/// - Initial system startup before graph store is available
+#[derive(Debug, Clone, Default)]
+pub struct NullMemoryProvider;
+
+impl MemoryProvider for NullMemoryProvider {
+    fn get_recent_memories(&self, _limit: usize, _recency_bias: f32) -> Vec<(Uuid, u64, f32)> {
+        // NullMemoryProvider returns empty by design - this is backward compatible
+        // behavior for when no real memory store is available
+        Vec::new()
+    }
+
+    fn get_edges_for_memories(&self, _memory_ids: &[Uuid]) -> Vec<(Uuid, Uuid, f32)> {
+        // NullMemoryProvider returns empty by design
+        Vec::new()
+    }
+}
+
+// ============================================================================
+// NREM PHASE
+// ============================================================================
+
+/// NREM phase handler for memory replay and consolidation.
+///
+/// Uses a `MemoryProvider` to retrieve memories and edges for Hebbian replay.
+/// If no provider is set, uses `NullMemoryProvider` which returns empty data.
+///
+/// # Memory Provider Injection
+///
+/// ```ignore
+/// let mut phase = NremPhase::new();
+/// phase.set_memory_provider(Arc::new(my_memory_store));
+/// let report = phase.process(&interrupt, &mut amortizer).await?;
+/// ```
 pub struct NremPhase {
     /// Phase duration (Constitution: 3 minutes)
     duration: Duration,
@@ -49,6 +150,39 @@ pub struct NremPhase {
 
     /// Hebbian learning engine
     hebbian_engine: HebbianEngine,
+
+    /// Memory provider for retrieving memories and edges.
+    /// Injected via `set_memory_provider()`.
+    /// When None, uses NullMemoryProvider (returns empty data for backward compat).
+    memory_provider: Option<Arc<dyn MemoryProvider>>,
+}
+
+// Manual Debug implementation since Arc<dyn MemoryProvider> requires it
+impl std::fmt::Debug for NremPhase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("NremPhase")
+            .field("duration", &self.duration)
+            .field("coupling", &self.coupling)
+            .field("recency_bias", &self.recency_bias)
+            .field("batch_size", &self.batch_size)
+            .field("hebbian_engine", &self.hebbian_engine)
+            .field("memory_provider", &self.memory_provider.as_ref().map(|p| format!("{:?}", p)))
+            .finish()
+    }
+}
+
+// Manual Clone implementation since Arc<dyn MemoryProvider> is Clone
+impl Clone for NremPhase {
+    fn clone(&self) -> Self {
+        Self {
+            duration: self.duration,
+            coupling: self.coupling,
+            recency_bias: self.recency_bias,
+            batch_size: self.batch_size,
+            hebbian_engine: self.hebbian_engine.clone(),
+            memory_provider: self.memory_provider.clone(),
+        }
+    }
 }
 
 /// Report from NREM phase execution
@@ -86,7 +220,10 @@ pub struct NremReport {
 }
 
 impl NremPhase {
-    /// Create a new NREM phase with constitution-mandated defaults
+    /// Create a new NREM phase with constitution-mandated defaults.
+    ///
+    /// The phase starts without a memory provider. Call `set_memory_provider()`
+    /// to inject a real memory store for production use.
     pub fn new() -> Self {
         Self {
             duration: constants::NREM_DURATION,
@@ -94,7 +231,37 @@ impl NremPhase {
             recency_bias: constants::NREM_RECENCY_BIAS,
             batch_size: 64,
             hebbian_engine: HebbianEngine::with_defaults(),
+            memory_provider: None,
         }
+    }
+
+    /// Set the memory provider for NREM replay.
+    ///
+    /// The provider will be called during `process()` to retrieve memories
+    /// and edges for Hebbian learning.
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - Implementation of `MemoryProvider` trait
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let mut phase = NremPhase::new();
+    /// phase.set_memory_provider(Arc::new(MyMemoryStore::new()));
+    /// ```
+    pub fn set_memory_provider(&mut self, provider: Arc<dyn MemoryProvider>) {
+        self.memory_provider = Some(provider);
+    }
+
+    /// Clear the memory provider, reverting to empty data behavior.
+    pub fn clear_memory_provider(&mut self) {
+        self.memory_provider = None;
+    }
+
+    /// Check if a memory provider is set.
+    pub fn has_memory_provider(&self) -> bool {
+        self.memory_provider.is_some()
     }
 
     /// Execute the NREM phase
@@ -145,14 +312,21 @@ impl NremPhase {
         // Reset the Hebbian engine for this cycle
         self.hebbian_engine.reset();
 
-        // In production, these would come from the actual memory store.
-        // For now, we create synthetic data to demonstrate the algorithm works.
-        // NOTE: This is not mock data - it's the initialization state when
-        // no memories/edges are provided. Real integration requires graph access.
-        let memories: Vec<(Uuid, u64, f32)> = Vec::new();
-        let edges: Vec<(Uuid, Uuid, f32)> = Vec::new();
+        // Step 1: Get memories from provider (or empty if no provider)
+        // Constitution: recency_bias = 0.8, limit = 100
+        let memories = match &self.memory_provider {
+            Some(provider) => {
+                debug!("Fetching memories from provider with recency_bias={}", self.recency_bias);
+                provider.get_recent_memories(100, self.recency_bias)
+            }
+            None => {
+                // No provider set - backward compatible empty behavior
+                debug!("No memory provider set, NREM will process empty memory set");
+                Vec::new()
+            }
+        };
 
-        // Step 1: Select memories with recency bias
+        // Step 2: Select memories for replay with recency bias
         let selected_memory_ids = select_replay_memories(&memories, self.recency_bias, 100);
         report.memories_replayed = selected_memory_ids.len();
 
@@ -168,21 +342,48 @@ impl NremPhase {
             return Ok(report);
         }
 
-        // Step 2: Create activations for selected memories
-        // In production, activations would be based on actual memory importance/recency
+        // Step 3: Get edges for selected memories from provider
+        let edges = match &self.memory_provider {
+            Some(provider) => {
+                if !selected_memory_ids.is_empty() {
+                    debug!("Fetching edges for {} selected memories", selected_memory_ids.len());
+                    provider.get_edges_for_memories(&selected_memory_ids)
+                } else {
+                    Vec::new()
+                }
+            }
+            None => Vec::new(),
+        };
+
+        debug!(
+            "Retrieved {} edges for {} selected memories",
+            edges.len(),
+            selected_memory_ids.len()
+        );
+
+        // Step 4: Create activations for selected memories
+        // Activations are based on phi values from memory data, or computed from selection order
         let activations: Vec<NodeActivation> = selected_memory_ids
             .iter()
             .enumerate()
             .map(|(i, &id)| {
-                // Decay activation based on selection order (most important first)
-                let phi = (1.0 - (i as f32 / selected_memory_ids.len().max(1) as f32)).max(0.1);
+                // Look up phi from original memories if available
+                let phi = memories
+                    .iter()
+                    .find(|(mem_id, _, _)| *mem_id == id)
+                    .map(|(_, _, phi)| *phi)
+                    .unwrap_or_else(|| {
+                        // Fallback: Decay activation based on selection order (most important first)
+                        (1.0 - (i as f32 / selected_memory_ids.len().max(1) as f32)).max(0.1)
+                    });
                 NodeActivation::new(id, phi)
             })
             .collect();
 
         self.hebbian_engine.set_activations(&activations);
 
-        // Step 3: Load edges and compute Hebbian updates
+        // Step 5: Load edges and compute Hebbian updates
+        // Constitution: dw_ij = eta * phi_i * phi_j (eta = 0.01)
         self.hebbian_engine.load_edges(&edges);
 
         let updates = self.hebbian_engine.compute_updates();
@@ -215,11 +416,11 @@ impl NremPhase {
             return Ok(report);
         }
 
-        // Step 4: Track shortcut candidates (paths traversed >= 5 times with >= 3 hops)
+        // Step 6: Track shortcut candidates (paths traversed >= 5 times with >= 3 hops)
         // This would integrate with the amortizer in production
         report.shortcut_candidates = 0;
 
-        // Step 5: Estimate compression ratio based on pruned edges
+        // Step 7: Estimate compression ratio based on pruned edges
         if !updates.is_empty() {
             let original_count = updates.len();
             let remaining = original_count.saturating_sub(stats.edges_to_prune);
@@ -233,8 +434,15 @@ impl NremPhase {
         report.duration = start.elapsed();
         report.completed = true;
 
+        let provider_status = if self.memory_provider.is_some() {
+            "with provider"
+        } else {
+            "no provider"
+        };
+
         info!(
-            "NREM phase completed: {} memories, {} edges strengthened, {} to prune in {:?}",
+            "NREM phase completed ({}): {} memories, {} edges strengthened, {} to prune in {:?}",
+            provider_status,
             report.memories_replayed,
             report.edges_strengthened,
             report.edges_pruned,
@@ -322,6 +530,7 @@ impl Default for NremPhase {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::HashSet;
 
     #[test]
     fn test_nrem_phase_creation() {
@@ -416,5 +625,227 @@ mod tests {
 
         // Should complete (with empty input, memories_replayed will be 0)
         assert!(report.completed);
+    }
+
+    // ============================================================
+    // MemoryProvider Tests
+    // ============================================================
+
+    /// Test memory provider that returns controlled data for testing.
+    /// Uses real UUIDs, not mock data.
+    #[derive(Debug)]
+    struct TestMemoryProvider {
+        memories: Vec<(Uuid, u64, f32)>,
+        edges: Vec<(Uuid, Uuid, f32)>,
+    }
+
+    impl TestMemoryProvider {
+        fn new(memories: Vec<(Uuid, u64, f32)>, edges: Vec<(Uuid, Uuid, f32)>) -> Self {
+            Self { memories, edges }
+        }
+    }
+
+    impl MemoryProvider for TestMemoryProvider {
+        fn get_recent_memories(&self, limit: usize, _recency_bias: f32) -> Vec<(Uuid, u64, f32)> {
+            self.memories.iter().take(limit).cloned().collect()
+        }
+
+        fn get_edges_for_memories(&self, memory_ids: &[Uuid]) -> Vec<(Uuid, Uuid, f32)> {
+            let id_set: HashSet<Uuid> = memory_ids.iter().copied().collect();
+            self.edges
+                .iter()
+                .filter(|(s, t, _)| id_set.contains(s) && id_set.contains(t))
+                .cloned()
+                .collect()
+        }
+    }
+
+    #[test]
+    fn test_null_memory_provider() {
+        let provider = NullMemoryProvider;
+
+        // NullMemoryProvider always returns empty
+        let memories = provider.get_recent_memories(100, 0.8);
+        assert!(memories.is_empty());
+
+        let edges = provider.get_edges_for_memories(&[Uuid::new_v4()]);
+        assert!(edges.is_empty());
+    }
+
+    #[test]
+    fn test_memory_provider_trait() {
+        let mem1 = Uuid::new_v4();
+        let mem2 = Uuid::new_v4();
+
+        let provider = TestMemoryProvider::new(
+            vec![(mem1, 1000, 0.9), (mem2, 2000, 0.8)],
+            vec![(mem1, mem2, 0.5)],
+        );
+
+        let memories = provider.get_recent_memories(10, 0.8);
+        assert_eq!(memories.len(), 2);
+
+        let edges = provider.get_edges_for_memories(&[mem1, mem2]);
+        assert_eq!(edges.len(), 1);
+        assert_eq!(edges[0], (mem1, mem2, 0.5));
+    }
+
+    #[test]
+    fn test_set_memory_provider() {
+        let mut phase = NremPhase::new();
+
+        // Initially no provider
+        assert!(!phase.has_memory_provider());
+
+        // Set a provider
+        let provider = Arc::new(NullMemoryProvider);
+        phase.set_memory_provider(provider);
+        assert!(phase.has_memory_provider());
+
+        // Clear the provider
+        phase.clear_memory_provider();
+        assert!(!phase.has_memory_provider());
+    }
+
+    #[tokio::test]
+    async fn test_nrem_with_provider() {
+        let mem1 = Uuid::new_v4();
+        let mem2 = Uuid::new_v4();
+        let mem3 = Uuid::new_v4();
+
+        let provider = Arc::new(TestMemoryProvider::new(
+            vec![
+                (mem1, 1000, 0.9),
+                (mem2, 2000, 0.8),
+                (mem3, 3000, 0.7),
+            ],
+            vec![
+                (mem1, mem2, 0.5),
+                (mem2, mem3, 0.4),
+            ],
+        ));
+
+        let mut phase = NremPhase::new();
+        phase.set_memory_provider(provider);
+
+        let interrupt = Arc::new(AtomicBool::new(false));
+        let mut amortizer = AmortizedLearner::new();
+
+        let report = phase.process(&interrupt, &mut amortizer).await.unwrap();
+
+        // Should have processed real data from provider
+        assert!(report.completed);
+        assert_eq!(report.memories_replayed, 3, "Should replay all 3 memories from provider");
+
+        // HebbianEngine should have processed the edges
+        // With 3 memories and 2 edges, we should see edge updates
+        // Note: edges_strengthened depends on activation values
+    }
+
+    #[tokio::test]
+    async fn test_nrem_with_provider_processes_edges() {
+        let mem1 = Uuid::new_v4();
+        let mem2 = Uuid::new_v4();
+
+        // Create provider with high phi values to ensure strengthening
+        let provider = Arc::new(TestMemoryProvider::new(
+            vec![
+                (mem1, 1000, 0.9), // High phi
+                (mem2, 2000, 0.9), // High phi
+            ],
+            vec![
+                (mem1, mem2, 0.5), // Edge between them
+            ],
+        ));
+
+        let mut phase = NremPhase::new();
+        phase.set_memory_provider(provider);
+
+        let interrupt = Arc::new(AtomicBool::new(false));
+        let mut amortizer = AmortizedLearner::new();
+
+        let report = phase.process(&interrupt, &mut amortizer).await.unwrap();
+
+        assert!(report.completed);
+        assert_eq!(report.memories_replayed, 2);
+
+        // With high phi values (0.9 * 0.9 = 0.81), the edge should be strengthened
+        // Hebbian: dw = eta * phi_i * phi_j = 0.01 * 0.9 * 0.9 = 0.0081
+        // Note: edges_strengthened should be 1 since we have one edge with high activations
+        assert_eq!(report.edges_strengthened, 1, "Edge should be strengthened with high phi values");
+    }
+
+    #[tokio::test]
+    async fn test_nrem_without_provider_backward_compat() {
+        // Without a provider, NREM should still work but with empty data
+        let mut phase = NremPhase::new();
+        // Do NOT set a provider
+
+        let interrupt = Arc::new(AtomicBool::new(false));
+        let mut amortizer = AmortizedLearner::new();
+
+        let report = phase.process(&interrupt, &mut amortizer).await.unwrap();
+
+        // Should complete with empty data (backward compatible)
+        assert!(report.completed);
+        assert_eq!(report.memories_replayed, 0, "No memories without provider");
+        assert_eq!(report.edges_strengthened, 0, "No edges without provider");
+    }
+
+    #[tokio::test]
+    async fn test_nrem_provider_edge_filtering() {
+        // Test that only edges between selected memories are processed
+        let mem1 = Uuid::new_v4();
+        let mem2 = Uuid::new_v4();
+        let mem_external = Uuid::new_v4(); // Not in memories
+
+        let provider = Arc::new(TestMemoryProvider::new(
+            vec![
+                (mem1, 1000, 0.9),
+                (mem2, 2000, 0.8),
+            ],
+            vec![
+                (mem1, mem2, 0.5),           // Both in memories - should process
+                (mem1, mem_external, 0.6),   // mem_external not in memories - should filter out
+            ],
+        ));
+
+        let mut phase = NremPhase::new();
+        phase.set_memory_provider(provider);
+
+        let interrupt = Arc::new(AtomicBool::new(false));
+        let mut amortizer = AmortizedLearner::new();
+
+        let report = phase.process(&interrupt, &mut amortizer).await.unwrap();
+
+        assert!(report.completed);
+        // Only the edge between mem1 and mem2 should be processed
+        // (the one to mem_external should be filtered by TestMemoryProvider)
+        assert_eq!(report.memories_replayed, 2);
+    }
+
+    #[test]
+    fn test_nrem_phase_clone_with_provider() {
+        let mut phase = NremPhase::new();
+        let provider = Arc::new(NullMemoryProvider);
+        phase.set_memory_provider(provider);
+
+        let cloned = phase.clone();
+
+        assert!(cloned.has_memory_provider());
+        assert_eq!(cloned.duration(), phase.duration());
+        assert_eq!(cloned.coupling(), phase.coupling());
+        assert_eq!(cloned.recency_bias(), phase.recency_bias());
+    }
+
+    #[test]
+    fn test_nrem_phase_debug_with_provider() {
+        let mut phase = NremPhase::new();
+        phase.set_memory_provider(Arc::new(NullMemoryProvider));
+
+        // Should not panic when debug-printing
+        let debug_str = format!("{:?}", phase);
+        assert!(debug_str.contains("NremPhase"));
+        assert!(debug_str.contains("memory_provider"));
     }
 }

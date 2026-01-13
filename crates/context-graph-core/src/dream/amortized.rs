@@ -21,9 +21,19 @@
 //! - `original_path`: Reference to the original multi-hop path
 //! - `weight`: Product of path edge weights
 //! - `confidence`: Minimum confidence along the path
+//!
+//! ## Edge Creation
+//!
+//! The [`EdgeCreator`] trait abstracts edge persistence. Implementations can:
+//! - Persist edges to a graph store
+//! - Log edges for debugging (via [`NullEdgeCreator`])
+//! - Record edges for testing (via [`RecordingEdgeCreator`])
+//!
+//! When no edge creator is set, shortcuts are tracked internally but not persisted.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
+use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info};
@@ -46,6 +56,92 @@ impl PathSignature {
             node.hash(&mut hasher);
         }
         PathSignature(hasher.finish())
+    }
+}
+
+/// Edge to be created as a shortcut
+///
+/// Represents a direct edge that replaces a multi-hop path that was
+/// traversed frequently enough to warrant optimization.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ShortcutEdge {
+    /// Source node ID
+    pub source: Uuid,
+    /// Target node ID
+    pub target: Uuid,
+    /// Combined weight (product of path edge weights)
+    pub weight: f32,
+    /// Minimum confidence along the original path
+    pub confidence: f32,
+    /// Flag indicating this is a shortcut edge (always true)
+    pub is_shortcut: bool,
+    /// Original multi-hop path that this shortcut replaces
+    pub original_path: Vec<Uuid>,
+}
+
+impl ShortcutEdge {
+    /// Create a ShortcutEdge from a ShortcutCandidate
+    ///
+    /// The `is_shortcut` flag is always set to `true` to distinguish
+    /// shortcut edges from regular edges in the graph store.
+    pub fn from_candidate(candidate: &ShortcutCandidate) -> Self {
+        Self {
+            source: candidate.source,
+            target: candidate.target,
+            weight: candidate.combined_weight,
+            confidence: candidate.min_confidence,
+            is_shortcut: true, // Always true for shortcuts
+            original_path: candidate.path_nodes.clone(),
+        }
+    }
+}
+
+/// Trait for creating shortcut edges in storage
+///
+/// Implementations of this trait handle the persistence of shortcut edges
+/// to a graph store or other storage mechanism.
+///
+/// # Contract
+///
+/// - `create_edge` is called only for candidates that pass the quality gate
+/// - The edge's `is_shortcut` flag is always `true`
+/// - The `original_path` contains the full multi-hop path
+///
+/// # Error Handling
+///
+/// Implementations must return errors (not panic) on failure.
+/// Returning `Ok(false)` indicates the edge already exists.
+pub trait EdgeCreator: Send + Sync {
+    /// Create a shortcut edge in the graph store
+    ///
+    /// # Arguments
+    ///
+    /// * `edge` - The shortcut edge to create
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(true)` - Edge was successfully created
+    /// * `Ok(false)` - Edge already exists (no-op)
+    /// * `Err(_)` - Error during creation
+    fn create_edge(&self, edge: &ShortcutEdge) -> CoreResult<bool>;
+}
+
+/// Null implementation of EdgeCreator for backward compatibility
+///
+/// This implementation logs edge creation attempts but does not persist
+/// them. Useful for testing and when no graph store is available.
+pub struct NullEdgeCreator;
+
+impl EdgeCreator for NullEdgeCreator {
+    fn create_edge(&self, edge: &ShortcutEdge) -> CoreResult<bool> {
+        debug!(
+            "NullEdgeCreator: would create edge {} -> {} (is_shortcut={}, path_len={})",
+            edge.source,
+            edge.target,
+            edge.is_shortcut,
+            edge.original_path.len()
+        );
+        Ok(true) // Pretend success for backward compatibility
     }
 }
 
@@ -87,7 +183,15 @@ impl ShortcutCandidate {
 }
 
 /// Amortized learning system for shortcut creation
-#[derive(Debug, Clone)]
+///
+/// The learner tracks path traversals and creates shortcut edges when
+/// paths meet the quality gate requirements (3+ hops, 5+ traversals, 0.7+ confidence).
+///
+/// # Edge Creation
+///
+/// When an `EdgeCreator` is set via [`set_edge_creator`](Self::set_edge_creator),
+/// shortcut edges are persisted to the graph store. Without a creator,
+/// shortcuts are tracked internally but not persisted.
 pub struct AmortizedLearner {
     /// Path traversal counts
     path_counts: HashMap<PathSignature, PathInfo>,
@@ -106,6 +210,24 @@ pub struct AmortizedLearner {
 
     /// Total shortcuts created
     total_shortcuts_created: usize,
+
+    /// Optional edge creator for persisting shortcut edges
+    edge_creator: Option<Arc<dyn EdgeCreator>>,
+}
+
+// Manual Debug impl because Arc<dyn EdgeCreator> doesn't implement Debug
+impl std::fmt::Debug for AmortizedLearner {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AmortizedLearner")
+            .field("path_counts", &self.path_counts)
+            .field("min_hops", &self.min_hops)
+            .field("min_traversals", &self.min_traversals)
+            .field("confidence_threshold", &self.confidence_threshold)
+            .field("shortcuts_created_this_cycle", &self.shortcuts_created_this_cycle)
+            .field("total_shortcuts_created", &self.total_shortcuts_created)
+            .field("edge_creator", &self.edge_creator.is_some())
+            .finish()
+    }
 }
 
 /// Internal tracking info for a path
@@ -134,6 +256,35 @@ impl AmortizedLearner {
             confidence_threshold: constants::SHORTCUT_CONFIDENCE_THRESHOLD,
             shortcuts_created_this_cycle: 0,
             total_shortcuts_created: 0,
+            edge_creator: None,
+        }
+    }
+
+    /// Set the edge creator for shortcut persistence
+    ///
+    /// When set, the learner will call the creator to persist shortcut edges
+    /// to the graph store when candidates pass the quality gate.
+    ///
+    /// # Arguments
+    ///
+    /// * `creator` - The edge creator implementation
+    pub fn set_edge_creator(&mut self, creator: Arc<dyn EdgeCreator>) {
+        self.edge_creator = Some(creator);
+    }
+
+    /// Create a new AmortizedLearner with an edge creator
+    ///
+    /// Convenience constructor for creating a learner with edge persistence.
+    #[allow(deprecated)]
+    pub fn with_edge_creator(creator: Arc<dyn EdgeCreator>) -> Self {
+        Self {
+            path_counts: HashMap::new(),
+            min_hops: constants::MIN_SHORTCUT_HOPS,
+            min_traversals: constants::MIN_SHORTCUT_TRAVERSALS,
+            confidence_threshold: constants::SHORTCUT_CONFIDENCE_THRESHOLD,
+            shortcuts_created_this_cycle: 0,
+            total_shortcuts_created: 0,
+            edge_creator: Some(creator),
         }
     }
 
@@ -225,8 +376,8 @@ impl AmortizedLearner {
 
     /// Create a shortcut for a candidate
     ///
-    /// Note: This is a stub. Agent 2 will implement actual edge creation
-    /// with graph store integration.
+    /// Creates a [`ShortcutEdge`] from the candidate and persists it via the
+    /// configured [`EdgeCreator`] (if set).
     ///
     /// # Arguments
     ///
@@ -234,7 +385,16 @@ impl AmortizedLearner {
     ///
     /// # Returns
     ///
-    /// True if shortcut was created, false if it failed quality gate
+    /// * `Ok(true)` - Shortcut was created successfully
+    /// * `Ok(false)` - Candidate failed quality gate or edge already exists
+    /// * `Err(_)` - Error during edge creation
+    ///
+    /// # Quality Gate
+    ///
+    /// The candidate must meet these requirements (Constitution DREAM-005):
+    /// - hops >= 3
+    /// - traversals >= 5
+    /// - confidence >= 0.7
     pub fn create_shortcut(&mut self, candidate: &ShortcutCandidate) -> CoreResult<bool> {
         if !candidate.meets_quality_gate() {
             debug!(
@@ -253,16 +413,25 @@ impl AmortizedLearner {
             candidate.min_confidence
         );
 
-        // TODO: Agent 2 will implement actual edge creation:
-        // let edge = Edge {
-        //     source: candidate.source,
-        //     target: candidate.target,
-        //     weight: candidate.combined_weight,
-        //     confidence: candidate.min_confidence,
-        //     is_shortcut: true,
-        //     original_path: Some(candidate.path_nodes.clone()),
-        // };
-        // graph.store_edge(&edge).await?;
+        // Create ShortcutEdge from candidate
+        let edge = ShortcutEdge::from_candidate(candidate);
+
+        // Call edge creator if set
+        if let Some(creator) = &self.edge_creator {
+            let created = creator.create_edge(&edge)?;
+            if !created {
+                debug!(
+                    "Edge creator returned false for {} -> {} (edge may already exist)",
+                    edge.source, edge.target
+                );
+                return Ok(false);
+            }
+        } else {
+            debug!(
+                "No edge creator set, shortcut {} -> {} tracked but not persisted",
+                edge.source, edge.target
+            );
+        }
 
         self.shortcuts_created_this_cycle += 1;
         self.total_shortcuts_created += 1;
@@ -576,5 +745,303 @@ mod tests {
         learner.reset_cycle_counter();
         assert_eq!(learner.shortcuts_created_this_cycle, 0);
         assert_eq!(learner.total_shortcuts_created, 1); // Total unchanged
+    }
+
+    // =====================================================================
+    // EdgeCreator Tests
+    // =====================================================================
+
+    use std::sync::Mutex;
+
+    /// Recording edge creator for testing - tracks all created edges
+    pub struct RecordingEdgeCreator {
+        created_edges: Mutex<Vec<ShortcutEdge>>,
+    }
+
+    impl RecordingEdgeCreator {
+        pub fn new() -> Self {
+            Self {
+                created_edges: Mutex::new(Vec::new()),
+            }
+        }
+
+        pub fn get_created_edges(&self) -> Vec<ShortcutEdge> {
+            self.created_edges
+                .lock()
+                .expect("RecordingEdgeCreator lock poisoned")
+                .clone()
+        }
+    }
+
+    impl EdgeCreator for RecordingEdgeCreator {
+        fn create_edge(&self, edge: &ShortcutEdge) -> CoreResult<bool> {
+            self.created_edges
+                .lock()
+                .expect("RecordingEdgeCreator lock poisoned")
+                .push(edge.clone());
+            Ok(true)
+        }
+    }
+
+    #[test]
+    fn test_shortcut_edge_from_candidate() {
+        let source = Uuid::new_v4();
+        let target = Uuid::new_v4();
+        let path_nodes = vec![source, Uuid::new_v4(), Uuid::new_v4(), target];
+
+        let candidate = ShortcutCandidate {
+            source,
+            target,
+            hop_count: 3,
+            traversal_count: 5,
+            combined_weight: 0.5,
+            min_confidence: 0.8,
+            path_nodes: path_nodes.clone(),
+        };
+
+        let edge = ShortcutEdge::from_candidate(&candidate);
+
+        assert_eq!(edge.source, source);
+        assert_eq!(edge.target, target);
+        assert_eq!(edge.weight, 0.5);
+        assert_eq!(edge.confidence, 0.8);
+        assert!(edge.is_shortcut, "is_shortcut must be true");
+        assert_eq!(edge.original_path, path_nodes);
+    }
+
+    #[test]
+    fn test_shortcut_edge_is_shortcut_always_true() {
+        let candidate = ShortcutCandidate {
+            source: Uuid::new_v4(),
+            target: Uuid::new_v4(),
+            hop_count: 3,
+            traversal_count: 5,
+            combined_weight: 0.5,
+            min_confidence: 0.8,
+            path_nodes: vec![],
+        };
+
+        let edge = ShortcutEdge::from_candidate(&candidate);
+        assert!(edge.is_shortcut, "ShortcutEdge.is_shortcut must always be true");
+    }
+
+    #[test]
+    fn test_null_edge_creator() {
+        let creator = NullEdgeCreator;
+        let edge = ShortcutEdge {
+            source: Uuid::new_v4(),
+            target: Uuid::new_v4(),
+            weight: 0.5,
+            confidence: 0.8,
+            is_shortcut: true,
+            original_path: vec![],
+        };
+
+        let result = creator.create_edge(&edge).unwrap();
+        assert!(result, "NullEdgeCreator should return true");
+    }
+
+    #[test]
+    fn test_set_edge_creator() {
+        let creator = Arc::new(RecordingEdgeCreator::new());
+        let mut learner = AmortizedLearner::new();
+
+        // Initially no creator
+        assert!(learner.edge_creator.is_none());
+
+        // Set creator
+        learner.set_edge_creator(creator.clone());
+        assert!(learner.edge_creator.is_some());
+    }
+
+    #[test]
+    fn test_with_edge_creator_constructor() {
+        let creator = Arc::new(RecordingEdgeCreator::new());
+        let learner = AmortizedLearner::with_edge_creator(creator);
+
+        assert!(learner.edge_creator.is_some());
+        assert_eq!(learner.min_hops, 3);
+        assert_eq!(learner.min_traversals, 5);
+    }
+
+    #[test]
+    fn test_shortcut_creation_calls_creator() {
+        let creator = Arc::new(RecordingEdgeCreator::new());
+        let mut learner = AmortizedLearner::new();
+        learner.set_edge_creator(creator.clone());
+
+        // Create a candidate that passes quality gate
+        // 5 nodes = 4 hops (>= 3)
+        let nodes = vec![
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        ];
+        let weights = vec![0.8, 0.9, 0.7, 0.85];
+        let confidences = vec![0.9, 0.8, 0.75, 0.85];
+
+        // Record 6 traversals (>= 5)
+        for _ in 0..6 {
+            learner.record_traversal(&nodes, &weights, &confidences);
+        }
+
+        // Process candidates
+        let created = learner.process_candidates().unwrap();
+
+        assert_eq!(created, 1, "Should create 1 shortcut");
+
+        let edges = creator.get_created_edges();
+        assert_eq!(edges.len(), 1, "Creator should have 1 edge");
+
+        let edge = &edges[0];
+        assert!(edge.is_shortcut, "Edge must have is_shortcut=true");
+        assert_eq!(edge.original_path.len(), 5, "Edge must have full path");
+        assert_eq!(edge.source, nodes[0], "Source must be first node");
+        assert_eq!(edge.target, nodes[4], "Target must be last node");
+        assert!(edge.confidence >= 0.7, "Confidence must meet threshold");
+    }
+
+    #[test]
+    fn test_create_shortcut_without_creator() {
+        let mut learner = AmortizedLearner::new();
+
+        let candidate = ShortcutCandidate {
+            source: Uuid::new_v4(),
+            target: Uuid::new_v4(),
+            hop_count: 4,
+            traversal_count: 6,
+            combined_weight: 0.5,
+            min_confidence: 0.8,
+            path_nodes: vec![Uuid::new_v4(); 5],
+        };
+
+        // Should succeed even without creator
+        let result = learner.create_shortcut(&candidate).unwrap();
+        assert!(result, "Shortcut creation should succeed without creator");
+        assert_eq!(learner.shortcuts_created_this_cycle, 1);
+    }
+
+    /// Edge creator that returns false (edge already exists)
+    struct RejectingEdgeCreator;
+
+    impl EdgeCreator for RejectingEdgeCreator {
+        fn create_edge(&self, _edge: &ShortcutEdge) -> CoreResult<bool> {
+            Ok(false) // Edge already exists
+        }
+    }
+
+    #[test]
+    fn test_create_shortcut_creator_returns_false() {
+        let creator = Arc::new(RejectingEdgeCreator);
+        let mut learner = AmortizedLearner::with_edge_creator(creator);
+
+        let candidate = ShortcutCandidate {
+            source: Uuid::new_v4(),
+            target: Uuid::new_v4(),
+            hop_count: 4,
+            traversal_count: 6,
+            combined_weight: 0.5,
+            min_confidence: 0.8,
+            path_nodes: vec![Uuid::new_v4(); 5],
+        };
+
+        // Should return false when creator returns false
+        let result = learner.create_shortcut(&candidate).unwrap();
+        assert!(!result, "Should return false when creator returns false");
+        assert_eq!(learner.shortcuts_created_this_cycle, 0, "Counter should not increment");
+    }
+
+    /// Edge creator that returns an error
+    struct FailingEdgeCreator;
+
+    impl EdgeCreator for FailingEdgeCreator {
+        fn create_edge(&self, _edge: &ShortcutEdge) -> CoreResult<bool> {
+            Err(crate::error::CoreError::Internal("Edge creation failed".into()))
+        }
+    }
+
+    #[test]
+    fn test_create_shortcut_creator_error_propagates() {
+        let creator = Arc::new(FailingEdgeCreator);
+        let mut learner = AmortizedLearner::with_edge_creator(creator);
+
+        let candidate = ShortcutCandidate {
+            source: Uuid::new_v4(),
+            target: Uuid::new_v4(),
+            hop_count: 4,
+            traversal_count: 6,
+            combined_weight: 0.5,
+            min_confidence: 0.8,
+            path_nodes: vec![Uuid::new_v4(); 5],
+        };
+
+        // Error should propagate
+        let result = learner.create_shortcut(&candidate);
+        assert!(result.is_err(), "Error should propagate from creator");
+    }
+
+    #[test]
+    fn test_quality_gate_enforcement_with_creator() {
+        let creator = Arc::new(RecordingEdgeCreator::new());
+        let mut learner = AmortizedLearner::with_edge_creator(creator.clone());
+
+        // Candidate that fails quality gate (insufficient hops)
+        let bad_candidate = ShortcutCandidate {
+            source: Uuid::new_v4(),
+            target: Uuid::new_v4(),
+            hop_count: 2, // < 3
+            traversal_count: 6,
+            combined_weight: 0.5,
+            min_confidence: 0.8,
+            path_nodes: vec![],
+        };
+
+        let result = learner.create_shortcut(&bad_candidate).unwrap();
+        assert!(!result, "Should fail quality gate");
+
+        let edges = creator.get_created_edges();
+        assert!(edges.is_empty(), "Creator should NOT be called for failed quality gate");
+    }
+
+    #[test]
+    fn test_multiple_shortcuts_with_creator() {
+        let creator = Arc::new(RecordingEdgeCreator::new());
+        let mut learner = AmortizedLearner::with_edge_creator(creator.clone());
+
+        // Create two different paths
+        let nodes1 = vec![
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        ];
+        let nodes2 = vec![
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+            Uuid::new_v4(),
+        ];
+        let weights = vec![0.8, 0.9, 0.7, 0.85];
+        let confidences = vec![0.9, 0.8, 0.75, 0.85];
+
+        // Record both paths 6 times
+        for _ in 0..6 {
+            learner.record_traversal(&nodes1, &weights[..3], &confidences[..3]);
+            learner.record_traversal(&nodes2, &weights, &confidences);
+        }
+
+        let created = learner.process_candidates().unwrap();
+        assert_eq!(created, 2, "Should create 2 shortcuts");
+
+        let edges = creator.get_created_edges();
+        assert_eq!(edges.len(), 2, "Creator should have 2 edges");
+
+        // Verify all edges have is_shortcut=true
+        for edge in &edges {
+            assert!(edge.is_shortcut, "All edges must have is_shortcut=true");
+        }
     }
 }

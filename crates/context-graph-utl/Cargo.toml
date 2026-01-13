@@ -43,6 +43,10 @@ harness = false
 name = "surprise_bench"
 harness = false
 
+[[bench]]
+name = "cluster_fit_bench"
+harness = false
+
 [[test]]
 name = "integration_tests"
 path = "tests/integration_tests/mod.rs"

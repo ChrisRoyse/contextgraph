@@ -11,7 +11,7 @@ use uuid::Uuid;
 
 use context_graph_core::johari::NUM_EMBEDDERS;
 
-use super::types::{SelfCorrectionConfig, StoredPrediction};
+use super::types::{Domain, DomainAccuracyTracker, SelfCorrectionConfig, StoredPrediction};
 
 /// Meta-UTL Tracker for learning about learning
 ///
@@ -46,6 +46,9 @@ pub struct MetaUtlTracker {
     cycle_embedder_updated: [bool; NUM_EMBEDDERS],
     /// TASK-METAUTL-P0-001: Number of complete accuracy recording cycles
     cycle_count: usize,
+    /// TASK-METAUTL-P1-001: Per-domain accuracy tracking for lambda recalibration
+    #[allow(dead_code)]
+    pub domain_accuracy: HashMap<Domain, DomainAccuracyTracker>,
 }
 
 impl Default for MetaUtlTracker {
@@ -67,6 +70,8 @@ impl Default for MetaUtlTracker {
             config: SelfCorrectionConfig::default(),
             cycle_embedder_updated: [false; NUM_EMBEDDERS],
             cycle_count: 0,
+            // TASK-METAUTL-P1-001: Per-domain accuracy tracking
+            domain_accuracy: HashMap::new(),
         }
     }
 }
@@ -421,5 +426,136 @@ impl MetaUtlTracker {
     #[allow(dead_code)] // API reserved for TASK-METAUTL-P0-005 integration
     pub fn config(&self) -> &SelfCorrectionConfig {
         &self.config
+    }
+
+    // ========== TASK-METAUTL-P1-001: Per-Domain Accuracy Tracking ==========
+
+    /// Record accuracy for a specific domain.
+    /// TASK-METAUTL-P1-001: Enables domain-specific lambda optimization.
+    #[allow(dead_code)]
+    pub fn record_domain_accuracy(&mut self, domain: Domain, accuracy: f32) {
+        let tracker = self.domain_accuracy
+            .entry(domain)
+            .or_default();
+        tracker.record(accuracy);
+
+        // Check for consecutive low accuracy in this domain
+        if let Some(avg) = tracker.average() {
+            if avg < self.config.low_accuracy_threshold {
+                tracker.consecutive_low_count += 1;
+            } else {
+                tracker.consecutive_low_count = 0;
+            }
+        }
+
+        debug!(
+            domain = ?domain,
+            accuracy = accuracy,
+            avg = tracker.average(),
+            sample_count = tracker.sample_count(),
+            "Recorded domain-specific accuracy"
+        );
+    }
+
+    /// Get average accuracy for a specific domain.
+    /// TASK-METAUTL-P1-001: Returns None if no samples recorded for domain.
+    #[allow(dead_code)]
+    pub fn get_domain_accuracy(&self, domain: Domain) -> Option<f32> {
+        self.domain_accuracy.get(&domain).and_then(|t| t.average())
+    }
+
+    /// Get all domain accuracies as a HashMap.
+    /// TASK-METAUTL-P1-001: For introspection and MCP exposure.
+    #[allow(dead_code)]
+    pub fn get_all_domain_accuracies(&self) -> HashMap<Domain, f32> {
+        self.domain_accuracy
+            .iter()
+            .filter_map(|(domain, tracker)| {
+                tracker.average().map(|avg| (*domain, avg))
+            })
+            .collect()
+    }
+
+    /// Get domain accuracy tracker for detailed inspection.
+    /// TASK-METAUTL-P1-001: For accessing consecutive_low_count and other fields.
+    #[allow(dead_code)]
+    pub fn get_domain_tracker(&self, domain: Domain) -> Option<&DomainAccuracyTracker> {
+        self.domain_accuracy.get(&domain)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_domain_accuracy_recording() {
+        use super::super::types::Domain;
+
+        let mut tracker = MetaUtlTracker::new();
+
+        // Record some accuracies for different domains
+        tracker.record_domain_accuracy(Domain::Code, 0.8);
+        tracker.record_domain_accuracy(Domain::Code, 0.9);
+        tracker.record_domain_accuracy(Domain::Medical, 0.7);
+
+        // Verify Code domain
+        let code_acc = tracker.get_domain_accuracy(Domain::Code);
+        assert!(code_acc.is_some());
+        let code_avg = code_acc.unwrap();
+        assert!((code_avg - 0.85).abs() < 0.01, "Code accuracy should be ~0.85");
+
+        // Verify Medical domain
+        let medical_acc = tracker.get_domain_accuracy(Domain::Medical);
+        assert!(medical_acc.is_some());
+        assert!((medical_acc.unwrap() - 0.7).abs() < 0.01);
+
+        // Verify untracked domain returns None
+        assert!(tracker.get_domain_accuracy(Domain::Legal).is_none());
+    }
+
+    #[test]
+    fn test_get_all_domain_accuracies() {
+        use super::super::types::Domain;
+
+        let mut tracker = MetaUtlTracker::new();
+
+        tracker.record_domain_accuracy(Domain::Code, 0.8);
+        tracker.record_domain_accuracy(Domain::Research, 0.6);
+
+        let all = tracker.get_all_domain_accuracies();
+        assert_eq!(all.len(), 2);
+        assert!(all.contains_key(&Domain::Code));
+        assert!(all.contains_key(&Domain::Research));
+    }
+
+    #[test]
+    fn test_domain_accuracy_clamping() {
+        use super::super::types::Domain;
+
+        let mut tracker = MetaUtlTracker::new();
+
+        // Values should be clamped to [0.0, 1.0]
+        tracker.record_domain_accuracy(Domain::Code, 1.5);  // Should clamp to 1.0
+        tracker.record_domain_accuracy(Domain::Code, -0.5); // Should clamp to 0.0
+
+        let avg = tracker.get_domain_accuracy(Domain::Code).unwrap();
+        assert!((avg - 0.5).abs() < 0.01, "Average of clamped 1.0 and 0.0 should be 0.5");
+    }
+
+    #[test]
+    fn test_domain_consecutive_low_tracking() {
+        use super::super::types::Domain;
+
+        let mut tracker = MetaUtlTracker::new();
+
+        // Record consistently low accuracy (below default threshold of 0.7)
+        for _ in 0..5 {
+            tracker.record_domain_accuracy(Domain::Code, 0.5);
+        }
+
+        let domain_tracker = tracker.get_domain_tracker(Domain::Code);
+        assert!(domain_tracker.is_some());
+        assert!(domain_tracker.unwrap().consecutive_low_count > 0);
     }
 }

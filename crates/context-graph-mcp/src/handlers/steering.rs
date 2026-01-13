@@ -139,6 +139,37 @@ impl Handlers {
             None, // No previous accuracy for trend
         );
 
+        // TASK-NEURO-P1-001: Wire steering reward to neuromodulation
+        let neuromod_json = if let Some(neuromod_manager) = &self.neuromod_manager {
+            let mut manager = neuromod_manager.write();
+            let report = manager.on_goal_progress_with_cascades(feedback.reward.value);
+            debug!(
+                reward_value = feedback.reward.value,
+                da_delta = report.da_delta,
+                da_new = report.da_new,
+                mood_cascade = report.mood_cascade_triggered,
+                alertness_cascade = report.alertness_cascade_triggered,
+                "Steering feedback propagated to neuromodulation"
+            );
+            json!({
+                "propagated": true,
+                "da_delta": report.da_delta,
+                "da_new": report.da_new,
+                "serotonin_delta": report.serotonin_delta,
+                "serotonin_new": report.serotonin_new,
+                "ne_delta": report.ne_delta,
+                "ne_new": report.ne_new,
+                "mood_cascade_triggered": report.mood_cascade_triggered,
+                "alertness_cascade_triggered": report.alertness_cascade_triggered
+            })
+        } else {
+            warn!("get_steering_feedback: NeuromodulationManager not initialized - skipping neuromod update");
+            json!({
+                "propagated": false,
+                "reason": "NeuromodulationManager not initialized"
+            })
+        };
+
         self.tool_result_with_pulse(
             id,
             json!({
@@ -172,7 +203,8 @@ impl Handlers {
                 },
                 "summary": feedback.summary(),
                 "needs_immediate_attention": feedback.needs_immediate_attention(),
-                "priority_improvement": feedback.priority_improvement()
+                "priority_improvement": feedback.priority_improvement(),
+                "neuromodulation": neuromod_json
             }),
         )
     }

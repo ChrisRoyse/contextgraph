@@ -1,182 +1,173 @@
-# Sherlock Holmes Forensic Investigation Report: Dream Layer and Memory Consolidation
+# SHERLOCK HOLMES CASE FILE
+
+## Case ID: SPEC-DREAM-001
+## Date: 2026-01-12
+## Subject: Dream Layer Compliance Investigation
+
+---
 
 ```
-================================================================================
-                        CASE FILE: DREAM-LAYER-2026-001
-================================================================================
-```
+HOLMES: *adjusts magnifying glass*
 
-**Case ID:** DREAM-LAYER-2026-001
-**Date:** 2026-01-10
-**Investigator:** Sherlock Holmes (Forensic Code Investigation Agent)
-**Subject:** Dream Layer Implementation for Memory Consolidation and Blind Spot Discovery
+The game is afoot! I am now investigating the Dream Layer implementation
+for compliance with Constitution v4.0.0 Section dream (lines 446-453).
+
+All code is SUSPECTED OF FAILURE until proven innocent.
+```
 
 ---
 
 ## EXECUTIVE SUMMARY
 
-*"The game is afoot!"*
+| Aspect | Verdict | Confidence |
+|--------|---------|------------|
+| NREM Phase Implementation | **PARTIALLY GUILTY** | HIGH |
+| REM Phase Implementation | **GUILTY** | HIGH |
+| Wake Controller | **INNOCENT** | HIGH |
+| Error Handling | **INNOCENT** | HIGH |
+| Real Integration | **GUILTY** | HIGH |
+| Constitution Compliance | **PARTIALLY GUILTY** | HIGH |
 
-After exhaustive forensic examination of the codebase, I present my findings on the dream layer implementation. The investigation reveals a **well-architected but partially implemented** system with robust constitution compliance for implemented components, but with critical stub implementations that prevent full dream functionality.
-
-**VERDICT: PARTIALLY GUILTY - IMPLEMENTATION INCOMPLETE**
-
-The dream layer architecture is sound and constitutionally compliant, but several core behaviors remain stub implementations awaiting completion by "Agent 2" as documented in code comments.
-
----
-
-## 1. EVIDENCE COLLECTED
-
-### 1.1 File Inventory
-
-| File Path | Purpose | Status |
-|-----------|---------|--------|
-| `/crates/context-graph-core/src/dream/mod.rs` | Dream layer module root | COMPLETE |
-| `/crates/context-graph-core/src/dream/controller.rs` | DreamController orchestrator | COMPLETE (structure) |
-| `/crates/context-graph-core/src/dream/nrem.rs` | NREM phase handler | PARTIAL (stub processing) |
-| `/crates/context-graph-core/src/dream/rem.rs` | REM phase handler | PARTIAL (stub processing) |
-| `/crates/context-graph-core/src/dream/scheduler.rs` | Dream trigger scheduler | COMPLETE |
-| `/crates/context-graph-core/src/dream/amortized.rs` | Marblestone shortcut learner | COMPLETE (logic, stub storage) |
-| `/crates/context-graph-mcp/src/handlers/dream.rs` | MCP dream tool handlers | COMPLETE |
-| `/crates/context-graph-utl/src/phase/consolidation/` | Consolidation phase detection | COMPLETE |
+**OVERALL VERDICT: PARTIALLY GUILTY - Stub code violations detected**
 
 ---
 
-## 2. PRD REQUIREMENT ANALYSIS
+## 1. DREAM LAYER ARCHITECTURE EVIDENCE
 
-### 2.1 Trigger Conditions
+### 1.1 Files Examined
 
-**PRD Requirement:**
-- Activity < 0.15 for 10min
-- OR Entropy > 0.7 for 5+min
-
-**EVIDENCE - Constitution Reference (lines 391-394):**
-```yaml
-dream:
-  trigger: { activity: "<0.15", idle: "10min" }
+```
+/home/cabdru/contextgraph/crates/context-graph-core/src/dream/
+|-- mod.rs              (module orchestration)
+|-- controller.rs       (DreamController - main orchestrator)
+|-- nrem.rs             (NREM phase implementation)
+|-- rem.rs              (REM phase implementation)
+|-- wake_controller.rs  (WakeController - interrupt handling)
+|-- hebbian.rs          (Hebbian learning engine)
+|-- hyperbolic_walk.rs  (Poincare ball random walks)
+|-- poincare_walk/      (math, mobius, sampling, config)
+|-- amortized.rs        (shortcut learning)
+|-- scheduler.rs        (trigger detection)
+|-- triggers.rs         (TriggerManager, EntropyCalculator)
+|-- thresholds.rs       (DreamThresholds with ATC)
+|-- types.rs            (HebbianConfig, WalkStep, etc.)
+|-- mcp_events.rs       (MCP event broadcasting)
 ```
 
-**EVIDENCE - Implementation (`scheduler.rs` lines 73-77):**
-```rust
-/// Activity threshold below which dream may trigger (Constitution: 0.15)
-activity_threshold: f32,
+### 1.2 Module Structure Analysis
 
-/// Duration of low activity required (Constitution: 10 minutes)
-idle_duration_trigger: Duration,
 ```
+HOLMES: The dream module is well-organized with 18 source files.
 
-**EVIDENCE - Constants (`mod.rs` lines 73-77):**
-```rust
-/// Activity threshold for dream trigger (Constitution: 0.15)
-pub const ACTIVITY_THRESHOLD: f32 = 0.15;
+COLD READ VERDICT:
+- File organization: CLEAR
+- Import structure: WELL-COUPLED (appropriate dependencies)
+- Naming conventions: CONSISTENT (snake_case, descriptive)
+- Constitution references: ABUNDANT (inline documentation)
 
-/// Idle duration before dream trigger (Constitution: 10 minutes)
-pub const IDLE_DURATION_TRIGGER: Duration = Duration::from_secs(600);
+FIRST IMPRESSION: WELL-STRUCTURED, but requires deep investigation
 ```
-
-| Condition | Constitution | Implementation | Verdict |
-|-----------|--------------|----------------|---------|
-| Activity < 0.15 for 10min | YES | YES - `DreamScheduler` | INNOCENT |
-| Entropy > 0.7 for 5+min | DOCUMENTED | **NO** - Not implemented | **GUILTY** |
-
-**FINDING:** The high-entropy trigger condition (entropy > 0.7 for 5+ min) is documented in the PRD and constitution.yaml (line 749: `"entropy>0.7 for 5min->full"`) but is **NOT implemented** in the DreamScheduler. The scheduler only monitors activity levels, not entropy.
 
 ---
 
-### 2.2 NREM Phase (3 minutes)
+## 2. NREM PHASE STATUS
 
-**PRD Requirement:**
-- Duration: 3 minutes
-- Hebbian learning: delta_w = eta x pre x post
-- Tight coupling (0.9)
-- Replay recent memories with recency_bias: 0.8
+### 2.1 Implementation Evidence
 
-**EVIDENCE - Implementation (`nrem.rs` lines 123-136):**
+**File:** `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/nrem.rs`
+
+**Constitution Requirements:**
+- Duration: 3 minutes (180 seconds)
+- Coupling: 0.9 (tight)
+- Recency bias: 0.8
+- Hebbian learning: delta_w = eta * pre * post
+
+**Code Evidence (lines 91-98):**
 ```rust
-pub fn new() -> Self {
-    Self {
-        duration: constants::NREM_DURATION,        // 180 seconds
-        coupling: constants::NREM_COUPLING,        // 0.9
-        recency_bias: constants::NREM_RECENCY_BIAS, // 0.8
-        learning_rate: 0.01,
-        // ...
-    }
+Self {
+    duration: constants::NREM_DURATION,         // 180 seconds - COMPLIANT
+    coupling: constants::NREM_COUPLING,         // 0.9 - COMPLIANT
+    recency_bias: constants::NREM_RECENCY_BIAS, // 0.8 - COMPLIANT
+    batch_size: 64,
+    hebbian_engine: HebbianEngine::with_defaults(),
 }
 ```
 
-**EVIDENCE - Hebbian Update (`nrem.rs` lines 237-251):**
+**Hebbian Update Implementation (lines 261-277):**
 ```rust
-pub fn hebbian_update(
-    &self,
-    current_weight: f32,
-    pre_activation: f32,
-    post_activation: f32,
-) -> f32 {
-    // Hebbian update: "neurons that fire together wire together"
-    let delta_w = self.learning_rate * pre_activation * post_activation;
-    let decayed = current_weight * (1.0 - self.weight_decay);
-    (decayed + delta_w).clamp(self.weight_floor, self.weight_cap)
+pub fn hebbian_update(&self, current_weight: f32, pre_activation: f32, post_activation: f32) -> f32 {
+    let config = self.hebbian_engine.config();
+    let delta_w = config.learning_rate * pre_activation * post_activation;
+    let decayed = current_weight * (1.0 - config.weight_decay);
+    (decayed + delta_w).clamp(config.weight_floor, config.weight_cap)
 }
 ```
 
-| Feature | Required | Implemented | Verdict |
-|---------|----------|-------------|---------|
-| Duration: 3 min | 180s | 180s | INNOCENT |
-| Coupling: 0.9 | 0.9 | 0.9 | INNOCENT |
-| Recency bias: 0.8 | 0.8 | 0.8 | INNOCENT |
-| Hebbian formula | delta_w = eta x pre x post | YES | INNOCENT |
-| Actual memory replay | YES | **STUB** | **GUILTY** |
+### 2.2 NREM VERDICT
 
-**CRITICAL FINDING (nrem.rs line 184-188):**
+| Check | Status | Evidence |
+|-------|--------|----------|
+| Duration (3 min) | COMPLIANT | `constants::NREM_DURATION = 180 secs` |
+| Coupling (0.9) | COMPLIANT | `constants::NREM_COUPLING = 0.9` |
+| Recency bias (0.8) | COMPLIANT | `constants::NREM_RECENCY_BIAS = 0.8` |
+| Hebbian formula | COMPLIANT | `delta_w = eta * pre * post` |
+| Real memory retrieval | **NON-COMPLIANT** | Uses empty Vec (stub) |
+
+**CRITICAL VIOLATION (lines 152-154):**
 ```rust
-// TODO: Agent 2 will implement actual processing:
-// 1. Select memories with recency bias
-// 2. Apply Hebbian updates: delta_w = eta * pre * post
-// 3. Apply tight coupling via Kuramoto
-// 4. Detect shortcut candidates
+// In production, these would come from the actual memory store.
+// NOTE: This is not mock data - it's the initialization state when
+// no memories/edges are provided. Real integration requires graph access.
+let memories: Vec<(Uuid, u64, f32)> = Vec::new();
+let edges: Vec<(Uuid, Uuid, f32)> = Vec::new();
 ```
 
-The NREM phase `process()` method is a **stub that simulates values** rather than performing actual memory replay and Hebbian learning.
+```
+HOLMES: *narrows eyes*
+
+The NREM phase CLAIMS to perform Hebbian replay, but it processes
+EMPTY vectors. While the algorithm is correctly implemented, it
+operates on nothing. This is a DECEPTIVE INNOCENT - the machinery
+works, but the fuel tank is empty.
+
+VERDICT: PARTIALLY GUILTY - Real memory store integration missing
+```
 
 ---
 
-### 2.3 REM Phase (2 minutes)
+## 3. REM PHASE STATUS
 
-**PRD Requirement:**
-- Duration: 2 minutes
-- Synthetic queries via hyperbolic random walk
-- Blind spot discovery (high semantic distance + shared causal)
-- New edges with w=0.3, c=0.5
-- Temperature: 2.0
+### 3.1 Implementation Evidence
 
-**EVIDENCE - Implementation (`rem.rs` lines 124-137):**
+**File:** `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/rem.rs`
+
+**Constitution Requirements:**
+- Duration: 2 minutes (120 seconds)
+- Temperature: 2.0 (high exploration)
+- Semantic leap: >= 0.7
+- Query limit: 100 synthetic queries
+
+**Code Evidence (lines 132-143):**
 ```rust
-pub fn new() -> Self {
-    Self {
-        duration: constants::REM_DURATION,           // 120 seconds
-        temperature: constants::REM_TEMPERATURE,     // 2.0
-        min_semantic_leap: constants::MIN_SEMANTIC_LEAP, // 0.7
-        query_limit: constants::MAX_REM_QUERIES,     // 100
-        new_edge_weight: 0.3,
-        new_edge_confidence: 0.5,
-        // ...
-    }
+Self {
+    duration: constants::REM_DURATION,      // 120 seconds - COMPLIANT
+    temperature: constants::REM_TEMPERATURE, // 2.0 - COMPLIANT
+    min_semantic_leap: constants::MIN_SEMANTIC_LEAP, // 0.7 - COMPLIANT
+    query_limit: constants::MAX_REM_QUERIES, // 100 - COMPLIANT
+    ...
 }
 ```
 
-| Feature | Required | Implemented | Verdict |
-|---------|----------|-------------|---------|
-| Duration: 2 min | 120s | 120s | INNOCENT |
-| Temperature: 2.0 | 2.0 | 2.0 | INNOCENT |
-| Semantic leap: 0.7 | 0.7 | 0.7 | INNOCENT |
-| Query limit: 100 | 100 | 100 | INNOCENT |
-| New edge w=0.3 | 0.3 | 0.3 (defined) | INNOCENT |
-| New edge c=0.5 | 0.5 | 0.5 (defined) | INNOCENT |
-| Hyperbolic random walk | YES | **STUB** | **GUILTY** |
-| Blind spot discovery | YES | **PARTIAL** | **SUSPICIOUS** |
+### 3.2 CRITICAL STUB VIOLATIONS
 
-**CRITICAL FINDING (rem.rs lines 177-183):**
+**GUILTY EVIDENCE (lines 20-21, 147-148, 184-189):**
+
 ```rust
+//! Agent 2 will implement the actual exploration logic.
+
+/// Note: This is a stub implementation. Agent 2 will implement the full
+/// exploration logic with actual graph integration.
+
 // TODO: Agent 2 will implement actual processing:
 // 1. Generate synthetic queries via random walk
 // 2. Search with high temperature (2.0)
@@ -185,345 +176,529 @@ pub fn new() -> Self {
 // 5. Track blind spots
 ```
 
-The `SyntheticQuery` struct exists but is **never populated** with actual hyperbolic random walk data. The `BlindSpot` struct exists with proper validation but discovery is simulated.
-
----
-
-### 2.4 Amortized Shortcuts (Marblestone)
-
-**PRD Requirement:**
-- 3+ hop chains traversed >= 5x -> direct edge
-- Confidence >= 0.7
-- w = product(path weights)
-- is_amortized_shortcut = true
-
-**EVIDENCE - Implementation (`amortized.rs` lines 122-132):**
+**SIMULATED DATA (lines 191-218):**
 ```rust
-pub fn new() -> Self {
-    Self {
-        path_counts: HashMap::new(),
-        min_hops: constants::MIN_SHORTCUT_HOPS,           // 3
-        min_traversals: constants::MIN_SHORTCUT_TRAVERSALS, // 5
-        confidence_threshold: constants::SHORTCUT_CONFIDENCE_THRESHOLD, // 0.7
-        // ...
+// Placeholder: Simulate REM phase processing
+let mut queries_generated = 0;
+let mut blind_spots_found = 0;
+let mut semantic_leaps = Vec::new();
+
+// Simulate query generation up to limit
+while queries_generated < self.query_limit {
+    // ...
+    queries_generated += 1;
+    // Simulate occasional blind spot discovery
+    if queries_generated % 10 == 0 {
+        blind_spots_found += 1;
+        semantic_leaps.push(0.75 + (queries_generated as f32 * 0.001));
     }
+    // ...
 }
 ```
 
-**EVIDENCE - GraphEdge Support (`edge.rs` line 67):**
-```rust
-/// Whether this edge is an amortized shortcut (learned during dreams).
-pub is_amortized_shortcut: bool,
+### 3.3 REM VERDICT
+
+| Check | Status | Evidence |
+|-------|--------|----------|
+| Duration (2 min) | COMPLIANT | `constants::REM_DURATION = 120 secs` |
+| Temperature (2.0) | COMPLIANT | `constants::REM_TEMPERATURE = 2.0` |
+| Semantic leap (0.7) | COMPLIANT | `constants::MIN_SEMANTIC_LEAP = 0.7` |
+| Query limit (100) | COMPLIANT | `constants::MAX_REM_QUERIES = 100` |
+| Hyperbolic walks | **IMPLEMENTED** | `hyperbolic_walk.rs` is real |
+| REM process() | **STUB** | Simulates data, TODO comments |
+
 ```
+HOLMES: *slams fist on table*
 
-**EVIDENCE - Quality Gate (`amortized.rs` lines 78-83):**
-```rust
-pub fn meets_quality_gate(&self) -> bool {
-    self.hop_count >= constants::MIN_SHORTCUT_HOPS
-        && self.traversal_count >= constants::MIN_SHORTCUT_TRAVERSALS
-        && self.min_confidence >= constants::SHORTCUT_CONFIDENCE_THRESHOLD
-}
-```
+GUILTY AS CHARGED!
 
-| Feature | Required | Implemented | Verdict |
-|---------|----------|-------------|---------|
-| Min hops: 3 | 3 | 3 | INNOCENT |
-| Min traversals: 5 | 5 | 5 | INNOCENT |
-| Confidence >= 0.7 | 0.7 | 0.7 | INNOCENT |
-| Weight = product | YES | YES (line 152) | INNOCENT |
-| GraphEdge.is_amortized_shortcut | YES | YES | INNOCENT |
-| Actual shortcut creation | YES | **STUB** | **GUILTY** |
+The REM phase's `process()` method is a STUB. It:
+1. Contains explicit TODO comments referencing "Agent 2"
+2. SIMULATES query generation instead of real exploration
+3. Generates FAKE blind spots (every 10th query)
+4. Uses ARTIFICIAL semantic leap values (0.75 + offset)
 
-**CRITICAL FINDING (amortized.rs lines 250-259):**
-```rust
-// TODO: Agent 2 will implement actual edge creation:
-// let edge = Edge {
-//     source: candidate.source,
-//     target: candidate.target,
-//     weight: candidate.combined_weight,
-//     confidence: candidate.min_confidence,
-//     is_shortcut: true,
-//     original_path: Some(candidate.path_nodes.clone()),
-// };
-// graph.store_edge(&edge).await?;
+The irony: The ACTUAL hyperbolic exploration code EXISTS in
+`hyperbolic_walk.rs` with full Poincare ball mathematics,
+but REM phase does NOT USE IT!
+
+The HyperbolicExplorer (545 lines) is fully implemented but ORPHANED.
 ```
 
 ---
 
-### 2.5 Wake Behavior
+## 4. HYPERBOLIC WALK ANALYSIS
 
-**PRD Requirement:**
-- Wake latency < 100ms on query
+### 4.1 Real Implementation Evidence
+
+**File:** `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/hyperbolic_walk.rs`
+
+This file contains REAL, WORKING implementation:
+
+```rust
+pub struct HyperbolicExplorer {
+    config: HyperbolicWalkConfig,
+    ball_config: PoincareBallConfig,
+    rng: StdRng,
+    known_positions: Vec<[f32; 64]>,
+    query_limit: usize,  // Constitution: 100 - HARD CODED
+    queries_used: usize,
+}
+```
+
+**Key Methods (all implemented, not stubs):**
+- `walk()` - Performs actual Poincare ball random walk
+- `explore()` - Multi-walk exploration with blind spot detection
+- `check_blind_spot()` - Uses geodesic distance >= 0.7
+- `mobius_add()` - Real Mobius addition in hyperbolic space
+
+**Test Results:** All 195 dream tests PASS.
+
+### 4.2 Integration Gap
+
+```
+HOLMES: *steeples fingers*
+
+The contradiction is stark:
+
+EVIDENCE A: `hyperbolic_walk.rs` contains 830 lines of production-ready
+            Poincare ball exploration with:
+            - HyperbolicExplorer
+            - DiscoveredBlindSpot
+            - WalkResult, ExplorationResult
+            - Real geodesic distance calculations
+            - Constitution-compliant query limits
+
+EVIDENCE B: `rem.rs` `process()` method (lines 157-238) contains:
+            - TODO comments
+            - Simulated counters
+            - Artificial blind spot generation
+
+CONTRADICTION DETECTED: Real implementation exists but is NOT WIRED.
+```
+
+---
+
+## 5. WAKE CONTROLLER STATUS
+
+### 5.1 Implementation Evidence
+
+**File:** `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/wake_controller.rs`
+
+**Constitution Requirements:**
+- Wake latency: < 100ms
+- GPU budget: < 30%
 - abort_on_query: true
-- GPU usage < 30%
 
-**EVIDENCE - Implementation (`controller.rs` lines 401-439):**
+**Code Evidence (lines 139-146):**
 ```rust
-pub fn abort(&mut self) -> CoreResult<Duration> {
-    let abort_start = Instant::now();
-    self.interrupt_flag.store(true, Ordering::SeqCst);
-    self.state = DreamState::Waking;
-    self.state = DreamState::Awake;
-    let wake_latency = abort_start.elapsed();
+max_latency: constants::MAX_WAKE_LATENCY,  // 99ms (< 100ms) - COMPLIANT
+gpu_monitor: Arc::new(std::sync::RwLock::new(GpuMonitor::new())),
+max_gpu_usage: constants::MAX_GPU_USAGE,   // 0.30 (30%) - COMPLIANT
+```
 
-    if wake_latency > self.wake_latency_budget {
-        error!("Wake latency {:?} exceeded budget {:?}", wake_latency, self.wake_latency_budget);
-        return Err(CoreError::LayerError { ... });
-    }
-    Ok(wake_latency)
+**Latency Enforcement (lines 241-251):**
+```rust
+if latency > self.max_latency {
+    self.latency_violations.fetch_add(1, Ordering::Relaxed);
+    error!(
+        "CONSTITUTION VIOLATION: Wake latency {:?} > {:?} (max allowed)",
+        latency, self.max_latency
+    );
+    return Err(WakeError::LatencyViolation {
+        actual_ms: latency.as_millis() as u64,
+        max_ms: self.max_latency.as_millis() as u64,
+    });
 }
 ```
 
-**EVIDENCE - Constants (`mod.rs` lines 85-90):**
-```rust
-/// Maximum wake latency (Constitution: <100ms)
-/// Set to 99ms to satisfy strict less-than requirement
-pub const MAX_WAKE_LATENCY: Duration = Duration::from_millis(99);
+### 5.2 WAKE CONTROLLER VERDICT
 
-/// Maximum GPU usage during dream (Constitution: <30%)
-pub const MAX_GPU_USAGE: f32 = 0.30;
+| Check | Status | Evidence |
+|-------|--------|----------|
+| Latency < 100ms | COMPLIANT | `MAX_WAKE_LATENCY = 99ms` |
+| GPU budget < 30% | COMPLIANT | `MAX_GPU_USAGE = 0.30` |
+| Interrupt flag | COMPLIANT | `AtomicBool` with SeqCst |
+| State machine | COMPLIANT | Idle -> Dreaming -> Waking -> Completing |
+| Error types | COMPLIANT | `WakeError::LatencyViolation`, `GpuBudgetExceeded` |
+
+```
+HOLMES: *nods approvingly*
+
+The WakeController is INNOCENT.
+
+It properly enforces:
+1. Wake latency < 100ms with violation logging
+2. GPU budget monitoring with 30% threshold
+3. Atomic interrupt flag for immediate abort
+4. State machine transitions
+5. Statistics tracking (wake_count, latency_violations)
+
+The only caveat: GpuMonitor uses simulated values (acknowledged as STUB).
+However, this is DOCUMENTED and the interface is correct.
 ```
 
-| Feature | Required | Implemented | Verdict |
-|---------|----------|-------------|---------|
-| Wake latency < 100ms | <100ms | 99ms max | INNOCENT |
-| abort_on_query | true | Interrupt flag checked | INNOCENT |
-| GPU < 30% | <30% | 0.30 constant, **stub check** | SUSPICIOUS |
+---
 
-**FINDING (controller.rs lines 469-475):**
+## 6. STUB/TODO VIOLATIONS CATALOG
+
+### 6.1 Complete List of Violations Found
+
+| File | Line(s) | Violation Type | Severity |
+|------|---------|----------------|----------|
+| `rem.rs` | 20-21 | "Agent 2 will implement" | **P0 CRITICAL** |
+| `rem.rs` | 147-148 | "stub implementation" | **P0 CRITICAL** |
+| `rem.rs` | 184-189 | TODO: 5 items unimplemented | **P0 CRITICAL** |
+| `rem.rs` | 191-218 | Simulated data generation | **P0 CRITICAL** |
+| `amortized.rs` | 228 | "stub. Agent 2 will implement" | P1 HIGH |
+| `amortized.rs` | 256 | TODO: edge creation | P1 HIGH |
+| `nrem.rs` | 150-154 | Empty memory/edge vectors | P1 HIGH |
+| `triggers.rs` | 291-297 | GpuMonitor is a STUB | P2 MEDIUM |
+| `controller.rs` | 472 | TODO: GPU monitoring | P2 MEDIUM |
+
+### 6.2 Test for Absence of `todo!()`
+
+```bash
+grep -rn "todo!\(\)" /home/cabdru/contextgraph/crates/context-graph-core/src/dream/
+# Result: No matches found
+```
+
+```
+HOLMES: The codebase does NOT contain `todo!()` macros.
+        The violations are SEMANTIC (stub implementations that run
+        but produce simulated data) rather than SYNTACTIC (compile-time
+        markers).
+
+        This is MORE DANGEROUS - the code appears to work but lies about
+        its functionality.
+```
+
+---
+
+## 7. ERROR HANDLING COMPLIANCE
+
+### 7.1 Error Types Defined
+
+**File:** `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/wake_controller.rs`
+
 ```rust
-fn current_gpu_usage(&self) -> f32 {
-    // TODO: Integrate with actual GPU monitoring
-    // For now, return a safe value
-    0.0
+#[derive(Debug, Error)]
+pub enum WakeError {
+    #[error("Wake latency exceeded: {actual_ms}ms > {max_ms}ms (Constitution violation)")]
+    LatencyViolation { actual_ms: u64, max_ms: u64 },
+
+    #[error("GPU budget exceeded during dream: {usage:.1}% > {max:.1}%")]
+    GpuBudgetExceeded { usage: f32, max: f32 },
+
+    #[error("Failed to signal wake: {reason}")]
+    SignalFailed { reason: String },
 }
 ```
 
-GPU monitoring is a **stub returning 0.0**.
+### 7.2 Fail-Fast Patterns
+
+**Panic on Invalid State (hyperbolic_walk.rs lines 174-176, 218-220):**
+```rust
+panic!(
+    "[HYPERBOLIC_WALK] Invalid known position {}: norm={:.6} >= max_norm={:.6}",
+    i, norm, self.ball_config.max_norm
+);
+
+panic!(
+    "[HYPERBOLIC_WALK] Start position outside ball: norm={:.6} >= max_norm={:.6}",
+    start_norm, self.ball_config.max_norm
+);
+```
+
+**Panic on Config Violation (types.rs lines 83-108):**
+```rust
+assert!(
+    self.learning_rate > 0.0 && self.learning_rate <= 1.0,
+    "HebbianConfig: learning_rate={} must be in (0.0, 1.0], constitution default=0.01",
+    self.learning_rate
+);
+```
+
+### 7.3 Error Handling Verdict
+
+| Check | Status | Evidence |
+|-------|--------|----------|
+| DreamError types | **MISSING** | No dedicated DreamError enum |
+| WakeError types | COMPLIANT | LatencyViolation, GpuBudgetExceeded |
+| Fail-fast panics | COMPLIANT | Validation with descriptive messages |
+| Result propagation | COMPLIANT | `CoreResult<T>` used throughout |
+
+```
+HOLMES: Error handling is PARTIALLY COMPLIANT.
+
+WakeController has proper error types. Other modules use CoreError
+which is acceptable but less specific. The absence of a dedicated
+DreamError enum is a minor concern, not a violation.
+```
 
 ---
 
-## 3. BLIND SPOT DISCOVERY ANALYSIS
+## 8. REAL INTEGRATION STATUS
 
-The blind spot discovery system is **partially implemented** across multiple modules:
+### 8.1 Memory Store Integration
 
-### 3.1 REM Phase BlindSpot Struct
+**Required:** NREM should retrieve memories from MemoryStore
+**Actual:** Uses empty `Vec::new()` (stub)
 
-**Location:** `rem.rs` lines 93-111
+**Evidence (nrem.rs lines 152-154):**
 ```rust
-pub struct BlindSpot {
-    pub node_a: Uuid,
-    pub node_b: Uuid,
-    pub semantic_distance: f32,
-    pub confidence: f32,
+let memories: Vec<(Uuid, u64, f32)> = Vec::new();
+let edges: Vec<(Uuid, Uuid, f32)> = Vec::new();
+```
+
+### 8.2 Graph Store Integration
+
+**Required:** REM should explore actual graph structure
+**Actual:** Simulates exploration with counters
+
+### 8.3 Edge Store Integration
+
+**Required:** Amortized learner should create real edges
+**Actual:** Stub with TODO
+
+**Evidence (amortized.rs lines 228, 256):**
+```rust
+/// Note: This is a stub. Agent 2 will implement actual edge creation
+
+// TODO: Agent 2 will implement actual edge creation:
+// edge_store.insert(shortcut.source_id, shortcut.target_id, edge)?;
+```
+
+### 8.4 Integration Verdict
+
+| Store | Status | Evidence |
+|-------|--------|----------|
+| MemoryStore | **NOT INTEGRATED** | Empty Vec used |
+| GraphStore | **NOT INTEGRATED** | Simulated exploration |
+| EdgeStore | **NOT INTEGRATED** | TODO in amortized.rs |
+
+---
+
+## 9. CONSTITUTION PARAMETER VERIFICATION
+
+### 9.1 All Parameters Traced
+
+| Parameter | Constitution Value | Code Value | Location | Status |
+|-----------|-------------------|------------|----------|--------|
+| NREM duration | 3 min | 180 sec | `constants::NREM_DURATION` | COMPLIANT |
+| REM duration | 2 min | 120 sec | `constants::REM_DURATION` | COMPLIANT |
+| NREM coupling | 0.9 | 0.9 | `constants::NREM_COUPLING` | COMPLIANT |
+| REM temperature | 2.0 | 2.0 | `constants::REM_TEMPERATURE` | COMPLIANT |
+| Semantic leap | >= 0.7 | 0.7 | `constants::MIN_SEMANTIC_LEAP` | COMPLIANT |
+| Query limit | 100 | 100 | `constants::MAX_REM_QUERIES` | COMPLIANT |
+| Wake latency | < 100ms | 99ms | `constants::MAX_WAKE_LATENCY` | COMPLIANT |
+| GPU budget | < 30% | 0.30 | `constants::MAX_GPU_USAGE` | COMPLIANT |
+| Recency bias | 0.8 | 0.8 | `constants::NREM_RECENCY_BIAS` | COMPLIANT |
+| Shortcut hops | >= 3 | 3 | `constants::MIN_SHORTCUT_HOPS` | COMPLIANT |
+| Shortcut traversals | >= 5 | 5 | `constants::MIN_SHORTCUT_TRAVERSALS` | COMPLIANT |
+
+```
+HOLMES: All Constitution parameters are correctly defined.
+        The VALUES are compliant - the INTEGRATION is missing.
+```
+
+---
+
+## 10. TEST EVIDENCE
+
+### 10.1 Test Execution Results
+
+```
+cargo test --package context-graph-core --lib dream:: -- --nocapture
+test result: ok. 195 passed; 0 failed; 0 ignored
+```
+
+### 10.2 Constitution Compliance Tests
+
+```rust
+// From nrem.rs test
+#[test]
+fn test_constitution_compliance() {
+    let phase = NremPhase::new();
+    assert_eq!(phase.duration, constants::NREM_DURATION);
+    assert_eq!(phase.coupling, constants::NREM_COUPLING);
+    assert_eq!(phase.recency_bias, constants::NREM_RECENCY_BIAS);
 }
 
-impl BlindSpot {
-    pub fn is_significant(&self) -> bool {
-        self.semantic_distance >= constants::MIN_SEMANTIC_LEAP && self.confidence >= 0.5
-    }
+// From rem.rs test
+#[test]
+fn test_constitution_compliance() {
+    let phase = RemPhase::new();
+    assert_eq!(phase.duration, constants::REM_DURATION);
+    assert_eq!(phase.temperature, constants::REM_TEMPERATURE);
+    assert_eq!(phase.min_semantic_leap, constants::MIN_SEMANTIC_LEAP);
+    assert_eq!(phase.query_limit, constants::MAX_REM_QUERIES);
 }
 ```
 
-### 3.2 Johari-Based Blind Spot Discovery
+### 10.3 Test Limitations
 
-**Location:** `johari/default_manager.rs` lines 369-410
-
-A more sophisticated blind spot discovery exists in the Johari manager that:
-- Analyzes external signals for Unknown/Hidden quadrants
-- Calculates signal strength based on mismatches
-- Creates BlindSpotCandidate objects with embedder indices
-
-```rust
-async fn discover_blind_spots(
-    &self,
-    id: NodeId,
-    signals: &[ExternalSignal],
-) -> Result<Vec<BlindSpotCandidate>, JohariError>
 ```
+HOLMES: The tests verify that PARAMETERS are correct, but they do NOT
+        verify that the OPERATIONS are real.
 
-### 3.3 Fingerprint Analysis
-
-**Location:** `types/fingerprint/johari/analysis.rs` lines 26-44
-
-```rust
-pub fn find_blind_spots(&self) -> Vec<(usize, f32)> {
-    // Finds cross-space gaps where one embedder understands but another doesn't
-}
+        A test that passes with empty memory vectors does not prove
+        the system works with real memories.
 ```
-
-**VERDICT ON BLIND SPOTS:**
-- Structure: INNOCENT (well-designed)
-- Integration with REM: **GUILTY** (not connected)
 
 ---
 
-## 4. MEMORY CONSOLIDATION MECHANISMS
+## 11. EVIDENCE SUMMARY
 
-### 4.1 Phase Detection System
+### 11.1 What Works (INNOCENT)
 
-**Location:** `utl/phase/consolidation/`
+1. **WakeController** - Full implementation with latency/GPU enforcement
+2. **HyperbolicExplorer** - Complete Poincare ball exploration
+3. **HebbianEngine** - Correct Hebbian update algorithm
+4. **DreamThresholds** - Domain-aware threshold calibration via ATC
+5. **TriggerManager** - Entropy and GPU trigger detection
+6. **MCP Events** - Complete event broadcasting framework
+7. **Constitution Parameters** - All values correctly defined
 
-A complete phase detection system exists:
-- `ConsolidationPhase` enum (NREM/REM/Wake)
-- `PhaseDetector` with EMA smoothing and hysteresis
-- Phase-specific parameters (recency_bias, temperature, coupling_strength)
+### 11.2 What Fails (GUILTY)
 
-**This is SEPARATE from the Dream Layer** - it provides phase detection based on activity levels but does not integrate with the actual dream controller.
+1. **REM `process()` method** - STUB with simulated data
+2. **NREM memory retrieval** - Uses empty vectors
+3. **Amortized edge creation** - STUB with TODO
+4. **Real store integration** - Not wired
 
-### 4.2 Hebbian Learning Logic
+### 11.3 Orphaned Code
 
-The mathematical formula is correctly implemented:
-```rust
-delta_w = self.learning_rate * pre_activation * post_activation
-```
-
-But it is **never called with real activation data** during dream processing.
-
----
-
-## 5. CONSTITUTION COMPLIANCE MATRIX
-
-| Mandate | Constitution | Implementation | Status |
-|---------|--------------|----------------|--------|
-| Activity trigger < 0.15 for 10min | line 392 | DreamScheduler | COMPLIANT |
-| NREM duration 3min | line 393 | NREM_DURATION = 180s | COMPLIANT |
-| REM duration 2min | line 393 | REM_DURATION = 120s | COMPLIANT |
-| NREM recency_bias 0.8 | line 393 | NREM_RECENCY_BIAS = 0.8 | COMPLIANT |
-| REM temp 2.0 | line 393 | REM_TEMPERATURE = 2.0 | COMPLIANT |
-| Max queries 100 | line 394 | MAX_REM_QUERIES = 100 | COMPLIANT |
-| Semantic leap >= 0.7 | line 394 | MIN_SEMANTIC_LEAP = 0.7 | COMPLIANT |
-| abort_on_query true | line 394 | Interrupt flag | COMPLIANT |
-| Wake latency < 100ms | line 394 | MAX_WAKE_LATENCY = 99ms | COMPLIANT |
-| GPU < 30% | line 394 | MAX_GPU_USAGE = 0.30 | CONSTANTS ONLY |
+The `HyperbolicExplorer` in `hyperbolic_walk.rs` is:
+- 830 lines of production-ready code
+- Fully tested (20+ passing tests)
+- Constitution-compliant
+- **NOT CALLED by REM phase**
 
 ---
 
-## 6. THE SMOKING GUN - STUB IMPLEMENTATIONS
+## 12. RECOMMENDED ACTIONS
 
-### Evidence Trail
+### 12.1 P0 Critical (Must Fix)
 
-Throughout the codebase, the phrase **"Agent 2 will implement"** appears as a marker for incomplete functionality:
+1. **Wire HyperbolicExplorer to REM phase**
+   - Remove simulated exploration from `rem.rs:191-218`
+   - Use `HyperbolicExplorer::explore()` for real walks
+   - Connect blind spot detection to results
 
-| Location | Stub Description |
-|----------|------------------|
-| `nrem.rs:184-188` | Memory selection, Hebbian updates, Kuramoto coupling |
-| `rem.rs:177-183` | Synthetic queries, high-temp search, edge creation |
-| `amortized.rs:250-259` | Actual shortcut edge storage |
-| `controller.rs:469-475` | GPU monitoring |
+2. **Integrate MemoryStore with NREM phase**
+   - Replace empty vectors with real memory retrieval
+   - Implement `select_replay_memories()` with actual store access
 
----
+3. **Complete amortized edge creation**
+   - Implement actual EdgeStore insertion in `create_shortcut()`
+   - Remove "Agent 2" TODO comments
 
-## 7. RECOMMENDATIONS
+### 12.2 P1 High Priority
 
-### 7.1 Critical Implementation Gaps
+4. **Add integration tests with real stores**
+   - Test NREM with populated MemoryStore
+   - Test REM with actual graph exploration
+   - Verify shortcuts appear in EdgeStore
 
-1. **HIGH PRIORITY - NREM Memory Replay**
-   - Implement actual memory selection with recency weighting
-   - Apply Hebbian updates to real edge weights
-   - Integrate Kuramoto coupling for synchronization
-   - Connect to storage layer for weight persistence
+5. **Define DreamError enum**
+   - Create dedicated error types for dream layer
+   - Include specific variants for phase failures
 
-2. **HIGH PRIORITY - REM Exploration**
-   - Implement hyperbolic random walk on Poincare ball embeddings
-   - Generate real synthetic queries from walk endpoints
-   - Connect to vector search with temperature=2.0 softmax
-   - Create actual edges for discovered blind spots
+### 12.3 P2 Medium Priority
 
-3. **MEDIUM PRIORITY - Entropy Trigger**
-   - Add entropy tracking to DreamScheduler
-   - Implement 5-minute high-entropy window detection
-   - Connect to CognitivePulse entropy measurements
+6. **Replace GpuMonitor stub**
+   - Integrate with NVML for NVIDIA GPUs
+   - Add fallback for non-GPU systems
 
-4. **MEDIUM PRIORITY - GPU Monitoring**
-   - Integrate with CUDA monitoring APIs
-   - Implement actual GPU usage tracking
-   - Add circuit breaker for > 30% usage
-
-5. **LOW PRIORITY - Phase Detection Integration**
-   - Connect UTL ConsolidationPhase detector with Dream layer
-   - Unify activity monitoring systems
-
-### 7.2 Architecture Observations
-
-The codebase shows excellent architecture:
-- Clear separation between phases
-- Well-defined constitution constants
-- Proper interrupt handling for wake latency
-- Good test coverage for implemented components
-
-The stubs are **intentional** and well-documented, indicating planned future work rather than oversight.
+7. **Add metrics/telemetry**
+   - Track actual exploration coverage
+   - Measure real blind spot discovery rates
 
 ---
 
-## 8. VERDICT
+## 13. FINAL VERDICT
 
 ```
-================================================================================
-                           CASE CLOSED
-================================================================================
+===============================================================
+                    CASE CLOSED
+===============================================================
+
+THE CRIME: Stub code masquerading as implementation
+
+THE CRIMINAL: rem.rs `process()` method (lines 157-238)
+
+THE MOTIVE: Incremental development left stubs in place
+
+THE METHOD:
+  - REM phase simulates exploration instead of using real walks
+  - NREM phase operates on empty memory vectors
+  - Amortized learner cannot create edges
+
+THE EVIDENCE:
+  1. "Agent 2 will implement" comments in rem.rs, amortized.rs
+  2. Simulated blind spot discovery (every 10th query)
+  3. Empty Vec::new() for memories/edges
+  4. Orphaned HyperbolicExplorer (830 lines unused)
+
+THE NARRATIVE:
+  The Dream Layer was architected correctly with Constitution-compliant
+  parameters and supporting infrastructure. The hyperbolic exploration
+  code was fully implemented. However, the final integration step was
+  never completed - the REM phase's process() method remains a stub
+  that simulates data instead of using the real HyperbolicExplorer.
+
+THE SENTENCE:
+  Wire HyperbolicExplorer to REM phase immediately.
+  Integrate MemoryStore with NREM phase.
+  Complete amortized edge creation.
+
+THE PREVENTION:
+  Add integration tests that verify real data flows through phases.
+  Remove all "Agent 2" and similar deferred-implementation markers.
+  Require end-to-end tests before marking features complete.
+
+===============================================================
+    CASE SPEC-DREAM-001 - VERDICT: PARTIALLY GUILTY
+===============================================================
 ```
 
-**THE CRIME:** Dream Layer claims to enable memory consolidation and blind spot discovery, but core functionality is stub implementations.
+---
 
-**THE CRIMINAL:** Not malice, but intentional phased development. "Agent 2" is the designated future implementer.
+## APPENDIX A: FILE LOCATIONS
 
-**THE EVIDENCE:**
-1. All constitution constants are correctly defined
-2. Phase structures (NREM/REM) are properly architected
-3. Hebbian learning formula exists but is never invoked with real data
-4. Blind spot discovery exists in Johari but not connected to REM
-5. Amortized shortcuts have logic but no storage integration
-6. Entropy trigger is completely missing
-7. GPU monitoring is a stub returning 0.0
+| File | Absolute Path |
+|------|---------------|
+| mod.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/mod.rs` |
+| controller.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/controller.rs` |
+| nrem.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/nrem.rs` |
+| rem.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/rem.rs` |
+| wake_controller.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/wake_controller.rs` |
+| hyperbolic_walk.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/hyperbolic_walk.rs` |
+| hebbian.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/hebbian.rs` |
+| amortized.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/amortized.rs` |
+| triggers.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/triggers.rs` |
+| thresholds.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/thresholds.rs` |
+| types.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/types.rs` |
+| mcp_events.rs | `/home/cabdru/contextgraph/crates/context-graph-core/src/dream/mcp_events.rs` |
 
-**THE NARRATIVE:**
-The Dream Layer was designed with constitution compliance in mind. The architecture is sound, constants are correct, and the framework is ready. However, the actual "dreaming" - memory replay, exploration, and consolidation - remains simulated placeholder code awaiting full implementation.
+---
 
-**THE SENTENCE:**
-Full dream capability requires:
-- NREM: Real memory selection + Hebbian application
-- REM: Real hyperbolic random walk + blind spot creation
-- Storage: Shortcut edge persistence
-- Monitoring: GPU and entropy triggers
+## APPENDIX B: TEST COMMANDS
 
-**CONFIDENCE:** HIGH
+```bash
+# Run all dream tests
+cargo test --package context-graph-core --lib dream:: -- --nocapture
 
-**INVESTIGATION STATUS:** COMPLETE
+# Run specific module tests
+cargo test --package context-graph-core --lib dream::hyperbolic_walk:: -- --nocapture
+cargo test --package context-graph-core --lib dream::wake_controller:: -- --nocapture
+cargo test --package context-graph-core --lib dream::hebbian:: -- --nocapture
+```
 
 ---
 
 *"When you have eliminated the impossible, whatever remains, however improbable, must be the truth."*
 
-The truth is that this system is **ready for dreaming** but has not yet learned to dream.
-
----
-
-## APPENDIX: KEY FILE LOCATIONS
-
-```
-/home/cabdru/contextgraph/
-  crates/
-    context-graph-core/src/
-      dream/
-        mod.rs              # Module root with constants
-        controller.rs       # DreamController orchestration
-        nrem.rs             # NREM phase with Hebbian (STUB)
-        rem.rs              # REM phase with exploration (STUB)
-        scheduler.rs        # Activity-based trigger (COMPLETE)
-        amortized.rs        # Shortcut learner (STUB storage)
-    context-graph-mcp/src/handlers/
-      dream.rs              # MCP tool handlers (COMPLETE)
-    context-graph-utl/src/phase/consolidation/
-      mod.rs                # Phase detection root
-      phase.rs              # ConsolidationPhase enum
-      detector.rs           # PhaseDetector with EMA
-  docs2/
-    constitution.yaml       # lines 388-394 define dream mandates
-    contextprd.md           # Section 7.1 Dream Layer specification
-```
-
----
-
-**Case File Closed: 2026-01-10**
-**Sherlock Holmes, Forensic Code Investigation Agent**
+**Investigation conducted by: Sherlock Holmes, Forensic Code Detective**
+**Date: 2026-01-12**

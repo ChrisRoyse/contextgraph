@@ -19,6 +19,7 @@
 //!   - `teleological`: 13-embedder fusion tools
 //!   - `autonomous`: Autonomous North Star tools
 
+pub mod aliases;
 pub mod definitions;
 pub mod names;
 pub mod types;

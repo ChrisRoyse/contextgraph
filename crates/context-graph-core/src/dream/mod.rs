@@ -59,7 +59,9 @@ pub mod types;
 pub mod wake_controller;
 
 // Re-exports for convenience
-pub use amortized::{AmortizedLearner, PathSignature, ShortcutCandidate};
+pub use amortized::{
+    AmortizedLearner, EdgeCreator, NullEdgeCreator, PathSignature, ShortcutCandidate, ShortcutEdge,
+};
 pub use controller::{DreamController, DreamReport, DreamState, DreamStatus};
 pub use hebbian::{
     find_coactivated_pairs, kuramoto_coupling, kuramoto_order_parameter, select_replay_memories,
@@ -73,7 +75,7 @@ pub use hyperbolic_walk::{
     position_to_query,
     sample_starting_positions,
 };
-pub use nrem::{NremPhase, NremReport};
+pub use nrem::{MemoryProvider, NremPhase, NremReport, NullMemoryProvider};
 pub use poincare_walk::{
     PoincareBallConfig,
     direction_toward,

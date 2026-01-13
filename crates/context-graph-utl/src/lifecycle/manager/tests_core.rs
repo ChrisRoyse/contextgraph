@@ -182,4 +182,66 @@ mod tests {
         assert!(debug.contains("interaction_count"));
         assert!(debug.contains("current_stage"));
     }
+
+    // ========== TASK-METAUTL-P2-001: Lambda Override Persistence Tests ==========
+
+    #[test]
+    fn test_lambda_override_persistence_roundtrip() {
+        // TASK-METAUTL-P2-001: Verify lambda_override survives serialization
+        use crate::lifecycle::lambda::LifecycleLambdaWeights;
+
+        let config = test_config();
+        let mut manager = LifecycleManager::new(&config);
+
+        // Set override
+        let override_weights = LifecycleLambdaWeights::new(0.4, 0.6).unwrap();
+        manager.set_lambda_override(override_weights);
+
+        // Serialize
+        let json = serde_json::to_string(&manager).expect("serialize");
+
+        // Verify override is in JSON
+        assert!(json.contains("lambda_override"), "lambda_override should be in JSON");
+
+        // Deserialize
+        let restored: LifecycleManager = serde_json::from_str(&json).expect("deserialize");
+
+        // Verify override preserved
+        assert!(restored.has_lambda_override(), "override should be preserved");
+        let restored_weights = restored.get_effective_weights();
+        assert!((restored_weights.lambda_s() - 0.4).abs() < 1e-6, "lambda_s should be 0.4");
+        assert!((restored_weights.lambda_c() - 0.6).abs() < 1e-6, "lambda_c should be 0.6");
+    }
+
+    #[test]
+    fn test_lambda_override_backwards_compatibility() {
+        // TASK-METAUTL-P2-001: Old JSON without lambda_override field deserializes correctly
+        let json_without_override = r#"{
+            "interaction_count": 100,
+            "current_stage": "growth",
+            "auto_transition": true,
+            "transition_hysteresis": 10,
+            "last_transition_count": 50,
+            "smooth_transitions": false,
+            "smoothing_window": 5
+        }"#;
+
+        let manager: LifecycleManager = serde_json::from_str(json_without_override)
+            .expect("deserialize old format");
+
+        // Should not have override (defaults to None)
+        assert!(!manager.has_lambda_override(), "override should default to None");
+    }
+
+    #[test]
+    fn test_lambda_override_none_not_serialized() {
+        // TASK-METAUTL-P2-001: None override should not appear in JSON (cleaner output)
+        let config = test_config();
+        let manager = LifecycleManager::new(&config);
+
+        let json = serde_json::to_string(&manager).expect("serialize");
+
+        // When None, field should be omitted
+        assert!(!json.contains("lambda_override"), "lambda_override should be omitted when None");
+    }
 }
