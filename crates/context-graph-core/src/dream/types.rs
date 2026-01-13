@@ -544,8 +544,28 @@ impl Default for GpuTriggerState {
 }
 
 /// Reason for triggering a dream cycle (extended).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// Priority order (highest to lowest):
+/// 1. Manual - User-initiated
+/// 2. IdentityCritical - IC < 0.5 threshold (AP-26, AP-38, IDENTITY-007)
+/// 3. GpuOverload - GPU approaching 30% budget
+/// 4. HighEntropy - Entropy > 0.7 for 5 minutes
+/// 5. MemoryPressure - Memory consolidation needed
+/// 6. IdleTimeout - Activity below 0.15 for idle_duration
+/// 7. Scheduled - Scheduled dream time
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum ExtendedTriggerReason {
+    /// User/system manual trigger (highest priority)
+    Manual,
+
+    /// Identity Continuity crisis (IC < 0.5)
+    /// Constitution: AP-26, AP-38, IDENTITY-007
+    /// Triggers dream consolidation to restore identity coherence.
+    IdentityCritical {
+        /// The IC value that triggered the crisis (must be < 0.5)
+        ic_value: f32,
+    },
+
     /// Activity below 0.15 for idle_duration (10 min)
     IdleTimeout,
 
@@ -558,9 +578,6 @@ pub enum ExtendedTriggerReason {
     /// Memory pressure requires consolidation
     MemoryPressure,
 
-    /// Manual trigger by user/system
-    Manual,
-
     /// Scheduled dream time
     Scheduled,
 }
@@ -568,11 +585,14 @@ pub enum ExtendedTriggerReason {
 impl std::fmt::Display for ExtendedTriggerReason {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::Manual => write!(f, "manual"),
+            Self::IdentityCritical { ic_value } => {
+                write!(f, "identity_critical(IC={:.3})", ic_value)
+            }
             Self::IdleTimeout => write!(f, "idle_timeout"),
             Self::HighEntropy => write!(f, "high_entropy"),
             Self::GpuOverload => write!(f, "gpu_overload"),
             Self::MemoryPressure => write!(f, "memory_pressure"),
-            Self::Manual => write!(f, "manual"),
             Self::Scheduled => write!(f, "scheduled"),
         }
     }
@@ -783,11 +803,69 @@ mod tests {
 
     #[test]
     fn test_extended_trigger_reason_display() {
+        assert_eq!(ExtendedTriggerReason::Manual.to_string(), "manual");
+        assert_eq!(
+            ExtendedTriggerReason::IdentityCritical { ic_value: 0.423 }.to_string(),
+            "identity_critical(IC=0.423)"
+        );
         assert_eq!(ExtendedTriggerReason::IdleTimeout.to_string(), "idle_timeout");
         assert_eq!(ExtendedTriggerReason::HighEntropy.to_string(), "high_entropy");
         assert_eq!(ExtendedTriggerReason::GpuOverload.to_string(), "gpu_overload");
         assert_eq!(ExtendedTriggerReason::MemoryPressure.to_string(), "memory_pressure");
-        assert_eq!(ExtendedTriggerReason::Manual.to_string(), "manual");
         assert_eq!(ExtendedTriggerReason::Scheduled.to_string(), "scheduled");
+    }
+
+    #[test]
+    fn test_identity_critical_ic_value_serialization() {
+        // Test serialization with real IC value
+        let reason = ExtendedTriggerReason::IdentityCritical { ic_value: 0.35 };
+
+        // Serialize to JSON
+        let json = serde_json::to_string(&reason).expect("serialization should succeed");
+
+        // Verify JSON structure
+        assert!(json.contains("IdentityCritical"));
+        assert!(json.contains("0.35"));
+
+        // Deserialize back
+        let deserialized: ExtendedTriggerReason =
+            serde_json::from_str(&json).expect("deserialization should succeed");
+
+        // Verify round-trip
+        match deserialized {
+            ExtendedTriggerReason::IdentityCritical { ic_value } => {
+                assert!((ic_value - 0.35).abs() < 0.001,
+                    "IC value should survive round-trip: got {}", ic_value);
+            }
+            _ => panic!("Expected IdentityCritical variant"),
+        }
+    }
+
+    #[test]
+    fn test_identity_critical_display_precision() {
+        // Constitution requires 3 decimal places for IC display
+        let test_cases = [
+            (0.499, "identity_critical(IC=0.499)"),
+            (0.1, "identity_critical(IC=0.100)"),
+            (0.0, "identity_critical(IC=0.000)"),
+            (0.123456, "identity_critical(IC=0.123)"),
+        ];
+
+        for (ic_value, expected) in test_cases {
+            let reason = ExtendedTriggerReason::IdentityCritical { ic_value };
+            assert_eq!(reason.to_string(), expected,
+                "IC={} should display as {}", ic_value, expected);
+        }
+    }
+
+    #[test]
+    fn test_identity_critical_equality() {
+        let a = ExtendedTriggerReason::IdentityCritical { ic_value: 0.42 };
+        let b = ExtendedTriggerReason::IdentityCritical { ic_value: 0.42 };
+        let c = ExtendedTriggerReason::IdentityCritical { ic_value: 0.43 };
+
+        assert_eq!(a, b, "Same IC values should be equal");
+        assert_ne!(a, c, "Different IC values should not be equal");
+        assert_ne!(a, ExtendedTriggerReason::Manual, "Different variants should not be equal");
     }
 }
