@@ -62,6 +62,7 @@ pub mod storage;
 pub mod traits;
 pub mod types;
 pub mod warm;
+pub mod pruning;
 
 // Cache re-exports
 pub use cache::{CacheKey, CacheStats, EmbeddingCache};
@@ -100,3 +101,6 @@ pub use storage::{
     EmbedderQueryResult, IndexEntry, MultiSpaceQueryResult, StoredQuantizedFingerprint,
     EXPECTED_QUANTIZED_SIZE_BYTES, MAX_QUANTIZED_SIZE_BYTES, RRF_K, STORAGE_VERSION,
 };
+
+// Pruning re-exports
+pub use pruning::{ImportanceScoringMethod, PrunedEmbeddings, TokenPruningConfig, TokenPruningQuantizer};
