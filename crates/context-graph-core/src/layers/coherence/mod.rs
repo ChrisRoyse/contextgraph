@@ -31,9 +31,9 @@
 //!
 //! Where:
 //! - θ_i = phase of oscillator i ∈ [0, 2π]
-//! - ω_i = natural frequency of oscillator i
+//! - ω_i = natural frequency of oscillator i (from constitution gwt.kuramoto.frequencies)
 //! - K = global coupling strength (2.0 from constitution)
-//! - N = number of oscillators (8 for layer-level, 13 for full embedder model)
+//! - N = number of oscillators (13 for embedder model, one per E1-E13)
 
 mod constants;
 mod layer;
@@ -54,6 +54,9 @@ pub use constants::{
     FRAGMENTATION_THRESHOLD, GW_THRESHOLD, HYPERSYNC_THRESHOLD, INTEGRATION_STEPS, KURAMOTO_DT,
     KURAMOTO_K, KURAMOTO_N,
 };
+
+// Re-export new Kuramoto constants (constitution-aligned)
+pub use constants::{KURAMOTO_BASE_FREQUENCIES, KURAMOTO_DEFAULT_COUPLING, KURAMOTO_STEP_INTERVAL_MS};
 
 // Re-export layer components
 pub use layer::CoherenceLayer;

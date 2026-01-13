@@ -5,6 +5,7 @@
 
 use std::f32::consts::PI;
 
+use super::constants::KURAMOTO_BASE_FREQUENCIES;
 use super::oscillator::KuramotoOscillator;
 
 /// Kuramoto network implementing coupled oscillator dynamics.
@@ -27,18 +28,17 @@ impl KuramotoNetwork {
     /// Create a new Kuramoto network with n oscillators and coupling strength K.
     ///
     /// Oscillators are initialized with distributed phases and varied frequencies
-    /// based on constitution-defined natural frequencies for different cognitive bands.
+    /// based on constitution-defined natural frequencies for the 13 embedding spaces (E1-E13).
     pub fn new(n: usize, coupling: f32) -> Self {
         // Initialize oscillators with distributed phases and varying frequencies
-        // Frequency bands from constitution: gamma(40), alpha(8), beta(25), theta(4), high-gamma(80)
-        let base_frequencies = [40.0, 8.0, 25.0, 4.0, 12.0, 15.0, 60.0, 40.0];
-
+        // Frequency bands from constitution gwt.kuramoto.frequencies (13 values for E1-E13)
         let oscillators: Vec<_> = (0..n)
             .map(|i| {
                 // Distribute initial phases evenly
                 let phase = (i as f32 / n as f32) * 2.0 * PI;
-                // Use varied frequencies based on cognitive bands
-                let freq = base_frequencies[i % base_frequencies.len()] * (1.0 + (i as f32 * 0.05));
+                // Use constitution frequencies with slight variation for stability
+                let freq = KURAMOTO_BASE_FREQUENCIES[i % KURAMOTO_BASE_FREQUENCIES.len()]
+                    * (1.0 + (i as f32 * 0.02)); // Reduced variance for stability
                 KuramotoOscillator::new(phase, freq)
             })
             .collect();
@@ -170,34 +170,39 @@ mod tests {
 
     #[test]
     fn test_network_creation() {
-        let net = KuramotoNetwork::new(8, 2.0);
-        assert_eq!(net.size(), 8);
+        use super::super::constants::KURAMOTO_N;
+        let net = KuramotoNetwork::new(KURAMOTO_N, 2.0);
+        assert_eq!(net.size(), KURAMOTO_N);
+        assert_eq!(net.size(), 13, "[FSV] CRITICAL: Must have 13 oscillators per constitution");
         assert!((net.coupling() - 2.0).abs() < 1e-6);
-        println!("[VERIFIED] Network creation with 8 oscillators and K=2.0");
+        println!("[VERIFIED] Network creation with {} oscillators and K=2.0", KURAMOTO_N);
     }
 
     #[test]
     fn test_order_parameter_range() {
-        let net = KuramotoNetwork::new(8, 2.0);
+        use super::super::constants::KURAMOTO_N;
+        let net = KuramotoNetwork::new(KURAMOTO_N, 2.0);
         let r = net.order_parameter();
         assert!((0.0..=1.0).contains(&r));
-        println!("[VERIFIED] Order parameter r ∈ [0, 1]: r = {}", r);
+        println!("[VERIFIED] Order parameter r ∈ [0, 1]: r = {} (with {} oscillators)", r, KURAMOTO_N);
     }
 
     #[test]
     fn test_perfect_sync_order_parameter() {
+        use super::super::constants::KURAMOTO_N;
         // All oscillators at same phase = perfect sync (r = 1)
-        let oscillators: Vec<_> = (0..8).map(|_| KuramotoOscillator::new(0.0, 40.0)).collect();
+        let oscillators: Vec<_> = (0..KURAMOTO_N).map(|_| KuramotoOscillator::new(0.0, 40.0)).collect();
         let net = KuramotoNetwork::with_oscillators(oscillators, 2.0);
         let r = net.order_parameter();
         assert!((r - 1.0).abs() < 1e-6, "Expected r ≈ 1.0, got {}", r);
-        println!("[VERIFIED] Perfect sync: r = {} ≈ 1.0", r);
+        println!("[VERIFIED] Perfect sync with {} oscillators: r = {} ≈ 1.0", KURAMOTO_N, r);
     }
 
     #[test]
     fn test_kuramoto_sync_increases_with_coupling() {
+        use super::super::constants::KURAMOTO_N;
         // With strong coupling, sync should increase over time
-        let mut net = KuramotoNetwork::new(8, 5.0); // Strong coupling
+        let mut net = KuramotoNetwork::new(KURAMOTO_N, 5.0); // Strong coupling
         let r_initial = net.order_parameter();
 
         // Run many steps
@@ -216,8 +221,8 @@ mod tests {
             r_final
         );
         println!(
-            "[VERIFIED] Kuramoto sync with strong coupling: {} -> {}",
-            r_initial, r_final
+            "[VERIFIED] Kuramoto sync with strong coupling ({} oscillators): {} -> {}",
+            KURAMOTO_N, r_initial, r_final
         );
     }
 
@@ -296,8 +301,9 @@ mod tests {
 
     #[test]
     fn test_kuramoto_computation_benchmark() {
+        use super::super::constants::KURAMOTO_N;
         let iterations = 10_000;
-        let mut net = KuramotoNetwork::new(8, 2.0);
+        let mut net = KuramotoNetwork::new(KURAMOTO_N, 2.0);
 
         let start = Instant::now();
 
@@ -309,7 +315,7 @@ mod tests {
         let total_us = start.elapsed().as_micros();
         let avg_ns = (total_us * 1000) / iterations as u128;
 
-        println!("Kuramoto Computation Benchmark:");
+        println!("Kuramoto Computation Benchmark ({} oscillators):", KURAMOTO_N);
         println!("  Iterations: {}", iterations);
         println!("  Total time: {} us", total_us);
         println!("  Avg per step+r: {} ns", avg_ns);
@@ -321,6 +327,38 @@ mod tests {
             avg_ns
         );
 
-        println!("[VERIFIED] Kuramoto step+order_param avg {} ns", avg_ns);
+        println!("[VERIFIED] Kuramoto step+order_param ({} oscillators) avg {} ns", KURAMOTO_N, avg_ns);
+    }
+
+    /// Full State Verification test for 13 oscillators per constitution
+    #[test]
+    fn fsv_l5_kuramoto_13_oscillators() {
+        use super::super::constants::{KURAMOTO_N, KURAMOTO_BASE_FREQUENCIES};
+
+        // Verify constant is 13
+        assert_eq!(KURAMOTO_N, 13, "[FSV] KURAMOTO_N must be 13 per constitution");
+
+        // Verify frequencies array has 13 elements
+        assert_eq!(KURAMOTO_BASE_FREQUENCIES.len(), 13, "[FSV] KURAMOTO_BASE_FREQUENCIES must have 13 elements");
+
+        // Create network with constitution size
+        let net = KuramotoNetwork::new(KURAMOTO_N, 2.0);
+        assert_eq!(net.size(), 13, "[FSV] Network must have 13 oscillators");
+
+        // Verify all 13 phases are present
+        let phases = net.phases();
+        assert_eq!(phases.len(), 13, "[FSV] Must have 13 oscillator phases");
+
+        // Verify all 13 frequencies are present
+        let frequencies = net.frequencies();
+        assert_eq!(frequencies.len(), 13, "[FSV] Must have 13 natural frequencies");
+
+        println!("[FSV] L5 Kuramoto verification:");
+        println!("  KURAMOTO_N = {}", KURAMOTO_N);
+        println!("  KURAMOTO_BASE_FREQUENCIES.len() = {}", KURAMOTO_BASE_FREQUENCIES.len());
+        println!("  Network oscillators = {}", net.size());
+        println!("  Phases count = {}", phases.len());
+        println!("  Frequencies count = {}", frequencies.len());
+        println!("[VERIFIED] All 13 oscillator requirements met per constitution GWT-002");
     }
 }
