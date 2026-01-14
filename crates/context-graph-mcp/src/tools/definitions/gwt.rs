@@ -1,11 +1,12 @@
 //! GWT (Global Workspace Theory) tool definitions.
 //! TASK-GWT-001: Consciousness state, Kuramoto sync, workspace, ego, broadcast, coupling.
 //! TASK-34: High-level coherence state tool.
+//! TASK-38: Identity continuity focused tool.
 
 use serde_json::json;
 use crate::tools::types::ToolDefinition;
 
-/// Returns GWT tool definitions (7 tools).
+/// Returns GWT tool definitions (8 tools).
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         // get_consciousness_state - GWT consciousness state (TASK-GWT-001)
@@ -156,6 +157,27 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "boolean",
                         "default": false,
                         "description": "Include all 13 oscillator phases in response (optional)"
+                    }
+                },
+                "required": []
+            }),
+        ),
+
+        // get_identity_continuity - Focused IC status (TASK-38)
+        ToolDefinition::new(
+            "get_identity_continuity",
+            "Get focused identity continuity (IC) status. Returns IC value (0.0-1.0), \
+             status classification (Healthy/Warning/Degraded/Critical), in_crisis flag, \
+             and thresholds. Unlike get_ego_state (full purpose vector, trajectory), this \
+             provides a minimal snapshot for monitoring identity health without bulk data. \
+             Requires GWT providers to be initialized via with_gwt() constructor.",
+            json!({
+                "type": "object",
+                "properties": {
+                    "include_history": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include recent IC history values (optional, up to 10 entries)"
                     }
                 },
                 "required": []

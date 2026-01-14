@@ -136,3 +136,13 @@ pub const GET_JOHARI_CLASSIFICATION: &str = "get_johari_classification";
 /// Unlike get_kuramoto_sync (raw oscillator data) or get_consciousness_state (full state),
 /// this returns a focused coherence summary for quick status checks.
 pub const GET_COHERENCE_STATE: &str = "get_coherence_state";
+
+// ========== IDENTITY CONTINUITY TOOL (TASK-38) ==========
+
+/// TASK-38: Get focused identity continuity (IC) status.
+/// Returns IC value (0.0-1.0), status (Healthy/Warning/Degraded/Critical),
+/// in_crisis flag, and thresholds.
+/// Unlike get_ego_state (full purpose vector, trajectory), this provides
+/// a minimal snapshot for monitoring identity health without bulk data.
+/// Requires GWT providers to be initialized via with_gwt() constructor.
+pub const GET_IDENTITY_CONTINUITY: &str = "get_identity_continuity";

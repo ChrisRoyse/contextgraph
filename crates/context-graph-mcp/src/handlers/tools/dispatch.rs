@@ -165,6 +165,10 @@ impl Handlers {
             tool_names::GET_COHERENCE_STATE => {
                 self.call_get_coherence_state(id, arguments).await
             }
+            // TASK-38: Identity continuity focused status
+            tool_names::GET_IDENTITY_CONTINUITY => {
+                self.call_get_identity_continuity(id, arguments).await
+            }
             _ => JsonRpcResponse::error(
                 id,
                 error_codes::TOOL_NOT_FOUND,

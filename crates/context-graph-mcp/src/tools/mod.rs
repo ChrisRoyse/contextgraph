@@ -35,16 +35,17 @@ mod tests {
     #[test]
     fn test_get_tool_definitions() {
         let tools = get_tool_definitions();
-        // 6 original + 7 GWT tools + 1 UTL delta-S/C + 3 ATC tools + 4 Dream tools
-        // + 2 Neuromod tools + 1 Steering + 1 Causal + 5 Teleological + 7 Autonomous = 37 total
-        // + 3 Meta-UTL tools (TASK-METAUTL-P0-005) = 40 total
-        // + 1 Epistemic tool (TASK-MCP-001) = 41 total
-        // + 1 Merge tool (TASK-MCP-003) = 42 total
-        // + 1 Johari classification tool (TASK-MCP-005) = 43 total
-        // NOTE: GWT now has 7 tools (TASK-33/34 added get_coherence_state)
+        // 6 original + 8 GWT tools + 1 UTL delta-S/C + 3 ATC tools + 5 Dream tools
+        // + 2 Neuromod tools + 1 Steering + 1 Causal + 5 Teleological + 7 Autonomous = 39 total
+        // + 3 Meta-UTL tools (TASK-METAUTL-P0-005) = 42 total
+        // + 1 Epistemic tool (TASK-MCP-001) = 43 total
+        // + 1 Merge tool (TASK-MCP-003) = 44 total
+        // + 1 Johari classification tool (TASK-MCP-005) = 45 total
+        // NOTE: GWT now has 8 tools (TASK-33/34 added get_coherence_state, TASK-38 added get_identity_continuity)
+        // NOTE: Dream now has 5 tools (TASK-37 added get_gpu_status)
         // NOTE: 6 manual North Star tools REMOVED (created single 1024D embeddings
         // incompatible with 13-embedder teleological arrays)
-        assert_eq!(tools.len(), 43);
+        assert_eq!(tools.len(), 45);
 
         let tool_names: Vec<_> = tools.iter().map(|t| t.name.as_str()).collect();
 
@@ -56,7 +57,7 @@ mod tests {
         assert!(tool_names.contains(&"search_graph"));
         assert!(tool_names.contains(&"utl_status"));
 
-        // GWT tools (TASK-GWT-001, TASK-33/34)
+        // GWT tools (TASK-GWT-001, TASK-33/34, TASK-38)
         assert!(tool_names.contains(&"get_consciousness_state"));
         assert!(tool_names.contains(&"get_kuramoto_sync"));
         assert!(tool_names.contains(&"get_workspace_status"));
@@ -64,6 +65,7 @@ mod tests {
         assert!(tool_names.contains(&"trigger_workspace_broadcast"));
         assert!(tool_names.contains(&"adjust_coupling"));
         assert!(tool_names.contains(&"get_coherence_state")); // TASK-33/34
+        assert!(tool_names.contains(&"get_identity_continuity")); // TASK-38
 
         // UTL delta-S/C tool (TASK-UTL-P1-001)
         assert!(tool_names.contains(&"gwt/compute_delta_sc"));
@@ -73,11 +75,12 @@ mod tests {
         assert!(tool_names.contains(&"get_calibration_metrics"));
         assert!(tool_names.contains(&"trigger_recalibration"));
 
-        // Dream tools (TASK-DREAM-MCP)
+        // Dream tools (TASK-DREAM-MCP, TASK-37)
         assert!(tool_names.contains(&"trigger_dream"));
         assert!(tool_names.contains(&"get_dream_status"));
         assert!(tool_names.contains(&"abort_dream"));
         assert!(tool_names.contains(&"get_amortized_shortcuts"));
+        assert!(tool_names.contains(&"get_gpu_status")); // TASK-37
 
         // Neuromod tools (TASK-NEUROMOD-MCP)
         assert!(tool_names.contains(&"get_neuromodulation_state"));

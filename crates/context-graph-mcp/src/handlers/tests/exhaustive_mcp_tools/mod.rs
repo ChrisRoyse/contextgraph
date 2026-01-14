@@ -1,6 +1,6 @@
 //! Exhaustive MCP Tool Tests with Synthetic Data
 //!
-//! TASK: Comprehensive testing of ALL 44 MCP tools with known inputs/outputs.
+//! TASK: Comprehensive testing of ALL 45 MCP tools with known inputs/outputs.
 //! This module provides:
 //! - Synthetic test data with predictable outcomes
 //! - Edge case testing (boundary values, invalid inputs)
@@ -8,10 +8,10 @@
 //!
 //! Reference: contextprd.md and constitution.yaml
 //!
-//! # Tool Categories (44 total)
+//! # Tool Categories (45 total)
 //!
 //! 1. Core (6): inject_context, store_memory, get_memetic_status, get_graph_manifest, search_graph, utl_status
-//! 2. GWT/Consciousness (7): get_consciousness_state, get_kuramoto_sync, get_workspace_status, get_ego_state, trigger_workspace_broadcast, adjust_coupling, get_coherence_state
+//! 2. GWT/Consciousness (8): get_consciousness_state, get_kuramoto_sync, get_workspace_status, get_ego_state, trigger_workspace_broadcast, adjust_coupling, get_coherence_state, get_identity_continuity
 //! 3. UTL (1): gwt/compute_delta_sc
 //! 4. ATC (3): get_threshold_status, get_calibration_metrics, trigger_recalibration
 //! 5. Dream (5): trigger_dream, get_dream_status, abort_dream, get_amortized_shortcuts, get_gpu_status
@@ -38,3 +38,4 @@ mod autonomous_tools;
 mod gwt_verification;
 mod edge_cases;
 mod gpu_status;
+mod identity_continuity;
