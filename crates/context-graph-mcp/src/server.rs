@@ -26,6 +26,7 @@ use tracing::{debug, error, info, warn};
 /// Transport mode for the MCP server.
 ///
 /// TASK-INTEG-018: Enum for selecting between stdio and TCP transports.
+/// TASK-42: Added Sse variant for HTTP-based real-time streaming.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum TransportMode {
     /// Standard input/output transport (default).
@@ -36,6 +37,12 @@ pub enum TransportMode {
     /// TCP socket transport.
     /// Used for network-based MCP clients and remote deployments.
     Tcp,
+
+    /// Server-Sent Events transport.
+    /// Used for HTTP-based real-time streaming to web clients.
+    /// Events are broadcast to all connected clients.
+    /// TASK-42: Added for web client support.
+    Sse,
 }
 
 use context_graph_core::alignment::{DefaultAlignmentCalculator, GoalAlignmentCalculator};
@@ -53,6 +60,8 @@ use context_graph_storage::teleological::RocksDbTeleologicalStore;
 
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
+// TASK-42: SSE transport types
+use crate::transport::{create_sse_router, SseAppState, SseConfig};
 
 // NOTE: LazyFailMultiArrayProvider was removed - now using ProductionMultiArrayProvider
 // from context-graph-embeddings crate (TASK-F007 COMPLETED)
@@ -696,6 +705,90 @@ impl McpServer {
 
         Ok(())
     }
+
+    /// Run the MCP server with SSE transport.
+    ///
+    /// TASK-42: Starts an HTTP server with SSE endpoint for real-time streaming.
+    /// Uses axum web framework with the SSE transport module.
+    ///
+    /// # Endpoint
+    ///
+    /// - `GET /events` - SSE endpoint for receiving MCP events
+    ///
+    /// # Configuration
+    ///
+    /// - `config.mcp.bind_address` - HTTP server bind address
+    /// - `config.mcp.sse_port` - HTTP server port (default: 3101)
+    /// - `config.mcp.max_connections` - Maximum concurrent SSE connections
+    ///
+    /// # Errors
+    ///
+    /// Returns error if:
+    /// - HTTP server fails to bind (address in use, permissions)
+    /// - Server encounters fatal error during operation
+    pub async fn run_sse(&self) -> Result<()> {
+        // Parse bind address
+        let bind_addr: SocketAddr = format!(
+            "{}:{}",
+            self.config.mcp.bind_address, self.config.mcp.sse_port
+        )
+        .parse()
+        .map_err(|e| {
+            error!(
+                "FATAL: Invalid SSE bind address '{}:{}': {}",
+                self.config.mcp.bind_address, self.config.mcp.sse_port, e
+            );
+            anyhow::anyhow!(
+                "Invalid SSE bind address '{}:{}': {}. \
+                 Check config.mcp.bind_address and config.mcp.sse_port.",
+                self.config.mcp.bind_address,
+                self.config.mcp.sse_port,
+                e
+            )
+        })?;
+
+        // Create SSE configuration
+        let sse_config = SseConfig::default();
+        sse_config.validate().map_err(|e| {
+            error!("FATAL: Invalid SSE configuration: {}", e);
+            anyhow::anyhow!("Invalid SSE configuration: {}", e)
+        })?;
+
+        // Create SSE application state
+        let sse_state = SseAppState::new(sse_config).map_err(|e| {
+            error!("FATAL: Failed to create SSE application state: {}", e);
+            anyhow::anyhow!("Failed to create SSE application state: {}", e)
+        })?;
+
+        // Create SSE router
+        let router = create_sse_router(sse_state);
+
+        // Bind TCP listener
+        let listener = tokio::net::TcpListener::bind(bind_addr).await.map_err(|e| {
+            error!("FATAL: Failed to bind SSE listener to {}: {}", bind_addr, e);
+            anyhow::anyhow!(
+                "Failed to bind SSE listener to {}: {}. \
+                 Address may be in use or require elevated permissions.",
+                bind_addr,
+                e
+            )
+        })?;
+
+        info!(
+            "MCP Server listening on SSE http://{}/events (max_connections={})",
+            bind_addr, self.config.mcp.max_connections
+        );
+
+        // Run axum server with explicit type annotation
+        axum::serve(listener, router.into_make_service())
+            .await
+            .map_err(|e| {
+                error!("SSE server error: {}", e);
+                anyhow::anyhow!("SSE server error: {}", e)
+            })?;
+
+        Ok(())
+    }
 }
 
 // ============================================================================
@@ -836,6 +929,7 @@ mod tests {
         let result = match mode {
             TransportMode::Stdio => "stdio",
             TransportMode::Tcp => "tcp",
+            TransportMode::Sse => "sse",
         };
 
         assert_eq!(result, "tcp");

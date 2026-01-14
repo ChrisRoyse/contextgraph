@@ -46,6 +46,7 @@ mod middleware;
 mod protocol;
 mod server;
 mod tools;
+mod transport;
 mod weights;
 
 use std::env;
@@ -66,6 +67,7 @@ use server::TransportMode;
 /// Parsed CLI arguments for the MCP server.
 ///
 /// TASK-INTEG-019: Simple argument parsing without external dependencies.
+/// TASK-42: Added sse_port for SSE transport.
 struct CliArgs {
     /// Path to configuration file
     config_path: Option<PathBuf>,
@@ -73,7 +75,9 @@ struct CliArgs {
     transport: Option<String>,
     /// TCP port override (--port)
     port: Option<u16>,
-    /// TCP bind address override (--bind)
+    /// SSE port override (--sse-port, TASK-42)
+    sse_port: Option<u16>,
+    /// TCP/SSE bind address override (--bind)
     bind_address: Option<String>,
     /// Show help
     help: bool,
@@ -90,6 +94,7 @@ impl CliArgs {
             config_path: None,
             transport: None,
             port: None,
+            sse_port: None,
             bind_address: None,
             help: false,
         };
@@ -120,6 +125,15 @@ impl CliArgs {
                         }
                     }
                 }
+                "--sse-port" => {
+                    // TASK-42: SSE port argument
+                    i += 1;
+                    if i < args.len() {
+                        if let Ok(port) = args[i].parse::<u16>() {
+                            cli.sse_port = Some(port);
+                        }
+                    }
+                }
                 "--bind" => {
                     i += 1;
                     if i < args.len() {
@@ -145,15 +159,17 @@ USAGE:
 
 OPTIONS:
     --config <PATH>      Path to configuration file
-    --transport <MODE>   Transport mode: stdio (default) or tcp
+    --transport <MODE>   Transport mode: stdio (default), tcp, or sse
     --port <PORT>        TCP port (only used with --transport tcp)
-    --bind <ADDRESS>     TCP bind address (only used with --transport tcp)
+    --sse-port <PORT>    SSE port (only used with --transport sse, default: 3101)
+    --bind <ADDRESS>     TCP/SSE bind address (default: 127.0.0.1)
     --help, -h           Show this help message
 
 ENVIRONMENT VARIABLES:
-    CONTEXT_GRAPH_TRANSPORT     Transport mode (stdio|tcp)
+    CONTEXT_GRAPH_TRANSPORT     Transport mode (stdio|tcp|sse)
     CONTEXT_GRAPH_TCP_PORT      TCP port number
-    CONTEXT_GRAPH_BIND_ADDRESS  TCP bind address
+    CONTEXT_GRAPH_SSE_PORT      SSE port number (TASK-42)
+    CONTEXT_GRAPH_BIND_ADDRESS  TCP/SSE bind address
     RUST_LOG                    Log level (error, warn, info, debug, trace)
 
 PRIORITY:
@@ -172,6 +188,12 @@ EXAMPLES:
     # Run with TCP on all interfaces
     context-graph-mcp --transport tcp --bind 0.0.0.0 --port 3100
 
+    # Run with SSE transport on default port (3101)
+    context-graph-mcp --transport sse
+
+    # Run with SSE transport on custom port
+    context-graph-mcp --transport sse --sse-port 8080
+
     # Run with custom config file
     context-graph-mcp --config /path/to/config.toml
 "#
@@ -183,6 +205,7 @@ EXAMPLES:
 /// Priority: CLI > ENV > Config > Default (Stdio)
 ///
 /// TASK-INTEG-019: FAIL FAST if invalid transport is specified.
+/// TASK-42: Added SSE transport support.
 fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportMode> {
     // CLI takes highest priority
     if let Some(ref transport) = cli.transport {
@@ -190,13 +213,14 @@ fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportM
         return match transport_lower.as_str() {
             "stdio" => Ok(TransportMode::Stdio),
             "tcp" => Ok(TransportMode::Tcp),
+            "sse" => Ok(TransportMode::Sse),
             _ => {
                 error!(
-                    "FATAL: Invalid transport '{}' from CLI. Must be 'stdio' or 'tcp'.",
+                    "FATAL: Invalid transport '{}' from CLI. Must be 'stdio', 'tcp', or 'sse'.",
                     transport
                 );
                 Err(anyhow::anyhow!(
-                    "Invalid transport '{}'. Must be 'stdio' or 'tcp'.",
+                    "Invalid transport '{}'. Must be 'stdio', 'tcp', or 'sse'.",
                     transport
                 ))
             }
@@ -209,13 +233,14 @@ fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportM
         return match transport_lower.as_str() {
             "stdio" => Ok(TransportMode::Stdio),
             "tcp" => Ok(TransportMode::Tcp),
+            "sse" => Ok(TransportMode::Sse),
             _ => {
                 error!(
-                    "FATAL: Invalid CONTEXT_GRAPH_TRANSPORT='{}'. Must be 'stdio' or 'tcp'.",
+                    "FATAL: Invalid CONTEXT_GRAPH_TRANSPORT='{}'. Must be 'stdio', 'tcp', or 'sse'.",
                     transport
                 );
                 Err(anyhow::anyhow!(
-                    "Invalid CONTEXT_GRAPH_TRANSPORT='{}'. Must be 'stdio' or 'tcp'.",
+                    "Invalid CONTEXT_GRAPH_TRANSPORT='{}'. Must be 'stdio', 'tcp', or 'sse'.",
                     transport
                 ))
             }
@@ -227,14 +252,15 @@ fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportM
     match transport_lower.as_str() {
         "stdio" => Ok(TransportMode::Stdio),
         "tcp" => Ok(TransportMode::Tcp),
+        "sse" => Ok(TransportMode::Sse),
         _ => {
             // This should not happen if Config::validate() passed, but FAIL FAST anyway
             error!(
-                "FATAL: Invalid transport '{}' in config. Must be 'stdio' or 'tcp'.",
+                "FATAL: Invalid transport '{}' in config. Must be 'stdio', 'tcp', or 'sse'.",
                 config.mcp.transport
             );
             Err(anyhow::anyhow!(
-                "Invalid transport '{}' in config. Must be 'stdio' or 'tcp'.",
+                "Invalid transport '{}' in config. Must be 'stdio', 'tcp', or 'sse'.",
                 config.mcp.transport
             ))
         }
@@ -244,9 +270,10 @@ fn determine_transport_mode(cli: &CliArgs, config: &Config) -> Result<TransportM
 /// Apply CLI/env overrides to config.
 ///
 /// TASK-INTEG-019: Modifies config in-place with CLI and env overrides.
+/// TASK-42: Added sse_port override.
 /// Called AFTER config is loaded but BEFORE validation.
 fn apply_overrides(config: &mut Config, cli: &CliArgs) {
-    // Override port from CLI
+    // Override TCP port from CLI
     if let Some(port) = cli.port {
         info!("CLI override: tcp_port = {}", port);
         config.mcp.tcp_port = port;
@@ -254,6 +281,17 @@ fn apply_overrides(config: &mut Config, cli: &CliArgs) {
         if let Ok(port) = port_str.parse::<u16>() {
             info!("ENV override: tcp_port = {}", port);
             config.mcp.tcp_port = port;
+        }
+    }
+
+    // TASK-42: Override SSE port from CLI
+    if let Some(port) = cli.sse_port {
+        info!("CLI override: sse_port = {}", port);
+        config.mcp.sse_port = port;
+    } else if let Ok(port_str) = env::var("CONTEXT_GRAPH_SSE_PORT") {
+        if let Ok(port) = port_str.parse::<u16>() {
+            info!("ENV override: sse_port = {}", port);
+            config.mcp.sse_port = port;
         }
     }
 
@@ -348,6 +386,10 @@ async fn main() -> Result<()> {
         TransportMode::Tcp => {
             info!("MCP Server initialized, starting TCP transport");
             server.run_tcp().await?;
+        }
+        TransportMode::Sse => {
+            info!("MCP Server initialized, starting SSE transport");
+            server.run_sse().await?;
         }
     }
 

@@ -1,21 +1,22 @@
 //! Tool definitions organized by functional category.
 //!
 //! Each submodule provides tool definitions for a specific category of MCP tools.
+//! TASK-41: Changed private modules to pub(crate) for ToolRegistry access.
 
-mod atc;
-mod autonomous;
-mod causal;
-mod core;
-mod dream;
+pub(crate) mod atc;
+pub(crate) mod autonomous;
+pub(crate) mod causal;
+pub(crate) mod core;
+pub(crate) mod dream;
 pub mod epistemic;
-mod gwt;
+pub(crate) mod gwt;
 pub mod johari;
 pub mod merge;
-mod meta_utl;
-mod neuromod;
-mod steering;
-mod teleological;
-mod utl;
+pub(crate) mod meta_utl;
+pub(crate) mod neuromod;
+pub(crate) mod steering;
+pub(crate) mod teleological;
+pub(crate) mod utl;
 
 use crate::tools::types::ToolDefinition;
 

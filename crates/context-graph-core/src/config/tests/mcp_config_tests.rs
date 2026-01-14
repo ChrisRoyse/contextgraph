@@ -106,8 +106,9 @@ fn test_mcp_config_rejects_invalid_transport() {
     );
 
     let err_msg = result.unwrap_err().to_string();
+    // TASK-42: Updated to include 'sse' transport
     assert!(
-        err_msg.contains("transport must be 'stdio' or 'tcp'"),
+        err_msg.contains("transport must be 'stdio', 'tcp', or 'sse'"),
         "Error must explain valid transport types, got: {}",
         err_msg
     );
@@ -546,6 +547,7 @@ fn test_mcp_config_serde_serialization_roundtrip() {
         request_timeout: 45,
         bind_address: "192.168.1.1".to_string(),
         tcp_port: 9000,
+        sse_port: 9001, // TASK-42
         max_connections: 64,
     };
 
@@ -600,6 +602,7 @@ fn test_mcp_config_multiple_validation_errors_first_wins() {
         request_timeout: 0,
         bind_address: "127.0.0.1".to_string(),
         tcp_port: 3100,
+        sse_port: 3101, // TASK-42
         max_connections: 32,
     };
     let result = config.validate();

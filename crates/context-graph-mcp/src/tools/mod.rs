@@ -7,6 +7,7 @@
 //!
 //! - `types`: Core type definitions (`ToolDefinition`)
 //! - `names`: Tool name constants for dispatch matching
+//! - `registry`: Centralized tool registry with O(1) lookup (TASK-41)
 //! - `definitions`: Tool definitions organized by category
 //!   - `core`: Core tools (inject, store, search, status)
 //!   - `gwt`: Global Workspace Theory tools
@@ -22,11 +23,15 @@
 pub mod aliases;
 pub mod definitions;
 pub mod names;
+pub mod registry;
 pub mod types;
 
 // Re-export for backwards compatibility
 pub use self::definitions::get_tool_definitions;
 pub use self::names as tool_names;
+
+// TASK-41: Export ToolRegistry for centralized tool management
+pub use self::registry::{register_all_tools, ToolRegistry};
 
 #[cfg(test)]
 mod tests {

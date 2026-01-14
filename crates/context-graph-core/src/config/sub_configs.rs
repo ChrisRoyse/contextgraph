@@ -24,10 +24,11 @@ impl Default for ServerConfig {
 /// MCP (Model Context Protocol) configuration.
 ///
 /// TASK-INTEG-017: Extended with TCP transport configuration fields.
-/// Supports both stdio (default) and TCP transports.
+/// TASK-42: Extended with SSE transport configuration fields.
+/// Supports stdio (default), TCP, and SSE transports.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct McpConfig {
-    /// Transport type: "stdio" or "tcp"
+    /// Transport type: "stdio", "tcp", or "sse"
     #[serde(default = "default_transport")]
     pub transport: String,
 
@@ -39,8 +40,8 @@ pub struct McpConfig {
     #[serde(default = "default_request_timeout")]
     pub request_timeout: u64,
 
-    /// TCP bind address (default: "127.0.0.1")
-    /// Only used when transport = "tcp"
+    /// TCP/SSE bind address (default: "127.0.0.1")
+    /// Used when transport = "tcp" or "sse"
     #[serde(default = "default_bind_address")]
     pub bind_address: String,
 
@@ -49,8 +50,14 @@ pub struct McpConfig {
     #[serde(default = "default_tcp_port")]
     pub tcp_port: u16,
 
-    /// Maximum concurrent TCP connections (default: 32)
-    /// Only used when transport = "tcp"
+    /// SSE port number (default: 3101)
+    /// Only used when transport = "sse"
+    /// TASK-42: Added for SSE transport support
+    #[serde(default = "default_sse_port")]
+    pub sse_port: u16,
+
+    /// Maximum concurrent TCP/SSE connections (default: 32)
+    /// Used when transport = "tcp" or "sse"
     #[serde(default = "default_max_connections")]
     pub max_connections: usize,
 }
@@ -79,6 +86,11 @@ fn default_tcp_port() -> u16 {
     3100
 }
 
+/// TASK-42: Default SSE port
+fn default_sse_port() -> u16 {
+    3101
+}
+
 fn default_max_connections() -> usize {
     32
 }
@@ -91,6 +103,7 @@ impl Default for McpConfig {
             request_timeout: default_request_timeout(),
             bind_address: default_bind_address(),
             tcp_port: default_tcp_port(),
+            sse_port: default_sse_port(), // TASK-42
             max_connections: default_max_connections(),
         }
     }
@@ -100,16 +113,18 @@ impl McpConfig {
     /// Validate the MCP configuration.
     ///
     /// TASK-INTEG-017: Validates all MCP configuration fields.
+    /// TASK-42: Extended to support SSE transport validation.
     /// FAIL FAST: Returns error immediately on invalid configuration.
     ///
     /// # Validation Rules
     ///
-    /// - `transport`: Must be "stdio" or "tcp" (case-insensitive after lowercase)
+    /// - `transport`: Must be "stdio", "tcp", or "sse" (case-insensitive)
     /// - `max_payload_size`: Must be > 0
     /// - `request_timeout`: Must be > 0
-    /// - `bind_address`: Must be non-empty when transport = "tcp"
+    /// - `bind_address`: Must be non-empty when transport = "tcp" or "sse"
     /// - `tcp_port`: Must be in valid range (1-65535) when transport = "tcp"
-    /// - `max_connections`: Must be > 0 when transport = "tcp"
+    /// - `sse_port`: Must be in valid range (1-65535) when transport = "sse"
+    /// - `max_connections`: Must be > 0 when transport = "tcp" or "sse"
     ///
     /// # Errors
     ///
@@ -117,11 +132,11 @@ impl McpConfig {
     pub fn validate(&self) -> crate::error::CoreResult<()> {
         use crate::error::CoreError;
 
-        // Validate transport type
+        // Validate transport type (TASK-42: Added "sse")
         let transport_lower = self.transport.to_lowercase();
-        if transport_lower != "stdio" && transport_lower != "tcp" {
+        if transport_lower != "stdio" && transport_lower != "tcp" && transport_lower != "sse" {
             return Err(CoreError::ConfigError(format!(
-                "McpConfig validation failed: transport must be 'stdio' or 'tcp', got '{}'",
+                "McpConfig validation failed: transport must be 'stdio', 'tcp', or 'sse', got '{}'",
                 self.transport
             )));
         }
@@ -162,6 +177,33 @@ impl McpConfig {
             if self.max_connections == 0 {
                 return Err(CoreError::ConfigError(
                     "McpConfig validation failed: max_connections must be > 0 for TCP transport"
+                        .to_string(),
+                ));
+            }
+        }
+
+        // SSE-specific validation (TASK-42)
+        if transport_lower == "sse" {
+            // Validate bind_address
+            if self.bind_address.trim().is_empty() {
+                return Err(CoreError::ConfigError(
+                    "McpConfig validation failed: bind_address must be non-empty for SSE transport"
+                        .to_string(),
+                ));
+            }
+
+            // Validate sse_port (u16 is already 0-65535, but 0 is reserved)
+            if self.sse_port == 0 {
+                return Err(CoreError::ConfigError(
+                    "McpConfig validation failed: sse_port must be in range 1-65535, got 0"
+                        .to_string(),
+                ));
+            }
+
+            // Validate max_connections
+            if self.max_connections == 0 {
+                return Err(CoreError::ConfigError(
+                    "McpConfig validation failed: max_connections must be > 0 for SSE transport"
                         .to_string(),
                 ));
             }

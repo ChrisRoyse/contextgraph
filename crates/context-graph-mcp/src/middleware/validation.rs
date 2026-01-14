@@ -11,9 +11,13 @@
 //! ```rust
 //! use context_graph_mcp::middleware::validation::*;
 //!
-//! let rationale = validate_required_string("rationale", args.get("rationale"))?;
-//! let limit = validate_range("limit", limit_value, 1, 100)?;
-//! let memory_id = validate_uuid("memory_id", id_string)?;
+//! fn example() -> Result<(), ValidationError> {
+//!     let args = serde_json::json!({"rationale": "test reason"});
+//!     let rationale = validate_required_string("rationale", args.get("rationale"))?;
+//!     let limit = validate_range("limit", 50i64, 1i64, 100i64)?;
+//!     let memory_id = validate_uuid("memory_id", "550e8400-e29b-41d4-a716-446655440000")?;
+//!     Ok(())
+//! }
 //! ```
 
 use serde::de::DeserializeOwned;
