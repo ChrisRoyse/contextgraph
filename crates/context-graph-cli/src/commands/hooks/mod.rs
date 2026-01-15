@@ -16,4 +16,12 @@
 
 mod types;
 
-pub use types::HookEventType;
+pub use types::{
+    ConsciousnessState,
+    HookEventType,
+    HookInput,
+    HookOutput,
+    ICClassification,
+    ICLevel,
+    JohariQuadrant,
+};
