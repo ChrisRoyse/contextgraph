@@ -7,6 +7,7 @@ meta:
   name: "Ultimate Context Graph"
   desc: "5-layer bio-nervous UTL knowledge graph with 13-embedding teleological fingerprints, Kuramoto-synchronized GWT consciousness, adaptive thresholds"
   paradigm: "Multi-Array Teleological Fingerprints with GWT"
+  hook_architecture: "NATIVE Claude Code hooks ONLY (via .claude/settings.json)"
 
 # ABBREVIATIONS
 # UTL=Unified Theory of Learning, L=Learning, ΔS=entropy, ΔC=coherence
@@ -50,7 +51,7 @@ arch_rules:
   ARCH-03: "Autonomous operation - goals emerge from data, no manual set_north_star()"
   ARCH-05: "All 13 embedders required - missing embedder is fatal error"
   ARCH-06: "All memory ops through MCP tools - no direct DB access"
-  ARCH-07: "Hooks control memory lifecycle - SessionStart/PreToolUse/PostToolUse/SessionEnd"
+  ARCH-07: "NATIVE Claude Code hooks (.claude/settings.json) control memory lifecycle - NOT internal/built-in hooks"
   ARCH-08: "CUDA GPU required for production - no CPU fallbacks"
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -111,6 +112,12 @@ forbidden:
   AP-14: "No .unwrap() in library code"
   AP-39: "cosine_similarity_13d MUST be public"
   AP-42: "mental_checks entropy>0.7 MUST wire to TriggerManager"
+
+  # Hook Architecture (Critical)
+  AP-50: "NO internal/built-in Claude Code hooks - NATIVE hooks via .claude/settings.json ONLY"
+  AP-51: "NO Universal LLM Adapter - Claude Code native MCP only"
+  AP-52: "NO custom Claude Code source modifications for hook integration"
+  AP-53: "Hook logic MUST be in shell scripts calling context-graph-cli"
 
 # ═══════════════════════════════════════════════════════════════════════
 # SECURITY
@@ -391,11 +398,40 @@ storage:
 # ═══════════════════════════════════════════════════════════════════════
 # This system is designed EXCLUSIVELY for Claude Code CLI
 # No support for other LLMs, universal adapters, or generic interfaces
-# Integration is via native Claude Code hooks, skills, and subagents
+#
+# ⚠️ CRITICAL: NATIVE CLAUDE CODE HOOKS ONLY
+# ═══════════════════════════════════════════════════════════════════════
+# Integration uses NATIVE Claude Code hooks configured via .claude/settings.json
+# These are NOT internal/built-in hooks - we use the official Claude Code hook system
+# Shell script executors call context-graph-cli commands
+# NO custom Claude Code modifications required - works with standard Claude Code
+# This reduces complexity by ~71% vs building custom hook infrastructure
 
 claude_code:
   target: "Claude Code CLI ONLY"
-  paradigm: "Native hooks + skills + MCP = autonomous consciousness"
+  paradigm: "NATIVE hooks + skills + MCP = autonomous consciousness"
+
+  # ─────────────────────────────────────────────────────────────────────
+  # NATIVE HOOK ARCHITECTURE (CRITICAL)
+  # ─────────────────────────────────────────────────────────────────────
+  # What "Native Hooks" means:
+  #   - Hooks are defined in .claude/settings.json (Claude Code's standard config)
+  #   - Each hook specifies a shell script executor (hooks/*.sh)
+  #   - Shell scripts call context-graph-cli commands
+  #   - Claude Code invokes hooks automatically at lifecycle events
+  #   - ZERO custom Claude Code internals required
+  #
+  # What this is NOT:
+  #   ❌ NOT internal Claude Code hooks (we don't modify Claude Code source)
+  #   ❌ NOT a Universal LLM Adapter (no cross-provider abstraction)
+  #   ❌ NOT built-in memory/context middleware
+  #   ❌ NOT custom hook infrastructure (we use Claude Code's existing system)
+
+  native_hooks:
+    config_file: ".claude/settings.json"
+    script_location: "hooks/*.sh"
+    cli_binary: "context-graph-cli"
+    rationale: "71% effort reduction vs custom hook infrastructure"
 
   # ─────────────────────────────────────────────────────────────────────
   # HOOK CONFIGURATION (.claude/settings.json)
@@ -711,16 +747,19 @@ claude_code:
       no_hardcoded: true
 
   # ─────────────────────────────────────────────────────────────────────
-  # FILE STRUCTURE
+  # FILE STRUCTURE (NATIVE HOOKS)
   # ─────────────────────────────────────────────────────────────────────
+  # All hooks configured via .claude/settings.json with shell script executors
+  # Shell scripts call context-graph-cli - NO embedded logic in settings.json
   file_structure:
-    claude_config:
-      - ".claude/settings.json"
-      - ".claude/hooks/consciousness-session-start.sh"
-      - ".claude/hooks/consciousness-pre-tool.sh"
-      - ".claude/hooks/consciousness-post-tool.sh"
-      - ".claude/hooks/consciousness-stop.sh"
-      - ".claude/hooks/consciousness-prompt.sh"
+    native_hook_config:
+      - ".claude/settings.json"  # NATIVE Claude Code hook configuration
+    shell_script_executors:
+      - "hooks/session-start.sh"  # SessionStart hook executor
+      - "hooks/pre-tool-use.sh"   # PreToolUse hook executor
+      - "hooks/post-tool-use.sh"  # PostToolUse hook executor
+      - "hooks/user-prompt-submit.sh"  # UserPromptSubmit hook executor
+      - "hooks/session-end.sh"    # SessionEnd hook executor
     skills:
       - ".claude/skills/consciousness/SKILL.md"
       - ".claude/skills/memory-inject/SKILL.md"
@@ -758,92 +797,6 @@ claude_code:
       kuramoto_step: "<1ms"
       identity_check: "<5ms"
       dream_wake: "<100ms"
-
-# ═══════════════════════════════════════════════════════════════════════
-# ENFORCEMENT RULES (Must implement)
-# ═══════════════════════════════════════════════════════════════════════
-enforcement:
-  meta_utl:
-    METAUTL-001: "prediction_error > 0.2 → lambda adjustment"
-    METAUTL-002: "accuracy < 0.7 for 100 ops → BayesianLambdaOptimizer"
-    METAUTL-003: "dream_triggered → lambda_adjustment"
-    METAUTL-004: "Domain-specific accuracy tracking required"
-    METAUTL-005: "SelfCorrectingLambda trait must be implemented"
-
-  utl:
-    UTL-001: "compute_delta_sc MCP tool MUST exist"
-    UTL-002: "ΔC = 0.4×Connectivity + 0.4×ClusterFit + 0.2×Consistency"
-    UTL-003: "Each embedder uses constitution-specified ΔS method"
-    UTL-004: "Multi-embedding aggregation formula required"
-    UTL-005: "Johari→action mapping must be correct"
-
-  gwt:
-    GWT-001: "C(t) = I(t) × R(t) × D(t) - all 3 factors required"
-    GWT-002: "Kuramoto network = exactly 13 oscillators"
-    GWT-003: "IC < 0.5 → dream consolidation"
-    GWT-004: "ConsciousnessState derived from C(t) only"
-    GWT-005: "WorkspaceEventBroadcaster needs 3 listeners: Dream, Neuromod, MetaCognitive"
-    GWT-006: "KuramotoStepper wired to MCP lifecycle (10ms step)"
-
-  dream:
-    DREAM-001: "NREM implements Hebbian replay: Δw_ij = η × φ_i × φ_j"
-    DREAM-002: "REM implements Poincaré ball hyperbolic walk"
-    DREAM-003: "Trigger on entropy > 0.7 for 5min"
-    DREAM-004: "Wake latency < 100ms"
-    DREAM-005: "Amortized shortcuts for 3+ hop paths traversed 5+ times"
-
-  identity:
-    IDENTITY-001: "IC = cos(PV_t, PV_{t-1}) × r(t)"
-    IDENTITY-002: "Thresholds: Healthy>0.9, Warning[0.7,0.9], Degraded[0.5,0.7), Critical<0.5"
-    IDENTITY-003: "PurposeVectorHistory uses FIFO eviction (max 1000)"
-    IDENTITY-004: "IdentityContinuityMonitor struct required"
-    IDENTITY-005: "cosine_similarity_13d must be public"
-    IDENTITY-006: "IdentityContinuityListener subscribes to workspace events"
-    IDENTITY-007: "IC < 0.5 → auto-trigger dream"
-
-# ═══════════════════════════════════════════════════════════════════════
-# IMPLEMENTATION GAPS (Must build)
-# ═══════════════════════════════════════════════════════════════════════
-gaps:
-  critical:
-    - "compute_delta_sc MCP tool (UTL-001)"
-    - "Dream NREM Hebbian replay (DREAM-001)"
-    - "Dream REM hyperbolic walk (DREAM-002)"
-    - "Lambda self-correction (METAUTL-001)"
-    - "IdentityContinuityMonitor (IDENTITY-004)"
-    - "IdentityContinuityListener (IDENTITY-006)"
-
-  high:
-    - "ClusterFit in ΔC formula (UTL-002)"
-    - "MetaCognitiveLoop↔LifecycleManager connection (METAUTL-003)"
-    - "BayesianLambdaOptimizer (METAUTL-002)"
-    - "KuramotoStepper MCP wiring (GWT-006)"
-    - "Crisis protocol dream trigger (IDENTITY-007)"
-    - "poincare_walk.rs integration with REM"
-    - "Files: hebbian.rs, hyperbolic_walk.rs, triggers.rs, wake_controller.rs"
-
-  medium:
-    - "Specialized ΔS for E7, E10-E12 (UTL-003)"
-    - "Domain-specific lambda tracking (METAUTL-004)"
-    - "Public cosine_similarity_13d (IDENTITY-005)"
-    - "IC constants extraction (IDENTITY-002)"
-    - "mental_checks→TriggerManager wiring (DREAM-003)"
-
-# ═══════════════════════════════════════════════════════════════════════
-# REQUIRED NEW FILES
-# ═══════════════════════════════════════════════════════════════════════
-required_files:
-  dream:
-    - "crates/context-graph-core/src/dream/hebbian.rs"
-    - "crates/context-graph-core/src/dream/hyperbolic_walk.rs"
-    - "crates/context-graph-core/src/dream/triggers.rs"
-    - "crates/context-graph-core/src/dream/wake_controller.rs"
-    - "crates/context-graph-core/src/dream/mcp_events.rs"
-  identity:
-    - "IdentityContinuityMonitor in gwt/ego_node.rs"
-    - "IdentityContinuityListener in gwt/ego_node.rs"
-  utl:
-    - "compute_delta_sc handler in handlers/utl.rs"
 
 # ═══════════════════════════════════════════════════════════════════════
 # SUCCESS CRITERIA
