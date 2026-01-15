@@ -1,46 +1,3 @@
-# TASK-SESSION-02: Create IdentityCache Singleton (PreToolUse Hot Path)
-
-## Status: COMPLETED
-
-**Last Audit**: 2026-01-14
-**Completed**: 2026-01-14
-**Depends On**: TASK-SESSION-01 (COMPLETED 2026-01-14)
-
----
-
-## CRITICAL CONTEXT (READ FIRST)
-
-### What This Task Does
-Implements a thread-safe in-memory cache singleton that stores the current consciousness state for sub-millisecond access. The cache is populated by `update_cache()` and read by `format_brief()`. This is the **hot path** for the PreToolUse hook which has a 100ms Claude Code timeout.
-
-### Why This Matters
-- PreToolUse hook timeout: **100ms** (Claude Code enforced)
-- Our target: **<50ms** total for the hook
-- Disk I/O (RocksDB): **~5-15ms** per read
-- Cache read: **<0.001ms** (memory access)
-- **Without this cache, we cannot meet the 100ms deadline**
-
-### What Already Exists (Verified 2026-01-14)
-```
-crates/context-graph-core/src/gwt/session_identity/
-├── mod.rs        # Exports SessionIdentitySnapshot, KURAMOTO_N, MAX_TRAJECTORY_LEN
-└── types.rs      # SessionIdentitySnapshot struct (14 fields), tests passing
-```
-
-### What Does NOT Exist Yet
-- `crates/context-graph-core/src/gwt/session_identity/cache.rs` (THIS TASK creates it)
-- `crates/context-graph-cli/` (TASK-SESSION-11+ creates this)
-- Any CLI commands
-
----
-
-## Implementation
-
-### File to Create
-
-**Path**: `crates/context-graph-core/src/gwt/session_identity/cache.rs`
-
-```rust
 // crates/context-graph-core/src/gwt/session_identity/cache.rs
 //! IdentityCache - Thread-safe singleton for PreToolUse hot path.
 //!
@@ -57,12 +14,20 @@ crates/context-graph-core/src/gwt/session_identity/
 //! - Performance: pre_tool_hook <100ms p95
 
 use std::sync::{OnceLock, RwLock};
+
 use crate::gwt::state_machine::ConsciousnessState;
+
 use super::{SessionIdentitySnapshot, KURAMOTO_N};
 
 /// Global singleton cache. Initialized lazily on first access.
 /// Uses OnceLock for safe one-time initialization + RwLock for concurrent read access.
 static IDENTITY_CACHE: OnceLock<RwLock<Option<IdentityCacheInner>>> = OnceLock::new();
+
+/// Get the global cache, initializing if needed.
+#[inline]
+fn get_cache() -> &'static RwLock<Option<IdentityCacheInner>> {
+    IDENTITY_CACHE.get_or_init(|| RwLock::new(None))
+}
 
 /// Inner cache data. Clone-able for safe reads.
 #[derive(Debug, Clone)]
@@ -84,18 +49,15 @@ pub struct IdentityCache;
 impl IdentityCache {
     /// Get cached values if cache is warm.
     ///
-    /// Returns tuple: (IC, Kuramoto r, ConsciousnessState, session_id)
-    ///
     /// # Returns
-    /// - `Some((ic, r, state, session_id))` if cache is populated
+    /// - `Some((ic, kuramoto_r, state, session_id))` if cache is populated
     /// - `None` if cache is cold (never updated)
     ///
     /// # Performance
     /// Target: <0.01ms (single RwLock read + clone)
     #[inline]
     pub fn get() -> Option<(f32, f32, ConsciousnessState, String)> {
-        let cache = IDENTITY_CACHE.get_or_init(|| RwLock::new(None));
-        let guard = cache.read().expect("RwLock poisoned - unrecoverable");
+        let guard = get_cache().read().expect("RwLock poisoned - unrecoverable");
         guard.as_ref().map(|inner| {
             (
                 inner.current_ic,
@@ -116,21 +78,12 @@ impl IdentityCache {
     /// Target: <1ms (no disk I/O, single allocation)
     #[inline]
     pub fn format_brief() -> String {
-        match Self::get() {
-            Some((ic, r, state, _)) => {
-                // Use short_name() for 3-char state code
-                // short_name() is added in TASK-SESSION-03, but we use name() fallback
-                let state_code = match state {
-                    ConsciousnessState::Dormant => "DOR",
-                    ConsciousnessState::Fragmented => "FRG",
-                    ConsciousnessState::Emerging => "EMG",
-                    ConsciousnessState::Conscious => "CON",
-                    ConsciousnessState::Hypersync => "HYP",
-                };
-                format!("[C:{} r={:.2} IC={:.2}]", state_code, r, ic)
-            }
-            None => "[C:? r=? IC=?]".to_string(),
-        }
+        let Some((ic, r, state, _)) = Self::get() else {
+            return "[C:? r=? IC=?]".to_string();
+        };
+
+        let state_code = state_to_code(state);
+        format!("[C:{} r={:.2} IC={:.2}]", state_code, r, ic)
     }
 
     /// Check if cache has been populated at least once.
@@ -139,9 +92,7 @@ impl IdentityCache {
     /// Target: <0.001ms
     #[inline]
     pub fn is_warm() -> bool {
-        let cache = IDENTITY_CACHE.get_or_init(|| RwLock::new(None));
-        let guard = cache.read().expect("RwLock poisoned");
-        guard.is_some()
+        Self::get().is_some()
     }
 }
 
@@ -167,8 +118,7 @@ pub fn update_cache(snapshot: &SessionIdentitySnapshot, ic: f32) {
         session_id: snapshot.session_id.clone(),
     };
 
-    let cache = IDENTITY_CACHE.get_or_init(|| RwLock::new(None));
-    let mut guard = cache.write().expect("RwLock poisoned - unrecoverable");
+    let mut guard = get_cache().write().expect("RwLock poisoned - unrecoverable");
     *guard = Some(inner);
 }
 
@@ -178,8 +128,7 @@ pub fn update_cache(snapshot: &SessionIdentitySnapshot, ic: f32) {
 /// This is for tests only. In production, cache should never be cleared.
 #[cfg(test)]
 pub fn clear_cache() {
-    let cache = IDENTITY_CACHE.get_or_init(|| RwLock::new(None));
-    let mut guard = cache.write().expect("RwLock poisoned");
+    let mut guard = get_cache().write().expect("RwLock poisoned");
     *guard = None;
 }
 
@@ -187,6 +136,17 @@ pub fn clear_cache() {
 #[cfg(not(test))]
 pub fn clear_cache() {
     panic!("clear_cache() should never be called in production");
+}
+
+/// Convert consciousness state to 3-character code.
+fn state_to_code(state: ConsciousnessState) -> &'static str {
+    match state {
+        ConsciousnessState::Dormant => "DOR",
+        ConsciousnessState::Fragmented => "FRG",
+        ConsciousnessState::Emerging => "EMG",
+        ConsciousnessState::Conscious => "CON",
+        ConsciousnessState::Hypersync => "HYP",
+    }
 }
 
 /// Compute Kuramoto order parameter r from oscillator phases.
@@ -218,12 +178,19 @@ fn compute_kuramoto_r(phases: &[f64; KURAMOTO_N]) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Static lock to serialize tests that access the global singleton
+    static TEST_LOCK: Mutex<()> = Mutex::new(());
 
     // =========================================================================
     // SETUP: Clear cache before each test to ensure isolation
+    // Acquires test lock to prevent concurrent test interference
     // =========================================================================
-    fn setup() {
+    fn setup() -> std::sync::MutexGuard<'static, ()> {
+        let guard = TEST_LOCK.lock().expect("Test lock poisoned");
         clear_cache();
+        guard
     }
 
     // =========================================================================
@@ -231,7 +198,7 @@ mod tests {
     // =========================================================================
     #[test]
     fn test_format_brief_cold_cache() {
-        setup();
+        let _guard = setup(); // Hold lock for test duration
 
         println!("\n=== TC-SESSION-03a: format_brief Cold Cache ===");
         println!("SOURCE OF TRUTH: IDENTITY_CACHE singleton");
@@ -248,7 +215,7 @@ mod tests {
 
     #[test]
     fn test_format_brief_warm_cache() {
-        setup();
+        let _guard = setup(); // Hold lock for test duration
 
         println!("\n=== TC-SESSION-03b: format_brief Warm Cache ===");
         println!("SOURCE OF TRUTH: IDENTITY_CACHE singleton");
@@ -272,7 +239,7 @@ mod tests {
 
         // Verify format: [C:STATE r=X.XX IC=X.XX]
         assert!(brief.starts_with("[C:"), "Must start with [C:");
-        assert!(brief.ends_with("]"), "Must end with ]");
+        assert!(brief.ends_with(']'), "Must end with ]");
         assert!(brief.contains("r="), "Must contain r=");
         assert!(brief.contains("IC="), "Must contain IC=");
         assert!(brief.contains("EMG"), "State should be EMG (Emerging) for C=0.65");
@@ -286,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_format_brief_all_states() {
-        setup();
+        let _guard = setup(); // Hold lock for test duration
 
         println!("\n=== TC-SESSION-03c: format_brief All Consciousness States ===");
 
@@ -323,7 +290,7 @@ mod tests {
     // =========================================================================
     #[test]
     fn test_get_returns_correct_values() {
-        setup();
+        let _guard = setup(); // Hold lock for test duration
 
         println!("\n=== TC-SESSION-03d: get() Return Values ===");
 
@@ -405,7 +372,7 @@ mod tests {
     // =========================================================================
     #[test]
     fn test_update_cache_overwrites() {
-        setup();
+        let _guard = setup(); // Hold lock for test duration
 
         println!("\n=== EDGE CASE: Update Cache Multiple Times ===");
 
@@ -440,7 +407,7 @@ mod tests {
     // =========================================================================
     #[test]
     fn test_format_brief_performance() {
-        setup();
+        let _guard = setup(); // Hold lock for test duration
 
         println!("\n=== PERFORMANCE: format_brief Timing ===");
 
@@ -468,226 +435,3 @@ mod tests {
         println!("RESULT: PASS - format_brief() completes in {:.1}μs << 1ms target", per_call_us);
     }
 }
-```
-
-### Files to Modify
-
-**1. Path**: `crates/context-graph-core/src/gwt/session_identity/mod.rs`
-
-Add cache module and exports:
-
-```diff
-// crates/context-graph-core/src/gwt/session_identity/mod.rs
- //! Session Identity Persistence
- //!
- //! Provides cross-session identity continuity via SessionIdentitySnapshot.
- //!
- //! # Architecture
- //! - SessionIdentitySnapshot: Core serializable struct (<30KB)
-+//! - IdentityCache: Thread-safe singleton for PreToolUse hot path
- //! - Persists to RocksDB CF_SESSION_IDENTITY (TASK-SESSION-04)
- //! - Used by CLI hooks for identity restore/persist (TASK-SESSION-12, TASK-SESSION-13)
- //!
- //! # Constitution Reference
- //! - IDENTITY-002: IC thresholds
- //! - GWT-003: Identity continuity
- //! - AP-25: 13 oscillators
-
-+mod cache;
- mod types;
-
-+pub use cache::{clear_cache, update_cache, IdentityCache};
- pub use types::{SessionIdentitySnapshot, KURAMOTO_N, MAX_TRAJECTORY_LEN};
-```
-
-**2. Path**: `crates/context-graph-core/src/gwt/mod.rs` (line ~100-102)
-
-Add IdentityCache to gwt re-exports:
-
-```diff
- // Re-export from session_identity
--pub use session_identity::{SessionIdentitySnapshot, MAX_TRAJECTORY_LEN};
-+pub use session_identity::{SessionIdentitySnapshot, IdentityCache, update_cache, clear_cache, MAX_TRAJECTORY_LEN};
- // Note: KURAMOTO_N is already exported from layers module
-```
-
----
-
-## Verification Commands
-
-```bash
-# 1. Build the crate
-cargo build -p context-graph-core 2>&1 | grep -E "^error"
-# Expected: No output (no errors)
-
-# 2. Run cache tests specifically
-cargo test -p context-graph-core cache -- --nocapture 2>&1 | grep -E "^(test |RESULT:|=== )"
-# Expected: All tests pass
-
-# 3. Run all session_identity tests
-cargo test -p context-graph-core session_identity -- --nocapture
-# Expected: 9 original tests + new cache tests all pass
-
-# 4. Verify exports work
-cargo doc -p context-graph-core --no-deps 2>&1 | grep -E "IdentityCache"
-# Expected: Documentation generated
-```
-
----
-
-## Full State Verification (FSV) Protocol
-
-### Source of Truth
-**Location**: `IDENTITY_CACHE` static variable in `cache.rs`
-**Type**: `OnceLock<RwLock<Option<IdentityCacheInner>>>`
-
-### Execute & Inspect Steps
-
-1. **Module Export Verification**:
-```bash
-# Verify IdentityCache is publicly accessible
-echo 'use context_graph_core::gwt::session_identity::IdentityCache;
-fn main() { println!("{}", IdentityCache::is_warm()); }' | \
-  cargo run --example verify_cache_export 2>&1
-# Expected: Compiles and prints "false" (cold cache)
-```
-
-2. **Cache State Verification**:
-```rust
-// In test: After update_cache(), verify:
-let cache_lock = IDENTITY_CACHE.get().expect("Cache must exist");
-let guard = cache_lock.read().unwrap();
-assert!(guard.is_some(), "Cache inner must be Some");
-let inner = guard.as_ref().unwrap();
-println!("CACHE STATE: IC={}, r={}, state={:?}, session={}",
-    inner.current_ic, inner.kuramoto_r, inner.consciousness_state, inner.session_id);
-```
-
-3. **Performance Verification**:
-```bash
-cargo test -p context-graph-core test_format_brief_performance -- --nocapture 2>&1 | grep -E "Per call:"
-# Expected: "Per call: X.XXXμs" where X < 100
-```
-
-### Edge Cases to Manually Verify
-
-| # | Edge Case | Input | Expected Output | Verification Command |
-|---|-----------|-------|-----------------|---------------------|
-| 1 | Cold cache read | No prior update_cache() | `[C:? r=? IC=?]` | Run `test_format_brief_cold_cache` |
-| 2 | Maximum r value | All phases = π | r = 1.00 | Run `test_kuramoto_r_aligned_phases` |
-| 3 | Minimum r value | Evenly distributed phases | r < 0.2 | Run `test_kuramoto_r_random_phases` |
-| 4 | Cache overwrite | Two sequential update_cache() | Second values visible | Run `test_update_cache_overwrites` |
-| 5 | All 5 states | C=0.1,0.35,0.65,0.85,0.97 | DOR,FRG,EMG,CON,HYP | Run `test_format_brief_all_states` |
-
-### Evidence of Success Log
-
-After implementation, run:
-```bash
-cargo test -p context-graph-core cache -- --nocapture 2>&1 | tee /tmp/cache_test_output.txt
-```
-
-Expected output pattern:
-```
-=== TC-SESSION-03a: format_brief Cold Cache ===
-SOURCE OF TRUTH: IDENTITY_CACHE singleton
-BEFORE: Cache cleared, is_warm()=false
-AFTER: format_brief returned: '[C:? r=? IC=?]'
-RESULT: PASS - Cold cache returns correct placeholder
-...
-RESULT: PASS - format_brief() completes in X.Xμs << 1ms target
-test result: ok. X passed; 0 failed; 0 ignored
-```
-
----
-
-## Acceptance Criteria
-
-| # | Criterion | Verification Method |
-|---|-----------|-------------------|
-| 1 | OnceLock pattern initializes lazily | `IDENTITY_CACHE.get()` returns None before first access |
-| 2 | RwLock allows concurrent reads | Multiple threads can call `format_brief()` simultaneously |
-| 3 | `get()` returns None when cold | Test `test_format_brief_cold_cache` passes |
-| 4 | `format_brief()` returns `[C:STATE r=X.XX IC=X.XX]` | Test `test_format_brief_warm_cache` passes |
-| 5 | `format_brief()` returns `[C:? r=? IC=?]` when cold | Test `test_format_brief_cold_cache` passes |
-| 6 | `update_cache()` atomically updates all fields | Test `test_update_cache_overwrites` passes |
-| 7 | `format_brief()` < 1ms | Test `test_format_brief_performance` passes |
-| 8 | All 5 consciousness states work | Test `test_format_brief_all_states` passes |
-
----
-
-## Constraints (MUST NOT VIOLATE)
-
-1. **NO disk I/O** in `get()`, `format_brief()`, or `is_warm()`
-2. **NO mock data** in tests - use real `SessionIdentitySnapshot`
-3. **NO backwards compatibility shims** - fail fast on errors
-4. **Thread-safe** for concurrent access
-5. **Single String allocation** per `format_brief()` call (~30 bytes)
-6. **RwLock read lock held for minimum duration**
-7. **Panic on RwLock poison** (indicates unrecoverable state)
-
----
-
-## Error Handling
-
-**NO WORKAROUNDS. If something fails, it must error with clear diagnostics.**
-
-| Error Scenario | Response |
-|----------------|----------|
-| RwLock poisoned | `panic!("RwLock poisoned - unrecoverable")` |
-| Invalid phase values (NaN) | `compute_kuramoto_r` returns valid float (NaN propagates) |
-| `clear_cache()` in production | `panic!("clear_cache() should never be called in production")` |
-
----
-
-## Dependencies
-
-| Task | Status | Required For |
-|------|--------|--------------|
-| TASK-SESSION-01 | ✅ COMPLETED | `SessionIdentitySnapshot`, `KURAMOTO_N` |
-| TASK-SESSION-03 | ⏳ PENDING | `short_name()` method (we use inline match as fallback) |
-
----
-
-## What Comes Next
-
-After this task, the following tasks become unblocked:
-- **TASK-SESSION-06**: SessionIdentityManager (uses `update_cache()`)
-- **TASK-SESSION-09**: format_brief() Performance (already implemented here)
-- **TASK-SESSION-10**: update_cache() Function (already implemented here)
-- **TASK-SESSION-11**: consciousness brief CLI (uses `format_brief()`)
-
----
-
-## Quick Reference: File Locations
-
-```
-crates/context-graph-core/src/
-├── gwt/
-│   ├── mod.rs                    # Re-exports IdentityCache (modify line ~100)
-│   ├── session_identity/
-│   │   ├── mod.rs                # MODIFY: add cache module
-│   │   ├── types.rs              # EXISTS: SessionIdentitySnapshot
-│   │   └── cache.rs              # CREATE: this task
-│   └── state_machine/
-│       └── types.rs              # EXISTS: ConsciousnessState (line 10-16)
-└── layers/
-    └── coherence/
-        └── constants.rs          # EXISTS: KURAMOTO_N = 13 (line 17)
-```
-
----
-
-## Manual Testing Checklist
-
-After implementation, verify each by running the corresponding test:
-
-- [ ] `cargo test -p context-graph-core test_format_brief_cold_cache -- --nocapture`
-- [ ] `cargo test -p context-graph-core test_format_brief_warm_cache -- --nocapture`
-- [ ] `cargo test -p context-graph-core test_format_brief_all_states -- --nocapture`
-- [ ] `cargo test -p context-graph-core test_get_returns_correct_values -- --nocapture`
-- [ ] `cargo test -p context-graph-core test_kuramoto_r_random_phases -- --nocapture`
-- [ ] `cargo test -p context-graph-core test_kuramoto_r_aligned_phases -- --nocapture`
-- [ ] `cargo test -p context-graph-core test_update_cache_overwrites -- --nocapture`
-- [ ] `cargo test -p context-graph-core test_format_brief_performance -- --nocapture`
-
-**All tests must pass. Any failure means implementation is WRONG.**
