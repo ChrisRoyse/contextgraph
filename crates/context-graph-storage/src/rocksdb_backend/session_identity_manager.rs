@@ -164,10 +164,26 @@ impl SessionIdentityManager for StandaloneSessionIdentityManager {
 
             // Create a new snapshot for first session
             let session_id = format!("session-{}", timestamp_ms());
-            let current = SessionIdentitySnapshot::new(&session_id);
+            let mut current = SessionIdentitySnapshot::new(&session_id);
 
             // First session: IC = 1.0 (perfect continuity by definition)
             let ic = 1.0_f32;
+            current.last_ic = ic;
+
+            // CRITICAL: Persist the new snapshot to RocksDB so subsequent CLI
+            // invocations (separate processes) can find it. Each CLI command runs
+            // as a separate process, so in-memory cache is not shared.
+            if let Err(e) = self.storage.save_snapshot(&current) {
+                error!(
+                    session_id = %current.session_id,
+                    error = %e,
+                    "STORAGE ERROR: Failed to persist first session snapshot"
+                );
+                return Err(CoreError::StorageError(format!(
+                    "Failed to persist first session: {}",
+                    e
+                )));
+            }
 
             // Update cache with current state
             update_cache(&current, ic);
@@ -175,7 +191,7 @@ impl SessionIdentityManager for StandaloneSessionIdentityManager {
             info!(
                 session_id = %current.session_id,
                 ic = ic,
-                "SESSION_IDENTITY_MANAGER: First session initialized with IC=1.0"
+                "SESSION_IDENTITY_MANAGER: First session initialized and persisted with IC=1.0"
             );
 
             return Ok((current, ic));

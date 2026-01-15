@@ -1,92 +1,3 @@
-# TASK-SESSION-13: Create session persist-identity CLI Command
-
-```xml
-<task_spec id="TASK-SESSION-13" version="2.0">
-<metadata>
-  <title>Create session persist-identity CLI Command</title>
-  <status>pending</status>
-  <layer>surface</layer>
-  <sequence>13</sequence>
-  <implements>
-    <requirement_ref>REQ-SESSION-13</requirement_ref>
-  </implements>
-  <depends_on>
-    <task_ref>TASK-SESSION-05</task_ref><!-- save_snapshot/load_snapshot in storage -->
-    <task_ref>TASK-SESSION-06</task_ref><!-- SessionIdentityManager -->
-  </depends_on>
-  <estimated_hours>1.5</estimated_hours>
-</metadata>
-```
-
-## Objective
-
-Implement `session persist-identity` CLI command for the SessionEnd hook. This command persists the current session's identity snapshot to RocksDB so it can be restored on next startup.
-
-**Critical Behavior**:
-- Silent on success (NO stdout) - required by Claude Code SessionEnd hook semantics
-- Errors to stderr with structured logging
-- Exit 0 on success, exit 1 on recoverable error, exit 2 on corruption
-- Never blocks Claude Code (even on error, use exit 1 not exit 2 unless truly corrupted)
-- Total latency < 3s (Claude Code SessionEnd timeout is 30s)
-
-## Current Codebase State (VERIFIED 2026-01-15)
-
-### Existing Files (MUST USE)
-
-| File | Purpose | Key Exports |
-|------|---------|-------------|
-| `crates/context-graph-cli/src/commands/session/mod.rs` | Session command router | `SessionCommands`, `handle_session_command()` |
-| `crates/context-graph-cli/src/commands/session/restore.rs` | Pattern to follow | `RestoreIdentityArgs`, `restore_identity_command()` |
-| `crates/context-graph-storage/src/rocksdb_backend/session_identity_manager.rs` | Storage manager | `StandaloneSessionIdentityManager` |
-| `crates/context-graph-core/src/gwt/session_identity/mod.rs` | Core types | `SessionIdentitySnapshot`, `IdentityCache`, `update_cache()`, `compute_ic()` |
-| `crates/context-graph-core/src/gwt/session_identity/cache.rs` | Global cache | `IdentityCache::get()`, `IdentityCache::is_warm()` |
-
-### Current mod.rs State (PLACEHOLDER EXISTS)
-
-```rust
-// crates/context-graph-cli/src/commands/session/mod.rs lines 23-41
-#[derive(Subcommand, Debug)]
-pub enum SessionCommands {
-    /// Restore identity from storage
-    RestoreIdentity(RestoreIdentityArgs),
-    /// Persist identity to storage (TASK-SESSION-13 - placeholder)
-    PersistIdentity,  // <-- THIS NEEDS TO BE REPLACED WITH ACTUAL IMPLEMENTATION
-}
-
-pub async fn handle_session_command(cmd: SessionCommands) -> i32 {
-    match cmd {
-        SessionCommands::RestoreIdentity(args) => restore_identity_command(args).await,
-        SessionCommands::PersistIdentity => {
-            eprintln!("TASK-SESSION-13: persist-identity not yet implemented");
-            1  // <-- THIS PLACEHOLDER MUST BE REPLACED
-        }
-    }
-}
-```
-
-### Key Dependencies (Cargo.toml already configured)
-
-```toml
-# crates/context-graph-cli/Cargo.toml (dependencies already present)
-[dependencies]
-clap = { version = "4.4", features = ["derive"] }
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-tokio = { version = "1.35", features = ["full"] }
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-
-context-graph-core = { path = "../context-graph-core" }
-context-graph-storage = { path = "../context-graph-storage" }
-```
-
-## Implementation Steps
-
-### Step 1: Create persist.rs File
-
-Create `crates/context-graph-cli/src/commands/session/persist.rs`:
-
-```rust
 //! session persist-identity CLI command
 //!
 //! TASK-SESSION-13: Persists current session identity to RocksDB.
@@ -126,6 +37,7 @@ use serde::Deserialize;
 use tracing::{debug, error, info, warn};
 
 use context_graph_core::gwt::session_identity::{IdentityCache, SessionIdentitySnapshot};
+use context_graph_core::gwt::state_machine::ConsciousnessState;
 use context_graph_storage::rocksdb_backend::{RocksDbMemex, StandaloneSessionIdentityManager};
 
 /// Arguments for `session persist-identity` command
@@ -167,8 +79,9 @@ pub async fn persist_identity_command(args: PersistIdentityArgs) -> i32 {
     );
 
     // Get current identity from cache
-    let (ic, r, consciousness, session_id) = match IdentityCache::get() {
-        Some((ic, r, c, sid)) => (ic, r, c, sid),
+    // Note: IdentityCache::get() returns (ic, kuramoto_r, ConsciousnessState, session_id)
+    let (ic, _r, consciousness_state, session_id) = match IdentityCache::get() {
+        Some(values) => values,
         None => {
             warn!("persist-identity: Cache is cold, nothing to persist");
             // Not an error - session may not have been restored
@@ -181,8 +94,8 @@ pub async fn persist_identity_command(args: PersistIdentityArgs) -> i32 {
     let final_session_id = input.session_id.unwrap_or(session_id);
 
     info!(
-        "persist-identity: Persisting session {} with IC={:.2}, r={:.2}",
-        final_session_id, ic, r
+        "persist-identity: Persisting session {} with IC={:.2}",
+        final_session_id, ic
     );
 
     // Determine DB path
@@ -230,10 +143,14 @@ pub async fn persist_identity_command(args: PersistIdentityArgs) -> i32 {
     let manager = StandaloneSessionIdentityManager::new(Arc::clone(&storage));
 
     // Create snapshot with current state
+    // Convert ConsciousnessState back to f32 level for snapshot
+    // Using middle of each state's range for reconstruction
+    let consciousness_level = state_to_level(&consciousness_state);
+
     let mut snapshot = SessionIdentitySnapshot::new(&final_session_id);
-    snapshot.consciousness = consciousness;
+    snapshot.consciousness = consciousness_level;
     snapshot.last_ic = ic;
-    // Note: Kuramoto phases and purpose_vector are not in cache
+    // Note: kuramoto_phases and purpose_vector are not in cache
     // They will use defaults - the restore command will recompute if needed
 
     // Save snapshot
@@ -292,6 +209,24 @@ fn home_dir() -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// Convert ConsciousnessState back to a representative level.
+///
+/// Uses the middle of each state's range:
+/// - Dormant: C < 0.3 → 0.15
+/// - Fragmented: 0.3 <= C < 0.5 → 0.40
+/// - Emerging: 0.5 <= C < 0.8 → 0.65
+/// - Conscious: 0.8 <= C < 0.95 → 0.875
+/// - Hypersync: C > 0.95 → 0.975
+fn state_to_level(state: &ConsciousnessState) -> f32 {
+    match state {
+        ConsciousnessState::Dormant => 0.15,
+        ConsciousnessState::Fragmented => 0.40,
+        ConsciousnessState::Emerging => 0.65,
+        ConsciousnessState::Conscious => 0.875,
+        ConsciousnessState::Hypersync => 0.975,
+    }
+}
+
 // =============================================================================
 // Tests - Use REAL RocksDB (NO MOCKS per spec)
 // =============================================================================
@@ -323,6 +258,8 @@ mod tests {
         println!("SOURCE OF TRUTH: RocksDB after save");
 
         // SETUP: Warm the cache with test data
+        // Note: consciousness=0.75 maps to Emerging state (0.5-0.8 range)
+        // When persisted, state_to_level returns 0.65 (middle of range)
         let mut snapshot = SessionIdentitySnapshot::new("test-persist-session");
         snapshot.consciousness = 0.75;
         snapshot.last_ic = 0.85;
@@ -330,15 +267,19 @@ mod tests {
         update_cache(&snapshot, 0.85);
 
         println!("BEFORE: Cache warmed with session test-persist-session, IC=0.85");
+        println!("  Original consciousness: 0.75 (maps to Emerging state)");
 
         // Create storage
         let (storage, tmp_dir) = create_test_storage();
         let manager = StandaloneSessionIdentityManager::new(Arc::clone(&storage));
 
         // Execute persist (simulating command logic)
-        let (ic, _r, consciousness, session_id) = IdentityCache::get().expect("Cache must be warm");
+        let (ic, _r, consciousness_state, session_id) = IdentityCache::get().expect("Cache must be warm");
+        let reconstructed_consciousness = state_to_level(&consciousness_state);
+        println!("  Reconstructed consciousness: {} (from {:?})", reconstructed_consciousness, consciousness_state);
+
         let mut persist_snapshot = SessionIdentitySnapshot::new(&session_id);
-        persist_snapshot.consciousness = consciousness;
+        persist_snapshot.consciousness = reconstructed_consciousness;
         persist_snapshot.last_ic = ic;
 
         let save_result = manager.save_snapshot(&persist_snapshot);
@@ -360,7 +301,9 @@ mod tests {
         println!("  timestamp_ms: {}", loaded.timestamp_ms);
 
         assert_eq!(loaded.session_id, "test-persist-session");
-        assert!((loaded.consciousness - 0.75).abs() < 0.01);
+        // Note: consciousness is reconstructed from state, so 0.75 -> Emerging -> 0.65
+        assert!((loaded.consciousness - 0.65).abs() < 0.01,
+            "Consciousness should be 0.65 (Emerging state midpoint), got {}", loaded.consciousness);
         assert!((loaded.last_ic - 0.85).abs() < 0.01);
         assert!(loaded.timestamp_ms > 0);
 
@@ -408,7 +351,8 @@ mod tests {
             reason: "exit".to_string(),
         };
 
-        let final_session_id = input.session_id.unwrap_or_else(|| "cache-session".to_string());
+        let (_, _, _, cached_session) = IdentityCache::get().expect("Cache must be warm");
+        let final_session_id = input.session_id.unwrap_or(cached_session);
 
         println!("BEFORE: Cache has 'cache-session', stdin provides 'override-session'");
         println!("AFTER: Using final_session_id = {}", final_session_id);
@@ -470,200 +414,3 @@ mod tests {
         println!("RESULT: PASS - All reasons parse correctly");
     }
 }
-```
-
-### Step 2: Update mod.rs
-
-Modify `crates/context-graph-cli/src/commands/session/mod.rs`:
-
-```rust
-//! Session identity persistence commands
-//!
-//! # Commands
-//!
-//! - `restore-identity`: Restore identity from storage (TASK-SESSION-12)
-//! - `persist-identity`: Persist identity to storage (TASK-SESSION-13)
-//!
-//! # Constitution Reference
-//! - IDENTITY-001: IC formula: IC = cos(PV_current, PV_previous) * r(current)
-//! - IDENTITY-002: IC thresholds (Healthy >= 0.9, Good >= 0.7, Warning >= 0.5, Degraded < 0.5)
-//! - AP-26: Exit codes (0=success, 1=error, 2=corruption)
-//! - GWT-003: Identity continuity across sessions
-//! - ARCH-07: Native Claude Code hooks
-//!
-//! NO BACKWARDS COMPATIBILITY - FAIL FAST WITH ROBUST LOGGING.
-
-mod persist;
-mod restore;
-
-pub use persist::{persist_identity_command, PersistIdentityArgs};
-pub use restore::{restore_identity_command, RestoreIdentityArgs};
-
-use clap::Subcommand;
-
-/// Session subcommands
-#[derive(Subcommand, Debug)]
-pub enum SessionCommands {
-    /// Restore identity from storage
-    RestoreIdentity(RestoreIdentityArgs),
-    /// Persist identity to storage
-    PersistIdentity(PersistIdentityArgs),
-}
-
-/// Handle session command dispatch
-pub async fn handle_session_command(cmd: SessionCommands) -> i32 {
-    match cmd {
-        SessionCommands::RestoreIdentity(args) => restore_identity_command(args).await,
-        SessionCommands::PersistIdentity(args) => persist_identity_command(args).await,
-    }
-}
-```
-
-## Files to Create
-
-| File | Description |
-|------|-------------|
-| `crates/context-graph-cli/src/commands/session/persist.rs` | Complete persist-identity command implementation |
-
-## Files to Modify
-
-| File | Change |
-|------|--------|
-| `crates/context-graph-cli/src/commands/session/mod.rs` | Add `mod persist`, update `SessionCommands` enum, update dispatch |
-
-## Exit Code Semantics (Critical)
-
-| Outcome | Exit Code | Stdout | Stderr | Claude Code Behavior |
-|---------|-----------|--------|--------|---------------------|
-| Success | 0 | EMPTY | EMPTY | Hook passes, session ends |
-| Recoverable Error | 1 | EMPTY | Error message | Hook passes (non-blocking) |
-| Corruption | 2 | EMPTY | Error message | Hook may retry |
-
-**IMPORTANT**: Claude Code SessionEnd hook is non-blocking. Exit 1 or 2 will not prevent session termination. Exit 2 signals data integrity issues that may trigger Claude Code recovery mechanisms.
-
-## Full State Verification Protocol
-
-After implementing the persist command, you MUST verify:
-
-### 1. Source of Truth: RocksDB Database
-
-```bash
-# Build the CLI
-cargo build -p context-graph-cli
-
-# Run with test data
-echo '{"reason":"exit"}' | ./target/debug/context-graph-cli session restore-identity
-echo '{"reason":"exit"}' | ./target/debug/context-graph-cli session persist-identity
-
-# VERIFY: Check database exists
-ls -la ~/.context-graph/db/
-
-# VERIFY: Database has content (RocksDB creates MANIFEST, LOG files)
-file ~/.context-graph/db/*
-```
-
-### 2. Execute & Inspect Pattern
-
-```bash
-# 1. Restore a session (creates cache)
-echo '{"source":"clear"}' | ./target/debug/context-graph-cli session restore-identity
-echo $?  # Must be 0
-
-# 2. Persist the session
-echo '{"reason":"exit"}' | ./target/debug/context-graph-cli session persist-identity
-echo $?  # Must be 0
-
-# 3. VERIFY: Restore again and check IC is preserved
-echo '{"source":"startup"}' | ./target/debug/context-graph-cli session restore-identity --format json 2>/dev/null
-# Should show the persisted IC value
-```
-
-### 3. Edge Case Tests (Manual)
-
-| Test Case | Input | Expected Exit | Expected Stderr |
-|-----------|-------|---------------|-----------------|
-| Empty stdin | `echo '' \| persist-identity` | 0 | (empty) |
-| Invalid JSON | `echo 'bad' \| persist-identity` | 0 | (empty, falls back to defaults) |
-| Cold cache | (no prior restore) | 0 | (empty, nothing to persist) |
-| Valid reason | `echo '{"reason":"clear"}' \| persist-identity` | 0 | (empty) |
-| Custom session | `echo '{"session_id":"custom"}' \| persist-identity` | 0 | (empty) |
-
-### 4. Evidence of Success Log
-
-After implementation, run ALL tests and capture output:
-
-```bash
-# Run unit tests
-cargo test -p context-graph-cli -- --nocapture 2>&1 | tee /tmp/persist-tests.log
-
-# Manual verification
-(
-  echo "=== MANUAL VERIFICATION ==="
-  echo "1. Clear test: "
-  echo '{"source":"clear"}' | ./target/debug/context-graph-cli session restore-identity
-  echo "Exit: $?"
-
-  echo "2. Persist test: "
-  echo '{"reason":"exit"}' | ./target/debug/context-graph-cli session persist-identity
-  echo "Exit: $?"
-
-  echo "3. Restore after persist: "
-  echo '{"source":"startup"}' | ./target/debug/context-graph-cli session restore-identity --format json
-  echo "Exit: $?"
-
-  echo "4. DB verification: "
-  ls -la ~/.context-graph/db/ 2>/dev/null || echo "DB not found"
-) | tee -a /tmp/persist-tests.log
-```
-
-## Definition of Done
-
-### Acceptance Criteria
-
-- [ ] File `crates/context-graph-cli/src/commands/session/persist.rs` exists
-- [ ] `mod.rs` exports `persist_identity_command` and `PersistIdentityArgs`
-- [ ] Parses stdin JSON for session_id and reason (with graceful defaults)
-- [ ] Saves snapshot to RocksDB via `StandaloneSessionIdentityManager::save_snapshot()`
-- [ ] NO stdout output on success (silent success)
-- [ ] Exit 0 on success
-- [ ] Exit 1 on recoverable errors (non-blocking)
-- [ ] Exit 2 only on corruption indicators
-- [ ] Errors logged to stderr with `tracing`
-- [ ] All test cases pass: `cargo test -p context-graph-cli`
-- [ ] Manual verification shows data in RocksDB after persist
-
-### Verification Commands
-
-```bash
-# Build
-cargo build -p context-graph-cli
-
-# Test
-cargo test -p context-graph-cli -- --nocapture
-
-# Manual smoke test (should be silent on success)
-echo '{"source":"clear"}' | ./target/debug/context-graph-cli session restore-identity >/dev/null
-echo '{"reason":"exit"}' | ./target/debug/context-graph-cli session persist-identity
-echo $?  # Must be 0
-
-# Verify DB exists
-test -d ~/.context-graph/db && echo "DB exists"
-```
-
-## Constitution Compliance
-
-| Requirement | How This Task Complies |
-|-------------|----------------------|
-| ARCH-07 | Implements native Claude Code SessionEnd hook command |
-| AP-26 | Exit codes: 0=success, 1=error, 2=corruption |
-| IDENTITY-001 | Uses IC from IdentityCache (computed by restore) |
-| AP-50 | No internal hooks, uses CLI command called by shell script |
-| AP-53 | Hook logic in CLI, called from hooks/session-end.sh |
-
-## Next Task
-
-After completion, proceed to **014-TASK-SESSION-14** (consciousness check-identity CLI Command) which implements the PostToolUse hook for identity monitoring.
-
-```xml
-</task_spec>
-```

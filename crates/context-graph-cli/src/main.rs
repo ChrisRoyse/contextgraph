@@ -48,20 +48,11 @@ enum Commands {
         #[command(subcommand)]
         action: commands::consciousness::ConsciousnessCommands,
     },
-    /// Session identity persistence commands (placeholder for TASK-SESSION-12, TASK-SESSION-13)
+    /// Session identity persistence commands
     Session {
         #[command(subcommand)]
-        action: SessionCommands,
+        action: commands::session::SessionCommands,
     },
-}
-
-/// Session subcommands (placeholders for future tasks)
-#[derive(Subcommand)]
-enum SessionCommands {
-    /// Restore identity from storage (TASK-SESSION-12 - placeholder)
-    RestoreIdentity,
-    /// Persist identity to storage (TASK-SESSION-13 - placeholder)
-    PersistIdentity,
 }
 
 #[tokio::main]
@@ -90,16 +81,7 @@ async fn main() {
             commands::consciousness::handle_consciousness_command(action).await
         }
         Commands::Session { action } => {
-            match action {
-                SessionCommands::RestoreIdentity => {
-                    eprintln!("TASK-SESSION-12: restore-identity not yet implemented");
-                    1
-                }
-                SessionCommands::PersistIdentity => {
-                    eprintln!("TASK-SESSION-13: persist-identity not yet implemented");
-                    1
-                }
-            }
+            commands::session::handle_session_command(action).await
         }
     };
 

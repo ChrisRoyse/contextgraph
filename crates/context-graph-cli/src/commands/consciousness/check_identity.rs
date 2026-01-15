@@ -1,25 +1,34 @@
 //! consciousness check-identity CLI command
 //!
-//! TASK-SESSION-08: Implements AP-26/AP-38 auto-dream trigger.
+//! TASK-SESSION-08/TASK-SESSION-14: Implements AP-26/AP-38 auto-dream trigger.
 //! NO BACKWARDS COMPATIBILITY - FAIL FAST WITH ROBUST LOGGING.
 //!
 //! # Purpose
 //!
-//! This command checks identity continuity (IC) from the IdentityCache singleton
-//! and optionally triggers dream consolidation if IC is in crisis (< 0.5).
+//! This command checks identity continuity (IC) from RocksDB storage and
+//! optionally triggers dream consolidation if IC is in crisis (< 0.5).
+//!
+//! # Architecture (CRITICAL)
+//!
+//! Each CLI invocation is a separate process - the IdentityCache singleton
+//! is process-local and lost when the process exits. Therefore, this command
+//! MUST load identity from RocksDB (persistent storage), NOT rely on
+//! in-memory cache. After loading from RocksDB, we update the in-process
+//! cache for consistency within this command's execution.
 //!
 //! # Output
 //!
 //! - JSON to stdout for hooks integration
 //! - Crisis messages to stderr
-//! - Exit code 0 on success, 1 on error
+//! - Exit code 0 on success, 1 on error, 2 on corruption
 //!
 //! # Constitution Reference
-//! - AP-26: IC<0.5 MUST trigger dream - no silent failures
+//! - AP-26: IC<0.5 MUST trigger dream - no silent failures; exit 2 on corruption
 //! - AP-38: IC<0.5 MUST auto-trigger dream
 //! - AP-42: entropy>0.7 MUST wire to TriggerManager
 //! - IDENTITY-002: IC thresholds (Healthy >= 0.9, Good >= 0.7, Warning >= 0.5, Degraded < 0.5)
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use clap::Args;
@@ -28,11 +37,17 @@ use serde::Serialize;
 use tracing::{debug, error, info, warn};
 
 use context_graph_core::dream::{DreamPhase, TriggerManager};
-use context_graph_core::gwt::session_identity::{classify_ic, is_ic_crisis, IdentityCache};
+use context_graph_core::gwt::session_identity::{classify_ic, is_ic_crisis, update_cache};
+use context_graph_storage::rocksdb_backend::{RocksDbMemex, StandaloneSessionIdentityManager};
 
 /// Arguments for `consciousness check-identity` command.
 #[derive(Args, Debug)]
 pub struct CheckIdentityArgs {
+    /// Path to RocksDB database directory.
+    /// If not provided, defaults to ~/.context-graph/db
+    #[arg(long, env = "CONTEXT_GRAPH_DB_PATH")]
+    pub db_path: Option<PathBuf>,
+
     /// Auto-trigger dream consolidation if IC < 0.5.
     /// Per AP-26 and AP-38: IC crisis MUST trigger dream automatically.
     #[arg(long, default_value = "false")]
@@ -157,38 +172,102 @@ impl CheckIdentityResponse {
 
 /// Execute the check-identity command.
 ///
+/// # Architecture
+///
+/// CRITICAL: Each CLI invocation is a separate process. The IdentityCache singleton
+/// is process-local and reset when the process exits. Therefore, we MUST load
+/// identity state from RocksDB (persistent storage) on each invocation.
+///
+/// Flow:
+/// 1. Determine DB path (arg > env > default)
+/// 2. Open RocksDB storage
+/// 3. Load latest snapshot via StandaloneSessionIdentityManager
+/// 4. Update in-process cache for internal consistency
+/// 5. Check IC and trigger dream if crisis + --auto-dream
+///
 /// # Fail Fast Policy
-/// - If IdentityCache is empty: Error immediately with exit code 1
+/// - If DB open fails: Error immediately with exit code 1 or 2 (corruption)
+/// - If no identity found: Error with exit code 1
 /// - If trigger fails: Log error but still report status
 /// - Never return default IC values
 ///
 /// # Returns
 /// Exit code per AP-26:
 /// - 0: Success (no crisis, or crisis + dream triggered, or crisis + no auto-dream)
-/// - 1: Error (cache empty, critical failures)
-/// - 2: Corruption detected (reserved, not used here)
+/// - 1: Error (DB errors, no identity found)
+/// - 2: Corruption detected
 pub async fn check_identity_command(args: CheckIdentityArgs) -> i32 {
     debug!("check_identity_command: starting with args={:?}", args);
 
-    // STEP 1: Read IC from IdentityCache
-    let cached = IdentityCache::get();
-
-    let (ic, kuramoto_r, state, session_id) = match cached {
-        Some(data) => data,
+    // STEP 1: Determine DB path (arg > env > default)
+    let db_path = match &args.db_path {
+        Some(p) => p.clone(),
         None => {
-            // FAIL FAST: Cache empty means restore_identity was not called
-            error!("check-identity: IdentityCache is empty - call 'session restore-identity' first");
-            let response = CheckIdentityResponse::error(
-                "IdentityCache empty - restore identity first".to_string()
-            );
-            output_response(&response, args.format);
-            return 1; // Error exit code
+            // Default: ~/.context-graph/db
+            match home_dir() {
+                Some(home) => home.join(".context-graph").join("db"),
+                None => {
+                    error!("Cannot determine home directory for DB path");
+                    let response = CheckIdentityResponse::error(
+                        "Cannot determine DB path. Set --db-path or CONTEXT_GRAPH_DB_PATH".to_string()
+                    );
+                    output_response(&response, args.format);
+                    return 1;
+                }
+            }
         }
     };
 
+    debug!("check-identity: db_path={:?}", db_path);
+
+    // STEP 2: Open RocksDB storage - FAIL FAST on error
+    let storage = match RocksDbMemex::open(&db_path) {
+        Ok(s) => Arc::new(s),
+        Err(e) => {
+            let err_str = e.to_string();
+            error!("Failed to open RocksDB at {:?}: {}", db_path, err_str);
+            let response = CheckIdentityResponse::error(
+                format!("Failed to open database: {}", err_str)
+            );
+            output_response(&response, args.format);
+            return if is_corruption_error(&err_str) { 2 } else { 1 };
+        }
+    };
+
+    let manager = StandaloneSessionIdentityManager::new(Arc::clone(&storage));
+
+    // STEP 3: Load latest snapshot
+    let (snapshot, ic) = match manager.load_latest() {
+        Ok(Some(snap)) => {
+            let loaded_ic = snap.last_ic;
+            // Update in-process cache for internal consistency
+            update_cache(&snap, loaded_ic);
+            (snap, loaded_ic)
+        }
+        Ok(None) => {
+            // No identity found - this is an error, not cold cache
+            error!("check-identity: No identity found in storage - run 'session restore-identity' first");
+            let response = CheckIdentityResponse::error(
+                "No identity found in storage - run 'session restore-identity' first".to_string()
+            );
+            output_response(&response, args.format);
+            return 1;
+        }
+        Err(e) => {
+            let err_str = e.to_string();
+            error!("Failed to load identity from storage: {}", err_str);
+            let response = CheckIdentityResponse::error(
+                format!("Failed to load identity: {}", err_str)
+            );
+            output_response(&response, args.format);
+            return if is_corruption_error(&err_str) { 2 } else { 1 };
+        }
+    };
+
+    let session_id = &snapshot.session_id;
     debug!(
-        "check-identity: IC={:.3}, r={:.3}, state={:?}, session={}",
-        ic, kuramoto_r, state, session_id
+        "check-identity: IC={:.3}, session={}",
+        ic, session_id
     );
 
     // STEP 2: Check for IC crisis
@@ -485,76 +564,137 @@ fn output_response(response: &CheckIdentityResponse, format: OutputFormat) {
     }
 }
 
+/// Get home directory (cross-platform).
+fn home_dir() -> Option<PathBuf> {
+    std::env::var_os("HOME")
+        .or_else(|| std::env::var_os("USERPROFILE"))
+        .map(PathBuf::from)
+}
+
+/// Check if error indicates corruption (exit code 2 per AP-26).
+fn is_corruption_error(msg: &str) -> bool {
+    let corruption_indicators = [
+        "corruption",
+        "checksum",
+        "invalid",
+        "malformed",
+        "truncated",
+    ];
+    let lower = msg.to_lowercase();
+    corruption_indicators.iter().any(|i| lower.contains(i))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use context_graph_core::gwt::session_identity::{update_cache, SessionIdentitySnapshot};
+    use context_graph_core::gwt::session_identity::SessionIdentitySnapshot;
     use std::sync::Mutex;
+    use tempfile::TempDir;
 
     // Static lock to serialize tests that access global IdentityCache
     // This prevents race conditions when multiple tests modify the global cache
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    /// TC-SESSION-08-01: Normal IC check (healthy)
-    ///
-    /// Tests that healthy IC values (>= 0.9) are correctly identified.
-    /// Note: Since clear_cache() panics in production mode (non-test compilation),
-    /// we overwrite the cache with known values for each test.
-    #[tokio::test]
-    async fn tc_session_08_01_healthy_ic() {
-        let _guard = TEST_LOCK.lock().expect("Test lock poisoned");
-        println!("\n=== TC-SESSION-08-01: Healthy IC Check ===");
+    /// Create real RocksDB storage for testing
+    fn create_test_storage() -> (Arc<RocksDbMemex>, TempDir) {
+        let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+        let storage = RocksDbMemex::open(tmp_dir.path()).expect("Failed to open RocksDB");
+        (Arc::new(storage), tmp_dir)
+    }
 
-        // SETUP: Warm cache with healthy IC
+    // =========================================================================
+    // TC-SESSION-14-01: Healthy IC from RocksDB (>= 0.9)
+    // Source of Truth: RocksDB storage
+    // =========================================================================
+    #[tokio::test]
+    async fn tc_session_14_01_healthy_ic_from_rocksdb() {
+        let _guard = TEST_LOCK.lock().expect("Test lock poisoned");
+        println!("\n=== TC-SESSION-14-01: Healthy IC from RocksDB ===");
+        println!("SOURCE OF TRUTH: RocksDB storage");
+
+        // SETUP: Create real RocksDB and populate with healthy IC snapshot
+        let (storage, _tmp) = create_test_storage();
+        let manager = StandaloneSessionIdentityManager::new(Arc::clone(&storage));
+
         let mut snapshot = SessionIdentitySnapshot::new("test-healthy");
         snapshot.consciousness = 0.85;
-        update_cache(&snapshot, 0.92); // Healthy IC
+        snapshot.last_ic = 0.92; // Healthy IC
 
-        // Test the core logic directly
-        let cached = IdentityCache::get();
-        assert!(cached.is_some(), "Cache should be warm");
+        manager.save_snapshot(&snapshot).expect("save_snapshot must succeed");
 
-        let (ic, _, _, _) = cached.unwrap();
+        println!("BEFORE: Saved snapshot with IC={}", snapshot.last_ic);
+
+        // EXECUTE: Load and verify
+        let loaded = manager
+            .load_latest()
+            .expect("load_latest must succeed")
+            .expect("snapshot must exist");
+
+        println!("AFTER: Loaded snapshot with IC={}", loaded.last_ic);
+
+        // VERIFY
+        let ic = loaded.last_ic;
         assert!(!is_ic_crisis(ic), "IC {} should NOT be crisis", ic);
         assert_eq!(classify_ic(ic), "Healthy", "IC {} should be Healthy", ic);
 
-        println!("RESULT: PASS - Healthy IC correctly identified");
+        println!("RESULT: PASS - Healthy IC loaded from RocksDB");
     }
 
-    /// TC-SESSION-08-02: IC crisis without auto-dream
-    ///
-    /// Tests that crisis IC values (< 0.5) are correctly identified.
+    // =========================================================================
+    // TC-SESSION-14-02: Crisis IC from RocksDB (< 0.5)
+    // Source of Truth: RocksDB storage
+    // =========================================================================
     #[tokio::test]
-    async fn tc_session_08_02_crisis_no_auto_dream() {
+    async fn tc_session_14_02_crisis_ic_from_rocksdb() {
         let _guard = TEST_LOCK.lock().expect("Test lock poisoned");
-        println!("\n=== TC-SESSION-08-02: IC Crisis without auto-dream ===");
+        println!("\n=== TC-SESSION-14-02: Crisis IC from RocksDB ===");
+        println!("SOURCE OF TRUTH: RocksDB storage");
 
-        // SETUP: Warm cache with crisis IC
+        let (storage, _tmp) = create_test_storage();
+        let manager = StandaloneSessionIdentityManager::new(Arc::clone(&storage));
+
         let mut snapshot = SessionIdentitySnapshot::new("test-crisis");
         snapshot.consciousness = 0.35;
-        update_cache(&snapshot, 0.45); // Crisis IC
+        snapshot.last_ic = 0.45; // Crisis IC
 
-        // Verify
-        let (ic, _, _, _) = IdentityCache::get().unwrap();
+        manager.save_snapshot(&snapshot).expect("save_snapshot must succeed");
+
+        println!("BEFORE: Saved snapshot with crisis IC={}", snapshot.last_ic);
+
+        let loaded = manager
+            .load_latest()
+            .expect("load_latest must succeed")
+            .expect("snapshot must exist");
+
+        let ic = loaded.last_ic;
+        println!("AFTER: Loaded IC={}", ic);
+
         assert!(is_ic_crisis(ic), "IC {} should be crisis", ic);
         assert_eq!(classify_ic(ic), "Degraded", "IC {} should be Degraded", ic);
 
-        println!("RESULT: PASS - IC crisis correctly identified");
+        println!("RESULT: PASS - Crisis IC loaded from RocksDB");
     }
 
-    /// TC-SESSION-08-03: IC boundary (exactly 0.5)
-    ///
-    /// Tests boundary condition: IC = 0.5 is NOT crisis (< 0.5 is threshold).
+    // =========================================================================
+    // TC-SESSION-14-03: IC boundary (exactly 0.5) from RocksDB
+    // Source of Truth: RocksDB storage + Constitution IDENTITY-002
+    // =========================================================================
     #[tokio::test]
-    async fn tc_session_08_03_boundary_ic() {
+    async fn tc_session_14_03_boundary_ic_from_rocksdb() {
         let _guard = TEST_LOCK.lock().expect("Test lock poisoned");
-        println!("\n=== TC-SESSION-08-03: IC Boundary (0.5) ===");
+        println!("\n=== TC-SESSION-14-03: IC Boundary (0.5) from RocksDB ===");
+        println!("SOURCE OF TRUTH: RocksDB + IDENTITY-002");
 
-        // SETUP: Warm cache with boundary IC
-        let snapshot = SessionIdentitySnapshot::new("test-boundary");
-        update_cache(&snapshot, 0.5); // Boundary
+        let (storage, _tmp) = create_test_storage();
+        let manager = StandaloneSessionIdentityManager::new(Arc::clone(&storage));
 
-        let (ic, _, _, _) = IdentityCache::get().unwrap();
+        let mut snapshot = SessionIdentitySnapshot::new("test-boundary");
+        snapshot.last_ic = 0.5; // Boundary
+
+        manager.save_snapshot(&snapshot).expect("save_snapshot must succeed");
+
+        let loaded = manager.load_latest().unwrap().unwrap();
+        let ic = loaded.last_ic;
 
         // Per is_ic_crisis: ic < 0.5 is crisis, so 0.5 is NOT crisis
         assert!(!is_ic_crisis(ic), "IC 0.5 should NOT be crisis (< 0.5 is threshold)");
@@ -563,50 +703,59 @@ mod tests {
         println!("RESULT: PASS - Boundary IC (0.5) is Warning, not crisis");
     }
 
-    /// TC-SESSION-08-04: IC just below boundary (0.499)
-    ///
-    /// Tests that values just below threshold are correctly identified as crisis.
+    // =========================================================================
+    // TC-SESSION-14-04: IC just below boundary (0.499)
+    // Source of Truth: RocksDB storage
+    // =========================================================================
     #[tokio::test]
-    async fn tc_session_08_04_just_below_boundary() {
+    async fn tc_session_14_04_just_below_boundary_from_rocksdb() {
         let _guard = TEST_LOCK.lock().expect("Test lock poisoned");
-        println!("\n=== TC-SESSION-08-04: IC Just Below Boundary (0.499) ===");
+        println!("\n=== TC-SESSION-14-04: IC Just Below Boundary (0.499) ===");
 
-        let snapshot = SessionIdentitySnapshot::new("test-below");
-        update_cache(&snapshot, 0.499);
+        let (storage, _tmp) = create_test_storage();
+        let manager = StandaloneSessionIdentityManager::new(Arc::clone(&storage));
 
-        let (ic, _, _, _) = IdentityCache::get().unwrap();
+        let mut snapshot = SessionIdentitySnapshot::new("test-below");
+        snapshot.last_ic = 0.499;
+
+        manager.save_snapshot(&snapshot).expect("save_snapshot must succeed");
+
+        let loaded = manager.load_latest().unwrap().unwrap();
+        let ic = loaded.last_ic;
+
         assert!(is_ic_crisis(ic), "IC 0.499 should be crisis");
         assert_eq!(classify_ic(ic), "Degraded", "IC 0.499 should be Degraded");
 
         println!("RESULT: PASS - IC 0.499 correctly identified as crisis");
     }
 
-    /// TC-SESSION-08-05: Empty cache behavior
-    ///
-    /// Tests that the `is_warm()` function correctly reports cache state.
-    /// Note: We cannot actually clear the global cache in non-test builds,
-    /// so we verify the inverse: that a warmed cache reports as warm.
+    // =========================================================================
+    // TC-SESSION-14-05: Empty storage returns None
+    // Source of Truth: Fresh RocksDB storage
+    // =========================================================================
     #[tokio::test]
-    async fn tc_session_08_05_empty_cache() {
+    async fn tc_session_14_05_empty_storage() {
         let _guard = TEST_LOCK.lock().expect("Test lock poisoned");
-        println!("\n=== TC-SESSION-08-05: Cache Warm State Verification ===");
+        println!("\n=== TC-SESSION-14-05: Empty Storage Verification ===");
+        println!("SOURCE OF TRUTH: Fresh RocksDB storage");
 
-        // Since we can't clear the cache, we verify the is_warm() function
-        // by confirming that after update_cache, the cache is_warm
-        let snapshot = SessionIdentitySnapshot::new("test-warm-check");
-        update_cache(&snapshot, 0.75);
+        let (storage, _tmp) = create_test_storage();
+        let manager = StandaloneSessionIdentityManager::new(Arc::clone(&storage));
 
-        // Verify cache is warm after update
-        assert!(IdentityCache::is_warm(), "Cache should be warm after update");
-        assert!(IdentityCache::get().is_some(), "Cache should return Some after update");
+        // Load from empty storage
+        let result = manager.load_latest().expect("load_latest should not error");
 
-        println!("RESULT: PASS - Cache correctly reports warm state");
+        assert!(result.is_none(), "Empty storage should return None");
+
+        println!("RESULT: PASS - Empty storage correctly returns None");
     }
 
-    /// TC-SESSION-08-06: Entropy check (below threshold)
+    // =========================================================================
+    // TC-SESSION-14-06: Entropy check (below threshold)
+    // =========================================================================
     #[test]
-    fn tc_session_08_06_entropy_below_threshold() {
-        println!("\n=== TC-SESSION-08-06: Entropy Below Threshold ===");
+    fn tc_session_14_06_entropy_below_threshold() {
+        println!("\n=== TC-SESSION-14-06: Entropy Below Threshold ===");
 
         let result = check_entropy(0.5);
         assert!(!result.exceeds_threshold, "Entropy 0.5 should NOT exceed 0.7");
@@ -616,10 +765,12 @@ mod tests {
         println!("RESULT: PASS - Entropy 0.5 correctly identified as below threshold");
     }
 
-    /// TC-SESSION-08-07: Entropy check (above threshold)
+    // =========================================================================
+    // TC-SESSION-14-07: Entropy check (above threshold)
+    // =========================================================================
     #[test]
-    fn tc_session_08_07_entropy_above_threshold() {
-        println!("\n=== TC-SESSION-08-07: Entropy Above Threshold ===");
+    fn tc_session_14_07_entropy_above_threshold() {
+        println!("\n=== TC-SESSION-14-07: Entropy Above Threshold ===");
 
         let result = check_entropy(0.8);
         assert!(result.exceeds_threshold, "Entropy 0.8 should exceed 0.7");
@@ -628,10 +779,12 @@ mod tests {
         println!("RESULT: PASS - Entropy 0.8 correctly identified as above threshold");
     }
 
-    /// TC-SESSION-08-08: Response serialization
+    // =========================================================================
+    // TC-SESSION-14-08: Response serialization
+    // =========================================================================
     #[test]
-    fn tc_session_08_08_response_serialization() {
-        println!("\n=== TC-SESSION-08-08: Response Serialization ===");
+    fn tc_session_14_08_response_serialization() {
+        println!("\n=== TC-SESSION-14-08: Response Serialization ===");
 
         // Test with IC that classifies as "Healthy" (>= 0.9)
         let response = CheckIdentityResponse::no_crisis(0.95);
@@ -650,10 +803,12 @@ mod tests {
         println!("RESULT: PASS - Response serializes correctly");
     }
 
-    /// TC-SESSION-08-09: Crisis response serialization
+    // =========================================================================
+    // TC-SESSION-14-09: Crisis response serialization
+    // =========================================================================
     #[test]
-    fn tc_session_08_09_crisis_response_serialization() {
-        println!("\n=== TC-SESSION-08-09: Crisis Response Serialization ===");
+    fn tc_session_14_09_crisis_response_serialization() {
+        println!("\n=== TC-SESSION-14-09: Crisis Response Serialization ===");
 
         let response = CheckIdentityResponse::crisis_triggered(
             0.4,
@@ -668,14 +823,90 @@ mod tests {
         println!("RESULT: PASS - Crisis response serializes correctly");
     }
 
-    /// TC-SESSION-08-10: Trigger dream function
+    // =========================================================================
+    // TC-SESSION-14-10: Trigger dream function
+    // =========================================================================
     #[test]
-    fn tc_session_08_10_trigger_dream_function() {
-        println!("\n=== TC-SESSION-08-10: Trigger Dream Function ===");
+    fn tc_session_14_10_trigger_dream_function() {
+        println!("\n=== TC-SESSION-14-10: Trigger Dream Function ===");
 
         let result = trigger_dream_cycle("Test rationale");
         assert!(result.is_ok(), "Trigger should succeed: {:?}", result);
 
         println!("RESULT: PASS - Dream trigger function works");
+    }
+
+    // =========================================================================
+    // TC-SESSION-14-11: Corruption error detection
+    // =========================================================================
+    #[test]
+    fn tc_session_14_11_corruption_detection() {
+        println!("\n=== TC-SESSION-14-11: Corruption Error Detection ===");
+
+        let test_cases = [
+            ("data corruption detected", true),
+            ("checksum mismatch", true),
+            ("invalid record format", true),
+            ("malformed entry", true),
+            ("truncated file", true),
+            ("connection refused", false),
+            ("timeout error", false),
+            ("file not found", false),
+        ];
+
+        for (msg, expected_corruption) in test_cases {
+            let result = is_corruption_error(msg);
+            println!("  '{}': corruption={}", msg, result);
+            assert_eq!(
+                result, expected_corruption,
+                "Message '{}' should be corruption={}",
+                msg, expected_corruption
+            );
+        }
+
+        println!("RESULT: PASS - Corruption detection works correctly");
+    }
+
+    // =========================================================================
+    // TC-SESSION-14-12: Full E2E with RocksDB (check_identity_command)
+    // Source of Truth: Complete flow from RocksDB to response
+    // =========================================================================
+    #[tokio::test]
+    async fn tc_session_14_12_e2e_check_identity_command() {
+        let _guard = TEST_LOCK.lock().expect("Test lock poisoned");
+        println!("\n=== TC-SESSION-14-12: E2E check_identity_command ===");
+        println!("SOURCE OF TRUTH: RocksDB → Command → Response");
+
+        // Create temp DB and populate
+        let tmp_dir = TempDir::new().expect("Failed to create temp dir");
+        let db_path = tmp_dir.path().to_path_buf();
+
+        // Populate the DB
+        {
+            let storage = Arc::new(RocksDbMemex::open(&db_path).expect("open"));
+            let manager = StandaloneSessionIdentityManager::new(Arc::clone(&storage));
+
+            let mut snapshot = SessionIdentitySnapshot::new("e2e-test");
+            snapshot.last_ic = 0.85; // Good IC
+            manager.save_snapshot(&snapshot).expect("save");
+        }
+
+        println!("BEFORE: Created RocksDB at {:?} with IC=0.85", db_path);
+
+        // Run the command with explicit --db-path
+        let args = CheckIdentityArgs {
+            db_path: Some(db_path.clone()),
+            auto_dream: false,
+            format: OutputFormat::Json,
+            entropy: None,
+        };
+
+        let exit_code = check_identity_command(args).await;
+        println!("AFTER: check_identity_command returned exit_code={}", exit_code);
+
+        // VERIFY: Success exit code
+        assert_eq!(exit_code, 0, "Command should succeed with exit code 0");
+
+        println!("RESULT: PASS - E2E check_identity_command works with RocksDB");
     }
 }
