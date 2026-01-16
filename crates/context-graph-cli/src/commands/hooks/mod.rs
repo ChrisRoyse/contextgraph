@@ -20,6 +20,7 @@ pub mod post_tool_use;
 pub mod pre_tool_use;
 pub mod session_start;
 mod types;
+pub mod user_prompt_submit;
 
 pub use args::{
     GenerateConfigArgs,
@@ -128,9 +129,26 @@ pub async fn handle_hooks_command(cmd: HooksCommands) -> i32 {
                 }
             }
         }
-        HooksCommands::PromptSubmit(_args) => {
-            error!("PromptSubmit hook not yet implemented");
-            1
+        HooksCommands::PromptSubmit(args) => {
+            match user_prompt_submit::execute(args).await {
+                Ok(output) => {
+                    match serde_json::to_string(&output) {
+                        Ok(json) => {
+                            println!("{}", json);
+                            0
+                        }
+                        Err(e) => {
+                            error!(error = %e, "Failed to serialize output");
+                            1
+                        }
+                    }
+                }
+                Err(e) => {
+                    let error_json = e.to_json_error();
+                    eprintln!("{}", error_json);
+                    e.exit_code()
+                }
+            }
         }
         HooksCommands::SessionEnd(_args) => {
             error!("SessionEnd hook not yet implemented");
