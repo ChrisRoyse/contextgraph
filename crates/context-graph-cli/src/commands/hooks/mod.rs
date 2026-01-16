@@ -16,6 +16,7 @@
 
 mod args;
 mod error;
+pub mod pre_tool_use;
 pub mod session_start;
 mod types;
 
@@ -82,9 +83,28 @@ pub async fn handle_hooks_command(cmd: HooksCommands) -> i32 {
                 }
             }
         }
-        HooksCommands::PreTool(_args) => {
-            error!("PreTool hook not yet implemented");
-            1
+        HooksCommands::PreTool(args) => {
+            match pre_tool_use::handle_pre_tool_use(&args) {
+                Ok(output) => {
+                    // Output JSON to stdout
+                    match serde_json::to_string(&output) {
+                        Ok(json) => {
+                            println!("{}", json);
+                            0
+                        }
+                        Err(e) => {
+                            error!(error = %e, "Failed to serialize output");
+                            1
+                        }
+                    }
+                }
+                Err(e) => {
+                    // Output error JSON to stderr
+                    let error_json = e.to_json_error();
+                    eprintln!("{}", error_json);
+                    e.exit_code()
+                }
+            }
         }
         HooksCommands::PostTool(_args) => {
             error!("PostTool hook not yet implemented");

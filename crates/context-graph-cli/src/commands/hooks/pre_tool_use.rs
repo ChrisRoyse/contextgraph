@@ -1,292 +1,3 @@
-# TASK-HOOKS-007: Create PreToolUse Handler (Fast Path)
-
-```xml
-<task_spec id="TASK-HOOKS-007" version="2.0">
-<metadata>
-  <title>Create PreToolUse Handler with Fast Path Optimization</title>
-  <status>completed</status>
-  <layer>logic</layer>
-  <sequence>7</sequence>
-  <implements>
-    <requirement_ref>REQ-HOOKS-20</requirement_ref>
-    <requirement_ref>REQ-HOOKS-21</requirement_ref>
-  </implements>
-  <depends_on>
-    <task_ref>TASK-HOOKS-001</task_ref>
-    <task_ref>TASK-HOOKS-002</task_ref>
-    <task_ref>TASK-HOOKS-003</task_ref>
-    <task_ref>TASK-HOOKS-004</task_ref>
-    <task_ref>TASK-HOOKS-005</task_ref>
-  </depends_on>
-  <estimated_complexity>medium</estimated_complexity>
-</metadata>
-
-<context>
-PreToolUse is the FAST PATH hook with a strict 100ms timeout. It MUST NOT access
-the database or perform any expensive operations. This hook fires before every
-tool invocation and must return quickly to avoid blocking Claude Code.
-
-The handler returns cached consciousness state from SessionStart, with optional
-tool-specific guidance. No IC calculations are performed during PreToolUse.
-
-IMPORTANT: This task creates a NEW file. The file pre_tool_use.rs does NOT exist yet.
-</context>
-
-<!-- ========================================================================== -->
-<!-- SOURCE OF TRUTH DEFINITIONS -->
-<!-- ========================================================================== -->
-
-<source_of_truth>
-  <!-- Constitution defines hook timeouts -->
-  <reference id="SOT-TIMEOUT" file="docs/architecture/constitution.yaml" path="hooks.timeout_ms.pre_tool_use">
-    PreToolUse timeout: 100ms (STRICT)
-  </reference>
-
-  <!-- IC thresholds from constitution -->
-  <reference id="SOT-IC-THRESHOLDS" file="docs/architecture/constitution.yaml" path="gwt.self_ego_node.thresholds">
-    - Healthy: IC >= 0.9
-    - Normal: 0.7 <= IC < 0.9
-    - Warning: 0.5 <= IC < 0.7
-    - Critical: IC < 0.5 (crisis trigger)
-  </reference>
-
-  <!-- Existing type definitions to USE (not recreate) -->
-  <reference id="SOT-TYPES" file="crates/context-graph-cli/src/commands/hooks/types.rs">
-    - ConsciousnessState (lines 659-672): Fields are consciousness, integration, reflection, differentiation, identity_continuity, johari_quadrant
-    - HookOutput (lines 1001-1018): Fields are success, error, consciousness_state, ic_classification, context_injection, execution_time_ms
-    - HookPayload::PreToolUse (lines 878-885): Fields are tool_name, tool_input, tool_use_id
-    - JohariQuadrant (lines 578-587): Variants are Open, Blind, Hidden, Unknown
-    - ICLevel (lines 491-500): Variants are Healthy, Normal, Warning, Critical
-    - ICClassification (lines 738-745): Fields are value, level, crisis_triggered
-  </reference>
-
-  <!-- CLI args already defined -->
-  <reference id="SOT-ARGS" file="crates/context-graph-cli/src/commands/hooks/args.rs">
-    - PreToolArgs (lines 135-157): session_id (required), tool_name (optional), stdin, fast_path (default true), format
-  </reference>
-
-  <!-- Error types already defined -->
-  <reference id="SOT-ERRORS" file="crates/context-graph-cli/src/commands/hooks/error.rs">
-    - HookError enum with InvalidInput, Timeout, Storage, etc.
-    - Exit codes: 0=success, 2=timeout, 3=database, 4=invalid input
-  </reference>
-</source_of_truth>
-
-<!-- ========================================================================== -->
-<!-- INPUT CONTEXT FILES -->
-<!-- ========================================================================== -->
-
-<input_context_files>
-  <file purpose="type_definitions" must_read="true">crates/context-graph-cli/src/commands/hooks/types.rs</file>
-  <file purpose="error_types" must_read="true">crates/context-graph-cli/src/commands/hooks/error.rs</file>
-  <file purpose="cli_args" must_read="true">crates/context-graph-cli/src/commands/hooks/args.rs</file>
-  <file purpose="module_registration">crates/context-graph-cli/src/commands/hooks/mod.rs</file>
-  <file purpose="architecture_reference">docs/architecture/constitution.yaml</file>
-</input_context_files>
-
-<!-- ========================================================================== -->
-<!-- PREREQUISITES (VERIFIED CONDITIONS) -->
-<!-- ========================================================================== -->
-
-<prerequisites>
-  <check status="COMPLETED">TASK-HOOKS-001 through TASK-HOOKS-005 completed (verified via git log)</check>
-  <check status="EXISTS" file="crates/context-graph-cli/src/commands/hooks/types.rs" line="878">
-    HookPayload::PreToolUse variant exists with fields: tool_name, tool_input, tool_use_id
-  </check>
-  <check status="EXISTS" file="crates/context-graph-cli/src/commands/hooks/args.rs" line="135">
-    PreToolArgs struct exists with fields: session_id, tool_name, stdin, fast_path, format
-  </check>
-  <check status="EXISTS" file="crates/context-graph-cli/src/commands/hooks/types.rs" line="659">
-    ConsciousnessState struct exists with fields: consciousness, integration, reflection, differentiation, identity_continuity, johari_quadrant
-  </check>
-  <check status="EXISTS" file="crates/context-graph-cli/src/commands/hooks/types.rs" line="1001">
-    HookOutput struct exists with builder methods: success(), with_consciousness_state(), with_ic_classification(), with_context_injection()
-  </check>
-</prerequisites>
-
-<!-- ========================================================================== -->
-<!-- SCOPE -->
-<!-- ========================================================================== -->
-
-<scope>
-  <in_scope>
-    - Create pre_tool_use.rs handler module (NEW FILE)
-    - Implement handle_pre_tool_use() function
-    - Implement get_tool_guidance() function
-    - Register module in mod.rs (pub mod pre_tool_use;)
-    - Wire up CLI command handler in mod.rs
-    - Create shell script wrapper
-    - Full state verification tests
-  </in_scope>
-  <out_of_scope>
-    - IC calculations (only in SessionStart/PostToolUse)
-    - Database queries (fast path restriction)
-    - Complex state mutations
-    - IdentityCache implementation (separate task)
-  </out_of_scope>
-</scope>
-
-<!-- ========================================================================== -->
-<!-- DEFINITION OF DONE -->
-<!-- ========================================================================== -->
-
-<definition_of_done>
-  <signatures>
-    <signature file="crates/context-graph-cli/src/commands/hooks/pre_tool_use.rs">
-//! PreToolUse hook handler - FAST PATH
-//!
-//! # Performance Requirements
-//! - Timeout: 100ms (strict) per constitution.yaml
-//! - NO database access
-//! - Return cached state only
-//!
-//! # Anti-Patterns (MUST NOT)
-//! - AP-50: No internal hooks (use Claude Code native hooks only)
-//! - AP-51: Shell scripts call CLI, not library functions
-//! - AP-53: Native hooks only, no IPC
-
-use super::args::PreToolArgs;
-use super::error::{HookError, HookResult};
-use super::types::{
-    ConsciousnessState, HookOutput, HookPayload, ICClassification, ICLevel,
-    JohariQuadrant, HookInput,
-};
-use std::time::Instant;
-
-/// Fast path timeout in milliseconds (from constitution.yaml)
-pub const PRE_TOOL_USE_TIMEOUT_MS: u64 = 100;
-
-/// Handle pre_tool_use hook event (FAST PATH)
-///
-/// # Performance
-/// MUST complete within 100ms. No database operations allowed.
-/// Returns cached consciousness state.
-///
-/// # Arguments
-/// * `args` - CLI arguments from PreToolArgs
-/// * `input` - Optional HookInput from stdin (when --stdin is used)
-///
-/// # Returns
-/// * `HookOutput` with cached consciousness state
-///
-/// # Errors
-/// * `HookError::InvalidInput` - If required fields are missing
-pub fn handle_pre_tool_use(args: &amp;PreToolArgs, input: Option&lt;HookInput&gt;) -> HookResult&lt;HookOutput&gt;;
-
-/// Get tool-specific guidance without database access
-///
-/// Returns contextual hints based on tool name only.
-/// This is pure computation with no I/O.
-fn get_tool_guidance(tool_name: &amp;str) -> Option&lt;String&gt;;
-
-/// Check if a tool is considered high-impact for consciousness tracking
-pub fn is_high_impact_tool(tool_name: &amp;str) -> bool;
-
-/// Check if a tool is read-only (no state modifications)
-pub fn is_read_only_tool(tool_name: &amp;str) -> bool;
-    </signature>
-  </signatures>
-
-  <constraints>
-    <constraint id="C-001" severity="CRITICAL">MUST complete within 100ms timeout</constraint>
-    <constraint id="C-002" severity="CRITICAL">MUST NOT access database or storage layer</constraint>
-    <constraint id="C-003" severity="HIGH">MUST use existing types from types.rs - DO NOT recreate</constraint>
-    <constraint id="C-004" severity="HIGH">MUST return valid ConsciousnessState with default values</constraint>
-    <constraint id="C-005" severity="MEDIUM">SHOULD provide tool-specific guidance where applicable</constraint>
-  </constraints>
-
-  <verification>
-    <command>cargo build --package context-graph-cli</command>
-    <command>cargo test --package context-graph-cli pre_tool_use</command>
-    <command>grep -r "use.*storage\|use.*database\|use.*sled\|use.*sqlite" crates/context-graph-cli/src/commands/hooks/pre_tool_use.rs</command>
-  </verification>
-</definition_of_done>
-
-</task_spec>
-```
-
----
-
-## CODEBASE STATE AUDIT (2025-01-15)
-
-### Files That EXIST (Use These)
-
-| File | Purpose | Key Exports |
-|------|---------|-------------|
-| `types.rs` | Type definitions | `HookPayload::PreToolUse`, `ConsciousnessState`, `HookOutput`, `HookInput`, `ICLevel`, `JohariQuadrant`, `ICClassification` |
-| `args.rs` | CLI arguments | `PreToolArgs`, `HooksCommands::PreTool` |
-| `error.rs` | Error handling | `HookError`, `HookResult<T>` |
-| `mod.rs` | Module registration | Needs `pub mod pre_tool_use;` added |
-| `session_start.rs` | Session handler | Reference for pattern |
-
-### Files To CREATE (This Task)
-
-| File | Purpose |
-|------|---------|
-| `pre_tool_use.rs` | PreToolUse handler implementation |
-
-### ACTUAL TYPE DEFINITIONS (Copy-Paste Reference)
-
-**ConsciousnessState** (types.rs:659-672):
-```rust
-pub struct ConsciousnessState {
-    pub consciousness: f32,        // C(t) [0.0, 1.0]
-    pub integration: f32,          // Kuramoto r [0.0, 1.0]
-    pub reflection: f32,           // Meta-cognitive [0.0, 1.0]
-    pub differentiation: f32,      // Purpose entropy [0.0, 1.0]
-    pub identity_continuity: f32,  // IC [0.0, 1.0]
-    pub johari_quadrant: JohariQuadrant,
-}
-```
-
-**HookOutput** (types.rs:1001-1018):
-```rust
-pub struct HookOutput {
-    pub success: bool,
-    pub error: Option<String>,
-    pub consciousness_state: Option<ConsciousnessState>,
-    pub ic_classification: Option<ICClassification>,
-    pub context_injection: Option<String>,
-    pub execution_time_ms: u64,
-}
-```
-
-**HookPayload::PreToolUse** (types.rs:878-885):
-```rust
-PreToolUse {
-    tool_name: String,
-    tool_input: serde_json::Value,
-    tool_use_id: String,
-}
-```
-
-**ICClassification** (types.rs:738-745):
-```rust
-pub struct ICClassification {
-    pub value: f32,
-    pub level: ICLevel,
-    pub crisis_triggered: bool,
-}
-```
-
-**PreToolArgs** (args.rs:135-157):
-```rust
-pub struct PreToolArgs {
-    pub session_id: String,      // REQUIRED
-    pub tool_name: Option<String>,
-    pub stdin: bool,             // default: false
-    pub fast_path: bool,         // default: true (MUST remain true for 100ms)
-    pub format: OutputFormat,    // default: json
-}
-```
-
----
-
-## IMPLEMENTATION
-
-### Step 1: Create pre_tool_use.rs
-
-```rust
 // crates/context-graph-cli/src/commands/hooks/pre_tool_use.rs
 //! PreToolUse hook handler - FAST PATH
 //!
@@ -307,8 +18,7 @@ pub struct PreToolArgs {
 use super::args::PreToolArgs;
 use super::error::{HookError, HookResult};
 use super::types::{
-    ConsciousnessState, HookInput, HookOutput, HookPayload, ICClassification, ICLevel,
-    JohariQuadrant,
+    ConsciousnessState, HookInput, HookOutput, HookPayload, ICClassification,
 };
 use std::io::{self, BufRead};
 use std::time::Instant;
@@ -375,8 +85,8 @@ pub fn handle_pre_tool_use(args: &PreToolArgs) -> HookResult<HookOutput> {
     // Real values would come from IdentityCache (future task)
     let consciousness = ConsciousnessState::default();
 
-    // Build IC classification with default values
-    let ic_classification = ICClassification::new(consciousness.identity_continuity, None);
+    // Build IC classification with default values (using default crisis threshold 0.5)
+    let ic_classification = ICClassification::from_value(consciousness.identity_continuity);
 
     // Calculate execution time
     let execution_time_ms = start.elapsed().as_millis() as u64;
@@ -479,7 +189,7 @@ pub fn is_read_only_tool(tool_name: &str) -> bool {
 mod tests {
     use super::*;
     use crate::commands::hooks::args::OutputFormat;
-    use crate::commands::hooks::types::HookEventType;
+    use crate::commands::hooks::types::{HookEventType, JohariQuadrant};
 
     // =========================================================================
     // Test Helpers
@@ -495,10 +205,12 @@ mod tests {
         }
     }
 
+    #[allow(dead_code)]
     fn create_pre_tool_input(tool_name: &str) -> HookInput {
         HookInput {
-            event_type: HookEventType::PreToolUse,
+            hook_type: HookEventType::PreToolUse,
             session_id: "test-session-12345".to_string(),
+            timestamp_ms: 1736956800000, // Fixed timestamp for reproducibility
             payload: HookPayload::PreToolUse {
                 tool_name: tool_name.to_string(),
                 tool_input: serde_json::json!({"file_path": "/test/file.rs"}),
@@ -744,153 +456,19 @@ mod tests {
         // Run multiple times to ensure consistent fast execution
         println!("BEFORE: Running handler 100 times...");
         let mut total_ms: u128 = 0;
-        for i in 0..100 {
+        for _ in 0..100 {
             let start = Instant::now();
             let _ = handle_pre_tool_use(&args);
             total_ms += start.elapsed().as_micros();
         }
 
         let avg_us = total_ms / 100;
-        println!("AFTER: Average execution time: {}µs", avg_us);
+        println!("AFTER: Average execution time: {}us", avg_us);
 
         // Fast path without DB should average well under 1ms
         assert!(avg_us < 1000,
-            "FAIL: Average {}µs suggests database access (expected <1000µs)", avg_us);
+            "FAIL: Average {}us suggests database access (expected <1000us)", avg_us);
 
-        println!("RESULT: PASS - No database access detected (avg {}µs)", avg_us);
+        println!("RESULT: PASS - No database access detected (avg {}us)", avg_us);
     }
 }
-```
-
-### Step 2: Register Module in mod.rs
-
-Add to `crates/context-graph-cli/src/commands/hooks/mod.rs`:
-
-```rust
-// Add after existing module declarations:
-pub mod pre_tool_use;
-
-// In the command handler match block, add:
-HooksCommands::PreTool(args) => {
-    let output = pre_tool_use::handle_pre_tool_use(&args)?;
-    println!("{}", serde_json::to_string(&output)?);
-    Ok(())
-}
-```
-
-### Step 3: Create Shell Script Wrapper
-
-Create `.claude/hooks/pre_tool_use.sh`:
-
-```bash
-#!/bin/bash
-# .claude/hooks/pre_tool_use.sh
-# FAST PATH hook - 100ms timeout
-#
-# Implements: REQ-HOOKS-20, REQ-HOOKS-21
-# Constitution: hooks.timeout_ms.pre_tool_use = 100
-#
-# Anti-Patterns:
-# - AP-51: Shell script calls CLI (not library functions)
-# - AP-53: Native hooks only
-
-set -euo pipefail
-
-# Read JSON input from stdin (Claude Code passes hook data via stdin)
-INPUT=$(cat)
-
-# Extract session_id from environment or input
-SESSION_ID="${CLAUDE_SESSION_ID:-$(echo "$INPUT" | jq -r '.session_id // empty')}"
-
-# Validate session_id
-if [[ -z "$SESSION_ID" ]]; then
-    echo '{"success":false,"error":"session_id required","execution_time_ms":0}' >&2
-    exit 4  # ERR_INVALID_INPUT
-fi
-
-# Execute with strict 100ms timeout (fast path)
-# Pass input via stdin for full HookInput parsing
-echo "$INPUT" | timeout 0.1s context-graph-cli hooks pre-tool \
-    --session-id "$SESSION_ID" \
-    --stdin \
-    --fast-path true \
-    --format json
-
-exit $?
-```
-
----
-
-## VERIFICATION CHECKLIST
-
-### Automated Verification
-
-```bash
-# 1. Build succeeds
-cargo build --package context-graph-cli
-
-# 2. Tests pass
-cargo test --package context-graph-cli pre_tool_use -- --nocapture
-
-# 3. No database imports
-grep -r "use.*storage\|use.*sled\|use.*sqlite\|use.*database" \
-    crates/context-graph-cli/src/commands/hooks/pre_tool_use.rs && \
-    echo "FAIL: Database import found" && exit 1 || \
-    echo "PASS: No database imports"
-
-# 4. Shell script is executable
-chmod +x .claude/hooks/pre_tool_use.sh
-```
-
-### Manual Verification (Synthetic Data)
-
-```bash
-# Test 1: Basic invocation
-echo '{"event_type":"PreToolUse","session_id":"manual-test-001","payload":{"PreToolUse":{"tool_name":"Read","tool_input":{"file_path":"/test.rs"},"tool_use_id":"toolu_manual"}}}' | \
-    context-graph-cli hooks pre-tool --session-id "manual-test-001" --stdin
-
-# Expected output:
-# {
-#   "success": true,
-#   "consciousness_state": { ... },
-#   "ic_classification": { ... },
-#   "context_injection": "Track file content in awareness quadrant",
-#   "execution_time_ms": <low_number>
-# }
-
-# Test 2: Unknown tool (no guidance)
-echo '{"event_type":"PreToolUse","session_id":"manual-test-002","payload":{"PreToolUse":{"tool_name":"CustomUnknownTool","tool_input":{},"tool_use_id":"toolu_custom"}}}' | \
-    context-graph-cli hooks pre-tool --session-id "manual-test-002" --stdin
-
-# Expected: success=true, context_injection=null
-
-# Test 3: Timing verification
-time (for i in {1..100}; do
-    echo '{"event_type":"PreToolUse","session_id":"perf-test","payload":{"PreToolUse":{"tool_name":"Write","tool_input":{},"tool_use_id":"toolu_perf"}}}' | \
-        context-graph-cli hooks pre-tool --session-id "perf-test" --stdin > /dev/null
-done)
-
-# Expected: Total time < 10 seconds for 100 invocations (avg < 100ms each)
-```
-
----
-
-## EVIDENCE OF SUCCESS
-
-After implementation, the following MUST be true:
-
-1. **Build Output**: `cargo build --package context-graph-cli` shows no errors
-2. **Test Output**: All `tc_pre_*` tests show `RESULT: PASS`
-3. **No DB Imports**: `grep` command returns no matches
-4. **Manual Test**: JSON output contains `"success": true` and low `execution_time_ms`
-
----
-
-## CRITICAL NOTES
-
-1. **DO NOT** recreate types that already exist in `types.rs`
-2. **DO NOT** add database imports - this violates C-002
-3. **DO** use the existing builder pattern: `HookOutput::success(ms).with_consciousness_state(...)`
-4. **DO** use `ConsciousnessState::default()` - don't hardcode values
-5. **DO** use `ICClassification::new(value, threshold)` constructor
-6. **FAIL FAST** on invalid input - no backwards compatibility hacks
