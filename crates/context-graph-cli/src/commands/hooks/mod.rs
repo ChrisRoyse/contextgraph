@@ -18,10 +18,13 @@ mod types;
 
 pub use types::{
     ConsciousnessState,
+    ConversationMessage,
     HookEventType,
     HookInput,
     HookOutput,
+    HookPayload,
     ICClassification,
     ICLevel,
     JohariQuadrant,
+    SessionEndStatus,
 };

@@ -772,15 +772,165 @@ impl ICClassification {
 }
 
 // =============================================================================
+// Session End Status (typed payload support)
+// Technical Reference: TECH-HOOKS.md Section 2.2
+// Implements: REQ-HOOKS-10
+// =============================================================================
+
+/// Status of session termination for SessionEnd hook
+/// Implements REQ-HOOKS-10 (Typed Payloads)
+///
+/// # Variants
+/// Each variant represents a distinct termination mode:
+/// - `Normal`: User-initiated graceful exit
+/// - `Timeout`: Session exceeded time limit
+/// - `Error`: Terminated due to error condition
+/// - `UserAbort`: User interrupted with Ctrl+C or similar
+/// - `Clear`: Session cleared via /clear command
+/// - `Logout`: User logged out
+///
+/// # NO BACKWARDS COMPATIBILITY
+/// Fail fast on unknown status - do not add fallback variants.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SessionEndStatus {
+    /// Normal graceful exit
+    Normal,
+    /// Session timed out
+    Timeout,
+    /// Error caused termination
+    Error,
+    /// User aborted (Ctrl+C)
+    UserAbort,
+    /// Session cleared via /clear
+    Clear,
+    /// User logged out
+    Logout,
+}
+
+// =============================================================================
+// Conversation Message (typed payload support)
+// Technical Reference: TECH-HOOKS.md Section 2.2
+// Implements: REQ-HOOKS-11
+// =============================================================================
+
+/// A single message in the conversation context
+/// Implements REQ-HOOKS-11 (Context Structure)
+///
+/// Used in UserPromptSubmit payload to provide conversation history.
+///
+/// # Fields
+/// - `role`: "user" | "assistant" | "system"
+/// - `content`: Message text content
+///
+/// # NO BACKWARDS COMPATIBILITY
+/// Unknown roles should fail deserialization.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConversationMessage {
+    /// Message role: "user", "assistant", or "system"
+    pub role: String,
+    /// Message content text
+    pub content: String,
+}
+
+// =============================================================================
+// Hook Payload (typed variants per event type)
+// Technical Reference: TECH-HOOKS.md Section 2.2
+// Implements: REQ-HOOKS-10, REQ-HOOKS-11, REQ-HOOKS-12
+// =============================================================================
+
+/// Typed payload variants for each hook event type
+/// Implements REQ-HOOKS-10 (Typed Payloads), REQ-HOOKS-11, REQ-HOOKS-12
+///
+/// # Variants
+/// Each variant contains fields specific to its event type:
+/// - `SessionStart`: Session initialization data
+/// - `PreToolUse`: Tool invocation request (100ms timeout)
+/// - `PostToolUse`: Tool completion with response (3000ms timeout)
+/// - `UserPromptSubmit`: User input with context (1500ms timeout)
+/// - `SessionEnd`: Session termination data (5000ms timeout)
+///
+/// # JSON Format
+/// Uses internally tagged enum for Claude Code compatibility:
+/// ```json
+/// { "type": "session_start", "data": { "cwd": "/path", ... } }
+/// ```
+///
+/// # NO BACKWARDS COMPATIBILITY
+/// Unknown variants fail deserialization - no fallback.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "type", content = "data", rename_all = "snake_case")]
+pub enum HookPayload {
+    /// SessionStart hook payload
+    /// Timeout: 5000ms per TECH-HOOKS.md
+    SessionStart {
+        /// Current working directory
+        cwd: String,
+        /// How session was initiated (e.g., "cli", "ide")
+        source: String,
+        /// Previous session ID for continuity (optional)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        previous_session_id: Option<String>,
+    },
+
+    /// PreToolUse hook payload (fast path)
+    /// Timeout: 100ms per TECH-HOOKS.md - must be extremely fast
+    PreToolUse {
+        /// Name of tool being invoked
+        tool_name: String,
+        /// Tool input parameters as JSON
+        tool_input: serde_json::Value,
+        /// Unique identifier for this tool use
+        tool_use_id: String,
+    },
+
+    /// PostToolUse hook payload
+    /// Timeout: 3000ms per TECH-HOOKS.md
+    PostToolUse {
+        /// Name of tool that was invoked
+        tool_name: String,
+        /// Tool input parameters as JSON
+        tool_input: serde_json::Value,
+        /// Tool response/result
+        tool_response: String,
+        /// Unique identifier for this tool use
+        tool_use_id: String,
+    },
+
+    /// UserPromptSubmit hook payload
+    /// Timeout: 1500ms per TECH-HOOKS.md
+    UserPromptSubmit {
+        /// User's input prompt text
+        prompt: String,
+        /// Conversation history for context
+        #[serde(default)]
+        context: Vec<ConversationMessage>,
+    },
+
+    /// SessionEnd hook payload
+    /// Timeout: 5000ms per TECH-HOOKS.md
+    SessionEnd {
+        /// Session duration in milliseconds
+        duration_ms: u64,
+        /// How session ended
+        status: SessionEndStatus,
+        /// Optional reason for termination
+        #[serde(skip_serializing_if = "Option::is_none")]
+        reason: Option<String>,
+    },
+}
+
+// =============================================================================
 // Hook Input (stdin contract)
 // Technical Reference: TECH-HOOKS.md Section 2.2
 // =============================================================================
 
 /// Input received from Claude Code hook system via stdin
-/// Implements REQ-HOOKS-07, REQ-HOOKS-08
+/// Implements REQ-HOOKS-07, REQ-HOOKS-08, REQ-HOOKS-10, REQ-HOOKS-11, REQ-HOOKS-12
 ///
-/// Note: `payload` is `serde_json::Value` in this task.
-/// Typed payloads will be added in TASK-HOOKS-003.
+/// # Typed Payloads (TASK-HOOKS-003)
+/// The `payload` field uses the `HookPayload` enum for type-safe access
+/// to event-specific data. Each variant matches the corresponding hook type.
 ///
 /// # JSON Format (from Claude Code)
 /// ```json
@@ -788,9 +938,12 @@ impl ICClassification {
 ///   "hook_type": "pre_tool_use",
 ///   "session_id": "session-12345",
 ///   "timestamp_ms": 1705312345678,
-///   "payload": { ... }
+///   "payload": { "type": "pre_tool_use", "data": { ... } }
 /// }
 /// ```
+///
+/// # NO BACKWARDS COMPATIBILITY
+/// Unknown hook types or payload types will fail deserialization.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HookInput {
     /// Hook event type (snake_case in JSON)
@@ -799,8 +952,8 @@ pub struct HookInput {
     pub session_id: String,
     /// Unix timestamp in milliseconds
     pub timestamp_ms: i64,
-    /// Event-specific payload (typed in TASK-HOOKS-003)
-    pub payload: serde_json::Value,
+    /// Event-specific typed payload (REQ-HOOKS-10, REQ-HOOKS-11, REQ-HOOKS-12)
+    pub payload: HookPayload,
 }
 
 impl HookInput {
@@ -1167,7 +1320,11 @@ mod hook_io_tests {
             hook_type: HookEventType::PreToolUse,
             session_id: "session-123".into(),
             timestamp_ms: 1705312345678,
-            payload: serde_json::json!({}),
+            payload: HookPayload::PreToolUse {
+                tool_name: "Read".into(),
+                tool_input: serde_json::json!({"file_path": "/test.txt"}),
+                tool_use_id: "tool-use-001".into(),
+            },
         };
         assert!(valid.validate().is_none(), "Valid input MUST pass validation");
 
@@ -1312,5 +1469,486 @@ mod hook_io_tests {
         }
 
         println!("RESULT: PASS - Invalid inputs fail fast");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-001: SessionEndStatus Serialization
+    // Implements: REQ-HOOKS-10
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_001_session_end_status_serialization() {
+        println!("\n=== TC-HOOKS-PAYLOAD-001: SessionEndStatus Serialization ===");
+
+        let statuses = [
+            (SessionEndStatus::Normal, "\"normal\""),
+            (SessionEndStatus::Timeout, "\"timeout\""),
+            (SessionEndStatus::Error, "\"error\""),
+            (SessionEndStatus::UserAbort, "\"user_abort\""),
+            (SessionEndStatus::Clear, "\"clear\""),
+            (SessionEndStatus::Logout, "\"logout\""),
+        ];
+
+        for (status, expected_json) in statuses {
+            let json = serde_json::to_string(&status).expect("serialize");
+            assert_eq!(json, expected_json, "SessionEndStatus::{:?} MUST serialize to {}", status, expected_json);
+            println!("  {:?} -> {}", status, json);
+
+            // Round-trip
+            let deserialized: SessionEndStatus = serde_json::from_str(&json).expect("deserialize");
+            assert_eq!(deserialized, status, "Round-trip MUST preserve value");
+        }
+
+        println!("RESULT: PASS - All SessionEndStatus variants serialize correctly");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-002: SessionEndStatus Invalid Deserialization
+    // NO BACKWARDS COMPATIBILITY - unknown status MUST fail
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_002_session_end_status_invalid() {
+        println!("\n=== TC-HOOKS-PAYLOAD-002: SessionEndStatus Invalid Deserialization ===");
+
+        let invalid_inputs = [
+            "\"unknown\"",
+            "\"NORMAL\"",        // Wrong case
+            "\"Normal\"",        // PascalCase
+            "\"abort\"",         // Missing 'user_' prefix
+            "\"\"",              // Empty
+            "null",              // Null
+            "123",               // Number
+        ];
+
+        for input in invalid_inputs {
+            let result: Result<SessionEndStatus, _> = serde_json::from_str(input);
+            assert!(result.is_err(), "Invalid input {} MUST fail deserialization", input);
+            println!("  {} -> Err (expected)", input);
+        }
+
+        println!("RESULT: PASS - Invalid SessionEndStatus fails fast");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-003: ConversationMessage Structure
+    // Implements: REQ-HOOKS-11
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_003_conversation_message() {
+        println!("\n=== TC-HOOKS-PAYLOAD-003: ConversationMessage Structure ===");
+
+        let msg = ConversationMessage {
+            role: "user".into(),
+            content: "Hello, world!".into(),
+        };
+
+        let json = serde_json::to_value(&msg).expect("serialize");
+        assert_eq!(json["role"], "user");
+        assert_eq!(json["content"], "Hello, world!");
+        println!("  User message: {}", serde_json::to_string(&json).unwrap());
+
+        let assistant_msg = ConversationMessage {
+            role: "assistant".into(),
+            content: "Hello! How can I help?".into(),
+        };
+
+        let json2 = serde_json::to_value(&assistant_msg).expect("serialize");
+        assert_eq!(json2["role"], "assistant");
+        println!("  Assistant message: {}", serde_json::to_string(&json2).unwrap());
+
+        // Round-trip
+        let roundtrip: ConversationMessage = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(roundtrip.role, "user");
+        assert_eq!(roundtrip.content, "Hello, world!");
+
+        println!("RESULT: PASS - ConversationMessage serializes correctly");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-004: HookPayload SessionStart Variant
+    // Implements: REQ-HOOKS-10
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_004_session_start() {
+        println!("\n=== TC-HOOKS-PAYLOAD-004: HookPayload SessionStart ===");
+
+        let payload = HookPayload::SessionStart {
+            cwd: "/home/user/project".into(),
+            source: "cli".into(),
+            previous_session_id: None,
+        };
+
+        let json = serde_json::to_value(&payload).expect("serialize");
+        println!("  JSON: {}", serde_json::to_string_pretty(&json).unwrap());
+
+        assert_eq!(json["type"], "session_start");
+        assert_eq!(json["data"]["cwd"], "/home/user/project");
+        assert_eq!(json["data"]["source"], "cli");
+        assert!(json["data"].get("previous_session_id").is_none(), "None field MUST be omitted");
+
+        // With previous session
+        let payload_with_prev = HookPayload::SessionStart {
+            cwd: "/home/user/project".into(),
+            source: "ide".into(),
+            previous_session_id: Some("prev-session-123".into()),
+        };
+
+        let json2 = serde_json::to_value(&payload_with_prev).expect("serialize");
+        assert_eq!(json2["data"]["previous_session_id"], "prev-session-123");
+
+        // Round-trip
+        let roundtrip: HookPayload = serde_json::from_value(json).expect("deserialize");
+        if let HookPayload::SessionStart { cwd, source, previous_session_id } = roundtrip {
+            assert_eq!(cwd, "/home/user/project");
+            assert_eq!(source, "cli");
+            assert!(previous_session_id.is_none());
+        } else {
+            panic!("Wrong variant after round-trip");
+        }
+
+        println!("RESULT: PASS - SessionStart payload serializes correctly");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-005: HookPayload PreToolUse Variant
+    // Implements: REQ-HOOKS-10
+    // Timeout: 100ms (fast path per TECH-HOOKS.md)
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_005_pre_tool_use() {
+        println!("\n=== TC-HOOKS-PAYLOAD-005: HookPayload PreToolUse ===");
+
+        let payload = HookPayload::PreToolUse {
+            tool_name: "Read".into(),
+            tool_input: serde_json::json!({
+                "file_path": "/home/user/test.rs",
+                "offset": 0
+            }),
+            tool_use_id: "toolu_01ABC123".into(),
+        };
+
+        let json = serde_json::to_value(&payload).expect("serialize");
+        println!("  JSON: {}", serde_json::to_string_pretty(&json).unwrap());
+
+        assert_eq!(json["type"], "pre_tool_use");
+        assert_eq!(json["data"]["tool_name"], "Read");
+        assert_eq!(json["data"]["tool_use_id"], "toolu_01ABC123");
+        assert_eq!(json["data"]["tool_input"]["file_path"], "/home/user/test.rs");
+
+        // Round-trip
+        let roundtrip: HookPayload = serde_json::from_value(json).expect("deserialize");
+        if let HookPayload::PreToolUse { tool_name, tool_use_id, .. } = roundtrip {
+            assert_eq!(tool_name, "Read");
+            assert_eq!(tool_use_id, "toolu_01ABC123");
+        } else {
+            panic!("Wrong variant after round-trip");
+        }
+
+        println!("RESULT: PASS - PreToolUse payload serializes correctly");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-006: HookPayload PostToolUse Variant
+    // Implements: REQ-HOOKS-10
+    // Timeout: 3000ms per TECH-HOOKS.md
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_006_post_tool_use() {
+        println!("\n=== TC-HOOKS-PAYLOAD-006: HookPayload PostToolUse ===");
+
+        let payload = HookPayload::PostToolUse {
+            tool_name: "Bash".into(),
+            tool_input: serde_json::json!({
+                "command": "cargo build"
+            }),
+            tool_response: "Compiling context-graph v0.1.0\nFinished release".into(),
+            tool_use_id: "toolu_02DEF456".into(),
+        };
+
+        let json = serde_json::to_value(&payload).expect("serialize");
+        println!("  JSON: {}", serde_json::to_string_pretty(&json).unwrap());
+
+        assert_eq!(json["type"], "post_tool_use");
+        assert_eq!(json["data"]["tool_name"], "Bash");
+        assert_eq!(json["data"]["tool_use_id"], "toolu_02DEF456");
+        assert!(json["data"]["tool_response"].as_str().unwrap().contains("Compiling"));
+
+        // Round-trip
+        let roundtrip: HookPayload = serde_json::from_value(json).expect("deserialize");
+        if let HookPayload::PostToolUse { tool_name, tool_response, .. } = roundtrip {
+            assert_eq!(tool_name, "Bash");
+            assert!(tool_response.contains("Compiling"));
+        } else {
+            panic!("Wrong variant after round-trip");
+        }
+
+        println!("RESULT: PASS - PostToolUse payload serializes correctly");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-007: HookPayload UserPromptSubmit Variant
+    // Implements: REQ-HOOKS-10, REQ-HOOKS-11
+    // Timeout: 1500ms per TECH-HOOKS.md
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_007_user_prompt_submit() {
+        println!("\n=== TC-HOOKS-PAYLOAD-007: HookPayload UserPromptSubmit ===");
+
+        let payload = HookPayload::UserPromptSubmit {
+            prompt: "Help me fix this bug".into(),
+            context: vec![
+                ConversationMessage {
+                    role: "user".into(),
+                    content: "There's an error in line 42".into(),
+                },
+                ConversationMessage {
+                    role: "assistant".into(),
+                    content: "I see the issue. Let me check...".into(),
+                },
+            ],
+        };
+
+        let json = serde_json::to_value(&payload).expect("serialize");
+        println!("  JSON: {}", serde_json::to_string_pretty(&json).unwrap());
+
+        assert_eq!(json["type"], "user_prompt_submit");
+        assert_eq!(json["data"]["prompt"], "Help me fix this bug");
+        assert_eq!(json["data"]["context"].as_array().unwrap().len(), 2);
+        assert_eq!(json["data"]["context"][0]["role"], "user");
+        assert_eq!(json["data"]["context"][1]["role"], "assistant");
+
+        // Empty context (default)
+        let payload_empty = HookPayload::UserPromptSubmit {
+            prompt: "Hello".into(),
+            context: vec![],
+        };
+        let json_empty = serde_json::to_value(&payload_empty).expect("serialize");
+        assert!(json_empty["data"]["context"].as_array().unwrap().is_empty());
+
+        // Round-trip
+        let roundtrip: HookPayload = serde_json::from_value(json).expect("deserialize");
+        if let HookPayload::UserPromptSubmit { prompt, context } = roundtrip {
+            assert_eq!(prompt, "Help me fix this bug");
+            assert_eq!(context.len(), 2);
+        } else {
+            panic!("Wrong variant after round-trip");
+        }
+
+        println!("RESULT: PASS - UserPromptSubmit payload serializes correctly");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-008: HookPayload SessionEnd Variant
+    // Implements: REQ-HOOKS-10
+    // Timeout: 5000ms per TECH-HOOKS.md
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_008_session_end() {
+        println!("\n=== TC-HOOKS-PAYLOAD-008: HookPayload SessionEnd ===");
+
+        let payload = HookPayload::SessionEnd {
+            duration_ms: 3600000,
+            status: SessionEndStatus::Normal,
+            reason: None,
+        };
+
+        let json = serde_json::to_value(&payload).expect("serialize");
+        println!("  JSON: {}", serde_json::to_string_pretty(&json).unwrap());
+
+        assert_eq!(json["type"], "session_end");
+        assert_eq!(json["data"]["duration_ms"], 3600000);
+        assert_eq!(json["data"]["status"], "normal");
+        assert!(json["data"].get("reason").is_none(), "None reason MUST be omitted");
+
+        // With reason
+        let payload_with_reason = HookPayload::SessionEnd {
+            duration_ms: 120000,
+            status: SessionEndStatus::Error,
+            reason: Some("Connection lost".into()),
+        };
+        let json2 = serde_json::to_value(&payload_with_reason).expect("serialize");
+        assert_eq!(json2["data"]["status"], "error");
+        assert_eq!(json2["data"]["reason"], "Connection lost");
+
+        // Round-trip
+        let roundtrip: HookPayload = serde_json::from_value(json).expect("deserialize");
+        if let HookPayload::SessionEnd { duration_ms, status, reason } = roundtrip {
+            assert_eq!(duration_ms, 3600000);
+            assert_eq!(status, SessionEndStatus::Normal);
+            assert!(reason.is_none());
+        } else {
+            panic!("Wrong variant after round-trip");
+        }
+
+        println!("RESULT: PASS - SessionEnd payload serializes correctly");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-009: HookPayload Invalid Deserialization
+    // NO BACKWARDS COMPATIBILITY - unknown types MUST fail
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_009_invalid_deserialization() {
+        println!("\n=== TC-HOOKS-PAYLOAD-009: HookPayload Invalid Deserialization ===");
+
+        let invalid_inputs = [
+            r#"{"type": "unknown_event", "data": {}}"#,
+            r#"{"type": "SessionStart", "data": {"cwd": "/"}}"#,  // PascalCase
+            r#"{"type": "PRE_TOOL_USE", "data": {}}"#,            // UPPERCASE
+            r#"{"data": {"cwd": "/"}}"#,                           // Missing type
+            r#"{"type": "session_start"}"#,                        // Missing data
+            r#"null"#,
+            r#"[]"#,
+        ];
+
+        for input in invalid_inputs {
+            let result: Result<HookPayload, _> = serde_json::from_str(input);
+            assert!(result.is_err(), "Invalid input {} MUST fail deserialization", input);
+            println!("  {} -> Err (expected)", input);
+        }
+
+        println!("RESULT: PASS - Invalid HookPayload fails fast");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-010: HookInput with Typed Payload Integration
+    // Implements: REQ-HOOKS-10, REQ-HOOKS-11, REQ-HOOKS-12
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_010_hook_input_integration() {
+        println!("\n=== TC-HOOKS-PAYLOAD-010: HookInput with Typed Payload Integration ===");
+
+        let input = HookInput {
+            hook_type: HookEventType::SessionStart,
+            session_id: "session-abc123".into(),
+            timestamp_ms: 1705312345678,
+            payload: HookPayload::SessionStart {
+                cwd: "/home/user/project".into(),
+                source: "cli".into(),
+                previous_session_id: None,
+            },
+        };
+
+        let json = serde_json::to_value(&input).expect("serialize");
+        println!("  JSON: {}", serde_json::to_string_pretty(&json).unwrap());
+
+        assert_eq!(json["hook_type"], "session_start");
+        assert_eq!(json["session_id"], "session-abc123");
+        assert_eq!(json["payload"]["type"], "session_start");
+        assert_eq!(json["payload"]["data"]["cwd"], "/home/user/project");
+
+        // Round-trip
+        let roundtrip: HookInput = serde_json::from_value(json).expect("deserialize");
+        assert_eq!(roundtrip.hook_type, HookEventType::SessionStart);
+        assert_eq!(roundtrip.session_id, "session-abc123");
+        assert!(roundtrip.validate().is_none(), "Valid input MUST pass validation");
+
+        println!("RESULT: PASS - HookInput integrates with typed payload");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-011: Edge Case - Empty Strings
+    // Boundary condition testing
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_011_edge_case_empty_strings() {
+        println!("\n=== TC-HOOKS-PAYLOAD-011: Edge Case - Empty Strings ===");
+
+        // Empty cwd is technically valid (serialization perspective)
+        let payload = HookPayload::SessionStart {
+            cwd: "".into(),
+            source: "".into(),
+            previous_session_id: Some("".into()),
+        };
+
+        let json = serde_json::to_value(&payload).expect("serialize empty strings");
+        assert_eq!(json["data"]["cwd"], "");
+        assert_eq!(json["data"]["source"], "");
+        assert_eq!(json["data"]["previous_session_id"], "");
+
+        // Round-trip preserves empty strings
+        let roundtrip: HookPayload = serde_json::from_value(json).expect("deserialize");
+        if let HookPayload::SessionStart { cwd, source, previous_session_id } = roundtrip {
+            assert_eq!(cwd, "");
+            assert_eq!(source, "");
+            assert_eq!(previous_session_id, Some("".into()));
+        } else {
+            panic!("Wrong variant");
+        }
+
+        println!("RESULT: PASS - Empty strings handled correctly");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-012: Edge Case - Large Values
+    // Boundary condition testing
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_012_edge_case_large_values() {
+        println!("\n=== TC-HOOKS-PAYLOAD-012: Edge Case - Large Values ===");
+
+        // Large duration_ms (max u64)
+        let payload = HookPayload::SessionEnd {
+            duration_ms: u64::MAX,
+            status: SessionEndStatus::Normal,
+            reason: None,
+        };
+
+        let json = serde_json::to_value(&payload).expect("serialize large duration");
+        assert_eq!(json["data"]["duration_ms"], u64::MAX);
+
+        // Large prompt
+        let large_prompt = "x".repeat(100_000);
+        let payload2 = HookPayload::UserPromptSubmit {
+            prompt: large_prompt.clone(),
+            context: vec![],
+        };
+
+        let json2 = serde_json::to_value(&payload2).expect("serialize large prompt");
+        assert_eq!(json2["data"]["prompt"].as_str().unwrap().len(), 100_000);
+
+        // Round-trip
+        let roundtrip: HookPayload = serde_json::from_value(json2).expect("deserialize");
+        if let HookPayload::UserPromptSubmit { prompt, .. } = roundtrip {
+            assert_eq!(prompt.len(), 100_000);
+        } else {
+            panic!("Wrong variant");
+        }
+
+        println!("RESULT: PASS - Large values handled correctly");
+    }
+
+    // =========================================================================
+    // TC-HOOKS-PAYLOAD-013: Edge Case - Unicode Content
+    // Boundary condition testing
+    // =========================================================================
+    #[test]
+    fn tc_hooks_payload_013_edge_case_unicode() {
+        println!("\n=== TC-HOOKS-PAYLOAD-013: Edge Case - Unicode Content ===");
+
+        let payload = HookPayload::UserPromptSubmit {
+            prompt: "Hello \u{1F600} World \u{4E2D}\u{6587} \u{0391}\u{03B2}\u{03B3}".into(),
+            context: vec![
+                ConversationMessage {
+                    role: "user".into(),
+                    content: "\u{1F389} Party! \u{1F3C6}".into(),
+                },
+            ],
+        };
+
+        let json = serde_json::to_value(&payload).expect("serialize unicode");
+        let json_str = serde_json::to_string(&json).expect("to string");
+        println!("  JSON: {}", json_str);
+
+        // Round-trip
+        let roundtrip: HookPayload = serde_json::from_value(json).expect("deserialize");
+        if let HookPayload::UserPromptSubmit { prompt, context } = roundtrip {
+            assert!(prompt.contains("\u{1F600}"));
+            assert!(prompt.contains("\u{4E2D}\u{6587}"));
+            assert_eq!(context[0].content, "\u{1F389} Party! \u{1F3C6}");
+        } else {
+            panic!("Wrong variant");
+        }
+
+        println!("RESULT: PASS - Unicode content preserved correctly");
     }
 }

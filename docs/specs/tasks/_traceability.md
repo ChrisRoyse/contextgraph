@@ -45,7 +45,7 @@ This document provides full traceability from functional requirements to task im
 | REQ-HOOKS-16 | HookOutput type with content, exit_code | TASK-HOOKS-002 | ✓ |
 | REQ-HOOKS-17 | HookConfig struct with timeouts | TASK-HOOKS-005 | ✓ |
 | REQ-HOOKS-18 | HookError enum variants | TASK-HOOKS-004 | ✓ |
-| REQ-HOOKS-19 | CLI argument types | TASK-HOOKS-003 | ✓ |
+| REQ-HOOKS-19 | CLI argument types | TASK-HOOKS-004 | ✓ |
 | REQ-HOOKS-20 | Exit code mapping (AP-26 compliant) | TASK-HOOKS-004 | ✓ |
 
 ### CLI Command Requirements (REQ-HOOKS-21 to REQ-HOOKS-35)
@@ -224,8 +224,8 @@ This document provides full traceability from functional requirements to task im
 |---------|---------------------|
 | TASK-HOOKS-001 | REQ-HOOKS-11, 12, 13, 14 |
 | TASK-HOOKS-002 | REQ-HOOKS-07, 08, 15, 16 |
-| TASK-HOOKS-003 | REQ-HOOKS-19 |
-| TASK-HOOKS-004 | REQ-HOOKS-18, 20 |
+| TASK-HOOKS-003 | TECH-HOOKS-2.2 (HookPayload types) |
+| TASK-HOOKS-004 | REQ-HOOKS-18, 19, 20 |
 | TASK-HOOKS-005 | REQ-HOOKS-17 |
 | TASK-HOOKS-006 | REQ-HOOKS-21 |
 | TASK-HOOKS-007 | REQ-HOOKS-22 |

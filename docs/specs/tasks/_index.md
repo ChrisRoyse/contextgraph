@@ -467,9 +467,9 @@ Tasks MUST be executed in this order. Each task depends on previous tasks in its
 
 | # | Task ID | Title | Layer | Est. Hours | Depends On |
 |---|---------|-------|-------|------------|------------|
-| 1 | TASK-HOOKS-001 | SessionIdentitySnapshot Struct for Hooks | foundation | 1.5 | - |
-| 2 | TASK-HOOKS-002 | HookInput/HookOutput Types | foundation | 1.5 | 001 |
-| 3 | TASK-HOOKS-003 | CLI Argument Types for Hooks | foundation | 1.0 | 002 |
+| 1 | TASK-HOOKS-001 | HookEventType Enum | foundation | 1.5 | - | DONE |
+| 2 | TASK-HOOKS-002 | HookInput/HookOutput Types | foundation | 1.5 | 001 | DONE |
+| 3 | TASK-HOOKS-003 | HookPayload Enum with Typed Variants | foundation | 1.0 | 002 | DONE |
 | 4 | TASK-HOOKS-004 | HookError Enum | foundation | 1.0 | - |
 | 5 | TASK-HOOKS-005 | HookConfig Settings Struct | foundation | 0.5 | 004 |
 | 6 | TASK-HOOKS-006 | SessionStart Shell Executor | logic | 2.0 | 001-005 |
@@ -507,8 +507,8 @@ Layer 1: Foundation (Must Complete First)
          ▼
 ┌─────────────────┐
 │ TASK-HOOKS-003  │
-│ CLI Arg Types   │
-│ (1.0h)          │
+│ HookPayload     │
+│ (1.0h) DONE     │
 └────────┬────────┘
          │
 Layer 2: Logic (Depends on Foundation)
@@ -608,9 +608,9 @@ Layer 3: Surface (Shell Scripts & Tests)
 
 | Task | Status | Started | Completed | Verified |
 |------|--------|---------|-----------|----------|
-| TASK-HOOKS-001 | Ready | - | - | - |
-| TASK-HOOKS-002 | Ready | - | - | - |
-| TASK-HOOKS-003 | Ready | - | - | - |
+| TASK-HOOKS-001 | DONE | 2026-01-15 | 2026-01-15 | HookEventType enum at types.rs:46 |
+| TASK-HOOKS-002 | DONE | 2026-01-15 | 2026-01-15 | HookInput/HookOutput at types.rs:948,1001 |
+| TASK-HOOKS-003 | DONE | 2026-01-15 | 2026-01-15 | HookPayload enum at types.rs:863 |
 | TASK-HOOKS-004 | Ready | - | - | - |
 | TASK-HOOKS-005 | Ready | - | - | - |
 | TASK-HOOKS-006 | Ready | - | - | - |
