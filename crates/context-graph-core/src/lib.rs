@@ -87,5 +87,5 @@ pub use teleological::{
 // Purpose module re-exports (goal hierarchy types) - TASK-CORE-010
 pub use purpose::{GoalLevel, GoalNode};
 
-// Memory capture types (Phase 1) - TASK-P1-001, TASK-P1-002
-pub use memory::{ChunkMetadata, HookType, Memory, MemorySource, ResponseType, TextChunk, MAX_CONTENT_LENGTH};
+// Memory capture types (Phase 1) - TASK-P1-001, TASK-P1-002, TASK-P1-003
+pub use memory::{ChunkMetadata, HookType, Memory, MemorySource, ResponseType, Session, SessionStatus, TextChunk, MAX_CONTENT_LENGTH};
