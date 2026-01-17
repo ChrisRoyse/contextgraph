@@ -58,9 +58,9 @@ pub trait TeleologicalMemoryStoreExt: TeleologicalMemoryStore {
         fingerprint
             .semantic
             .validate()
-            .map_err(|msg| crate::error::CoreError::ValidationError {
+            .map_err(|err| crate::error::CoreError::ValidationError {
                 field: "semantic".to_string(),
-                message: msg,
+                message: err.to_string(),
             })
     }
 

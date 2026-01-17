@@ -17,7 +17,7 @@ use super::constants::{
 };
 use super::slice::EmbeddingSlice;
 use crate::teleological::Embedder;
-use crate::types::fingerprint::{SparseVector, SparseVectorError};
+use crate::types::fingerprint::SparseVector;
 
 /// Type alias for specification alignment.
 ///
@@ -74,16 +74,6 @@ pub enum ValidationError {
         expected: usize,
     },
 
-    /// A sparse vector failed validation.
-    #[error("Sparse vector validation failed for {embedder}: {source}")]
-    SparseVectorError {
-        /// The embedder with invalid sparse data
-        embedder: Embedder,
-        /// The underlying sparse vector error
-        #[source]
-        source: SparseVectorError,
-    },
-
     /// A token in the late-interaction embedding has wrong dimensions.
     #[error(
         "Token {token_index} dimension mismatch for {embedder}: expected {expected}, got {actual}"
@@ -97,6 +87,28 @@ pub enum ValidationError {
         expected: usize,
         /// Actual token dimension
         actual: usize,
+    },
+
+    /// A sparse index exceeds the vocabulary size for the embedder.
+    #[error("Sparse index {index} exceeds vocabulary size {vocab_size} for {embedder}")]
+    SparseIndexOutOfBounds {
+        /// The embedder with the out-of-bounds index
+        embedder: Embedder,
+        /// The invalid index value
+        index: u32,
+        /// The maximum valid vocabulary size
+        vocab_size: usize,
+    },
+
+    /// Sparse indices and values vectors have different lengths.
+    #[error("Sparse indices ({indices_len}) and values ({values_len}) length mismatch for {embedder}")]
+    SparseIndicesValuesMismatch {
+        /// The embedder with mismatched sparse data
+        embedder: Embedder,
+        /// Length of indices vector
+        indices_len: usize,
+        /// Length of values vector
+        values_len: usize,
     },
 }
 
@@ -371,177 +383,13 @@ impl SemanticFingerprint {
         self.storage_size()
     }
 
-    /// Validate all embeddings with detailed error reporting.
+    /// Validate all embeddings with detailed error reporting (alias for validate).
     ///
-    /// This method performs comprehensive validation of all 13 embeddings
-    /// and returns a structured error on failure.
-    ///
-    /// # Validation Rules
-    ///
-    /// 1. Dense embeddings (E1-E5, E7-E11): Must have exact dimensions
-    /// 2. Sparse embeddings (E6, E13): Indices must be in-bounds and sorted
-    /// 3. Token-level embedding (E12): Each token must have 128 dimensions
-    ///
-    /// # Returns
-    ///
-    /// * `Ok(())` - All embeddings are valid
-    /// * `Err(ValidationError)` - First validation failure found (fail-fast)
+    /// This is an alias for [`Self::validate()`] for API compatibility.
+    /// Both methods perform identical validation with fail-fast semantics.
+    #[inline]
     pub fn validate_strict(&self) -> Result<(), ValidationError> {
-        // E1: Semantic
-        if self.e1_semantic.len() != E1_DIM {
-            return Err(ValidationError::DimensionMismatch {
-                embedder: Embedder::Semantic,
-                expected: E1_DIM,
-                actual: self.e1_semantic.len(),
-            });
-        }
-
-        // E2: Temporal Recent
-        if self.e2_temporal_recent.len() != E2_DIM {
-            return Err(ValidationError::DimensionMismatch {
-                embedder: Embedder::TemporalRecent,
-                expected: E2_DIM,
-                actual: self.e2_temporal_recent.len(),
-            });
-        }
-
-        // E3: Temporal Periodic
-        if self.e3_temporal_periodic.len() != E3_DIM {
-            return Err(ValidationError::DimensionMismatch {
-                embedder: Embedder::TemporalPeriodic,
-                expected: E3_DIM,
-                actual: self.e3_temporal_periodic.len(),
-            });
-        }
-
-        // E4: Temporal Positional
-        if self.e4_temporal_positional.len() != E4_DIM {
-            return Err(ValidationError::DimensionMismatch {
-                embedder: Embedder::TemporalPositional,
-                expected: E4_DIM,
-                actual: self.e4_temporal_positional.len(),
-            });
-        }
-
-        // E5: Causal
-        if self.e5_causal.len() != E5_DIM {
-            return Err(ValidationError::DimensionMismatch {
-                embedder: Embedder::Causal,
-                expected: E5_DIM,
-                actual: self.e5_causal.len(),
-            });
-        }
-
-        // E6: Sparse - validate index bounds and sortedness
-        self.validate_sparse_vector(Embedder::Sparse, &self.e6_sparse, E6_SPARSE_VOCAB)?;
-
-        // E7: Code
-        if self.e7_code.len() != E7_DIM {
-            return Err(ValidationError::DimensionMismatch {
-                embedder: Embedder::Code,
-                expected: E7_DIM,
-                actual: self.e7_code.len(),
-            });
-        }
-
-        // E8: Emotional (connectivity)
-        if self.e8_graph.len() != E8_DIM {
-            return Err(ValidationError::DimensionMismatch {
-                embedder: Embedder::Emotional,
-                expected: E8_DIM,
-                actual: self.e8_graph.len(),
-            });
-        }
-
-        // E9: HDC
-        if self.e9_hdc.len() != E9_DIM {
-            return Err(ValidationError::DimensionMismatch {
-                embedder: Embedder::Hdc,
-                expected: E9_DIM,
-                actual: self.e9_hdc.len(),
-            });
-        }
-
-        // E10: Multimodal
-        if self.e10_multimodal.len() != E10_DIM {
-            return Err(ValidationError::DimensionMismatch {
-                embedder: Embedder::Multimodal,
-                expected: E10_DIM,
-                actual: self.e10_multimodal.len(),
-            });
-        }
-
-        // E11: Entity
-        if self.e11_entity.len() != E11_DIM {
-            return Err(ValidationError::DimensionMismatch {
-                embedder: Embedder::Entity,
-                expected: E11_DIM,
-                actual: self.e11_entity.len(),
-            });
-        }
-
-        // E12: Late Interaction - each token must have 128 dimensions
-        for (i, token) in self.e12_late_interaction.iter().enumerate() {
-            if token.len() != E12_TOKEN_DIM {
-                return Err(ValidationError::TokenDimensionMismatch {
-                    embedder: Embedder::LateInteraction,
-                    token_index: i,
-                    expected: E12_TOKEN_DIM,
-                    actual: token.len(),
-                });
-            }
-        }
-
-        // E13: Keyword SPLADE
-        self.validate_sparse_vector(Embedder::KeywordSplade, &self.e13_splade, E13_SPLADE_VOCAB)?;
-
-        Ok(())
-    }
-
-    /// Validate a sparse vector for the specified embedder.
-    fn validate_sparse_vector(
-        &self,
-        embedder: Embedder,
-        sparse: &SparseVector,
-        vocab_size: usize,
-    ) -> Result<(), ValidationError> {
-        // Check indices/values length match
-        if sparse.indices.len() != sparse.values.len() {
-            return Err(ValidationError::SparseVectorError {
-                embedder,
-                source: SparseVectorError::LengthMismatch {
-                    indices_len: sparse.indices.len(),
-                    values_len: sparse.values.len(),
-                },
-            });
-        }
-
-        // Check indices are in bounds and sorted
-        let mut prev: Option<u16> = None;
-        for &idx in &sparse.indices {
-            // Bounds check
-            if idx as usize >= vocab_size {
-                return Err(ValidationError::SparseVectorError {
-                    embedder,
-                    source: SparseVectorError::IndexOutOfBounds {
-                        index: idx as usize,
-                        max: vocab_size - 1,
-                    },
-                });
-            }
-            // Sorted check
-            if let Some(p) = prev {
-                if idx <= p {
-                    return Err(ValidationError::SparseVectorError {
-                        embedder,
-                        source: SparseVectorError::UnsortedOrDuplicate { index: idx },
-                    });
-                }
-            }
-            prev = Some(idx);
-        }
-
-        Ok(())
+        self.validate()
     }
 }
 

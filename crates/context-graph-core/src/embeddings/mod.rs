@@ -7,6 +7,8 @@
 //! - `TokenPruningEmbedding` (E12): Token-level embedding with Quantizable support
 //! - `DenseVector`: Generic dense vector for similarity computation
 //! - `BinaryVector`: Bit-packed vector for Hamming distance
+//! - `StubMultiArrayProvider`: Test implementation of MultiArrayEmbeddingProvider
+//! - Stub embedders: `StubSingleEmbedder`, `StubSparseEmbedder`, `StubTokenEmbedder`
 //!
 //! Note: `SparseVector` for SPLADE is in `types::fingerprint::sparse`.
 //! Note: `Embedder` enum is in `teleological::embedder`.
@@ -14,6 +16,8 @@
 
 pub mod category;
 pub mod config;
+pub mod provider;
+pub mod stubs;
 pub mod token_pruning;
 pub mod vector;
 
@@ -23,5 +27,7 @@ pub use config::{
     get_topic_weight, is_asymmetric, is_relational, is_semantic, is_sparse, is_structural,
     is_temporal, is_token_level, EmbedderConfig, QuantizationConfig, EMBEDDER_CONFIGS,
 };
+pub use provider::StubMultiArrayProvider;
+pub use stubs::{StubSingleEmbedder, StubSparseEmbedder, StubTokenEmbedder};
 pub use token_pruning::TokenPruningEmbedding;
 pub use vector::{BinaryVector, DenseVector, VectorError};

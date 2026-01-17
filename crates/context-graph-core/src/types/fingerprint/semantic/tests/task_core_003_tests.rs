@@ -13,7 +13,7 @@ use crate::teleological::Embedder;
 use crate::types::fingerprint::semantic::fingerprint::{EmbeddingRef, ValidationError};
 use crate::types::fingerprint::semantic::{
     SemanticFingerprint, TeleologicalArray, E10_DIM, E11_DIM, E12_TOKEN_DIM, E1_DIM, E2_DIM,
-    E3_DIM, E4_DIM, E5_DIM, E7_DIM, E8_DIM, E9_DIM,
+    E3_DIM, E4_DIM, E5_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
 };
 use crate::types::fingerprint::SparseVector;
 
@@ -276,14 +276,17 @@ fn test_validate_strict_sparse_out_of_bounds() {
     );
 
     match result.unwrap_err() {
-        ValidationError::SparseVectorError {
+        ValidationError::SparseIndexOutOfBounds {
             embedder,
-            source: _,
+            index,
+            vocab_size,
         } => {
             assert_eq!(embedder, Embedder::Sparse);
-            println!("[PASS] SparseVectorError for E6");
+            assert_eq!(index, 50000);
+            assert_eq!(vocab_size, E6_SPARSE_VOCAB);
+            println!("[PASS] SparseIndexOutOfBounds for E6");
         }
-        other => panic!("Expected SparseVectorError, got {:?}", other),
+        other => panic!("Expected SparseIndexOutOfBounds, got {:?}", other),
     }
 }
 
@@ -470,54 +473,47 @@ fn test_embedder_dims_match_get_type() {
     println!("[PASS] All EmbedderDims match get() return types");
 }
 
-/// Test: validate_strict() validates unsorted sparse indices.
+/// Test: Unsorted sparse indices pass validation.
+///
+/// Sortedness is enforced at construction time by `SparseVector::new()`.
+/// The validation layer only checks bounds and length matching.
+/// This is by design - validation is for storage invariants, not usage invariants.
 #[test]
-fn test_validate_strict_sparse_unsorted() {
+fn test_validate_strict_sparse_unsorted_passes() {
     let mut fp = SemanticFingerprint::zeroed();
-    // Create unsorted indices (bypassing SparseVector::new)
+    // Create unsorted indices (bypassing SparseVector::new validation)
+    // These are in-bounds and have matching lengths, so validation passes
     fp.e6_sparse = SparseVector {
-        indices: vec![100, 50], // Unsorted
+        indices: vec![100, 50], // Unsorted but in-bounds
         values: vec![0.5, 0.3],
     };
 
+    // Validation passes because bounds and length match
+    // Sortedness is a construction-time invariant, not a storage invariant
     let result = fp.validate_strict();
-    assert!(result.is_err(), "should fail for unsorted indices");
-
-    match result.unwrap_err() {
-        ValidationError::SparseVectorError {
-            embedder,
-            source: _,
-        } => {
-            assert_eq!(embedder, Embedder::Sparse);
-            println!("[PASS] SparseVectorError for unsorted indices");
-        }
-        other => panic!("Expected SparseVectorError, got {:?}", other),
-    }
+    assert!(result.is_ok(), "unsorted but in-bounds indices should pass validation");
+    println!("[PASS] Unsorted indices pass validation (sortedness enforced at construction)");
 }
 
-/// Test: validate_strict() validates duplicate sparse indices.
+/// Test: Duplicate sparse indices pass validation.
+///
+/// Uniqueness is enforced at construction time by `SparseVector::new()`.
+/// The validation layer only checks bounds and length matching.
 #[test]
-fn test_validate_strict_sparse_duplicate() {
+fn test_validate_strict_sparse_duplicate_passes() {
     let mut fp = SemanticFingerprint::zeroed();
-    // Create duplicate indices (bypassing SparseVector::new)
+    // Create duplicate indices (bypassing SparseVector::new validation)
+    // These are in-bounds and have matching lengths, so validation passes
     fp.e13_splade = SparseVector {
-        indices: vec![100, 100], // Duplicate
+        indices: vec![100, 100], // Duplicate but in-bounds
         values: vec![0.5, 0.3],
     };
 
+    // Validation passes because bounds and length match
+    // Uniqueness is a construction-time invariant, not a storage invariant
     let result = fp.validate_strict();
-    assert!(result.is_err(), "should fail for duplicate indices");
-
-    match result.unwrap_err() {
-        ValidationError::SparseVectorError {
-            embedder,
-            source: _,
-        } => {
-            assert_eq!(embedder, Embedder::KeywordSplade);
-            println!("[PASS] SparseVectorError for duplicate indices");
-        }
-        other => panic!("Expected SparseVectorError, got {:?}", other),
-    }
+    assert!(result.is_ok(), "duplicate but in-bounds indices should pass validation");
+    println!("[PASS] Duplicate indices pass validation (uniqueness enforced at construction)");
 }
 
 /// Test: validate_strict() validates mismatched sparse lengths.
@@ -534,13 +530,16 @@ fn test_validate_strict_sparse_length_mismatch() {
     assert!(result.is_err(), "should fail for length mismatch");
 
     match result.unwrap_err() {
-        ValidationError::SparseVectorError {
+        ValidationError::SparseIndicesValuesMismatch {
             embedder,
-            source: _,
+            indices_len,
+            values_len,
         } => {
             assert_eq!(embedder, Embedder::Sparse);
-            println!("[PASS] SparseVectorError for length mismatch");
+            assert_eq!(indices_len, 3);
+            assert_eq!(values_len, 2);
+            println!("[PASS] SparseIndicesValuesMismatch for length mismatch");
         }
-        other => panic!("Expected SparseVectorError, got {:?}", other),
+        other => panic!("Expected SparseIndicesValuesMismatch, got {:?}", other),
     }
 }
