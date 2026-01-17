@@ -80,9 +80,11 @@
 
 mod aggregation;
 pub mod config;
+pub mod detector;
 pub mod distance;
 pub mod divergence;
 mod executor;
+pub mod multi_space;
 mod pipeline;
 mod query;
 mod result;
@@ -133,7 +135,16 @@ pub use config::{
 
 // Distance and similarity computation functions
 pub use distance::{
-    cosine_similarity, jaccard_similarity, hamming_similarity,
-    max_sim, transe_similarity, compute_similarity_for_space,
-    compute_all_similarities,
+    compute_all_similarities, compute_similarity_for_space, cosine_similarity,
+    hamming_similarity, jaccard_similarity, max_sim, transe_similarity,
+};
+
+// Multi-space similarity service
+pub use multi_space::{
+    compute_similarities_batch, filter_relevant, sort_by_relevance, MultiSpaceSimilarity,
+};
+
+// Divergence detection service
+pub use detector::{
+    DivergenceDetector, RecentMemory, is_divergence_space,
 };
