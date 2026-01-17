@@ -1,187 +1,3 @@
-# TASK-P3-002: DivergenceAlert Type Implementation
-
-```xml
-<task_spec id="TASK-P3-002" version="3.0">
-<metadata>
-  <title>DivergenceAlert and DivergenceReport Types</title>
-  <status>COMPLETE</status>
-  <layer>foundation</layer>
-  <sequence>21</sequence>
-  <phase>3</phase>
-  <implements>
-    <requirement_ref>REQ-P3-04</requirement_ref>
-    <arch_rule>ARCH-10: Divergence detection uses SEMANTIC embedders only</arch_rule>
-  </implements>
-  <depends_on>
-    <dependency id="TASK-P3-001" status="COMPLETE" verified="2026-01-16">PerSpaceScores and SimilarityResult types</dependency>
-    <dependency id="TASK-P2-003" status="COMPLETE" verified="2026-01-16">EmbedderCategory system</dependency>
-    <dependency id="TASK-P2-001" status="COMPLETE" verified="2026-01-16">Embedder enum</dependency>
-  </depends_on>
-  <estimated_complexity>low</estimated_complexity>
-  <last_audited>2026-01-16</last_audited>
-</metadata>
-
-<context>
-## Purpose
-Create the DivergenceAlert and DivergenceReport types that represent detected divergences
-between current activity and recent work. These types are used by the DivergenceDetector
-(TASK-P3-006) to report when current queries show LOW similarity to recent memories in
-SEMANTIC embedding spaces.
-
-## Key Concept: What is Divergence?
-Divergence = LOW similarity between current query and recent memories in SEMANTIC spaces.
-When a user's current query has LOW similarity to what they were recently working on,
-this indicates a "topic shift" or "context switch" that should be flagged.
-
-- High similarity = user is continuing on same topic (no alert needed)
-- Low similarity = user has switched topics (generate DivergenceAlert)
-
-## CRITICAL Architecture Rules (from CLAUDE.md v6.0.0)
-1. **ARCH-10**: Divergence detection uses SEMANTIC embedders ONLY (E1, E5, E6, E7, E10, E12, E13)
-2. **AP-60**: Temporal embedders (E2-E4) MUST NOT count toward topic detection
-3. **AP-62**: Divergence alerts MUST only use SEMANTIC embedders
-4. **AP-63**: NEVER trigger divergence from temporal proximity differences
-
-## Why Only Semantic Spaces?
-- Working at different times (temporal) is NOT divergence
-- Different entities (relational) is NOT inherently divergent
-- Different structure (structural) is NOT semantic divergence
-- Only MEANING differences (semantic) indicate true topic divergence
-</context>
-
-<codebase_audit verified="2026-01-16">
-## EXACT File Locations (VERIFIED - Use These Paths)
-
-### Embedder Enum Location
-**File**: `crates/context-graph-core/src/teleological/embedder.rs`
-**Variant Names** (EXACT - DO NOT MODIFY):
-```rust
-Embedder::Semantic          // E1 (index 0)
-Embedder::TemporalRecent    // E2 (index 1)
-Embedder::TemporalPeriodic  // E3 (index 2)
-Embedder::TemporalPositional // E4 (index 3)
-Embedder::Causal            // E5 (index 4)
-Embedder::Sparse            // E6 (index 5)
-Embedder::Code              // E7 (index 6)
-Embedder::Emotional         // E8 (index 7) - NOT "Graph"
-Embedder::Hdc               // E9 (index 8)
-Embedder::Multimodal        // E10 (index 9)
-Embedder::Entity            // E11 (index 10)
-Embedder::LateInteraction   // E12 (index 11)
-Embedder::KeywordSplade     // E13 (index 12)
-```
-
-### EmbedderCategory Location
-**File**: `crates/context-graph-core/src/embeddings/category.rs`
-**Key Functions**:
-- `category_for(embedder: Embedder) -> EmbedderCategory`
-- `EmbedderCategory::used_for_divergence_detection() -> bool` (returns true only for Semantic)
-
-### Existing Similarity Types (TASK-P3-001 - COMPLETE)
-**File**: `crates/context-graph-core/src/retrieval/similarity.rs`
-**Types Available**:
-- `PerSpaceScores` - holds f32 scores for all 13 spaces
-- `SimilarityResult` - wraps scores with memory_id
-- `NUM_SPACES` = 13
-
-### Retrieval Module Structure
-**Directory**: `crates/context-graph-core/src/retrieval/`
-**Existing Files**:
-- `mod.rs` - module exports (line 86: `pub mod similarity;`)
-- `similarity.rs` - PerSpaceScores, SimilarityResult (TASK-P3-001)
-- `executor.rs` - MultiEmbeddingQueryExecutor trait
-- `query.rs` - MultiEmbeddingQuery, EmbeddingSpaceMask
-- `result.rs` - MultiEmbeddingResult, ScoredMatch
-- `aggregation.rs` - RRF aggregation
-
-### Required Dependencies (Already in Cargo.toml)
-```toml
-uuid = { version = "1.6", features = ["v4", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-serde = { version = "1.0", features = ["derive"] }
-```
-</codebase_audit>
-
-<semantic_embedders>
-## DIVERGENCE_SPACES Constant (7 Semantic Embedders)
-
-These are the ONLY embedders that can trigger divergence alerts:
-
-| Embedder | Variant Name | Index | Purpose |
-|----------|--------------|-------|---------|
-| E1 | `Embedder::Semantic` | 0 | Core meaning similarity |
-| E5 | `Embedder::Causal` | 4 | Intent/reasoning similarity |
-| E6 | `Embedder::Sparse` | 5 | Term overlap detection |
-| E7 | `Embedder::Code` | 6 | Code structure similarity |
-| E10 | `Embedder::Multimodal` | 9 | Cross-modal concept similarity |
-| E12 | `Embedder::LateInteraction` | 11 | Deep semantic matching |
-| E13 | `Embedder::KeywordSplade` | 12 | Sparse lexical expansion |
-
-## EXCLUDED from Divergence Detection
-
-| Category | Embedders | Reason |
-|----------|-----------|--------|
-| Temporal | E2, E3, E4 | Working at different times != topic change |
-| Relational | E8, E11 | Different entities != topic divergence |
-| Structural | E9 | Different structure != semantic divergence |
-</semantic_embedders>
-
-<scope>
-  <in_scope>
-    - Create `DivergenceSeverity` enum (Low, Medium, High based on score)
-    - Create `DivergenceAlert` struct with memory_id, space, similarity_score, summary, timestamp
-    - Create `DivergenceReport` collection type for multiple alerts
-    - Implement `DivergenceAlert::severity()` -> DivergenceSeverity
-    - Implement `DivergenceAlert::format_alert()` -> formatted string
-    - Implement helper function `truncate_summary(content, max_len)` -> String
-    - Add `pub const DIVERGENCE_SPACES: [Embedder; 7]` constant
-    - Add module to retrieval/mod.rs and re-exports
-    - Write comprehensive unit tests with synthetic data
-  </in_scope>
-  <out_of_scope>
-    - Divergence detection LOGIC (that's TASK-P3-006)
-    - Threshold comparison (TASK-P3-003)
-    - Database queries for recent memories
-    - Integration with MCP tools
-  </out_of_scope>
-</scope>
-
-<definition_of_done>
-  <file_to_create path="crates/context-graph-core/src/retrieval/divergence.rs">
-See full implementation in the Implementation section below.
-  </file_to_create>
-
-  <file_to_modify path="crates/context-graph-core/src/retrieval/mod.rs">
-    Add after line 86 (`pub mod similarity;`):
-    ```rust
-    pub mod divergence;
-    ```
-
-    Add to re-exports section (after line 116):
-    ```rust
-    pub use divergence::{
-        DivergenceAlert, DivergenceReport, DivergenceSeverity,
-        DIVERGENCE_SPACES, MAX_SUMMARY_LEN, truncate_summary,
-    };
-    ```
-  </file_to_modify>
-
-  <constraints>
-    - DIVERGENCE_SPACES MUST contain exactly 7 semantic embedders
-    - DivergenceAlert can ONLY be created for semantic spaces (DIVERGENCE_SPACES)
-    - Similarity scores MUST be clamped to [0.0, 1.0]
-    - Memory summary MUST be truncated to MAX_SUMMARY_LEN (100) characters
-    - Truncation MUST prefer word boundaries when possible
-    - All types MUST implement Serialize, Deserialize
-    - NO backwards compatibility shims - fail fast on type mismatch
-    - NO mock data in tests - use real calculations with synthetic inputs
-  </constraints>
-</definition_of_done>
-
-<implementation>
-File: crates/context-graph-core/src/retrieval/divergence.rs
-
-```rust
 //! Divergence alert types for topic drift detection.
 //!
 //! This module provides types for representing divergence alerts when current
@@ -367,16 +183,13 @@ impl DivergenceReport {
     pub fn most_severe(&self) -> Option<&DivergenceAlert> {
         self.alerts
             .iter()
-            .min_by(|a, b| a.similarity_score.partial_cmp(&b.similarity_score).unwrap())
+            .min_by(|a, b| compare_scores(a.similarity_score, b.similarity_score))
     }
 
     /// Sort alerts by severity (lowest score first = most severe first).
     pub fn sort_by_severity(&mut self) {
-        self.alerts.sort_by(|a, b| {
-            a.similarity_score
-                .partial_cmp(&b.similarity_score)
-                .unwrap()
-        });
+        self.alerts
+            .sort_by(|a, b| compare_scores(a.similarity_score, b.similarity_score));
     }
 
     /// Format all alerts for injection, one per line.
@@ -405,6 +218,22 @@ impl DivergenceReport {
         }
         (high, medium, low)
     }
+}
+
+/// Compare two similarity scores for ordering.
+///
+/// Handles NaN by treating it as greater than all other values,
+/// ensuring NaN values sort to the end (least severe).
+fn compare_scores(a: f32, b: f32) -> std::cmp::Ordering {
+    a.partial_cmp(&b).unwrap_or_else(|| {
+        // Handle NaN: NaN values sort to the end
+        match (a.is_nan(), b.is_nan()) {
+            (true, true) => std::cmp::Ordering::Equal,
+            (true, false) => std::cmp::Ordering::Greater,
+            (false, true) => std::cmp::Ordering::Less,
+            (false, false) => unreachable!("partial_cmp only fails for NaN"),
+        }
+    })
 }
 
 /// Truncate content to max_len, preferring word boundaries.
@@ -436,6 +265,7 @@ pub fn truncate_summary(content: &str, max_len: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::embeddings::category::category_for;
 
     // =========================================================================
     // DivergenceSeverity Tests
@@ -486,8 +316,6 @@ mod tests {
 
     #[test]
     fn test_divergence_spaces_are_semantic() {
-        use crate::embeddings::category::category_for;
-
         for space in &DIVERGENCE_SPACES {
             let cat = category_for(*space);
             assert!(
@@ -518,6 +346,28 @@ mod tests {
     fn test_divergence_spaces_excludes_structural() {
         assert!(!DIVERGENCE_SPACES.contains(&Embedder::Hdc));
         println!("[PASS] DIVERGENCE_SPACES excludes structural embedder");
+    }
+
+    #[test]
+    fn test_divergence_spaces_contains_all_semantic() {
+        // Verify all 7 semantic embedders are present
+        let expected = [
+            Embedder::Semantic,
+            Embedder::Causal,
+            Embedder::Sparse,
+            Embedder::Code,
+            Embedder::Multimodal,
+            Embedder::LateInteraction,
+            Embedder::KeywordSplade,
+        ];
+        for e in &expected {
+            assert!(
+                DIVERGENCE_SPACES.contains(e),
+                "{:?} not in DIVERGENCE_SPACES",
+                e
+            );
+        }
+        println!("[PASS] DIVERGENCE_SPACES contains all 7 semantic embedders");
     }
 
     // =========================================================================
@@ -644,6 +494,22 @@ mod tests {
         let result = truncate_summary(padded, 100);
         assert_eq!(result, "content with spaces");
         println!("[PASS] Whitespace is trimmed");
+    }
+
+    #[test]
+    fn test_truncate_empty_content() {
+        let empty = "";
+        let result = truncate_summary(empty, 100);
+        assert_eq!(result, "");
+        println!("[PASS] Empty content returns empty string");
+    }
+
+    #[test]
+    fn test_truncate_whitespace_only() {
+        let whitespace = "     ";
+        let result = truncate_summary(whitespace, 100);
+        assert_eq!(result, "");
+        println!("[PASS] Whitespace-only content returns empty string");
     }
 
     // =========================================================================
@@ -781,275 +647,112 @@ mod tests {
         assert_eq!(recovered, DivergenceSeverity::High);
         println!("[PASS] DivergenceSeverity JSON roundtrip works");
     }
+
+    // =========================================================================
+    // Edge Case Tests
+    // =========================================================================
+
+    #[test]
+    fn test_alert_boundary_scores() {
+        let id = Uuid::new_v4();
+
+        // Test exact boundary values
+        let at_zero = DivergenceAlert::new(id, Embedder::Semantic, 0.0, "test");
+        assert_eq!(at_zero.severity(), DivergenceSeverity::High);
+        assert_eq!(at_zero.similarity_score, 0.0);
+
+        let at_one = DivergenceAlert::new(id, Embedder::Semantic, 1.0, "test");
+        assert_eq!(at_one.severity(), DivergenceSeverity::Low);
+        assert_eq!(at_one.similarity_score, 1.0);
+
+        // Test exact threshold boundaries
+        let at_0_10 = DivergenceAlert::new(id, Embedder::Semantic, 0.10, "test");
+        assert_eq!(at_0_10.severity(), DivergenceSeverity::Medium);
+
+        let at_0_20 = DivergenceAlert::new(id, Embedder::Semantic, 0.20, "test");
+        assert_eq!(at_0_20.severity(), DivergenceSeverity::Low);
+
+        println!("[PASS] Boundary scores handled correctly");
+    }
+
+    #[test]
+    fn test_truncate_at_exact_boundary() {
+        // Content that is exactly 103 chars should truncate to 100
+        let content = "a".repeat(103);
+        let result = truncate_summary(&content, 100);
+        assert_eq!(result.len(), 100);
+        assert!(result.ends_with("..."));
+        assert_eq!(&result[..97], &"a".repeat(97));
+        println!("[PASS] Exact boundary truncation works");
+    }
+
+    #[test]
+    fn test_report_single_alert() {
+        let mut report = DivergenceReport::new();
+        let id = Uuid::new_v4();
+        report.add(DivergenceAlert::new(id, Embedder::Semantic, 0.12, "single"));
+
+        let most_severe = report.most_severe().unwrap();
+        assert_eq!(most_severe.memory_id, id);
+
+        report.sort_by_severity();
+        assert_eq!(report.alerts.len(), 1);
+        assert_eq!(report.alerts[0].memory_id, id);
+
+        println!("[PASS] Single alert report works correctly");
+    }
+
+    // =========================================================================
+    // Constitution Compliance Tests
+    // =========================================================================
+
+    #[test]
+    fn test_arch_10_divergence_semantic_only() {
+        // ARCH-10: Divergence detection uses SEMANTIC embedders only
+        for embedder in Embedder::all() {
+            let cat = category_for(embedder);
+            if cat.used_for_divergence_detection() {
+                assert!(
+                    DIVERGENCE_SPACES.contains(&embedder),
+                    "{:?} should be in DIVERGENCE_SPACES",
+                    embedder
+                );
+            } else {
+                assert!(
+                    !DIVERGENCE_SPACES.contains(&embedder),
+                    "{:?} should NOT be in DIVERGENCE_SPACES",
+                    embedder
+                );
+            }
+        }
+        println!("[PASS] ARCH-10 compliance verified: DIVERGENCE_SPACES matches category.used_for_divergence_detection()");
+    }
+
+    #[test]
+    fn test_ap62_divergence_alerts_semantic_only() {
+        // AP-62: Divergence alerts MUST only use SEMANTIC embedders
+        // All embedders in DIVERGENCE_SPACES must be semantic
+        for space in &DIVERGENCE_SPACES {
+            let cat = category_for(*space);
+            assert!(
+                cat.is_semantic(),
+                "AP-62 violation: {:?} in DIVERGENCE_SPACES is not semantic",
+                space
+            );
+        }
+        println!("[PASS] AP-62 verified: All DIVERGENCE_SPACES are semantic");
+    }
+
+    #[test]
+    fn test_ap63_no_temporal_divergence() {
+        // AP-63: NEVER trigger divergence from temporal proximity differences
+        for embedder in [Embedder::TemporalRecent, Embedder::TemporalPeriodic, Embedder::TemporalPositional] {
+            assert!(
+                !DIVERGENCE_SPACES.contains(&embedder),
+                "AP-63 violation: {:?} should not be in DIVERGENCE_SPACES",
+                embedder
+            );
+        }
+        println!("[PASS] AP-63 verified: No temporal embedders in DIVERGENCE_SPACES");
+    }
 }
-```
-</implementation>
-
-<verification_protocol>
-## Full State Verification
-
-### Source of Truth
-1. **File existence**: `crates/context-graph-core/src/retrieval/divergence.rs`
-2. **Module export**: `retrieval/mod.rs` has `pub mod divergence;`
-3. **Re-exports**: `pub use divergence::{...};`
-4. **Compilation**: `cargo check --package context-graph-core`
-5. **Tests**: `cargo test --package context-graph-core divergence -- --nocapture`
-
-### Execute & Inspect Commands
-```bash
-# 1. Verify file exists and has correct structure
-ls -la crates/context-graph-core/src/retrieval/divergence.rs
-wc -l crates/context-graph-core/src/retrieval/divergence.rs
-
-# 2. Check module export in mod.rs
-grep -n "pub mod divergence" crates/context-graph-core/src/retrieval/mod.rs
-
-# 3. Check re-exports
-grep -n "pub use divergence" crates/context-graph-core/src/retrieval/mod.rs
-
-# 4. Compile check (MUST pass with no errors)
-cargo check --package context-graph-core 2>&1 | head -50
-
-# 5. Run ALL divergence tests (MUST show all [PASS] messages)
-cargo test --package context-graph-core divergence -- --nocapture 2>&1
-
-# 6. Verify DIVERGENCE_SPACES constant contains exactly 7 embedders
-grep -A8 "DIVERGENCE_SPACES" crates/context-graph-core/src/retrieval/divergence.rs
-
-# 7. Run clippy (MUST pass with no warnings)
-cargo clippy --package context-graph-core -- -D warnings 2>&1 | head -20
-```
-
-### Boundary & Edge Case Audit
-
-**Edge Case 1: Score Clamping**
-- Input: `DivergenceAlert::new(id, Embedder::Semantic, 1.5, "test")`
-- Expected: `alert.similarity_score == 1.0`
-- Verify: `assert_eq!(alert.similarity_score, 1.0)`
-
-**Edge Case 2: Empty Summary**
-- Input: `truncate_summary("", 100)`
-- Expected: Returns `""`
-- Verify: `assert_eq!(result, "")`
-
-**Edge Case 3: Summary at Word Boundary**
-- Input: `truncate_summary("Hello world this is long", 20)`
-- Expected: Truncates at word boundary with "..."
-- Verify: Result ends with "..." and length <= 20
-
-**Edge Case 4: Empty Report**
-- Input: `DivergenceReport::new()`
-- Expected: `is_empty() == true`, `len() == 0`, `most_severe() == None`
-
-**Edge Case 5: Single Alert Report**
-- Input: Report with 1 alert
-- Expected: `most_severe()` returns that alert
-
-### Evidence of Success
-Test output MUST show ALL these [PASS] messages:
-```
-[PASS] Score < 0.10 -> High severity
-[PASS] Score 0.10..0.20 -> Medium severity
-[PASS] Score >= 0.20 -> Low severity
-[PASS] DivergenceSeverity display works
-[PASS] DIVERGENCE_SPACES has exactly 7 semantic embedders
-[PASS] All DIVERGENCE_SPACES are semantic category
-[PASS] DIVERGENCE_SPACES excludes all temporal embedders
-[PASS] DIVERGENCE_SPACES excludes relational embedders
-[PASS] DIVERGENCE_SPACES excludes structural embedder
-[PASS] DivergenceAlert creation works
-[PASS] DivergenceAlert clamps score to [0.0, 1.0]
-[PASS] DivergenceAlert.severity() computes correctly
-[PASS] format_alert() produces expected output
-[PASS] format_with_severity() includes severity prefix
-[PASS] Short content not truncated
-[PASS] Exact length content not truncated
-[PASS] Long content truncated at word boundary
-[PASS] Content without spaces truncated to exact length
-[PASS] Whitespace is trimmed
-[PASS] Empty DivergenceReport works
-[PASS] DivergenceReport.add() works
-[PASS] most_severe() returns lowest score alert
-[PASS] sort_by_severity() orders by ascending score
-[PASS] format_all() produces one line per alert
-[PASS] count_by_severity() returns (2, 1, 2)
-[PASS] DivergenceAlert JSON roundtrip works
-[PASS] DivergenceReport JSON roundtrip works
-[PASS] DivergenceSeverity JSON roundtrip works
-```
-</verification_protocol>
-
-<manual_testing>
-## Manual Testing with Synthetic Data
-
-### Test 1: Happy Path - Create Alert and Verify Fields
-```rust
-use uuid::Uuid;
-
-// Known input
-let memory_id = Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap();
-let content = "Working on the DivergenceAlert implementation for context-graph-core";
-
-// Create alert
-let alert = DivergenceAlert::new(memory_id, Embedder::Semantic, 0.15, content);
-
-// Verify all fields (SOURCE OF TRUTH: struct fields)
-println!("memory_id: {}", alert.memory_id);     // Expected: 550e8400-e29b-41d4-a716-446655440000
-println!("space: {:?}", alert.space);            // Expected: Semantic
-println!("similarity_score: {}", alert.similarity_score); // Expected: 0.15
-println!("summary: {}", alert.memory_summary);   // Expected: content (< 100 chars)
-println!("severity: {:?}", alert.severity());    // Expected: Medium (0.15 is in 0.10..0.20)
-```
-
-### Test 2: Verify Summary Truncation
-```rust
-// Input: 150 character string
-let long_content = "This is a very long memory content string that exceeds the maximum summary length of 100 characters and should be truncated at a word boundary";
-
-let alert = DivergenceAlert::new(Uuid::new_v4(), Embedder::Code, 0.12, long_content);
-
-// Verify truncation (SOURCE OF TRUTH: memory_summary field)
-assert!(alert.memory_summary.len() <= 100, "Summary exceeds max length");
-assert!(alert.memory_summary.ends_with("..."), "Truncated summary should end with ...");
-println!("Truncated summary: '{}' (len={})", alert.memory_summary, alert.memory_summary.len());
-```
-
-### Test 3: Verify Severity Mapping
-```rust
-// Create alerts at boundary scores
-let scores = [0.00, 0.05, 0.09, 0.10, 0.15, 0.19, 0.20, 0.25, 0.30];
-let expected = ["High", "High", "High", "Medium", "Medium", "Medium", "Low", "Low", "Low"];
-
-for (score, expected_sev) in scores.iter().zip(expected.iter()) {
-    let alert = DivergenceAlert::new(Uuid::new_v4(), Embedder::Semantic, *score, "test");
-    let actual = alert.severity().as_str();
-    assert_eq!(actual, *expected_sev, "Score {} should be {} severity", score, expected_sev);
-    println!("Score {} -> {} severity [PASS]", score, actual);
-}
-```
-
-### Test 4: Verify Report Ordering
-```rust
-let mut report = DivergenceReport::new();
-
-// Add in random order
-report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Semantic, 0.25, "low"));
-report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Code, 0.05, "high"));
-report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Causal, 0.15, "medium"));
-
-// Verify most_severe before sorting
-let most_severe = report.most_severe().unwrap();
-assert_eq!(most_severe.similarity_score, 0.05, "most_severe should return score 0.05");
-println!("most_severe score: {} [PASS]", most_severe.similarity_score);
-
-// Sort and verify order
-report.sort_by_severity();
-let scores: Vec<f32> = report.alerts.iter().map(|a| a.similarity_score).collect();
-assert_eq!(scores, vec![0.05, 0.15, 0.25], "Should be sorted ascending");
-println!("Sorted scores: {:?} [PASS]", scores);
-```
-
-### Test 5: Verify DIVERGENCE_SPACES Contains Correct Embedders
-```rust
-use crate::embeddings::category::category_for;
-
-// Verify count
-assert_eq!(DIVERGENCE_SPACES.len(), 7);
-println!("DIVERGENCE_SPACES count: 7 [PASS]");
-
-// Verify all are semantic
-for space in &DIVERGENCE_SPACES {
-    let cat = category_for(*space);
-    assert!(cat.is_semantic(), "{:?} is not semantic!", space);
-    println!("{:?} is semantic [PASS]", space);
-}
-
-// Verify specific embedders
-let expected = [
-    Embedder::Semantic,
-    Embedder::Causal,
-    Embedder::Sparse,
-    Embedder::Code,
-    Embedder::Multimodal,
-    Embedder::LateInteraction,
-    Embedder::KeywordSplade,
-];
-for e in &expected {
-    assert!(DIVERGENCE_SPACES.contains(e), "{:?} not in DIVERGENCE_SPACES", e);
-}
-println!("All expected embedders present [PASS]");
-
-// Verify exclusions
-let excluded = [
-    Embedder::TemporalRecent,
-    Embedder::TemporalPeriodic,
-    Embedder::TemporalPositional,
-    Embedder::Emotional,
-    Embedder::Hdc,
-    Embedder::Entity,
-];
-for e in &excluded {
-    assert!(!DIVERGENCE_SPACES.contains(e), "{:?} should not be in DIVERGENCE_SPACES", e);
-}
-println!("All excluded embedders absent [PASS]");
-```
-</manual_testing>
-
-<validation_criteria>
-  <criterion>DIVERGENCE_SPACES constant contains exactly 7 semantic embedders</criterion>
-  <criterion>DIVERGENCE_SPACES excludes E2, E3, E4 (temporal)</criterion>
-  <criterion>DIVERGENCE_SPACES excludes E8, E11 (relational)</criterion>
-  <criterion>DIVERGENCE_SPACES excludes E9 (structural)</criterion>
-  <criterion>DivergenceSeverity::from_score maps correctly: <0.10=High, 0.10-0.20=Medium, >=0.20=Low</criterion>
-  <criterion>DivergenceAlert clamps similarity_score to [0.0, 1.0]</criterion>
-  <criterion>DivergenceAlert.memory_summary is max 100 chars</criterion>
-  <criterion>truncate_summary prefers word boundaries</criterion>
-  <criterion>DivergenceReport.most_severe returns lowest score</criterion>
-  <criterion>DivergenceReport.sort_by_severity orders ascending (lowest first)</criterion>
-  <criterion>All types serialize/deserialize correctly (JSON)</criterion>
-  <criterion>All tests print [PASS] messages</criterion>
-</validation_criteria>
-
-<test_commands>
-  <command description="Compile check">cargo check --package context-graph-core</command>
-  <command description="Run divergence tests">cargo test --package context-graph-core divergence -- --nocapture</command>
-  <command description="Clippy lint check">cargo clippy --package context-graph-core -- -D warnings</command>
-  <command description="Verify module export">grep -n "pub mod divergence" crates/context-graph-core/src/retrieval/mod.rs</command>
-  <command description="Verify re-exports">grep -n "pub use divergence" crates/context-graph-core/src/retrieval/mod.rs</command>
-  <command description="Verify DIVERGENCE_SPACES">grep -A8 "DIVERGENCE_SPACES" crates/context-graph-core/src/retrieval/divergence.rs</command>
-</test_commands>
-</task_spec>
-```
-
-## Execution Checklist
-
-- [x] Read `crates/context-graph-core/src/retrieval/mod.rs` to understand current structure
-- [x] Create `crates/context-graph-core/src/retrieval/divergence.rs` with all types
-- [x] Add `DIVERGENCE_SPACES` constant with exactly 7 semantic embedders
-- [x] Implement `DivergenceSeverity` enum with `from_score` and `as_str`
-- [x] Implement `DivergenceAlert` struct with `new`, `severity`, `format_alert`, `format_with_severity`
-- [x] Implement `truncate_summary` helper function
-- [x] Implement `DivergenceReport` with `add`, `is_empty`, `len`, `most_severe`, `sort_by_severity`, `format_all`, `count_by_severity`
-- [x] Add `pub mod divergence;` to `retrieval/mod.rs`
-- [x] Add re-exports to `retrieval/mod.rs`
-- [x] Write ALL unit tests (must have all [PASS] messages)
-- [x] Run `cargo check --package context-graph-core`
-- [x] Run `cargo test --package context-graph-core divergence -- --nocapture`
-- [x] Run `cargo clippy --package context-graph-core -- -D warnings`
-- [x] Verify ALL [PASS] messages in test output
-- [x] Run manual tests with synthetic data
-- [x] Verify DIVERGENCE_SPACES has exactly 7 embedders and all are semantic
-
-## Critical Reminders
-
-1. **Embedder variant names**: Use `Embedder::Semantic`, NOT `Embedder::E1Semantic`
-2. **E8 name**: Use `Embedder::Emotional` (NOT `Graph` - deprecated)
-3. **DIVERGENCE_SPACES**: MUST be exactly 7 semantic embedders
-4. **Score interpretation**: LOW score = HIGH severity (more divergent)
-5. **No backwards compatibility**: If types don't match, fail fast
-6. **No mock data**: Use real calculations, verify actual values
-
-## Next Task After This
-
-After completing TASK-P3-002, proceed to:
-- **TASK-P3-003**: Threshold Configurations (PerSpaceThresholds, SimilarityThresholds)

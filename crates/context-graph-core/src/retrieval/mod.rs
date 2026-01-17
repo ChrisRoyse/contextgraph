@@ -79,6 +79,7 @@
 //! ```
 
 mod aggregation;
+pub mod divergence;
 mod executor;
 mod pipeline;
 mod query;
@@ -114,3 +115,9 @@ pub use teleological_result::{
 
 // Similarity types for retrieval
 pub use similarity::{PerSpaceScores, SimilarityResult, NUM_SPACES};
+
+// Divergence types for topic drift detection
+pub use divergence::{
+    DivergenceAlert, DivergenceReport, DivergenceSeverity,
+    DIVERGENCE_SPACES, MAX_SUMMARY_LEN, truncate_summary,
+};
