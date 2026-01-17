@@ -33,6 +33,7 @@ pub mod alignment;
 pub mod atc;
 pub mod autonomous;
 pub mod causal;
+pub mod clustering;
 pub mod config;
 pub mod dream;
 pub mod embeddings;
@@ -92,3 +93,6 @@ pub use memory::{
     ChunkMetadata, HookType, Memory, MemorySource, ResponseType, Session, SessionStatus, TextChunk,
     MAX_CONTENT_LENGTH,
 };
+
+// Clustering types (Phase 4) - TASK-P4-001
+pub use clustering::{Cluster, ClusterError, ClusterMembership};
