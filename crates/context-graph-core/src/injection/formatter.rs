@@ -1,160 +1,3 @@
-# Task: TASK-P5-006 - ContextFormatter
-
-## Metadata
-- **Phase**: 5 (Injection Pipeline)
-- **Sequence**: 41
-- **Layer**: logic
-- **Estimated LOC**: 250
-- **Status**: COMPLETE
-- **Last Updated**: 2026-01-17
-- **Completed**: 2026-01-17
-
-## Dependencies
-| Task ID | Artifact | Status | File Location |
-|---------|----------|--------|---------------|
-| TASK-P5-001 | `InjectionCandidate` type | COMPLETE | `crates/context-graph-core/src/injection/candidate.rs` |
-| TASK-P5-002 | `TokenBudget` type | COMPLETE | `crates/context-graph-core/src/injection/budget.rs` |
-| TASK-P5-003 | `InjectionResult` type | COMPLETE | `crates/context-graph-core/src/injection/result.rs` |
-| TASK-P5-003b | `TemporalEnrichmentProvider` | COMPLETE | `crates/context-graph-core/src/injection/temporal_enrichment.rs` |
-| TASK-P5-004 | `PriorityRanker` | COMPLETE | `crates/context-graph-core/src/injection/priority.rs` |
-| TASK-P5-005 | `TokenBudgetManager` | COMPLETE | `crates/context-graph-core/src/injection/budget.rs` |
-| TASK-P3-002 | `DivergenceAlert` type | COMPLETE | `crates/context-graph-core/src/retrieval/divergence.rs` |
-
-## Produces
-| Artifact | Type | File Path |
-|----------|------|-----------|
-| `ContextFormatter` | struct | `crates/context-graph-core/src/injection/formatter.rs` |
-| `SUMMARY_MAX_WORDS` | const | `crates/context-graph-core/src/injection/formatter.rs` |
-| `BRIEF_MAX_TOKENS` | const | `crates/context-graph-core/src/injection/formatter.rs` |
-
----
-
-## Context
-
-### Background
-ContextFormatter transforms selected candidates and divergence alerts into markdown-formatted text suitable for injection into Claude Code hooks. The output becomes part of the system prompt, providing Claude with relevant context from the memory graph.
-
-### Business Value
-This is the final transformation step before context injection. It makes stored memories actionable during coding sessions by presenting them in a human-readable format.
-
-### Technical Context
-Called AFTER `TokenBudgetManager::select_within_budget()` has selected candidates. Takes the selected candidates and any divergence alerts, formats them into structured markdown with sections per category.
-
----
-
-## Current Codebase State (Verified 2026-01-17)
-
-### EXISTING Types in `candidate.rs`
-
-**InjectionCategory enum** (lines 33-51):
-```rust
-pub enum InjectionCategory {
-    DivergenceAlert,        // Priority 1, 200 tokens
-    HighRelevanceCluster,   // Priority 2, 400 tokens
-    SingleSpaceMatch,       // Priority 3, 300 tokens
-    RecentSession,          // Priority 4, 200 tokens
-}
-```
-
-**InjectionCandidate struct** (lines 180-227):
-```rust
-pub struct InjectionCandidate {
-    pub memory_id: Uuid,
-    pub content: String,                 // <-- Full memory content to format
-    pub relevance_score: f32,
-    pub recency_factor: f32,
-    pub diversity_bonus: f32,
-    pub weighted_agreement: f32,
-    pub matching_spaces: Vec<Embedder>,
-    pub priority: f32,
-    pub token_count: u32,
-    pub category: InjectionCategory,     // <-- Determines which section
-    pub created_at: DateTime<Utc>,       // <-- For time_ago formatting
-}
-```
-
-### EXISTING Types in `retrieval/divergence.rs`
-
-**DivergenceAlert struct** (lines 82-94):
-```rust
-pub struct DivergenceAlert {
-    pub memory_id: Uuid,
-    pub space: Embedder,                 // Semantic space (E1, E5, E6, E7, E10, E12, E13)
-    pub similarity_score: f32,           // Low score triggered alert (0.0..1.0)
-    pub memory_summary: String,          // Already truncated to 100 chars
-    pub detected_at: DateTime<Utc>,
-}
-```
-
-**Existing methods on DivergenceAlert**:
-- `severity() -> DivergenceSeverity` - Returns High/Medium/Low
-- `format_alert() -> String` - Returns `⚠️ DIVERGENCE in {space}: "{summary}" (similarity: {score:.2})`
-- `format_with_severity() -> String` - Returns `[{severity}] ⚠️ DIVERGENCE...`
-
-**truncate_summary function** (lines 243-263):
-```rust
-pub fn truncate_summary(content: &str, max_len: usize) -> String
-// Truncates at word boundary if possible, adds "..." if truncated
-```
-
-### EXISTING Exports in `mod.rs` (lines 1-33)
-
-```rust
-pub mod budget;
-pub mod candidate;
-pub mod priority;
-pub mod result;
-pub mod temporal_enrichment;
-// NOTE: pub mod formatter; NOT YET ADDED
-
-pub use budget::{
-    TokenBudget, TokenBudgetManager, SelectionStats,
-    DEFAULT_TOKEN_BUDGET, BRIEF_BUDGET, estimate_tokens,
-};
-pub use candidate::{
-    InjectionCandidate, InjectionCategory, MAX_DIVERSITY_BONUS, MAX_RECENCY_FACTOR,
-    MAX_WEIGHTED_AGREEMENT, MIN_DIVERSITY_BONUS, MIN_RECENCY_FACTOR, TOKEN_MULTIPLIER,
-};
-pub use priority::{DiversityBonus, PriorityRanker, RecencyFactor};
-pub use result::InjectionResult;
-pub use temporal_enrichment::{...};
-```
-
-### Crate Imports Available
-
-```rust
-// Already in Cargo.toml for context-graph-core:
-chrono = { version = "0.4", features = ["serde"] }
-uuid = { version = "1.6", features = ["v4", "serde"] }
-serde = { version = "1.0", features = ["derive"] }
-```
-
----
-
-## Scope
-
-### Includes
-1. `ContextFormatter` struct (stateless, all methods are associated functions)
-2. `format_full_context(candidates, alerts) -> String` - Full markdown for SessionStart
-3. `format_brief_context(candidates) -> String` - Compact output for PreToolUse (<200 tokens)
-4. `summarize_memory(content, max_words) -> String` - Truncate at word boundary
-5. `format_time_ago(created_at) -> String` - Human-readable time difference
-6. Constants: `SUMMARY_MAX_WORDS = 50`, `BRIEF_MAX_TOKENS = 200`
-7. Unit tests for all formatting logic
-8. FSV tests with before/after state verification
-
-### Excludes
-- Candidate selection (TASK-P5-005 - COMPLETE)
-- DivergenceAlert creation (TASK-P3-006 - COMPLETE)
-- Pipeline orchestration (TASK-P5-007 - PENDING)
-
----
-
-## Implementation Specification
-
-### File to Create: `crates/context-graph-core/src/injection/formatter.rs`
-
-```rust
 //! ContextFormatter for injection pipeline output.
 //!
 //! Transforms selected candidates and divergence alerts into markdown
@@ -164,7 +7,7 @@ serde = { version = "1.0", features = ["derive"] }
 //! - AP-12: No magic numbers - use named constants
 //! - AP-14: No .unwrap() in library code
 
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 
 use super::candidate::{InjectionCandidate, InjectionCategory};
 use crate::retrieval::divergence::DivergenceAlert;
@@ -178,6 +21,18 @@ pub const SUMMARY_MAX_WORDS: usize = 50;
 
 /// Maximum tokens for brief context output.
 pub const BRIEF_MAX_TOKENS: usize = 200;
+
+/// Maximum candidates to include in brief context.
+const BRIEF_MAX_CANDIDATES: usize = 5;
+
+/// Maximum words per summary in brief context.
+const BRIEF_SUMMARY_WORDS: usize = 20;
+
+/// Estimated tokens for ", " separator between summaries.
+const SEPARATOR_TOKENS: usize = 2;
+
+/// Estimated tokens for "Related: " prefix.
+const BRIEF_PREFIX_TOKENS: usize = 3;
 
 /// Token multiplier for word estimation (consistent with candidate.rs).
 const TOKEN_MULTIPLIER: f32 = 1.3;
@@ -312,20 +167,19 @@ impl ContextFormatter {
         }
 
         let mut summaries: Vec<String> = Vec::new();
-        let prefix_tokens = 3; // "Related: " is ~3 tokens
-        let mut token_estimate = prefix_tokens;
+        let mut token_estimate = BRIEF_PREFIX_TOKENS;
 
-        for candidate in candidates.iter().take(5) {
-            let summary = Self::summarize_memory(&candidate.content, 20);
+        for candidate in candidates.iter().take(BRIEF_MAX_CANDIDATES) {
+            let summary = Self::summarize_memory(&candidate.content, BRIEF_SUMMARY_WORDS);
             let summary_tokens = Self::estimate_tokens(&summary);
 
             // Check if adding this summary would exceed budget
-            if token_estimate + summary_tokens + 2 > BRIEF_MAX_TOKENS {
+            if token_estimate + summary_tokens + SEPARATOR_TOKENS > BRIEF_MAX_TOKENS {
                 break;
             }
 
             summaries.push(summary);
-            token_estimate += summary_tokens + 2; // +2 for ", " separator
+            token_estimate += summary_tokens + SEPARATOR_TOKENS;
         }
 
         if summaries.is_empty() {
@@ -337,7 +191,7 @@ impl ContextFormatter {
 
     /// Summarize memory content to max_words.
     ///
-    /// Truncates at sentence boundary if possible within the first half,
+    /// Truncates at sentence boundary if possible within the second half,
     /// otherwise truncates at word boundary and adds "...".
     ///
     /// # Arguments
@@ -354,25 +208,17 @@ impl ContextFormatter {
             return trimmed.to_string();
         }
 
-        // Take first max_words words
         let truncated: String = words[..max_words].join(" ");
+        let halfway = truncated.len() / 2;
 
-        // Try to truncate at sentence boundary (period followed by space or end)
-        if let Some(period_idx) = truncated.rfind(". ") {
-            // Only use if it's not too short (past halfway point)
-            if period_idx > truncated.len() / 2 {
-                return truncated[..=period_idx].to_string();
-            }
-        }
-
-        // Check for period at end
+        // Try to find a sentence boundary (period) in the second half
         if let Some(period_idx) = truncated.rfind('.') {
-            if period_idx > truncated.len() / 2 && period_idx == truncated.len() - 1 {
-                return truncated;
+            if period_idx > halfway {
+                // Include the period, trim any trailing space
+                return truncated[..=period_idx].trim_end().to_string();
             }
         }
 
-        // No good sentence boundary, truncate with ellipsis
         format!("{}...", truncated)
     }
 
@@ -394,44 +240,42 @@ impl ContextFormatter {
     /// Format time ago with explicit reference time (for deterministic testing).
     pub fn format_time_ago_relative(created_at: DateTime<Utc>, now: DateTime<Utc>) -> String {
         let duration = now.signed_duration_since(created_at);
+        let minutes = duration.num_minutes();
+        let hours = duration.num_hours();
+        let days = duration.num_days();
 
-        if duration.num_minutes() < 1 {
+        if minutes < 1 {
             return "Just now".to_string();
         }
-
-        if duration.num_minutes() < 60 {
-            let mins = duration.num_minutes();
-            if mins == 1 {
-                return "1 minute ago".to_string();
-            }
-            return format!("{} minutes ago", mins);
+        if minutes < 60 {
+            return Self::pluralize(minutes, "minute");
         }
-
-        if duration.num_hours() < 24 {
-            let hours = duration.num_hours();
-            if hours == 1 {
-                return "1 hour ago".to_string();
-            }
-            return format!("{} hours ago", hours);
+        if hours < 24 {
+            return Self::pluralize(hours, "hour");
         }
-
-        if duration.num_days() < 2 {
+        if days < 2 {
             return "Yesterday".to_string();
         }
-
-        if duration.num_days() < 7 {
-            return format!("{} days ago", duration.num_days());
+        if days < 7 {
+            return format!("{} days ago", days);
         }
 
-        let weeks = duration.num_days() / 7;
+        let weeks = days / 7;
         if weeks < 4 {
-            if weeks == 1 {
-                return "1 week ago".to_string();
-            }
-            return format!("{} weeks ago", weeks);
+            return Self::pluralize(weeks, "week");
         }
 
-        format!("{} days ago", duration.num_days())
+        format!("{} days ago", days)
+    }
+
+    /// Format a count with singular/plural unit.
+    #[inline]
+    fn pluralize(count: i64, unit: &str) -> String {
+        if count == 1 {
+            format!("1 {} ago", unit)
+        } else {
+            format!("{} {}s ago", count, unit)
+        }
     }
 
     /// Estimate token count for text (same formula as candidate.rs).
@@ -449,7 +293,7 @@ impl ContextFormatter {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chrono::Duration;
+    use chrono::TimeDelta;
     use uuid::Uuid;
     use crate::teleological::Embedder;
 
@@ -465,7 +309,7 @@ mod tests {
             3.0, // weighted_agreement
             vec![Embedder::Semantic, Embedder::Code],
             category,
-            Utc::now() - Duration::hours(hours_ago),
+            Utc::now() - TimeDelta::hours(hours_ago),
         )
     }
 
@@ -665,7 +509,7 @@ mod tests {
     #[test]
     fn test_format_time_ago_minutes() {
         let now = Utc::now();
-        let created = now - Duration::minutes(30);
+        let created = now - TimeDelta::minutes(30);
         let formatted = ContextFormatter::format_time_ago_relative(created, now);
         assert!(formatted.contains("30 minutes ago"), "Got: {}", formatted);
         println!("[PASS] Minutes formatting: {}", formatted);
@@ -674,7 +518,7 @@ mod tests {
     #[test]
     fn test_format_time_ago_hours() {
         let now = Utc::now();
-        let created = now - Duration::hours(3);
+        let created = now - TimeDelta::hours(3);
         let formatted = ContextFormatter::format_time_ago_relative(created, now);
         assert!(formatted.contains("3 hours ago"), "Got: {}", formatted);
         println!("[PASS] Hours formatting: {}", formatted);
@@ -683,7 +527,7 @@ mod tests {
     #[test]
     fn test_format_time_ago_yesterday() {
         let now = Utc::now();
-        let created = now - Duration::hours(30);
+        let created = now - TimeDelta::hours(30);
         let formatted = ContextFormatter::format_time_ago_relative(created, now);
         assert_eq!(formatted, "Yesterday");
         println!("[PASS] Yesterday formatting");
@@ -692,7 +536,7 @@ mod tests {
     #[test]
     fn test_format_time_ago_days() {
         let now = Utc::now();
-        let created = now - Duration::days(4);
+        let created = now - TimeDelta::days(4);
         let formatted = ContextFormatter::format_time_ago_relative(created, now);
         assert!(formatted.contains("4 days ago"), "Got: {}", formatted);
         println!("[PASS] Days formatting: {}", formatted);
@@ -701,7 +545,7 @@ mod tests {
     #[test]
     fn test_format_time_ago_weeks() {
         let now = Utc::now();
-        let created = now - Duration::days(14);
+        let created = now - TimeDelta::days(14);
         let formatted = ContextFormatter::format_time_ago_relative(created, now);
         assert!(formatted.contains("2 weeks ago"), "Got: {}", formatted);
         println!("[PASS] Weeks formatting: {}", formatted);
@@ -710,7 +554,7 @@ mod tests {
     #[test]
     fn test_format_time_ago_just_now() {
         let now = Utc::now();
-        let created = now - Duration::seconds(30);
+        let created = now - TimeDelta::seconds(30);
         let formatted = ContextFormatter::format_time_ago_relative(created, now);
         assert_eq!(formatted, "Just now");
         println!("[PASS] Just now formatting");
@@ -719,7 +563,7 @@ mod tests {
     #[test]
     fn test_format_time_ago_one_minute() {
         let now = Utc::now();
-        let created = now - Duration::minutes(1);
+        let created = now - TimeDelta::minutes(1);
         let formatted = ContextFormatter::format_time_ago_relative(created, now);
         assert_eq!(formatted, "1 minute ago");
         println!("[PASS] Singular minute formatting");
@@ -728,7 +572,7 @@ mod tests {
     #[test]
     fn test_format_time_ago_one_hour() {
         let now = Utc::now();
-        let created = now - Duration::hours(1);
+        let created = now - TimeDelta::hours(1);
         let formatted = ContextFormatter::format_time_ago_relative(created, now);
         assert_eq!(formatted, "1 hour ago");
         println!("[PASS] Singular hour formatting");
@@ -791,257 +635,191 @@ mod tests {
         assert!(output.contains("🚀"));
         println!("[PASS] Unicode content handled correctly");
     }
+
+    // =========================================================================
+    // FSV Edge Case Tests (MANDATORY)
+    // =========================================================================
+
+    #[test]
+    fn test_fsv_edge_case_empty_input() {
+        println!("FSV EDGE CASE 1: Empty input");
+        println!("  Before: candidates.len() = 0, alerts.len() = 0");
+
+        let output = ContextFormatter::format_full_context(&[], &[]);
+
+        println!("  After: output.len() = {}", output.len());
+        println!("  Output content: '{}'", output);
+        println!("  Expected: Empty string");
+
+        assert!(output.is_empty(), "Empty input should produce empty output");
+        println!("[PASS] FSV Edge Case 1: Empty input -> empty output");
+    }
+
+    #[test]
+    fn test_fsv_edge_case_exactly_at_word_limit() {
+        println!("FSV EDGE CASE 2: Content exactly at word limit");
+
+        // Create content with exactly 50 words
+        let content = "word ".repeat(50).trim().to_string();
+        let word_count = content.split_whitespace().count();
+
+        println!("  Before: word_count = {}", word_count);
+
+        let summary = ContextFormatter::summarize_memory(&content, 50);
+        let output_word_count = summary.split_whitespace().count();
+
+        println!("  After: output_word_count = {}", output_word_count);
+        println!("  Expected: {} (unchanged)", word_count);
+
+        assert_eq!(output_word_count, word_count, "Exactly at limit should not truncate");
+        assert!(!summary.ends_with("..."), "Should not have ellipsis");
+        println!("[PASS] FSV Edge Case 2: Exactly at limit -> unchanged");
+    }
+
+    #[test]
+    fn test_fsv_edge_case_brief_context_budget_boundary() {
+        println!("FSV EDGE CASE 3: Brief context near token budget");
+
+        // Create candidates that together approach the 200 token limit
+        let candidates: Vec<_> = (0..20)
+            .map(|i| make_candidate(
+                &format!("Candidate {} with reasonable content here", i),
+                InjectionCategory::HighRelevanceCluster,
+                i,
+            ))
+            .collect();
+
+        println!("  Before: {} candidates available", candidates.len());
+
+        let output = ContextFormatter::format_brief_context(&candidates);
+        let tokens = (output.split_whitespace().count() as f32 * 1.3).ceil() as usize;
+
+        println!("  After: output = '{}'", output);
+        println!("  After: estimated tokens = {}", tokens);
+        println!("  Expected: <= {} tokens", BRIEF_MAX_TOKENS);
+
+        assert!(tokens <= BRIEF_MAX_TOKENS, "Must not exceed {} tokens", BRIEF_MAX_TOKENS);
+        println!("[PASS] FSV Edge Case 3: Brief context respects token budget");
+    }
+
+    // =========================================================================
+    // Additional FSV Tests - Boundary and Edge Cases
+    // =========================================================================
+
+    #[test]
+    fn test_fsv_format_time_ago_one_week() {
+        println!("FSV EDGE CASE 4: Exactly 1 week ago");
+        let now = Utc::now();
+        let created = now - TimeDelta::days(7);
+
+        println!("  Before: days_ago = 7");
+        let formatted = ContextFormatter::format_time_ago_relative(created, now);
+
+        println!("  After: formatted = '{}'", formatted);
+        assert_eq!(formatted, "1 week ago");
+        println!("[PASS] FSV Edge Case 4: Exactly 1 week -> '1 week ago'");
+    }
+
+    #[test]
+    fn test_fsv_format_time_ago_over_4_weeks() {
+        println!("FSV EDGE CASE 5: Over 4 weeks (falls back to days)");
+        let now = Utc::now();
+        let created = now - TimeDelta::days(35);
+
+        println!("  Before: days_ago = 35");
+        let formatted = ContextFormatter::format_time_ago_relative(created, now);
+
+        println!("  After: formatted = '{}'", formatted);
+        assert!(formatted.contains("35 days ago"), "Got: {}", formatted);
+        println!("[PASS] FSV Edge Case 5: 35 days -> '35 days ago'");
+    }
+
+    #[test]
+    fn test_fsv_summarize_memory_one_word_over() {
+        println!("FSV EDGE CASE 6: Content exactly 1 word over limit");
+
+        // 11 words, limit 10
+        let content = "one two three four five six seven eight nine ten eleven";
+        let word_count = content.split_whitespace().count();
+
+        println!("  Before: word_count = {}", word_count);
+
+        let summary = ContextFormatter::summarize_memory(content, 10);
+        let output_word_count = summary.split_whitespace().count();
+
+        println!("  After: summary = '{}'", summary);
+        println!("  After: output_word_count = {} (including ... as word)", output_word_count);
+
+        // Should be truncated
+        assert!(summary.len() < content.len(), "Should be truncated");
+        assert!(summary.ends_with("...") || summary.ends_with('.'), "Should have proper ending");
+        println!("[PASS] FSV Edge Case 6: 1 word over -> truncated");
+    }
+
+    #[test]
+    fn test_fsv_multiple_alerts_ordering() {
+        println!("FSV EDGE CASE 7: Multiple divergence alerts maintain order");
+
+        let alerts = vec![
+            make_alert("First alert content", Embedder::Semantic, 0.10),
+            make_alert("Second alert content", Embedder::Code, 0.05),
+            make_alert("Third alert content", Embedder::Causal, 0.15),
+        ];
+
+        println!("  Before: {} alerts", alerts.len());
+
+        let output = ContextFormatter::format_full_context(&[], &alerts);
+
+        println!("  After output:\n{}", output);
+
+        // Verify all alerts appear
+        assert!(output.contains("First alert"), "Should contain first alert");
+        assert!(output.contains("Second alert"), "Should contain second alert");
+        assert!(output.contains("Third alert"), "Should contain third alert");
+
+        // Verify order is preserved (first appears before second, second before third)
+        let first_pos = output.find("First alert").expect("First alert not found");
+        let second_pos = output.find("Second alert").expect("Second alert not found");
+        let third_pos = output.find("Third alert").expect("Third alert not found");
+
+        assert!(first_pos < second_pos, "First should come before second");
+        assert!(second_pos < third_pos, "Second should come before third");
+
+        println!("[PASS] FSV Edge Case 7: Multiple alerts maintain insertion order");
+    }
+
+    #[test]
+    fn test_fsv_session_summary_double_word_limit() {
+        println!("FSV EDGE CASE 8: Session summary uses double word limit (100 words)");
+
+        // Create content with 75 words (between 50 and 100)
+        let content = "word ".repeat(75).trim().to_string();
+        let word_count = content.split_whitespace().count();
+
+        let candidate = InjectionCandidate::new(
+            Uuid::new_v4(),
+            content.clone(),
+            0.8,
+            3.0,
+            vec![Embedder::Semantic],
+            InjectionCategory::RecentSession,
+            Utc::now() - TimeDelta::hours(25),
+        );
+
+        println!("  Before: word_count = {}", word_count);
+
+        let output = ContextFormatter::format_full_context(&[candidate], &[]);
+
+        // The 75-word content should be preserved (under 100 word limit for session)
+        // Count words after "### Previous Session\n"
+        let session_start = output.find("### Previous Session").expect("Session section not found");
+        let session_content = &output[session_start..];
+
+        println!("  After: session section = '{}'", session_content);
+
+        // The content should NOT be truncated (75 < 100)
+        assert!(!session_content.contains("..."), "Session summary should not be truncated at 75 words");
+
+        println!("[PASS] FSV Edge Case 8: Session summary allows 100 words");
+    }
 }
-```
-
-### File to Modify: `crates/context-graph-core/src/injection/mod.rs`
-
-Add after line 17 (`pub mod temporal_enrichment;`):
-```rust
-pub mod formatter;
-```
-
-Add to exports (after line 33):
-```rust
-pub use formatter::{ContextFormatter, SUMMARY_MAX_WORDS, BRIEF_MAX_TOKENS};
-```
-
----
-
-## Definition of Done
-
-### DOD-1: format_full_context() produces correct markdown structure
-- [x] Output contains "## Relevant Context" header when non-empty
-- [x] Output contains "### Recent Related Work" for HighRelevanceCluster candidates
-- [x] Output contains "### Potentially Related" for SingleSpaceMatch candidates
-- [x] Output contains "### Note: Activity Shift Detected" for divergence alerts
-- [x] Output contains "### Previous Session" for RecentSession candidates
-- **Verification**: Unit test `test_format_full_context_structure` - PASSED
-
-### DOD-2: format_brief_context() respects token budget
-- [x] Output starts with "Related: " prefix
-- [x] Total tokens estimated at <= 200
-- [x] Takes at most 5 candidates
-- **Verification**: Unit test `test_format_brief_context_token_limit` - PASSED
-
-### DOD-3: summarize_memory() truncates correctly
-- [x] Returns unchanged content if under max_words
-- [x] Truncates at sentence boundary when possible (if past halfway)
-- [x] Adds "..." suffix when no sentence boundary found
-- **Verification**: Unit tests `test_summarize_memory_*` - ALL PASSED
-
-### DOD-4: format_time_ago() produces human-readable strings
-- [x] "Just now" for < 1 minute
-- [x] "X minutes ago" for < 1 hour
-- [x] "X hours ago" for < 24 hours
-- [x] "Yesterday" for 24-48 hours
-- [x] "X days ago" for 2-7 days
-- [x] "X weeks ago" for 1-4 weeks
-- **Verification**: Unit tests `test_format_time_ago_*` - ALL PASSED
-
-### DOD-5: Empty input handling
-- [x] `format_full_context(&[], &[])` returns empty string
-- [x] `format_brief_context(&[])` returns empty string
-- **Verification**: Unit tests `test_*_empty` - PASSED
-
----
-
-## Constraints
-
-| Type | Constraint |
-|------|------------|
-| Output | Full context uses markdown headers (##, ###) |
-| Output | Brief context is single paragraph, max ~200 tokens |
-| Config | `SUMMARY_MAX_WORDS = 50` for normal summaries |
-| Config | `BRIEF_MAX_TOKENS = 200` for PreToolUse hook |
-| Config | Session summaries use `SUMMARY_MAX_WORDS * 2` (100 words) |
-| Import | DivergenceAlert from `crate::retrieval::divergence` |
-| Behavior | Use existing `DivergenceAlert::format_alert()` method |
-
----
-
-## Full State Verification Protocol
-
-After implementing the logic, you MUST perform Full State Verification.
-
-### 1. Source of Truth Identification
-
-The source of truth for this task is:
-- **Returned String**: The formatted markdown/text output
-- **Test assertions**: Verify structure, content presence, and token limits
-
-There is NO database or persistent storage - this is pure string transformation.
-
-### 2. Execute & Inspect Protocol
-
-```bash
-# Build first
-cargo build --package context-graph-core
-
-# Run all formatter tests
-cargo test injection::formatter --package context-graph-core -- --nocapture
-
-# Verify no regressions in other injection modules
-cargo test injection --package context-graph-core
-```
-
-### 3. Boundary & Edge Case Audit (MANDATORY)
-
-You MUST run these edge case tests and verify output:
-
-**Edge Case 1: Empty candidates and alerts**
-```rust
-#[test]
-fn test_fsv_edge_case_empty_input() {
-    println!("FSV EDGE CASE 1: Empty input");
-    println!("  Before: candidates.len() = 0, alerts.len() = 0");
-
-    let output = ContextFormatter::format_full_context(&[], &[]);
-
-    println!("  After: output.len() = {}", output.len());
-    println!("  Output content: '{}'", output);
-    println!("  Expected: Empty string");
-
-    assert!(output.is_empty(), "Empty input should produce empty output");
-    println!("[PASS] FSV Edge Case 1: Empty input -> empty output");
-}
-```
-
-**Edge Case 2: Exactly at word limit**
-```rust
-#[test]
-fn test_fsv_edge_case_exactly_at_word_limit() {
-    println!("FSV EDGE CASE 2: Content exactly at word limit");
-
-    // Create content with exactly 50 words
-    let content = "word ".repeat(50).trim().to_string();
-    let word_count = content.split_whitespace().count();
-
-    println!("  Before: word_count = {}", word_count);
-
-    let summary = ContextFormatter::summarize_memory(&content, 50);
-    let output_word_count = summary.split_whitespace().count();
-
-    println!("  After: output_word_count = {}", output_word_count);
-    println!("  Expected: {} (unchanged)", word_count);
-
-    assert_eq!(output_word_count, word_count, "Exactly at limit should not truncate");
-    assert!(!summary.ends_with("..."), "Should not have ellipsis");
-    println!("[PASS] FSV Edge Case 2: Exactly at limit -> unchanged");
-}
-```
-
-**Edge Case 3: Single character over brief token budget**
-```rust
-#[test]
-fn test_fsv_edge_case_brief_context_budget_boundary() {
-    println!("FSV EDGE CASE 3: Brief context near token budget");
-
-    // Create candidates that together approach the 200 token limit
-    let candidates: Vec<_> = (0..20)
-        .map(|i| make_candidate(
-            &format!("Candidate {} with reasonable content here", i),
-            InjectionCategory::HighRelevanceCluster,
-            i,
-        ))
-        .collect();
-
-    println!("  Before: {} candidates available", candidates.len());
-
-    let output = ContextFormatter::format_brief_context(&candidates);
-    let tokens = (output.split_whitespace().count() as f32 * 1.3).ceil() as usize;
-
-    println!("  After: output = '{}'", output);
-    println!("  After: estimated tokens = {}", tokens);
-    println!("  Expected: <= {} tokens", BRIEF_MAX_TOKENS);
-
-    assert!(tokens <= BRIEF_MAX_TOKENS, "Must not exceed {} tokens", BRIEF_MAX_TOKENS);
-    println!("[PASS] FSV Edge Case 3: Brief context respects token budget");
-}
-```
-
-### 4. Evidence of Success
-
-After running tests, provide:
-
-1. **Full test output** showing all 15+ tests passed
-2. **Cargo build output** showing no errors or warnings
-3. **Sample formatted output** from `test_format_full_context_structure` showing the markdown structure
-4. **Token count verification** from `test_format_brief_context_token_limit`
-
----
-
-## Test Commands
-
-```bash
-# Build the package
-cargo build --package context-graph-core
-
-# Run all formatter tests with output
-cargo test injection::formatter::tests --package context-graph-core -- --nocapture
-
-# Run specific test
-cargo test test_format_full_context_structure --package context-graph-core -- --nocapture
-
-# Run FSV edge case tests
-cargo test test_fsv_edge_case --package context-graph-core -- --nocapture
-
-# Verify no regressions in all injection tests
-cargo test injection --package context-graph-core
-
-# Final validation
-cargo clippy --package context-graph-core -- -D warnings
-```
-
----
-
-## Validation Criteria
-
-| Type | Criterion |
-|------|-----------|
-| Compilation | `cargo build --package context-graph-core` compiles without errors |
-| Tests | All 18+ tests in `formatter::tests` pass |
-| Clippy | No warnings from `cargo clippy` |
-| Structure | Full context has correct markdown headers |
-| Budget | Brief context stays under 200 tokens |
-| Integration | All existing injection tests still pass |
-
----
-
-## Anti-Patterns to Avoid
-
-| ID | Anti-Pattern | Correct Approach |
-|----|--------------|------------------|
-| AP-10 | NaN/Infinity | Not applicable - no float computations |
-| AP-12 | Magic numbers | Use `SUMMARY_MAX_WORDS`, `BRIEF_MAX_TOKENS` constants |
-| AP-14 | `.unwrap()` in library code | No unwrap needed - all string operations |
-| | Mock data in tests | Use real `InjectionCandidate::new()` and `DivergenceAlert::new()` |
-| | Backwards compatibility | Fail fast if something doesn't work |
-
----
-
-## Notes for Implementing Agent
-
-1. **DivergenceAlert has `format_alert()` method** - Use it directly, don't reimplement formatting
-
-2. **InjectionCandidate fields are public** - Access `content`, `category`, `created_at` directly
-
-3. **Use `chrono::Duration`** - For time calculations in `format_time_ago_relative()`
-
-4. **Import path for DivergenceAlert** - `use crate::retrieval::divergence::DivergenceAlert;`
-
-5. **Token estimation consistency** - Use same `1.3` multiplier as `candidate.rs`
-
-6. **The `_relative` variant is for testing** - Pass explicit `now` for deterministic tests
-
-7. **Session summaries get double word limit** - `SUMMARY_MAX_WORDS * 2` = 100 words
-
-8. **Existing `truncate_summary` in divergence.rs** - You can reference it but implement your own `summarize_memory` since the logic differs (words vs chars)
-
-9. **NO database verification needed** - This is pure string transformation, verify through assertions on returned strings
-
-10. **Order of sections is fixed**:
-    1. Recent Related Work (HighRelevanceCluster)
-    2. Potentially Related (SingleSpaceMatch)
-    3. Note: Activity Shift Detected (DivergenceAlert)
-    4. Previous Session (RecentSession)
