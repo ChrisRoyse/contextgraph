@@ -88,6 +88,7 @@ pub mod multi_space;
 mod pipeline;
 mod query;
 mod result;
+pub mod retriever;
 pub mod similarity;
 mod teleological_query;
 mod teleological_result;
@@ -98,6 +99,9 @@ mod in_memory_executor;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod manual_test;
 
 // Re-export all public types
 pub use aggregation::AggregationStrategy;
@@ -147,4 +151,9 @@ pub use multi_space::{
 // Divergence detection service
 pub use detector::{
     DivergenceDetector, RecentMemory, is_divergence_space,
+};
+
+// High-level retrieval orchestrator
+pub use retriever::{
+    memory_to_recent, RetrieverError, SimilarityRetriever,
 };
