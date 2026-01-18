@@ -90,6 +90,10 @@ impl Handlers {
             tool_names::FORGET_CONCEPT => self.call_forget_concept(id, arguments).await,
             tool_names::BOOST_IMPORTANCE => self.call_boost_importance(id, arguments).await,
 
+            // ========== DREAM TOOLS (Constitution dream layer) ==========
+            tool_names::TRIGGER_DREAM => self.call_trigger_dream(id, arguments).await,
+            tool_names::GET_DREAM_STATUS => self.call_get_dream_status(id, arguments).await,
+
             // Unknown tool
             _ => JsonRpcResponse::error(
                 id,

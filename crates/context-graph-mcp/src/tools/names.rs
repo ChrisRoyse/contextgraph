@@ -28,3 +28,7 @@ pub const GET_DIVERGENCE_ALERTS: &str = "get_divergence_alerts";
 pub const MERGE_CONCEPTS: &str = "merge_concepts";
 pub const FORGET_CONCEPT: &str = "forget_concept";
 pub const BOOST_IMPORTANCE: &str = "boost_importance";
+
+// ========== DREAM TOOLS (PRD Section 10.1) ==========
+pub const TRIGGER_DREAM: &str = "trigger_dream";
+pub const GET_DREAM_STATUS: &str = "get_dream_status";
