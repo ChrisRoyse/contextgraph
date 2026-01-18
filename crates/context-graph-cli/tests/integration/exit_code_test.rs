@@ -373,10 +373,13 @@ fn test_graceful_handling_previous_session_not_found() {
     );
 
     // Verify warning is logged about missing session
+    // The CLI logs: "cache is cold, cannot link to previous session" with previous_session_id
     let stderr_lower = result.stderr.to_lowercase();
     assert!(
         stderr_lower.contains("previous session not found")
-            || stderr_lower.contains("starting fresh"),
+            || stderr_lower.contains("starting fresh")
+            || stderr_lower.contains("cannot link to previous session")
+            || stderr_lower.contains("cache is cold"),
         "Should log warning about missing previous session.\nstderr: {}",
         result.stderr
     );
