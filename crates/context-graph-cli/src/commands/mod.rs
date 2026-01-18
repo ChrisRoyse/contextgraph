@@ -9,6 +9,7 @@
 pub mod hooks;
 pub mod memory;
 pub mod session;
+pub mod setup;
 
 /// Test utilities for CLI tests
 #[cfg(test)]

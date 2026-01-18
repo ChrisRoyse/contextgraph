@@ -57,6 +57,11 @@ enum Commands {
         #[command(subcommand)]
         action: commands::memory::MemoryCommands,
     },
+    /// Initialize context-graph hooks for Claude Code
+    ///
+    /// Creates .claude/settings.json and .claude/hooks/ directory with
+    /// all required hook scripts for context-graph integration.
+    Setup(commands::setup::SetupArgs),
 }
 
 #[tokio::main]
@@ -83,6 +88,7 @@ async fn main() {
         Commands::Session { action } => commands::session::handle_session_command(action).await,
         Commands::Hooks { action } => commands::hooks::handle_hooks_command(action).await,
         Commands::Memory { action } => commands::memory::handle_memory_command(action).await,
+        Commands::Setup(args) => commands::setup::handle_setup(args).await,
     };
 
     std::process::exit(exit_code);
