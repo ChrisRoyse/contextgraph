@@ -11,14 +11,14 @@ fn test_teleological_cf_names_count() {
     // TASK-TELEO-006: Updated from 4 to 7 CFs
     // TASK-STORAGE-P2-001: Updated from 7 to 8 CFs (added CF_E12_LATE_INTERACTION)
     // TASK-CONTENT-001: Updated from 8 to 9 CFs (added CF_CONTENT)
-    // PRD v6: Removed CF_SESSION_IDENTITY (Session Identity deprecated)
+    // LEGACY-COMPAT: Added 2 legacy CFs (session_identity, ego_node) for backwards compat
     assert_eq!(
         TELEOLOGICAL_CFS.len(),
         TELEOLOGICAL_CF_COUNT,
         "Must have exactly {} teleological column families",
         TELEOLOGICAL_CF_COUNT
     );
-    assert_eq!(TELEOLOGICAL_CF_COUNT, 9); // 9 CFs total
+    assert_eq!(TELEOLOGICAL_CF_COUNT, 11); // 9 active + 2 legacy CFs total
 }
 
 #[test]
@@ -166,19 +166,19 @@ fn test_descriptors_in_correct_order() {
 }
 
 #[test]
-fn test_get_all_teleological_cf_descriptors_returns_22() {
+fn test_get_all_teleological_cf_descriptors_returns_24() {
     use rocksdb::Cache;
     let cache = Cache::new_lru_cache(256 * 1024 * 1024);
     let descriptors = get_all_teleological_cf_descriptors(&cache);
 
-    // 9 teleological + 13 quantized embedder = 22
+    // 11 teleological + 13 quantized embedder = 24
     // TASK-STORAGE-P2-001: +1 for CF_E12_LATE_INTERACTION
     // TASK-CONTENT-001: +1 for CF_CONTENT
-    // PRD v6: Removed CF_SESSION_IDENTITY (Session Identity deprecated)
+    // LEGACY-COMPAT: +2 for legacy CFs (session_identity, ego_node)
     assert_eq!(
         descriptors.len(),
-        22,
-        "Must return 9 teleological + 13 quantized = 22 CFs"
+        24,
+        "Must return 11 teleological + 13 quantized = 24 CFs"
     );
 }
 

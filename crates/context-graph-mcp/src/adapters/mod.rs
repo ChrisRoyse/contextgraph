@@ -13,13 +13,14 @@
 //! # Available Adapters
 //!
 //! - [`UtlProcessorAdapter`]: Bridges `context_graph_utl::UtlProcessor` to core trait
-//!
-//! # Blocked Adapters
-//!
-//! - `EmbeddingProviderAdapter`: Blocked until TASK-F007 implements multi-array provider.
+//! - [`LazyMultiArrayProvider`]: Wraps provider for lazy loading on MCP startup
 
+pub mod lazy_provider;
 pub mod utl_adapter;
 
 // UtlProcessorAdapter is prepared for future use when UTL integration is enabled
 #[allow(unused_imports)]
 pub use utl_adapter::UtlProcessorAdapter;
+
+// LazyMultiArrayProvider allows immediate MCP startup while models load in background
+pub use lazy_provider::LazyMultiArrayProvider;

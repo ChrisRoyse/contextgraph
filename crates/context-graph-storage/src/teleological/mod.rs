@@ -1,10 +1,10 @@
 //! Teleological fingerprint storage extensions.
 //!
-//! Adds 22 column families for TeleologicalFingerprint storage:
-//! - 9 core teleological CFs (~63KB fingerprints, purpose vectors, indexes, teleological vectors)
+//! Adds 24 column families for TeleologicalFingerprint storage:
+//! - 11 core teleological CFs (9 active + 2 legacy for backwards compatibility)
 //! - 13 quantized embedder CFs (per-embedder quantized storage)
 //!
-//! # Column Families (22 new, 30 total with base 8)
+//! # Column Families (24 new, 32 total with base 8)
 //!
 //! ## Core Teleological (9 CFs)
 //! | Name | Purpose | Key Format | Value Size |

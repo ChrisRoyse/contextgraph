@@ -260,12 +260,12 @@ pub fn get_all_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamil
 }
 
 /// Total number of column families in a fully configured Context Graph database.
-/// Base (8) + Teleological (9) + Quantized Embedder (13) + Autonomous (5) = 35
+/// Base (8) + Teleological (11) + Quantized Embedder (13) + Autonomous (5) = 37
 /// TASK-CONTENT-001: +1 for CF_CONTENT
 /// TASK-STORAGE-P2-001: +1 for CF_E12_LATE_INTERACTION
 /// TASK-P0-004: -2 (removed drift_history and goal_activity_metrics)
-/// PRD v6: Removed CF_SESSION_IDENTITY (Session Identity deprecated, replaced by Topic Stability)
-pub const TOTAL_COLUMN_FAMILIES: usize = 35;
+/// LEGACY-COMPAT: +2 for legacy CFs (session_identity, ego_node) for backwards compatibility
+pub const TOTAL_COLUMN_FAMILIES: usize = 37;
 
 #[cfg(test)]
 mod tests {
@@ -532,10 +532,10 @@ mod tests {
         // TASK-CONTENT-001: +1 for CF_CONTENT
         // TASK-STORAGE-P2-001: +1 for CF_E12_LATE_INTERACTION
         // TASK-P0-004: -2 (removed drift_history and goal_activity_metrics)
-        // PRD v6: Removed CF_SESSION_IDENTITY (Session Identity deprecated)
+        // LEGACY-COMPAT: +2 for legacy CFs (session_identity, ego_node)
         assert_eq!(
-            TOTAL_COLUMN_FAMILIES, 35,
-            "Total column families should be 35 (8 base + 9 teleological + 13 quantized + 5 autonomous)"
+            TOTAL_COLUMN_FAMILIES, 37,
+            "Total column families should be 37 (8 base + 11 teleological + 13 quantized + 5 autonomous)"
         );
     }
 

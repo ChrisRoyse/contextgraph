@@ -10,7 +10,7 @@
 use std::io::{self, BufRead, Write};
 use std::net::SocketAddr;
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -55,7 +55,7 @@ use context_graph_core::traits::{
 use context_graph_embeddings::{GpuConfig, ProductionMultiArrayProvider};
 
 // REAL implementations - NO STUBS
-use crate::adapters::UtlProcessorAdapter;
+use crate::adapters::{LazyMultiArrayProvider, UtlProcessorAdapter};
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 
 use crate::handlers::Handlers;
@@ -74,6 +74,7 @@ use crate::transport::{create_sse_router, SseAppState, SseConfig};
 ///
 /// TASK-S001: Uses TeleologicalMemoryStore for 13-embedding fingerprint storage.
 /// TASK-INTEG-018: Arc-wrapped handlers for TCP transport sharing across concurrent clients.
+/// LAZY-STARTUP: Models load in background to allow immediate MCP protocol response.
 #[allow(dead_code)]
 pub struct McpServer {
     config: Config,
@@ -81,7 +82,12 @@ pub struct McpServer {
     teleological_store: Arc<dyn TeleologicalMemoryStore>,
     utl_processor: Arc<dyn UtlProcessor>,
     /// Multi-array embedding provider - generates all 13 embeddings.
-    multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider>,
+    /// Wrapped in RwLock<Option<...>> for lazy loading - None while models are loading.
+    multi_array_provider: Arc<RwLock<Option<Arc<dyn MultiArrayEmbeddingProvider>>>>,
+    /// Flag indicating whether models are currently loading.
+    models_loading: Arc<AtomicBool>,
+    /// Flag indicating whether model loading failed.
+    models_failed: Arc<RwLock<Option<String>>>,
     /// Arc-wrapped handlers for safe sharing across TCP client tasks.
     /// TASK-INTEG-018: Handlers are now Arc-wrapped to allow concurrent TCP connections.
     handlers: Arc<Handlers>,
@@ -150,29 +156,59 @@ impl McpServer {
         //
         // GPU Requirements: NVIDIA CUDA GPU with 8GB+ VRAM
         // Model Directory: ./models relative to binary (configurable via env)
+        //
+        // LAZY-STARTUP: Models are loaded in a background task to allow immediate
+        // MCP protocol response. The server will be ready for protocol messages
+        // immediately, but embedding tools will return "models loading" until ready.
         let models_dir = Self::resolve_models_path(&config);
         info!(
-            "Loading ProductionMultiArrayProvider with models from {:?}...",
+            "Will load ProductionMultiArrayProvider with models from {:?} (background)...",
             models_dir
         );
 
-        let multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(
-            ProductionMultiArrayProvider::new(models_dir.clone(), GpuConfig::default())
-                .await
-                .map_err(|e| {
-                    error!(
-                        "FATAL: Failed to create ProductionMultiArrayProvider: {}",
-                        e
-                    );
-                    anyhow::anyhow!(
-                        "Failed to create ProductionMultiArrayProvider: {}. \
-                         Ensure models exist at {:?} and CUDA GPU is available.",
-                        e,
-                        models_dir
-                    )
-                })?,
-        );
-        info!("Created ProductionMultiArrayProvider (13 embedders, GPU-accelerated, <30ms target)");
+        // Create shared state for lazy model loading
+        let multi_array_provider: Arc<RwLock<Option<Arc<dyn MultiArrayEmbeddingProvider>>>> =
+            Arc::new(RwLock::new(None));
+        let models_loading = Arc::new(AtomicBool::new(true));
+        let models_failed: Arc<RwLock<Option<String>>> = Arc::new(RwLock::new(None));
+
+        // Spawn background task to load models
+        {
+            let provider_slot = Arc::clone(&multi_array_provider);
+            let loading_flag = Arc::clone(&models_loading);
+            let failed_slot = Arc::clone(&models_failed);
+            let models_dir_clone = models_dir.clone();
+
+            tokio::spawn(async move {
+                info!("Background model loading started...");
+                match ProductionMultiArrayProvider::new(models_dir_clone.clone(), GpuConfig::default()).await {
+                    Ok(provider) => {
+                        let mut slot = provider_slot.write().await;
+                        *slot = Some(Arc::new(provider));
+                        loading_flag.store(false, Ordering::SeqCst);
+                        info!("Background model loading COMPLETE - 13 embedders ready");
+                    }
+                    Err(e) => {
+                        error!(
+                            "FATAL: Background model loading FAILED: {}. \
+                             Ensure models exist at {:?} and CUDA GPU is available.",
+                            e, models_dir_clone
+                        );
+                        let mut failed = failed_slot.write().await;
+                        *failed = Some(format!("{}", e));
+                        loading_flag.store(false, Ordering::SeqCst);
+                    }
+                }
+            });
+        }
+        info!("Spawned background task to load 13 embedding models (GPU-accelerated)");
+
+        // Create lazy provider wrapper for immediate MCP startup
+        let lazy_provider: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(LazyMultiArrayProvider::new(
+            Arc::clone(&multi_array_provider),
+            Arc::clone(&models_loading),
+            Arc::clone(&models_failed),
+        ));
 
         // TASK-S003: Create alignment calculator and goal hierarchy
         let alignment_calculator: Arc<dyn GoalAlignmentCalculator> =
@@ -204,10 +240,11 @@ impl McpServer {
         // - GwtSystemProviderImpl: Real GWT state management
         // - WorkspaceProviderImpl: Real global workspace with winner-take-all
         // - MetaCognitiveProviderImpl: Real meta-cognitive loop
+        // NOTE: Using lazy_provider to allow immediate MCP startup
         let handlers = Handlers::with_default_gwt(
             Arc::clone(&teleological_store),
             Arc::clone(&utl_processor),
-            Arc::clone(&multi_array_provider),
+            lazy_provider,
             alignment_calculator,
             goal_hierarchy,
             meta_utl_tracker,
@@ -234,6 +271,8 @@ impl McpServer {
             teleological_store,
             utl_processor,
             multi_array_provider,
+            models_loading,
+            models_failed,
             // TASK-INTEG-018: Arc-wrap handlers for TCP sharing
             handlers: Arc::new(handlers),
             initialized: Arc::new(RwLock::new(false)),
