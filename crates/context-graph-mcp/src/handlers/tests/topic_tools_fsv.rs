@@ -17,9 +17,7 @@ use serde_json::json;
 
 use crate::protocol::JsonRpcId;
 
-use super::{
-    create_test_handlers_with_rocksdb_store_access, extract_mcp_tool_data, make_request,
-};
+use super::{create_test_handlers_with_rocksdb_store_access, extract_mcp_tool_data, make_request};
 
 // ============================================================================
 // Full State Verification Tests
@@ -39,10 +37,7 @@ async fn test_fsv_topic_portfolio_empty_database() {
     // PRE-CONDITION: Verify database is empty
     let count_before = store.count().await.expect("count() must work");
     println!("PRE-CONDITION: Memory count = {}", count_before);
-    assert_eq!(
-        count_before, 0,
-        "Database must be empty at start of test"
-    );
+    assert_eq!(count_before, 0, "Database must be empty at start of test");
 
     // EXECUTE: Call get_topic_portfolio
     let params = json!({
@@ -112,10 +107,7 @@ async fn test_fsv_detect_topics_insufficient_memories() {
     );
 
     let error = response.error.as_ref().unwrap();
-    println!(
-        "ERROR: code={}, message={}",
-        error.code, error.message
-    );
+    println!("ERROR: code={}, message={}", error.code, error.message);
 
     assert_eq!(
         error.code,
@@ -307,10 +299,7 @@ async fn test_fsv_cognitive_pulse_included() {
         );
 
         let pulse = pulse.unwrap();
-        assert!(
-            pulse.get("entropy").is_some(),
-            "pulse must have entropy"
-        );
+        assert!(pulse.get("entropy").is_some(), "pulse must have entropy");
         assert!(
             pulse.get("coherence").is_some(),
             "pulse must have coherence"
@@ -347,11 +336,23 @@ async fn test_fsv_validation_errors_use_iserror() {
 
     // Test cases: tool name, invalid args, expected error text
     let test_cases = [
-        ("get_topic_portfolio", json!({"format": "invalid_xyz"}), "Invalid"),
+        (
+            "get_topic_portfolio",
+            json!({"format": "invalid_xyz"}),
+            "Invalid",
+        ),
         ("get_topic_stability", json!({"hours": 0}), "hours"),
         ("get_topic_stability", json!({"hours": 200}), "hours"),
-        ("get_divergence_alerts", json!({"lookback_hours": 0}), "lookback"),
-        ("get_divergence_alerts", json!({"lookback_hours": 100}), "lookback"),
+        (
+            "get_divergence_alerts",
+            json!({"lookback_hours": 0}),
+            "lookback",
+        ),
+        (
+            "get_divergence_alerts",
+            json!({"lookback_hours": 100}),
+            "lookback",
+        ),
     ];
 
     for (tool_name, args, expected_text) in test_cases {
@@ -471,7 +472,10 @@ async fn test_fsv_max_boundary_values() {
     });
     let request = make_request("tools/call", Some(JsonRpcId::Number(1)), Some(params));
     let response = handlers.dispatch(request).await;
-    assert!(response.error.is_none(), "lookback_hours=48 should be valid");
+    assert!(
+        response.error.is_none(),
+        "lookback_hours=48 should be valid"
+    );
     let result = response.result.expect("Must have result");
     let is_error = result.get("isError").unwrap().as_bool().unwrap();
     assert!(!is_error, "lookback_hours=48 should succeed");

@@ -313,10 +313,7 @@ impl Handlers {
             hash
         };
 
-        let merged_fingerprint = TeleologicalFingerprint::new(
-            merged_semantic,
-            content_hash,
-        );
+        let merged_fingerprint = TeleologicalFingerprint::new(merged_semantic, content_hash);
         let merged_id = merged_fingerprint.id;
 
         // Step 5: Generate reversal hash and store reversal record

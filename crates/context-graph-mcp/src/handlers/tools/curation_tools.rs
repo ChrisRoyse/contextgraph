@@ -55,7 +55,8 @@ impl Handlers {
             Ok(uuid) => uuid,
             Err(validation_error) => {
                 error!(error = %validation_error, "forget_concept: Validation failed");
-                return self.tool_error_with_pulse(id, &format!("Invalid params: {}", validation_error));
+                return self
+                    .tool_error_with_pulse(id, &format!("Invalid params: {}", validation_error));
             }
         };
 
@@ -82,7 +83,10 @@ impl Handlers {
         };
 
         // Perform delete operation
-        let delete_result = self.teleological_store.delete(node_id, request.soft_delete).await;
+        let delete_result = self
+            .teleological_store
+            .delete(node_id, request.soft_delete)
+            .await;
 
         match delete_result {
             Ok(true) => {
@@ -106,15 +110,15 @@ impl Handlers {
                 JsonRpcResponse::error(
                     id,
                     error_codes::FINGERPRINT_NOT_FOUND,
-                    format!("Memory {} not found (may have been deleted concurrently)", node_id),
+                    format!(
+                        "Memory {} not found (may have been deleted concurrently)",
+                        node_id
+                    ),
                 )
             }
             Err(e) => {
                 error!(error = %e, node_id = %node_id, "forget_concept: Delete operation failed");
-                self.tool_error_with_pulse(
-                    id,
-                    &format!("Storage error: Delete failed: {}", e),
-                )
+                self.tool_error_with_pulse(id, &format!("Storage error: Delete failed: {}", e))
             }
         }
     }
@@ -160,7 +164,8 @@ impl Handlers {
             Ok(uuid) => uuid,
             Err(validation_error) => {
                 error!(error = %validation_error, "boost_importance: Validation failed");
-                return self.tool_error_with_pulse(id, &format!("Invalid params: {}", validation_error));
+                return self
+                    .tool_error_with_pulse(id, &format!("Invalid params: {}", validation_error));
             }
         };
 
@@ -232,7 +237,8 @@ impl Handlers {
 
                 self.tool_result_with_pulse(
                     id,
-                    serde_json::to_value(response).expect("BoostImportanceResponse should serialize"),
+                    serde_json::to_value(response)
+                        .expect("BoostImportanceResponse should serialize"),
                 )
             }
             Ok(false) => {
@@ -241,15 +247,15 @@ impl Handlers {
                 JsonRpcResponse::error(
                     id,
                     error_codes::FINGERPRINT_NOT_FOUND,
-                    format!("Memory {} not found (may have been deleted concurrently)", node_id),
+                    format!(
+                        "Memory {} not found (may have been deleted concurrently)",
+                        node_id
+                    ),
                 )
             }
             Err(e) => {
                 error!(error = %e, node_id = %node_id, "boost_importance: Update operation failed");
-                self.tool_error_with_pulse(
-                    id,
-                    &format!("Storage error: Update failed: {}", e),
-                )
+                self.tool_error_with_pulse(id, &format!("Storage error: Update failed: {}", e))
             }
         }
     }
@@ -257,10 +263,8 @@ impl Handlers {
 
 #[cfg(test)]
 mod tests {
+    use super::super::curation_dtos::{MAX_IMPORTANCE, MIN_IMPORTANCE, SOFT_DELETE_RECOVERY_DAYS};
     use super::*;
-    use super::super::curation_dtos::{
-        MAX_IMPORTANCE, MIN_IMPORTANCE, SOFT_DELETE_RECOVERY_DAYS,
-    };
 
     #[test]
     fn test_constants_match_constitution() {

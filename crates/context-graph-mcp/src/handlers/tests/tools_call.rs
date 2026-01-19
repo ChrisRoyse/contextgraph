@@ -416,4 +416,3 @@ async fn test_tool_error_sets_is_error_true() {
         .expect("content must be an array");
     assert!(!content.is_empty(), "Error content must not be empty");
 }
-

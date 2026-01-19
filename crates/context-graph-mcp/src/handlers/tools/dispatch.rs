@@ -74,12 +74,8 @@ impl Handlers {
             }
 
             // ========== TOPIC TOOLS (PRD Section 10.2) ==========
-            tool_names::GET_TOPIC_PORTFOLIO => {
-                self.call_get_topic_portfolio(id, arguments).await
-            }
-            tool_names::GET_TOPIC_STABILITY => {
-                self.call_get_topic_stability(id, arguments).await
-            }
+            tool_names::GET_TOPIC_PORTFOLIO => self.call_get_topic_portfolio(id, arguments).await,
+            tool_names::GET_TOPIC_STABILITY => self.call_get_topic_stability(id, arguments).await,
             tool_names::DETECT_TOPICS => self.call_detect_topics(id, arguments).await,
             tool_names::GET_DIVERGENCE_ALERTS => {
                 self.call_get_divergence_alerts(id, arguments).await

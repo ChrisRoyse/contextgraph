@@ -267,8 +267,7 @@ mod tests {
 
     #[test]
     fn test_forget_concept_request_hard_delete() {
-        let json =
-            r#"{"node_id": "550e8400-e29b-41d4-a716-446655440000", "soft_delete": false}"#;
+        let json = r#"{"node_id": "550e8400-e29b-41d4-a716-446655440000", "soft_delete": false}"#;
         let req: ForgetConceptRequest = serde_json::from_str(json).unwrap();
 
         assert!(!req.soft_delete);
@@ -602,7 +601,10 @@ mod tests {
         // BR-MCP-001: forget_concept uses soft delete by default
         let json = r#"{"node_id": "550e8400-e29b-41d4-a716-446655440000"}"#;
         let req: ForgetConceptRequest = serde_json::from_str(json).unwrap();
-        assert!(req.soft_delete, "soft_delete must default to true per BR-MCP-001");
+        assert!(
+            req.soft_delete,
+            "soft_delete must default to true per BR-MCP-001"
+        );
         println!("[PASS] Soft delete is default per BR-MCP-001");
     }
 
@@ -629,7 +631,10 @@ mod tests {
     fn test_forget_concept_request_default_impl() {
         let req = ForgetConceptRequest::default();
         assert!(req.node_id.is_empty());
-        assert!(req.soft_delete, "Default should use soft_delete=true per BR-MCP-001");
+        assert!(
+            req.soft_delete,
+            "Default should use soft_delete=true per BR-MCP-001"
+        );
         println!("[PASS] ForgetConceptRequest::default() uses soft_delete=true");
     }
 

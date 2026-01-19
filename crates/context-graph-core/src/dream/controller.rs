@@ -108,6 +108,27 @@ pub struct DreamStatus {
     pub activity_level: f32,
 }
 
+/// Configuration for a dream cycle
+#[derive(Debug, Clone)]
+pub struct DreamCycleConfig {
+    /// Run NREM phase (default: true)
+    pub run_nrem: bool,
+    /// Run REM phase (default: true)
+    pub run_rem: bool,
+    /// Maximum duration for the entire cycle (default: 300s)
+    pub max_duration: Duration,
+}
+
+impl Default for DreamCycleConfig {
+    fn default() -> Self {
+        Self {
+            run_nrem: true,
+            run_rem: true,
+            max_duration: Duration::from_secs(300),
+        }
+    }
+}
+
 /// Report from a completed dream cycle
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DreamReport {
@@ -267,7 +288,10 @@ impl DreamController {
         }
     }
 
-    /// Start a complete dream cycle (NREM + REM)
+    /// Start a complete dream cycle (NREM + REM) with default configuration.
+    ///
+    /// This is a convenience method that calls `start_dream_cycle_with_config`
+    /// with `DreamCycleConfig::default()`.
     ///
     /// # Returns
     ///
@@ -277,13 +301,68 @@ impl DreamController {
     ///
     /// Returns `CoreError::LayerError` if dream cannot be started or processing fails.
     pub async fn start_dream_cycle(&mut self) -> CoreResult<DreamReport> {
+        self.start_dream_cycle_with_config(DreamCycleConfig::default())
+            .await
+    }
+
+    /// Start a dream cycle with custom configuration.
+    ///
+    /// Allows selective execution of NREM and/or REM phases, and setting
+    /// a maximum duration for the entire cycle.
+    ///
+    /// # Arguments
+    ///
+    /// * `config` - Configuration specifying which phases to run and max duration
+    ///
+    /// # Returns
+    ///
+    /// A `DreamReport` containing metrics from executed phases and overall cycle status.
+    /// Skipped phases will have `None` in their report fields.
+    ///
+    /// # Errors
+    ///
+    /// Returns `CoreError::LayerError` if:
+    /// - Both phases are skipped (at least one must be enabled)
+    /// - Dream cannot be started or processing fails
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use std::time::Duration;
+    /// use context_graph_core::dream::{DreamController, DreamCycleConfig};
+    ///
+    /// let mut controller = DreamController::new();
+    ///
+    /// // Run only NREM phase with 60 second timeout
+    /// let config = DreamCycleConfig {
+    ///     run_nrem: true,
+    ///     run_rem: false,
+    ///     max_duration: Duration::from_secs(60),
+    /// };
+    /// let report = controller.start_dream_cycle_with_config(config).await?;
+    /// ```
+    pub async fn start_dream_cycle_with_config(
+        &mut self,
+        config: DreamCycleConfig,
+    ) -> CoreResult<DreamReport> {
+        // Validate at least one phase is enabled
+        if !config.run_nrem && !config.run_rem {
+            return Err(CoreError::LayerError {
+                layer: "dream".to_string(),
+                message: "At least one phase (NREM or REM) must be enabled".to_string(),
+            });
+        }
+
         let started_at = Utc::now();
         let cycle_start = Instant::now();
         self.cycle_start = Some(cycle_start);
         self.peak_gpu_usage = 0.0;
         self.interrupt_flag.store(false, Ordering::SeqCst);
 
-        info!("Starting dream cycle at {:?}", started_at);
+        info!(
+            "Starting dream cycle with config: run_nrem={}, run_rem={}, max_duration={:?}",
+            config.run_nrem, config.run_rem, config.max_duration
+        );
 
         // Transition to entering dream state
         self.state = DreamState::EnteringDream;
@@ -299,63 +378,60 @@ impl DreamController {
             ));
         }
 
-        // Execute NREM phase
-        let nrem_result = self.execute_nrem_phase().await;
+        let mut nrem_report: Option<NremReport> = None;
+        let mut rem_report: Option<RemReport> = None;
 
-        // Check for interrupt
-        if self.interrupt_flag.load(Ordering::SeqCst) {
-            info!("Dream cycle interrupted during NREM");
-            return Ok(self.create_aborted_report(
-                started_at,
-                cycle_start.elapsed(),
-                WakeReason::ExternalQuery,
-            ));
-        }
+        // Execute NREM phase if enabled
+        if config.run_nrem {
+            let nrem_result = self.execute_nrem_phase().await;
 
-        let nrem_report = match nrem_result {
-            Ok(report) => Some(report),
-            Err(e) => {
-                error!("NREM phase failed: {:?}", e);
-                self.state = DreamState::Waking;
+            // Check for interrupt
+            if self.interrupt_flag.load(Ordering::SeqCst) {
+                info!("Dream cycle interrupted during NREM");
                 return Ok(self.create_aborted_report(
                     started_at,
                     cycle_start.elapsed(),
-                    WakeReason::Error,
+                    WakeReason::ExternalQuery,
                 ));
             }
-        };
 
-        // Execute REM phase
-        let rem_result = self.execute_rem_phase().await;
+            // Check for max duration exceeded
+            if cycle_start.elapsed() > config.max_duration {
+                info!("Dream cycle exceeded max duration during NREM");
+                return Ok(self.create_aborted_report(
+                    started_at,
+                    cycle_start.elapsed(),
+                    WakeReason::CycleComplete,
+                ));
+            }
 
-        // Check for interrupt
-        if self.interrupt_flag.load(Ordering::SeqCst) {
-            info!("Dream cycle interrupted during REM");
-            return Ok(DreamReport {
-                completed: false,
-                nrem_report,
-                rem_report: None,
-                total_duration: cycle_start.elapsed(),
-                wake_reason: WakeReason::ExternalQuery,
-                shortcuts_created: self.amortizer.shortcuts_created_this_cycle(),
-                peak_gpu_usage: self.peak_gpu_usage,
-                wake_latency: None,
-                started_at,
-                ended_at: Utc::now(),
-            });
+            match nrem_result {
+                Ok(report) => nrem_report = Some(report),
+                Err(e) => {
+                    error!("NREM phase failed: {:?}", e);
+                    self.state = DreamState::Waking;
+                    return Ok(self.create_aborted_report(
+                        started_at,
+                        cycle_start.elapsed(),
+                        WakeReason::Error,
+                    ));
+                }
+            }
         }
 
-        let rem_report = match rem_result {
-            Ok(report) => Some(report),
-            Err(e) => {
-                error!("REM phase failed: {:?}", e);
-                self.state = DreamState::Waking;
+        // Execute REM phase if enabled
+        if config.run_rem {
+            let rem_result = self.execute_rem_phase().await;
+
+            // Check for interrupt
+            if self.interrupt_flag.load(Ordering::SeqCst) {
+                info!("Dream cycle interrupted during REM");
                 return Ok(DreamReport {
                     completed: false,
                     nrem_report,
                     rem_report: None,
                     total_duration: cycle_start.elapsed(),
-                    wake_reason: WakeReason::Error,
+                    wake_reason: WakeReason::ExternalQuery,
                     shortcuts_created: self.amortizer.shortcuts_created_this_cycle(),
                     peak_gpu_usage: self.peak_gpu_usage,
                     wake_latency: None,
@@ -363,7 +439,44 @@ impl DreamController {
                     ended_at: Utc::now(),
                 });
             }
-        };
+
+            // Check for max duration exceeded
+            if cycle_start.elapsed() > config.max_duration {
+                info!("Dream cycle exceeded max duration during REM");
+                return Ok(DreamReport {
+                    completed: false,
+                    nrem_report,
+                    rem_report: None,
+                    total_duration: cycle_start.elapsed(),
+                    wake_reason: WakeReason::CycleComplete,
+                    shortcuts_created: self.amortizer.shortcuts_created_this_cycle(),
+                    peak_gpu_usage: self.peak_gpu_usage,
+                    wake_latency: None,
+                    started_at,
+                    ended_at: Utc::now(),
+                });
+            }
+
+            match rem_result {
+                Ok(report) => rem_report = Some(report),
+                Err(e) => {
+                    error!("REM phase failed: {:?}", e);
+                    self.state = DreamState::Waking;
+                    return Ok(DreamReport {
+                        completed: false,
+                        nrem_report,
+                        rem_report: None,
+                        total_duration: cycle_start.elapsed(),
+                        wake_reason: WakeReason::Error,
+                        shortcuts_created: self.amortizer.shortcuts_created_this_cycle(),
+                        peak_gpu_usage: self.peak_gpu_usage,
+                        wake_latency: None,
+                        started_at,
+                        ended_at: Utc::now(),
+                    });
+                }
+            }
+        }
 
         // Complete cycle
         self.state = DreamState::Awake;
@@ -380,22 +493,16 @@ impl DreamController {
             cycle_start.elapsed()
         );
 
-        // TASK-L02: Invoke consolidation callback for lambda adjustment
-        // SPEC-DREAM-LAMBDA-001: Wire DreamController to MetaUtlTracker
-        // METAUTL-003: `"dream_triggered → lambda_adjustment"`
+        // Invoke consolidation callback for lambda adjustment
         let edges_pruned = nrem_report.as_ref().map(|r| r.edges_pruned).unwrap_or(0) as u32;
         let duration = cycle_start.elapsed();
 
-        // Compute quality and coherence from consolidation results
-        // Quality: ratio of pruned edges to total processed (approximated by memories_replayed * edges per memory)
-        // Coherence: placeholder computed from shortcuts ratio (will be replaced with clustering order parameter)
         let quality = {
             let memories = nrem_report
                 .as_ref()
                 .map(|r| r.memories_replayed)
                 .unwrap_or(0);
             if memories > 0 {
-                // Approximate: each memory ~10 edges, quality = edges_pruned / estimated_total
                 let estimated_edges = memories * 10;
                 (edges_pruned as f32 / estimated_edges.max(1) as f32).clamp(0.0, 1.0)
             } else {
@@ -404,14 +511,11 @@ impl DreamController {
         };
 
         let coherence = {
-            // Placeholder: coherence based on shortcuts_created / edges_pruned ratio
-            // High shortcuts with moderate pruning = good coherence
             if edges_pruned > 0 {
                 let ratio = shortcuts_created as f32 / edges_pruned as f32;
-                // Normalize ratio to [0, 1] using sigmoid-like function
                 (1.0 - (-ratio).exp()).clamp(0.0, 1.0)
             } else if shortcuts_created > 0 {
-                1.0 // All shortcuts, no pruning = high coherence
+                1.0
             } else {
                 0.0
             }
@@ -424,7 +528,7 @@ impl DreamController {
             shortcuts_created: shortcuts_created as u32,
             duration,
             success: true,
-            blind_spots_found: 0, // Placeholder: will be computed by identity layer
+            blind_spots_found: 0,
         };
 
         self.invoke_consolidation_callback(consolidation_metrics);
@@ -910,5 +1014,106 @@ mod tests {
         };
         controller.invoke_consolidation_callback(metrics);
         // No panic = success
+    }
+
+    // ========================================================================
+    // DreamCycleConfig and Selective Phase Execution Tests
+    // ========================================================================
+
+    #[test]
+    fn test_dream_cycle_config_default() {
+        let config = DreamCycleConfig::default();
+        assert!(config.run_nrem);
+        assert!(config.run_rem);
+        assert_eq!(config.max_duration, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn test_dream_cycle_config_custom() {
+        let config = DreamCycleConfig {
+            run_nrem: false,
+            run_rem: true,
+            max_duration: Duration::from_secs(60),
+        };
+        assert!(!config.run_nrem);
+        assert!(config.run_rem);
+        assert_eq!(config.max_duration, Duration::from_secs(60));
+    }
+
+    #[tokio::test]
+    async fn test_selective_phase_nrem_only() {
+        let mut controller = DreamController::new();
+        let config = DreamCycleConfig {
+            run_nrem: true,
+            run_rem: false,
+            max_duration: Duration::from_secs(60),
+        };
+
+        let report = controller
+            .start_dream_cycle_with_config(config)
+            .await
+            .expect("Dream cycle should complete");
+
+        // NREM should have run
+        assert!(report.nrem_report.is_some(), "NREM report should be present");
+        // REM should NOT have run
+        assert!(report.rem_report.is_none(), "REM report should be None when skip_rem=true");
+        assert!(report.completed);
+    }
+
+    #[tokio::test]
+    async fn test_selective_phase_rem_only() {
+        let mut controller = DreamController::new();
+        let config = DreamCycleConfig {
+            run_nrem: false,
+            run_rem: true,
+            max_duration: Duration::from_secs(60),
+        };
+
+        let report = controller
+            .start_dream_cycle_with_config(config)
+            .await
+            .expect("Dream cycle should complete");
+
+        // NREM should NOT have run
+        assert!(report.nrem_report.is_none(), "NREM report should be None when skip_nrem=true");
+        // REM should have run
+        assert!(report.rem_report.is_some(), "REM report should be present");
+        assert!(report.completed);
+    }
+
+    #[tokio::test]
+    async fn test_selective_phase_both_skipped_returns_error() {
+        let mut controller = DreamController::new();
+        let config = DreamCycleConfig {
+            run_nrem: false,
+            run_rem: false,
+            max_duration: Duration::from_secs(60),
+        };
+
+        let result = controller.start_dream_cycle_with_config(config).await;
+
+        assert!(result.is_err(), "Should return error when both phases are skipped");
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("At least one phase"),
+            "Error message should mention phase requirement"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_start_dream_cycle_backwards_compatible() {
+        let mut controller = DreamController::new();
+
+        // The original start_dream_cycle should still work and run both phases
+        let report = controller
+            .start_dream_cycle()
+            .await
+            .expect("Dream cycle should complete");
+
+        // Both phases should run with default config
+        assert!(report.nrem_report.is_some(), "NREM should run by default");
+        assert!(report.rem_report.is_some(), "REM should run by default");
+        assert!(report.completed);
     }
 }

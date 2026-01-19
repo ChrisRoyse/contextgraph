@@ -201,7 +201,11 @@ impl McpServer {
                     info!("Using global warm provider - all 13 models ready (no loading delay)");
                 }
                 Err(e) => {
-                    error!("Failed to get global warm provider: {}. Status: {}", e, warm_status_message());
+                    error!(
+                        "Failed to get global warm provider: {}. Status: {}",
+                        e,
+                        warm_status_message()
+                    );
                     if warm_first {
                         // FAIL FAST when warm_first is enabled
                         return Err(anyhow::anyhow!(
@@ -218,7 +222,9 @@ impl McpServer {
         } else if warm_first {
             // TASK-EMB-WARMUP: BLOCKING warmup mode
             // Block startup until all 13 models are loaded into VRAM
-            info!("warm_first=true: Blocking startup until embedding models are loaded into VRAM...");
+            info!(
+                "warm_first=true: Blocking startup until embedding models are loaded into VRAM..."
+            );
             info!("This may take 20-30 seconds on RTX 5090 (32GB VRAM)...");
 
             let models_dir = Self::resolve_models_path(&config);
@@ -236,7 +242,11 @@ impl McpServer {
                             info!("SUCCESS: All 13 embedding models loaded into VRAM and ready");
                         }
                         Err(e) => {
-                            error!("Failed to get global warm provider after init: {}. Status: {}", e, warm_status_message());
+                            error!(
+                                "Failed to get global warm provider after init: {}. Status: {}",
+                                e,
+                                warm_status_message()
+                            );
                             return Err(anyhow::anyhow!(
                                 "Failed to get global warm provider after initialization: {}. \
                                  This is unexpected - check GPU status.",
@@ -289,7 +299,9 @@ impl McpServer {
                                 let mut slot = provider_slot.write().await;
                                 *slot = Some(provider);
                                 loading_flag.store(false, Ordering::SeqCst);
-                                info!("Global warm provider initialized - 13 embedders ready (warm)");
+                                info!(
+                                    "Global warm provider initialized - 13 embedders ready (warm)"
+                                );
                             }
                             Err(e) => {
                                 error!("Failed to get global warm provider after init: {}", e);
@@ -306,7 +318,12 @@ impl McpServer {
                             e
                         );
 
-                        match ProductionMultiArrayProvider::new(models_dir_clone.clone(), GpuConfig::default()).await {
+                        match ProductionMultiArrayProvider::new(
+                            models_dir_clone.clone(),
+                            GpuConfig::default(),
+                        )
+                        .await
+                        {
                             Ok(provider) => {
                                 let mut slot = provider_slot.write().await;
                                 *slot = Some(Arc::new(provider));
@@ -330,11 +347,12 @@ impl McpServer {
         }
 
         // Create lazy provider wrapper for immediate MCP startup
-        let lazy_provider: Arc<dyn MultiArrayEmbeddingProvider> = Arc::new(LazyMultiArrayProvider::new(
-            Arc::clone(&multi_array_provider),
-            Arc::clone(&models_loading),
-            Arc::clone(&models_failed),
-        ));
+        let lazy_provider: Arc<dyn MultiArrayEmbeddingProvider> =
+            Arc::new(LazyMultiArrayProvider::new(
+                Arc::clone(&multi_array_provider),
+                Arc::clone(&models_loading),
+                Arc::clone(&models_failed),
+            ));
 
         // ==========================================================================
         // 4. Create Handlers (PRD v6 Section 10 - 14 tools)
@@ -351,7 +369,9 @@ impl McpServer {
         );
         info!("Created Handlers with 14 MCP tools including topic detection and clustering");
 
-        info!("MCP Server initialization complete - TeleologicalFingerprint mode with 13 embeddings");
+        info!(
+            "MCP Server initialization complete - TeleologicalFingerprint mode with 13 embeddings"
+        );
 
         // TASK-INTEG-018: Create connection semaphore from config
         let max_connections = config.mcp.max_connections;

@@ -5,7 +5,7 @@ use std::time::Instant;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use context_graph_core::dream::{DreamController, DreamState as CoreDreamState, WakeReason};
+use context_graph_core::dream::{DreamController, DreamCycleConfig, DreamState as CoreDreamState, WakeReason};
 
 use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
 
@@ -47,11 +47,13 @@ impl Handlers {
 
         // Get current UTL metrics for pre-dream state
         let utl_status = self.utl_processor.get_status();
-        let pre_entropy = utl_status.get("entropy")
+        let pre_entropy = utl_status
+            .get("entropy")
             .and_then(|v| v.as_f64())
             .map(|v| v as f32)
             .unwrap_or(0.5);
-        let pre_coherence = utl_status.get("coherence")
+        let pre_coherence = utl_status
+            .get("coherence")
             .and_then(|v| v.as_f64())
             .map(|v| v as f32)
             .unwrap_or(0.5);
@@ -153,17 +155,22 @@ impl Handlers {
             );
         }
 
-        // Execute the dream cycle
-        // Note: skip_nrem/skip_rem are logged but both use start_dream_cycle
-        // (selective phase execution to be implemented in DreamController)
-        if request.skip_nrem {
-            info!(dream_id = %dream_id, "trigger_dream: running REM only");
-        } else if request.skip_rem {
-            info!(dream_id = %dream_id, "trigger_dream: running NREM only");
-        } else {
-            info!(dream_id = %dream_id, "trigger_dream: running full NREM+REM cycle");
-        }
-        let cycle_result = controller.start_dream_cycle().await;
+        // Build configuration from request parameters
+        let config = DreamCycleConfig {
+            run_nrem: !request.skip_nrem,
+            run_rem: !request.skip_rem,
+            max_duration: std::time::Duration::from_secs(request.max_duration_secs),
+        };
+
+        info!(
+            dream_id = %dream_id,
+            run_nrem = config.run_nrem,
+            run_rem = config.run_rem,
+            max_duration_secs = request.max_duration_secs,
+            "trigger_dream: starting dream cycle with config"
+        );
+
+        let cycle_result = controller.start_dream_cycle_with_config(config).await;
 
         let total_duration_ms = start_time.elapsed().as_millis() as u64;
 
@@ -185,10 +192,12 @@ impl Handlers {
 
                 // Get post-dream UTL metrics
                 let post_utl_status = self.utl_processor.get_status();
-                let post_entropy = post_utl_status.get("entropy")
+                let post_entropy = post_utl_status
+                    .get("entropy")
                     .and_then(|v| v.as_f64())
                     .map(|v| v as f32);
-                let post_coherence = post_utl_status.get("coherence")
+                let post_coherence = post_utl_status
+                    .get("coherence")
                     .and_then(|v| v.as_f64())
                     .map(|v| v as f32);
 
@@ -311,9 +320,11 @@ impl Handlers {
         let (dto_status, current_phase, progress_percent) = match status.state {
             CoreDreamState::Awake => (DreamStatus::Completed, "awake", 100),
             CoreDreamState::EnteringDream => (DreamStatus::Queued, "entering", 0),
-            CoreDreamState::Nrem { progress, .. } => {
-                (DreamStatus::NremInProgress, "nrem", (progress * 100.0) as u8)
-            }
+            CoreDreamState::Nrem { progress, .. } => (
+                DreamStatus::NremInProgress,
+                "nrem",
+                (progress * 100.0) as u8,
+            ),
             CoreDreamState::Rem { progress, .. } => {
                 // NREM is 60% of total (3 min out of 5 min), REM is 40%
                 let total_progress = 60 + (progress * 40.0) as u8;
@@ -327,11 +338,15 @@ impl Handlers {
             status: dto_status,
             progress_percent,
             current_phase: current_phase.to_string(),
-            elapsed_ms: status.time_since_last_dream
+            elapsed_ms: status
+                .time_since_last_dream
                 .map(|d| d.as_millis() as u64)
                 .unwrap_or(0),
             remaining_ms: if status.is_dreaming {
-                let elapsed = status.time_since_last_dream.map(|d| d.as_millis() as u64).unwrap_or(0);
+                let elapsed = status
+                    .time_since_last_dream
+                    .map(|d| d.as_millis() as u64)
+                    .unwrap_or(0);
                 Some(300_000_u64.saturating_sub(elapsed))
             } else {
                 None

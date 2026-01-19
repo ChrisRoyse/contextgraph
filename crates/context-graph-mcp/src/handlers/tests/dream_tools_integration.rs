@@ -22,13 +22,21 @@ async fn test_trigger_dream_dry_run() {
     let parsed: serde_json::Value = serde_json::from_str(text_content).unwrap();
 
     assert_eq!(parsed.get("dry_run").and_then(|v| v.as_bool()), Some(true));
-    assert_eq!(parsed.get("status").and_then(|v| v.as_str()), Some("dry_run_complete"));
+    assert_eq!(
+        parsed.get("status").and_then(|v| v.as_str()),
+        Some("dry_run_complete")
+    );
 
     let dream_id_str = parsed.get("dream_id").and_then(|v| v.as_str()).unwrap();
     Uuid::parse_str(dream_id_str).expect("dream_id should be valid UUID");
 
     let report = parsed.get("report").unwrap();
-    assert!(!report.get("recommendations").unwrap().as_array().unwrap().is_empty());
+    assert!(!report
+        .get("recommendations")
+        .unwrap()
+        .as_array()
+        .unwrap()
+        .is_empty());
 }
 
 #[tokio::test]
@@ -99,10 +107,7 @@ async fn test_get_dream_status_no_id() {
     let handlers = create_test_handlers();
 
     let response = handlers
-        .call_get_dream_status(
-            Some(crate::protocol::JsonRpcId::Number(5)),
-            json!({}),
-        )
+        .call_get_dream_status(Some(crate::protocol::JsonRpcId::Number(5)), json!({}))
         .await;
 
     let result = response.result.unwrap();
@@ -193,10 +198,7 @@ async fn test_dream_tools_include_cognitive_pulse() {
     assert!(response.result.unwrap().get("_cognitive_pulse").is_some());
 
     let response = handlers
-        .call_get_dream_status(
-            Some(crate::protocol::JsonRpcId::Number(10)),
-            json!({}),
-        )
+        .call_get_dream_status(Some(crate::protocol::JsonRpcId::Number(10)), json!({}))
         .await;
     assert!(response.result.unwrap().get("_cognitive_pulse").is_some());
 }

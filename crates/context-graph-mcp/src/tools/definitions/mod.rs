@@ -45,10 +45,20 @@ mod tests {
         let names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
 
         let expected = [
-            "inject_context", "store_memory", "get_memetic_status", "search_graph",
-            "trigger_consolidation", "merge_concepts", "forget_concept", "boost_importance",
-            "get_topic_portfolio", "get_topic_stability", "detect_topics", "get_divergence_alerts",
-            "trigger_dream", "get_dream_status",
+            "inject_context",
+            "store_memory",
+            "get_memetic_status",
+            "search_graph",
+            "trigger_consolidation",
+            "merge_concepts",
+            "forget_concept",
+            "boost_importance",
+            "get_topic_portfolio",
+            "get_topic_stability",
+            "detect_topics",
+            "get_divergence_alerts",
+            "trigger_dream",
+            "get_dream_status",
         ];
 
         for name in expected {
@@ -69,8 +79,16 @@ mod tests {
     #[test]
     fn test_all_tools_have_descriptions_and_schemas() {
         for tool in &get_tool_definitions() {
-            assert!(!tool.description.is_empty(), "Tool {} missing description", tool.name);
-            assert!(tool.input_schema.get("type").is_some(), "Tool {} missing schema type", tool.name);
+            assert!(
+                !tool.description.is_empty(),
+                "Tool {} missing description",
+                tool.name
+            );
+            assert!(
+                tool.input_schema.get("type").is_some(),
+                "Tool {} missing schema type",
+                tool.name
+            );
         }
     }
 

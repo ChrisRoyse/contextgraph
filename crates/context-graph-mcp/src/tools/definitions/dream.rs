@@ -49,7 +49,6 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         ),
-
         // get_dream_status - Get status of running or completed dream cycle
         ToolDefinition::new(
             "get_dream_status",
@@ -85,7 +84,12 @@ mod tests {
         let tools = definitions();
         let trigger = tools.iter().find(|t| t.name == "trigger_dream").unwrap();
 
-        let props = trigger.input_schema.get("properties").unwrap().as_object().unwrap();
+        let props = trigger
+            .input_schema
+            .get("properties")
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert!(props.contains_key("blocking"));
         assert!(props.contains_key("dry_run"));
         assert!(props.contains_key("skip_nrem"));
@@ -98,7 +102,12 @@ mod tests {
         let tools = definitions();
         let status = tools.iter().find(|t| t.name == "get_dream_status").unwrap();
 
-        let props = status.input_schema.get("properties").unwrap().as_object().unwrap();
+        let props = status
+            .input_schema
+            .get("properties")
+            .unwrap()
+            .as_object()
+            .unwrap();
         assert!(props.contains_key("dream_id"));
     }
 }

@@ -13,19 +13,15 @@
 //! - Manual verification of database state before and after operations
 //! - Edge case testing (not found, boundary conditions, clamping)
 
-use sha2::{Digest, Sha256};
 use serde_json::json;
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
-use context_graph_core::types::fingerprint::{
-    SemanticFingerprint, TeleologicalFingerprint,
-};
+use context_graph_core::types::fingerprint::{SemanticFingerprint, TeleologicalFingerprint};
 
 use crate::protocol::{error_codes, JsonRpcId};
 
-use super::{
-    create_test_handlers_with_rocksdb_store_access, extract_mcp_tool_data, make_request,
-};
+use super::{create_test_handlers_with_rocksdb_store_access, extract_mcp_tool_data, make_request};
 
 // ============================================================================
 // Synthetic Data Helpers
@@ -82,8 +78,15 @@ async fn test_fsv_forget_concept_soft_delete() {
     let count_before = store.count().await.expect("count() must work");
     let retrieved_before = store.retrieve(node_id).await.expect("retrieve() must work");
     println!("PRE-CONDITION: Memory count = {}", count_before);
-    println!("PRE-CONDITION: Memory {} exists = {}", node_id, retrieved_before.is_some());
-    assert!(retrieved_before.is_some(), "Memory must exist before delete");
+    println!(
+        "PRE-CONDITION: Memory {} exists = {}",
+        node_id,
+        retrieved_before.is_some()
+    );
+    assert!(
+        retrieved_before.is_some(),
+        "Memory must exist before delete"
+    );
 
     // EXECUTE: Call forget_concept with soft_delete=true (default)
     let params = json!({
@@ -115,11 +118,18 @@ async fn test_fsv_forget_concept_soft_delete() {
 
     assert_eq!(deleted_id, node_id.to_string(), "Deleted ID must match");
     assert!(was_soft_delete, "soft_deleted must be true per SEC-06");
-    assert!(recoverable_until.is_string(), "recoverable_until must be timestamp");
+    assert!(
+        recoverable_until.is_string(),
+        "recoverable_until must be timestamp"
+    );
 
     // POST-CONDITION: Verify memory is no longer retrievable
     let retrieved_after = store.retrieve(node_id).await.expect("retrieve() must work");
-    println!("POST-CONDITION: Memory {} exists = {}", node_id, retrieved_after.is_some());
+    println!(
+        "POST-CONDITION: Memory {} exists = {}",
+        node_id,
+        retrieved_after.is_some()
+    );
     assert!(
         retrieved_after.is_none(),
         "Memory must NOT be retrievable after soft delete"
@@ -245,7 +255,10 @@ async fn test_fsv_boost_importance_increase() {
     let retrieved_before = store.retrieve(node_id).await.expect("retrieve() must work");
     let fp_before = retrieved_before.as_ref().unwrap();
     println!("PRE-CONDITION: node_id = {}", node_id);
-    println!("PRE-CONDITION: fingerprint exists = true, access_count = {}", fp_before.access_count);
+    println!(
+        "PRE-CONDITION: fingerprint exists = true, access_count = {}",
+        fp_before.access_count
+    );
 
     // EXECUTE: Call boost_importance with positive delta
     let delta = 0.2;
@@ -278,12 +291,18 @@ async fn test_fsv_boost_importance_increase() {
     println!("RESPONSE: clamped={}", response_clamped);
 
     // Importance is computed from access_count per PRD Section 7
-    println!("INFO: response_old={}, response_new={}, clamped={}", response_old, response_new, response_clamped);
+    println!(
+        "INFO: response_old={}, response_new={}, clamped={}",
+        response_old, response_new, response_clamped
+    );
 
     // POST-CONDITION: Verify fingerprint still exists and last_updated was touched
     let retrieved_after = store.retrieve(node_id).await.expect("retrieve() must work");
     let fp_after = retrieved_after.as_ref().unwrap();
-    println!("POST-CONDITION: fingerprint exists = true, last_updated = {}", fp_after.last_updated);
+    println!(
+        "POST-CONDITION: fingerprint exists = true, last_updated = {}",
+        fp_after.last_updated
+    );
 
     println!("[FSV PASS] boost_importance increases importance and persists to database");
 }
@@ -396,7 +415,10 @@ async fn test_fsv_boost_importance_clamp_min() {
     println!("RESPONSE: new_importance={}", response_new);
     println!("RESPONSE: clamped={}", response_clamped);
 
-    assert!(response_clamped, "clamped must be true when going below min");
+    assert!(
+        response_clamped,
+        "clamped must be true when going below min"
+    );
     assert!(
         response_new.abs() < 0.001,
         "new_importance must be clamped to 0.0"
@@ -501,10 +523,7 @@ async fn test_fsv_boost_importance_invalid_delta() {
 
         let result = response.result.expect("Must have result");
         let is_error = result.get("isError").unwrap().as_bool().unwrap();
-        assert!(
-            is_error,
-            "isError must be true for delta={}", invalid_delta
-        );
+        assert!(is_error, "isError must be true for delta={}", invalid_delta);
 
         let content = result.get("content").unwrap().as_array().unwrap();
         let text = content[0].get("text").unwrap().as_str().unwrap();
@@ -606,9 +625,18 @@ async fn test_fsv_cognitive_pulse_included_in_curation() {
 
     let pulse = pulse.unwrap();
     assert!(pulse.get("entropy").is_some(), "pulse must have entropy");
-    assert!(pulse.get("coherence").is_some(), "pulse must have coherence");
-    assert!(pulse.get("learning_score").is_some(), "pulse must have learning_score");
-    assert!(pulse.get("suggested_action").is_some(), "pulse must have suggested_action");
+    assert!(
+        pulse.get("coherence").is_some(),
+        "pulse must have coherence"
+    );
+    assert!(
+        pulse.get("learning_score").is_some(),
+        "pulse must have learning_score"
+    );
+    assert!(
+        pulse.get("suggested_action").is_some(),
+        "pulse must have suggested_action"
+    );
 
     println!(
         "  _cognitive_pulse: entropy={}, coherence={}, learning_score={}, suggested_action={}",
@@ -695,7 +723,10 @@ async fn test_fsv_forget_concept_hard_delete() {
 
     // POST-CONDITION: Verify memory is gone
     let retrieved_after = store.retrieve(node_id).await.expect("retrieve() must work");
-    println!("POST-CONDITION: Memory exists = {}", retrieved_after.is_some());
+    println!(
+        "POST-CONDITION: Memory exists = {}",
+        retrieved_after.is_some()
+    );
     assert!(
         retrieved_after.is_none(),
         "Memory must NOT exist after hard delete"
@@ -797,10 +828,18 @@ async fn test_fsv_boost_importance_multiple_operations() {
                 "delta": delta
             }
         });
-        let request = make_request("tools/call", Some(JsonRpcId::Number(i as i64 + 1)), Some(params));
+        let request = make_request(
+            "tools/call",
+            Some(JsonRpcId::Number(i as i64 + 1)),
+            Some(params),
+        );
         let response = handlers.dispatch(request).await;
 
-        assert!(response.error.is_none(), "Operation {} should succeed", i + 1);
+        assert!(
+            response.error.is_none(),
+            "Operation {} should succeed",
+            i + 1
+        );
         let result = response.result.expect("Must have result");
         let is_error = result.get("isError").unwrap().as_bool().unwrap();
         assert!(!is_error, "Tool should succeed");
@@ -811,7 +850,10 @@ async fn test_fsv_boost_importance_multiple_operations() {
 
         println!(
             "Operation {}: delta={}, old_importance={:.3}, new_importance={:.3}",
-            i + 1, delta, response_old, response_new
+            i + 1,
+            delta,
+            response_old,
+            response_new
         );
 
         // new_importance should be old_importance + delta
@@ -819,7 +861,9 @@ async fn test_fsv_boost_importance_multiple_operations() {
         assert!(
             (response_new - expected_new).abs() < 0.01,
             "Operation {} new_importance mismatch: got {}, expected {}",
-            i + 1, response_new, expected_new
+            i + 1,
+            response_new,
+            expected_new
         );
 
         // old_importance should be >= prev from previous iteration
@@ -827,7 +871,8 @@ async fn test_fsv_boost_importance_multiple_operations() {
         if i > 0 {
             assert!(
                 response_old >= prev_importance - 0.01,
-                "Operation {} old_importance should not decrease significantly", i + 1
+                "Operation {} old_importance should not decrease significantly",
+                i + 1
             );
         }
         prev_importance = response_new;

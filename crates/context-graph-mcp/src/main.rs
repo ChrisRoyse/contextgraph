@@ -420,7 +420,10 @@ fn determine_warm_first(cli: &CliArgs) -> bool {
     if let Ok(warm_env) = env::var("CONTEXT_GRAPH_WARM_FIRST") {
         let warm_first = warm_env != "0" && warm_env.to_lowercase() != "false";
         if !warm_first {
-            info!("ENV override: warm_first = false (CONTEXT_GRAPH_WARM_FIRST={})", warm_env);
+            info!(
+                "ENV override: warm_first = false (CONTEXT_GRAPH_WARM_FIRST={})",
+                warm_env
+            );
         }
         return warm_first;
     }
@@ -446,7 +449,10 @@ fn determine_daemon_mode(cli: &CliArgs) -> bool {
     if let Ok(daemon_env) = env::var("CONTEXT_GRAPH_DAEMON") {
         let daemon = daemon_env == "1" || daemon_env.to_lowercase() == "true";
         if daemon {
-            info!("ENV: daemon mode enabled (CONTEXT_GRAPH_DAEMON={})", daemon_env);
+            info!(
+                "ENV: daemon mode enabled (CONTEXT_GRAPH_DAEMON={})",
+                daemon_env
+            );
         }
         return daemon;
     }

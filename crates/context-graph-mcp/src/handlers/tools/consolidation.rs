@@ -225,7 +225,11 @@ impl Handlers {
         // store.list_recent(limit) method for unbiased sampling.
         let search_options = TeleologicalSearchOptions::quick(params.max_memories);
 
-        let broad_query = match self.multi_array_provider.embed_all("context memory patterns").await {
+        let broad_query = match self
+            .multi_array_provider
+            .embed_all("context memory patterns")
+            .await
+        {
             Ok(output) => output.fingerprint,
             Err(e) => {
                 error!(error = %e, "trigger_consolidation: Failed to generate broad query embedding");

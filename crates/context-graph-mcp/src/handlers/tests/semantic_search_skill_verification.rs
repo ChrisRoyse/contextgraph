@@ -68,8 +68,14 @@ async fn test_basic_search_response_structure() {
     let data = extract_mcp_tool_data(&result);
 
     // Verify required fields per SKILL.md
-    assert!(data.get("results").is_some(), "Response must have 'results' array");
-    assert!(data.get("count").is_some(), "Response must have 'count' field");
+    assert!(
+        data.get("results").is_some(),
+        "Response must have 'results' array"
+    );
+    assert!(
+        data.get("count").is_some(),
+        "Response must have 'count' field"
+    );
 
     let results = data.get("results").unwrap().as_array().unwrap();
     println!("Search returned {} results", results.len());
@@ -155,7 +161,10 @@ async fn test_topk_parameter_limits_results() {
     let data = extract_mcp_tool_data(&result);
     let results = data.get("results").unwrap().as_array().unwrap();
 
-    println!("Stored 5 items, requested topK=2, got {} results", results.len());
+    println!(
+        "Stored 5 items, requested topK=2, got {} results",
+        results.len()
+    );
     assert!(
         results.len() <= 2,
         "topK=2 should return at most 2 results, got {}",
@@ -422,7 +431,10 @@ async fn test_empty_graph_returns_empty_results() {
     );
 
     let response = handlers.dispatch(search_request).await;
-    assert!(response.error.is_none(), "Search should succeed even on empty graph");
+    assert!(
+        response.error.is_none(),
+        "Search should succeed even on empty graph"
+    );
 
     let result = response.result.expect("Must have result");
     let data = extract_mcp_tool_data(&result);
@@ -430,9 +442,16 @@ async fn test_empty_graph_returns_empty_results() {
     let results = data.get("results").unwrap().as_array().unwrap();
     let count = data.get("count").unwrap().as_u64().unwrap();
 
-    println!("Empty graph search: count={}, results.len()={}", count, results.len());
+    println!(
+        "Empty graph search: count={}, results.len()={}",
+        count,
+        results.len()
+    );
     assert_eq!(count, 0, "Empty graph should return count=0");
-    assert!(results.is_empty(), "Empty graph should return empty results array");
+    assert!(
+        results.is_empty(),
+        "Empty graph should return empty results array"
+    );
 
     println!("\n✓ TC-SKILL-008 PASSED: Empty graph returns empty results\n");
 }
@@ -479,7 +498,10 @@ async fn test_unicode_query_handled() {
     let data = extract_mcp_tool_data(&result);
 
     // Just verify the response structure is valid
-    assert!(data.get("results").is_some(), "Response must have results array");
+    assert!(
+        data.get("results").is_some(),
+        "Response must have results array"
+    );
     assert!(data.get("count").is_some(), "Response must have count");
 
     println!("\n✓ TC-SKILL-009 PASSED: Unicode query handled correctly\n");
@@ -570,7 +592,10 @@ async fn test_modality_filter() {
     );
 
     let response = handlers.dispatch(search_request).await;
-    assert!(response.error.is_none(), "Search with modality filter should succeed");
+    assert!(
+        response.error.is_none(),
+        "Search with modality filter should succeed"
+    );
 
     let result = response.result.expect("Must have result");
     let data = extract_mcp_tool_data(&result);

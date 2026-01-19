@@ -62,7 +62,7 @@ pub mod wake_controller;
 pub use amortized::{
     AmortizedLearner, EdgeCreator, NullEdgeCreator, PathSignature, ShortcutCandidate, ShortcutEdge,
 };
-pub use controller::{DreamController, DreamReport, DreamState, DreamStatus};
+pub use controller::{DreamController, DreamCycleConfig, DreamReport, DreamState, DreamStatus};
 pub use hebbian::{
     find_coactivated_pairs, select_replay_memories, EdgeUpdate, HebbianEngine, HebbianUpdateResult,
 };

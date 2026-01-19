@@ -46,7 +46,11 @@ use crate::protocol::{JsonRpcId, JsonRpcRequest};
 
 /// TASK-GAP-001: Create a tools/call request for PRD v6 compliant API.
 /// In PRD v6, all tool operations go through "tools/call" with name+arguments.
-fn make_tools_call_request(tool_name: &str, id: i64, arguments: serde_json::Value) -> JsonRpcRequest {
+fn make_tools_call_request(
+    tool_name: &str,
+    id: i64,
+    arguments: serde_json::Value,
+) -> JsonRpcRequest {
     JsonRpcRequest {
         jsonrpc: "2.0".to_string(),
         id: Some(JsonRpcId::Number(id)),
@@ -95,12 +99,7 @@ async fn manual_fsv_memory_store_physical_verification() {
     let layer_status: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
 
     // Note: GoalHierarchy was removed - Handlers::with_defaults now takes 4 args
-    let handlers = Handlers::with_defaults(
-        store.clone(),
-        utl_processor,
-        multi_array,
-        layer_status,
-    );
+    let handlers = Handlers::with_defaults(store.clone(), utl_processor, multi_array, layer_status);
 
     // =========================================================================
     // BEFORE STATE - DIRECT INSPECTION OF SOURCE OF TRUTH
@@ -252,12 +251,7 @@ async fn manual_fsv_edge_case_empty_content() {
     let layer_status: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
 
     // Note: GoalHierarchy was removed - Handlers::with_defaults now takes 4 args
-    let handlers = Handlers::with_defaults(
-        store.clone(),
-        utl_processor,
-        multi_array,
-        layer_status,
-    );
+    let handlers = Handlers::with_defaults(store.clone(), utl_processor, multi_array, layer_status);
 
     // BEFORE STATE
     println!("📊 BEFORE STATE:");
@@ -313,12 +307,7 @@ async fn manual_fsv_edge_case_search_empty_store() {
     let layer_status: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
 
     // Note: GoalHierarchy was removed - Handlers::with_defaults now takes 4 args
-    let handlers = Handlers::with_defaults(
-        store.clone(),
-        utl_processor,
-        multi_array,
-        layer_status,
-    );
+    let handlers = Handlers::with_defaults(store.clone(), utl_processor, multi_array, layer_status);
 
     // BEFORE STATE - Verify empty
     println!("📊 BEFORE STATE:");
@@ -341,9 +330,15 @@ async fn manual_fsv_edge_case_search_empty_store() {
 
     // VERIFY - Should succeed with empty results
     println!("\n🔍 VERIFY RESPONSE:");
-    assert!(response.error.is_none(), "Search should succeed on empty store");
+    assert!(
+        response.error.is_none(),
+        "Search should succeed on empty store"
+    );
     let result = response.result.unwrap();
-    println!("   Response received: {}", serde_json::to_string(&result).unwrap_or_default());
+    println!(
+        "   Response received: {}",
+        serde_json::to_string(&result).unwrap_or_default()
+    );
 
     println!("\n✓ EDGE CASE VERIFIED: Search on empty store returns empty results\n");
 }
@@ -364,26 +359,20 @@ async fn manual_fsv_edge_case_memetic_status() {
     let layer_status: Arc<dyn LayerStatusProvider> = Arc::new(StubLayerStatusProvider);
 
     // Note: GoalHierarchy was removed - Handlers::with_defaults now takes 4 args
-    let handlers = Handlers::with_defaults(
-        store.clone(),
-        utl_processor,
-        multi_array,
-        layer_status,
-    );
+    let handlers = Handlers::with_defaults(store.clone(), utl_processor, multi_array, layer_status);
 
     // EXECUTE
     println!("📝 EXECUTE: tools/call -> get_memetic_status");
     let response = handlers
-        .dispatch(make_tools_call_request(
-            "get_memetic_status",
-            1,
-            json!({}),
-        ))
+        .dispatch(make_tools_call_request("get_memetic_status", 1, json!({})))
         .await;
 
     // VERIFY
     println!("\n🔍 VERIFY RESPONSE:");
-    assert!(response.error.is_none(), "get_memetic_status should succeed");
+    assert!(
+        response.error.is_none(),
+        "get_memetic_status should succeed"
+    );
     let result = response.result.unwrap();
 
     // Extract text content from tools/call response
@@ -393,17 +382,33 @@ async fn manual_fsv_edge_case_memetic_status() {
         .and_then(|obj| obj["text"].as_str())
         .expect("Should have content text");
 
-    let data: serde_json::Value = serde_json::from_str(content)
-        .expect("Content should be valid JSON");
+    let data: serde_json::Value =
+        serde_json::from_str(content).expect("Content should be valid JSON");
 
     println!("   layers: {}", data["layers"]);
 
     // Verify layer statuses from StubLayerStatusProvider (4-layer system - all active)
     let layers = &data["layers"];
-    assert_eq!(layers["perception"].as_str().unwrap(), "active", "perception should be active");
-    assert_eq!(layers["memory"].as_str().unwrap(), "active", "memory should be active");
-    assert_eq!(layers["action"].as_str().unwrap(), "active", "action should be active");
-    assert_eq!(layers["meta"].as_str().unwrap(), "active", "meta should be active");
+    assert_eq!(
+        layers["perception"].as_str().unwrap(),
+        "active",
+        "perception should be active"
+    );
+    assert_eq!(
+        layers["memory"].as_str().unwrap(),
+        "active",
+        "memory should be active"
+    );
+    assert_eq!(
+        layers["action"].as_str().unwrap(),
+        "active",
+        "action should be active"
+    );
+    assert_eq!(
+        layers["meta"].as_str().unwrap(),
+        "active",
+        "meta should be active"
+    );
 
     println!("\n✓ EDGE CASE VERIFIED: get_memetic_status returns correct layer statuses\n");
 }

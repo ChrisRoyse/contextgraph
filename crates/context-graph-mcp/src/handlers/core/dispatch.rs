@@ -34,7 +34,10 @@ impl Handlers {
             _ => JsonRpcResponse::error(
                 request.id,
                 error_codes::METHOD_NOT_FOUND,
-                format!("Method not found: {}. Use tools/call for tool access.", request.method),
+                format!(
+                    "Method not found: {}. Use tools/call for tool access.",
+                    request.method
+                ),
             ),
         }
     }

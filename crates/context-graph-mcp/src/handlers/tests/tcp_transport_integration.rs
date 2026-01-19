@@ -209,4 +209,3 @@ fn test_bind_address_validation() {
     config.bind_address = "   ".to_string();
     assert!(config.validate().is_err());
 }
-

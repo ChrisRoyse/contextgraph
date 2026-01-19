@@ -47,9 +47,9 @@ mod error_codes;
 #[cfg(feature = "cuda")]
 mod gpu_embedding_verification;
 mod initialize;
+mod manual_fsv_verification;
 #[cfg(feature = "cuda")]
 mod mcp_protocol_e2e_test;
-mod manual_fsv_verification;
 mod semantic_search_skill_verification;
 mod task_emb_024_verification;
 mod tcp_transport_integration;

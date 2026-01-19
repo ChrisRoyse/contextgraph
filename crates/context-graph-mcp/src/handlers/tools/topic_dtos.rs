@@ -655,7 +655,9 @@ mod tests {
         let zero = GetDivergenceAlertsRequest { lookback_hours: 0 };
         assert!(zero.validate().is_err());
 
-        let too_large = GetDivergenceAlertsRequest { lookback_hours: 100 };
+        let too_large = GetDivergenceAlertsRequest {
+            lookback_hours: 100,
+        };
         assert!(too_large.validate().is_err());
         println!("[PASS] GetDivergenceAlertsRequest validation works");
     }
@@ -814,9 +816,15 @@ mod tests {
         assert!(DivergenceAlert::is_valid_semantic_space("E7_Code"));
 
         // Invalid - temporal spaces per AP-63
-        assert!(!DivergenceAlert::is_valid_semantic_space("E2_TemporalRecent"));
-        assert!(!DivergenceAlert::is_valid_semantic_space("E3_TemporalPeriodic"));
-        assert!(!DivergenceAlert::is_valid_semantic_space("E4_TemporalPositional"));
+        assert!(!DivergenceAlert::is_valid_semantic_space(
+            "E2_TemporalRecent"
+        ));
+        assert!(!DivergenceAlert::is_valid_semantic_space(
+            "E3_TemporalPeriodic"
+        ));
+        assert!(!DivergenceAlert::is_valid_semantic_space(
+            "E4_TemporalPositional"
+        ));
 
         // Invalid - relational/structural (not for divergence)
         assert!(!DivergenceAlert::is_valid_semantic_space("E8_Graph"));

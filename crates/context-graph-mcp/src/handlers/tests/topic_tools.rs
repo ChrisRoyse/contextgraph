@@ -158,7 +158,10 @@ async fn test_get_topic_stability_default_hours() {
 
     let response = handlers.dispatch(request).await;
 
-    assert!(response.error.is_none(), "get_topic_stability should not error");
+    assert!(
+        response.error.is_none(),
+        "get_topic_stability should not error"
+    );
     let result = response.result.expect("tools/call must return a result");
     let is_error = result.get("isError").unwrap().as_bool().unwrap();
     assert!(!is_error, "isError must be false");
@@ -174,10 +177,7 @@ async fn test_get_topic_stability_default_hours() {
         data.get("entropy").is_some(),
         "Response must contain entropy"
     );
-    assert!(
-        data.get("phases").is_some(),
-        "Response must contain phases"
-    );
+    assert!(data.get("phases").is_some(), "Response must contain phases");
     assert!(
         data.get("dream_recommended").is_some(),
         "Response must contain dream_recommended"
@@ -499,7 +499,10 @@ async fn test_topic_tools_return_cognitive_pulse() {
 
     let pulse = result.get("_cognitive_pulse").unwrap();
     assert!(pulse.get("entropy").is_some(), "pulse must have entropy");
-    assert!(pulse.get("coherence").is_some(), "pulse must have coherence");
+    assert!(
+        pulse.get("coherence").is_some(),
+        "pulse must have coherence"
+    );
     assert!(
         pulse.get("learning_score").is_some(),
         "pulse must have learning_score"

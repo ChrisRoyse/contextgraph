@@ -190,10 +190,7 @@ mod tests {
 
         let result = provider.embed_all("test").await;
         assert!(result.is_err());
-        assert!(result
-            .unwrap_err()
-            .to_string()
-            .contains("still loading"));
+        assert!(result.unwrap_err().to_string().contains("still loading"));
     }
 
     #[tokio::test]

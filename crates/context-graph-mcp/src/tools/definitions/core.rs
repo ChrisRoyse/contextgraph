@@ -22,7 +22,9 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "rationale": {
                         "type": "string",
-                        "description": "Why this context is relevant and should be stored"
+                        "minLength": 1,
+                        "maxLength": 1024,
+                        "description": "Why this context is relevant and should be stored (REQUIRED, 1-1024 chars)"
                     },
                     "modality": {
                         "type": "string",
@@ -41,7 +43,6 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "required": ["content", "rationale"]
             }),
         ),
-
         // store_memory - store a memory node directly
         ToolDefinition::new(
             "store_memory",
@@ -75,7 +76,6 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "required": ["content"]
             }),
         ),
-
         // get_memetic_status - get UTL metrics and system state
         ToolDefinition::new(
             "get_memetic_status",
@@ -89,7 +89,6 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "required": []
             }),
         ),
-
         // search_graph - semantic search
         ToolDefinition::new(
             "search_graph",
@@ -130,7 +129,6 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "required": ["query"]
             }),
         ),
-
         // trigger_consolidation - trigger memory consolidation (PRD Section 10.1)
         ToolDefinition::new(
             "trigger_consolidation",

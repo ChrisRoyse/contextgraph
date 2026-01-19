@@ -28,9 +28,8 @@ use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
 use super::super::Handlers;
 use super::topic_dtos::{
     DetectTopicsRequest, DetectTopicsResponse, DivergenceAlert, DivergenceAlertsResponse,
-    GetDivergenceAlertsRequest, GetTopicPortfolioRequest, GetTopicStabilityRequest,
-    PhaseBreakdown, StabilityMetricsSummary, TopicPortfolioResponse, TopicStabilityResponse,
-    TopicSummary,
+    GetDivergenceAlertsRequest, GetTopicPortfolioRequest, GetTopicStabilityRequest, PhaseBreakdown,
+    StabilityMetricsSummary, TopicPortfolioResponse, TopicStabilityResponse, TopicSummary,
 };
 
 /// Minimum memories required for clustering (per constitution min_cluster_size).
@@ -114,7 +113,9 @@ fn extract_entropy_from_status(status: &serde_json::Value) -> f32 {
 /// Compute phase breakdown from topics.
 ///
 /// TASK-INTEG-TOPIC: Helper to count topics by lifecycle phase.
-fn compute_phase_breakdown(topics: &std::collections::HashMap<uuid::Uuid, Topic>) -> PhaseBreakdown {
+fn compute_phase_breakdown(
+    topics: &std::collections::HashMap<uuid::Uuid, Topic>,
+) -> PhaseBreakdown {
     use context_graph_core::clustering::TopicPhase;
 
     let mut emerging = 0;
@@ -169,20 +170,15 @@ impl Handlers {
             Ok(r) => r,
             Err(e) => {
                 error!(error = %e, "get_topic_portfolio: Failed to parse request");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid params: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid params: {}", e));
             }
         };
 
         // Validate format using DTO's validate method
         if let Err(validation_error) = request.validate() {
             error!(error = %validation_error, "get_topic_portfolio: Validation failed");
-            return self.tool_error_with_pulse(
-                id,
-                &format!("Invalid params: {}", validation_error),
-            );
+            return self
+                .tool_error_with_pulse(id, &format!("Invalid params: {}", validation_error));
         }
 
         // Get memory count to determine tier
@@ -221,10 +217,7 @@ impl Handlers {
         let topics_map = cluster_manager.get_topics();
 
         // Convert core Topics to TopicSummary DTOs
-        let topics: Vec<TopicSummary> = topics_map
-            .values()
-            .map(topic_to_summary)
-            .collect();
+        let topics: Vec<TopicSummary> = topics_map.values().map(topic_to_summary).collect();
 
         let total_topics = topics.len();
 
@@ -286,20 +279,15 @@ impl Handlers {
             Ok(r) => r,
             Err(e) => {
                 error!(error = %e, "get_topic_stability: Failed to parse request");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid params: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid params: {}", e));
             }
         };
 
         // Validate hours range using DTO's validate method
         if let Err(validation_error) = request.validate() {
             error!(error = %validation_error, "get_topic_stability: Validation failed");
-            return self.tool_error_with_pulse(
-                id,
-                &format!("Invalid params: {}", validation_error),
-            );
+            return self
+                .tool_error_with_pulse(id, &format!("Invalid params: {}", validation_error));
         }
 
         debug!(
@@ -378,10 +366,7 @@ impl Handlers {
             Ok(r) => r,
             Err(e) => {
                 error!(error = %e, "detect_topics: Failed to parse request");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid params: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid params: {}", e));
             }
         };
 
@@ -470,10 +455,7 @@ impl Handlers {
             }
             Err(e) => {
                 error!(error = %e, "detect_topics: Reclustering failed");
-                self.tool_error_with_pulse(
-                    id,
-                    &format!("Clustering error: {}", e),
-                )
+                self.tool_error_with_pulse(id, &format!("Clustering error: {}", e))
             }
         }
     }
@@ -508,20 +490,15 @@ impl Handlers {
             Ok(r) => r,
             Err(e) => {
                 error!(error = %e, "get_divergence_alerts: Failed to parse request");
-                return self.tool_error_with_pulse(
-                    id,
-                    &format!("Invalid params: {}", e),
-                );
+                return self.tool_error_with_pulse(id, &format!("Invalid params: {}", e));
             }
         };
 
         // Validate lookback range using DTO's validate method
         if let Err(validation_error) = request.validate() {
             error!(error = %validation_error, "get_divergence_alerts: Validation failed");
-            return self.tool_error_with_pulse(
-                id,
-                &format!("Invalid params: {}", validation_error),
-            );
+            return self
+                .tool_error_with_pulse(id, &format!("Invalid params: {}", validation_error));
         }
 
         let lookback_hours = request.lookback_hours as i64;
@@ -672,8 +649,8 @@ impl Handlers {
 
 #[cfg(test)]
 mod tests {
+    use super::super::topic_dtos::{DivergenceAlert, MAX_WEIGHTED_AGREEMENT, TOPIC_THRESHOLD};
     use super::*;
-    use super::super::topic_dtos::{DivergenceAlert, TOPIC_THRESHOLD, MAX_WEIGHTED_AGREEMENT};
 
     #[test]
     fn test_constants_match_constitution() {
@@ -721,7 +698,8 @@ mod tests {
     fn test_insufficient_memories_error_code() {
         // Per TECH_SPEC_PRD_GAPS.md Section 11.1
         assert_eq!(
-            error_codes::INSUFFICIENT_MEMORIES, -32021,
+            error_codes::INSUFFICIENT_MEMORIES,
+            -32021,
             "INSUFFICIENT_MEMORIES error code must be -32021"
         );
     }
@@ -737,8 +715,14 @@ mod tests {
         assert_eq!(embedder_to_dto_space(Embedder::Causal), "E5_Causal");
         assert_eq!(embedder_to_dto_space(Embedder::Sparse), "E6_Sparse");
         assert_eq!(embedder_to_dto_space(Embedder::Code), "E7_Code");
-        assert_eq!(embedder_to_dto_space(Embedder::Multimodal), "E10_Multimodal");
-        assert_eq!(embedder_to_dto_space(Embedder::LateInteraction), "E12_LateInteraction");
+        assert_eq!(
+            embedder_to_dto_space(Embedder::Multimodal),
+            "E10_Multimodal"
+        );
+        assert_eq!(
+            embedder_to_dto_space(Embedder::LateInteraction),
+            "E12_LateInteraction"
+        );
         assert_eq!(embedder_to_dto_space(Embedder::KeywordSplade), "E13_SPLADE");
     }
 
@@ -748,7 +732,10 @@ mod tests {
         // These should never be used in divergence detection per AP-62
         assert_eq!(embedder_to_dto_space(Embedder::TemporalRecent), "Unknown");
         assert_eq!(embedder_to_dto_space(Embedder::TemporalPeriodic), "Unknown");
-        assert_eq!(embedder_to_dto_space(Embedder::TemporalPositional), "Unknown");
+        assert_eq!(
+            embedder_to_dto_space(Embedder::TemporalPositional),
+            "Unknown"
+        );
     }
 
     #[test]
@@ -759,7 +746,8 @@ mod tests {
 
     #[test]
     fn test_truncate_summary_long() {
-        let content = "This is a very long piece of text that should be truncated to only a few words";
+        let content =
+            "This is a very long piece of text that should be truncated to only a few words";
         let truncated = truncate_summary(content, 5);
         assert_eq!(truncated, "This is a very long");
         assert!(!truncated.contains("truncated"));
@@ -783,30 +771,61 @@ mod tests {
     #[test]
     fn test_max_summary_words() {
         // Verify summary truncation limit
-        assert_eq!(
-            MAX_SUMMARY_WORDS, 50,
-            "MAX_SUMMARY_WORDS should be 50"
-        );
+        assert_eq!(MAX_SUMMARY_WORDS, 50, "MAX_SUMMARY_WORDS should be 50");
     }
 
     #[test]
     fn test_divergence_spaces_match_ap62() {
         // AP-62: Only SEMANTIC embedders (E1, E5, E6, E7, E10, E12, E13) trigger alerts
-        assert_eq!(DIVERGENCE_SPACES.len(), 7, "Should have 7 DIVERGENCE_SPACES");
+        assert_eq!(
+            DIVERGENCE_SPACES.len(),
+            7,
+            "Should have 7 DIVERGENCE_SPACES"
+        );
 
         // Verify each expected embedder is present
-        assert!(DIVERGENCE_SPACES.contains(&Embedder::Semantic), "Must include E1");
-        assert!(DIVERGENCE_SPACES.contains(&Embedder::Causal), "Must include E5");
-        assert!(DIVERGENCE_SPACES.contains(&Embedder::Sparse), "Must include E6");
-        assert!(DIVERGENCE_SPACES.contains(&Embedder::Code), "Must include E7");
-        assert!(DIVERGENCE_SPACES.contains(&Embedder::Multimodal), "Must include E10");
-        assert!(DIVERGENCE_SPACES.contains(&Embedder::LateInteraction), "Must include E12");
-        assert!(DIVERGENCE_SPACES.contains(&Embedder::KeywordSplade), "Must include E13");
+        assert!(
+            DIVERGENCE_SPACES.contains(&Embedder::Semantic),
+            "Must include E1"
+        );
+        assert!(
+            DIVERGENCE_SPACES.contains(&Embedder::Causal),
+            "Must include E5"
+        );
+        assert!(
+            DIVERGENCE_SPACES.contains(&Embedder::Sparse),
+            "Must include E6"
+        );
+        assert!(
+            DIVERGENCE_SPACES.contains(&Embedder::Code),
+            "Must include E7"
+        );
+        assert!(
+            DIVERGENCE_SPACES.contains(&Embedder::Multimodal),
+            "Must include E10"
+        );
+        assert!(
+            DIVERGENCE_SPACES.contains(&Embedder::LateInteraction),
+            "Must include E12"
+        );
+        assert!(
+            DIVERGENCE_SPACES.contains(&Embedder::KeywordSplade),
+            "Must include E13"
+        );
 
         // AP-63: Temporal embedders must NOT be included
-        assert!(!DIVERGENCE_SPACES.contains(&Embedder::TemporalRecent), "Must NOT include E2");
-        assert!(!DIVERGENCE_SPACES.contains(&Embedder::TemporalPeriodic), "Must NOT include E3");
-        assert!(!DIVERGENCE_SPACES.contains(&Embedder::TemporalPositional), "Must NOT include E4");
+        assert!(
+            !DIVERGENCE_SPACES.contains(&Embedder::TemporalRecent),
+            "Must NOT include E2"
+        );
+        assert!(
+            !DIVERGENCE_SPACES.contains(&Embedder::TemporalPeriodic),
+            "Must NOT include E3"
+        );
+        assert!(
+            !DIVERGENCE_SPACES.contains(&Embedder::TemporalPositional),
+            "Must NOT include E4"
+        );
     }
 
     #[test]
