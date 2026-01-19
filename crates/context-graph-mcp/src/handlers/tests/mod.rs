@@ -44,7 +44,11 @@ mod content_storage_verification;
 mod curation_tools_fsv;
 mod dream_tools_integration;
 mod error_codes;
+#[cfg(feature = "cuda")]
+mod gpu_embedding_verification;
 mod initialize;
+#[cfg(feature = "cuda")]
+mod mcp_protocol_e2e_test;
 mod manual_fsv_verification;
 mod semantic_search_skill_verification;
 mod task_emb_024_verification;
@@ -331,6 +335,7 @@ pub(crate) fn create_test_handlers() -> Handlers {
 ///
 /// Panics if TempDir creation, RocksDB opening, or HNSW initialization fails.
 /// This is intentional - tests should fail immediately if infrastructure cannot be set up.
+#[allow(dead_code)] // Available for integration tests that need real RocksDB
 pub(crate) async fn create_test_handlers_with_rocksdb() -> (Handlers, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for RocksDB test");
     let db_path = tempdir.path().join("test_rocksdb");
@@ -480,6 +485,7 @@ pub(crate) async fn create_test_handlers_with_rocksdb_store_access(
 /// }
 /// ```
 #[cfg(feature = "cuda")]
+#[allow(dead_code)] // Available for FSV tests that don't need direct store access
 pub(crate) async fn create_test_handlers_with_real_embeddings() -> (Handlers, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for RocksDB FSV test");
     let db_path = tempdir.path().join("test_rocksdb_fsv_real_embeddings");
@@ -524,7 +530,6 @@ pub(crate) async fn create_test_handlers_with_real_embeddings() -> (Handlers, Te
 /// - Direct reference to the store for FSV assertions (verify data was persisted)
 /// - TempDir that MUST be kept alive for the duration of the test
 #[cfg(feature = "cuda")]
-#[allow(dead_code)]
 pub(crate) async fn create_test_handlers_with_real_embeddings_store_access(
 ) -> (Handlers, Arc<dyn TeleologicalMemoryStore>, TempDir) {
     let tempdir = TempDir::new().expect("Failed to create temp directory for FSV test");

@@ -214,25 +214,27 @@ fn verify_simulated_gpu_rejection_logic() {
 }
 
 /// Edge Case Test: Verify all required cfg attributes
+/// Note: The codebase uses `candle` as the actual feature, with `cuda` as an alias.
 #[test]
 fn verify_cfg_attributes() {
     let preflight_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/warm/loader/preflight.rs");
 
     let content = fs::read_to_string(&preflight_path).expect("Failed to read preflight.rs");
 
-    // Must have cfg(not(feature = "cuda")) for compile_error
+    // Must have cfg(not(feature = "candle")) for compile_error
+    // Note: cuda = ["candle"] in Cargo.toml, so candle is the actual feature
     assert!(
-        content.contains("#[cfg(not(feature = \"cuda\"))]"),
-        "PHYSICAL VERIFICATION FAILED: Missing #[cfg(not(feature = \"cuda\"))] attribute"
+        content.contains("#[cfg(not(feature = \"candle\"))]"),
+        "PHYSICAL VERIFICATION FAILED: Missing #[cfg(not(feature = \"candle\"))] attribute"
     );
 
-    // Must have cfg(feature = "cuda") for actual implementation
+    // Must have cfg(feature = "candle") for actual implementation
     assert!(
-        content.contains("#[cfg(feature = \"cuda\")]"),
-        "PHYSICAL VERIFICATION FAILED: Missing #[cfg(feature = \"cuda\")] attribute"
+        content.contains("#[cfg(feature = \"candle\")]"),
+        "PHYSICAL VERIFICATION FAILED: Missing #[cfg(feature = \"candle\")] attribute"
     );
 
-    println!("[PASS] All required cfg attributes present");
+    println!("[PASS] All required cfg attributes present (candle feature)");
 }
 
 /// Summary test that aggregates all physical verification results

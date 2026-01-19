@@ -21,7 +21,7 @@
 //! | E12 LateInteraction | 128 | 128 | TokenPruning |
 //! | E13 Splade | 30522 | 1536 | SparseNative |
 //!
-//! TOTAL_DIMENSION = 9856
+//! TOTAL_DIMENSION = 10624
 
 mod aggregate_dimensions;
 mod comprehensive;

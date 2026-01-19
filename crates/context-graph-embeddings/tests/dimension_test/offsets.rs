@@ -86,8 +86,8 @@ fn test_key_offsets() {
     // E6 Sparse: 2560 + 768 = 3328
     assert_eq!(offset_by_index(5), 3328, "E6 offset should be 3328");
 
-    // E13 Splade: 9856 - 1536 = 8320
-    assert_eq!(offset_by_index(12), 8320, "E13 offset should be 8320");
+    // E13 Splade: 10624 - 1536 = 9088 (E7 Code increased from 768→1536)
+    assert_eq!(offset_by_index(12), 9088, "E13 offset should be 9088");
 
     println!("[PASS] Key offsets verified");
 }

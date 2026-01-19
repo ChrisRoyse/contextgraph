@@ -193,8 +193,62 @@ pub struct DreamController {
 }
 
 impl DreamController {
-    /// Create a new DreamController with constitution-mandated defaults
+    /// Create a new DreamController with a real MemoryProvider (PRODUCTION USE).
+    ///
+    /// This is the REQUIRED constructor for production and integration tests.
+    /// Per AP-71: "Dream NREM/REM returning stubs forbidden"
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - A real MemoryProvider implementation (e.g., GraphMemoryProvider)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use context_graph_storage::GraphMemoryProvider;
+    ///
+    /// let storage = Arc::new(RocksDbMemex::open("/tmp/test")?);
+    /// let provider = Arc::new(GraphMemoryProvider::new(storage));
+    /// let controller = DreamController::with_provider(provider);
+    /// ```
+    pub fn with_provider(provider: Arc<dyn MemoryProvider>) -> Self {
+        info!(
+            "DreamController::with_provider() - Creating controller with real memory provider"
+        );
+        Self {
+            state: DreamState::Awake,
+            nrem: NremPhase::with_provider(provider),
+            rem: RemPhase::new(),
+            amortizer: AmortizedLearner::new(),
+            scheduler: DreamScheduler::new(),
+            gpu_budget: constants::MAX_GPU_USAGE,
+            query_limit: constants::MAX_REM_QUERIES,
+            wake_latency_budget: constants::MAX_WAKE_LATENCY,
+            interrupt_flag: Arc::new(AtomicBool::new(false)),
+            completed_cycles: 0,
+            last_dream_completed: None,
+            cycle_start: None,
+            peak_gpu_usage: 0.0,
+            consolidation_callback: None,
+        }
+    }
+
+    /// Create a new DreamController WITHOUT a memory provider (UNIT TESTING ONLY).
+    ///
+    /// # WARNING: Constitution Compliance
+    ///
+    /// - AP-71: "Dream NREM/REM returning stubs forbidden"
+    /// - This method logs a WARNING because production code should use `with_provider()`
+    /// - Only use this in unit tests that test state machine logic
+    ///
+    /// # For Production
+    ///
+    /// Use `with_provider()` with a real MemoryProvider instead.
     pub fn new() -> Self {
+        warn!(
+            "DreamController::new() called without MemoryProvider - this is ONLY for unit tests! \
+             Production code MUST use DreamController::with_provider() per AP-71"
+        );
         Self {
             state: DreamState::Awake,
             nrem: NremPhase::new(),

@@ -17,14 +17,19 @@
 //! 3. **Tight Coupling**: Apply coupling K=0.9 for synchronization
 //! 4. **Shortcut Detection**: Identify 3+ hop paths for amortization
 //!
-//! ## Memory Provider Architecture
+//! ## Memory Provider Architecture (AP-71, AP-72 Compliant)
 //!
-//! The NREM phase uses a `MemoryProvider` trait for dependency injection of memory
-//! stores. This allows decoupling from the actual graph store implementation:
+//! The NREM phase REQUIRES a real MemoryProvider for production use:
 //!
 //! - `MemoryProvider`: Trait for retrieving memories and edges for replay
-//! - `NullMemoryProvider`: Default implementation returning empty data (backward compat)
-//! - Real implementations: Inject via `set_memory_provider()` when graph store available
+//! - `NullMemoryProvider`: **ONLY for unit tests** - returns empty data
+//! - Production: Use `with_provider()` constructor with a real MemoryProvider
+//!
+//! ## Constitution Anti-Patterns
+//!
+//! - AP-71: "Dream NREM/REM returning stubs forbidden"
+//! - AP-72: "nrem.rs/rem.rs TODO stubs MUST be implemented"
+//! - AP-35: "Implementations MUST NOT return stub data when real data is available"
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -91,17 +96,27 @@ pub trait MemoryProvider: Send + Sync + std::fmt::Debug {
     fn get_edges_for_memories(&self, memory_ids: &[Uuid]) -> Vec<(Uuid, Uuid, f32)>;
 }
 
-/// Null implementation of MemoryProvider for backward compatibility.
+/// Null implementation of MemoryProvider for **UNIT TESTING ONLY**.
 ///
-/// Returns empty vectors, which is the same behavior as before the
-/// MemoryProvider trait was introduced. This allows NremPhase to be
-/// created without a provider and still function (with no memories).
+/// Returns empty vectors. This should ONLY be used in unit tests that
+/// specifically test Hebbian math logic without needing real memory data.
 ///
-/// # Use Cases
+/// # WARNING: Constitution Compliance
 ///
-/// - Testing without a real graph store
-/// - Backward compatibility with existing code
-/// - Initial system startup before graph store is available
+/// - AP-71: "Dream NREM/REM returning stubs forbidden" - This is ONLY for unit tests
+/// - AP-35: Production code MUST use a real MemoryProvider (e.g., GraphMemoryProvider)
+///
+/// # Allowed Use Cases
+///
+/// - Unit tests for Hebbian learning math
+/// - Unit tests for interrupt handling
+/// - Unit tests for state machine logic
+///
+/// # NOT Allowed For
+///
+/// - Integration tests (use real RocksDbMemex with GraphMemoryProvider)
+/// - Production code (will log ERROR-level warning)
+/// - Benchmarks (use real data)
 #[derive(Debug, Clone, Default)]
 pub struct NullMemoryProvider;
 
@@ -125,15 +140,32 @@ impl MemoryProvider for NullMemoryProvider {
 /// NREM phase handler for memory replay and consolidation.
 ///
 /// Uses a `MemoryProvider` to retrieve memories and edges for Hebbian replay.
-/// If no provider is set, uses `NullMemoryProvider` which returns empty data.
 ///
-/// # Memory Provider Injection
+/// # Production Usage (REQUIRED)
+///
+/// In production, always use `with_provider()` to ensure real memories are processed:
 ///
 /// ```ignore
-/// let mut phase = NremPhase::new();
-/// phase.set_memory_provider(Arc::new(my_memory_store));
+/// use context_graph_storage::GraphMemoryProvider;
+///
+/// let storage = Arc::new(RocksDbMemex::open("/path/to/db")?);
+/// let provider = Arc::new(GraphMemoryProvider::new(storage));
+/// let phase = NremPhase::with_provider(provider);
 /// let report = phase.process(&interrupt, &mut amortizer).await?;
 /// ```
+///
+/// # Unit Testing (NullMemoryProvider)
+///
+/// For unit tests that ONLY test Hebbian math, use `new()`:
+///
+/// ```ignore
+/// let phase = NremPhase::new();  // Uses no provider - logs WARNING
+/// ```
+///
+/// # Constitution Compliance
+///
+/// - AP-71: "Dream NREM/REM returning stubs forbidden" - Production MUST use real provider
+/// - AP-72: Stubs replaced with real implementations via GraphMemoryProvider
 pub struct NremPhase {
     /// Phase duration (Constitution: 3 minutes)
     duration: Duration,
@@ -223,11 +255,55 @@ pub struct NremReport {
 }
 
 impl NremPhase {
-    /// Create a new NREM phase with constitution-mandated defaults.
+    /// Create a new NREM phase with a real MemoryProvider (PRODUCTION USE).
     ///
-    /// The phase starts without a memory provider. Call `set_memory_provider()`
-    /// to inject a real memory store for production use.
+    /// This is the REQUIRED constructor for production and integration tests.
+    /// Per AP-71: "Dream NREM/REM returning stubs forbidden"
+    ///
+    /// # Arguments
+    ///
+    /// * `provider` - A real MemoryProvider implementation (e.g., GraphMemoryProvider)
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// use context_graph_storage::GraphMemoryProvider;
+    ///
+    /// let storage = Arc::new(RocksDbMemex::open("/tmp/test")?);
+    /// let provider = Arc::new(GraphMemoryProvider::new(storage));
+    /// let phase = NremPhase::with_provider(provider);
+    /// ```
+    pub fn with_provider(provider: Arc<dyn MemoryProvider>) -> Self {
+        info!(
+            "NremPhase::with_provider() - Creating NREM phase with real memory provider: {:?}",
+            provider
+        );
+        Self {
+            duration: constants::NREM_DURATION,
+            coupling: constants::NREM_COUPLING,
+            recency_bias: constants::NREM_RECENCY_BIAS,
+            batch_size: 64,
+            hebbian_engine: HebbianEngine::with_defaults(),
+            memory_provider: Some(provider),
+        }
+    }
+
+    /// Create a new NREM phase WITHOUT a memory provider (UNIT TESTING ONLY).
+    ///
+    /// # WARNING: Constitution Compliance
+    ///
+    /// - AP-71: "Dream NREM/REM returning stubs forbidden"
+    /// - This method logs a WARNING because production code should use `with_provider()`
+    /// - Only use this in unit tests that test Hebbian math or state machine logic
+    ///
+    /// # For Production
+    ///
+    /// Use `with_provider()` with a real MemoryProvider instead.
     pub fn new() -> Self {
+        tracing::warn!(
+            "NremPhase::new() called without MemoryProvider - this is ONLY for unit tests! \
+             Production code MUST use NremPhase::with_provider() per AP-71"
+        );
         Self {
             duration: constants::NREM_DURATION,
             coupling: constants::NREM_COUPLING,
@@ -315,19 +391,38 @@ impl NremPhase {
         // Reset the Hebbian engine for this cycle
         self.hebbian_engine.reset();
 
-        // Step 1: Get memories from provider (or empty if no provider)
+        // Step 1: Get memories from provider
         // Constitution: recency_bias = 0.8, limit = 100
+        // AP-71: "Dream NREM/REM returning stubs forbidden"
         let memories = match &self.memory_provider {
             Some(provider) => {
-                debug!(
-                    "Fetching memories from provider with recency_bias={}",
+                info!(
+                    "NREM: Fetching memories from real provider with recency_bias={}, limit=100",
                     self.recency_bias
                 );
-                provider.get_recent_memories(100, self.recency_bias)
+                let fetched = provider.get_recent_memories(100, self.recency_bias);
+                info!(
+                    "NREM: Provider returned {} memories for Hebbian replay",
+                    fetched.len()
+                );
+
+                // Log warning if provider returns empty (might indicate early graph state)
+                if fetched.is_empty() {
+                    tracing::warn!(
+                        "NREM: MemoryProvider returned 0 memories - this is OK for early graph \
+                         state but should have memories after normal usage"
+                    );
+                }
+                fetched
             }
             None => {
-                // No provider set - backward compatible empty behavior
-                debug!("No memory provider set, NREM will process empty memory set");
+                // No provider set - this is ONLY valid for unit tests
+                // Per AP-71: Production code MUST have a provider
+                tracing::error!(
+                    "NREM: No MemoryProvider set! This violates AP-71 in production. \
+                     NREM will process empty memory set. Use NremPhase::with_provider() \
+                     or set_memory_provider() to fix this."
+                );
                 Vec::new()
             }
         };

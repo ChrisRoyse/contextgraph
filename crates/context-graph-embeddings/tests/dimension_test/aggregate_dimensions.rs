@@ -87,9 +87,11 @@ fn test_model_id_iteration_sum() {
 /// Test TOTAL_DIMENSION breakdown matches documented calculation.
 #[test]
 fn test_total_dimension_breakdown() {
-    // Constitution: 1024 + 512 + 512 + 512 + 768 + 1536 + 768 + 384 + 1024 + 768 + 384 + 128 + 1536 = 9856
+    // Constitution: E1-E13 projected dimensions
+    // E7 Code was 768, now 1536 after Qodo-Embed migration
+    // 1024 + 512 + 512 + 512 + 768 + 1536 + 1536 + 384 + 1024 + 768 + 384 + 128 + 1536 = 10624
     let expected_breakdown =
-        1024 + 512 + 512 + 512 + 768 + 1536 + 768 + 384 + 1024 + 768 + 384 + 128 + 1536;
+        1024 + 512 + 512 + 512 + 768 + 1536 + 1536 + 384 + 1024 + 768 + 384 + 128 + 1536;
     assert_eq!(
         expected_breakdown, EXPECTED_TOTAL_DIMENSION,
         "Documented breakdown sum {} != expected {}",

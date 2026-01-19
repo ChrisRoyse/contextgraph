@@ -62,8 +62,8 @@ pub const EXPECTED_QUANTIZATION: [(ModelId, QuantizationMethod); 13] = [
     (ModelId::Splade, QuantizationMethod::SparseNative), // E13
 ];
 
-/// Expected total dimension sum.
-pub const EXPECTED_TOTAL_DIMENSION: usize = 9856;
+/// Expected total dimension sum (updated after E7 Code 768→1536 for Qodo-Embed).
+pub const EXPECTED_TOTAL_DIMENSION: usize = 10624;
 
 /// Expected model count.
 pub const EXPECTED_MODEL_COUNT: usize = 13;

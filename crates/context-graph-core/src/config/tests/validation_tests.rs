@@ -278,7 +278,7 @@ fn test_production_phase_accepts_valid_config() {
         phase: Phase::Production,
         embedding: EmbeddingConfig {
             model: "multi_array_13".to_string(),
-            dimension: 9856,
+            dimension: 10624,
             max_input_length: 8191,
         },
         storage: StorageConfig {

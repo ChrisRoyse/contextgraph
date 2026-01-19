@@ -66,7 +66,7 @@ pub const fn native_dimension_by_index(index: usize) -> usize {
 
 /// Returns the byte offset for model at index within the total dimension space.
 ///
-/// Used for memory calculations and index offsets (9856D total).
+/// Used for memory calculations and index offsets (10624D total).
 ///
 /// # Example
 /// ```rust

@@ -203,7 +203,7 @@ fn test_total_latency_sums_all() {
 #[test]
 fn test_total_dimension() {
     let mae = create_complete_embedding();
-    // Sum of all projected dimensions (9856 for 13 models)
+    // Sum of all projected dimensions (10624 for 13 models)
     assert_eq!(mae.total_dimension(), TOTAL_DIMENSION);
 }
 
@@ -319,7 +319,7 @@ fn verify_multi_array_storage() {
     // 3. Verify hash is non-zero
     assert_ne!(mae.content_hash, 0);
 
-    // 4. Verify total dimension is sum of all (9856 for 13 models)
+    // 4. Verify total dimension is sum of all (10624 for 13 models)
     assert_eq!(mae.total_dimension(), TOTAL_DIMENSION);
 }
 

@@ -5,7 +5,7 @@
 //! # Key Verifications
 //! - Storage size targets (~17KB quantized fingerprint)
 //! - Model count: 13 embedders
-//! - Dimension totals: 9856D
+//! - Dimension totals: 10624D
 //! - Quantization method assignments per Constitution
 //! - Memory estimate calculations
 //!
@@ -73,10 +73,10 @@ fn test_storage_version() {
 // DIMENSION BENCHMARK TESTS
 // =============================================================================
 
-/// Test: Total dimension is 9856
+/// Test: Total dimension is 10624 (updated after E7 Code 768→1536 for Qodo-Embed)
 #[test]
 fn test_total_dimension_benchmark() {
-    assert_eq!(TOTAL_DIMENSION, 9856);
+    assert_eq!(TOTAL_DIMENSION, 10624);
     eprintln!("[BENCHMARK] Total dimension: {}D", TOTAL_DIMENSION);
 }
 
@@ -638,8 +638,8 @@ fn test_constitution_constants_consistency() {
     // RRF_K from Constitution
     assert_eq!(RRF_K, 60.0);
 
-    // TOTAL_DIMENSION
-    assert_eq!(TOTAL_DIMENSION, 9856);
+    // TOTAL_DIMENSION (updated after E7 Code 768→1536 for Qodo-Embed)
+    assert_eq!(TOTAL_DIMENSION, 10624);
 
     eprintln!("[BENCHMARK] Constitution constants verified:");
     eprintln!("  NUM_EMBEDDERS = MODEL_COUNT = {}", NUM_EMBEDDERS);
