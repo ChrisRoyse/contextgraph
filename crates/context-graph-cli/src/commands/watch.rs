@@ -15,6 +15,7 @@
 //! 2. Chunks new/modified files using TextChunker (200 words, 50 overlap)
 //! 3. Stores chunks with source metadata (MDFileChunk, file_path, chunk_index)
 //! 4. Clears old embeddings before storing new ones on file modification
+//! 5. **Phase 8 Fix**: Stores fingerprints in TeleologicalMemoryStore for MCP search
 //!
 //! # Prerequisites
 //!
@@ -26,11 +27,13 @@ use context_graph_core::memory::{
 };
 use context_graph_core::memory::store::MemoryStore;
 use context_graph_core::memory::watcher::GitFileWatcher;
+use context_graph_core::traits::TeleologicalMemoryStore;
 use context_graph_embeddings::{get_warm_provider, initialize_global_warm_provider, is_warm_initialized};
+use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::signal;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 /// Arguments for the watch command
 #[derive(Args)]
@@ -97,7 +100,7 @@ pub async fn handle_watch(args: WatchArgs) -> i32 {
     };
 
     // Setup database path - use env var or default to ./contextgraph_data
-    let db_path = args.db_path.unwrap_or_else(|| {
+    let db_path = args.db_path.clone().unwrap_or_else(|| {
         std::env::var("CONTEXT_GRAPH_DATA_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from("./contextgraph_data"))
@@ -105,8 +108,9 @@ pub async fn handle_watch(args: WatchArgs) -> i32 {
 
     info!(db_path = ?db_path, "Using database path");
 
-    // Create memory store
-    let memory_store = match MemoryStore::new(&db_path) {
+    // Create watcher-specific memory store in a subdirectory (for local storage)
+    let watcher_db_path = db_path.join("watcher_memory");
+    let memory_store = match MemoryStore::new(&watcher_db_path) {
         Ok(store) => Arc::new(store),
         Err(e) => {
             error!(error = %e, "Failed to create memory store");
@@ -118,8 +122,28 @@ pub async fn handle_watch(args: WatchArgs) -> i32 {
     let embedder: Arc<dyn EmbeddingProvider> =
         Arc::new(MultiArrayEmbeddingAdapter::new(warm_provider));
 
-    // Create capture service
-    let capture_service = Arc::new(MemoryCaptureService::new(memory_store.clone(), embedder));
+    // Phase 8 Fix: Try to create TeleologicalMemoryStore for MCP search integration
+    // This ensures file watcher memories are searchable via MCP tools
+    let capture_service: Arc<MemoryCaptureService> = match RocksDbTeleologicalStore::open(&db_path) {
+        Ok(store) => {
+            info!("Opened TeleologicalStore at {:?} - memories will be searchable via MCP tools", db_path);
+            let teleological_store: Arc<dyn TeleologicalMemoryStore> = Arc::new(store);
+            // Create capture service WITH teleological store for MCP integration
+            Arc::new(MemoryCaptureService::with_teleological_store(
+                memory_store.clone(),
+                embedder,
+                teleological_store,
+            ))
+        }
+        Err(e) => {
+            warn!(
+                error = %e,
+                "Failed to open TeleologicalStore - memories will NOT be searchable via MCP tools"
+            );
+            // Fall back to local-only storage
+            Arc::new(MemoryCaptureService::new(memory_store.clone(), embedder))
+        }
+    };
 
     // Create file watcher
     let mut watcher = match GitFileWatcher::new(

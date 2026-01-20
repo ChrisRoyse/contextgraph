@@ -186,4 +186,27 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
     async fn get_file_watcher_stats(&self) -> CoreResult<context_graph_core::types::file_index::FileWatcherStats> {
         self.get_file_watcher_stats_async().await
     }
+
+    // ==================== Topic Portfolio Persistence ====================
+
+    async fn persist_topic_portfolio(
+        &self,
+        session_id: &str,
+        portfolio: &context_graph_core::clustering::PersistedTopicPortfolio,
+    ) -> CoreResult<()> {
+        self.persist_topic_portfolio_async(session_id, portfolio).await
+    }
+
+    async fn load_topic_portfolio(
+        &self,
+        session_id: &str,
+    ) -> CoreResult<Option<context_graph_core::clustering::PersistedTopicPortfolio>> {
+        self.load_topic_portfolio_async(session_id).await
+    }
+
+    async fn load_latest_topic_portfolio(
+        &self,
+    ) -> CoreResult<Option<context_graph_core::clustering::PersistedTopicPortfolio>> {
+        self.load_latest_topic_portfolio_async().await
+    }
 }

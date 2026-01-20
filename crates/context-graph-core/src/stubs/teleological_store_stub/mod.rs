@@ -50,6 +50,7 @@ use dashmap::DashMap;
 use tracing::info;
 use uuid::Uuid;
 
+use crate::clustering::PersistedTopicPortfolio;
 use crate::traits::TeleologicalStorageBackend;
 use crate::types::fingerprint::TeleologicalFingerprint;
 use crate::types::SourceMetadata;
@@ -69,6 +70,8 @@ pub struct InMemoryTeleologicalStore {
     pub(crate) content: DashMap<Uuid, String>,
     /// Source metadata storage: UUID -> SourceMetadata
     pub(crate) source_metadata: DashMap<Uuid, SourceMetadata>,
+    /// Topic portfolio storage: session_id -> PersistedTopicPortfolio
+    pub(crate) topic_portfolios: DashMap<String, PersistedTopicPortfolio>,
     /// Running size estimate in bytes
     pub(crate) size_bytes: AtomicUsize,
 }
@@ -82,6 +85,7 @@ impl InMemoryTeleologicalStore {
             deleted: DashMap::new(),
             content: DashMap::new(),
             source_metadata: DashMap::new(),
+            topic_portfolios: DashMap::new(),
             size_bytes: AtomicUsize::new(0),
         }
     }
@@ -97,6 +101,7 @@ impl InMemoryTeleologicalStore {
             deleted: DashMap::new(),
             content: DashMap::with_capacity(capacity),
             source_metadata: DashMap::with_capacity(capacity),
+            topic_portfolios: DashMap::new(),
             size_bytes: AtomicUsize::new(0),
         }
     }

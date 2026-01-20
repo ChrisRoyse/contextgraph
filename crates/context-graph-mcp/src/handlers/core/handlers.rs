@@ -139,8 +139,121 @@ impl Handlers {
     /// Handle MCP shutdown request.
     ///
     /// Performs graceful shutdown of handlers.
+    /// PHASE-7: Persists topic portfolio before shutdown.
     pub async fn handle_shutdown(&self, id: Option<JsonRpcId>) -> JsonRpcResponse {
         info!("MCP shutdown request received");
+
+        // Persist topic portfolio before shutdown
+        if let Err(e) = self.persist_topic_portfolio().await {
+            tracing::error!(error = %e, "Failed to persist topic portfolio on shutdown");
+        } else {
+            info!("Topic portfolio persisted on shutdown");
+        }
+
         JsonRpcResponse::success(id, json!({}))
+    }
+
+    // =========================================================================
+    // Topic Portfolio Persistence (Phase 7)
+    // =========================================================================
+
+    /// Restore topic portfolio from storage on startup.
+    ///
+    /// Loads the latest persisted topic portfolio from RocksDB and imports
+    /// it into the cluster manager. This ensures topics survive across sessions.
+    ///
+    /// # Returns
+    ///
+    /// Number of topics restored, or 0 if no portfolio was found.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if storage operations fail.
+    pub async fn restore_topic_portfolio(&self) -> Result<usize, context_graph_core::error::CoreError> {
+        info!("Restoring topic portfolio from storage...");
+
+        // Load latest portfolio from storage
+        let portfolio = self.teleological_store.load_latest_topic_portfolio().await?;
+
+        match portfolio {
+            Some(portfolio) => {
+                let _topic_count = portfolio.topic_count();
+                let session_id = portfolio.session_id.clone();
+
+                // Import into cluster manager
+                let mut cluster_manager = self.cluster_manager.write();
+                let imported = cluster_manager.import_portfolio(&portfolio);
+
+                info!(
+                    topic_count = imported,
+                    original_session_id = %session_id,
+                    churn_rate = portfolio.churn_rate,
+                    entropy = portfolio.entropy,
+                    "Topic portfolio restored from storage"
+                );
+
+                Ok(imported)
+            }
+            None => {
+                info!("No existing topic portfolio found in storage");
+                Ok(0)
+            }
+        }
+    }
+
+    /// Persist current topic portfolio to storage.
+    ///
+    /// Exports the current topic portfolio from the cluster manager and
+    /// persists it to RocksDB. Called automatically on shutdown and can
+    /// be called manually for checkpointing.
+    ///
+    /// # Returns
+    ///
+    /// Number of topics persisted.
+    ///
+    /// # Errors
+    ///
+    /// Returns error if storage operations fail.
+    pub async fn persist_topic_portfolio(&self) -> Result<usize, context_graph_core::error::CoreError> {
+        // Extract all data from locks BEFORE any async operations
+        let (session_id, portfolio, churn_rate, entropy) = {
+            // Get stability metrics from tracker
+            let stability_tracker = self.stability_tracker.read();
+            let churn_rate = stability_tracker.current_churn();
+            // Lock is released at end of block
+
+            // Get entropy from UTL processor (synchronous)
+            let utl_status = self.utl_processor.get_status();
+            let entropy = utl_status
+                .get("entropy")
+                .and_then(|v| v.as_f64())
+                .map(|f| f as f32)
+                .unwrap_or(0.0);
+
+            // Export portfolio from cluster manager
+            let cluster_manager = self.cluster_manager.read();
+            let session_id = format!("session-{}", chrono::Utc::now().timestamp_millis());
+            let portfolio = cluster_manager.export_portfolio(&session_id, churn_rate, entropy);
+            // Lock is released at end of block
+
+            (session_id, portfolio, churn_rate, entropy)
+        };
+
+        let topic_count = portfolio.topic_count();
+
+        // Now all locks are released - safe to await
+        self.teleological_store
+            .persist_topic_portfolio(&session_id, &portfolio)
+            .await?;
+
+        info!(
+            session_id = %session_id,
+            topic_count = topic_count,
+            churn_rate = churn_rate,
+            entropy = entropy,
+            "Topic portfolio persisted to storage"
+        );
+
+        Ok(topic_count)
     }
 }

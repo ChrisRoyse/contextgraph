@@ -326,4 +326,38 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
             max_chunks,
         })
     }
+
+    // ==================== Topic Portfolio Persistence ====================
+    // In-memory stub implementation stores portfolios in memory only
+
+    async fn persist_topic_portfolio(
+        &self,
+        session_id: &str,
+        portfolio: &crate::clustering::PersistedTopicPortfolio,
+    ) -> CoreResult<()> {
+        debug!(
+            session_id = %session_id,
+            topic_count = portfolio.topics.len(),
+            "Persisting topic portfolio to in-memory store"
+        );
+        self.topic_portfolios.insert(session_id.to_string(), portfolio.clone());
+        // Also store as "__latest__"
+        self.topic_portfolios.insert("__latest__".to_string(), portfolio.clone());
+        Ok(())
+    }
+
+    async fn load_topic_portfolio(
+        &self,
+        session_id: &str,
+    ) -> CoreResult<Option<crate::clustering::PersistedTopicPortfolio>> {
+        debug!(session_id = %session_id, "Loading topic portfolio from in-memory store");
+        Ok(self.topic_portfolios.get(session_id).map(|r| r.clone()))
+    }
+
+    async fn load_latest_topic_portfolio(
+        &self,
+    ) -> CoreResult<Option<crate::clustering::PersistedTopicPortfolio>> {
+        debug!("Loading latest topic portfolio from in-memory store");
+        Ok(self.topic_portfolios.get("__latest__").map(|r| r.clone()))
+    }
 }

@@ -266,4 +266,51 @@ pub trait TeleologicalMemoryStoreDefaults: Send + Sync {
     async fn get_file_watcher_stats_default(&self) -> CoreResult<crate::types::FileWatcherStats> {
         Ok(crate::types::FileWatcherStats::default())
     }
+
+    // ==================== Topic Portfolio Persistence Defaults ====================
+
+    /// Default: Persist topic portfolio - returns unsupported error.
+    ///
+    /// # Arguments
+    /// * `session_id` - The session identifier
+    /// * `portfolio` - The topic portfolio to persist
+    ///
+    /// # Errors
+    /// - `CoreError::Internal` - Topic portfolio persistence not supported by backend
+    async fn persist_topic_portfolio_default(
+        &self,
+        session_id: &str,
+        portfolio: &crate::clustering::PersistedTopicPortfolio,
+    ) -> CoreResult<()> {
+        let _ = (session_id, portfolio); // Suppress unused warnings
+        Err(CoreError::Internal(format!(
+            "Topic portfolio persistence not supported by {} backend",
+            self.backend_type()
+        )))
+    }
+
+    /// Default: Load topic portfolio - returns None (graceful degradation).
+    ///
+    /// # Arguments
+    /// * `session_id` - The session identifier to load
+    ///
+    /// # Returns
+    /// `None` - Backend does not support topic portfolio persistence.
+    async fn load_topic_portfolio_default(
+        &self,
+        session_id: &str,
+    ) -> CoreResult<Option<crate::clustering::PersistedTopicPortfolio>> {
+        let _ = session_id; // Suppress unused warnings
+        Ok(None)
+    }
+
+    /// Default: Load latest topic portfolio - returns None (graceful degradation).
+    ///
+    /// # Returns
+    /// `None` - Backend does not support topic portfolio persistence.
+    async fn load_latest_topic_portfolio_default(
+        &self,
+    ) -> CoreResult<Option<crate::clustering::PersistedTopicPortfolio>> {
+        Ok(None)
+    }
 }

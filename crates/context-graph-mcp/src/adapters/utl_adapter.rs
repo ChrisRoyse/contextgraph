@@ -111,16 +111,21 @@ impl UtlProcessorAdapter {
 
     /// Extract embedding from context.
     ///
-    /// Returns the goal_vector if present, otherwise returns a default zero vector.
-    /// This allows UTL computation to proceed even without a configured strategic goal.
-    /// The 13-embedder teleological arrays ARE the primary data; goal_vector alignment
-    /// is supplementary metadata that can be computed later.
+    /// Returns the input_embedding if present (from inject_context), otherwise
+    /// falls back to goal_vector (strategic alignment), otherwise returns a default zero vector.
+    ///
+    /// # Priority Order
+    /// 1. `input_embedding` - The actual content embedding (E1 semantic from inject_context)
+    /// 2. `goal_vector` - Strategic goal alignment vector
+    /// 3. Zero vector - Fallback for autonomous operation
     fn get_embedding(context: &UtlContext) -> CoreResult<Vec<f32>> {
-        // Use goal_vector if present, otherwise default to zero vector
-        // This enables autonomous operation without requiring strategic goal configuration
+        // Prefer input_embedding (actual content embedding from inject_context)
+        // Fall back to goal_vector (strategic alignment)
+        // Final fallback to zero vector for autonomous operation
         Ok(context
-            .goal_vector
+            .input_embedding
             .clone()
+            .or_else(|| context.goal_vector.clone())
             .unwrap_or_else(|| vec![0.0; 128]))
     }
 

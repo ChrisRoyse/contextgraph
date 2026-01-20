@@ -32,6 +32,8 @@
 //! - [`TopicSynthesizer`]: Standalone synthesizer using weighted agreement formula
 //! - [`TopicSnapshot`]: Snapshot of topic portfolio at a point in time
 //! - [`TopicStabilityTracker`]: Portfolio-level stability tracking for dream triggers
+//! - [`PersistedTopicPortfolio`]: Serializable topic portfolio for session persistence
+//! - [`PersistenceError`]: Error types for persistence operations
 
 pub mod birch;
 pub mod cluster;
@@ -39,6 +41,7 @@ pub mod error;
 pub mod hdbscan;
 pub mod manager;
 pub mod membership;
+pub mod persistence;
 pub mod stability;
 pub mod synthesizer;
 pub mod topic;
@@ -52,6 +55,7 @@ pub use manager::{
     UpdateStatus, DEFAULT_RECLUSTER_THRESHOLD, MAX_WEIGHTED_AGREEMENT, TOPIC_THRESHOLD,
 };
 pub use membership::ClusterMembership;
+pub use persistence::{PersistedTopicPortfolio, PersistenceError};
 pub use stability::{
     TopicSnapshot, TopicStabilityTracker, DEFAULT_CHURN_THRESHOLD, DEFAULT_ENTROPY_DURATION_SECS,
     DEFAULT_ENTROPY_THRESHOLD, SNAPSHOT_RETENTION_HOURS,

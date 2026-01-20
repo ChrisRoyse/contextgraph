@@ -438,4 +438,59 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     /// # Errors
     /// - `CoreError::StorageError` - Storage backend failure
     async fn get_file_watcher_stats(&self) -> CoreResult<crate::types::FileWatcherStats>;
+
+    // ==================== Topic Portfolio Persistence ====================
+    // Enables session-to-session topic continuity per PRD Section 9.1.
+    // See `defaults.rs` for default implementations.
+
+    /// Persist topic portfolio for a session.
+    ///
+    /// Called by SessionEnd hook to save discovered topics. Stores both
+    /// under the session_id key and as "__latest__" for cross-session restoration.
+    ///
+    /// # Arguments
+    /// * `session_id` - The session identifier
+    /// * `portfolio` - The topic portfolio to persist
+    ///
+    /// # Errors
+    /// - `CoreError::StorageError` - Storage backend failure
+    /// - `CoreError::SerializationError` - Serialization failure
+    async fn persist_topic_portfolio(
+        &self,
+        session_id: &str,
+        portfolio: &crate::clustering::PersistedTopicPortfolio,
+    ) -> CoreResult<()>;
+
+    /// Load topic portfolio for a specific session.
+    ///
+    /// Called by SessionStart hook to restore topics from a previous session.
+    ///
+    /// # Arguments
+    /// * `session_id` - The session identifier to load
+    ///
+    /// # Returns
+    /// `Some(portfolio)` if found, `None` if no portfolio for this session.
+    ///
+    /// # Errors
+    /// - `CoreError::StorageError` - Storage backend failure
+    /// - `CoreError::SerializationError` - Deserialization failure
+    async fn load_topic_portfolio(
+        &self,
+        session_id: &str,
+    ) -> CoreResult<Option<crate::clustering::PersistedTopicPortfolio>>;
+
+    /// Load the most recent topic portfolio across all sessions.
+    ///
+    /// Fallback when no specific session portfolio is available. Uses the
+    /// "__latest__" sentinel key.
+    ///
+    /// # Returns
+    /// `Some(portfolio)` if any portfolio exists, `None` otherwise.
+    ///
+    /// # Errors
+    /// - `CoreError::StorageError` - Storage backend failure
+    /// - `CoreError::SerializationError` - Deserialization failure
+    async fn load_latest_topic_portfolio(
+        &self,
+    ) -> CoreResult<Option<crate::clustering::PersistedTopicPortfolio>>;
 }

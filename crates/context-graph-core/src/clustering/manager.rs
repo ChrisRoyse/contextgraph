@@ -698,6 +698,106 @@ impl MultiSpaceClusterManager {
             .iter()
             .any(|s| s.updates_since_recluster >= self.params.recluster_threshold)
     }
+
+    // =========================================================================
+    // Topic Portfolio Persistence (Phase 5)
+    // =========================================================================
+
+    /// Export the current topic portfolio for persistence.
+    ///
+    /// Creates a snapshot of all discovered topics with their profiles,
+    /// stability metrics, and portfolio-level metrics (churn, entropy).
+    ///
+    /// # Arguments
+    ///
+    /// * `session_id` - Session identifier for tracking
+    /// * `churn_rate` - Current portfolio-level churn rate [0.0, 1.0]
+    /// * `entropy` - Current portfolio-level entropy [0.0, 1.0]
+    ///
+    /// # Returns
+    ///
+    /// A `PersistedTopicPortfolio` ready for storage.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use context_graph_core::clustering::MultiSpaceClusterManager;
+    ///
+    /// let manager = MultiSpaceClusterManager::with_defaults().unwrap();
+    /// let portfolio = manager.export_portfolio("session-123", 0.15, 0.45);
+    ///
+    /// assert_eq!(portfolio.session_id, "session-123");
+    /// ```
+    pub fn export_portfolio(
+        &self,
+        session_id: impl Into<String>,
+        churn_rate: f32,
+        entropy: f32,
+    ) -> crate::clustering::PersistedTopicPortfolio {
+        let topics: Vec<Topic> = self.topics.values().cloned().collect();
+
+        crate::clustering::PersistedTopicPortfolio::new(
+            topics,
+            churn_rate,
+            entropy,
+            session_id.into(),
+        )
+    }
+
+    /// Import topics from a persisted portfolio.
+    ///
+    /// Restores topics from a previous session's portfolio snapshot.
+    /// This replaces the current topics with the imported ones.
+    ///
+    /// # Arguments
+    ///
+    /// * `portfolio` - The persisted portfolio to import
+    ///
+    /// # Returns
+    ///
+    /// Number of topics imported.
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use context_graph_core::clustering::{MultiSpaceClusterManager, PersistedTopicPortfolio};
+    ///
+    /// let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+    ///
+    /// // Load portfolio from storage
+    /// let portfolio: PersistedTopicPortfolio = load_from_storage()?;
+    ///
+    /// // Import into manager
+    /// let count = manager.import_portfolio(&portfolio);
+    /// println!("Imported {} topics", count);
+    /// ```
+    pub fn import_portfolio(&mut self, portfolio: &crate::clustering::PersistedTopicPortfolio) -> usize {
+        // Clear existing topics
+        self.topics.clear();
+
+        // Import topics from portfolio
+        for topic in &portfolio.topics {
+            self.topics.insert(topic.id, topic.clone());
+        }
+
+        self.topics.len()
+    }
+
+    /// Clear all topics from the manager.
+    ///
+    /// This is useful before importing a new portfolio or for testing.
+    pub fn clear_topics(&mut self) {
+        self.topics.clear();
+    }
+
+    /// Get portfolio-level summary for persistence.
+    ///
+    /// Returns a tuple of (topic_count, total_members).
+    #[inline]
+    pub fn portfolio_summary(&self) -> (usize, usize) {
+        let total_members: usize = self.topics.values().map(|t| t.member_count()).sum();
+        (self.topics.len(), total_members)
+    }
 }
 
 // =============================================================================
@@ -1424,5 +1524,153 @@ mod tests {
         );
 
         println!("[PASS] test_constants_match_constitution");
+    }
+
+    // =========================================================================
+    // Portfolio Export/Import Tests (Phase 5)
+    // =========================================================================
+
+    #[test]
+    fn test_export_portfolio_empty() {
+        let manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        let portfolio = manager.export_portfolio("test-session", 0.15, 0.45);
+
+        assert!(portfolio.is_empty());
+        assert_eq!(portfolio.session_id, "test-session");
+        assert!((portfolio.churn_rate - 0.15).abs() < f32::EPSILON);
+        assert!((portfolio.entropy - 0.45).abs() < f32::EPSILON);
+
+        println!("[PASS] test_export_portfolio_empty");
+    }
+
+    #[test]
+    fn test_export_portfolio_with_topics() {
+        let params = manager_defaults().with_recluster_threshold(3);
+        let mut manager = MultiSpaceClusterManager::new(params).unwrap();
+
+        // Insert memories and recluster to create topics
+        for i in 0..5 {
+            let memory_id = Uuid::new_v4();
+            let embeddings = create_test_embeddings(i as f32 * 0.1);
+            manager.insert(memory_id, &embeddings).unwrap();
+        }
+        manager.recluster().unwrap();
+
+        let portfolio = manager.export_portfolio("session-123", 0.2, 0.6);
+
+        assert_eq!(portfolio.session_id, "session-123");
+        assert!(portfolio.persisted_at_ms > 0);
+        // The topic count depends on clustering results
+
+        println!(
+            "[PASS] test_export_portfolio_with_topics - topics={}",
+            portfolio.topic_count()
+        );
+    }
+
+    #[test]
+    fn test_import_portfolio_empty() {
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+        let empty_portfolio = crate::clustering::PersistedTopicPortfolio::default();
+
+        let count = manager.import_portfolio(&empty_portfolio);
+
+        assert_eq!(count, 0);
+        assert_eq!(manager.topic_count(), 0);
+
+        println!("[PASS] test_import_portfolio_empty");
+    }
+
+    #[test]
+    fn test_import_portfolio_roundtrip() {
+        let params = manager_defaults().with_recluster_threshold(3);
+        let mut manager = MultiSpaceClusterManager::new(params).unwrap();
+
+        // Create topics
+        for i in 0..5 {
+            let memory_id = Uuid::new_v4();
+            let embeddings = create_test_embeddings(i as f32 * 0.1);
+            manager.insert(memory_id, &embeddings).unwrap();
+        }
+        manager.recluster().unwrap();
+
+        // Export
+        let original_count = manager.topic_count();
+        let portfolio = manager.export_portfolio("roundtrip-test", 0.1, 0.3);
+
+        // Create new manager and import
+        let mut new_manager = MultiSpaceClusterManager::with_defaults().unwrap();
+        let imported_count = new_manager.import_portfolio(&portfolio);
+
+        assert_eq!(imported_count, original_count);
+        assert_eq!(new_manager.topic_count(), original_count);
+
+        println!(
+            "[PASS] test_import_portfolio_roundtrip - topics={}",
+            imported_count
+        );
+    }
+
+    #[test]
+    fn test_clear_topics() {
+        let params = manager_defaults().with_recluster_threshold(3);
+        let mut manager = MultiSpaceClusterManager::new(params).unwrap();
+
+        // Create some topics
+        for i in 0..5 {
+            let memory_id = Uuid::new_v4();
+            let embeddings = create_test_embeddings(i as f32 * 0.1);
+            manager.insert(memory_id, &embeddings).unwrap();
+        }
+        manager.recluster().unwrap();
+
+        // Clear topics
+        manager.clear_topics();
+
+        assert_eq!(manager.topic_count(), 0);
+
+        println!("[PASS] test_clear_topics");
+    }
+
+    #[test]
+    fn test_portfolio_summary() {
+        let manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        let (count, members) = manager.portfolio_summary();
+
+        assert_eq!(count, 0);
+        assert_eq!(members, 0);
+
+        println!("[PASS] test_portfolio_summary");
+    }
+
+    #[test]
+    fn test_import_replaces_existing_topics() {
+        let params = manager_defaults().with_recluster_threshold(3);
+        let mut manager = MultiSpaceClusterManager::new(params).unwrap();
+
+        // Create initial topics
+        for i in 0..5 {
+            let memory_id = Uuid::new_v4();
+            let embeddings = create_test_embeddings(i as f32 * 0.1);
+            manager.insert(memory_id, &embeddings).unwrap();
+        }
+        manager.recluster().unwrap();
+
+        let initial_count = manager.topic_count();
+
+        // Create a different portfolio
+        let new_portfolio = crate::clustering::PersistedTopicPortfolio::default();
+
+        // Import should replace existing
+        manager.import_portfolio(&new_portfolio);
+
+        assert_eq!(manager.topic_count(), 0, "Import should replace existing topics");
+
+        println!(
+            "[PASS] test_import_replaces_existing_topics - before={}, after=0",
+            initial_count
+        );
     }
 }

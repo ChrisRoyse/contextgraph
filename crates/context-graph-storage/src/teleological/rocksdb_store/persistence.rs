@@ -1,18 +1,20 @@
 //! Batch, statistics, and persistence operations.
 //!
-//! Contains batch store/retrieve, count/stats, and flush/checkpoint/compact operations.
+//! Contains batch store/retrieve, count/stats, flush/checkpoint/compact,
+//! and topic portfolio persistence operations.
 
 use std::path::PathBuf;
 
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
+use context_graph_core::clustering::PersistedTopicPortfolio;
 use context_graph_core::error::{CoreError, CoreResult};
 use context_graph_core::traits::TeleologicalStorageBackend;
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 
 use crate::teleological::column_families::{
-    CF_FINGERPRINTS, QUANTIZED_EMBEDDER_CFS, TELEOLOGICAL_CFS,
+    CF_FINGERPRINTS, CF_TOPIC_PORTFOLIO, QUANTIZED_EMBEDDER_CFS, TELEOLOGICAL_CFS,
 };
 use crate::teleological::schema::parse_fingerprint_key;
 
@@ -244,5 +246,148 @@ impl RocksDbTeleologicalStore {
 
         info!("Compaction complete");
         Ok(())
+    }
+}
+
+// ============================================================================
+// Topic Portfolio Persistence Operations
+// ============================================================================
+
+/// Sentinel key for the most recent topic portfolio across all sessions.
+const LATEST_PORTFOLIO_KEY: &[u8] = b"__latest__";
+
+impl RocksDbTeleologicalStore {
+    /// Persist topic portfolio for a session (internal async wrapper).
+    ///
+    /// Stores the portfolio under both the session_id key and the "__latest__"
+    /// sentinel for cross-session restoration.
+    pub(crate) async fn persist_topic_portfolio_async(
+        &self,
+        session_id: &str,
+        portfolio: &PersistedTopicPortfolio,
+    ) -> CoreResult<()> {
+        debug!(
+            session_id = %session_id,
+            topic_count = portfolio.topics.len(),
+            churn_rate = portfolio.churn_rate,
+            entropy = portfolio.entropy,
+            "Persisting topic portfolio"
+        );
+
+        let cf = self.get_cf(CF_TOPIC_PORTFOLIO)?;
+
+        // Serialize portfolio to JSON bytes
+        let value = portfolio.to_bytes().map_err(|e| {
+            CoreError::SerializationError(format!("Failed to serialize topic portfolio: {}", e))
+        })?;
+
+        // Store under session_id key
+        self.db
+            .put_cf(cf, session_id.as_bytes(), &value)
+            .map_err(|e| TeleologicalStoreError::RocksDbOperation {
+                operation: "put",
+                cf: CF_TOPIC_PORTFOLIO,
+                key: Some(session_id.to_string()),
+                source: e,
+            })?;
+
+        // Also store as "__latest__" for cross-session restoration
+        self.db
+            .put_cf(cf, LATEST_PORTFOLIO_KEY, &value)
+            .map_err(|e| TeleologicalStoreError::RocksDbOperation {
+                operation: "put",
+                cf: CF_TOPIC_PORTFOLIO,
+                key: Some("__latest__".to_string()),
+                source: e,
+            })?;
+
+        info!(
+            session_id = %session_id,
+            topic_count = portfolio.topics.len(),
+            "Topic portfolio persisted"
+        );
+
+        Ok(())
+    }
+
+    /// Load topic portfolio for a specific session (internal async wrapper).
+    pub(crate) async fn load_topic_portfolio_async(
+        &self,
+        session_id: &str,
+    ) -> CoreResult<Option<PersistedTopicPortfolio>> {
+        debug!(session_id = %session_id, "Loading topic portfolio");
+
+        let cf = self.get_cf(CF_TOPIC_PORTFOLIO)?;
+
+        match self.db.get_cf(cf, session_id.as_bytes()) {
+            Ok(Some(bytes)) => {
+                let portfolio = PersistedTopicPortfolio::from_bytes(&bytes).map_err(|e| {
+                    CoreError::SerializationError(format!(
+                        "Failed to deserialize topic portfolio: {}",
+                        e
+                    ))
+                })?;
+
+                info!(
+                    session_id = %session_id,
+                    topic_count = portfolio.topics.len(),
+                    "Topic portfolio loaded"
+                );
+
+                Ok(Some(portfolio))
+            }
+            Ok(None) => {
+                debug!(session_id = %session_id, "No topic portfolio found for session");
+                Ok(None)
+            }
+            Err(e) => Err(TeleologicalStoreError::RocksDbOperation {
+                operation: "get",
+                cf: CF_TOPIC_PORTFOLIO,
+                key: Some(session_id.to_string()),
+                source: e,
+            }
+            .into()),
+        }
+    }
+
+    /// Load the most recent topic portfolio (internal async wrapper).
+    ///
+    /// Uses the "__latest__" sentinel key.
+    pub(crate) async fn load_latest_topic_portfolio_async(
+        &self,
+    ) -> CoreResult<Option<PersistedTopicPortfolio>> {
+        debug!("Loading latest topic portfolio");
+
+        let cf = self.get_cf(CF_TOPIC_PORTFOLIO)?;
+
+        match self.db.get_cf(cf, LATEST_PORTFOLIO_KEY) {
+            Ok(Some(bytes)) => {
+                let portfolio = PersistedTopicPortfolio::from_bytes(&bytes).map_err(|e| {
+                    CoreError::SerializationError(format!(
+                        "Failed to deserialize latest topic portfolio: {}",
+                        e
+                    ))
+                })?;
+
+                info!(
+                    session_id = %portfolio.session_id,
+                    topic_count = portfolio.topics.len(),
+                    "Latest topic portfolio loaded"
+                );
+
+                Ok(Some(portfolio))
+            }
+            Ok(None) => {
+                debug!("No latest topic portfolio found");
+                Ok(None)
+            }
+            Err(e) => Err(TeleologicalStoreError::RocksDbOperation {
+                operation: "get",
+                cf: CF_TOPIC_PORTFOLIO,
+                key: Some("__latest__".to_string()),
+                source: e,
+            }
+            .into()),
+        }
     }
 }

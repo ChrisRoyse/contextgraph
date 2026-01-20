@@ -106,6 +106,20 @@ pub const CF_SOURCE_METADATA: &str = "source_metadata";
 /// - Prefix iteration for path-based queries
 pub const CF_FILE_INDEX: &str = "file_index";
 
+/// Column family for persisted topic portfolio storage.
+///
+/// Stores serialized PersistedTopicPortfolio for session continuity.
+/// Topics are persisted at SessionEnd and loaded at SessionStart per PRD Section 9.1.
+///
+/// Key: session_id bytes (UTF-8, variable length) or "__latest__" for most recent
+/// Value: PersistedTopicPortfolio serialized via JSON (~1KB-50KB depending on topic count)
+///
+/// # Storage Details
+/// - LZ4 compression (JSON compresses well)
+/// - Bloom filter for fast session lookups
+/// - Point lookups by session_id or "__latest__" sentinel
+pub const CF_TOPIC_PORTFOLIO: &str = "topic_portfolio";
+
 // =============================================================================
 // TASK-STORAGE-P2-001: E12 LATE INTERACTION COLUMN FAMILY
 // =============================================================================
@@ -151,7 +165,7 @@ pub const CF_SESSION_IDENTITY: &str = "session_identity";
 /// It is no longer used but must be opened for databases created with older versions.
 pub const CF_EGO_NODE: &str = "ego_node";
 
-/// All teleological column family names (13 total: 4 original + 3 teleological + 1 content + 1 source_metadata + 1 file_index + 1 e12_late_interaction + 2 legacy).
+/// All teleological column family names (14 total: 4 original + 3 teleological + 1 content + 1 source_metadata + 1 file_index + 1 topic_portfolio + 1 e12_late_interaction + 2 legacy).
 pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_FINGERPRINTS,
     CF_TOPIC_PROFILES,
@@ -167,6 +181,8 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_SOURCE_METADATA,
     // File index for file watcher management
     CF_FILE_INDEX,
+    // Topic portfolio persistence for session continuity
+    CF_TOPIC_PORTFOLIO,
     // TASK-STORAGE-P2-001: E12 Late Interaction token storage CF
     CF_E12_LATE_INTERACTION,
     // Legacy CFs for backwards compatibility
@@ -174,8 +190,8 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_EGO_NODE,
 ];
 
-/// Total count of teleological CFs (should be 13: 11 active + 2 legacy).
-pub const TELEOLOGICAL_CF_COUNT: usize = 13;
+/// Total count of teleological CFs (should be 14: 12 active + 2 legacy).
+pub const TELEOLOGICAL_CF_COUNT: usize = 14;
 
 // =============================================================================
 // QUANTIZED EMBEDDER COLUMN FAMILIES (13 CFs for per-embedder storage)
@@ -511,6 +527,37 @@ pub fn file_index_cf_options(cache: &Cache) -> Options {
     opts
 }
 
+/// Options for topic portfolio storage (~1KB-50KB per portfolio).
+///
+/// # Configuration
+/// - LZ4 compression (JSON data compresses well, ~50% reduction)
+/// - Bloom filter for fast session lookups
+/// - Point lookups by session_id or "__latest__" sentinel
+///
+/// # Key Format
+/// UTF-8 session_id bytes (variable length) or "__latest__" (9 bytes).
+///
+/// # Value Format
+/// PersistedTopicPortfolio serialized via JSON (~1KB-50KB depending on topic count).
+///
+/// # FAIL FAST Policy
+/// No fallback options - let RocksDB error on open if misconfigured.
+pub fn topic_portfolio_cf_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    // LZ4 compression - JSON compresses well
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.optimize_for_point_lookup(32); // 32MB hint for point lookups
+    opts.create_if_missing(true);
+    // FAIL FAST: No fallback options - let RocksDB error on open if misconfigured
+    opts
+}
+
 // =============================================================================
 // TASK-STORAGE-P2-001: CF OPTION BUILDER FOR E12 LATE INTERACTION
 // =============================================================================
@@ -599,15 +646,15 @@ pub fn quantized_embedder_cf_options(cache: &Cache) -> Options {
     opts
 }
 
-/// Get all 13 teleological column family descriptors.
+/// Get all 14 teleological column family descriptors.
 ///
-/// Returns 13 descriptors: 4 original + 3 teleological + 1 content + 1 source_metadata + 1 file_index + 1 e12_late_interaction + 2 legacy.
+/// Returns 14 descriptors: 4 original + 3 teleological + 1 content + 1 source_metadata + 1 file_index + 1 topic_portfolio + 1 e12_late_interaction + 2 legacy.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 13 `ColumnFamilyDescriptor`s for teleological storage.
+/// Vector of 14 `ColumnFamilyDescriptor`s for teleological storage.
 ///
 /// # Example
 /// ```ignore
@@ -616,7 +663,7 @@ pub fn quantized_embedder_cf_options(cache: &Cache) -> Options {
 ///
 /// let cache = Cache::new_lru_cache(256 * 1024 * 1024); // 256MB
 /// let descriptors = get_teleological_cf_descriptors(&cache);
-/// assert_eq!(descriptors.len(), 13);
+/// assert_eq!(descriptors.len(), 14);
 /// ```
 pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     vec![
@@ -643,6 +690,8 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
         ColumnFamilyDescriptor::new(CF_SOURCE_METADATA, source_metadata_cf_options(cache)),
         // File index for file watcher management
         ColumnFamilyDescriptor::new(CF_FILE_INDEX, file_index_cf_options(cache)),
+        // Topic portfolio persistence for session continuity
+        ColumnFamilyDescriptor::new(CF_TOPIC_PORTFOLIO, topic_portfolio_cf_options(cache)),
         // TASK-STORAGE-P2-001: E12 Late Interaction token storage CF
         ColumnFamilyDescriptor::new(
             CF_E12_LATE_INTERACTION,
@@ -683,14 +732,14 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 
 /// Get ALL teleological + quantized embedder column family descriptors.
 ///
-/// Returns 26 descriptors total: 13 teleological (11 active + 2 legacy) + 13 quantized embedder.
+/// Returns 27 descriptors total: 14 teleological (12 active + 2 legacy) + 13 quantized embedder.
 /// Use this when opening a database that needs both fingerprint and per-embedder storage.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 26 `ColumnFamilyDescriptor`s.
+/// Vector of 27 `ColumnFamilyDescriptor`s.
 ///
 /// # Example
 /// ```ignore
@@ -699,7 +748,7 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 ///
 /// let cache = Cache::new_lru_cache(256 * 1024 * 1024); // 256MB
 /// let descriptors = get_all_teleological_cf_descriptors(&cache);
-/// assert_eq!(descriptors.len(), 26); // 13 teleological + 13 embedder
+/// assert_eq!(descriptors.len(), 27); // 14 teleological + 13 embedder
 /// ```
 pub fn get_all_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     let mut descriptors = get_teleological_cf_descriptors(cache);
