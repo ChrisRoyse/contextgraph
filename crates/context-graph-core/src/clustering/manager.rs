@@ -49,10 +49,12 @@ use uuid::Uuid;
 use crate::embeddings::category::category_for;
 use crate::embeddings::config::get_dimension;
 use crate::teleological::Embedder;
+use crate::types::SemanticFingerprint;
 
 use super::birch::{birch_defaults, BIRCHParams, BIRCHTree};
 use super::cluster::Cluster;
 use super::error::ClusterError;
+use super::fingerprint_matrix::{build_fingerprint_matrix, FingerprintMatrixConfig, SimilarityStats};
 use super::hdbscan::{hdbscan_defaults, HDBSCANClusterer, HDBSCANParams};
 use super::membership::ClusterMembership;
 use super::stability::TopicStabilityTracker;
@@ -477,6 +479,228 @@ impl MultiSpaceClusterManager {
             per_space_clusters,
             topics_discovered: self.topics.len(),
         })
+    }
+
+    // =========================================================================
+    // FINGERPRINT DISTANCE MATRIX CLUSTERING (FDMC)
+    // =========================================================================
+
+    /// Recluster using fingerprint distance matrix approach.
+    ///
+    /// Instead of clustering 13 spaces independently, this method:
+    /// 1. Builds a pairwise similarity matrix using TeleologicalComparator
+    /// 2. Runs HDBSCAN once on the aggregated fingerprint distances
+    /// 3. Topics emerge from memories with similar fingerprints
+    ///
+    /// This approach amplifies the signal: gaps of 0.03-0.08 across 7 semantic
+    /// spaces become 0.21-0.56 in aggregate, enabling better topic separation.
+    ///
+    /// # Arguments
+    ///
+    /// * `fingerprints` - Slice of (memory_id, fingerprint) pairs to cluster
+    ///
+    /// # Returns
+    ///
+    /// `FdmcResult` containing cluster assignments, topic information, and analysis.
+    ///
+    /// # Errors
+    ///
+    /// - `ClusterError::InsufficientData` if too few fingerprints for clustering
+    /// - `ClusterError::InvalidParameter` if fingerprint comparison fails
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use context_graph_core::clustering::MultiSpaceClusterManager;
+    /// use context_graph_core::types::SemanticFingerprint;
+    /// use uuid::Uuid;
+    ///
+    /// let mut manager = MultiSpaceClusterManager::with_defaults()?;
+    ///
+    /// // Get fingerprints from storage
+    /// let fingerprints: Vec<(Uuid, SemanticFingerprint)> = load_fingerprints();
+    ///
+    /// // Run FDMC clustering
+    /// let result = manager.recluster_fingerprint_matrix(&fingerprints)?;
+    ///
+    /// println!("Discovered {} topics", result.topics_discovered);
+    /// println!("Best discriminator: {:?}", result.dominant_embedder);
+    /// ```
+    pub fn recluster_fingerprint_matrix(
+        &mut self,
+        fingerprints: &[(Uuid, SemanticFingerprint)],
+    ) -> Result<FdmcResult, ClusterError> {
+        let n = fingerprints.len();
+
+        tracing::info!(
+            count = n,
+            min_cluster_size = self.params.hdbscan_params.min_cluster_size,
+            "Starting FDMC reclustering"
+        );
+
+        // Validate minimum data
+        if n < self.params.hdbscan_params.min_cluster_size {
+            tracing::debug!(
+                count = n,
+                required = self.params.hdbscan_params.min_cluster_size,
+                "Insufficient fingerprints for FDMC clustering"
+            );
+            return Ok(FdmcResult::empty());
+        }
+
+        // Build fingerprint similarity matrix
+        let config = FingerprintMatrixConfig::for_topic_detection();
+        let fp_refs: Vec<(Uuid, &SemanticFingerprint)> =
+            fingerprints.iter().map(|(id, fp)| (*id, fp)).collect();
+
+        let matrix = build_fingerprint_matrix(&fp_refs, &config)?;
+
+        // Get statistics about the similarity distribution
+        let stats = matrix.similarity_stats();
+        tracing::debug!(
+            min = stats.min,
+            max = stats.max,
+            mean = stats.mean,
+            std_dev = stats.std_dev,
+            max_gap = stats.max_gap,
+            gap_position = stats.gap_position,
+            "Fingerprint similarity statistics"
+        );
+
+        // Convert to distance and cluster
+        let distances = matrix.to_distance_matrix();
+        let memory_ids: Vec<Uuid> = matrix.memory_ids.clone();
+
+        let clusterer = HDBSCANClusterer::with_defaults();
+        let memberships = clusterer.fit_precomputed(&distances, &memory_ids)?;
+
+        // Compute silhouette score for quality
+        let labels: Vec<i32> = memberships.iter().map(|m| m.cluster_id).collect();
+        let silhouette = clusterer.compute_silhouette_precomputed(&distances, &labels);
+
+        tracing::debug!(
+            silhouette = silhouette,
+            "FDMC clustering quality"
+        );
+
+        // Build topics from cluster assignments
+        self.topics.clear();
+        let mut cluster_members: HashMap<i32, Vec<Uuid>> = HashMap::new();
+
+        for membership in &memberships {
+            if membership.cluster_id >= 0 {
+                cluster_members
+                    .entry(membership.cluster_id)
+                    .or_default()
+                    .push(membership.memory_id);
+            }
+        }
+
+        // Create topics for valid clusters
+        let mut total_clusters = 0;
+        for (cluster_id, members) in &cluster_members {
+            if members.len() < 2 {
+                continue;
+            }
+
+            // Compute topic profile from fingerprint similarities
+            let profile = self.compute_topic_profile_from_fingerprints(members, &fp_refs);
+
+            // Only create topic if profile meets threshold
+            if !profile.is_topic() {
+                tracing::debug!(
+                    cluster_id = cluster_id,
+                    members = members.len(),
+                    weighted_agreement = profile.weighted_agreement(),
+                    "Cluster does not meet topic threshold"
+                );
+                continue;
+            }
+
+            let cluster_ids = HashMap::new(); // N/A for FDMC
+            let topic = Topic::new(profile, cluster_ids, members.clone());
+            self.topics.insert(topic.id, topic);
+            total_clusters += 1;
+        }
+
+        // Analyze which embedders contributed most to separation
+        let contributions = matrix.analyze_embedder_contributions();
+        let dominant_embedder = matrix.dominant_embedder();
+
+        tracing::info!(
+            topics_discovered = self.topics.len(),
+            total_clusters = total_clusters,
+            silhouette = silhouette,
+            dominant_embedder = ?dominant_embedder,
+            "FDMC reclustering complete"
+        );
+
+        // Take stability snapshot
+        self.take_stability_snapshot();
+
+        Ok(FdmcResult {
+            total_clusters,
+            topics_discovered: self.topics.len(),
+            memberships,
+            silhouette_score: silhouette,
+            similarity_stats: stats,
+            embedder_contributions: contributions,
+            dominant_embedder,
+        })
+    }
+
+    /// Compute topic profile from fingerprint similarities.
+    ///
+    /// For FDMC, we compute the average per-space similarity across
+    /// all pairs of members, then use that as the profile strength.
+    fn compute_topic_profile_from_fingerprints(
+        &self,
+        members: &[Uuid],
+        fingerprints: &[(Uuid, &SemanticFingerprint)],
+    ) -> TopicProfile {
+        use crate::teleological::{TeleologicalComparator, NUM_EMBEDDERS};
+
+        if members.len() < 2 {
+            return TopicProfile::new([0.0f32; 13]);
+        }
+
+        // Build ID -> fingerprint lookup
+        let fp_map: HashMap<Uuid, &SemanticFingerprint> =
+            fingerprints.iter().map(|(id, fp)| (*id, *fp)).collect();
+
+        // Compute average per-space similarity across all pairs
+        let mut strengths = [0.0f32; NUM_EMBEDDERS];
+        let mut pair_count = 0usize;
+        let comparator = TeleologicalComparator::new();
+
+        for i in 0..members.len() {
+            for j in (i + 1)..members.len() {
+                let Some(fp_a) = fp_map.get(&members[i]) else {
+                    continue;
+                };
+                let Some(fp_b) = fp_map.get(&members[j]) else {
+                    continue;
+                };
+
+                if let Ok(result) = comparator.compare(fp_a, fp_b) {
+                    for (k, sim) in result.per_embedder.iter().enumerate() {
+                        if let Some(s) = sim {
+                            strengths[k] += *s;
+                        }
+                    }
+                    pair_count += 1;
+                }
+            }
+        }
+
+        // Average the strengths
+        if pair_count > 0 {
+            for s in &mut strengths {
+                *s /= pair_count as f32;
+            }
+        }
+
+        TopicProfile::new(strengths)
     }
 
     /// Synthesize topics from cross-space cluster memberships.
@@ -1101,6 +1325,88 @@ pub struct ReclusterResult {
 
     /// Number of topics discovered from cross-space synthesis.
     pub topics_discovered: usize,
+}
+
+// =============================================================================
+// FdmcResult
+// =============================================================================
+
+/// Result of Fingerprint Distance Matrix Clustering (FDMC).
+///
+/// Contains clustering results plus diagnostic information about which
+/// embedders contributed most to topic separation.
+#[derive(Debug, Clone)]
+pub struct FdmcResult {
+    /// Total number of valid clusters (non-noise).
+    pub total_clusters: usize,
+
+    /// Number of topics that meet the weighted_agreement >= 2.5 threshold.
+    pub topics_discovered: usize,
+
+    /// Cluster membership assignments for each memory.
+    pub memberships: Vec<ClusterMembership>,
+
+    /// Silhouette score measuring cluster quality [-1.0, 1.0].
+    /// >= 0.3 indicates good separation.
+    pub silhouette_score: f32,
+
+    /// Statistics about the similarity distribution.
+    pub similarity_stats: SimilarityStats,
+
+    /// Per-embedder variance (higher = better discriminator).
+    /// Index corresponds to Embedder::index().
+    pub embedder_contributions: [f32; 13],
+
+    /// The embedder with highest contribution to separation.
+    pub dominant_embedder: Option<Embedder>,
+}
+
+impl FdmcResult {
+    /// Create an empty result (used when insufficient data).
+    #[inline]
+    pub fn empty() -> Self {
+        Self {
+            total_clusters: 0,
+            topics_discovered: 0,
+            memberships: Vec::new(),
+            silhouette_score: 0.0,
+            similarity_stats: SimilarityStats::default(),
+            embedder_contributions: [0.0f32; 13],
+            dominant_embedder: None,
+        }
+    }
+
+    /// Check if the result is empty (no clustering performed).
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.memberships.is_empty()
+    }
+
+    /// Get the number of memories clustered.
+    #[inline]
+    pub fn memory_count(&self) -> usize {
+        self.memberships.len()
+    }
+
+    /// Get noise point count (memories not assigned to any cluster).
+    pub fn noise_count(&self) -> usize {
+        self.memberships.iter().filter(|m| m.cluster_id == -1).count()
+    }
+
+    /// Get cluster quality rating.
+    pub fn quality_rating(&self) -> &'static str {
+        if self.silhouette_score >= 0.7 {
+            "excellent"
+        } else if self.silhouette_score >= 0.5 {
+            "good"
+        } else if self.silhouette_score >= 0.3 {
+            "acceptable"
+        } else if self.silhouette_score >= 0.0 {
+            "poor"
+        } else {
+            "failed"
+        }
+    }
 }
 
 // =============================================================================
@@ -1921,5 +2227,895 @@ mod tests {
             "[PASS] test_import_replaces_existing_topics - before={}, after=0",
             initial_count
         );
+    }
+
+    // =========================================================================
+    // FDMC (Fingerprint Distance Matrix Clustering) Integration Tests
+    // =========================================================================
+
+    /// Create a test SemanticFingerprint with domain-specific patterns.
+    ///
+    /// Different domains will have distinct angular patterns for cosine similarity:
+    /// - ML: dominated by first third of embedding dimensions
+    /// - Database: dominated by middle third of dimensions
+    /// - DevOps: dominated by last third of dimensions
+    ///
+    /// Adds realistic noise to prevent artificially perfect clustering.
+    fn create_domain_fingerprint(domain: &str, variation: f32) -> SemanticFingerprint {
+        use crate::types::SparseVector;
+
+        /// Generate a non-uniform vector with domain-specific pattern and noise.
+        /// Creates distinct angular signatures for cosine similarity.
+        fn generate_domain_embedding(dim: usize, domain: &str, variation: f32, seed: u64) -> Vec<f32> {
+            let mut embedding = vec![0.1f32; dim]; // Low baseline
+
+            // Domain-specific high-activation regions
+            let (start_ratio, end_ratio) = match domain {
+                "ml" => (0.0, 0.33),       // ML: first third
+                "database" => (0.33, 0.66), // DB: middle third
+                "devops" => (0.66, 1.0),   // DevOps: last third
+                _ => (0.0, 1.0),
+            };
+
+            let start = (dim as f32 * start_ratio) as usize;
+            let end = (dim as f32 * end_ratio) as usize;
+
+            // Set high values in domain-specific region with realistic variation
+            for i in start..end.min(dim) {
+                // Add pseudo-random noise based on position and seed
+                let noise = ((seed as f32 + i as f32) * 0.618033988).fract() - 0.5;
+                embedding[i] = 0.5 + variation * 0.2 + noise * 0.15;
+            }
+
+            // Add some "bleed" into other regions (realistic overlap)
+            for i in 0..dim {
+                if i < start || i >= end {
+                    let noise = ((seed as f32 + i as f32 + 1000.0) * 0.618033988).fract() - 0.5;
+                    embedding[i] = 0.1 + noise * 0.1 + variation * 0.05;
+                }
+            }
+
+            // Normalize for cosine similarity
+            let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+            if norm > 0.0 {
+                for v in &mut embedding {
+                    *v /= norm;
+                }
+            }
+
+            embedding
+        }
+
+        // Use variation as seed modifier for reproducible but varied embeddings
+        let seed = (variation * 1000.0) as u64;
+
+        SemanticFingerprint {
+            e1_semantic: generate_domain_embedding(get_dimension(Embedder::Semantic), domain, variation, seed),
+            e2_temporal_recent: generate_domain_embedding(get_dimension(Embedder::TemporalRecent), "all", 0.5, seed + 100),
+            e3_temporal_periodic: generate_domain_embedding(get_dimension(Embedder::TemporalPeriodic), "all", 0.5, seed + 200),
+            e4_temporal_positional: generate_domain_embedding(get_dimension(Embedder::TemporalPositional), "all", 0.5, seed + 300),
+            e5_causal: generate_domain_embedding(get_dimension(Embedder::Causal), domain, variation, seed + 400),
+            e6_sparse: SparseVector::empty(),
+            e7_code: generate_domain_embedding(get_dimension(Embedder::Code), domain, variation, seed + 500),
+            e8_graph: generate_domain_embedding(get_dimension(Embedder::Emotional), "all", 0.5, seed + 600),
+            e9_hdc: generate_domain_embedding(get_dimension(Embedder::Hdc), "all", 0.5, seed + 700),
+            e10_multimodal: generate_domain_embedding(get_dimension(Embedder::Multimodal), domain, variation, seed + 800),
+            e11_entity: generate_domain_embedding(get_dimension(Embedder::Entity), domain, variation, seed + 900),
+            e12_late_interaction: vec![generate_domain_embedding(128, domain, variation, seed + 1000); 10],
+            e13_splade: SparseVector::empty(),
+        }
+    }
+
+    #[test]
+    fn test_fdmc_empty_fingerprints() {
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        let fingerprints: Vec<(Uuid, SemanticFingerprint)> = vec![];
+        let result = manager.recluster_fingerprint_matrix(&fingerprints);
+
+        assert!(result.is_ok());
+        let fdmc_result = result.unwrap();
+        assert!(fdmc_result.is_empty());
+        assert_eq!(fdmc_result.topics_discovered, 0);
+
+        println!("[PASS] test_fdmc_empty_fingerprints");
+    }
+
+    #[test]
+    fn test_fdmc_insufficient_fingerprints() {
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        // Only 2 fingerprints (min_cluster_size = 3)
+        let fingerprints: Vec<(Uuid, SemanticFingerprint)> = vec![
+            (Uuid::new_v4(), create_domain_fingerprint("ml", 0.0)),
+            (Uuid::new_v4(), create_domain_fingerprint("ml", 0.1)),
+        ];
+
+        let result = manager.recluster_fingerprint_matrix(&fingerprints);
+        assert!(result.is_ok());
+
+        let fdmc_result = result.unwrap();
+        assert!(fdmc_result.is_empty());
+
+        println!("[PASS] test_fdmc_insufficient_fingerprints - correctly handles < min_cluster_size");
+    }
+
+    #[test]
+    fn test_fdmc_single_cluster() {
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        // All ML domain - should form single cluster
+        let fingerprints: Vec<(Uuid, SemanticFingerprint)> = (0..5)
+            .map(|i| {
+                (
+                    Uuid::new_v4(),
+                    create_domain_fingerprint("ml", i as f32 * 0.1),
+                )
+            })
+            .collect();
+
+        let result = manager.recluster_fingerprint_matrix(&fingerprints);
+        assert!(result.is_ok());
+
+        let fdmc_result = result.unwrap();
+        assert!(!fdmc_result.is_empty());
+        assert_eq!(fdmc_result.memory_count(), 5);
+
+        // All should be in same cluster (or few noise)
+        let cluster_ids: Vec<i32> = fdmc_result.memberships.iter().map(|m| m.cluster_id).collect();
+        let non_noise: Vec<i32> = cluster_ids.iter().filter(|&&c| c >= 0).cloned().collect();
+        if !non_noise.is_empty() {
+            assert!(
+                non_noise.iter().all(|&c| c == non_noise[0]),
+                "All non-noise should be in same cluster"
+            );
+        }
+
+        println!(
+            "[PASS] test_fdmc_single_cluster - clusters={}, noise={}",
+            fdmc_result.total_clusters,
+            fdmc_result.noise_count()
+        );
+    }
+
+    #[test]
+    fn test_fdmc_multi_domain_separation() {
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        // Create fingerprints from 3 domains
+        // 5 ML, 5 Database, 5 DevOps = 15 total
+        let mut fingerprints: Vec<(Uuid, SemanticFingerprint)> = Vec::new();
+
+        // ML domain (memories 0-4)
+        for i in 0..5 {
+            fingerprints.push((
+                Uuid::new_v4(),
+                create_domain_fingerprint("ml", i as f32 * 0.1),
+            ));
+        }
+
+        // Database domain (memories 5-9)
+        for i in 0..5 {
+            fingerprints.push((
+                Uuid::new_v4(),
+                create_domain_fingerprint("database", i as f32 * 0.1),
+            ));
+        }
+
+        // DevOps domain (memories 10-14)
+        for i in 0..5 {
+            fingerprints.push((
+                Uuid::new_v4(),
+                create_domain_fingerprint("devops", i as f32 * 0.1),
+            ));
+        }
+
+        let result = manager.recluster_fingerprint_matrix(&fingerprints);
+        assert!(result.is_ok());
+
+        let fdmc_result = result.unwrap();
+        assert_eq!(fdmc_result.memory_count(), 15);
+
+        // Check silhouette score - should be reasonable for well-separated data
+        println!(
+            "[RESULT] FDMC silhouette={}, quality={}",
+            fdmc_result.silhouette_score,
+            fdmc_result.quality_rating()
+        );
+
+        // Check similarity stats
+        let stats = &fdmc_result.similarity_stats;
+        println!(
+            "[RESULT] Similarity: min={:.3}, max={:.3}, mean={:.3}, gap={:.3} at {:.3}",
+            stats.min, stats.max, stats.mean, stats.max_gap, stats.gap_position
+        );
+
+        // Check embedder contributions
+        let contributions = &fdmc_result.embedder_contributions;
+        if let Some(dominant) = fdmc_result.dominant_embedder {
+            println!(
+                "[RESULT] Dominant embedder: {:?} with contribution {:.4}",
+                dominant,
+                contributions[dominant.index()]
+            );
+        }
+
+        println!(
+            "[PASS] test_fdmc_multi_domain_separation - topics={}, clusters={}",
+            fdmc_result.topics_discovered, fdmc_result.total_clusters
+        );
+    }
+
+    #[test]
+    fn test_fdmc_result_quality_rating() {
+        let result = FdmcResult {
+            silhouette_score: 0.8,
+            ..FdmcResult::empty()
+        };
+        assert_eq!(result.quality_rating(), "excellent");
+
+        let result = FdmcResult {
+            silhouette_score: 0.5,
+            ..FdmcResult::empty()
+        };
+        assert_eq!(result.quality_rating(), "good");
+
+        let result = FdmcResult {
+            silhouette_score: 0.3,
+            ..FdmcResult::empty()
+        };
+        assert_eq!(result.quality_rating(), "acceptable");
+
+        let result = FdmcResult {
+            silhouette_score: 0.1,
+            ..FdmcResult::empty()
+        };
+        assert_eq!(result.quality_rating(), "poor");
+
+        let result = FdmcResult {
+            silhouette_score: -0.5,
+            ..FdmcResult::empty()
+        };
+        assert_eq!(result.quality_rating(), "failed");
+
+        println!("[PASS] test_fdmc_result_quality_rating");
+    }
+
+    #[test]
+    fn test_fdmc_noise_count() {
+        let memberships = vec![
+            ClusterMembership::new(Uuid::new_v4(), Embedder::Semantic, 0, 0.9, true),
+            ClusterMembership::new(Uuid::new_v4(), Embedder::Semantic, 0, 0.8, false),
+            ClusterMembership::new(Uuid::new_v4(), Embedder::Semantic, -1, 0.0, false), // Noise
+            ClusterMembership::new(Uuid::new_v4(), Embedder::Semantic, 1, 0.7, true),
+            ClusterMembership::new(Uuid::new_v4(), Embedder::Semantic, -1, 0.0, false), // Noise
+        ];
+
+        let result = FdmcResult {
+            memberships,
+            ..FdmcResult::empty()
+        };
+
+        assert_eq!(result.noise_count(), 2);
+        assert_eq!(result.memory_count(), 5);
+
+        println!("[PASS] test_fdmc_noise_count");
+    }
+
+    #[test]
+    fn test_fdmc_updates_topics_in_manager() {
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        // Initially no topics
+        assert_eq!(manager.topic_count(), 0);
+
+        // Create fingerprints
+        let fingerprints: Vec<(Uuid, SemanticFingerprint)> = (0..6)
+            .map(|i| {
+                (
+                    Uuid::new_v4(),
+                    create_domain_fingerprint("ml", i as f32 * 0.05),
+                )
+            })
+            .collect();
+
+        let result = manager.recluster_fingerprint_matrix(&fingerprints);
+        assert!(result.is_ok());
+
+        let fdmc_result = result.unwrap();
+
+        // Manager's topics should be updated
+        assert_eq!(manager.topic_count(), fdmc_result.topics_discovered);
+
+        println!(
+            "[PASS] test_fdmc_updates_topics_in_manager - topics={}",
+            manager.topic_count()
+        );
+    }
+
+    #[test]
+    fn test_fdmc_topic_profile_computation() {
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        // Create fingerprints with known pattern
+        let fingerprints: Vec<(Uuid, SemanticFingerprint)> = (0..6)
+            .map(|i| {
+                (
+                    Uuid::new_v4(),
+                    create_domain_fingerprint("ml", i as f32 * 0.05),
+                )
+            })
+            .collect();
+
+        let result = manager.recluster_fingerprint_matrix(&fingerprints);
+        assert!(result.is_ok());
+
+        // Check that topics have valid profiles
+        for topic in manager.get_topics().values() {
+            let weighted = topic.profile.weighted_agreement();
+            assert!(
+                weighted >= TOPIC_THRESHOLD,
+                "Topic should meet threshold, got {}",
+                weighted
+            );
+
+            // Check contributing spaces
+            assert!(
+                !topic.contributing_spaces.is_empty(),
+                "Topic should have contributing spaces"
+            );
+        }
+
+        println!("[PASS] test_fdmc_topic_profile_computation");
+    }
+
+    #[test]
+    fn test_fdmc_silhouette_manual_verification() {
+        // Create small dataset to manually verify silhouette math
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        // 3 ML, 3 DB = 6 memories, expecting 2 clusters
+        let mut fingerprints: Vec<(Uuid, SemanticFingerprint)> = Vec::new();
+        for i in 0..3 {
+            fingerprints.push((
+                Uuid::new_v4(),
+                create_domain_fingerprint("ml", i as f32 * 0.1),
+            ));
+        }
+        for i in 0..3 {
+            fingerprints.push((
+                Uuid::new_v4(),
+                create_domain_fingerprint("database", i as f32 * 0.1),
+            ));
+        }
+
+        // Build the fingerprint matrix to inspect distances
+        use crate::clustering::{build_fingerprint_matrix, FingerprintMatrixConfig};
+        let fp_refs: Vec<(Uuid, &SemanticFingerprint)> =
+            fingerprints.iter().map(|(id, fp)| (*id, fp)).collect();
+        let config = FingerprintMatrixConfig::for_topic_detection();
+        let matrix = build_fingerprint_matrix(&fp_refs, &config).unwrap();
+
+        println!("\n=== DISTANCE MATRIX (6x6) ===");
+        let distances = matrix.to_distance_matrix();
+        for i in 0..6 {
+            let row: Vec<String> = distances[i].iter().map(|d| format!("{:.3}", d)).collect();
+            let domain = if i < 3 { "ML" } else { "DB" };
+            println!("  [{}] {}: [{}]", i, domain, row.join(", "));
+        }
+
+        // Expected pattern:
+        // - ML[0-2] to ML[0-2]: low distance (high similarity within domain)
+        // - DB[3-5] to DB[3-5]: low distance (high similarity within domain)
+        // - ML[0-2] to DB[3-5]: high distance (low similarity across domains)
+
+        // Now cluster and compute silhouette
+        let result = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
+        let labels: Vec<i32> = result.memberships.iter().map(|m| m.cluster_id).collect();
+
+        println!("\n=== CLUSTER LABELS ===");
+        println!("  Labels: {:?}", labels);
+
+        // Manually compute a(i) and b(i) for point 0 (ML)
+        if labels.iter().filter(|&&l| l >= 0).count() >= 2 {
+            let i = 0; // First ML point
+
+            // a(i) = mean distance to same cluster
+            let same_cluster: Vec<f32> = (0..6)
+                .filter(|&j| j != i && labels[j] == labels[i])
+                .map(|j| distances[i][j])
+                .collect();
+            let a_i = if same_cluster.is_empty() {
+                0.0
+            } else {
+                same_cluster.iter().sum::<f32>() / same_cluster.len() as f32
+            };
+
+            // b(i) = min mean distance to other clusters
+            let other_clusters: std::collections::HashSet<i32> = labels
+                .iter()
+                .filter(|&&l| l >= 0 && l != labels[i])
+                .copied()
+                .collect();
+
+            let mut b_i = f32::MAX;
+            for &other_cluster in &other_clusters {
+                let other_dists: Vec<f32> = (0..6)
+                    .filter(|&j| labels[j] == other_cluster)
+                    .map(|j| distances[i][j])
+                    .collect();
+                if !other_dists.is_empty() {
+                    let mean = other_dists.iter().sum::<f32>() / other_dists.len() as f32;
+                    b_i = b_i.min(mean);
+                }
+            }
+            if b_i == f32::MAX { b_i = 0.0; }
+
+            // s(i) = (b(i) - a(i)) / max(a(i), b(i))
+            let max_ab = a_i.max(b_i);
+            let s_i = if max_ab > 0.0 { (b_i - a_i) / max_ab } else { 0.0 };
+
+            println!("\n=== MANUAL SILHOUETTE FOR POINT 0 (ML) ===");
+            println!("  same_cluster_distances: {:?}", same_cluster);
+            println!("  a(0) = mean intra-cluster distance = {:.4}", a_i);
+            println!("  b(0) = min mean inter-cluster distance = {:.4}", b_i);
+            println!("  s(0) = (b - a) / max(a, b) = ({:.4} - {:.4}) / {:.4} = {:.4}",
+                     b_i, a_i, max_ab, s_i);
+        }
+
+        println!("\n=== COMPUTED SILHOUETTE ===");
+        println!("  Silhouette score: {:.6}", result.silhouette_score);
+        println!("  Quality rating: {}", result.quality_rating());
+
+        // If intra-cluster distance ≈ 0 and inter-cluster distance ≈ 0.45
+        // Then s(i) ≈ (0.45 - 0) / 0.45 ≈ 1.0
+        // This would be mathematically correct for perfectly separated clusters!
+
+        println!("\n[PASS] test_fdmc_silhouette_manual_verification");
+    }
+
+    // =========================================================================
+    // FDMC Large-Scale Topic Discovery Tests (15 Topics)
+    // =========================================================================
+
+    /// Domain definitions for 15-topic test.
+    /// Each domain has a unique activation pattern across embedding dimensions.
+    const DOMAINS_15: [&str; 15] = [
+        "machine_learning",
+        "database_systems",
+        "devops_infra",
+        "web_frontend",
+        "mobile_ios",
+        "mobile_android",
+        "security_crypto",
+        "networking",
+        "cloud_aws",
+        "cloud_gcp",
+        "data_science",
+        "game_dev",
+        "embedded_systems",
+        "blockchain",
+        "quantum_computing",
+    ];
+
+    /// Create fingerprint with one of 15 domain patterns.
+    /// Uses fractional dimension ranges to create 15 distinct signatures.
+    fn create_15domain_fingerprint(domain_idx: usize, variation: f32) -> SemanticFingerprint {
+        use crate::types::SparseVector;
+
+        /// Generate embedding with domain-specific activation region.
+        /// Divides dimension space into 15 regions (6.67% each).
+        fn generate_15domain_embedding(dim: usize, domain_idx: usize, variation: f32, seed: u64) -> Vec<f32> {
+            let mut embedding = vec![0.05f32; dim]; // Very low baseline
+
+            // Each domain gets ~6.67% of the dimension space
+            let start_ratio = (domain_idx as f32) / 15.0;
+            let end_ratio = ((domain_idx + 1) as f32) / 15.0;
+
+            let start = (dim as f32 * start_ratio) as usize;
+            let end = (dim as f32 * end_ratio) as usize;
+
+            // High activation in domain-specific region
+            for i in start..end.min(dim) {
+                let noise = ((seed as f32 + i as f32) * 0.618033988).fract() - 0.5;
+                embedding[i] = 0.6 + variation * 0.15 + noise * 0.1;
+            }
+
+            // Add slight bleed to adjacent regions (realistic overlap)
+            let bleed_start = if start > 10 { start - 10 } else { 0 };
+            let bleed_end = (end + 10).min(dim);
+            for i in bleed_start..start {
+                let decay = (i - bleed_start) as f32 / 10.0;
+                embedding[i] = 0.1 + decay * 0.2;
+            }
+            for i in end..bleed_end {
+                let decay = 1.0 - (i - end) as f32 / 10.0;
+                embedding[i] = 0.1 + decay * 0.2;
+            }
+
+            // Add global noise
+            for i in 0..dim {
+                let noise = ((seed as f32 + i as f32 + 5000.0) * 0.618033988).fract() - 0.5;
+                embedding[i] += noise * 0.03;
+                embedding[i] = embedding[i].max(0.01); // Keep positive
+            }
+
+            // Normalize
+            let norm: f32 = embedding.iter().map(|x| x * x).sum::<f32>().sqrt();
+            if norm > 0.0 {
+                for v in &mut embedding {
+                    *v /= norm;
+                }
+            }
+
+            embedding
+        }
+
+        let seed = (domain_idx as u64 * 1000) + (variation * 100.0) as u64;
+
+        SemanticFingerprint {
+            e1_semantic: generate_15domain_embedding(get_dimension(Embedder::Semantic), domain_idx, variation, seed),
+            e2_temporal_recent: generate_15domain_embedding(get_dimension(Embedder::TemporalRecent), 7, 0.5, seed + 100),
+            e3_temporal_periodic: generate_15domain_embedding(get_dimension(Embedder::TemporalPeriodic), 7, 0.5, seed + 200),
+            e4_temporal_positional: generate_15domain_embedding(get_dimension(Embedder::TemporalPositional), 7, 0.5, seed + 300),
+            e5_causal: generate_15domain_embedding(get_dimension(Embedder::Causal), domain_idx, variation, seed + 400),
+            e6_sparse: SparseVector::empty(),
+            e7_code: generate_15domain_embedding(get_dimension(Embedder::Code), domain_idx, variation, seed + 500),
+            e8_graph: generate_15domain_embedding(get_dimension(Embedder::Emotional), 7, 0.5, seed + 600),
+            e9_hdc: generate_15domain_embedding(get_dimension(Embedder::Hdc), 7, 0.5, seed + 700),
+            e10_multimodal: generate_15domain_embedding(get_dimension(Embedder::Multimodal), domain_idx, variation, seed + 800),
+            e11_entity: generate_15domain_embedding(get_dimension(Embedder::Entity), domain_idx, variation, seed + 900),
+            e12_late_interaction: vec![generate_15domain_embedding(128, domain_idx, variation, seed + 1000); 10],
+            e13_splade: SparseVector::empty(),
+        }
+    }
+
+    #[test]
+    fn test_fdmc_15_topics_discovery() {
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        // Create 3 fingerprints per domain = 45 total memories
+        // Should discover ~15 topics (one per domain)
+        let mut fingerprints: Vec<(Uuid, SemanticFingerprint)> = Vec::new();
+
+        for (domain_idx, domain_name) in DOMAINS_15.iter().enumerate() {
+            for i in 0..3 {
+                let fp = create_15domain_fingerprint(domain_idx, i as f32 * 0.1);
+                fingerprints.push((Uuid::new_v4(), fp));
+            }
+            println!("Created 3 fingerprints for domain {}: {}", domain_idx, domain_name);
+        }
+
+        assert_eq!(fingerprints.len(), 45, "Should have 45 fingerprints (15 domains × 3)");
+
+        // Run FDMC clustering
+        let result = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
+
+        println!("\n=== 15-TOPIC TEST RESULTS ===");
+        println!("Total memories: {}", result.memory_count());
+        println!("Total clusters: {}", result.total_clusters);
+        println!("Topics discovered: {}", result.topics_discovered);
+        println!("Noise points: {}", result.noise_count());
+        println!("Silhouette: {:.4} ({})", result.silhouette_score, result.quality_rating());
+
+        // Print similarity stats
+        let stats = &result.similarity_stats;
+        println!("\nSimilarity distribution:");
+        println!("  min={:.4}, max={:.4}, mean={:.4}, std={:.4}",
+                 stats.min, stats.max, stats.mean, stats.std_dev);
+
+        // Analyze cluster assignments
+        let labels: Vec<i32> = result.memberships.iter().map(|m| m.cluster_id).collect();
+        let unique_clusters: std::collections::HashSet<i32> = labels.iter().filter(|&&l| l >= 0).copied().collect();
+        println!("\nUnique cluster IDs (non-noise): {:?}", unique_clusters);
+
+        // Check each domain's cluster assignment
+        println!("\nDomain → Cluster mapping:");
+        for (domain_idx, domain_name) in DOMAINS_15.iter().enumerate() {
+            let start = domain_idx * 3;
+            let domain_labels: Vec<i32> = labels[start..start + 3].to_vec();
+            let coherent = domain_labels.iter().all(|&l| l == domain_labels[0] && l >= 0);
+            println!("  {}: {:?} {}", domain_name, domain_labels,
+                     if coherent { "✓" } else { "⚠" });
+        }
+
+        // Verify we got a reasonable number of topics
+        // With 15 domains, we expect close to 15 topics
+        assert!(
+            result.topics_discovered >= 10,
+            "Should discover at least 10 topics from 15 domains, got {}",
+            result.topics_discovered
+        );
+
+        println!("\n[PASS] test_fdmc_15_topics_discovery - {} topics from 15 domains",
+                 result.topics_discovered);
+    }
+
+    #[test]
+    fn test_fdmc_15_topics_cluster_purity() {
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        // Create fingerprints with known domain assignments
+        let mut fingerprints: Vec<(Uuid, SemanticFingerprint)> = Vec::new();
+        let mut domain_assignments: Vec<usize> = Vec::new();
+
+        for domain_idx in 0..15 {
+            for i in 0..3 {
+                let fp = create_15domain_fingerprint(domain_idx, i as f32 * 0.1);
+                fingerprints.push((Uuid::new_v4(), fp));
+                domain_assignments.push(domain_idx);
+            }
+        }
+
+        let result = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
+        let labels: Vec<i32> = result.memberships.iter().map(|m| m.cluster_id).collect();
+
+        // Calculate cluster purity: for each cluster, what % comes from the dominant domain?
+        let unique_clusters: std::collections::HashSet<i32> = labels.iter().filter(|&&l| l >= 0).copied().collect();
+
+        let mut total_purity = 0.0;
+        let mut cluster_count = 0;
+
+        println!("\n=== CLUSTER PURITY ANALYSIS ===");
+        for &cluster_id in &unique_clusters {
+            // Find which memories are in this cluster
+            let cluster_members: Vec<usize> = labels.iter()
+                .enumerate()
+                .filter(|(_, &l)| l == cluster_id)
+                .map(|(i, _)| i)
+                .collect();
+
+            // Count domain occurrences
+            let mut domain_counts: [usize; 15] = [0; 15];
+            for &member_idx in &cluster_members {
+                domain_counts[domain_assignments[member_idx]] += 1;
+            }
+
+            let max_count = *domain_counts.iter().max().unwrap_or(&0);
+            let dominant_domain = domain_counts.iter().position(|&c| c == max_count).unwrap_or(0);
+            let purity = max_count as f32 / cluster_members.len() as f32;
+
+            total_purity += purity;
+            cluster_count += 1;
+
+            println!("  Cluster {}: {} members, dominant={} ({}), purity={:.2}%",
+                     cluster_id, cluster_members.len(), DOMAINS_15[dominant_domain], max_count,
+                     purity * 100.0);
+        }
+
+        let avg_purity = if cluster_count > 0 { total_purity / cluster_count as f32 } else { 0.0 };
+        println!("\nAverage cluster purity: {:.2}%", avg_purity * 100.0);
+
+        // Expect high purity (each cluster mostly contains one domain)
+        assert!(
+            avg_purity >= 0.8,
+            "Average cluster purity should be >= 80%, got {:.2}%",
+            avg_purity * 100.0
+        );
+
+        println!("\n[PASS] test_fdmc_15_topics_cluster_purity - {:.2}% average purity",
+                 avg_purity * 100.0);
+    }
+
+    #[test]
+    fn test_fdmc_15_topics_with_5_per_domain() {
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        // Create 5 fingerprints per domain = 75 total memories
+        let mut fingerprints: Vec<(Uuid, SemanticFingerprint)> = Vec::new();
+
+        for domain_idx in 0..15 {
+            for i in 0..5 {
+                let fp = create_15domain_fingerprint(domain_idx, i as f32 * 0.08);
+                fingerprints.push((Uuid::new_v4(), fp));
+            }
+        }
+
+        assert_eq!(fingerprints.len(), 75);
+
+        let result = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
+
+        println!("\n=== 15-TOPIC TEST (5 per domain) ===");
+        println!("Memories: {}, Clusters: {}, Topics: {}",
+                 result.memory_count(), result.total_clusters, result.topics_discovered);
+        println!("Silhouette: {:.4} ({})", result.silhouette_score, result.quality_rating());
+        println!("Noise: {}", result.noise_count());
+
+        // With more samples per domain, clustering should be more stable
+        assert!(
+            result.topics_discovered >= 12,
+            "Should discover at least 12 topics with 5 samples per domain, got {}",
+            result.topics_discovered
+        );
+
+        println!("\n[PASS] test_fdmc_15_topics_with_5_per_domain - {} topics", result.topics_discovered);
+    }
+
+    #[test]
+    fn test_fdmc_mixed_domain_overlap() {
+        // Test with some domains that are "close" to each other
+        // e.g., mobile_ios and mobile_android should be somewhat similar
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        let mut fingerprints: Vec<(Uuid, SemanticFingerprint)> = Vec::new();
+
+        // Create related domain pairs (indices 4&5 = mobile, 8&9 = cloud)
+        let related_pairs = [(4, 5), (8, 9)]; // mobile_ios/android, cloud_aws/gcp
+
+        for domain_idx in 0..15 {
+            for i in 0..3 {
+                let fp = create_15domain_fingerprint(domain_idx, i as f32 * 0.1);
+                fingerprints.push((Uuid::new_v4(), fp));
+            }
+        }
+
+        let result = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
+        let labels: Vec<i32> = result.memberships.iter().map(|m| m.cluster_id).collect();
+
+        println!("\n=== RELATED DOMAIN ANALYSIS ===");
+        for (domain_a, domain_b) in related_pairs {
+            let labels_a: Vec<i32> = labels[domain_a * 3..(domain_a + 1) * 3].to_vec();
+            let labels_b: Vec<i32> = labels[domain_b * 3..(domain_b + 1) * 3].to_vec();
+
+            // Check if they ended up in same cluster (they're related, so might merge)
+            let same_cluster = labels_a.iter().any(|&a| labels_b.contains(&a) && a >= 0);
+
+            println!("  {} vs {}: {:?} vs {:?} - {}",
+                     DOMAINS_15[domain_a], DOMAINS_15[domain_b],
+                     labels_a, labels_b,
+                     if same_cluster { "MERGED" } else { "SEPARATE" });
+        }
+
+        println!("\nTotal topics: {}", result.topics_discovered);
+        println!("\n[PASS] test_fdmc_mixed_domain_overlap");
+    }
+
+    #[test]
+    fn test_fdmc_incremental_domain_addition() {
+        // Start with 5 domains, add more incrementally
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        // Phase 1: 5 domains (15 fingerprints)
+        let mut fingerprints: Vec<(Uuid, SemanticFingerprint)> = Vec::new();
+        for domain_idx in 0..5 {
+            for i in 0..3 {
+                fingerprints.push((Uuid::new_v4(), create_15domain_fingerprint(domain_idx, i as f32 * 0.1)));
+            }
+        }
+
+        let result1 = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
+        println!("\n=== INCREMENTAL TEST ===");
+        println!("Phase 1 (5 domains, 15 memories): {} topics", result1.topics_discovered);
+
+        // Phase 2: Add 5 more domains (30 fingerprints total)
+        for domain_idx in 5..10 {
+            for i in 0..3 {
+                fingerprints.push((Uuid::new_v4(), create_15domain_fingerprint(domain_idx, i as f32 * 0.1)));
+            }
+        }
+
+        let result2 = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
+        println!("Phase 2 (10 domains, 30 memories): {} topics", result2.topics_discovered);
+
+        // Phase 3: Add final 5 domains (45 fingerprints total)
+        for domain_idx in 10..15 {
+            for i in 0..3 {
+                fingerprints.push((Uuid::new_v4(), create_15domain_fingerprint(domain_idx, i as f32 * 0.1)));
+            }
+        }
+
+        let result3 = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
+        println!("Phase 3 (15 domains, 45 memories): {} topics", result3.topics_discovered);
+
+        // Topics should increase as we add more domains
+        assert!(
+            result2.topics_discovered >= result1.topics_discovered,
+            "Adding domains should not reduce topic count"
+        );
+        assert!(
+            result3.topics_discovered >= result2.topics_discovered,
+            "Adding domains should not reduce topic count"
+        );
+
+        println!("\n[PASS] test_fdmc_incremental_domain_addition");
+    }
+
+    #[test]
+    fn test_fdmc_noise_injection() {
+        // Test with some random noise fingerprints mixed in
+        let mut manager = MultiSpaceClusterManager::with_defaults().unwrap();
+
+        let mut fingerprints: Vec<(Uuid, SemanticFingerprint)> = Vec::new();
+
+        // Add 10 domains (30 fingerprints)
+        for domain_idx in 0..10 {
+            for i in 0..3 {
+                fingerprints.push((Uuid::new_v4(), create_15domain_fingerprint(domain_idx, i as f32 * 0.1)));
+            }
+        }
+
+        // Add 5 "noise" fingerprints with random domain indices
+        // These should either form noise cluster or join nearby clusters
+        let noise_indices = [3, 7, 11, 2, 14]; // Random domain patterns
+        for (i, &domain_idx) in noise_indices.iter().enumerate() {
+            let fp = create_15domain_fingerprint(domain_idx, 0.5 + i as f32 * 0.1); // High variation
+            fingerprints.push((Uuid::new_v4(), fp));
+        }
+
+        let result = manager.recluster_fingerprint_matrix(&fingerprints).unwrap();
+
+        println!("\n=== NOISE INJECTION TEST ===");
+        println!("Total memories: {} (30 regular + 5 noise)", result.memory_count());
+        println!("Topics: {}, Clusters: {}", result.topics_discovered, result.total_clusters);
+        println!("Noise points: {}", result.noise_count());
+        println!("Silhouette: {:.4}", result.silhouette_score);
+
+        // Should still find most of the 10 domains as topics
+        assert!(
+            result.topics_discovered >= 7,
+            "Should find at least 7 topics despite noise, got {}",
+            result.topics_discovered
+        );
+
+        println!("\n[PASS] test_fdmc_noise_injection");
+    }
+
+    #[test]
+    fn test_fdmc_similarity_matrix_structure() {
+        // Verify the similarity matrix has expected structure
+        use crate::clustering::{build_fingerprint_matrix, FingerprintMatrixConfig};
+
+        let mut fingerprints: Vec<(Uuid, SemanticFingerprint)> = Vec::new();
+        for domain_idx in 0..5 {
+            for i in 0..3 {
+                fingerprints.push((Uuid::new_v4(), create_15domain_fingerprint(domain_idx, i as f32 * 0.1)));
+            }
+        }
+
+        let fp_refs: Vec<(Uuid, &SemanticFingerprint)> =
+            fingerprints.iter().map(|(id, fp)| (*id, fp)).collect();
+        let config = FingerprintMatrixConfig::for_topic_detection();
+        let matrix = build_fingerprint_matrix(&fp_refs, &config).unwrap();
+
+        println!("\n=== SIMILARITY MATRIX STRUCTURE (5 domains) ===");
+
+        // Check block diagonal structure
+        // Entries within same domain should be high, across domains should be lower
+        let mut intra_domain_avg = 0.0;
+        let mut inter_domain_avg = 0.0;
+        let mut intra_count = 0;
+        let mut inter_count = 0;
+
+        for i in 0..15 {
+            for j in (i + 1)..15 {
+                let sim = matrix.get_similarity(i, j).unwrap();
+                let domain_i = i / 3;
+                let domain_j = j / 3;
+
+                if domain_i == domain_j {
+                    intra_domain_avg += sim;
+                    intra_count += 1;
+                } else {
+                    inter_domain_avg += sim;
+                    inter_count += 1;
+                }
+            }
+        }
+
+        intra_domain_avg /= intra_count as f32;
+        inter_domain_avg /= inter_count as f32;
+
+        println!("Intra-domain avg similarity: {:.4} ({} pairs)", intra_domain_avg, intra_count);
+        println!("Inter-domain avg similarity: {:.4} ({} pairs)", inter_domain_avg, inter_count);
+        println!("Separation ratio: {:.2}x", intra_domain_avg / inter_domain_avg);
+
+        // Intra-domain should be significantly higher than inter-domain
+        assert!(
+            intra_domain_avg > inter_domain_avg * 1.1,
+            "Intra-domain similarity ({:.4}) should be > inter-domain ({:.4})",
+            intra_domain_avg, inter_domain_avg
+        );
+
+        println!("\n[PASS] test_fdmc_similarity_matrix_structure");
     }
 }

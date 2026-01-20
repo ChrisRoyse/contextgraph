@@ -38,6 +38,7 @@
 pub mod birch;
 pub mod cluster;
 pub mod error;
+pub mod fingerprint_matrix;
 pub mod hdbscan;
 pub mod manager;
 pub mod membership;
@@ -49,10 +50,15 @@ pub mod topic;
 pub use birch::{birch_defaults, BIRCHEntry, BIRCHNode, BIRCHParams, BIRCHTree, ClusteringFeature};
 pub use cluster::Cluster;
 pub use error::ClusterError;
+pub use fingerprint_matrix::{
+    build_fingerprint_matrix, update_matrix_incremental, AggregationStrategy, FingerprintMatrix,
+    FingerprintMatrixConfig, SimilarityStats,
+};
 pub use hdbscan::{hdbscan_defaults, ClusterSelectionMethod, HDBSCANClusterer, HDBSCANParams};
 pub use manager::{
-    manager_defaults, InsertResult, ManagerParams, MultiSpaceClusterManager, ReclusterResult,
-    UpdateStatus, DEFAULT_RECLUSTER_THRESHOLD, MAX_WEIGHTED_AGREEMENT, TOPIC_THRESHOLD,
+    manager_defaults, FdmcResult, InsertResult, ManagerParams, MultiSpaceClusterManager,
+    ReclusterResult, UpdateStatus, DEFAULT_RECLUSTER_THRESHOLD, MAX_WEIGHTED_AGREEMENT,
+    TOPIC_THRESHOLD,
 };
 pub use membership::ClusterMembership;
 pub use persistence::{PersistedTopicPortfolio, PersistenceError, TopicPortfolio};

@@ -23,6 +23,7 @@ pub const GET_TOPIC_PORTFOLIO: &str = "get_topic_portfolio";
 pub const GET_TOPIC_STABILITY: &str = "get_topic_stability";
 pub const DETECT_TOPICS: &str = "detect_topics";
 pub const GET_DIVERGENCE_ALERTS: &str = "get_divergence_alerts";
+// ANALYZE_FINGERPRINTS tool will be added in future phase as diagnostic tool
 
 // ========== CURATION TOOLS (PRD Section 10.3) ==========
 pub const MERGE_CONCEPTS: &str = "merge_concepts";

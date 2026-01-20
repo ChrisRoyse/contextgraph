@@ -356,7 +356,7 @@ impl HDBSCANClusterer {
         let (labels, probabilities) = self.extract_clusters(&mst, n);
 
         // Step 5: Identify core points
-        let core_points = self.identify_core_points(embeddings, &labels);
+        let core_points = self.identify_core_points_from_labels(&labels);
 
         // Build ClusterMemberships
         let memberships: Vec<ClusterMembership> = memory_ids
@@ -637,11 +637,12 @@ impl HDBSCANClusterer {
         median
     }
 
-    /// Identify core points in each cluster.
+    /// Identify core points based on cluster labels.
     ///
     /// A point is core if it has >= min_samples neighbors in the same cluster.
-    fn identify_core_points(&self, embeddings: &[Vec<f32>], labels: &[i32]) -> Vec<bool> {
-        let n = embeddings.len();
+    /// This method only depends on labels, not on embeddings or distances.
+    fn identify_core_points_from_labels(&self, labels: &[i32]) -> Vec<bool> {
+        let n = labels.len();
         let mut is_core = vec![false; n];
 
         for i in 0..n {
@@ -650,12 +651,11 @@ impl HDBSCANClusterer {
             }
 
             // Count neighbors in same cluster
-            let mut neighbor_count = 0;
-            for j in 0..n {
-                if i != j && labels[j] == labels[i] {
-                    neighbor_count += 1;
-                }
-            }
+            let neighbor_count = labels
+                .iter()
+                .enumerate()
+                .filter(|&(j, &label)| j != i && label == labels[i])
+                .count();
 
             is_core[i] = neighbor_count >= self.params.min_samples;
         }
@@ -719,6 +719,138 @@ impl HDBSCANClusterer {
         }
     }
 
+    // =========================================================================
+    // PRECOMPUTED DISTANCE MATRIX SUPPORT (FDMC - Fingerprint Distance Matrix Clustering)
+    // =========================================================================
+
+    /// Fit clustering using a precomputed distance matrix.
+    ///
+    /// This enables the Fingerprint Distance Matrix Clustering (FDMC) approach
+    /// where similarity scores from all 13 embedding spaces are aggregated
+    /// into a single distance matrix before clustering.
+    ///
+    /// # Arguments
+    ///
+    /// * `distance_matrix` - Symmetric n×n matrix where entry (i,j) is the distance
+    ///   between memories i and j. Distances should be in [0.0, 1.0] where 0 = identical.
+    /// * `memory_ids` - UUIDs corresponding to each row/column of the matrix.
+    ///
+    /// # Returns
+    ///
+    /// `Vec<ClusterMembership>` with one entry per memory.
+    /// The `space` field is set to `Embedder::Semantic` as a placeholder since
+    /// this represents aggregated multi-space clustering.
+    ///
+    /// # Errors
+    ///
+    /// - `ClusterError::InsufficientData` if matrix size < min_cluster_size
+    /// - `ClusterError::DimensionMismatch` if matrix is not square or doesn't match IDs
+    /// - `ClusterError::InvalidParameter` if matrix contains NaN/Infinity
+    ///
+    /// # Example
+    ///
+    /// ```rust,ignore
+    /// use context_graph_core::clustering::HDBSCANClusterer;
+    /// use uuid::Uuid;
+    ///
+    /// let clusterer = HDBSCANClusterer::with_defaults();
+    ///
+    /// // Precomputed distance matrix (3 memories)
+    /// let distances = vec![
+    ///     vec![0.0, 0.1, 0.8],  // Memory 0: close to 1, far from 2
+    ///     vec![0.1, 0.0, 0.7],  // Memory 1: close to 0, far from 2
+    ///     vec![0.8, 0.7, 0.0],  // Memory 2: far from 0 and 1
+    /// ];
+    /// let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
+    ///
+    /// let memberships = clusterer.fit_precomputed(&distances, &ids)?;
+    /// ```
+    pub fn fit_precomputed(
+        &self,
+        distance_matrix: &[Vec<f32>],
+        memory_ids: &[Uuid],
+    ) -> Result<Vec<ClusterMembership>, ClusterError> {
+        let n = distance_matrix.len();
+
+        // Validate matrix size
+        if n < self.params.min_cluster_size {
+            return Err(ClusterError::insufficient_data(
+                self.params.min_cluster_size,
+                n,
+            ));
+        }
+
+        // Validate matrix is square
+        for (i, row) in distance_matrix.iter().enumerate() {
+            if row.len() != n {
+                return Err(ClusterError::dimension_mismatch(n, row.len()));
+            }
+
+            // Validate finite values (AP-10: No NaN/Infinity in similarity scores)
+            for (j, &val) in row.iter().enumerate() {
+                if !val.is_finite() {
+                    return Err(ClusterError::invalid_parameter(format!(
+                        "distance_matrix[{}][{}] is not finite: {}; all values must be finite per AP-10",
+                        i, j, val
+                    )));
+                }
+            }
+        }
+
+        // Validate matrix matches memory_ids
+        if n != memory_ids.len() {
+            return Err(ClusterError::dimension_mismatch(n, memory_ids.len()));
+        }
+
+        // Build MST from precomputed distance matrix (skip core distance computation)
+        // For precomputed matrices, we use the distances directly as mutual reachability
+        let mst = self.build_mst(distance_matrix);
+
+        // Extract clusters from hierarchy
+        let (labels, probabilities) = self.extract_clusters(&mst, n);
+
+        // Identify core points (uses labels only, not distances)
+        let core_points = self.identify_core_points_from_labels(&labels);
+
+        // Build ClusterMemberships
+        // Use Embedder::Semantic as placeholder - this is aggregated multi-space clustering
+        let memberships: Vec<ClusterMembership> = memory_ids
+            .iter()
+            .zip(labels.iter())
+            .zip(probabilities.iter())
+            .zip(core_points.iter())
+            .map(|(((id, &label), &prob), &is_core)| {
+                ClusterMembership::new(*id, Embedder::Semantic, label, prob, is_core)
+            })
+            .collect();
+
+        Ok(memberships)
+    }
+
+    /// Compute silhouette score using precomputed distance matrix.
+    ///
+    /// This is more efficient than computing distances on-the-fly for FDMC.
+    ///
+    /// # Arguments
+    ///
+    /// * `distance_matrix` - Precomputed n×n distance matrix
+    /// * `labels` - Cluster labels (-1 = noise)
+    ///
+    /// # Returns
+    ///
+    /// Silhouette score in [-1.0, 1.0], or 0.0 if cannot compute.
+    pub fn compute_silhouette_precomputed(
+        &self,
+        distance_matrix: &[Vec<f32>],
+        labels: &[i32],
+    ) -> f32 {
+        let n = distance_matrix.len();
+        if labels.len() != n {
+            return 0.0;
+        }
+        self.compute_silhouette_with_distance(n, labels, |i, j| distance_matrix[i][j])
+    }
+
     /// Compute silhouette score for clustering quality.
     ///
     /// Silhouette ranges from -1.0 (poor) to 1.0 (excellent).
@@ -727,6 +859,19 @@ impl HDBSCANClusterer {
     /// Returns 0.0 if cannot compute (insufficient data).
     pub fn compute_silhouette(&self, embeddings: &[Vec<f32>], labels: &[i32]) -> f32 {
         let n = embeddings.len();
+        self.compute_silhouette_with_distance(n, labels, |i, j| {
+            self.point_distance(&embeddings[i], &embeddings[j])
+        })
+    }
+
+    /// Core silhouette computation with pluggable distance function.
+    ///
+    /// Silhouette score measures how similar points are to their own cluster
+    /// compared to other clusters. Score ranges from -1.0 (poor) to 1.0 (excellent).
+    fn compute_silhouette_with_distance<F>(&self, n: usize, labels: &[i32], distance: F) -> f32
+    where
+        F: Fn(usize, usize) -> f32,
+    {
         if n < 2 {
             return 0.0;
         }
@@ -747,15 +892,11 @@ impl HDBSCANClusterer {
             }
 
             // a(i) = mean distance to same cluster
-            let mut same_cluster_sum = 0.0;
-            let mut same_cluster_count = 0;
-
-            for j in 0..n {
-                if i != j && labels[j] == labels[i] {
-                    same_cluster_sum += self.point_distance(&embeddings[i], &embeddings[j]);
-                    same_cluster_count += 1;
-                }
-            }
+            let (same_cluster_sum, same_cluster_count) = (0..n)
+                .filter(|&j| j != i && labels[j] == labels[i])
+                .fold((0.0f32, 0usize), |(sum, cnt), j| {
+                    (sum + distance(i, j), cnt + 1)
+                });
 
             let a_i = if same_cluster_count > 0 {
                 same_cluster_sum / same_cluster_count as f32
@@ -764,34 +905,24 @@ impl HDBSCANClusterer {
             };
 
             // b(i) = min mean distance to other clusters
-            let mut min_other_mean = f32::MAX;
-
-            for &cluster in &clusters {
-                if cluster == labels[i] {
-                    continue;
-                }
-
-                let mut other_sum = 0.0;
-                let mut other_count = 0;
-
-                for j in 0..n {
-                    if labels[j] == cluster {
-                        other_sum += self.point_distance(&embeddings[i], &embeddings[j]);
-                        other_count += 1;
+            let b_i = clusters
+                .iter()
+                .filter(|&&cluster| cluster != labels[i])
+                .filter_map(|&cluster| {
+                    let (sum, cnt) = (0..n)
+                        .filter(|&j| labels[j] == cluster)
+                        .fold((0.0f32, 0usize), |(sum, cnt), j| {
+                            (sum + distance(i, j), cnt + 1)
+                        });
+                    if cnt > 0 {
+                        Some(sum / cnt as f32)
+                    } else {
+                        None
                     }
-                }
+                })
+                .fold(f32::MAX, f32::min);
 
-                if other_count > 0 {
-                    let mean = other_sum / other_count as f32;
-                    min_other_mean = min_other_mean.min(mean);
-                }
-            }
-
-            let b_i = if min_other_mean == f32::MAX {
-                0.0
-            } else {
-                min_other_mean
-            };
+            let b_i = if b_i == f32::MAX { 0.0 } else { b_i };
 
             // s(i) = (b(i) - a(i)) / max(a(i), b(i))
             let max_ab = a_i.max(b_i);
@@ -1787,5 +1918,276 @@ mod tests {
         }
 
         println!("[PASS] test_all_embedder_spaces_cluster - all 13 embedders work");
+    }
+
+    // =========================================================================
+    // PRECOMPUTED DISTANCE MATRIX TESTS (FDMC Support)
+    // =========================================================================
+
+    #[test]
+    fn test_fit_precomputed_two_clusters() {
+        // Two well-separated clusters in distance space
+        // Cluster A: memories 0, 1, 2 (close to each other)
+        // Cluster B: memories 3, 4, 5 (close to each other, far from A)
+        let clusterer = HDBSCANClusterer::with_defaults();
+
+        // Distances: 0 = identical, 1 = maximally different
+        // Intra-cluster distance ~0.05-0.10
+        // Inter-cluster distance ~0.80-0.90
+        let distance_matrix = vec![
+            // Memory 0
+            vec![0.0, 0.05, 0.08, 0.85, 0.87, 0.88],
+            // Memory 1
+            vec![0.05, 0.0, 0.06, 0.82, 0.84, 0.85],
+            // Memory 2
+            vec![0.08, 0.06, 0.0, 0.83, 0.86, 0.84],
+            // Memory 3
+            vec![0.85, 0.82, 0.83, 0.0, 0.07, 0.09],
+            // Memory 4
+            vec![0.87, 0.84, 0.86, 0.07, 0.0, 0.06],
+            // Memory 5
+            vec![0.88, 0.85, 0.84, 0.09, 0.06, 0.0],
+        ];
+        let ids: Vec<Uuid> = (0..6).map(|_| Uuid::new_v4()).collect();
+
+        let result = clusterer.fit_precomputed(&distance_matrix, &ids);
+        assert!(result.is_ok(), "fit_precomputed must succeed");
+
+        let memberships = result.unwrap();
+        assert_eq!(memberships.len(), 6);
+
+        // Verify cluster assignments
+        let cluster_a: Vec<i32> = memberships[0..3].iter().map(|m| m.cluster_id).collect();
+        let cluster_b: Vec<i32> = memberships[3..6].iter().map(|m| m.cluster_id).collect();
+
+        // All in cluster A should have same label
+        assert!(
+            cluster_a.iter().all(|&c| c == cluster_a[0]),
+            "Memories 0-2 should be in same cluster"
+        );
+
+        // All in cluster B should have same label
+        assert!(
+            cluster_b.iter().all(|&c| c == cluster_b[0]),
+            "Memories 3-5 should be in same cluster"
+        );
+
+        // Clusters A and B should be different
+        if cluster_a[0] != -1 && cluster_b[0] != -1 {
+            assert_ne!(
+                cluster_a[0], cluster_b[0],
+                "Clusters A and B should have different labels"
+            );
+        }
+
+        println!(
+            "[PASS] test_fit_precomputed_two_clusters - A={:?}, B={:?}",
+            cluster_a[0], cluster_b[0]
+        );
+    }
+
+    #[test]
+    fn test_fit_precomputed_insufficient_data() {
+        let clusterer = HDBSCANClusterer::with_defaults(); // min_cluster_size=3
+
+        // Only 2 memories
+        let distance_matrix = vec![vec![0.0, 0.5], vec![0.5, 0.0]];
+        let ids: Vec<Uuid> = (0..2).map(|_| Uuid::new_v4()).collect();
+
+        let result = clusterer.fit_precomputed(&distance_matrix, &ids);
+        assert!(result.is_err(), "Should fail with insufficient data");
+
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("required 3"),
+            "Error should mention required count"
+        );
+
+        println!(
+            "[PASS] test_fit_precomputed_insufficient_data - error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn test_fit_precomputed_non_square_matrix() {
+        let clusterer = HDBSCANClusterer::with_defaults();
+
+        // Non-square matrix
+        let distance_matrix = vec![
+            vec![0.0, 0.1, 0.2],
+            vec![0.1, 0.0, 0.15],
+            vec![0.2, 0.15], // Missing element
+        ];
+        let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
+
+        let result = clusterer.fit_precomputed(&distance_matrix, &ids);
+        assert!(result.is_err(), "Should fail with non-square matrix");
+
+        println!("[PASS] test_fit_precomputed_non_square_matrix");
+    }
+
+    #[test]
+    fn test_fit_precomputed_nan_rejection() {
+        let clusterer = HDBSCANClusterer::with_defaults();
+
+        let mut distance_matrix = vec![
+            vec![0.0, 0.1, 0.2],
+            vec![0.1, 0.0, 0.15],
+            vec![0.2, 0.15, 0.0],
+        ];
+        // Insert NaN
+        distance_matrix[1][2] = f32::NAN;
+        let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
+
+        let result = clusterer.fit_precomputed(&distance_matrix, &ids);
+        assert!(result.is_err(), "Should fail with NaN");
+
+        let err = result.unwrap_err();
+        assert!(
+            err.to_string().contains("not finite"),
+            "Error should mention finite requirement"
+        );
+
+        println!("[PASS] test_fit_precomputed_nan_rejection - error: {}", err);
+    }
+
+    #[test]
+    fn test_fit_precomputed_infinity_rejection() {
+        let clusterer = HDBSCANClusterer::with_defaults();
+
+        let mut distance_matrix = vec![
+            vec![0.0, 0.1, 0.2],
+            vec![0.1, 0.0, 0.15],
+            vec![0.2, 0.15, 0.0],
+        ];
+        // Insert Infinity
+        distance_matrix[0][1] = f32::INFINITY;
+        let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
+
+        let result = clusterer.fit_precomputed(&distance_matrix, &ids);
+        assert!(result.is_err(), "Should fail with Infinity");
+
+        println!("[PASS] test_fit_precomputed_infinity_rejection");
+    }
+
+    #[test]
+    fn test_fit_precomputed_id_count_mismatch() {
+        let clusterer = HDBSCANClusterer::with_defaults();
+
+        let distance_matrix = vec![
+            vec![0.0, 0.1, 0.2],
+            vec![0.1, 0.0, 0.15],
+            vec![0.2, 0.15, 0.0],
+        ];
+        // Wrong number of IDs
+        let ids: Vec<Uuid> = (0..4).map(|_| Uuid::new_v4()).collect();
+
+        let result = clusterer.fit_precomputed(&distance_matrix, &ids);
+        assert!(result.is_err(), "Should fail with ID count mismatch");
+
+        println!("[PASS] test_fit_precomputed_id_count_mismatch");
+    }
+
+    #[test]
+    fn test_fit_precomputed_memory_ids_preserved() {
+        let clusterer = HDBSCANClusterer::with_defaults();
+
+        let distance_matrix = vec![
+            vec![0.0, 0.05, 0.06],
+            vec![0.05, 0.0, 0.04],
+            vec![0.06, 0.04, 0.0],
+        ];
+        let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
+
+        let result = clusterer.fit_precomputed(&distance_matrix, &ids);
+        assert!(result.is_ok());
+
+        let memberships = result.unwrap();
+        for (i, m) in memberships.iter().enumerate() {
+            assert_eq!(m.memory_id, ids[i], "Memory IDs must be preserved");
+        }
+
+        println!("[PASS] test_fit_precomputed_memory_ids_preserved");
+    }
+
+    #[test]
+    fn test_silhouette_precomputed() {
+        let clusterer = HDBSCANClusterer::with_defaults();
+
+        // Two well-separated clusters
+        let distance_matrix = vec![
+            vec![0.0, 0.05, 0.06, 0.85, 0.87, 0.88],
+            vec![0.05, 0.0, 0.04, 0.82, 0.84, 0.85],
+            vec![0.06, 0.04, 0.0, 0.83, 0.86, 0.84],
+            vec![0.85, 0.82, 0.83, 0.0, 0.07, 0.09],
+            vec![0.87, 0.84, 0.86, 0.07, 0.0, 0.06],
+            vec![0.88, 0.85, 0.84, 0.09, 0.06, 0.0],
+        ];
+        let labels = vec![0, 0, 0, 1, 1, 1];
+
+        let silhouette = clusterer.compute_silhouette_precomputed(&distance_matrix, &labels);
+
+        // Well-separated clusters should have high silhouette
+        assert!(
+            silhouette > 0.7,
+            "Well-separated clusters should have high silhouette, got {}",
+            silhouette
+        );
+
+        println!(
+            "[PASS] test_silhouette_precomputed - score={}",
+            silhouette
+        );
+    }
+
+    #[test]
+    fn test_silhouette_precomputed_single_cluster() {
+        let clusterer = HDBSCANClusterer::with_defaults();
+
+        let distance_matrix = vec![
+            vec![0.0, 0.1, 0.2],
+            vec![0.1, 0.0, 0.15],
+            vec![0.2, 0.15, 0.0],
+        ];
+        let labels = vec![0, 0, 0]; // Single cluster
+
+        let silhouette = clusterer.compute_silhouette_precomputed(&distance_matrix, &labels);
+
+        // Single cluster = 0.0 silhouette
+        assert_eq!(silhouette, 0.0, "Single cluster should have 0.0 silhouette");
+
+        println!("[PASS] test_silhouette_precomputed_single_cluster");
+    }
+
+    #[test]
+    fn test_fit_precomputed_single_cluster() {
+        // All memories are very close to each other - should form single cluster
+        let clusterer = HDBSCANClusterer::with_defaults();
+
+        let distance_matrix = vec![
+            vec![0.0, 0.02, 0.03],
+            vec![0.02, 0.0, 0.01],
+            vec![0.03, 0.01, 0.0],
+        ];
+        let ids: Vec<Uuid> = (0..3).map(|_| Uuid::new_v4()).collect();
+
+        let result = clusterer.fit_precomputed(&distance_matrix, &ids);
+        assert!(result.is_ok());
+
+        let memberships = result.unwrap();
+
+        // All should be in the same cluster (not noise)
+        let cluster_ids: Vec<i32> = memberships.iter().map(|m| m.cluster_id).collect();
+        assert!(
+            cluster_ids.iter().all(|&c| c == cluster_ids[0]),
+            "All memories should be in same cluster"
+        );
+        assert!(cluster_ids[0] >= 0, "Should not be noise");
+
+        println!(
+            "[PASS] test_fit_precomputed_single_cluster - all in cluster {}",
+            cluster_ids[0]
+        );
     }
 }
