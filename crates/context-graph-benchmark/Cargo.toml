@@ -89,3 +89,7 @@ path = "src/bin/mcp_bench.rs"
 [[bin]]
 name = "embedder-stress"
 path = "src/bin/embedder_stress.rs"
+
+[[bin]]
+name = "hf-bench"
+path = "src/bin/hf_bench.rs"

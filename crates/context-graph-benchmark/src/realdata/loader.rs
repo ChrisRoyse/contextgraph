@@ -30,6 +30,10 @@ pub struct ChunkRecord {
     pub end_word: usize,
     /// Topic hint (rough categorization).
     pub topic_hint: String,
+    /// Source dataset name (e.g., "arxiv", "stackoverflow", "wikipedia").
+    /// Used for multi-dataset benchmarks.
+    #[serde(default)]
+    pub source_dataset: Option<String>,
 }
 
 impl ChunkRecord {
@@ -54,19 +58,44 @@ pub struct DatasetMetadata {
     /// Total word count.
     pub total_words: usize,
     /// Number of short documents skipped.
+    #[serde(default)]
     pub skipped_short: usize,
     /// Chunk size in words.
     pub chunk_size: usize,
     /// Overlap in words.
     pub overlap: usize,
-    /// Data source.
+    /// Data source (single source for backward compat).
+    #[serde(default)]
     pub source: String,
+    /// Source datasets (for multi-dataset benchmarks).
+    #[serde(default)]
+    pub source_datasets: Vec<String>,
+    /// Per-dataset statistics.
+    #[serde(default)]
+    pub dataset_stats: HashMap<String, DatasetStats>,
     /// Top topics for ground truth.
     #[serde(default)]
     pub top_topics: Vec<String>,
     /// Topic counts.
     #[serde(default)]
     pub topic_counts: HashMap<String, usize>,
+}
+
+/// Statistics for a single source dataset.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct DatasetStats {
+    /// Documents from this source.
+    pub documents: usize,
+    /// Chunks from this source.
+    pub chunks: usize,
+    /// Words from this source.
+    pub words: usize,
+    /// Documents skipped (too short).
+    #[serde(default)]
+    pub skipped_short: usize,
+    /// Documents skipped (empty).
+    #[serde(default)]
+    pub skipped_empty: usize,
 }
 
 /// A loaded real dataset ready for benchmarking.
@@ -78,6 +107,8 @@ pub struct RealDataset {
     pub metadata: DatasetMetadata,
     /// Topic to index mapping (for ground truth).
     pub topic_to_idx: HashMap<String, usize>,
+    /// Source dataset to index mapping.
+    pub source_to_idx: HashMap<String, usize>,
 }
 
 impl RealDataset {
@@ -89,6 +120,16 @@ impl RealDataset {
             .unwrap_or(0) // Default to topic 0 for unknown
     }
 
+    /// Get the source dataset index for a chunk.
+    pub fn get_source_idx(&self, chunk: &ChunkRecord) -> usize {
+        chunk
+            .source_dataset
+            .as_ref()
+            .and_then(|s| self.source_to_idx.get(s))
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// Get topic assignments for all chunks.
     pub fn topic_assignments(&self) -> HashMap<Uuid, usize> {
         self.chunks
@@ -97,9 +138,37 @@ impl RealDataset {
             .collect()
     }
 
+    /// Get source dataset assignments for all chunks.
+    pub fn source_assignments(&self) -> HashMap<Uuid, usize> {
+        self.chunks
+            .iter()
+            .map(|c| (c.uuid(), self.get_source_idx(c)))
+            .collect()
+    }
+
     /// Get number of unique topics.
     pub fn topic_count(&self) -> usize {
         self.topic_to_idx.len()
+    }
+
+    /// Get number of source datasets.
+    pub fn source_count(&self) -> usize {
+        self.source_to_idx.len()
+    }
+
+    /// Get list of source dataset names.
+    pub fn source_names(&self) -> Vec<&str> {
+        let mut sources: Vec<_> = self.source_to_idx.keys().map(|s| s.as_str()).collect();
+        sources.sort();
+        sources
+    }
+
+    /// Get chunks from a specific source dataset.
+    pub fn chunks_by_source(&self, source: &str) -> Vec<&ChunkRecord> {
+        self.chunks
+            .iter()
+            .filter(|c| c.source_dataset.as_deref() == Some(source))
+            .collect()
     }
 
     /// Sample a subset of chunks for smaller-scale testing.
@@ -114,6 +183,28 @@ impl RealDataset {
         indices.sort(); // Maintain some order for reproducibility
 
         indices.iter().map(|&i| &self.chunks[i]).collect()
+    }
+
+    /// Sample chunks stratified by source dataset.
+    pub fn sample_stratified(&self, n_per_source: usize, seed: u64) -> Vec<&ChunkRecord> {
+        use rand::prelude::*;
+        use rand_chacha::ChaCha8Rng;
+
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let mut result = Vec::new();
+
+        for source in self.source_names() {
+            let source_chunks: Vec<_> = self.chunks_by_source(source);
+            let mut indices: Vec<usize> = (0..source_chunks.len()).collect();
+            indices.shuffle(&mut rng);
+            indices.truncate(n_per_source);
+
+            for idx in indices {
+                result.push(source_chunks[idx]);
+            }
+        }
+
+        result
     }
 }
 
@@ -161,10 +252,14 @@ impl DatasetLoader {
         // Build topic index
         let topic_to_idx = self.build_topic_index(&metadata, &chunks);
 
+        // Build source index
+        let source_to_idx = self.build_source_index(&metadata, &chunks);
+
         Ok(RealDataset {
             chunks,
             metadata,
             topic_to_idx,
+            source_to_idx,
         })
     }
 
@@ -244,6 +339,41 @@ impl DatasetLoader {
 
         topic_to_idx
     }
+
+    /// Build source dataset to index mapping.
+    fn build_source_index(
+        &self,
+        metadata: &DatasetMetadata,
+        chunks: &[ChunkRecord],
+    ) -> HashMap<String, usize> {
+        let mut source_to_idx = HashMap::new();
+
+        // Use source_datasets from metadata if available
+        if !metadata.source_datasets.is_empty() {
+            for (idx, source) in metadata.source_datasets.iter().enumerate() {
+                source_to_idx.insert(source.clone(), idx);
+            }
+        } else {
+            // Build from chunks
+            let mut sources: Vec<String> = chunks
+                .iter()
+                .filter_map(|c| c.source_dataset.clone())
+                .collect();
+            sources.sort();
+            sources.dedup();
+
+            for (idx, source) in sources.into_iter().enumerate() {
+                source_to_idx.insert(source, idx);
+            }
+        }
+
+        // Add default source if none found (for backward compat with single-source datasets)
+        if source_to_idx.is_empty() && !metadata.source.is_empty() {
+            source_to_idx.insert(metadata.source.clone(), 0);
+        }
+
+        source_to_idx
+    }
 }
 
 impl Default for DatasetLoader {
@@ -313,6 +443,8 @@ mod tests {
             chunk_size: 200,
             overlap: 50,
             source: "test".to_string(),
+            source_datasets: vec!["test".to_string()],
+            dataset_stats: HashMap::new(),
             top_topics: vec!["science".to_string(), "history".to_string()],
             topic_counts: HashMap::new(),
         };
@@ -339,6 +471,7 @@ mod tests {
                 start_word: (i % 2) * 200,
                 end_word: (i % 2) * 200 + 200,
                 topic_hint: if i % 2 == 0 { "science" } else { "history" }.to_string(),
+                source_dataset: Some("test".to_string()),
             };
 
             writeln!(f, "{}", serde_json::to_string(&chunk).unwrap()).unwrap();

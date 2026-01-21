@@ -45,12 +45,70 @@ pub struct EmbeddedDataset {
 }
 
 /// Minimal chunk info for reference.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ChunkInfo {
     pub doc_id: String,
     pub title: String,
     pub chunk_idx: usize,
     pub topic_hint: String,
+}
+
+/// Checkpoint for resumable embedding operations.
+///
+/// Saves embedding progress periodically to allow resuming after interruption.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub struct EmbeddingCheckpoint {
+    /// Number of embeddings completed.
+    pub embedded_count: usize,
+    /// Fingerprints computed so far.
+    pub fingerprints: HashMap<Uuid, SemanticFingerprint>,
+    /// Chunk info computed so far.
+    pub chunk_info: HashMap<Uuid, ChunkInfo>,
+    /// ID of the last processed chunk.
+    pub last_chunk_id: String,
+}
+
+impl EmbeddingCheckpoint {
+    const CHECKPOINT_FILE: &'static str = "embedding_checkpoint.json";
+
+    /// Save checkpoint to directory.
+    pub fn save(&self, dir: &std::path::Path) -> Result<(), EmbedError> {
+        use std::fs::File;
+        use std::io::BufWriter;
+
+        std::fs::create_dir_all(dir).map_err(|e| EmbedError::Checkpoint(e.to_string()))?;
+
+        let path = dir.join(Self::CHECKPOINT_FILE);
+        let file = File::create(&path).map_err(|e| EmbedError::Checkpoint(e.to_string()))?;
+        let writer = BufWriter::new(file);
+
+        serde_json::to_writer(writer, self).map_err(|e| EmbedError::Checkpoint(e.to_string()))?;
+
+        Ok(())
+    }
+
+    /// Load checkpoint from directory.
+    pub fn load(dir: &std::path::Path) -> Result<Self, EmbedError> {
+        use std::fs::File;
+        use std::io::BufReader;
+
+        let path = dir.join(Self::CHECKPOINT_FILE);
+        let file = File::open(&path).map_err(|e| EmbedError::Checkpoint(e.to_string()))?;
+        let reader = BufReader::new(file);
+
+        serde_json::from_reader(reader).map_err(|e| EmbedError::Checkpoint(e.to_string()))
+    }
+
+    /// Check if a checkpoint exists.
+    pub fn exists(dir: &std::path::Path) -> bool {
+        dir.join(Self::CHECKPOINT_FILE).exists()
+    }
+
+    /// Remove checkpoint file.
+    pub fn cleanup(dir: &std::path::Path) {
+        let path = dir.join(Self::CHECKPOINT_FILE);
+        let _ = std::fs::remove_file(path);
+    }
 }
 
 /// Embedder for real data using the 13-embedder system.
@@ -119,6 +177,151 @@ impl RealDataEmbedder {
 
         if self.config.show_progress {
             eprintln!("\rEmbedding: {}/{} chunks (100.0%)", total, total);
+        }
+
+        Ok(EmbeddedDataset {
+            fingerprints,
+            topic_assignments: dataset.topic_assignments(),
+            chunk_info,
+            topic_count: dataset.topic_count(),
+        })
+    }
+
+    /// Embed a dataset with batching and checkpointing support.
+    ///
+    /// This version supports:
+    /// - Batched processing for better GPU utilization
+    /// - Periodic checkpointing for resume capability
+    /// - Progress tracking with ETA estimation
+    ///
+    /// Checkpoint files are saved to `checkpoint_dir` every `checkpoint_interval` embeddings.
+    #[cfg(feature = "real-embeddings")]
+    pub async fn embed_dataset_batched(
+        &self,
+        dataset: &RealDataset,
+        checkpoint_dir: Option<&std::path::Path>,
+        checkpoint_interval: usize,
+    ) -> Result<EmbeddedDataset, EmbedError> {
+        use context_graph_embeddings::{get_warm_provider, initialize_global_warm_provider};
+        use std::time::Instant;
+
+        // Initialize the warm provider (loads all 13 models to GPU)
+        initialize_global_warm_provider()
+            .await
+            .map_err(|e| EmbedError::Pipeline(e.to_string()))?;
+
+        let provider = get_warm_provider()
+            .map_err(|e| EmbedError::Pipeline(e.to_string()))?;
+
+        let total = dataset.chunks.len();
+        let batch_size = self.config.batch_size;
+        let checkpoint_interval = if checkpoint_interval == 0 { 1000 } else { checkpoint_interval };
+
+        // Try to load existing checkpoint
+        let (mut fingerprints, mut chunk_info, start_idx) = if let Some(dir) = checkpoint_dir {
+            match EmbeddingCheckpoint::load(dir) {
+                Ok(checkpoint) => {
+                    if self.config.show_progress {
+                        eprintln!("Resuming from checkpoint: {} embeddings", checkpoint.embedded_count);
+                    }
+                    (checkpoint.fingerprints, checkpoint.chunk_info, checkpoint.embedded_count)
+                }
+                Err(_) => (HashMap::with_capacity(total), HashMap::with_capacity(total), 0),
+            }
+        } else {
+            (HashMap::with_capacity(total), HashMap::with_capacity(total), 0)
+        };
+
+        let start_time = Instant::now();
+        let mut last_checkpoint_time = Instant::now();
+        let mut embeddings_since_checkpoint = 0;
+
+        // Process in batches
+        let chunks_to_process: Vec<_> = dataset.chunks.iter().skip(start_idx).collect();
+        let num_batches = (chunks_to_process.len() + batch_size - 1) / batch_size;
+
+        for (batch_idx, batch) in chunks_to_process.chunks(batch_size).enumerate() {
+            let batch_start = start_idx + batch_idx * batch_size;
+
+            // Embed each chunk in the batch
+            for (i, chunk) in batch.iter().enumerate() {
+                let global_idx = batch_start + i;
+
+                if self.config.show_progress && global_idx % 100 == 0 {
+                    let elapsed = start_time.elapsed().as_secs_f64();
+                    let rate = if global_idx > start_idx {
+                        (global_idx - start_idx) as f64 / elapsed
+                    } else {
+                        0.0
+                    };
+                    let eta = if rate > 0.0 {
+                        (total - global_idx) as f64 / rate
+                    } else {
+                        0.0
+                    };
+                    eprint!(
+                        "\rEmbedding: {}/{} ({:.1}%) | {:.1} chunks/s | ETA: {:.0}s",
+                        global_idx, total,
+                        global_idx as f64 / total as f64 * 100.0,
+                        rate, eta
+                    );
+                }
+
+                // Embed using the warm provider (all 13 embedders)
+                let output = provider
+                    .embed_all(&chunk.text)
+                    .await
+                    .map_err(|e| EmbedError::Embedding(e.to_string()))?;
+
+                let uuid = chunk.uuid();
+                fingerprints.insert(uuid, output.fingerprint);
+                chunk_info.insert(
+                    uuid,
+                    ChunkInfo {
+                        doc_id: chunk.doc_id.clone(),
+                        title: chunk.title.clone(),
+                        chunk_idx: chunk.chunk_idx,
+                        topic_hint: chunk.topic_hint.clone(),
+                    },
+                );
+
+                embeddings_since_checkpoint += 1;
+            }
+
+            // Save checkpoint periodically
+            if let Some(dir) = checkpoint_dir {
+                if embeddings_since_checkpoint >= checkpoint_interval
+                    || last_checkpoint_time.elapsed().as_secs() >= 60
+                {
+                    let checkpoint = EmbeddingCheckpoint {
+                        embedded_count: fingerprints.len(),
+                        fingerprints: fingerprints.clone(),
+                        chunk_info: chunk_info.clone(),
+                        last_chunk_id: batch.last().map(|c| c.id.clone()).unwrap_or_default(),
+                    };
+                    checkpoint.save(dir)?;
+                    embeddings_since_checkpoint = 0;
+                    last_checkpoint_time = Instant::now();
+
+                    if self.config.show_progress {
+                        eprintln!("\n  Checkpoint saved: {} embeddings", fingerprints.len());
+                    }
+                }
+            }
+        }
+
+        if self.config.show_progress {
+            let elapsed = start_time.elapsed().as_secs_f64();
+            let rate = (total - start_idx) as f64 / elapsed;
+            eprintln!(
+                "\rEmbedding complete: {}/{} chunks | {:.1} chunks/s | {:.1}s total",
+                total, total, rate, elapsed
+            );
+        }
+
+        // Clean up checkpoint on successful completion
+        if let Some(dir) = checkpoint_dir {
+            EmbeddingCheckpoint::cleanup(dir);
         }
 
         Ok(EmbeddedDataset {
@@ -290,12 +493,15 @@ pub enum EmbedError {
     Pipeline(String),
     /// Embedding error.
     Embedding(String),
+    /// Checkpoint error.
+    Checkpoint(String),
 }
 
 impl std::fmt::Display for EmbedError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             EmbedError::Pipeline(e) => write!(f, "Pipeline error: {}", e),
+            EmbedError::Checkpoint(e) => write!(f, "Checkpoint error: {}", e),
             EmbedError::Embedding(e) => write!(f, "Embedding error: {}", e),
         }
     }
@@ -373,6 +579,8 @@ mod tests {
             chunk_size: 200,
             overlap: 50,
             source: "test".to_string(),
+            source_datasets: vec!["test".to_string()],
+            dataset_stats: HashMap::new(),
             top_topics: vec!["science".to_string(), "history".to_string()],
             topic_counts: HashMap::new(),
         };
@@ -395,6 +603,7 @@ mod tests {
                 start_word: (i % 2) * 200,
                 end_word: (i % 2) * 200 + 200,
                 topic_hint: if i % 2 == 0 { "science" } else { "history" }.to_string(),
+                source_dataset: Some("test".to_string()),
             };
             writeln!(f, "{}", serde_json::to_string(&chunk).unwrap()).unwrap();
         }

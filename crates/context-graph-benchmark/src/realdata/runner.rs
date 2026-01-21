@@ -756,6 +756,8 @@ mod tests {
             chunk_size: 200,
             overlap: 50,
             source: "test".to_string(),
+            source_datasets: vec!["test".to_string()],
+            dataset_stats: HashMap::new(),
             top_topics: vec!["science".to_string(), "history".to_string()],
             topic_counts: HashMap::new(),
         };
@@ -778,6 +780,7 @@ mod tests {
                 start_word: (i % 2) * 200,
                 end_word: (i % 2) * 200 + 200,
                 topic_hint: if i % 2 == 0 { "science" } else { "history" }.to_string(),
+                source_dataset: Some("test".to_string()),
             };
             writeln!(f, "{}", serde_json::to_string(&chunk).unwrap()).unwrap();
         }
