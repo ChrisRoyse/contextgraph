@@ -495,16 +495,24 @@ fn run_retrieval_benchmarks(
     for query_chunk in queries {
         let query_uuid = query_chunk.uuid();
         let query_topic = dataset.get_topic_idx(query_chunk);
+        let query_doc_id = &query_chunk.doc_id;
 
         // Get query embedding
         let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
 
-        // Compute similarities
+        // Build set of UUIDs from same document (to exclude for fair evaluation)
+        // This prevents "easy" retrieval where a chunk finds its sibling chunks
+        let same_doc_uuids: std::collections::HashSet<Uuid> = embedded.chunk_info.iter()
+            .filter(|(_, info)| &info.doc_id == query_doc_id)
+            .map(|(id, _)| *id)
+            .collect();
+
+        // Compute similarities (exclude same-document chunks for fair evaluation)
         let mut scores: Vec<(Uuid, f32)> = index
             .ids
             .iter()
             .zip(index.e1_embeddings.iter())
-            .filter(|(id, _)| **id != query_uuid) // Exclude self
+            .filter(|(id, _)| !same_doc_uuids.contains(id)) // Exclude same-document chunks
             .map(|(id, emb)| {
                 let sim = cosine_similarity(&query_fp.e1_semantic, emb);
                 (*id, sim)
@@ -513,11 +521,11 @@ fn run_retrieval_benchmarks(
 
         scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
-        // Get relevant set (same topic)
+        // Get relevant set (same topic, different document)
         let relevant: Vec<Uuid> = embedded
             .topic_assignments
             .iter()
-            .filter(|(id, topic)| **topic == query_topic && **id != query_uuid)
+            .filter(|(id, topic)| **topic == query_topic && !same_doc_uuids.contains(id))
             .map(|(id, _)| *id)
             .collect();
 
@@ -580,99 +588,463 @@ fn run_retrieval_benchmarks(
 }
 
 fn run_clustering_benchmarks(
-    dataset: &RealDataset,
+    _dataset: &RealDataset, // Ground truth comes from embedded.topic_assignments
     embedded: &EmbeddedDataset,
 ) -> ClusteringMetrics {
-    // Simple clustering evaluation using topic assignments as ground truth
-    let mut cluster_counts: HashMap<usize, HashMap<usize, usize>> = HashMap::new();
+    // REAL k-means clustering implementation
+    // Cluster using E1 semantic embeddings, evaluate against ground truth topic labels
 
-    // Simulate clustering by using top-K neighbors as cluster assignment
-    // For now, use a simplified purity calculation based on topic assignments
-    let topic_assignments = &embedded.topic_assignments;
-    let num_topics = embedded.topic_count;
-
-    // Calculate purity: for each "cluster" (approximated by topic), what fraction
-    // belongs to the dominant ground truth topic
-    let mut total_correct = 0usize;
-    let mut total = 0usize;
-
-    for (&id, &assigned_topic) in topic_assignments {
-        cluster_counts
-            .entry(assigned_topic)
-            .or_default()
-            .entry(assigned_topic)
-            .or_insert(0);
-        total += 1;
-        total_correct += 1; // In this simplified version, topic = cluster
+    let n_clusters = embedded.topic_count;
+    if n_clusters == 0 || embedded.fingerprints.is_empty() {
+        eprintln!("[ERROR] Cannot run clustering: no topics or embeddings");
+        return ClusteringMetrics {
+            purity: 0.0,
+            normalized_mutual_info: 0.0,
+            adjusted_rand_index: 0.0,
+            silhouette_score: 0.0,
+        };
     }
 
-    let purity = if total > 0 {
-        total_correct as f64 / total as f64
+    // Extract embeddings and IDs
+    let ids: Vec<Uuid> = embedded.fingerprints.keys().copied().collect();
+    let embeddings: Vec<&Vec<f32>> = ids.iter()
+        .filter_map(|id| embedded.fingerprints.get(id).map(|fp| &fp.e1_semantic))
+        .collect();
+
+    if embeddings.len() != ids.len() {
+        eprintln!("[ERROR] Embedding count mismatch: {} ids, {} embeddings", ids.len(), embeddings.len());
+        return ClusteringMetrics {
+            purity: 0.0,
+            normalized_mutual_info: 0.0,
+            adjusted_rand_index: 0.0,
+            silhouette_score: 0.0,
+        };
+    }
+
+    let dim = embeddings.first().map(|e| e.len()).unwrap_or(0);
+    let max_iters = 100;
+
+    // Initialize centroids with first n_clusters points
+    let mut centroids: Vec<Vec<f32>> = embeddings.iter()
+        .take(n_clusters)
+        .map(|e| (*e).clone())
+        .collect();
+
+    // Pad if needed
+    while centroids.len() < n_clusters {
+        centroids.push(vec![0.0; dim]);
+    }
+
+    let mut predicted_labels = vec![0usize; embeddings.len()];
+
+    // K-means iterations
+    for iter in 0..max_iters {
+        let mut changed = false;
+
+        // Assign each point to nearest centroid
+        for (i, emb) in embeddings.iter().enumerate() {
+            let mut best_cluster = 0;
+            let mut best_dist = f32::MAX;
+
+            for (j, centroid) in centroids.iter().enumerate() {
+                let dist: f32 = emb.iter()
+                    .zip(centroid.iter())
+                    .map(|(a, b)| (a - b).powi(2))
+                    .sum();
+
+                if dist < best_dist {
+                    best_dist = dist;
+                    best_cluster = j;
+                }
+            }
+
+            if predicted_labels[i] != best_cluster {
+                predicted_labels[i] = best_cluster;
+                changed = true;
+            }
+        }
+
+        if !changed {
+            eprintln!("  K-means converged at iteration {}", iter);
+            break;
+        }
+
+        // Update centroids
+        for (j, centroid) in centroids.iter_mut().enumerate() {
+            let cluster_points: Vec<&&Vec<f32>> = embeddings.iter()
+                .zip(predicted_labels.iter())
+                .filter(|(_, &label)| label == j)
+                .map(|(emb, _)| emb)
+                .collect();
+
+            if cluster_points.is_empty() {
+                continue;
+            }
+
+            for d in 0..dim {
+                centroid[d] = cluster_points.iter()
+                    .map(|e| e[d])
+                    .sum::<f32>() / cluster_points.len() as f32;
+            }
+        }
+    }
+
+    // Get ground truth labels
+    let true_labels: Vec<usize> = ids.iter()
+        .map(|id| embedded.topic_assignments.get(id).copied().unwrap_or(0))
+        .collect();
+
+    // Compute REAL metrics
+    let purity = compute_purity(&predicted_labels, &true_labels);
+    let nmi = compute_nmi(&predicted_labels, &true_labels);
+    let ari = compute_ari(&predicted_labels, &true_labels);
+
+    // Silhouette requires distance matrix - compute for a sample if too large
+    let silhouette = if ids.len() <= 1000 {
+        let distance_matrix = compute_distance_matrix(&embeddings);
+        compute_silhouette(&predicted_labels, &distance_matrix)
     } else {
-        0.0
+        // Sample-based silhouette for large datasets
+        0.0 // Skip for performance
     };
 
-    // Simplified NMI and ARI (would need real clustering for accurate values)
+    eprintln!("  Clustering results: purity={:.4}, NMI={:.4}, ARI={:.4}, silhouette={:.4}",
+              purity, nmi, ari, silhouette);
+
     ClusteringMetrics {
         purity,
-        normalized_mutual_info: purity * 0.95, // Approximation
-        adjusted_rand_index: purity * 0.85,    // Approximation
-        silhouette_score: purity * 0.5 - 0.1,  // Approximation
+        normalized_mutual_info: nmi,
+        adjusted_rand_index: ari,
+        silhouette_score: silhouette,
     }
+}
+
+// Compute cluster purity
+fn compute_purity(predicted: &[usize], true_labels: &[usize]) -> f64 {
+    if predicted.is_empty() || predicted.len() != true_labels.len() {
+        return 0.0;
+    }
+
+    let n = predicted.len() as f64;
+    let mut counts: HashMap<(usize, usize), usize> = HashMap::new();
+
+    for (&cluster, &true_class) in predicted.iter().zip(true_labels.iter()) {
+        *counts.entry((cluster, true_class)).or_insert(0) += 1;
+    }
+
+    let clusters: std::collections::HashSet<usize> = predicted.iter().copied().collect();
+
+    let purity_sum: usize = clusters.iter()
+        .map(|&cluster| {
+            counts.iter()
+                .filter(|((c, _), _)| *c == cluster)
+                .map(|(_, &count)| count)
+                .max()
+                .unwrap_or(0)
+        })
+        .sum();
+
+    purity_sum as f64 / n
+}
+
+// Compute Normalized Mutual Information
+fn compute_nmi(predicted: &[usize], true_labels: &[usize]) -> f64 {
+    if predicted.is_empty() || predicted.len() != true_labels.len() {
+        return 0.0;
+    }
+
+    let n = predicted.len() as f64;
+    let mut cluster_counts: HashMap<usize, f64> = HashMap::new();
+    let mut class_counts: HashMap<usize, f64> = HashMap::new();
+    let mut joint_counts: HashMap<(usize, usize), f64> = HashMap::new();
+
+    for (&cluster, &class) in predicted.iter().zip(true_labels.iter()) {
+        *cluster_counts.entry(cluster).or_insert(0.0) += 1.0;
+        *class_counts.entry(class).or_insert(0.0) += 1.0;
+        *joint_counts.entry((cluster, class)).or_insert(0.0) += 1.0;
+    }
+
+    let h_cluster: f64 = cluster_counts.values()
+        .map(|&count| {
+            let p = count / n;
+            if p > 0.0 { -p * p.ln() } else { 0.0 }
+        })
+        .sum();
+
+    let h_class: f64 = class_counts.values()
+        .map(|&count| {
+            let p = count / n;
+            if p > 0.0 { -p * p.ln() } else { 0.0 }
+        })
+        .sum();
+
+    let mi: f64 = joint_counts.iter()
+        .map(|((cluster, class), &count)| {
+            let p_joint = count / n;
+            let p_cluster = cluster_counts[cluster] / n;
+            let p_class = class_counts[class] / n;
+            if p_joint > 0.0 && p_cluster > 0.0 && p_class > 0.0 {
+                p_joint * (p_joint / (p_cluster * p_class)).ln()
+            } else {
+                0.0
+            }
+        })
+        .sum();
+
+    let denom = h_cluster + h_class;
+    if denom < f64::EPSILON { 0.0 } else { 2.0 * mi / denom }
+}
+
+// Compute Adjusted Rand Index
+fn compute_ari(predicted: &[usize], true_labels: &[usize]) -> f64 {
+    if predicted.is_empty() || predicted.len() != true_labels.len() {
+        return 0.0;
+    }
+
+    let n = predicted.len();
+    let mut contingency: HashMap<(usize, usize), usize> = HashMap::new();
+
+    for (&cluster, &class) in predicted.iter().zip(true_labels.iter()) {
+        *contingency.entry((cluster, class)).or_insert(0) += 1;
+    }
+
+    let mut row_sums: HashMap<usize, usize> = HashMap::new();
+    for &cluster in predicted {
+        *row_sums.entry(cluster).or_insert(0) += 1;
+    }
+
+    let mut col_sums: HashMap<usize, usize> = HashMap::new();
+    for &class in true_labels {
+        *col_sums.entry(class).or_insert(0) += 1;
+    }
+
+    let comb2 = |x: usize| -> f64 {
+        if x < 2 { 0.0 } else { (x * (x - 1)) as f64 / 2.0 }
+    };
+
+    let sum_comb_ij: f64 = contingency.values().map(|&x| comb2(x)).sum();
+    let sum_comb_a: f64 = row_sums.values().map(|&x| comb2(x)).sum();
+    let sum_comb_b: f64 = col_sums.values().map(|&x| comb2(x)).sum();
+    let comb_n = comb2(n);
+
+    if comb_n < f64::EPSILON {
+        return 0.0;
+    }
+
+    let expected = sum_comb_a * sum_comb_b / comb_n;
+    let max_index = 0.5 * (sum_comb_a + sum_comb_b);
+    let denom = max_index - expected;
+
+    if denom.abs() < f64::EPSILON { 0.0 } else { (sum_comb_ij - expected) / denom }
+}
+
+// Compute distance matrix for silhouette
+fn compute_distance_matrix(embeddings: &[&Vec<f32>]) -> Vec<Vec<f64>> {
+    let n = embeddings.len();
+    let mut matrix = vec![vec![0.0; n]; n];
+
+    for i in 0..n {
+        for j in (i + 1)..n {
+            let sim = cosine_similarity(embeddings[i], embeddings[j]);
+            let dist = (1.0 - sim) as f64;
+            matrix[i][j] = dist;
+            matrix[j][i] = dist;
+        }
+    }
+
+    matrix
+}
+
+// Compute average silhouette coefficient
+fn compute_silhouette(labels: &[usize], distance_matrix: &[Vec<f64>]) -> f64 {
+    if labels.is_empty() {
+        return 0.0;
+    }
+
+    let n = labels.len();
+    let mut sum = 0.0;
+
+    for i in 0..n {
+        let cluster = labels[i];
+        let mut same_cluster_dists: Vec<f64> = Vec::new();
+        let mut other_cluster_dists: HashMap<usize, Vec<f64>> = HashMap::new();
+
+        for j in 0..n {
+            if i == j { continue; }
+            let dist = distance_matrix[i][j];
+            if labels[j] == cluster {
+                same_cluster_dists.push(dist);
+            } else {
+                other_cluster_dists.entry(labels[j]).or_default().push(dist);
+            }
+        }
+
+        let a = if same_cluster_dists.is_empty() {
+            0.0
+        } else {
+            same_cluster_dists.iter().sum::<f64>() / same_cluster_dists.len() as f64
+        };
+
+        let b = other_cluster_dists.values()
+            .map(|dists| dists.iter().sum::<f64>() / dists.len() as f64)
+            .min_by(|x, y| x.partial_cmp(y).unwrap_or(std::cmp::Ordering::Equal))
+            .unwrap_or(0.0);
+
+        let max_ab = a.max(b);
+        if max_ab > f64::EPSILON {
+            sum += (b - a) / max_ab;
+        }
+    }
+
+    sum / n as f64
 }
 
 fn run_ablation_studies(
     queries: &[&ChunkRecord],
     dataset: &RealDataset,
     embedded: &EmbeddedDataset,
-    index: &RetrievalIndex,
+    _index: &RetrievalIndex, // Not used - we build per-embedder indexes
 ) -> AblationResults {
-    // Simplified ablation: measure contribution of different embedding spaces
-    let embedder_names = vec![
-        "E1_semantic",
-        "E2_temporal",
-        "E3_periodic",
-        "E4_positional",
-        "E5_causal",
-        "E6_sparse",
-        "E7_code",
-        "E8_graph",
-        "E9_hdc",
-        "E10_multimodal",
-        "E11_entity",
-        "E12_late",
-        "E13_splade",
-    ];
+    // REAL ablation: measure actual MRR for each embedder and compute contribution
+    eprintln!("  Running ablation studies (measuring per-embedder MRR)...");
 
     let mut contributions: HashMap<String, f64> = HashMap::new();
     let mut removal_deltas: HashMap<String, f64> = HashMap::new();
 
-    // Base score (E1 only for simplicity)
-    let base_score = 0.65; // Placeholder
+    // Measure MRR for each embedder by extracting its vector and computing similarity
+    // Using SemanticFingerprint from the embedded dataset
+    use context_graph_core::types::fingerprint::SemanticFingerprint;
 
-    for name in &embedder_names {
-        // Simulated contributions based on embedder category
-        let contribution = match *name {
-            "E1_semantic" => 0.35,
-            "E5_causal" => 0.15,
-            "E7_code" => 0.20,
-            "E10_multimodal" => 0.10,
-            "E12_late" => 0.08,
-            "E13_splade" => 0.05,
-            _ => 0.02,
-        };
-        contributions.insert(name.to_string(), contribution);
-        removal_deltas.insert(name.to_string(), -contribution * 0.8);
+    // Embedder extraction functions - dense vectors only (sparse/token-level need special handling)
+    let embedder_configs: Vec<(&str, fn(&SemanticFingerprint) -> &Vec<f32>)> = vec![
+        ("E1_semantic", |fp: &SemanticFingerprint| &fp.e1_semantic),
+        ("E5_causal", |fp: &SemanticFingerprint| &fp.e5_causal_as_cause), // Use cause vector for search
+        ("E7_code", |fp: &SemanticFingerprint| &fp.e7_code),
+        ("E10_multimodal", |fp: &SemanticFingerprint| &fp.e10_multimodal),
+    ];
+
+    let mut mrr_scores: HashMap<String, f64> = HashMap::new();
+
+    for (name, extractor) in &embedder_configs {
+        // Build index for this embedder
+        let mut emb_ids: Vec<Uuid> = Vec::new();
+        let mut emb_vecs: Vec<Vec<f32>> = Vec::new();
+
+        for (id, fp) in &embedded.fingerprints {
+            let vec = extractor(fp);
+            if !vec.is_empty() {
+                emb_ids.push(*id);
+                emb_vecs.push(vec.clone());
+            }
+        }
+
+        if emb_ids.is_empty() {
+            eprintln!("[ERROR] {} - No embeddings available, aborting ablation for this embedder", name);
+            mrr_scores.insert(name.to_string(), 0.0);
+            continue;
+        }
+
+        // Compute MRR for this embedder
+        let mut mrr_sum = 0.0;
+        let mut count = 0;
+
+        for query_chunk in queries.iter().take(50) { // Sample 50 queries for speed
+            let query_uuid = query_chunk.uuid();
+            let query_topic = dataset.get_topic_idx(query_chunk);
+            let query_doc_id = &query_chunk.doc_id;
+
+            let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
+            let query_vec = extractor(query_fp);
+            if query_vec.is_empty() { continue; }
+
+            // Exclude same-document chunks for fair evaluation
+            let same_doc_uuids: std::collections::HashSet<Uuid> = embedded.chunk_info.iter()
+                .filter(|(_, info)| &info.doc_id == query_doc_id)
+                .map(|(id, _)| *id)
+                .collect();
+
+            // Compute similarities
+            let mut scores: Vec<(Uuid, f32)> = emb_ids.iter()
+                .zip(emb_vecs.iter())
+                .filter(|(id, _)| !same_doc_uuids.contains(id))
+                .map(|(id, vec)| {
+                    let sim = cosine_similarity(query_vec, vec);
+                    (*id, sim)
+                })
+                .collect();
+
+            scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+            // Find first relevant in top 10 (same topic, different document)
+            let relevant: Vec<Uuid> = embedded.topic_assignments.iter()
+                .filter(|(id, topic)| **topic == query_topic && !same_doc_uuids.contains(id))
+                .map(|(id, _)| *id)
+                .collect();
+
+            if !relevant.is_empty() {
+                if let Some(pos) = scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+                    mrr_sum += 1.0 / (pos as f64 + 1.0);
+                }
+                count += 1;
+            }
+        }
+
+        let mrr = if count > 0 { mrr_sum / count as f64 } else { 0.0 };
+        mrr_scores.insert(name.to_string(), mrr);
+        eprintln!("    {} MRR@10: {:.4} (from {} queries)", name, mrr, count);
     }
 
+    // Temporal embedders are excluded per constitution (AP-60)
+    for name in ["E2_temporal", "E3_periodic", "E4_positional"] {
+        mrr_scores.insert(name.to_string(), 0.0);
+    }
+
+    // Supporting embedders (not directly measured in this benchmark)
+    for name in ["E6_sparse", "E8_graph", "E9_hdc", "E11_entity", "E12_late", "E13_splade"] {
+        mrr_scores.insert(name.to_string(), 0.0); // Not measured (would need SPLADE/ColBERT infrastructure)
+    }
+
+    // Compute contributions as percentage of total MRR
+    let total_mrr: f64 = mrr_scores.values().sum();
+    let normalized_total = if total_mrr > 0.0 { total_mrr } else { 1.0 };
+
+    for (name, mrr) in &mrr_scores {
+        let contribution = mrr / normalized_total;
+        contributions.insert(name.clone(), contribution);
+
+        // Removal delta is negative of contribution (removing this embedder would lose this much)
+        removal_deltas.insert(name.clone(), -contribution * 0.8); // 0.8 factor accounts for redundancy
+    }
+
+    // Compute category importance from measured contributions
+    let semantic_total: f64 = ["E1_semantic", "E5_causal", "E7_code", "E10_multimodal", "E12_late", "E13_splade"]
+        .iter()
+        .filter_map(|n| contributions.get(*n))
+        .sum();
+
+    let temporal_total: f64 = ["E2_temporal", "E3_periodic", "E4_positional"]
+        .iter()
+        .filter_map(|n| contributions.get(*n))
+        .sum();
+
+    let relational_total: f64 = ["E8_graph", "E11_entity"]
+        .iter()
+        .filter_map(|n| contributions.get(*n))
+        .sum();
+
+    let structural_total: f64 = contributions.get("E9_hdc").copied().unwrap_or(0.0);
+
     let category_importance: HashMap<String, f64> = [
-        ("SEMANTIC".to_string(), 0.75),
-        ("TEMPORAL".to_string(), 0.0),
-        ("RELATIONAL".to_string(), 0.15),
-        ("STRUCTURAL".to_string(), 0.10),
+        ("SEMANTIC".to_string(), semantic_total),
+        ("TEMPORAL".to_string(), temporal_total), // Should be ~0 per constitution
+        ("RELATIONAL".to_string(), relational_total),
+        ("STRUCTURAL".to_string(), structural_total),
     ]
     .into_iter()
     .collect();
+
+    eprintln!("  Ablation complete. SEMANTIC={:.2}, TEMPORAL={:.2}, RELATIONAL={:.2}, STRUCTURAL={:.2}",
+              semantic_total, temporal_total, relational_total, structural_total);
 
     AblationResults {
         embedder_contributions: contributions,
@@ -685,31 +1057,290 @@ fn compare_strategies(
     queries: &[&ChunkRecord],
     dataset: &RealDataset,
     embedded: &EmbeddedDataset,
-    index: &RetrievalIndex,
+    _index: &RetrievalIndex, // We build our own indexes per strategy
 ) -> StrategyComparison {
-    // Simplified strategy comparison
-    // In production, this would run each strategy and measure actual performance
+    // REAL strategy comparison - measure actual MRR, precision, and latency
+    eprintln!("  Comparing retrieval strategies...");
+
+    // Pre-build vectors for each strategy
+    let mut e1_ids: Vec<Uuid> = Vec::new();
+    let mut e1_vecs: Vec<Vec<f32>> = Vec::new();
+
+    // Multi-space uses weighted combination of E1, E5, E7, E10
+    // Per constitution: E1 (35%), E7 (20%), E5 (15%), E10 (15%)
+    let mut ms_ids: Vec<Uuid> = Vec::new();
+    let mut ms_vecs: Vec<Vec<f32>> = Vec::new();
+
+    for (id, fp) in &embedded.fingerprints {
+        // E1 only
+        if !fp.e1_semantic.is_empty() {
+            e1_ids.push(*id);
+            e1_vecs.push(fp.e1_semantic.clone());
+        }
+
+        // Multi-space: concatenate normalized vectors weighted
+        // Using simpler approach: average of normalized vectors
+        if !fp.e1_semantic.is_empty() && !fp.e7_code.is_empty() {
+            ms_ids.push(*id);
+
+            // Create weighted concatenation for multi-space scoring
+            let e1_norm = normalize_vec(&fp.e1_semantic);
+            let e7_norm = normalize_vec(&fp.e7_code);
+
+            // Combine: use E1 as primary, add E7 weighted average
+            // This is a simplified multi-space representation
+            let combined: Vec<f32> = e1_norm.iter()
+                .zip(e7_norm.iter().cycle())
+                .map(|(a, b)| a * 0.6 + b * 0.4)
+                .collect();
+            ms_vecs.push(combined);
+        }
+    }
+
+    if e1_ids.is_empty() {
+        eprintln!("[ERROR] No E1 embeddings available, cannot run strategy comparison");
+        return StrategyComparison {
+            e1_only: StrategyMetrics { strategy: "e1_only".into(), mrr_at_10: 0.0, precision_at_10: 0.0, avg_query_time_ms: 0.0 },
+            multi_space: StrategyMetrics { strategy: "multi_space".into(), mrr_at_10: 0.0, precision_at_10: 0.0, avg_query_time_ms: 0.0 },
+            pipeline: StrategyMetrics { strategy: "pipeline".into(), mrr_at_10: 0.0, precision_at_10: 0.0, avg_query_time_ms: 0.0 },
+        };
+    }
+
+    // Run E1-only evaluation
+    let (e1_mrr, e1_prec, e1_time) = evaluate_strategy(
+        queries, dataset, embedded,
+        &e1_ids, &e1_vecs, |fp: &SemanticFingerprint| &fp.e1_semantic,
+        "e1_only"
+    );
+
+    // Run multi-space evaluation
+    let (ms_mrr, ms_prec, ms_time) = evaluate_strategy(
+        queries, dataset, embedded,
+        &ms_ids, &ms_vecs, |fp: &SemanticFingerprint| &fp.e1_semantic, // Query uses E1, but corpus uses combined
+        "multi_space"
+    );
+
+    // Pipeline: E6 sparse recall -> E1 scoring -> E12 rerank (simplified to E1 -> E7 rerank)
+    let (pipe_mrr, pipe_prec, pipe_time) = evaluate_pipeline_strategy(
+        queries, dataset, embedded
+    );
+
+    eprintln!("    e1_only: MRR@10={:.4}, P@10={:.4}, {:.2}ms/query", e1_mrr, e1_prec, e1_time);
+    eprintln!("    multi_space: MRR@10={:.4}, P@10={:.4}, {:.2}ms/query", ms_mrr, ms_prec, ms_time);
+    eprintln!("    pipeline: MRR@10={:.4}, P@10={:.4}, {:.2}ms/query", pipe_mrr, pipe_prec, pipe_time);
 
     StrategyComparison {
         e1_only: StrategyMetrics {
             strategy: "e1_only".to_string(),
-            mrr_at_10: 0.65,
-            precision_at_10: 0.45,
-            avg_query_time_ms: 1.5,
+            mrr_at_10: e1_mrr,
+            precision_at_10: e1_prec,
+            avg_query_time_ms: e1_time,
         },
         multi_space: StrategyMetrics {
             strategy: "multi_space".to_string(),
-            mrr_at_10: 0.72,
-            precision_at_10: 0.52,
-            avg_query_time_ms: 3.2,
+            mrr_at_10: ms_mrr,
+            precision_at_10: ms_prec,
+            avg_query_time_ms: ms_time,
         },
         pipeline: StrategyMetrics {
             strategy: "pipeline".to_string(),
-            mrr_at_10: 0.75,
-            precision_at_10: 0.55,
-            avg_query_time_ms: 5.8,
+            mrr_at_10: pipe_mrr,
+            precision_at_10: pipe_prec,
+            avg_query_time_ms: pipe_time,
         },
     }
+}
+
+fn normalize_vec(v: &[f32]) -> Vec<f32> {
+    let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm > f32::EPSILON {
+        v.iter().map(|x| x / norm).collect()
+    } else {
+        v.to_vec()
+    }
+}
+
+fn evaluate_strategy(
+    queries: &[&ChunkRecord],
+    dataset: &RealDataset,
+    embedded: &EmbeddedDataset,
+    corpus_ids: &[Uuid],
+    corpus_vecs: &[Vec<f32>],
+    query_extractor: fn(&context_graph_core::types::fingerprint::SemanticFingerprint) -> &Vec<f32>,
+    strategy_name: &str,
+) -> (f64, f64, f64) {
+    use std::time::Instant;
+
+    let mut mrr_sum = 0.0;
+    let mut prec_sum = 0.0;
+    let mut total_time_ms = 0.0;
+    let mut count = 0;
+
+    for query_chunk in queries.iter().take(100) { // Sample 100 queries
+        let query_uuid = query_chunk.uuid();
+        let query_topic = dataset.get_topic_idx(query_chunk);
+        let query_doc_id = &query_chunk.doc_id;
+
+        let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
+        let query_vec = query_extractor(query_fp);
+        if query_vec.is_empty() { continue; }
+
+        // Exclude same-document chunks for fair evaluation
+        let same_doc_uuids: std::collections::HashSet<Uuid> = embedded.chunk_info.iter()
+            .filter(|(_, info)| &info.doc_id == query_doc_id)
+            .map(|(id, _)| *id)
+            .collect();
+
+        let start = Instant::now();
+
+        // Compute similarities (exclude same-document)
+        let mut scores: Vec<(Uuid, f32)> = corpus_ids.iter()
+            .zip(corpus_vecs.iter())
+            .filter(|(id, _)| !same_doc_uuids.contains(id))
+            .map(|(id, vec)| {
+                let sim = cosine_similarity(query_vec, vec);
+                (*id, sim)
+            })
+            .collect();
+
+        scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        total_time_ms += start.elapsed().as_secs_f64() * 1000.0;
+
+        // Find relevant documents (same topic, different document)
+        let relevant: std::collections::HashSet<Uuid> = embedded.topic_assignments.iter()
+            .filter(|(id, topic)| **topic == query_topic && !same_doc_uuids.contains(id))
+            .map(|(id, _)| *id)
+            .collect();
+
+        if !relevant.is_empty() {
+            // MRR: reciprocal rank of first relevant
+            if let Some(pos) = scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+                mrr_sum += 1.0 / (pos as f64 + 1.0);
+            }
+
+            // Precision@10: how many of top 10 are relevant
+            let hits = scores.iter().take(10).filter(|(id, _)| relevant.contains(id)).count();
+            prec_sum += hits as f64 / 10.0;
+
+            count += 1;
+        }
+    }
+
+    if count == 0 {
+        eprintln!("[WARN] {} strategy: no valid queries evaluated", strategy_name);
+        return (0.0, 0.0, 0.0);
+    }
+
+    (mrr_sum / count as f64, prec_sum / count as f64, total_time_ms / count as f64)
+}
+
+fn evaluate_pipeline_strategy(
+    queries: &[&ChunkRecord],
+    dataset: &RealDataset,
+    embedded: &EmbeddedDataset,
+) -> (f64, f64, f64) {
+    use std::time::Instant;
+
+    // Pipeline: Stage 1 (E1 recall 100) -> Stage 2 (E7 rerank to 10)
+    // This simulates: sparse recall -> dense scoring -> precise rerank
+
+    let mut e1_ids: Vec<Uuid> = Vec::new();
+    let mut e1_vecs: Vec<Vec<f32>> = Vec::new();
+    let mut e7_vecs: HashMap<Uuid, Vec<f32>> = HashMap::new();
+
+    for (id, fp) in &embedded.fingerprints {
+        if !fp.e1_semantic.is_empty() {
+            e1_ids.push(*id);
+            e1_vecs.push(fp.e1_semantic.clone());
+        }
+        if !fp.e7_code.is_empty() {
+            e7_vecs.insert(*id, fp.e7_code.clone());
+        }
+    }
+
+    if e1_ids.is_empty() {
+        eprintln!("[ERROR] Pipeline: No E1 embeddings for recall stage");
+        return (0.0, 0.0, 0.0);
+    }
+
+    let mut mrr_sum = 0.0;
+    let mut prec_sum = 0.0;
+    let mut total_time_ms = 0.0;
+    let mut count = 0;
+
+    for query_chunk in queries.iter().take(100) {
+        let query_uuid = query_chunk.uuid();
+        let query_topic = dataset.get_topic_idx(query_chunk);
+        let query_doc_id = &query_chunk.doc_id;
+
+        let Some(query_fp) = embedded.fingerprints.get(&query_uuid) else { continue };
+        if query_fp.e1_semantic.is_empty() { continue; }
+
+        // Exclude same-document chunks for fair evaluation
+        let same_doc_uuids: std::collections::HashSet<Uuid> = embedded.chunk_info.iter()
+            .filter(|(_, info)| &info.doc_id == query_doc_id)
+            .map(|(id, _)| *id)
+            .collect();
+
+        let start = Instant::now();
+
+        // Stage 1: E1 recall (top 100, excluding same-document)
+        let mut stage1_scores: Vec<(Uuid, f32)> = e1_ids.iter()
+            .zip(e1_vecs.iter())
+            .filter(|(id, _)| !same_doc_uuids.contains(id))
+            .map(|(id, vec)| {
+                let sim = cosine_similarity(&query_fp.e1_semantic, vec);
+                (*id, sim)
+            })
+            .collect();
+
+        stage1_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        let candidates: Vec<Uuid> = stage1_scores.iter().take(100).map(|(id, _)| *id).collect();
+
+        // Stage 2: E7 rerank (if query has E7)
+        let final_scores: Vec<(Uuid, f32)> = if !query_fp.e7_code.is_empty() {
+            let mut rerank_scores: Vec<(Uuid, f32)> = candidates.iter()
+                .filter_map(|id| {
+                    e7_vecs.get(id).map(|vec| {
+                        let sim = cosine_similarity(&query_fp.e7_code, vec);
+                        (*id, sim)
+                    })
+                })
+                .collect();
+            rerank_scores.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+            rerank_scores
+        } else {
+            // Fallback to E1 scores if no E7
+            stage1_scores.into_iter().take(100).collect()
+        };
+
+        total_time_ms += start.elapsed().as_secs_f64() * 1000.0;
+
+        // Evaluate (same topic, different document)
+        let relevant: std::collections::HashSet<Uuid> = embedded.topic_assignments.iter()
+            .filter(|(id, topic)| **topic == query_topic && !same_doc_uuids.contains(id))
+            .map(|(id, _)| *id)
+            .collect();
+
+        if !relevant.is_empty() {
+            if let Some(pos) = final_scores.iter().take(10).position(|(id, _)| relevant.contains(id)) {
+                mrr_sum += 1.0 / (pos as f64 + 1.0);
+            }
+
+            let hits = final_scores.iter().take(10).filter(|(id, _)| relevant.contains(id)).count();
+            prec_sum += hits as f64 / 10.0;
+
+            count += 1;
+        }
+    }
+
+    if count == 0 {
+        eprintln!("[WARN] Pipeline strategy: no valid queries evaluated");
+        return (0.0, 0.0, 0.0);
+    }
+
+    (mrr_sum / count as f64, prec_sum / count as f64, total_time_ms / count as f64)
 }
 
 fn generate_recommendations(
@@ -731,6 +1362,28 @@ fn generate_recommendations(
     if retrieval.recall_at_10 < 0.3 {
         recommendations.push(
             "Recall@10 is low. Consider using the pipeline strategy with sparse recall stage."
+                .to_string(),
+        );
+    }
+
+    // Based on clustering metrics
+    if clustering.purity < 0.6 {
+        recommendations.push(format!(
+            "Clustering purity is {:.3}, below target 0.6. Topic detection may be unreliable - consider more training data.",
+            clustering.purity
+        ));
+    }
+
+    if clustering.silhouette_score < 0.2 {
+        recommendations.push(format!(
+            "Silhouette score is {:.3}, indicating weak cluster separation. Consider adjusting topic threshold.",
+            clustering.silhouette_score
+        ));
+    }
+
+    if clustering.normalized_mutual_info > 0.8 {
+        recommendations.push(
+            "High NMI score indicates excellent topic-embedding alignment. Multi-space search is recommended."
                 .to_string(),
         );
     }
@@ -759,6 +1412,25 @@ fn generate_recommendations(
                 "E7 (code) embedder shows high contribution. Dataset appears code-heavy."
                     .to_string(),
             );
+        }
+    }
+
+    // Category analysis from ablation
+    if let Some(&semantic) = ablation.category_importance.get("SEMANTIC") {
+        if semantic < 0.5 {
+            recommendations.push(format!(
+                "SEMANTIC category contribution is only {:.1}%. Check embedder initialization.",
+                semantic * 100.0
+            ));
+        }
+    }
+
+    if let Some(&temporal) = ablation.category_importance.get("TEMPORAL") {
+        if temporal > 0.01 {
+            recommendations.push(format!(
+                "[WARNING] TEMPORAL embedders showing {:.1}% contribution - should be 0% per constitution AP-60.",
+                temporal * 100.0
+            ));
         }
     }
 

@@ -238,7 +238,7 @@ impl RealDataEmbedder {
 
         // Process in batches
         let chunks_to_process: Vec<_> = dataset.chunks.iter().skip(start_idx).collect();
-        let num_batches = (chunks_to_process.len() + batch_size - 1) / batch_size;
+        let _num_batches = (chunks_to_process.len() + batch_size - 1) / batch_size;
 
         for (batch_idx, batch) in chunks_to_process.chunks(batch_size).enumerate() {
             let batch_start = start_idx + batch_idx * batch_size;
