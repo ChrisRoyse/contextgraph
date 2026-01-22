@@ -1,0 +1,154 @@
+{
+  "timestamp": "2026-01-22T17:35:22.058137924+00:00",
+  "suite": "code-simplification-validation",
+  "results": {
+    "validation_correctness": {
+      "get_session_timeline": {
+        "pass": 5,
+        "fail": 0,
+        "details": [
+          {
+            "name": "limit_below_min",
+            "tool": "get_session_timeline",
+            "passed": true,
+            "latency_ms": 0.068661,
+            "error_message": "limit 0 below minimum 1",
+            "expected_error": "limit 0 below minimum"
+          },
+          {
+            "name": "limit_at_min",
+            "tool": "get_session_timeline",
+            "passed": true,
+            "latency_ms": 873.481243,
+            "error_message": null,
+            "expected_error": null
+          },
+          {
+            "name": "limit_at_max",
+            "tool": "get_session_timeline",
+            "passed": true,
+            "latency_ms": 1331.01423,
+            "error_message": null,
+            "expected_error": null
+          },
+          {
+            "name": "limit_above_max",
+            "tool": "get_session_timeline",
+            "passed": true,
+            "latency_ms": 0.041298999999999995,
+            "error_message": "limit 201 exceeds maximum 200",
+            "expected_error": "limit 201 exceeds maximum"
+          },
+          {
+            "name": "limit_default",
+            "tool": "get_session_timeline",
+            "passed": true,
+            "latency_ms": 988.79047,
+            "error_message": null,
+            "expected_error": null
+          }
+        ]
+      },
+      "traverse_memory_chain": {
+        "pass": 5,
+        "fail": 0,
+        "details": [
+          {
+            "name": "hops_below_min",
+            "tool": "traverse_memory_chain",
+            "passed": true,
+            "latency_ms": 0.075604,
+            "error_message": "hops 0 below minimum 1",
+            "expected_error": "hops 0 below minimum"
+          },
+          {
+            "name": "hops_above_max",
+            "tool": "traverse_memory_chain",
+            "passed": true,
+            "latency_ms": 0.011441999999999999,
+            "error_message": "hops 21 exceeds maximum 20",
+            "expected_error": "hops 21 exceeds maximum"
+          },
+          {
+            "name": "anchorId_missing",
+            "tool": "traverse_memory_chain",
+            "passed": true,
+            "latency_ms": 0.004148,
+            "error_message": "Missing required 'anchorId' parameter",
+            "expected_error": "Missing required 'anchorId'"
+          },
+          {
+            "name": "anchorId_invalid_format",
+            "tool": "traverse_memory_chain",
+            "passed": true,
+            "latency_ms": 0.006773,
+            "error_message": "Invalid anchorId UUID format",
+            "expected_error": "Invalid anchorId UUID format"
+          },
+          {
+            "name": "anchorId_not_found",
+            "tool": "traverse_memory_chain",
+            "passed": true,
+            "latency_ms": 0.039765999999999996,
+            "error_message": "Anchor memory 0ca941dc-206e-41cf-85a1-8abd540f479d not found in storage",
+            "expected_error": "not found in storage"
+          }
+        ]
+      },
+      "get_conversation_context": {
+        "pass": 5,
+        "fail": 0,
+        "details": [
+          {
+            "name": "windowSize_below_min",
+            "tool": "get_conversation_context",
+            "passed": true,
+            "latency_ms": 0.053452,
+            "error_message": "windowSize 0 below minimum 1",
+            "expected_error": "windowSize 0 below minimum"
+          },
+          {
+            "name": "windowSize_at_min",
+            "tool": "get_conversation_context",
+            "passed": true,
+            "latency_ms": 1161.632431,
+            "error_message": null,
+            "expected_error": null
+          },
+          {
+            "name": "windowSize_at_max",
+            "tool": "get_conversation_context",
+            "passed": true,
+            "latency_ms": 584.3743470000001,
+            "error_message": null,
+            "expected_error": null
+          },
+          {
+            "name": "windowSize_above_max",
+            "tool": "get_conversation_context",
+            "passed": true,
+            "latency_ms": 0.035667000000000004,
+            "error_message": "windowSize 51 exceeds maximum 50",
+            "expected_error": "windowSize 51 exceeds maximum"
+          },
+          {
+            "name": "windowSize_default",
+            "tool": "get_conversation_context",
+            "passed": true,
+            "latency_ms": 897.544146,
+            "error_message": null,
+            "expected_error": null
+          }
+        ]
+      }
+    },
+    "latency_overhead": {
+      "validation_p50_ms": 0.039765999999999996,
+      "validation_p99_ms": 0.075604,
+      "baseline_p50_ms": 988.79047,
+      "overhead_percent": -99.99597831884444
+    },
+    "failfast_tests": {}
+  },
+  "overall": "PASS"
+}

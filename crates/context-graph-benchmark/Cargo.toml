@@ -105,3 +105,7 @@ path = "src/bin/causal_realdata_bench.rs"
 [[bin]]
 name = "temporal-realdata-bench"
 path = "src/bin/temporal_realdata_bench.rs"
+
+[[bin]]
+name = "validation-bench"
+path = "src/bin/validation_bench.rs"

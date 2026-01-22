@@ -60,6 +60,13 @@ pub struct SourceMetadata {
     /// Sequence number within session (for E4 temporal ordering).
     /// Memories with higher sequence numbers are more recent within the session.
     pub session_sequence: Option<u64>,
+
+    /// Precomputed causal direction at embedding time (cause/effect/unknown).
+    /// Inferred from E5 embedding norms at storage time for efficient filtering.
+    /// - "cause": Document primarily describes causes (higher E5 cause norm)
+    /// - "effect": Document primarily describes effects (higher E5 effect norm)
+    /// - "unknown": No clear causal direction detected
+    pub causal_direction: Option<String>,
 }
 
 /// Type of memory source.
@@ -90,6 +97,7 @@ impl Default for SourceMetadata {
             tool_name: None,
             session_id: None,
             session_sequence: None,
+            causal_direction: None,
         }
     }
 }
@@ -114,6 +122,7 @@ impl SourceMetadata {
             tool_name: None,
             session_id: None,
             session_sequence: None,
+            causal_direction: None,
         }
     }
 
@@ -144,6 +153,7 @@ impl SourceMetadata {
             tool_name: None,
             session_id: None,
             session_sequence: None,
+            causal_direction: None,
         }
     }
 
@@ -165,6 +175,7 @@ impl SourceMetadata {
             tool_name,
             session_id: None,
             session_sequence: None,
+            causal_direction: None,
         }
     }
 
@@ -181,6 +192,7 @@ impl SourceMetadata {
             tool_name: None,
             session_id: None,
             session_sequence: None,
+            causal_direction: None,
         }
     }
 
@@ -197,7 +209,18 @@ impl SourceMetadata {
             tool_name: None,
             session_id: None,
             session_sequence: None,
+            causal_direction: None,
         }
+    }
+
+    /// Set causal direction for this memory.
+    ///
+    /// # Arguments
+    ///
+    /// * `direction` - Causal direction ("cause", "effect", or "unknown")
+    pub fn with_causal_direction(mut self, direction: impl Into<String>) -> Self {
+        self.causal_direction = Some(direction.into());
+        self
     }
 
     /// Set session context for temporal tracking.

@@ -5,6 +5,7 @@
 
 pub mod causal;
 pub mod comparative;
+pub mod failfast;
 pub mod retrieval;
 pub mod scaling;
 pub mod temporal;
@@ -42,3 +43,8 @@ pub use temporal_realdata::{
     TimestampBaselineResults, TemporalBenchmarkTimings, TemporalDatasetStats,
 };
 pub use topic::TopicRunner;
+pub use failfast::{
+    FailFastScenario, FailFastTrigger, ExpectedBehavior, FailFastResult,
+    FailFastSummary, ErrorMessageQuality,
+    build_sequence_tool_scenarios, analyze_error_message_quality, verify_failfast_behavior,
+};

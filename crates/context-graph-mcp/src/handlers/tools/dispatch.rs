@@ -110,6 +110,10 @@ impl Handlers {
                 self.call_compare_session_states(id, arguments).await
             }
 
+            // ========== CAUSAL TOOLS (E5 Priority 1 Enhancement) ==========
+            tool_names::SEARCH_CAUSES => self.call_search_causes(id, arguments).await,
+            tool_names::GET_CAUSAL_CHAIN => self.call_get_causal_chain(id, arguments).await,
+
             // Unknown tool
             _ => JsonRpcResponse::error(
                 id,

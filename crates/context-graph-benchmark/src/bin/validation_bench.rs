@@ -12,14 +12,21 @@
 //!     cargo run -p context-graph-benchmark --bin validation-bench --features real-embeddings -- --tool get_conversation_context
 //!     cargo run -p context-graph-benchmark --bin validation-bench --features real-embeddings -- --test-failfast
 
+#![allow(dead_code)]
+
 use std::collections::HashMap;
 use std::fs::{self, File};
 use std::io::Write;
 use std::path::Path;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
 
+#[cfg(feature = "real-embeddings")]
+use std::sync::Arc;
+#[cfg(feature = "real-embeddings")]
+use std::time::Instant;
+
+#[cfg(feature = "real-embeddings")]
 use chrono::Utc;
+
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
@@ -41,24 +48,13 @@ enum TestExpectation {
 
 /// Test result
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct TestResult {
-    name: String,
-    tool: String,
-    passed: bool,
-    latency_ms: f64,
-    error_message: Option<String>,
-    expected_error: Option<String>,
-}
-
-/// Validation metrics for a benchmark run
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct ValidationMetrics {
-    pub total_tests: usize,
-    pub passed: usize,
-    pub failed: usize,
-    pub pass_rate: f64,
-    pub avg_valid_latency_ms: f64,
-    pub avg_invalid_latency_ms: f64,
+pub struct TestResult {
+    pub name: String,
+    pub tool: String,
+    pub passed: bool,
+    pub latency_ms: f64,
+    pub error_message: Option<String>,
+    pub expected_error: Option<String>,
 }
 
 /// Complete benchmark results
@@ -92,22 +88,12 @@ pub struct LatencyOverhead {
     pub overhead_percent: f64,
 }
 
-/// Validation constants (copied from sequence_tools.rs for reference)
-mod validation {
-    pub const MIN_WINDOW_SIZE: u64 = 1;
-    pub const MAX_WINDOW_SIZE: u64 = 50;
-    pub const DEFAULT_WINDOW_SIZE: u64 = 10;
-
-    pub const MIN_LIMIT: u64 = 1;
-    pub const MAX_LIMIT: u64 = 200;
-    pub const DEFAULT_LIMIT: u64 = 50;
-
-    pub const MIN_HOPS: u64 = 1;
-    pub const MAX_HOPS: u64 = 20;
-    pub const DEFAULT_HOPS: u64 = 5;
-}
-
-fn build_test_cases() -> Vec<TestCase> {
+/// Build validation test cases.
+///
+/// # Arguments
+/// * `valid_anchor_id` - A valid anchor ID that exists in storage (for hops tests).
+///                       If None, hops tests will use a random UUID that doesn't exist.
+fn build_test_cases(valid_anchor_id: Option<&str>) -> Vec<TestCase> {
     let mut cases = Vec::new();
 
     // ========== get_conversation_context: windowSize ==========
@@ -152,6 +138,9 @@ fn build_test_cases() -> Vec<TestCase> {
     });
 
     // ========== get_session_timeline: limit ==========
+    // Note: These tests require a session ID to be configured via handlers.set_session_id()
+    // Session ID check happens BEFORE limit validation per sequence_tools.rs:280-283
+
     // Error: below minimum
     cases.push(TestCase {
         name: "limit_below_min".to_string(),
@@ -193,26 +182,30 @@ fn build_test_cases() -> Vec<TestCase> {
     });
 
     // ========== traverse_memory_chain: hops ==========
-    // Note: These need a valid anchorId to test hops validation
-    let test_anchor = Uuid::new_v4().to_string();
+    // CRITICAL: Hops tests need a VALID anchor that exists in storage.
+    // Anchor validation (sequence_tools.rs:437-452) happens BEFORE hops validation.
+    // Without a valid anchor, tests fail with "Anchor not found" instead of hops errors.
+    let anchor_for_hops = valid_anchor_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| Uuid::new_v4().to_string());
 
-    // Error: below minimum
+    // Error: below minimum (requires valid anchor to reach hops validation)
     cases.push(TestCase {
         name: "hops_below_min".to_string(),
         tool: "traverse_memory_chain".to_string(),
-        args: json!({ "anchorId": test_anchor, "hops": 0 }),
+        args: json!({ "anchorId": anchor_for_hops, "hops": 0 }),
         expected: TestExpectation::Error("hops 0 below minimum".to_string()),
     });
 
-    // Error: above maximum
+    // Error: above maximum (requires valid anchor to reach hops validation)
     cases.push(TestCase {
         name: "hops_above_max".to_string(),
         tool: "traverse_memory_chain".to_string(),
-        args: json!({ "anchorId": test_anchor, "hops": 21 }),
+        args: json!({ "anchorId": anchor_for_hops, "hops": 21 }),
         expected: TestExpectation::Error("hops 21 exceeds maximum".to_string()),
     });
 
-    // Error: missing anchorId
+    // Error: missing anchorId (no anchor needed - fails at parameter presence check)
     cases.push(TestCase {
         name: "anchorId_missing".to_string(),
         tool: "traverse_memory_chain".to_string(),
@@ -220,7 +213,7 @@ fn build_test_cases() -> Vec<TestCase> {
         expected: TestExpectation::Error("Missing required 'anchorId'".to_string()),
     });
 
-    // Error: invalid UUID format
+    // Error: invalid UUID format (no anchor needed - fails at UUID parse)
     cases.push(TestCase {
         name: "anchorId_invalid_format".to_string(),
         tool: "traverse_memory_chain".to_string(),
@@ -228,7 +221,7 @@ fn build_test_cases() -> Vec<TestCase> {
         expected: TestExpectation::Error("Invalid anchorId UUID format".to_string()),
     });
 
-    // Error: nonexistent anchor (valid UUID but not in storage)
+    // Error: nonexistent anchor (valid UUID format but not in storage)
     let nonexistent_uuid = Uuid::new_v4().to_string();
     cases.push(TestCase {
         name: "anchorId_not_found".to_string(),
@@ -270,8 +263,6 @@ fn build_failfast_test_cases() -> Vec<TestCase> {
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
-    let args: Vec<String> = std::env::args().collect();
-
     println!("=======================================================================");
     println!("  VALIDATION BENCHMARK: Code Simplification Tests");
     println!("=======================================================================");
@@ -286,7 +277,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     #[cfg(feature = "real-embeddings")]
     {
-        let test_tool = args.iter().position(|a| a == "--tool").map(|i| args.get(i + 1)).flatten();
+        let args: Vec<String> = std::env::args().collect();
+        let test_tool = args.iter().position(|a| a == "--tool").and_then(|i| args.get(i + 1));
         let test_all = args.iter().any(|a| a == "--test-all");
         let test_failfast = args.iter().any(|a| a == "--test-failfast");
 
@@ -297,7 +289,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(feature = "real-embeddings")]
 async fn run_validation_benchmark(
     filter_tool: Option<&str>,
-    test_all: bool,
+    _test_all: bool,
     test_failfast: bool,
 ) -> Result<(), Box<dyn std::error::Error>> {
     use context_graph_core::monitoring::{LayerStatusProvider, StubLayerStatusProvider};
@@ -315,7 +307,7 @@ async fn run_validation_benchmark(
     println!("PHASE 1: Initializing MCP handlers");
     println!("{}", "-".repeat(70));
 
-    let init_start = Instant::now();
+    let init_start = std::time::Instant::now();
 
     // Initialize global warm provider (loads all 13 models)
     initialize_global_warm_provider().await?;
@@ -343,15 +335,39 @@ async fn run_validation_benchmark(
     println!();
 
     // ========================================================================
-    // PHASE 2: Run validation correctness tests
+    // PHASE 2: Set up test prerequisites
     // ========================================================================
-    println!("PHASE 2: Running validation correctness tests");
+    println!("PHASE 2: Setting up test prerequisites");
+    println!("{}", "-".repeat(70));
+
+    // 2a. Configure session ID for get_session_timeline tests
+    // Per handlers.rs:153-165, session ID is required for session-dependent tools.
+    // get_session_timeline (sequence_tools.rs:280-283) checks session ID BEFORE limit validation.
+    const TEST_SESSION_ID: &str = "validation-bench-session";
+    handlers.set_session_id(Some(TEST_SESSION_ID.to_string()));
+    println!("  Session ID configured: {}", TEST_SESSION_ID);
+
+    // 2b. Create a test anchor memory for hops validation tests
+    // Per sequence_tools.rs:437-452, anchor existence is verified BEFORE hops validation.
+    // We need a REAL memory in storage for hops tests to reach hops validation logic.
+    let anchor_id = create_test_anchor(&handlers).await?;
+    println!("  Test anchor created: {}", anchor_id);
+
+    // 2c. Verify anchor exists in storage (FAIL FAST if not)
+    verify_anchor_exists(&handlers, &anchor_id).await?;
+    println!("  Anchor verified in storage");
+    println!();
+
+    // ========================================================================
+    // PHASE 3: Run validation correctness tests
+    // ========================================================================
+    println!("PHASE 3: Running validation correctness tests");
     println!("{}", "-".repeat(70));
 
     let test_cases = if test_failfast {
         build_failfast_test_cases()
     } else {
-        build_test_cases()
+        build_test_cases(Some(&anchor_id))
     };
 
     let filtered_cases: Vec<_> = if let Some(tool) = filter_tool {
@@ -385,28 +401,39 @@ async fn run_validation_benchmark(
         let response = handlers.dispatch(request).await;
         let latency_ms = test_start.elapsed().as_secs_f64() * 1000.0;
 
+        // MCP tools return errors as successful JSON-RPC responses with isError: true in content
+        // Extract the tool error from the MCP response format
+        let (is_tool_error, tool_error_message) = extract_mcp_tool_error(&response);
+
         // Evaluate result
-        let (passed, error_message) = match (&case.expected, &response.error) {
-            (TestExpectation::Success, None) => {
+        let (passed, error_message) = match (&case.expected, is_tool_error, &tool_error_message) {
+            (TestExpectation::Success, false, _) => {
                 valid_latencies.push(latency_ms);
                 (true, None)
             }
-            (TestExpectation::Success, Some(err)) => {
-                (false, Some(err.message.clone()))
+            (TestExpectation::Success, true, Some(msg)) => {
+                (false, Some(format!("Expected success, got error: {}", msg)))
             }
-            (TestExpectation::Error(expected), None) => {
-                (false, Some(format!("Expected error containing '{}', got success", expected)))
+            (TestExpectation::Success, true, None) => {
+                (false, Some("Expected success, got error (no message)".to_string()))
             }
-            (TestExpectation::Error(expected), Some(err)) => {
+            (TestExpectation::Error(expected), true, Some(msg)) => {
                 invalid_latencies.push(latency_ms);
-                if err.message.contains(expected) {
-                    (true, Some(err.message.clone()))
+                if msg.contains(expected) {
+                    (true, Some(msg.clone()))
                 } else {
                     (false, Some(format!(
                         "Expected error containing '{}', got: {}",
-                        expected, err.message
+                        expected, msg
                     )))
                 }
+            }
+            (TestExpectation::Error(expected), true, None) => {
+                invalid_latencies.push(latency_ms);
+                (false, Some(format!("Expected error containing '{}', got error with no message", expected)))
+            }
+            (TestExpectation::Error(expected), false, _) => {
+                (false, Some(format!("Expected error containing '{}', got success", expected)))
             }
         };
 
@@ -446,23 +473,11 @@ async fn run_validation_benchmark(
     println!();
 
     // ========================================================================
-    // PHASE 3: Compute metrics
+    // PHASE 4: Compute metrics
     // ========================================================================
     let total_tests = filtered_cases.len();
     let passed: usize = results_by_tool.values().map(|t| t.pass).sum();
     let failed: usize = results_by_tool.values().map(|t| t.fail).sum();
-
-    let avg_valid_latency = if valid_latencies.is_empty() {
-        0.0
-    } else {
-        valid_latencies.iter().sum::<f64>() / valid_latencies.len() as f64
-    };
-
-    let avg_invalid_latency = if invalid_latencies.is_empty() {
-        0.0
-    } else {
-        invalid_latencies.iter().sum::<f64>() / invalid_latencies.len() as f64
-    };
 
     // Compute latency percentiles
     let (valid_p50, valid_p99) = compute_percentiles(&valid_latencies);
@@ -476,7 +491,7 @@ async fn run_validation_benchmark(
     };
 
     // ========================================================================
-    // PHASE 4: Build results
+    // PHASE 5: Build results
     // ========================================================================
     let failfast_results: HashMap<String, String> = if test_failfast {
         results_by_tool.iter().flat_map(|(_, tr)| {
@@ -506,7 +521,7 @@ async fn run_validation_benchmark(
     };
 
     // ========================================================================
-    // PHASE 5: Print summary and save reports
+    // PHASE 6: Print summary and save reports
     // ========================================================================
     println!("=======================================================================");
     println!("  VALIDATION BENCHMARK RESULTS");
@@ -544,6 +559,161 @@ async fn run_validation_benchmark(
     drop(tempdir);
 
     Ok(())
+}
+
+/// Create a test anchor memory in storage.
+///
+/// Uses the MCP `store_memory` tool to create a real memory that can be used
+/// as an anchor for hops validation tests. Returns the fingerprintId of the
+/// created memory.
+///
+/// # Errors
+/// Returns an error if:
+/// - MCP dispatch fails
+/// - Response parsing fails
+/// - fingerprintId extraction fails
+#[cfg(feature = "real-embeddings")]
+async fn create_test_anchor(
+    handlers: &context_graph_mcp::handlers::Handlers,
+) -> Result<String, Box<dyn std::error::Error>> {
+    use context_graph_mcp::protocol::{JsonRpcId, JsonRpcRequest};
+
+    println!("  Creating test anchor via store_memory MCP tool...");
+
+    // Build store_memory request
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "tools/call".to_string(),
+        id: Some(JsonRpcId::Number(9999)),
+        params: Some(json!({
+            "name": "store_memory",
+            "arguments": {
+                "content": "Test anchor memory for validation benchmark. This memory is used to test hops validation in traverse_memory_chain.",
+                "importance": 0.5
+            }
+        })),
+    };
+
+    // Dispatch to MCP handlers
+    let response = handlers.dispatch(request).await;
+
+    // Check for JSON-RPC error
+    if let Some(ref err) = response.error {
+        return Err(format!("store_memory MCP error: {} (code: {})", err.message, err.code).into());
+    }
+
+    // Extract fingerprintId from response
+    // Response format: { "content": [{ "type": "text", "text": "{\"fingerprintId\": \"...\", ...}" }] }
+    let result = response.result.ok_or("store_memory returned no result")?;
+
+    let content = result
+        .get("content")
+        .and_then(|c| c.as_array())
+        .ok_or("store_memory result has no content array")?;
+
+    let first = content.first().ok_or("store_memory content array is empty")?;
+
+    let text = first
+        .get("text")
+        .and_then(|t| t.as_str())
+        .ok_or("store_memory content has no text field")?;
+
+    // Parse the JSON text to extract fingerprintId
+    let parsed: serde_json::Value =
+        serde_json::from_str(text).map_err(|e| format!("Failed to parse store_memory response: {}", e))?;
+
+    let fingerprint_id = parsed
+        .get("fingerprintId")
+        .and_then(|v| v.as_str())
+        .ok_or("store_memory response has no fingerprintId")?;
+
+    Ok(fingerprint_id.to_string())
+}
+
+/// Verify that an anchor memory exists in storage.
+///
+/// Uses the MCP `traverse_memory_chain` tool with the anchor to verify it exists.
+/// This FAIL FAST check ensures the anchor was properly stored before running tests.
+///
+/// # Errors
+/// Returns an error if the anchor doesn't exist or verification fails.
+#[cfg(feature = "real-embeddings")]
+async fn verify_anchor_exists(
+    handlers: &context_graph_mcp::handlers::Handlers,
+    anchor_id: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use context_graph_mcp::protocol::{JsonRpcId, JsonRpcRequest};
+
+    // Try to use the anchor in traverse_memory_chain with valid hops
+    // If it returns success or any error OTHER than "not found in storage", the anchor exists
+    let request = JsonRpcRequest {
+        jsonrpc: "2.0".to_string(),
+        method: "tools/call".to_string(),
+        id: Some(JsonRpcId::Number(9998)),
+        params: Some(json!({
+            "name": "traverse_memory_chain",
+            "arguments": {
+                "anchorId": anchor_id,
+                "hops": 1  // Valid hops value
+            }
+        })),
+    };
+
+    let response = handlers.dispatch(request).await;
+
+    // Check response - we expect success (anchor exists) or any other error (but not "not found")
+    let (is_error, error_msg) = extract_mcp_tool_error(&response);
+
+    if is_error {
+        if let Some(ref msg) = error_msg {
+            if msg.contains("not found in storage") {
+                return Err(format!(
+                    "FAIL FAST: Anchor {} was not persisted to storage. \
+                     store_memory succeeded but anchor cannot be retrieved. \
+                     Error: {}",
+                    anchor_id, msg
+                )
+                .into());
+            }
+            // Any other error is acceptable - anchor exists but something else failed
+            println!("    Note: traverse_memory_chain returned error (expected for empty db): {}", msg);
+        }
+    }
+
+    Ok(())
+}
+
+/// Extract error information from MCP tool response.
+///
+/// MCP tools return errors as successful JSON-RPC responses with `isError: true` in content.
+/// Returns (is_error, error_message_option).
+#[cfg(feature = "real-embeddings")]
+fn extract_mcp_tool_error(response: &context_graph_mcp::protocol::JsonRpcResponse) -> (bool, Option<String>) {
+    // Check if there's a JSON-RPC level error first
+    if let Some(ref err) = response.error {
+        return (true, Some(err.message.clone()));
+    }
+
+    // Check the MCP tool result for isError flag
+    if let Some(ref result) = response.result {
+        // Check isError flag
+        let is_error = result.get("isError")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if is_error {
+            // Extract error message from content array
+            let message = result.get("content")
+                .and_then(|c| c.as_array())
+                .and_then(|arr| arr.first())
+                .and_then(|item| item.get("text"))
+                .and_then(|t| t.as_str())
+                .map(String::from);
+            return (true, message);
+        }
+    }
+
+    (false, None)
 }
 
 fn compute_percentiles(values: &[f64]) -> (f64, f64) {

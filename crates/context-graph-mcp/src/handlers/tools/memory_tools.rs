@@ -48,6 +48,51 @@ const MAX_RATIONALE_LEN: usize = 1024;
 const MIN_TOP_K: u64 = 1;
 const MAX_TOP_K: u64 = 100;
 
+// E5 Causal Direction inference threshold
+// Per Phase 5: Infer causal direction from E5 embedding norms
+const CAUSAL_DIRECTION_THRESHOLD: f32 = 0.1;
+
+/// Infer causal direction from E5 asymmetric embeddings.
+///
+/// Compares the norms of the e5_causal_as_cause and e5_causal_as_effect vectors
+/// to determine if the content primarily describes causes or effects.
+///
+/// # Returns
+/// - Some("cause") if cause norm is significantly higher (>10% difference)
+/// - Some("effect") if effect norm is significantly higher
+/// - Some("unknown") if norms are similar or both are near zero
+fn infer_causal_direction_from_fingerprint(fingerprint: &SemanticFingerprint) -> String {
+    let cause_norm: f32 = fingerprint
+        .e5_causal_as_cause
+        .iter()
+        .map(|x| x * x)
+        .sum::<f32>()
+        .sqrt();
+    let effect_norm: f32 = fingerprint
+        .e5_causal_as_effect
+        .iter()
+        .map(|x| x * x)
+        .sum::<f32>()
+        .sqrt();
+
+    // Require >10% difference to be confident in direction
+    let diff_ratio = if effect_norm > f32::EPSILON {
+        (cause_norm - effect_norm) / effect_norm
+    } else if cause_norm > f32::EPSILON {
+        1.0 // All cause, no effect
+    } else {
+        0.0 // Both zero
+    };
+
+    if diff_ratio > CAUSAL_DIRECTION_THRESHOLD {
+        "cause".to_string()
+    } else if diff_ratio < -CAUSAL_DIRECTION_THRESHOLD {
+        "effect".to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
 impl Handlers {
     /// inject_context tool implementation.
     ///
@@ -198,6 +243,10 @@ impl Handlers {
         // This must be done before TeleologicalFingerprint::new() moves the semantic fingerprint.
         let cluster_array = embedding_output.fingerprint.to_cluster_array();
 
+        // E5 Phase 5: Infer causal direction BEFORE fingerprint is consumed
+        // This is used later for source metadata storage
+        let causal_direction = infer_causal_direction_from_fingerprint(&embedding_output.fingerprint);
+
         // Create TeleologicalFingerprint from embeddings with user-specified importance
         let fingerprint =
             TeleologicalFingerprint::with_importance(embedding_output.fingerprint, content_hash, importance);
@@ -266,6 +315,7 @@ impl Handlers {
             end_line: None,
             hook_type: None,
             tool_name: None,
+            causal_direction: Some(causal_direction.clone()),
         };
 
         if let Err(e) = self
@@ -277,6 +327,7 @@ impl Handlers {
                 fingerprint_id = %fingerprint_id,
                 error = %e,
                 session_sequence = session_sequence,
+                causal_direction = %causal_direction,
                 "inject_context: Failed to store source metadata (fingerprint saved successfully). \
                  E4 sequence retrieval may fall back to timestamp-based ordering."
             );
@@ -284,6 +335,7 @@ impl Handlers {
             debug!(
                 fingerprint_id = %fingerprint_id,
                 session_sequence = session_sequence,
+                causal_direction = %causal_direction,
                 "inject_context: Source metadata stored for E4 sequence retrieval"
             );
         }
@@ -372,6 +424,10 @@ impl Handlers {
         // This must be done before TeleologicalFingerprint::new() moves the semantic fingerprint.
         let cluster_array = embedding_output.fingerprint.to_cluster_array();
 
+        // E5 Phase 5: Infer causal direction BEFORE fingerprint is consumed
+        // This is used later for source metadata storage
+        let causal_direction = infer_causal_direction_from_fingerprint(&embedding_output.fingerprint);
+
         // Create TeleologicalFingerprint from embeddings with user-specified importance
         let fingerprint =
             TeleologicalFingerprint::with_importance(embedding_output.fingerprint, content_hash, importance);
@@ -435,6 +491,7 @@ impl Handlers {
                     end_line: None,
                     hook_type: None,
                     tool_name: None,
+                    causal_direction: Some(causal_direction.clone()),
                 };
 
                 if let Err(e) = self
@@ -446,6 +503,7 @@ impl Handlers {
                         fingerprint_id = %fingerprint_id,
                         error = %e,
                         session_sequence = session_sequence,
+                        causal_direction = %causal_direction,
                         "store_memory: Failed to store source metadata (fingerprint saved successfully). \
                          E4 sequence retrieval may fall back to timestamp-based ordering."
                     );
@@ -453,6 +511,7 @@ impl Handlers {
                     debug!(
                         fingerprint_id = %fingerprint_id,
                         session_sequence = session_sequence,
+                        causal_direction = %causal_direction,
                         "store_memory: Source metadata stored for E4 sequence retrieval"
                     );
                 }

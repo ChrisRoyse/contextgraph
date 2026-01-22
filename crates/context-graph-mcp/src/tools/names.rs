@@ -45,3 +45,7 @@ pub const GET_CONVERSATION_CONTEXT: &str = "get_conversation_context";
 pub const GET_SESSION_TIMELINE: &str = "get_session_timeline";
 pub const TRAVERSE_MEMORY_CHAIN: &str = "traverse_memory_chain";
 pub const COMPARE_SESSION_STATES: &str = "compare_session_states";
+
+// ========== CAUSAL TOOLS (E5 Priority 1 Enhancement) ==========
+pub const SEARCH_CAUSES: &str = "search_causes";
+pub const GET_CAUSAL_CHAIN: &str = "get_causal_chain";

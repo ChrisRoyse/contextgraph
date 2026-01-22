@@ -8,6 +8,7 @@
 //! - **Performance**: Latency percentiles, throughput, memory
 //! - **Temporal**: E2/E3/E4 embedder effectiveness metrics
 //! - **Causal**: E5 embedder effectiveness metrics (direction detection, asymmetric retrieval)
+//! - **Validation**: Input validation overhead and correctness metrics
 
 pub mod causal;
 pub mod clustering;
@@ -16,6 +17,7 @@ pub mod performance;
 pub mod retrieval;
 pub mod temporal;
 pub mod temporal_realdata;
+pub mod validation;
 
 pub use causal::CausalMetrics;
 pub use clustering::ClusteringMetrics;
@@ -24,6 +26,10 @@ pub use performance::PerformanceMetrics;
 pub use retrieval::RetrievalMetrics;
 pub use temporal::TemporalMetrics;
 pub use temporal_realdata::TemporalRealdataMetrics;
+pub use validation::{
+    ValidationMetrics, ToolValidationMetrics, TestCaseResult,
+    BoundaryTestConfig, BoundaryTestValue, sequence_tool_boundary_configs,
+};
 
 /// Combined metrics for a single benchmark run.
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
