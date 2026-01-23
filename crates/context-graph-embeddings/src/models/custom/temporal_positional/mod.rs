@@ -42,11 +42,17 @@
 mod constants;
 mod encoding;
 mod model;
+mod session_signature;
 mod timestamp;
 
 #[cfg(test)]
 mod tests;
 
 // Re-export public API for backwards compatibility
-pub use constants::{DEFAULT_BASE, TEMPORAL_POSITIONAL_DIMENSION};
+pub use constants::{
+    DEFAULT_BASE, HYBRID_MODE_DEFAULT, POSITION_ENCODING_DIMENSION, SESSION_SIGNATURE_DIMENSION,
+    TEMPORAL_POSITIONAL_DIMENSION,
+};
 pub use model::TemporalPositionalModel;
+pub use session_signature::{compute_session_signature, compute_session_signature_or_default};
+pub use timestamp::{HybridPositionInfo, PositionInfo};

@@ -144,3 +144,7 @@ path = "src/bin/graph_realdata_bench.rs"
 [[bin]]
 name = "validation-realdata-bench"
 path = "src/bin/validation_realdata_bench.rs"
+
+[[bin]]
+name = "e4-hybrid-session-bench"
+path = "src/bin/e4_hybrid_session_bench.rs"

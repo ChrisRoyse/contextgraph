@@ -6,10 +6,12 @@
 //! - `uniqueness` - Uniqueness and determinism tests
 //! - `edge_cases` - Edge case handling tests
 //! - `verification` - Source of truth and evidence tests
+//! - `hybrid` - Hybrid session+position encoding mode tests
 
 mod construction;
 mod edge_cases;
 mod embedding;
+mod hybrid;
 mod uniqueness;
 mod verification;
 

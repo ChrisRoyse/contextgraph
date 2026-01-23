@@ -73,6 +73,22 @@ pub struct TemporalMetrics {
     pub e4_boundary_f1: f64,
     /// Symmetry validation passed.
     pub symmetry_validated: bool,
+
+    // E4 Hybrid Session Clustering Metrics
+    /// E4 session separation ratio (intra/inter similarity).
+    pub e4_session_separation_ratio: Option<f64>,
+    /// E4 intra-session similarity (average within same session).
+    pub e4_intra_session_similarity: Option<f64>,
+    /// E4 inter-session similarity (average across different sessions).
+    pub e4_inter_session_similarity: Option<f64>,
+    /// E4 session silhouette score.
+    pub e4_session_silhouette: Option<f64>,
+    /// E4 intra-session ordering accuracy.
+    pub e4_intra_session_ordering: Option<f64>,
+    /// E4 hybrid vs legacy improvement percentage.
+    pub e4_hybrid_vs_legacy_improvement: Option<f64>,
+    /// E4 hybrid before/after symmetry score.
+    pub e4_hybrid_symmetry_score: Option<f64>,
 }
 
 /// Causal embedder metrics (E5).

@@ -533,44 +533,66 @@ fn gpu_forward(
 }
 
 /// Apply LayerNorm.
+///
+/// Uses broadcast operations for proper shape handling with 3D tensors [batch, seq_len, hidden].
 fn layer_norm(
     hidden_states: &Tensor,
     weight: &Tensor,
     bias: &Tensor,
     eps: f64,
 ) -> EmbeddingResult<Tensor> {
+    // Compute mean over the last dimension (hidden dimension) using D::Minus1
     let mean = hidden_states
-        .mean_keepdim(2)
+        .mean_keepdim(candle_core::D::Minus1)
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("ContextualModel layer_norm mean failed: {}", e),
         })?;
 
-    let diff = (hidden_states - &mean).map_err(|e| EmbeddingError::GpuError {
-        message: format!("ContextualModel layer_norm diff failed: {}", e),
-    })?;
+    // Center the input using broadcast subtraction (handles shape [B, S, H] - [B, S, 1])
+    let x_centered = hidden_states
+        .broadcast_sub(&mean)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("ContextualModel layer_norm center failed: {}", e),
+        })?;
 
-    let variance = diff
+    // Compute variance over the last dimension
+    let variance = x_centered
         .sqr()
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("ContextualModel layer_norm sqr failed: {}", e),
         })?
-        .mean_keepdim(2)
+        .mean_keepdim(candle_core::D::Minus1)
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("ContextualModel layer_norm variance failed: {}", e),
         })?;
 
-    let normalized = (diff / (variance + eps).map_err(|e| EmbeddingError::GpuError {
-        message: format!("ContextualModel layer_norm add eps failed: {}", e),
-    })?.sqrt().map_err(|e| EmbeddingError::GpuError {
-        message: format!("ContextualModel layer_norm sqrt failed: {}", e),
-    })?)
-    .map_err(|e| EmbeddingError::GpuError {
-        message: format!("ContextualModel layer_norm div failed: {}", e),
-    })?;
+    // Compute standard deviation
+    let std = (variance + eps)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("ContextualModel layer_norm add eps failed: {}", e),
+        })?
+        .sqrt()
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("ContextualModel layer_norm sqrt failed: {}", e),
+        })?;
 
-    (normalized.broadcast_mul(weight).map_err(|e| EmbeddingError::GpuError {
-        message: format!("ContextualModel layer_norm mul weight failed: {}", e),
-    })? + bias)
+    // Normalize using broadcast division (handles shape [B, S, H] / [B, S, 1])
+    let normalized = x_centered
+        .broadcast_div(&std)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("ContextualModel layer_norm div failed: {}", e),
+        })?;
+
+    // Scale by weight using broadcast multiply
+    let scaled = normalized
+        .broadcast_mul(weight)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("ContextualModel layer_norm mul weight failed: {}", e),
+        })?;
+
+    // Add bias using broadcast add
+    scaled
+        .broadcast_add(bias)
         .map_err(|e| EmbeddingError::GpuError {
             message: format!("ContextualModel layer_norm add bias failed: {}", e),
         })
@@ -960,3 +982,107 @@ impl EmbeddingModel for ContextualModel {
 
 unsafe impl Send for ContextualModel {}
 unsafe impl Sync for ContextualModel {}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use candle_core::{Device, Tensor};
+
+    #[test]
+    fn test_layer_norm_shape_compatibility() {
+        let device = Device::Cpu;
+
+        // Simulate typical input shape: [batch=1, seq_len=128, hidden=768]
+        let hidden_states = Tensor::randn(0.0f32, 1.0, (1, 128, 768), &device).unwrap();
+        let weight = Tensor::ones((768,), candle_core::DType::F32, &device).unwrap();
+        let bias = Tensor::zeros((768,), candle_core::DType::F32, &device).unwrap();
+
+        let result = layer_norm(&hidden_states, &weight, &bias, 1e-12);
+
+        assert!(
+            result.is_ok(),
+            "layer_norm should succeed: {:?}",
+            result.err()
+        );
+        let output = result.unwrap();
+        assert_eq!(
+            output.dims(),
+            &[1, 128, 768],
+            "Output shape should match input shape"
+        );
+    }
+
+    #[test]
+    fn test_layer_norm_different_batch_sizes() {
+        let device = Device::Cpu;
+
+        for batch_size in [1, 2, 4] {
+            let hidden_states =
+                Tensor::randn(0.0f32, 1.0, (batch_size, 64, 768), &device).unwrap();
+            let weight = Tensor::ones((768,), candle_core::DType::F32, &device).unwrap();
+            let bias = Tensor::zeros((768,), candle_core::DType::F32, &device).unwrap();
+
+            let result = layer_norm(&hidden_states, &weight, &bias, 1e-12);
+
+            assert!(
+                result.is_ok(),
+                "layer_norm should succeed for batch_size={}: {:?}",
+                batch_size,
+                result.err()
+            );
+            let output = result.unwrap();
+            assert_eq!(output.dims(), &[batch_size, 64, 768]);
+        }
+    }
+
+    #[test]
+    fn test_layer_norm_normalizes_output() {
+        let device = Device::Cpu;
+
+        // Create input with known non-zero mean
+        let hidden_states = Tensor::randn(5.0f32, 2.0, (1, 10, 768), &device).unwrap();
+        let weight = Tensor::ones((768,), candle_core::DType::F32, &device).unwrap();
+        let bias = Tensor::zeros((768,), candle_core::DType::F32, &device).unwrap();
+
+        let output = layer_norm(&hidden_states, &weight, &bias, 1e-12).unwrap();
+
+        // Check that output mean is close to 0 (per position in the sequence)
+        let output_mean = output
+            .mean_keepdim(candle_core::D::Minus1)
+            .unwrap();
+        let mean_vals: Vec<f32> = output_mean.flatten_all().unwrap().to_vec1().unwrap();
+
+        for (i, m) in mean_vals.iter().enumerate() {
+            assert!(
+                m.abs() < 0.01,
+                "Output mean at position {} should be ~0, got {}",
+                i,
+                m
+            );
+        }
+    }
+
+    #[test]
+    fn test_layer_norm_different_sequence_lengths() {
+        let device = Device::Cpu;
+
+        // Test various sequence lengths that might occur in practice
+        for seq_len in [1, 16, 128, 384] {
+            let hidden_states =
+                Tensor::randn(0.0f32, 1.0, (1, seq_len, 768), &device).unwrap();
+            let weight = Tensor::ones((768,), candle_core::DType::F32, &device).unwrap();
+            let bias = Tensor::zeros((768,), candle_core::DType::F32, &device).unwrap();
+
+            let result = layer_norm(&hidden_states, &weight, &bias, 1e-12);
+
+            assert!(
+                result.is_ok(),
+                "layer_norm should succeed for seq_len={}: {:?}",
+                seq_len,
+                result.err()
+            );
+            let output = result.unwrap();
+            assert_eq!(output.dims(), &[1, seq_len, 768]);
+        }
+    }
+}

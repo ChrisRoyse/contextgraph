@@ -13,6 +13,7 @@
 pub mod causal;
 pub mod clustering;
 pub mod divergence;
+pub mod e4_hybrid_session;
 pub mod mcp_intent;
 pub mod multimodal;
 pub mod performance;

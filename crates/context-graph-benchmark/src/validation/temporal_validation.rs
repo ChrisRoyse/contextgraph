@@ -605,6 +605,98 @@ impl TemporalValidator {
                 .with_details("Symmetry validation not performed in this benchmark run")
         }
     }
+
+    // =========================================================================
+    // E4 Hybrid Session Clustering Validation Checks
+    // =========================================================================
+
+    /// Test E4 hybrid session clustering quality.
+    ///
+    /// Validates that E4 hybrid mode achieves the target session separation ratio.
+    pub fn test_e4_hybrid_session_clustering(measured: &MeasuredTemporalMetrics) -> ValidationCheck {
+        let check = ValidationCheck::new(
+            "e4_hybrid_session_clustering",
+            "[HYBRID] E4 session separation ratio",
+        ).with_priority(CheckPriority::High);
+
+        let separation = measured.e4_session_separation_ratio.unwrap_or(0.0);
+        let target = 2.0;
+
+        if separation >= target {
+            check.pass(&format!("{:.2}x", separation), ">= 2.0x")
+        } else if separation >= 1.5 {
+            check.warning(&format!("{:.2}x", separation), ">= 2.0x")
+                .with_details("Below target but showing session clustering")
+        } else {
+            check.fail(&format!("{:.2}x", separation), ">= 2.0x")
+        }
+    }
+
+    /// Test E4 hybrid intra-session ordering accuracy.
+    ///
+    /// Validates that E4 hybrid mode preserves position ordering within sessions.
+    pub fn test_e4_hybrid_intra_session_ordering(measured: &MeasuredTemporalMetrics) -> ValidationCheck {
+        let check = ValidationCheck::new(
+            "e4_hybrid_intra_session_ordering",
+            "[HYBRID] E4 position ordering within sessions",
+        ).with_priority(CheckPriority::High);
+
+        let accuracy = measured.e4_intra_session_ordering.unwrap_or(0.0);
+        let target = 0.80;
+
+        if accuracy >= target {
+            check.pass(&format!("{:.1}%", accuracy * 100.0), ">= 80%")
+        } else if accuracy >= 0.6 {
+            check.warning(&format!("{:.1}%", accuracy * 100.0), ">= 80%")
+                .with_details("Below target but showing ordering preservation")
+        } else {
+            check.fail(&format!("{:.1}%", accuracy * 100.0), ">= 80%")
+        }
+    }
+
+    /// Test E4 hybrid vs legacy improvement.
+    ///
+    /// Validates that E4 hybrid mode improves over legacy position-only E4.
+    pub fn test_e4_hybrid_vs_legacy(measured: &MeasuredTemporalMetrics) -> ValidationCheck {
+        let check = ValidationCheck::new(
+            "e4_hybrid_vs_legacy",
+            "[HYBRID] E4 improvement over legacy mode",
+        ).with_priority(CheckPriority::Medium);
+
+        let improvement = measured.e4_hybrid_vs_legacy_improvement.unwrap_or(0.0);
+        let target = 0.10; // 10% improvement
+
+        if improvement >= target {
+            check.pass(&format!("+{:.1}%", improvement * 100.0), ">= +10%")
+        } else if improvement >= 0.0 {
+            check.warning(&format!("+{:.1}%", improvement * 100.0), ">= +10%")
+                .with_details("Positive improvement but below target")
+        } else {
+            check.fail(&format!("{:.1}%", improvement * 100.0), ">= +10%")
+                .with_details("Hybrid mode performing worse than legacy")
+        }
+    }
+
+    /// Test E4 hybrid before/after symmetry.
+    ///
+    /// Validates that before and after retrieval have similar accuracy.
+    pub fn test_e4_hybrid_symmetry(measured: &MeasuredTemporalMetrics) -> ValidationCheck {
+        let check = ValidationCheck::new(
+            "e4_hybrid_symmetry",
+            "[HYBRID] E4 before/after symmetry",
+        ).with_priority(CheckPriority::Medium);
+
+        let symmetry = measured.e4_hybrid_symmetry_score.unwrap_or(0.0);
+        let target = 0.80;
+
+        if symmetry >= target {
+            check.pass(&format!("{:.2}", symmetry), ">= 0.8")
+        } else if symmetry >= 0.6 {
+            check.warning(&format!("{:.2}", symmetry), ">= 0.8")
+        } else {
+            check.fail(&format!("{:.2}", symmetry), ">= 0.8")
+        }
+    }
 }
 
 #[cfg(test)]
@@ -649,6 +741,14 @@ mod tests {
             e4_ordering_precision: 0.82,
             e4_boundary_f1: 0.78,
             symmetry_validated: true,
+            // E4 hybrid session metrics (optional)
+            e4_session_separation_ratio: None,
+            e4_intra_session_similarity: None,
+            e4_inter_session_similarity: None,
+            e4_session_silhouette: None,
+            e4_intra_session_ordering: None,
+            e4_hybrid_vs_legacy_improvement: None,
+            e4_hybrid_symmetry_score: None,
         };
         let result = TemporalValidator::validate(&config, None, 0, Some(&measured));
         // Should have measured metrics checks

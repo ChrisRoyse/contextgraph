@@ -1241,4 +1241,78 @@ mod tests {
         ];
         assert_eq!(ids.len(), NUM_EMBEDDERS);
     }
+
+    // =========================================================================
+    // E4 INSTRUCTION FIX VERIFICATION TESTS
+    // =========================================================================
+
+    /// Test that EmbeddingMetadata.e4_instruction() includes session_id.
+    ///
+    /// This is the critical end-to-end verification test for the E4 session fix.
+    /// It verifies that when embed_all_with_metadata() is called, the session_id
+    /// is correctly passed through to the E4 embedder.
+    #[test]
+    fn test_embedding_metadata_e4_instruction_includes_session() {
+        // This test verifies the fix at the metadata level
+        let metadata = EmbeddingMetadata::with_sequence("test-session-id", 100);
+
+        let instruction = metadata.e4_instruction();
+
+        // Critical assertion: session_id must be in the instruction
+        assert!(
+            instruction.contains("session:test-session-id"),
+            "e4_instruction() must include session_id. Got: {}",
+            instruction
+        );
+        assert!(
+            instruction.contains("sequence:100"),
+            "e4_instruction() must include sequence. Got: {}",
+            instruction
+        );
+
+        // Verify exact format matches what E4 parser expects
+        assert_eq!(
+            instruction, "session:test-session-id sequence:100",
+            "Instruction format should match E4 parser expectations"
+        );
+    }
+
+    /// Test that different session_ids produce different instruction strings.
+    #[test]
+    fn test_different_sessions_produce_different_instructions() {
+        let metadata1 = EmbeddingMetadata::with_sequence("session-A", 1);
+        let metadata2 = EmbeddingMetadata::with_sequence("session-B", 1);
+
+        let inst1 = metadata1.e4_instruction();
+        let inst2 = metadata2.e4_instruction();
+
+        assert_ne!(
+            inst1, inst2,
+            "Different sessions should produce different instructions"
+        );
+        assert!(inst1.contains("session:session-A"));
+        assert!(inst2.contains("session:session-B"));
+    }
+
+    /// Test backward compatibility: metadata without session_id still works.
+    #[test]
+    fn test_backward_compatible_no_session_metadata() {
+        let metadata = EmbeddingMetadata {
+            session_id: None,
+            session_sequence: Some(42),
+            timestamp: None,
+        };
+
+        let instruction = metadata.e4_instruction();
+
+        // Should produce legacy format without session prefix
+        assert_eq!(
+            instruction, "sequence:42",
+            "Legacy format should work without session_id"
+        );
+        assert!(
+            !instruction.contains("session:"),
+            "No session prefix when session_id is None"
+        );
+    }
 }

@@ -279,19 +279,36 @@ impl EmbeddingMetadata {
         }
     }
 
-    /// Format E4 instruction string for sequence mode.
+    /// Format E4 instruction string for hybrid session+sequence mode.
     ///
-    /// Returns "sequence:N" if session_sequence is set, otherwise falls back
-    /// to "epoch:N" for timestamp mode.
+    /// Returns "session:X sequence:N" if both session_id and session_sequence are set,
+    /// enabling the E4 hybrid mode to generate session-specific signatures.
+    /// Falls back to "sequence:N" or "epoch:N" for backward compatibility.
+    ///
+    /// # Output Examples
+    ///
+    /// - With session + sequence: `"session:abc123 sequence:42"`
+    /// - With session + timestamp: `"session:abc123 epoch:1705315800"`
+    /// - Without session (legacy): `"sequence:42"` or `"epoch:1705315800"`
     #[must_use]
     pub fn e4_instruction(&self) -> String {
-        if let Some(seq) = self.session_sequence {
-            format!("sequence:{}", seq)
-        } else if let Some(ts) = self.timestamp {
-            format!("epoch:{}", ts.timestamp())
-        } else {
-            format!("epoch:{}", Utc::now().timestamp())
+        let mut parts = Vec::new();
+
+        // Include session_id if present (for hybrid mode)
+        if let Some(ref sess) = self.session_id {
+            parts.push(format!("session:{}", sess));
         }
+
+        // Include position (sequence or timestamp)
+        if let Some(seq) = self.session_sequence {
+            parts.push(format!("sequence:{}", seq));
+        } else if let Some(ts) = self.timestamp {
+            parts.push(format!("epoch:{}", ts.timestamp()));
+        } else {
+            parts.push(format!("epoch:{}", Utc::now().timestamp()));
+        }
+
+        parts.join(" ")
     }
 
     /// Format E2/E3 instruction string (always uses timestamp).
@@ -934,5 +951,112 @@ mod tests {
         assert_eq!(output.model_ids[11], "colbert-v2");
         assert_eq!(output.model_ids[12], "splade-v3");
         assert_eq!(output.model_ids.len(), NUM_EMBEDDERS);
+    }
+
+    // =========================================================================
+    // E4 INSTRUCTION FORMAT TESTS (Critical for session clustering)
+    // =========================================================================
+
+    /// Test e4_instruction() with session_id and sequence (hybrid mode).
+    ///
+    /// This is the critical fix test - verifies session_id is NOT dropped.
+    #[test]
+    fn test_e4_instruction_with_session_and_sequence() {
+        let metadata = EmbeddingMetadata::with_sequence("session-123", 42);
+        let instruction = metadata.e4_instruction();
+
+        assert!(
+            instruction.contains("session:session-123"),
+            "Should include session_id: {}",
+            instruction
+        );
+        assert!(
+            instruction.contains("sequence:42"),
+            "Should include sequence: {}",
+            instruction
+        );
+        assert_eq!(instruction, "session:session-123 sequence:42");
+    }
+
+    /// Test e4_instruction() without session_id (backward compatible legacy mode).
+    #[test]
+    fn test_e4_instruction_without_session() {
+        let metadata = EmbeddingMetadata {
+            session_id: None,
+            session_sequence: Some(42),
+            timestamp: None,
+        };
+        let instruction = metadata.e4_instruction();
+
+        assert_eq!(instruction, "sequence:42");
+        assert!(
+            !instruction.contains("session:"),
+            "Should NOT include session prefix when session_id is None"
+        );
+    }
+
+    /// Test e4_instruction() with timestamp only (no session or sequence).
+    #[test]
+    fn test_e4_instruction_with_timestamp_only() {
+        use chrono::TimeZone;
+        let ts = Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap();
+        let expected_epoch = ts.timestamp(); // Get the actual epoch value
+        let metadata = EmbeddingMetadata::with_timestamp(ts);
+        let instruction = metadata.e4_instruction();
+
+        assert!(instruction.starts_with("epoch:"), "Got: {}", instruction);
+        assert!(
+            !instruction.contains("session:"),
+            "Should NOT include session prefix"
+        );
+        assert_eq!(instruction, format!("epoch:{}", expected_epoch));
+    }
+
+    /// Test e4_instruction() with session_id and timestamp (no sequence).
+    #[test]
+    fn test_e4_instruction_with_session_and_timestamp() {
+        use chrono::TimeZone;
+        let ts = Utc.with_ymd_and_hms(2024, 1, 15, 10, 30, 0).unwrap();
+        let expected_epoch = ts.timestamp(); // Get the actual epoch value
+        let metadata = EmbeddingMetadata {
+            session_id: Some("my-session".to_string()),
+            session_sequence: None,
+            timestamp: Some(ts),
+        };
+        let instruction = metadata.e4_instruction();
+
+        assert!(
+            instruction.contains("session:my-session"),
+            "Got: {}",
+            instruction
+        );
+        assert!(instruction.contains("epoch:"), "Got: {}", instruction);
+        assert_eq!(
+            instruction,
+            format!("session:my-session epoch:{}", expected_epoch)
+        );
+    }
+
+    /// Test e4_instruction() with UUID session_id (common real-world case).
+    #[test]
+    fn test_e4_instruction_with_uuid_session() {
+        let uuid = "a1b2c3d4-e5f6-7890-abcd-ef1234567890";
+        let metadata = EmbeddingMetadata::with_sequence(uuid, 100);
+        let instruction = metadata.e4_instruction();
+
+        assert_eq!(
+            instruction,
+            "session:a1b2c3d4-e5f6-7890-abcd-ef1234567890 sequence:100"
+        );
+    }
+
+    /// Test e4_instruction() with empty string session_id (edge case).
+    #[test]
+    fn test_e4_instruction_with_empty_session() {
+        let metadata = EmbeddingMetadata::with_sequence("", 5);
+        let instruction = metadata.e4_instruction();
+
+        // Empty session_id is still included (it's Some(""))
+        assert_eq!(instruction, "session: sequence:5");
     }
 }

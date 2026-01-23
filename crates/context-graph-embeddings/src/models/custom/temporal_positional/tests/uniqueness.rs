@@ -159,7 +159,8 @@ async fn test_transformer_pe_formula_structure() {
 
 #[tokio::test]
 async fn test_transformer_pe_formula_sin_cos_pairs() {
-    let model = TemporalPositionalModel::new();
+    // Use legacy mode to test raw PE formula (hybrid mode has session signature in first 256D)
+    let model = TemporalPositionalModel::with_hybrid_mode(false);
 
     // For position 0, the raw PE values (before normalization) are:
     // PE(0, 2i) = sin(0) = 0

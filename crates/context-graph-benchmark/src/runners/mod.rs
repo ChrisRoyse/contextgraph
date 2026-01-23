@@ -5,6 +5,7 @@
 
 pub mod causal;
 pub mod comparative;
+pub mod e4_hybrid_session;
 pub mod failfast;
 pub mod graph_realdata;
 pub mod mcp_intent;
@@ -64,4 +65,9 @@ pub use failfast::{
     FailFastScenario, FailFastTrigger, ExpectedBehavior, FailFastResult,
     FailFastSummary, ErrorMessageQuality,
     build_sequence_tool_scenarios, analyze_error_message_quality, verify_failfast_behavior,
+};
+pub use e4_hybrid_session::{
+    E4HybridSessionBenchmarkConfig, E4HybridSessionBenchmarkResults, E4HybridSessionBenchmarkRunner,
+    E4HybridBenchmarkTimings, E4HybridDatasetStats, LegacyComparisonResults,
+    TimestampBaselineResults as E4TimestampBaselineResults, ValidationSummary as E4ValidationSummary,
 };
