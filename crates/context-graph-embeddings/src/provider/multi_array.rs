@@ -63,7 +63,7 @@ use context_graph_core::types::fingerprint::{
 
 use crate::config::GpuConfig;
 use crate::error::EmbeddingResult;
-use crate::models::pretrained::CausalModel;
+use crate::models::pretrained::{CausalModel, GraphModel};
 use crate::models::DefaultModelFactory;
 use crate::traits::{EmbeddingModel, ModelFactory, SingleModelConfig};
 use crate::types::{ModelId, ModelInput};
@@ -382,6 +382,71 @@ unsafe impl Send for CausalDualEmbedderAdapter {}
 unsafe impl Sync for CausalDualEmbedderAdapter {}
 
 // ============================================================================
+// GRAPH DUAL EMBEDDER ADAPTER (E8 - Asymmetric Source/Target)
+// ============================================================================
+
+/// Adapter that wraps GraphModel to support dual source/target embedding.
+///
+/// Following the E5 Causal pattern (ARCH-15), this adapter enables asymmetric
+/// similarity for graph relationships where direction matters:
+/// - **Source embedding**: "What does X use?" → X is the source
+/// - **Target embedding**: "What uses X?" → X is the target
+///
+/// The GraphModel.embed_dual() method produces genuinely different vectors
+/// through learned projections (W_source, W_target).
+struct GraphDualEmbedderAdapter {
+    /// Direct reference to GraphModel (not wrapped in EmbeddingModel trait)
+    model: Arc<GraphModel>,
+}
+
+impl GraphDualEmbedderAdapter {
+    /// Create a new GraphDualEmbedderAdapter.
+    ///
+    /// # Arguments
+    /// * `model` - GraphModel instance (must be loaded before use)
+    fn new(model: GraphModel) -> Self {
+        Self {
+            model: Arc::new(model),
+        }
+    }
+
+    /// Embed content as both source and target roles.
+    ///
+    /// Returns (source_vector, target_vector) where each is 384D.
+    /// The vectors are genuinely different due to learned projections.
+    ///
+    /// # Errors
+    /// - `CoreError::Internal` if model not initialized
+    /// - `CoreError::Embedding` if embedding fails
+    async fn embed_dual(&self, content: &str) -> CoreResult<(Vec<f32>, Vec<f32>)> {
+        if content.is_empty() {
+            return Err(CoreError::ValidationError {
+                field: "content".to_string(),
+                message: "Content cannot be empty".to_string(),
+            });
+        }
+
+        if !self.model.is_initialized() {
+            return Err(CoreError::Internal(
+                "GraphModel not initialized for dual embedding".to_string(),
+            ));
+        }
+
+        self.model.embed_dual(content).await.map_err(|e| {
+            CoreError::Embedding(format!("E8 dual embedding failed: {}", e))
+        })
+    }
+
+    /// Check if the model is ready for embedding.
+    fn is_ready(&self) -> bool {
+        self.model.is_initialized()
+    }
+}
+
+unsafe impl Send for GraphDualEmbedderAdapter {}
+unsafe impl Sync for GraphDualEmbedderAdapter {}
+
+// ============================================================================
 // PRODUCTION MULTI-ARRAY PROVIDER
 // ============================================================================
 
@@ -425,8 +490,11 @@ pub struct ProductionMultiArrayProvider {
     e6_sparse: Arc<dyn SparseEmbedder>,
     /// E7: Code embedder (Qodo-Embed, 1536D)
     e7_code: Arc<dyn SingleEmbedder>,
-    /// E8: Graph embedder (MiniLM, 384D)
-    e8_graph: Arc<dyn SingleEmbedder>,
+    /// E8: Graph embedder (MiniLM, 384D) - DUAL embedder for asymmetric similarity
+    ///
+    /// Per E8 Upgrade: Uses GraphDualEmbedderAdapter to produce genuinely different
+    /// vectors for source vs target roles.
+    e8_graph: Arc<GraphDualEmbedderAdapter>,
     /// E9: HDC embedder (hyperdimensional, 1024D projected)
     e9_hdc: Arc<dyn SingleEmbedder>,
     /// E10: Multimodal embedder (CLIP, 768D)
@@ -485,7 +553,9 @@ impl ProductionMultiArrayProvider {
 
         let e6_model = factory.create_model(ModelId::Sparse, &config)?;
         let e7_model = factory.create_model(ModelId::Code, &config)?;
-        let e8_model = factory.create_model(ModelId::Graph, &config)?;
+
+        // E8: Create GraphModel directly for dual embedding support (E8 Upgrade)
+        let e8_graph_model = GraphModel::new(&models_dir.join("graph"), config.clone())?;
         let e9_model = factory.create_model(ModelId::Hdc, &config)?;
         let e10_model = factory.create_model(ModelId::Multimodal, &config)?;
         let e11_model = factory.create_model(ModelId::Entity, &config)?;
@@ -503,7 +573,7 @@ impl ProductionMultiArrayProvider {
         e5_causal_model.load().await?; // E5 loaded directly
         e6_model.load().await?;
         e7_model.load().await?;
-        e8_model.load().await?;
+        e8_graph_model.load().await?; // E8 loaded directly for dual embedding
         e9_model.load().await?;
         e10_model.load().await?;
         e11_model.load().await?;
@@ -542,8 +612,10 @@ impl ProductionMultiArrayProvider {
             Arc::new(SparseEmbedderAdapter::new(e6_model, ModelId::Sparse));
         let e7_code: Arc<dyn SingleEmbedder> =
             Arc::new(DenseEmbedderAdapter::new(e7_model, ModelId::Code, E7_DIM));
-        let e8_graph: Arc<dyn SingleEmbedder> =
-            Arc::new(DenseEmbedderAdapter::new(e8_model, ModelId::Graph, E8_DIM));
+
+        // E8: Use GraphDualEmbedderAdapter for asymmetric embeddings (E8 Upgrade)
+        let e8_graph: Arc<GraphDualEmbedderAdapter> =
+            Arc::new(GraphDualEmbedderAdapter::new(e8_graph_model));
         let e9_hdc: Arc<dyn SingleEmbedder> =
             Arc::new(DenseEmbedderAdapter::new(e9_model, ModelId::Hdc, E9_DIM));
         let e10_multimodal: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
@@ -710,9 +782,9 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                 let c = content_owned.clone();
                 async move { e7.embed(&c).await }
             }),
-            Self::timed_embed("E8_Graph", {
+            Self::timed_embed("E8_Graph_Dual", {
                 let c = content_owned.clone();
-                async move { e8.embed(&c).await }
+                async move { e8.embed_dual(&c).await }
             }),
             Self::timed_embed("E9_HDC", {
                 let c = content_owned.clone();
@@ -747,7 +819,10 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
 
         let e6_sparse = r6?;
         let e7_vec = r7?;
-        let e8_vec = r8?;
+
+        // E8: embed_dual returns (source_vec, target_vec) for asymmetric similarity (E8 Upgrade)
+        let (e8_source_vec, e8_target_vec) = r8?;
+
         let e9_vec = r9?;
         let e10_vec = r10?;
         let e11_vec = r11?;
@@ -756,7 +831,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
 
         let total_latency = start.elapsed();
 
-        // Construct fingerprint with asymmetric E5 vectors
+        // Construct fingerprint with asymmetric E5 and E8 vectors
         let fingerprint = SemanticFingerprint {
             e1_semantic: e1_vec,
             e2_temporal_recent: e2_vec,
@@ -767,7 +842,9 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e5_causal: Vec::new(), // Empty - using new dual format
             e6_sparse,
             e7_code: e7_vec,
-            e8_graph: e8_vec,
+            e8_graph_as_source: e8_source_vec,
+            e8_graph_as_target: e8_target_vec,
+            e8_graph: Vec::new(), // Empty - using new dual format
             e9_hdc: e9_vec,
             e10_multimodal: e10_vec,
             e11_entity: e11_vec,
@@ -880,9 +957,9 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                 let c = content_owned.clone();
                 async move { e7.embed(&c).await }
             }),
-            Self::timed_embed("E8_Graph", {
+            Self::timed_embed("E8_Graph_Dual", {
                 let c = content_owned.clone();
-                async move { e8.embed(&c).await }
+                async move { e8.embed_dual(&c).await }
             }),
             Self::timed_embed("E9_HDC", {
                 let c = content_owned.clone();
@@ -917,7 +994,10 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
 
         let e6_sparse = r6?;
         let e7_vec = r7?;
-        let e8_vec = r8?;
+
+        // E8: embed_dual returns (source_vec, target_vec) for asymmetric similarity (E8 Upgrade)
+        let (e8_source_vec, e8_target_vec) = r8?;
+
         let e9_vec = r9?;
         let e10_vec = r10?;
         let e11_vec = r11?;
@@ -926,7 +1006,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
 
         let total_latency = start.elapsed();
 
-        // Construct fingerprint with asymmetric E5 vectors
+        // Construct fingerprint with asymmetric E5 and E8 vectors
         let fingerprint = SemanticFingerprint {
             e1_semantic: e1_vec,
             e2_temporal_recent: e2_vec,
@@ -937,7 +1017,9 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e5_causal: Vec::new(), // Empty - using new dual format
             e6_sparse,
             e7_code: e7_vec,
-            e8_graph: e8_vec,
+            e8_graph_as_source: e8_source_vec,
+            e8_graph_as_target: e8_target_vec,
+            e8_graph: Vec::new(), // Empty - using new dual format
             e9_hdc: e9_vec,
             e10_multimodal: e10_vec,
             e11_entity: e11_vec,

@@ -1,13 +1,15 @@
-//! Tool definitions per PRD v6 Section 10 (24 tools total).
+//! Tool definitions per PRD v6 Section 10 (26 tools total).
 //!
 //! Includes 18 original tools plus 4 sequence tools for E4 integration
-//! plus 2 causal tools for E5 Priority 1 enhancement.
+//! plus 2 causal tools for E5 Priority 1 enhancement
+//! plus 2 graph tools for E8 upgrade (Phase 4).
 
 pub(crate) mod causal;
 pub(crate) mod core;
 pub(crate) mod curation;
 pub(crate) mod dream;
 pub(crate) mod file_watcher;
+pub(crate) mod graph;
 pub(crate) mod merge;
 pub(crate) mod sequence;
 pub(crate) mod topic;
@@ -16,7 +18,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(24);
+    let mut tools = Vec::with_capacity(26);
 
     // Core tools (5)
     tools.extend(core::definitions());
@@ -42,6 +44,9 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Causal tools (2) - E5 Priority 1 enhancement
     tools.extend(causal::definitions());
 
+    // Graph tools (2) - E8 upgrade (Phase 4)
+    tools.extend(graph::definitions());
+
     tools
 }
 
@@ -51,7 +56,7 @@ mod tests {
 
     #[test]
     fn test_total_tool_count() {
-        assert_eq!(get_tool_definitions().len(), 24);
+        assert_eq!(get_tool_definitions().len(), 26);
     }
 
     #[test]
@@ -92,6 +97,9 @@ mod tests {
             // Causal tools (2) - E5 Priority 1 enhancement
             "search_causes",
             "get_causal_chain",
+            // Graph tools (2) - E8 upgrade (Phase 4)
+            "search_connections",
+            "get_graph_path",
         ];
 
         for name in expected {
@@ -135,5 +143,6 @@ mod tests {
         assert_eq!(file_watcher::definitions().len(), 4);
         assert_eq!(sequence::definitions().len(), 4);
         assert_eq!(causal::definitions().len(), 2);
+        assert_eq!(graph::definitions().len(), 2);
     }
 }

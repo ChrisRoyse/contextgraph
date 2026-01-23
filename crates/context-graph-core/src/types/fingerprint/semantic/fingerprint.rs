@@ -180,7 +180,25 @@ pub struct SemanticFingerprint {
     /// E7: Code (Qodo-Embed-1-1.5B) - 1536D dense embedding.
     pub e7_code: Vec<f32>,
 
-    /// E8: Graph (MiniLM for structure) - 384D dense embedding.
+    /// E8: Graph (MiniLM for structure) - 384D dense embedding (as source).
+    ///
+    /// This vector encodes the text as a potential source in graph relationships.
+    /// For asymmetric similarity: query_as_source is compared against doc_as_target.
+    /// Example: "Module A imports B" → A is the source.
+    pub e8_graph_as_source: Vec<f32>,
+
+    /// E8: Graph (MiniLM for structure) - 384D dense embedding (as target).
+    ///
+    /// This vector encodes the text as a potential target in graph relationships.
+    /// For asymmetric similarity: query_as_target is compared against doc_as_source.
+    /// Example: "Module X is imported by A, B" → X is the target.
+    pub e8_graph_as_target: Vec<f32>,
+
+    /// E8: Graph - Legacy single vector (deprecated, kept for backward compatibility).
+    ///
+    /// New code should use `e8_graph_as_source` and `e8_graph_as_target` instead.
+    /// This field is populated during deserialization of old fingerprints.
+    #[serde(default)]
     pub e8_graph: Vec<f32>,
 
     /// E9: HDC (projected from 10K-bit hyperdimensional) - 1024D dense embedding.
@@ -224,7 +242,9 @@ impl SemanticFingerprint {
             e5_causal: Vec::new(), // Legacy field, empty by default
             e6_sparse: SparseVector::empty(),
             e7_code: vec![0.0; E7_DIM],
-            e8_graph: vec![0.0; E8_DIM],
+            e8_graph_as_source: vec![0.0; E8_DIM],
+            e8_graph_as_target: vec![0.0; E8_DIM],
+            e8_graph: Vec::new(), // Legacy field, empty by default
             e9_hdc: vec![0.0; E9_DIM],
             e10_multimodal: vec![0.0; E10_DIM],
             e11_entity: vec![0.0; E11_DIM],
@@ -237,6 +257,9 @@ impl SemanticFingerprint {
     ///
     /// For E5 (index 4), returns the `e5_causal_as_cause` vector by default.
     /// Use `get_e5_as_effect()` for asymmetric similarity comparisons.
+    ///
+    /// For E8 (index 7), returns the `e8_graph_as_source` vector by default.
+    /// Use `get_e8_as_target()` for asymmetric similarity comparisons.
     pub fn get_embedding(&self, idx: usize) -> Option<EmbeddingSlice<'_>> {
         match idx {
             0 => Some(EmbeddingSlice::Dense(&self.e1_semantic)),
@@ -246,7 +269,7 @@ impl SemanticFingerprint {
             4 => Some(EmbeddingSlice::Dense(self.e5_active_vector())),
             5 => Some(EmbeddingSlice::Sparse(&self.e6_sparse)),
             6 => Some(EmbeddingSlice::Dense(&self.e7_code)),
-            7 => Some(EmbeddingSlice::Dense(&self.e8_graph)),
+            7 => Some(EmbeddingSlice::Dense(self.e8_active_vector())),
             8 => Some(EmbeddingSlice::Dense(&self.e9_hdc)),
             9 => Some(EmbeddingSlice::Dense(&self.e10_multimodal)),
             10 => Some(EmbeddingSlice::Dense(&self.e11_entity)),
@@ -305,6 +328,90 @@ impl SemanticFingerprint {
         !self.e5_causal_as_cause.is_empty() && !self.e5_causal_as_effect.is_empty()
     }
 
+    // =========================================================================
+    // E8 GRAPH DUAL VECTOR METHODS (Following E5 Causal Pattern)
+    // =========================================================================
+
+    /// Get the active E8 graph vector for standard operations.
+    ///
+    /// Returns `e8_graph_as_source` if populated, otherwise falls back to
+    /// the legacy `e8_graph` field for backward compatibility.
+    ///
+    /// This is the default E8 vector used for symmetric similarity comparisons
+    /// (when graph direction is unknown or not relevant).
+    #[inline]
+    pub fn e8_active_vector(&self) -> &[f32] {
+        if !self.e8_graph_as_source.is_empty() {
+            &self.e8_graph_as_source
+        } else {
+            &self.e8_graph
+        }
+    }
+
+    /// Get E8 graph embedding encoded as a potential source.
+    ///
+    /// Use this for asymmetric similarity when the query represents a source.
+    /// (e.g., "What does module X import?")
+    #[inline]
+    pub fn get_e8_as_source(&self) -> &[f32] {
+        if !self.e8_graph_as_source.is_empty() {
+            &self.e8_graph_as_source
+        } else {
+            &self.e8_graph
+        }
+    }
+
+    /// Get E8 graph embedding encoded as a potential target.
+    ///
+    /// Use this for asymmetric similarity when the query represents a target.
+    /// (e.g., "What imports module X?")
+    #[inline]
+    pub fn get_e8_as_target(&self) -> &[f32] {
+        if !self.e8_graph_as_target.is_empty() {
+            &self.e8_graph_as_target
+        } else {
+            &self.e8_graph
+        }
+    }
+
+    /// Check if this fingerprint has asymmetric E8 graph vectors.
+    ///
+    /// Returns `true` if both `e8_graph_as_source` and `e8_graph_as_target`
+    /// are populated, `false` if only the legacy `e8_graph` field is used.
+    #[inline]
+    pub fn has_asymmetric_e8(&self) -> bool {
+        !self.e8_graph_as_source.is_empty() && !self.e8_graph_as_target.is_empty()
+    }
+
+    /// Migrate a legacy fingerprint to the new dual E8 format.
+    ///
+    /// If the fingerprint has only the legacy `e8_graph` field populated,
+    /// this method copies it to both `e8_graph_as_source` and `e8_graph_as_target`.
+    ///
+    /// This is useful when loading old fingerprints that need to work with
+    /// asymmetric similarity computation.
+    pub fn migrate_legacy_e8(&mut self) {
+        if !self.e8_graph.is_empty()
+            && self.e8_graph_as_source.is_empty()
+            && self.e8_graph_as_target.is_empty()
+        {
+            // Copy legacy E8 to both source and target vectors
+            self.e8_graph_as_source = self.e8_graph.clone();
+            self.e8_graph_as_target = self.e8_graph.clone();
+        }
+    }
+
+    /// Check if this fingerprint uses the legacy single E8 format.
+    ///
+    /// Returns `true` if the fingerprint has only `e8_graph` populated
+    /// and both `e8_graph_as_source` and `e8_graph_as_target` are empty.
+    #[inline]
+    pub fn is_legacy_e8_format(&self) -> bool {
+        !self.e8_graph.is_empty()
+            && self.e8_graph_as_source.is_empty()
+            && self.e8_graph_as_target.is_empty()
+    }
+
     /// Compute total storage size in bytes (heap allocations only).
     pub fn storage_size(&self) -> usize {
         let dense_size = (self.e1_semantic.len()
@@ -315,7 +422,9 @@ impl SemanticFingerprint {
             + self.e5_causal_as_effect.len()
             + self.e5_causal.len() // Legacy field
             + self.e7_code.len()
-            + self.e8_graph.len()
+            + self.e8_graph_as_source.len()
+            + self.e8_graph_as_target.len()
+            + self.e8_graph.len() // Legacy field
             + self.e9_hdc.len()
             + self.e10_multimodal.len()
             + self.e11_entity.len())
@@ -414,7 +523,7 @@ impl SemanticFingerprint {
             Embedder::Causal => EmbeddingRef::Dense(self.e5_active_vector()),
             Embedder::Sparse => EmbeddingRef::Sparse(&self.e6_sparse),
             Embedder::Code => EmbeddingRef::Dense(&self.e7_code),
-            Embedder::Emotional => EmbeddingRef::Dense(&self.e8_graph),
+            Embedder::Emotional => EmbeddingRef::Dense(self.e8_active_vector()),
             Embedder::Hdc => EmbeddingRef::Dense(&self.e9_hdc),
             Embedder::Multimodal => EmbeddingRef::Dense(&self.e10_multimodal),
             Embedder::Entity => EmbeddingRef::Dense(&self.e11_entity),
@@ -433,6 +542,10 @@ impl SemanticFingerprint {
     /// - Both e5_causal_as_cause and e5_causal_as_effect populated (new format)
     /// - Only e5_causal populated (legacy format)
     ///
+    /// For E8 Graph, accepts either:
+    /// - Both e8_graph_as_source and e8_graph_as_target populated (new format)
+    /// - Only e8_graph populated (legacy format)
+    ///
     /// # Returns
     ///
     /// `true` if all dense embeddings have correct dimensions, `false` otherwise.
@@ -442,13 +555,18 @@ impl SemanticFingerprint {
             && self.e5_causal_as_effect.len() == E5_DIM)
             || self.e5_causal.len() == E5_DIM;
 
+        // E8 check: either new dual vectors OR legacy single vector
+        let e8_complete = (self.e8_graph_as_source.len() == E8_DIM
+            && self.e8_graph_as_target.len() == E8_DIM)
+            || self.e8_graph.len() == E8_DIM;
+
         self.e1_semantic.len() == E1_DIM
             && self.e2_temporal_recent.len() == E2_DIM
             && self.e3_temporal_periodic.len() == E3_DIM
             && self.e4_temporal_positional.len() == E4_DIM
             && e5_complete
             && self.e7_code.len() == E7_DIM
-            && self.e8_graph.len() == E8_DIM
+            && e8_complete
             && self.e9_hdc.len() == E9_DIM
             && self.e10_multimodal.len() == E10_DIM
             && self.e11_entity.len() == E11_DIM
@@ -524,7 +642,7 @@ impl SemanticFingerprint {
             self.e5_active_vector().to_vec(), // Use active E5 vector
             self.e6_sparse.to_dense(E6_SPARSE_VOCAB),
             self.e7_code.clone(),
-            self.e8_graph.clone(),
+            self.e8_active_vector().to_vec(), // Use active E8 vector
             self.e9_hdc.clone(),
             self.e10_multimodal.clone(),
             self.e11_entity.clone(),
@@ -578,6 +696,8 @@ impl PartialEq for SemanticFingerprint {
             && self.e5_causal == other.e5_causal
             && self.e6_sparse == other.e6_sparse
             && self.e7_code == other.e7_code
+            && self.e8_graph_as_source == other.e8_graph_as_source
+            && self.e8_graph_as_target == other.e8_graph_as_target
             && self.e8_graph == other.e8_graph
             && self.e9_hdc == other.e9_hdc
             && self.e10_multimodal == other.e10_multimodal

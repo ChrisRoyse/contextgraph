@@ -1,0 +1,187 @@
+{
+  "metadata": {
+    "timestamp": "2026-01-23T00:35:37.944656437+00:00",
+    "version": "0.1.0",
+    "seed": 42,
+    "max_samples": 500
+  },
+  "direction_detection": {
+    "total_samples": 25,
+    "source_detected": 12,
+    "target_detected": 9,
+    "unknown_detected": 4,
+    "detection_rate": 0.92,
+    "sample_results": [
+      {
+        "text": "Module auth imports utils and config",
+        "expected": "Source",
+        "detected": "Source",
+        "correct": true
+      },
+      {
+        "text": "The handler module imports database",
+        "expected": "Source",
+        "detected": "Source",
+        "correct": true
+      },
+      {
+        "text": "Service layer depends on repository",
+        "expected": "Source",
+        "detected": "Source",
+        "correct": true
+      },
+      {
+        "text": "Controller calls service methods",
+        "expected": "Source",
+        "detected": "Source",
+        "correct": true
+      },
+      {
+        "text": "Main.rs uses lib.rs functions",
+        "expected": "Source",
+        "detected": "Source",
+        "correct": true
+      },
+      {
+        "text": "API module requires validation",
+        "expected": "Source",
+        "detected": "Source",
+        "correct": true
+      },
+      {
+        "text": "Router extends base handler",
+        "expected": "Source",
+        "detected": "Source",
+        "correct": true
+      },
+      {
+        "text": "Client implements interface",
+        "expected": "Source",
+        "detected": "Source",
+        "correct": true
+      },
+      {
+        "text": "Plugin wraps core functionality",
+        "expected": "Source",
+        "detected": "Source",
+        "correct": true
+      },
+      {
+        "text": "Test module references production code",
+        "expected": "Source",
+        "detected": "Source",
+        "correct": true
+      },
+      {
+        "text": "Utils is used by auth, api, and tests",
+        "expected": "Target",
+        "detected": "Target",
+        "correct": true
+      },
+      {
+        "text": "Database is called by multiple handlers",
+        "expected": "Target",
+        "detected": "Target",
+        "correct": true
+      },
+      {
+        "text": "Config is imported by all modules",
+        "expected": "Target",
+        "detected": "Source",
+        "correct": false
+      },
+      {
+        "text": "Logger is required by every service",
+        "expected": "Target",
+        "detected": "Target",
+        "correct": true
+      },
+      {
+        "text": "Types is referenced by the entire codebase",
+        "expected": "Target",
+        "detected": "Target",
+        "correct": true
+      },
+      {
+        "text": "Errors is extended by custom exceptions",
+        "expected": "Target",
+        "detected": "Target",
+        "correct": true
+      },
+      {
+        "text": "Interface is implemented by client",
+        "expected": "Target",
+        "detected": "Target",
+        "correct": true
+      },
+      {
+        "text": "Base class is inherited by children",
+        "expected": "Target",
+        "detected": "Target",
+        "correct": true
+      },
+      {
+        "text": "Shared code is included in many places",
+        "expected": "Target",
+        "detected": "Target",
+        "correct": true
+      },
+      {
+        "text": "Common utils is depended on by all",
+        "expected": "Target",
+        "detected": "Target",
+        "correct": true
+      },
+      {
+        "text": "This module handles authentication",
+        "expected": "Unknown",
+        "detected": "Unknown",
+        "correct": true
+      },
+      {
+        "text": "The code implements business logic",
+        "expected": "Unknown",
+        "detected": "Source",
+        "correct": false
+      },
+      {
+        "text": "Functions process user input",
+        "expected": "Unknown",
+        "detected": "Unknown",
+        "correct": true
+      },
+      {
+        "text": "Variables store application state",
+        "expected": "Unknown",
+        "detected": "Unknown",
+        "correct": true
+      },
+      {
+        "text": "Constants define configuration values",
+        "expected": "Unknown",
+        "detected": "Unknown",
+        "correct": true
+      }
+    ]
+  },
+  "asymmetric_retrieval": {
+    "total_queries": 100,
+    "source_to_target_wins": 100,
+    "target_to_source_wins": 0,
+    "ties": 0,
+    "asymmetry_ratio": 1.5,
+    "e8_contribution_percentage": 100.0
+  },
+  "centrality_detection": {
+    "total_tests": 50,
+    "hub_correctly_identified": 50,
+    "hub_detection_rate": 1.0
+  },
+  "formula_verification": {
+    "source_to_target_mod": 1.2,
+    "target_to_source_mod": 0.8,
+    "same_direction_mod": 1.0,
+    "asymmetry_ratio": 1.5,
+    "formula_compliant": true
+  }
+}

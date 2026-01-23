@@ -1,13 +1,25 @@
-# Context Graph Constitution v6.0.0 (Topic-Based Architecture)
-# Multi-Space Embeddings | Emergent Topics | Weighted Clustering | Native Hooks
+# Context Graph Constitution v6.1.0 (Fingerprint Architecture)
+# E1 Semantic Foundation | 12 Enhancement Layers | Emergent Topics | Native Hooks
 # ===============================================================================
+#
+# CORE PHILOSOPHY: The 13 embedders create FINGERPRINTS for memories.
+# E1 (V_meaning) is THE semantic foundation. Other embedders ENHANCE E1,
+# they don't compete with it. This is a foundation+enhancement model.
 
 meta:
-  v: "6.0.0"
+  v: "6.1.0"
   name: "Ultimate Context Graph"
-  desc: "13-embedding multi-space retrieval with emergent topic discovery via HDBSCAN+BIRCH clustering, weighted category agreement"
-  paradigm: "Emergent Topics from Weighted Multi-Space Clustering"
+  desc: "13-embedding fingerprint system with E1 semantic foundation, enhanced by 12 specialized embedders for rich memory representation"
+  paradigm: "E1-Foundation + Enhancement Layers for Semantic Fingerprinting"
   hook_architecture: "NATIVE Claude Code hooks ONLY (via .claude/settings.json)"
+
+  # CORE DESIGN PHILOSOPHY
+  # The 13 embedders exist to create rich FINGERPRINTS for memories.
+  # E1 (V_meaning) is THE semantic embedder - the foundation of understanding.
+  # The other 12 embedders ENHANCE E1's semantic foundation with specialized intelligence:
+  # - They add dimensions of understanding (causal, temporal, structural, etc.)
+  # - They do NOT compete with E1 - they AUGMENT it
+  # - This is a foundation+enhancement model, NOT a peer fusion model
 
 # ABBREVIATIONS
 # TF=Teleological Fingerprint, TP=Topic Profile (13D)
@@ -59,24 +71,27 @@ arch_rules:
   ARCH-10: "Divergence detection uses SEMANTIC embedders only (E1, E5, E6, E7, E10, E12, E13)"
   ARCH-11: "Memory sources: HookDescription, ClaudeResponse, MDFileChunk"
 
-  # Multi-Space Search Architecture (TASK-MULTISPACE)
-  ARCH-12: "Search strategies: E1Only (default), MultiSpace (weighted fusion), Pipeline (3-stage)"
-  ARCH-13: "Weight profiles MUST have E2-E4=0.0 (temporal), E12=0.0 (rerank-only), E13=0.0 (recall-only) for semantic scoring profiles"
-  ARCH-14: "Recency boost is applied POST-retrieval as: final = semantic*(1-boost) + temporal*boost"
+  # FINGERPRINT ARCHITECTURE (Core Philosophy)
+  ARCH-12: "E1 is THE semantic foundation - all retrieval starts with E1, other embedders enhance"
+  ARCH-13: "Search strategies: E1Only (default), MultiSpace (E1 + enhancers), Pipeline (E1 + stages)"
+  ARCH-14: "Weight profiles MUST have E2-E4=0.0 (temporal), E12=0.0 (rerank-only), E13=0.0 (recall-only) for semantic scoring profiles"
+  ARCH-15: "Recency boost is applied POST-retrieval as: final = semantic*(1-boost) + temporal*boost"
+  ARCH-16: "E1 provides baseline retrieval; enhancement embedders (E5,E6,E7,E10) add specialized precision"
+  ARCH-17: "When E1 returns strong matches (sim>0.8), enhancement embedders refine; when weak, they broaden"
 
   # Embedder-Specific Optimizations (from retrieval research)
-  ARCH-15: "E5 Causal MUST use asymmetric similarity with separate cause/effect vector encodings - cause→effect direction matters"
-  ARCH-16: "E7 Code MUST detect query type (Code2Code vs Text2Code) and use appropriate encoder for each"
-  ARCH-17: "E11 Entity SHOULD use entity linking for disambiguation when possible, not just embedding similarity"
-  ARCH-18: "Multi-space fusion SHOULD use Weighted Reciprocal Rank Fusion (RRF), not weighted score sum"
+  ARCH-18: "E5 Causal MUST use asymmetric similarity with separate cause/effect vector encodings - cause→effect direction matters"
+  ARCH-19: "E7 Code MUST detect query type (Code2Code vs Text2Code) and use appropriate encoder for each"
+  ARCH-20: "E11 Entity SHOULD use entity linking for disambiguation when possible, not just embedding similarity"
+  ARCH-21: "Multi-space fusion SHOULD use Weighted Reciprocal Rank Fusion (RRF), not weighted score sum"
 
-  # Temporal Embedder Usage (E2/E3/E4)
-  ARCH-19: "E2 recency MUST support configurable decay functions (linear, exponential, step) for freshness scoring"
-  ARCH-20: "E3 periodic MUST be used for time-of-day/day-of-week pattern matching via cosine similarity"
-  ARCH-21: "E4 sequence MUST be used for before/after temporal ordering with directional filtering"
-  ARCH-22: "Temporal boosts MUST be applied POST-retrieval as score adjustments, NOT in similarity fusion"
-  ARCH-23: "Session filtering MUST use session_id from SourceMetadata for same-session retrieval"
-  ARCH-24: "Temporal scale (micro/meso/macro/long/archival) determines decay half-life defaults"
+  # Temporal Embedder Usage (E2/E3/E4) - POST-RETRIEVAL ONLY
+  ARCH-22: "E2 recency MUST support configurable decay functions (linear, exponential, step) for freshness scoring"
+  ARCH-23: "E3 periodic MUST be used for time-of-day/day-of-week pattern matching via cosine similarity"
+  ARCH-24: "E4 sequence MUST be used for before/after temporal ordering with directional filtering"
+  ARCH-25: "Temporal boosts MUST be applied POST-retrieval as score adjustments, NOT in similarity fusion"
+  ARCH-26: "Session filtering MUST use session_id from SourceMetadata for same-session retrieval"
+  ARCH-27: "Temporal scale (micro/meso/macro/long/archival) determines decay half-life defaults"
 
 # ===============================================================================
 # CODING STANDARDS
@@ -202,51 +217,77 @@ topic_system:
   overview: "Topics emerge from multi-space clustering, no manual goal setting"
 
   # -------------------------------------------------------------------------
-  # EMBEDDER CATEGORIES
+  # EMBEDDER CATEGORIES (Foundation + Enhancement Model)
   # -------------------------------------------------------------------------
+  # The 13 embedders form a FINGERPRINT with E1 as the foundation.
+  # Categories define how each embedder ENHANCES E1's semantic understanding.
   embedder_categories:
-    SEMANTIC:
-      embedders: [E1, E5, E6, E7, E10, E12, E13]
+    FOUNDATION:
+      embedders: [E1]
       topic_weight: 1.0
-      role: "Primary topic triggers - capture meaning, concepts, intent, code"
+      role: "THE semantic foundation - all retrieval starts here"
       divergence_detection: true
-      count: 7
+      count: 1
+      properties:
+        - "Primary semantic understanding (V_meaning)"
+        - "Always searched first (entry_embedder)"
+        - "Default fallback when other embedders unavailable"
+        - "Highest weight in general queries (35-40%)"
+        - "Other embedders ENHANCE this, they don't replace it"
 
-    TEMPORAL:
+    SEMANTIC_ENHANCERS:
+      embedders: [E5, E6, E7, E10, E12, E13]
+      topic_weight: 1.0
+      role: "Enhance E1 with specialized semantic dimensions"
+      divergence_detection: true
+      count: 6
+      enhancement_type: "Additive specialized intelligence on top of E1"
+      properties:
+        - "E5 (V_causality): Adds WHY understanding - causal reasoning"
+        - "E6 (V_selectivity): Adds KEYWORD precision - specific terms"
+        - "E7 (V_correctness): Adds CODE intelligence - technical patterns"
+        - "E10 (V_multimodality): Adds INTENT understanding - cross-modal"
+        - "E12 (V_precision): Adds EXACT MATCH - token-level reranking"
+        - "E13 (V_keyword_precision): Adds TERM EXPANSION - related keywords"
+
+    TEMPORAL_CONTEXT:
       embedders: [E2, E3, E4]
       topic_weight: 0.0
-      role: "Metadata only - NEVER for topic detection"
+      role: "POST-RETRIEVAL context only - NEVER in similarity fusion"
       divergence_detection: false
       count: 3
+      enhancement_type: "Metadata enrichment after E1-based retrieval"
       rationale: "Temporal proximity != semantic relationship"
-      usage:
-        - "E2 (V_freshness): Recency weighting"
-        - "E3 (V_periodicity): Cyclical patterns (daily, weekly)"
-        - "E4 (V_ordering): Sequence/order relationships"
-        - "Same-session badges on injected context"
-        - "Timeline enrichment metadata"
+      properties:
+        - "E2 (V_freshness): WHEN created - recency boost"
+        - "E3 (V_periodicity): TIME PATTERNS - cyclical matching"
+        - "E4 (V_ordering): SEQUENCE - before/after relationships"
+        - "Applied as post-retrieval score adjustments"
+        - "Power the sequence tools (get_conversation_context, etc.)"
 
-    RELATIONAL:
+    RELATIONAL_ENHANCERS:
       embedders: [E8, E11]
       topic_weight: 0.5
-      role: "Supporting - can reinforce but not define topics alone"
+      role: "Enhance E1 with relationship context"
       divergence_detection: false
       count: 2
-      usage:
-        - "E8 (V_connectivity): Graph structure relationships"
-        - "E11 (V_factuality): Named entity relationships"
-        - "Entity-based retrieval enrichment"
+      enhancement_type: "Structural/entity relationships layered on E1"
+      properties:
+        - "E8 (V_connectivity): Adds GRAPH structure understanding"
+        - "E11 (V_factuality): Adds ENTITY relationship understanding"
+        - "Support topics but cannot define them alone"
 
-    STRUCTURAL:
+    STRUCTURAL_CONTEXT:
       embedders: [E9]
       topic_weight: 0.5
-      role: "Supporting - structural/format patterns"
+      role: "Enhance E1 with format/structure awareness"
       divergence_detection: false
       count: 1
-      usage:
-        - "E9 (V_robustness): Hyperdimensional structure"
-        - "Format-aware retrieval"
-        - "Noise-robust pattern matching"
+      enhancement_type: "Noise-robust structural patterns"
+      properties:
+        - "E9 (V_robustness): Hyperdimensional format encoding"
+        - "Provides structural fingerprint component"
+        - "Supports topics but cannot define them alone"
 
   # -------------------------------------------------------------------------
   # WEIGHTED AGREEMENT FORMULA
@@ -409,26 +450,88 @@ clustering:
     confidence: "weighted_agreement / 8.5"
 
 # ===============================================================================
-# TELEOLOGICAL ARCHITECTURE
+# TELEOLOGICAL ARCHITECTURE (FINGERPRINT SYSTEM)
 # ===============================================================================
 teleological:
-  core: "13-embedding array IS the teleological vector"
+  core: "13-embedding array IS the teleological vector (fingerprint)"
   topic_profile: "TP = [A(E1,V)..A(E13,V)] # 13D alignment scores, searchable"
 
+  # ---------------------------------------------------------------------------
+  # FINGERPRINT PHILOSOPHY
+  # ---------------------------------------------------------------------------
+  # The 13 embedders create a FINGERPRINT - a rich, multi-dimensional signature
+  # for each memory. This is NOT 13 competing perspectives trying to "vote" on
+  # meaning. Instead, it is ONE semantic foundation (E1) ENHANCED by 12 specialized
+  # intelligence dimensions.
+  #
+  # Think of it like a person's identity:
+  # - E1 (Core Identity): WHO they are fundamentally
+  # - Enhancement Layers: ADDITIONAL facets that enrich understanding
+  #   - E5: WHY they act (motivations, causes)
+  #   - E7: WHAT they can do (skills, capabilities)
+  #   - E8: WHO they know (relationships)
+  #   - E2-E4: WHEN they did things (temporal context)
+  #   - etc.
+  #
+  # The fingerprint captures the FULL identity, but E1 is always the anchor.
+
+  fingerprint_philosophy:
+    core_principle: "E1 is THE semantic foundation; other embedders ENHANCE, not compete"
+    architecture: "Foundation + Enhancement Layers"
+
+    foundation:
+      embedder: E1
+      name: "V_meaning"
+      role: "Primary semantic understanding - WHAT the content means"
+      properties:
+        - "Always searched first (entry_embedder)"
+        - "Fallback when other embedders unavailable"
+        - "Highest weight in general semantic queries (35-40%)"
+        - "Provides baseline retrieval that others refine"
+
+    enhancement_layers:
+      semantic_enhancers:
+        description: "Add specialized semantic dimensions to E1's foundation"
+        embedders:
+          E5: { name: "V_causality", enhances: "WHY - causal relationships, reasoning chains" }
+          E6: { name: "V_selectivity", enhances: "KEYWORDS - specific terms and jargon" }
+          E7: { name: "V_correctness", enhances: "CODE - technical accuracy and patterns" }
+          E10: { name: "V_multimodality", enhances: "INTENT - cross-modal understanding" }
+          E12: { name: "V_precision", enhances: "EXACT MATCH - token-level precision" }
+          E13: { name: "V_keyword_precision", enhances: "TERM EXPANSION - related keywords" }
+
+      relational_enhancers:
+        description: "Add relationship context to E1's understanding"
+        embedders:
+          E8: { name: "V_connectivity", enhances: "STRUCTURE - graph relationships" }
+          E11: { name: "V_factuality", enhances: "ENTITIES - named entity relationships" }
+
+      temporal_context:
+        description: "Add time-based metadata (POST-RETRIEVAL only, never in similarity)"
+        embedders:
+          E2: { name: "V_freshness", enhances: "RECENCY - how recent" }
+          E3: { name: "V_periodicity", enhances: "PATTERNS - cyclical timing" }
+          E4: { name: "V_ordering", enhances: "SEQUENCE - before/after relationships" }
+
+      structural_context:
+        description: "Add format/structure awareness"
+        embedders:
+          E9: { name: "V_robustness", enhances: "FORMAT - noise-robust structural patterns" }
+
   embedder_purposes:
-    E1: "V_meaning"
-    E2: "V_freshness"
-    E3: "V_periodicity"
-    E4: "V_ordering"
-    E5: "V_causality"
-    E6: "V_selectivity"
-    E7: "V_correctness"
-    E8: "V_connectivity"
-    E9: "V_robustness"
-    E10: "V_multimodality"
-    E11: "V_factuality"
-    E12: "V_precision"
-    E13: "V_keyword_precision"
+    E1: { purpose: "V_meaning", role: "FOUNDATION", desc: "Primary semantic understanding" }
+    E2: { purpose: "V_freshness", role: "TEMPORAL_CONTEXT", desc: "Recency metadata" }
+    E3: { purpose: "V_periodicity", role: "TEMPORAL_CONTEXT", desc: "Cyclical patterns" }
+    E4: { purpose: "V_ordering", role: "TEMPORAL_CONTEXT", desc: "Sequence ordering" }
+    E5: { purpose: "V_causality", role: "SEMANTIC_ENHANCER", desc: "Causal reasoning" }
+    E6: { purpose: "V_selectivity", role: "SEMANTIC_ENHANCER", desc: "Keyword precision" }
+    E7: { purpose: "V_correctness", role: "SEMANTIC_ENHANCER", desc: "Code/technical" }
+    E8: { purpose: "V_connectivity", role: "RELATIONAL_ENHANCER", desc: "Graph structure" }
+    E9: { purpose: "V_robustness", role: "STRUCTURAL_CONTEXT", desc: "Format patterns" }
+    E10: { purpose: "V_multimodality", role: "SEMANTIC_ENHANCER", desc: "Cross-modal intent" }
+    E11: { purpose: "V_factuality", role: "RELATIONAL_ENHANCER", desc: "Entity facts" }
+    E12: { purpose: "V_precision", role: "SEMANTIC_ENHANCER", desc: "Late interaction" }
+    E13: { purpose: "V_keyword_precision", role: "SEMANTIC_ENHANCER", desc: "SPLADE expansion" }
 
   # Topics emerge AUTONOMOUSLY from clustering
   # Manual goal/topic setting is FORBIDDEN
@@ -613,28 +716,112 @@ mcp:
       - execute_prune
       - trigger_consolidation
 
+  # -------------------------------------------------------------------------
+  # MCP TOOL INTEGRATION (Fingerprint-Optimized)
+  # -------------------------------------------------------------------------
+  # Tools are organized around the E1-foundation philosophy:
+  # - Core search always starts with E1, other embedders enhance
+  # - Specialized tools expose specific enhancement dimensions
+  # - Temporal tools are POST-RETRIEVAL (sequence, context)
+  fingerprint_integration:
+    core_retrieval:
+      tool: search_graph
+      philosophy: |
+        E1 provides the baseline semantic retrieval.
+        Enhancement embedders (E5,E6,E7,E10) add precision via RRF.
+        Temporal (E2-E4) applied post-retrieval only.
+      strategies:
+        E1Only: "Default - pure E1 semantic matching"
+        MultiSpace: "E1 + enhancement embedders via weighted RRF"
+        Pipeline: "E13 recall → E1 dense → E12 rerank"
+
+    enhancement_tools:
+      causal_tools:
+        tools: [search_causes, get_causal_chain]
+        embedder: E5
+        philosophy: "E5 ENHANCES E1 results with causal reasoning"
+        flow: "E1 retrieval → E5 asymmetric reranking → causal direction filtering"
+
+      sequence_tools:
+        tools: [get_conversation_context, get_session_timeline, traverse_memory_chain, compare_session_states]
+        embedder: E4
+        philosophy: "E4 provides temporal ordering AFTER E1 retrieval"
+        flow: "E1 semantic anchor → E4 sequence traversal → chronological results"
+
+      graph_tools:
+        tools: [search_connections, get_graph_path]
+        embedder: E8
+        philosophy: "E8 ENHANCES E1 with structural relationships"
+        flow: "E1 semantic search → E8 graph expansion → path discovery"
+
+    optimal_patterns:
+      general_search:
+        strategy: E1Only
+        rationale: "E1 alone sufficient for most queries"
+        when: "Simple semantic queries, keyword lookup"
+
+      specialized_search:
+        strategy: MultiSpace
+        rationale: "Enhancement embedders add precision when needed"
+        when: "Code queries (E7), causal queries (E5), entity queries (E11)"
+
+      high_precision:
+        strategy: Pipeline
+        rationale: "Full 3-stage retrieval for best results"
+        when: "Critical retrieval, few results needed"
+
+      temporal_context:
+        strategy: "E1 retrieval + post-retrieval temporal boost"
+        rationale: "Temporal embedders measure TIME, not TOPIC"
+        when: "Recent memories needed, session context"
+
 # ===============================================================================
-# 13-MODEL EMBEDDINGS
+# 13-MODEL EMBEDDINGS (FINGERPRINT SYSTEM)
 # ===============================================================================
 embeddings:
-  paradigm: "NO FUSION - Store all 13 embeddings; ~17KB quantized"
+  paradigm: "FINGERPRINT - E1 foundation + 12 enhancement layers; ~17KB quantized"
+
+  # ---------------------------------------------------------------------------
+  # FINGERPRINT STRUCTURE
+  # ---------------------------------------------------------------------------
+  # The 13 embedders create a FINGERPRINT - a rich signature for each memory.
+  # E1 is THE semantic foundation; other embedders add specialized intelligence.
+  #
+  # Retrieval always starts with E1. Enhancement embedders add precision:
+  # - E5 adds WHY (causal reasoning)
+  # - E7 adds CODE intelligence
+  # - E6/E13 add KEYWORD precision
+  # - E2-E4 add TEMPORAL context (post-retrieval only)
 
   models:
-    E1_Semantic: { dim: 1024, type: dense, quant: "PQ-8", category: SEMANTIC, topic_weight: 1.0, use: "General meaning" }
-    E2_TemporalRecent: { dim: 512, type: dense, quant: Float8, category: TEMPORAL, topic_weight: 0.0, use: "Recency (metadata only)" }
-    E3_TemporalPeriodic: { dim: 512, type: dense, quant: Float8, category: TEMPORAL, topic_weight: 0.0, use: "Cycles (metadata only)" }
-    E4_TemporalPositional: { dim: 512, type: dense, quant: Float8, category: TEMPORAL, topic_weight: 0.0, use: "Ordering (metadata only)" }
-    E5_Causal: { dim: 768, type: dense, quant: "PQ-8", asymmetric: true, category: SEMANTIC, topic_weight: 1.0, use: "Why/because" }
-    E6_Sparse: { dim: "~30K 5%", type: sparse, category: SEMANTIC, topic_weight: 1.0, use: "Keywords" }
-    E7_Code: { dim: 1536, type: dense, quant: "PQ-8", category: SEMANTIC, topic_weight: 1.0, use: "Code/tech" }
-    E8_Graph: { dim: 384, type: dense, quant: Float8, category: RELATIONAL, topic_weight: 0.5, use: "Graph connectivity" }
-    E9_HDC: { dim: "10K->1024", type: binary, category: STRUCTURAL, topic_weight: 0.5, use: "Structure" }
-    E10_Multimodal: { dim: 768, type: dense, quant: "PQ-8", category: SEMANTIC, topic_weight: 1.0, use: "Intent" }
-    E11_Entity: { dim: 384, type: dense, quant: Float8, category: RELATIONAL, topic_weight: 0.5, use: "Named entity relationships" }
-    E12_LateInteraction: { dim: "128D/tok", type: dense_per_token, category: SEMANTIC, topic_weight: 1.0, use: "Precise match" }
-    E13_SPLADE: { dim: "~30K sparse", type: sparse, category: SEMANTIC, topic_weight: 1.0, use: "Term expansion" }
+    # FOUNDATION (always searched first)
+    E1_Semantic: { dim: 1024, type: dense, quant: "PQ-8", category: FOUNDATION, topic_weight: 1.0, use: "Primary semantic meaning", role: "FOUNDATION - retrieval starts here" }
 
-  fingerprint: { semantic_fingerprint: "[E1..E13]", topic_profile: "[A(E1,V)..A(E13,V)]" }
+    # SEMANTIC ENHANCERS (add specialized understanding to E1)
+    E5_Causal: { dim: 768, type: dense, quant: "PQ-8", asymmetric: true, category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "WHY - causal reasoning", role: "Enhances E1 with causality" }
+    E6_Sparse: { dim: "~30K 5%", type: sparse, category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "KEYWORDS - specific terms", role: "Stage 1 recall, enhances E1 precision" }
+    E7_Code: { dim: 1536, type: dense, quant: "PQ-8", category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "CODE - technical patterns", role: "Enhances E1 for code queries" }
+    E10_Multimodal: { dim: 768, type: dense, quant: "PQ-8", category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "INTENT - cross-modal", role: "Enhances E1 with intent understanding" }
+    E12_LateInteraction: { dim: "128D/tok", type: dense_per_token, category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "EXACT MATCH - token precision", role: "Stage 3 rerank, enhances E1 precision" }
+    E13_SPLADE: { dim: "~30K sparse", type: sparse, category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "TERM EXPANSION - related keywords", role: "Stage 1 recall, expands E1 coverage" }
+
+    # TEMPORAL CONTEXT (POST-RETRIEVAL ONLY - never in similarity fusion)
+    E2_TemporalRecent: { dim: 512, type: dense, quant: Float8, category: TEMPORAL_CONTEXT, topic_weight: 0.0, use: "RECENCY - how recent", role: "Post-retrieval boost only" }
+    E3_TemporalPeriodic: { dim: 512, type: dense, quant: Float8, category: TEMPORAL_CONTEXT, topic_weight: 0.0, use: "PATTERNS - time cycles", role: "Post-retrieval boost only" }
+    E4_TemporalPositional: { dim: 512, type: dense, quant: Float8, category: TEMPORAL_CONTEXT, topic_weight: 0.0, use: "SEQUENCE - ordering", role: "Powers sequence tools" }
+
+    # RELATIONAL ENHANCERS (add relationship context to E1)
+    E8_Graph: { dim: 384, type: dense, quant: Float8, category: RELATIONAL_ENHANCER, topic_weight: 0.5, use: "GRAPH - connectivity", role: "Powers graph tools, supports E1" }
+    E11_Entity: { dim: 384, type: dense, quant: Float8, category: RELATIONAL_ENHANCER, topic_weight: 0.5, use: "ENTITIES - named relationships", role: "Enhances E1 with entity facts" }
+
+    # STRUCTURAL CONTEXT (add format awareness to E1)
+    E9_HDC: { dim: "10K->1024", type: binary, category: STRUCTURAL_CONTEXT, topic_weight: 0.5, use: "FORMAT - structure patterns", role: "Noise-robust fingerprint component" }
+
+  fingerprint:
+    structure: "[E1..E13]"
+    foundation: "E1 (V_meaning)"
+    topic_profile: "[A(E1,V)..A(E13,V)]"
+    philosophy: "E1 provides baseline; others add specialized dimensions"
 
   retrieval: # 5-Stage (<60ms @ 1M)
     S1: { desc: "BM25+E13 sparse", out: "10K", lat: "<5ms" }

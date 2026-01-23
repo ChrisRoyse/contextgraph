@@ -184,7 +184,9 @@ impl DatasetGenerator {
             e5_causal: Vec::new(), // Empty - using new dual format
             e6_sparse: self.generate_sparse(E6_SPARSE_VOCAB, self.config.sparse_entries_e6),
             e7_code: embeddings.e7,
-            e8_graph: embeddings.e8,
+            e8_graph_as_source: embeddings.e8.clone(),
+            e8_graph_as_target: embeddings.e8,
+            e8_graph: Vec::new(), // Empty - using new dual format
             e9_hdc: embeddings.e9,
             e10_multimodal: embeddings.e10,
             e11_entity: embeddings.e11,

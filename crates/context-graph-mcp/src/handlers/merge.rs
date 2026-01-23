@@ -515,6 +515,12 @@ impl Handlers {
         let e8_graph = Self::average_dense_vectors(
             fingerprints.iter().map(|f| &f.semantic.e8_graph).collect(),
         );
+        let e8_graph_as_source = Self::average_dense_vectors(
+            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_source).collect(),
+        );
+        let e8_graph_as_target = Self::average_dense_vectors(
+            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_target).collect(),
+        );
         let e9_hdc =
             Self::average_dense_vectors(fingerprints.iter().map(|f| &f.semantic.e9_hdc).collect());
         let e10_multimodal = Self::average_dense_vectors(
@@ -558,6 +564,8 @@ impl Handlers {
             e6_sparse,
             e7_code,
             e8_graph,
+            e8_graph_as_source,
+            e8_graph_as_target,
             e9_hdc,
             e10_multimodal,
             e11_entity,
@@ -620,6 +628,12 @@ impl Handlers {
         let e8_graph = Self::intersection_dense_vectors(
             fingerprints.iter().map(|f| &f.semantic.e8_graph).collect(),
         );
+        let e8_graph_as_source = Self::intersection_dense_vectors(
+            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_source).collect(),
+        );
+        let e8_graph_as_target = Self::intersection_dense_vectors(
+            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_target).collect(),
+        );
         let e9_hdc = Self::intersection_dense_vectors(
             fingerprints.iter().map(|f| &f.semantic.e9_hdc).collect(),
         );
@@ -680,6 +694,8 @@ impl Handlers {
             e6_sparse,
             e7_code,
             e8_graph,
+            e8_graph_as_source,
+            e8_graph_as_target,
             e9_hdc,
             e10_multimodal,
             e11_entity,
@@ -757,6 +773,14 @@ impl Handlers {
             fingerprints.iter().map(|f| &f.semantic.e8_graph).collect(),
             &weights,
         );
+        let e8_graph_as_source = Self::weighted_average_dense_vectors(
+            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_source).collect(),
+            &weights,
+        );
+        let e8_graph_as_target = Self::weighted_average_dense_vectors(
+            fingerprints.iter().map(|f| &f.semantic.e8_graph_as_target).collect(),
+            &weights,
+        );
         let e9_hdc = Self::weighted_average_dense_vectors(
             fingerprints.iter().map(|f| &f.semantic.e9_hdc).collect(),
             &weights,
@@ -812,6 +836,8 @@ impl Handlers {
             e6_sparse,
             e7_code,
             e8_graph,
+            e8_graph_as_source,
+            e8_graph_as_target,
             e9_hdc,
             e10_multimodal,
             e11_entity,

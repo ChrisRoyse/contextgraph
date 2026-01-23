@@ -686,7 +686,7 @@ pub fn dequantize_fingerprint(
     let e6_sparse = dequantize_sparse(&qfp.e6_sparse, Embedder::Sparse)?;
     let e13_splade = dequantize_sparse(&qfp.e13_splade, Embedder::KeywordSplade)?;
 
-    // Dequantized E5 is stored in both cause and effect vectors
+    // Dequantized E5 and E8 are stored in both dual vector fields
     // (quantization loses the distinction, so we reconstruct symmetrically)
     Ok(SemanticFingerprint {
         e1_semantic,
@@ -698,7 +698,9 @@ pub fn dequantize_fingerprint(
         e5_causal: Vec::new(), // Using new dual format
         e6_sparse,
         e7_code,
-        e8_graph,
+        e8_graph_as_source: e8_graph.clone(),
+        e8_graph_as_target: e8_graph,
+        e8_graph: Vec::new(), // Using new dual format
         e9_hdc,
         e10_multimodal,
         e11_entity,

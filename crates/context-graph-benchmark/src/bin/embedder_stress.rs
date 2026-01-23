@@ -162,6 +162,7 @@ EMBEDDER NAMES:
     E5, E5_CAUSAL       - Causal relationships (asymmetric)
     E6, E6_SPARSE       - Sparse keywords (exact match)
     E7, E7_CODE         - Code patterns
+    E8, E8_GRAPH        - Graph connectivity (source/target asymmetric)
     E9, E9_HDC          - Hyperdimensional (noise robust)
     E10, E10_MULTIMODAL - Cross-modal (visual/intent)
     E11, E11_ENTITY     - Named entities

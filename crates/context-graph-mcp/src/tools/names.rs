@@ -49,3 +49,7 @@ pub const COMPARE_SESSION_STATES: &str = "compare_session_states";
 // ========== CAUSAL TOOLS (E5 Priority 1 Enhancement) ==========
 pub const SEARCH_CAUSES: &str = "search_causes";
 pub const GET_CAUSAL_CHAIN: &str = "get_causal_chain";
+
+// ========== GRAPH TOOLS (E8 Upgrade - Phase 4) ==========
+pub const SEARCH_CONNECTIONS: &str = "search_connections";
+pub const GET_GRAPH_PATH: &str = "get_graph_path";

@@ -116,3 +116,7 @@ path = "src/bin/validation_bench.rs"
 [[bin]]
 name = "sparse-bench"
 path = "src/bin/sparse_bench.rs"
+
+[[bin]]
+name = "graph-bench"
+path = "src/bin/graph_bench.rs"

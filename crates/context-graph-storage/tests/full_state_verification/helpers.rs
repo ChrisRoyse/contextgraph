@@ -52,7 +52,9 @@ pub fn generate_real_semantic_fingerprint() -> SemanticFingerprint {
         e5_causal: Vec::new(), // Empty - using new dual format
         e6_sparse: generate_real_sparse_vector(100),
         e7_code: generate_real_unit_vector(1536),
-        e8_graph: generate_real_unit_vector(384),
+        e8_graph_as_source: generate_real_unit_vector(384),
+        e8_graph_as_target: generate_real_unit_vector(384),
+        e8_graph: Vec::new(), // Legacy field, empty by default
         e9_hdc: generate_real_unit_vector(1024), // HDC projected dimension
         e10_multimodal: generate_real_unit_vector(768),
         e11_entity: generate_real_unit_vector(384),

@@ -2300,7 +2300,9 @@ mod tests {
             e5_causal: Vec::new(), // Using new dual format
             e6_sparse: SparseVector::empty(),
             e7_code: generate_domain_embedding(get_dimension(Embedder::Code), domain, variation, seed + 500),
-            e8_graph: generate_domain_embedding(get_dimension(Embedder::Emotional), "all", 0.5, seed + 600),
+            e8_graph_as_source: generate_domain_embedding(get_dimension(Embedder::Emotional), "all", 0.5, seed + 600),
+            e8_graph_as_target: generate_domain_embedding(get_dimension(Embedder::Emotional), "all", 0.5, seed + 601),
+            e8_graph: Vec::new(), // Legacy field, empty by default
             e9_hdc: generate_domain_embedding(get_dimension(Embedder::Hdc), "all", 0.5, seed + 700),
             e10_multimodal: generate_domain_embedding(get_dimension(Embedder::Multimodal), domain, variation, seed + 800),
             e11_entity: generate_domain_embedding(get_dimension(Embedder::Entity), domain, variation, seed + 900),
@@ -2767,7 +2769,9 @@ mod tests {
             e5_causal: Vec::new(), // Using new dual format
             e6_sparse: SparseVector::empty(),
             e7_code: generate_15domain_embedding(get_dimension(Embedder::Code), domain_idx, variation, seed + 500),
-            e8_graph: generate_15domain_embedding(get_dimension(Embedder::Emotional), 7, 0.5, seed + 600),
+            e8_graph_as_source: generate_15domain_embedding(get_dimension(Embedder::Emotional), 7, 0.5, seed + 600),
+            e8_graph_as_target: generate_15domain_embedding(get_dimension(Embedder::Emotional), 7, 0.5, seed + 601),
+            e8_graph: Vec::new(), // Legacy field, empty by default
             e9_hdc: generate_15domain_embedding(get_dimension(Embedder::Hdc), 7, 0.5, seed + 700),
             e10_multimodal: generate_15domain_embedding(get_dimension(Embedder::Multimodal), domain_idx, variation, seed + 800),
             e11_entity: generate_15domain_embedding(get_dimension(Embedder::Entity), domain_idx, variation, seed + 900),

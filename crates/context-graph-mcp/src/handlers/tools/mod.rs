@@ -11,6 +11,7 @@
 //! - list_watched_files, get_file_watcher_stats, delete_file_content, reconcile_files (file_watcher_tools.rs)
 //! - get_conversation_context, get_session_timeline, traverse_memory_chain, compare_session_states (sequence_tools.rs)
 //! - search_causes, get_causal_chain (causal_tools.rs) - E5 Causal Priority 1
+//! - search_connections, get_graph_path (graph_tools.rs) - E8 Upgrade Phase 4
 
 mod causal_tools;
 mod consolidation;
@@ -18,6 +19,7 @@ mod curation_tools;
 mod dispatch;
 mod dream_tools;
 mod file_watcher_tools;
+mod graph_tools;
 mod helpers;
 mod memory_tools;
 mod sequence_tools;
@@ -28,4 +30,5 @@ mod topic_tools;
 pub mod causal_dtos;
 pub mod curation_dtos;
 pub mod dream_dtos;
+pub mod graph_dtos;
 pub mod topic_dtos;

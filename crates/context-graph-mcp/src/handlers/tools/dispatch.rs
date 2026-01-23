@@ -114,6 +114,10 @@ impl Handlers {
             tool_names::SEARCH_CAUSES => self.call_search_causes(id, arguments).await,
             tool_names::GET_CAUSAL_CHAIN => self.call_get_causal_chain(id, arguments).await,
 
+            // ========== GRAPH TOOLS (E8 Upgrade - Phase 4) ==========
+            tool_names::SEARCH_CONNECTIONS => self.call_search_connections(id, arguments).await,
+            tool_names::GET_GRAPH_PATH => self.call_get_graph_path(id, arguments).await,
+
             // Unknown tool
             _ => JsonRpcResponse::error(
                 id,

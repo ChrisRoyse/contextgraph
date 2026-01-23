@@ -356,6 +356,174 @@ pub fn build_e7_code_corpus() -> EmbedderStressConfig {
     }
 }
 
+/// Build E8 Graph stress test corpus.
+///
+/// E8 captures structural connectivity and link relationships.
+/// E1 focuses on semantic similarity without understanding structural relationships.
+pub fn build_e8_graph_corpus() -> EmbedderStressConfig {
+    EmbedderStressConfig {
+        embedder: EmbedderIndex::E8Graph,
+        name: "E8 Graph",
+        description: "Structural connectivity and link relationships with source/target asymmetry",
+        corpus: vec![
+            // Module dependency relationships
+            StressCorpusEntry {
+                content: "The AuthService module imports UserRepository and TokenValidator. It exports authenticate() and logout() functions.".into(),
+                doc_id: 0,
+                e1_limitation: Some("E1 misses import/export direction".into()),
+                metadata: Some(serde_json::json!({
+                    "imports": ["UserRepository", "TokenValidator"],
+                    "exports": ["authenticate", "logout"],
+                    "graph_direction": "source"
+                })),
+            },
+            StressCorpusEntry {
+                content: "The UserRepository is used by AuthService, OrderService, and ProfileService. It provides findById() and save() methods.".into(),
+                doc_id: 1,
+                e1_limitation: Some("E1 doesn't understand 'used by' as target relationship".into()),
+                metadata: Some(serde_json::json!({
+                    "used_by": ["AuthService", "OrderService", "ProfileService"],
+                    "provides": ["findById", "save"],
+                    "graph_direction": "target"
+                })),
+            },
+            StressCorpusEntry {
+                content: "Authentication handles user login and logout operations. Token validation ensures security.".into(),
+                doc_id: 2,
+                e1_limitation: Some("Semantic match without structural info".into()),
+                metadata: None,
+            },
+            // Class inheritance relationships
+            StressCorpusEntry {
+                content: "The HttpHandler class extends BaseHandler and implements RequestHandler interface. It overrides handle() method.".into(),
+                doc_id: 3,
+                e1_limitation: Some("E1 misses extends/implements hierarchy".into()),
+                metadata: Some(serde_json::json!({
+                    "extends": "BaseHandler",
+                    "implements": ["RequestHandler"],
+                    "graph_direction": "source"
+                })),
+            },
+            StressCorpusEntry {
+                content: "BaseHandler is the parent class for HttpHandler, WebSocketHandler, and GrpcHandler. It defines abstract handle() method.".into(),
+                doc_id: 4,
+                e1_limitation: Some("E1 doesn't see 'parent class' as structural relationship".into()),
+                metadata: Some(serde_json::json!({
+                    "subclasses": ["HttpHandler", "WebSocketHandler", "GrpcHandler"],
+                    "graph_direction": "target"
+                })),
+            },
+            StressCorpusEntry {
+                content: "Request handling processes incoming HTTP requests and returns responses.".into(),
+                doc_id: 5,
+                e1_limitation: Some("Generic HTTP description".into()),
+                metadata: None,
+            },
+            // Database schema relationships
+            StressCorpusEntry {
+                content: "The orders table has a foreign key user_id that references the users table. Each order belongs to exactly one user.".into(),
+                doc_id: 6,
+                e1_limitation: Some("E1 misses FK relationship direction".into()),
+                metadata: Some(serde_json::json!({
+                    "references": "users",
+                    "foreign_key": "user_id",
+                    "graph_direction": "source"
+                })),
+            },
+            StressCorpusEntry {
+                content: "The users table is referenced by orders, reviews, and payments tables. It is the primary entity.".into(),
+                doc_id: 7,
+                e1_limitation: Some("E1 doesn't understand 'referenced by' as inbound links".into()),
+                metadata: Some(serde_json::json!({
+                    "referenced_by": ["orders", "reviews", "payments"],
+                    "graph_direction": "target"
+                })),
+            },
+            // API endpoint relationships
+            StressCorpusEntry {
+                content: "The /api/orders endpoint calls /api/users for user validation and /api/inventory for stock checking.".into(),
+                doc_id: 8,
+                e1_limitation: Some("E1 misses API call direction".into()),
+                metadata: Some(serde_json::json!({
+                    "calls": ["/api/users", "/api/inventory"],
+                    "graph_direction": "source"
+                })),
+            },
+            StressCorpusEntry {
+                content: "The /api/users endpoint is called by /api/orders, /api/auth, and /api/profile for user data retrieval.".into(),
+                doc_id: 9,
+                e1_limitation: Some("E1 doesn't see 'called by' as inbound relationship".into()),
+                metadata: Some(serde_json::json!({
+                    "called_by": ["/api/orders", "/api/auth", "/api/profile"],
+                    "graph_direction": "target"
+                })),
+            },
+        ],
+        queries: vec![
+            // Module dependency queries
+            StressQuery {
+                query: "What modules does AuthService import?".into(),
+                target_embedder: EmbedderIndex::E8Graph,
+                expected_top_docs: vec![0], // AuthService imports UserRepository, TokenValidator
+                anti_expected_docs: vec![1, 2], // UserRepository is target, doc 2 has no structure
+                e1_failure_reason: "E1 matches all auth-related docs equally".into(),
+            },
+            StressQuery {
+                query: "What modules use UserRepository?".into(),
+                target_embedder: EmbedderIndex::E8Graph,
+                expected_top_docs: vec![1], // UserRepository used_by list
+                anti_expected_docs: vec![0], // AuthService is source, not answering this
+                e1_failure_reason: "E1 doesn't understand 'use' direction".into(),
+            },
+            // Class hierarchy queries
+            StressQuery {
+                query: "What does HttpHandler extend?".into(),
+                target_embedder: EmbedderIndex::E8Graph,
+                expected_top_docs: vec![3], // HttpHandler extends BaseHandler
+                anti_expected_docs: vec![4, 5],
+                e1_failure_reason: "E1 matches all handler-related docs".into(),
+            },
+            StressQuery {
+                query: "What classes inherit from BaseHandler?".into(),
+                target_embedder: EmbedderIndex::E8Graph,
+                expected_top_docs: vec![4], // BaseHandler subclasses list
+                anti_expected_docs: vec![3], // HttpHandler is a source node
+                e1_failure_reason: "E1 doesn't understand inheritance direction".into(),
+            },
+            // Database relationship queries
+            StressQuery {
+                query: "What table does orders reference?".into(),
+                target_embedder: EmbedderIndex::E8Graph,
+                expected_top_docs: vec![6], // orders references users
+                anti_expected_docs: vec![7],
+                e1_failure_reason: "E1 sees both as order/user related".into(),
+            },
+            StressQuery {
+                query: "What tables have foreign keys to users?".into(),
+                target_embedder: EmbedderIndex::E8Graph,
+                expected_top_docs: vec![7], // users referenced_by list
+                anti_expected_docs: vec![6],
+                e1_failure_reason: "E1 doesn't understand FK direction".into(),
+            },
+            // API call graph queries
+            StressQuery {
+                query: "What APIs does /api/orders call?".into(),
+                target_embedder: EmbedderIndex::E8Graph,
+                expected_top_docs: vec![8], // orders calls users, inventory
+                anti_expected_docs: vec![9],
+                e1_failure_reason: "E1 matches API endpoints semantically".into(),
+            },
+            StressQuery {
+                query: "What endpoints call /api/users?".into(),
+                target_embedder: EmbedderIndex::E8Graph,
+                expected_top_docs: vec![9], // users called_by list
+                anti_expected_docs: vec![8],
+                e1_failure_reason: "E1 doesn't understand call direction".into(),
+            },
+        ],
+    }
+}
+
 /// Build E9 HDC stress test corpus.
 ///
 /// E9 captures noise-robust patterns using hyperdimensional codes.
@@ -706,6 +874,7 @@ pub fn get_all_stress_configs() -> Vec<EmbedderStressConfig> {
         build_e5_causal_corpus(),
         build_e6_sparse_corpus(),
         build_e7_code_corpus(),
+        build_e8_graph_corpus(),
         build_e9_hdc_corpus(),
         build_e10_multimodal_corpus(),
         build_e11_entity_corpus(),
@@ -792,6 +961,7 @@ mod tests {
             EmbedderIndex::E5Causal,
             EmbedderIndex::E6Sparse,
             EmbedderIndex::E7Code,
+            EmbedderIndex::E8Graph,
             EmbedderIndex::E9HDC,
             EmbedderIndex::E10Multimodal,
             EmbedderIndex::E11Entity,

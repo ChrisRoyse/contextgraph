@@ -10,6 +10,16 @@
 //! GraphModel uses 384D directly (unlike CodeModel which uses 1536D via Qodo-Embed)
 //! as this is the native MiniLM embedding dimension.
 //!
+//! # Asymmetric Dual Embeddings
+//!
+//! Following the E5 Causal pattern (ARCH-15), this model supports asymmetric
+//! source/target embeddings via `embed_dual()`:
+//!
+//! - **Source embedding**: Represents the entity as a source of outgoing relationships
+//!   (e.g., "Module A imports B, C, D")
+//! - **Target embedding**: Represents the entity as a target of incoming relationships
+//!   (e.g., "Module X is imported by A, B, C")
+//!
 //! # Thread Safety
 //! - `AtomicBool` for `loaded` state (lock-free reads)
 //! - `RwLock` for model state (thread-safe state transitions)
@@ -24,6 +34,8 @@
 //! - `constants`: Configuration constants (dimensions, tokens, latency)
 //! - `state`: Internal model state management
 //! - `encoding`: Graph-specific encoding utilities (relations, context)
+//! - `projections`: Asymmetric source/target projection weights
+//! - `marker_detection`: Structural relationship marker detection
 //! - `layer_norm`: LayerNorm implementation
 //! - `attention`: Self-attention for encoder layers
 //! - `ffn`: Feed-forward network implementation
@@ -38,7 +50,9 @@ mod encoding;
 mod ffn;
 mod forward;
 mod layer_norm;
+pub mod marker_detection;
 mod model;
+pub mod projections;
 mod state;
 
 #[cfg(test)]
@@ -51,4 +65,9 @@ pub use constants::{
     GRAPH_DIMENSION, GRAPH_LATENCY_BUDGET_MS, GRAPH_MAX_TOKENS, GRAPH_MODEL_NAME,
     MAX_CONTEXT_NEIGHBORS,
 };
+pub use marker_detection::{
+    RelationshipDirection, StructuralMarkerResult, detect_graph_query_intent,
+    detect_structural_markers, detect_structural_markers_simple,
+};
 pub use model::GraphModel;
+pub use projections::{GraphProjectionWeights, GRAPH_PROJECTION_SEED};

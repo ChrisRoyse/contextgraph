@@ -183,4 +183,46 @@ impl SynergyMatrix {
         matrix.computed_at = Utc::now();
         matrix
     }
+
+    /// Create a graph reasoning synergy matrix.
+    ///
+    /// Emphasizes E8_Spatial (Graph) relationships for structural and
+    /// connectivity queries. E8 captures module dependencies, code structure,
+    /// and connectivity patterns.
+    ///
+    /// Per E8 upgrade specification (Phase 5):
+    /// - E8 Graph: PRIMARY for structural relationships
+    /// - E1 Semantic: Supporting context
+    /// - E11 Abstract (Entity): Entity relationships
+    /// - E6 Code: Code structure connections
+    ///
+    /// Use for: module dependencies ("what imports X?"), code structure
+    /// ("what extends BaseClass?"), connectivity ("what connects to X?").
+    pub fn graph_reasoning() -> Self {
+        let mut matrix = Self::with_base_synergies();
+
+        // Boost E8_Spatial (Graph) pairs - PRIMARY for structural reasoning
+        // E8 + E1_Semantic: graph structure with semantic context
+        matrix.values[7][0] = 0.95;
+        matrix.values[0][7] = 0.95;
+        // E8 + E11_Abstract: graph relationships with entities
+        matrix.values[7][10] = 0.95;
+        matrix.values[10][7] = 0.95;
+        // E8 + E6_Code: code structure graphs (imports, dependencies)
+        matrix.values[7][5] = 0.95;
+        matrix.values[5][7] = 0.95;
+        // E8 + E7_Procedural: call graphs, flow structure
+        matrix.values[7][6] = 0.90;
+        matrix.values[6][7] = 0.90;
+        // E8 + E5_Analogical: structural analogies
+        matrix.values[7][4] = 0.85;
+        matrix.values[4][7] = 0.85;
+
+        // Also boost E6_Code + E11_Abstract (code entities)
+        matrix.values[5][10] = 0.85;
+        matrix.values[10][5] = 0.85;
+
+        matrix.computed_at = Utc::now();
+        matrix
+    }
 }

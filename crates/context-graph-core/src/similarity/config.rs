@@ -233,6 +233,26 @@ impl WeightingStrategy {
         weights[10] = 0.15; // E11 Entity
         weights
     }
+
+    /// Create static weights that emphasize graph/relational reasoning.
+    ///
+    /// Per E8 upgrade specification (Phase 5):
+    /// - w_graph: 0.45 (E8 primary for structural relationships)
+    /// - w_semantic: 0.25 (E1 supporting context)
+    /// - w_entity: 0.15 (E11 entity relationships)
+    /// - others: reduced (~0.15 / 10 = 0.015 each)
+    ///
+    /// Use this weight profile for queries about:
+    /// - Module dependencies ("what imports X?", "what uses X?")
+    /// - Code structure ("what extends BaseClass?")
+    /// - Connectivity patterns ("what connects to X?")
+    pub fn graph_reasoning_weights() -> [f32; NUM_EMBEDDERS] {
+        let mut weights = [0.015; NUM_EMBEDDERS]; // Base: ~0.15 split among 10 others
+        weights[7] = 0.45; // E8 Graph (PRIMARY)
+        weights[0] = 0.25; // E1 Semantic (supporting context)
+        weights[10] = 0.15; // E11 Entity (entity relationships)
+        weights
+    }
 }
 
 /// How to handle missing embeddings in a fingerprint.
@@ -346,5 +366,39 @@ mod tests {
             _ => panic!("Should be RRF"),
         }
         println!("[PASS] Config builder methods work correctly");
+    }
+
+    #[test]
+    fn test_graph_reasoning_weights_sum_to_one() {
+        let weights = WeightingStrategy::graph_reasoning_weights();
+        let sum: f32 = weights.iter().sum();
+        assert!(
+            (sum - 1.0).abs() < 0.01,
+            "Graph reasoning weights should sum close to 1.0, got {}",
+            sum
+        );
+        assert!(
+            weights[7] > weights[0],
+            "E8 Graph should have highest weight in graph_reasoning"
+        );
+        assert_eq!(weights[7], 0.45, "E8 Graph should be 0.45");
+        assert_eq!(weights[0], 0.25, "E1 Semantic should be 0.25");
+        assert_eq!(weights[10], 0.15, "E11 Entity should be 0.15");
+        println!(
+            "[PASS] Graph reasoning weights: E8={:.2}, E1={:.2}, E11={:.2}",
+            weights[7], weights[0], weights[10]
+        );
+    }
+
+    #[test]
+    fn test_code_search_weights_include_e8() {
+        let weights = WeightingStrategy::code_search_weights();
+        // E8 should have meaningful weight in code search
+        assert_eq!(weights[7], 0.15, "E8 Graph should be 0.15 in code_search");
+        assert!(weights[6] > weights[7], "E7 Code should be higher than E8 in code_search");
+        println!(
+            "[PASS] Code search weights: E7={:.2}, E1={:.2}, E8={:.2}",
+            weights[6], weights[0], weights[7]
+        );
     }
 }

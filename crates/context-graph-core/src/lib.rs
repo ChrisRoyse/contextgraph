@@ -38,6 +38,7 @@ pub mod embeddings;
 pub mod entity;
 pub mod error;
 pub mod fusion;
+pub mod graph;
 pub mod injection;
 pub mod gwt;
 pub mod index;
@@ -116,4 +117,11 @@ pub use code::{
 pub use fusion::{
     FusionStrategy, EmbedderRanking, FusedResult, RRF_K,
     fuse_rankings, weighted_rrf, weighted_sum, normalize_minmax,
+};
+
+// Graph asymmetric similarity (E8) - directional graph embeddings
+pub use graph::{
+    GraphDirection, ConnectivityContext, compute_graph_asymmetric_similarity,
+    compute_graph_asymmetric_similarity_simple, compute_e8_asymmetric_fingerprint_similarity,
+    compute_e8_asymmetric_full, detect_graph_query_intent, adjust_batch_graph_similarities,
 };

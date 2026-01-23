@@ -60,7 +60,9 @@ fn create_test_fingerprint_with_seed(seed: u64) -> TeleologicalFingerprint {
         e5_causal: Vec::new(),                               // Empty - using new dual format
         e6_sparse: generate_sparse(seed + 5),                // Sparse
         e7_code: generate_vec(1536, seed + 6),               // 1536D
-        e8_graph: generate_vec(384, seed + 7),               // 384D
+        e8_graph_as_source: generate_vec(384, seed + 7),      // 384D (as source)
+        e8_graph_as_target: generate_vec(384, seed + 8),      // 384D (as target)
+        e8_graph: Vec::new(),                                 // Legacy field, empty
         e9_hdc: generate_vec(1024, seed + 8),                // 1024D HDC (projected)
         e10_multimodal: generate_vec(768, seed + 9),         // 768D
         e11_entity: generate_vec(384, seed + 10),            // 384D

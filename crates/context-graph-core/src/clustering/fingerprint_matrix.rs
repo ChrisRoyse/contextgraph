@@ -611,7 +611,9 @@ mod tests {
             e5_causal: Vec::new(), // Using new dual format
             e6_sparse: SparseVector::empty(),
             e7_code: vec![offset; get_dimension(Embedder::Code)],
-            e8_graph: vec![offset; get_dimension(Embedder::Emotional)],
+            e8_graph_as_source: vec![offset; get_dimension(Embedder::Emotional)],
+            e8_graph_as_target: vec![offset; get_dimension(Embedder::Emotional)],
+            e8_graph: Vec::new(), // Legacy field, empty by default
             e9_hdc: vec![offset; get_dimension(Embedder::Hdc)],
             e10_multimodal: vec![offset; get_dimension(Embedder::Multimodal)],
             e11_entity: vec![offset; get_dimension(Embedder::Entity)],

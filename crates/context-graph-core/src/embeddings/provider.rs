@@ -243,8 +243,8 @@ impl StubMultiArrayProvider {
         latencies[12] = e13_lat; // E13
 
         // Build fingerprint
-        // For E5, we use the same vector for both cause and effect in stub mode
-        // (real models would produce different encodings)
+        // For E5 and E8, we use the same vector for both roles in stub mode
+        // (real models would produce different encodings via dual projections)
         let fingerprint = SemanticFingerprint {
             e1_semantic: e1_vec,
             e2_temporal_recent: e2_vec,
@@ -255,7 +255,9 @@ impl StubMultiArrayProvider {
             e5_causal: Vec::new(), // Empty - using new dual format
             e6_sparse,
             e7_code: e7_vec,
-            e8_graph: e8_vec,
+            e8_graph_as_source: e8_vec.clone(),
+            e8_graph_as_target: e8_vec,
+            e8_graph: Vec::new(), // Empty - using new dual format
             e9_hdc: e9_vec,
             e10_multimodal: e10_vec,
             e11_entity: e11_vec,
