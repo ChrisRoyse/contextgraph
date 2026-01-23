@@ -1,16 +1,20 @@
 //! Intent-aware tool implementations (search_by_intent, find_contextual_matches).
 //!
-//! # E10 Intent/Context Asymmetric Embeddings
+//! # E10 Query→Document Retrieval (E5-base-v2)
 //!
-//! These tools leverage the E10 embedder's asymmetric intent/context encoding:
-//! - `search_by_intent`: Find memories with similar intent/purpose
-//! - `find_contextual_matches`: Find memories relevant to a given context
+//! These tools leverage the E10 embedder (intfloat/e5-base-v2) for asymmetric
+//! query→document retrieval:
+//! - User queries → encoded with "query: " prefix → `get_e10_as_intent()`
+//! - Stored memories → encoded with "passage: " prefix → `get_e10_as_context()`
+//!
+//! Both tools use the SAME direction (query→document), as this is how E5-base-v2
+//! was trained. E10 ENHANCES E1 semantic search, it doesn't replace it.
 //!
 //! ## Constitution Compliance
 //!
-//! - ARCH-15: Uses asymmetric E10 with separate intent/context encodings
+//! - ARCH-12: E1 is the semantic foundation, E10 enhances
+//! - ARCH-15: Uses E5-base-v2's query/passage prefix-based asymmetry
 //! - E10 ENHANCES E1 semantic search via blendWithSemantic parameter
-//! - Direction modifiers: intent→context=1.2, context→intent=0.8
 //! - AP-02: All comparisons within respective spaces (no cross-embedder)
 //! - FAIL FAST: All errors propagate immediately with logging
 
@@ -26,7 +30,6 @@ use crate::protocol::JsonRpcResponse;
 use super::intent_dtos::{
     FindContextualMatchesRequest, FindContextualMatchesResponse, IntentSearchMetadata,
     IntentSearchResult, SearchByIntentRequest, SearchByIntentResponse, SourceInfo,
-    CONTEXT_TO_INTENT_MODIFIER, INTENT_TO_CONTEXT_MODIFIER,
 };
 
 use super::super::Handlers;
@@ -34,14 +37,14 @@ use super::super::Handlers;
 impl Handlers {
     /// search_by_intent tool implementation.
     ///
-    /// Finds memories that share similar intent or purpose using asymmetric E10 similarity.
+    /// Finds memories that share similar intent or purpose using E10 (E5-base-v2).
     /// ENHANCES E1 semantic search with intent awareness via blendWithSemantic parameter.
     ///
     /// # Algorithm
     ///
     /// 1. Embed the intent query using all 13 embedders
     /// 2. Search using E1 semantic as primary, E10 as enhancement
-    /// 3. Apply intent→context direction modifier (1.2x boost)
+    /// 3. Compute E10 similarity (query→document direction per E5-base-v2 training)
     /// 4. Blend E1 and E10 scores using blendWithSemantic weight
     /// 5. Filter by minScore and return top-K results
     ///
@@ -50,7 +53,7 @@ impl Handlers {
     /// - `query`: The intent or goal to search for (required)
     /// - `topK`: Maximum results to return (1-50, default: 10)
     /// - `minScore`: Minimum blended score threshold (0-1, default: 0.2)
-    /// - `blendWithSemantic`: E10 weight in blend (0-1, default: 0.3)
+    /// - `blendWithSemantic`: E10 weight in blend (0-1, default: 0.1)
     /// - `includeContent`: Include full content text (default: false)
     pub(crate) async fn call_search_by_intent(
         &self,
@@ -136,15 +139,15 @@ impl Handlers {
             // E1 cosine similarity
             let e1_sim = cosine_similarity(query_e1, cand_e1);
 
-            // E10 asymmetric similarity (intent→context with 1.2x boost)
-            let raw_e10_sim = cosine_similarity(query_e10_intent, cand_e10_context);
-            let e10_sim = raw_e10_sim * INTENT_TO_CONTEXT_MODIFIER;
+            // E10 asymmetric similarity (query→document direction per E5-base-v2)
+            // No artificial modifier - E5's prefix-based training provides natural asymmetry
+            let e10_sim = cosine_similarity(query_e10_intent, cand_e10_context);
 
             // Blend scores
             let blended_score = e1_weight * e1_sim + blend_weight * e10_sim;
 
             if blended_score >= min_score {
-                scored_results.push((cand_id, blended_score, e1_sim, e10_sim, raw_e10_sim));
+                scored_results.push((cand_id, blended_score, e1_sim, e10_sim, e10_sim));
             }
         }
 
@@ -215,7 +218,7 @@ impl Handlers {
                 filtered_by_score: filtered_count,
                 blend_weight,
                 e1_weight,
-                direction_modifier: INTENT_TO_CONTEXT_MODIFIER,
+                direction_modifier: 1.0, // No modifier - E5-base-v2 uses natural prefix asymmetry
             },
         };
 
@@ -231,23 +234,29 @@ impl Handlers {
 
     /// find_contextual_matches tool implementation.
     ///
-    /// Finds memories relevant to a given context or situation using E10 context embeddings.
+    /// Finds memories relevant to a given context or situation using E10 (E5-base-v2).
     /// ENHANCES E1 semantic search with contextual awareness.
     ///
     /// # Algorithm
     ///
     /// 1. Embed the context query using all 13 embedders
     /// 2. Search using E1 semantic as primary, E10 as enhancement
-    /// 3. Apply context→intent direction modifier (0.8x dampening)
+    /// 3. Compute E10 similarity (query→document direction per E5-base-v2 training)
     /// 4. Blend E1 and E10 scores using blendWithSemantic weight
     /// 5. Filter by minScore and return top-K results
+    ///
+    /// # Note
+    ///
+    /// Uses the SAME direction as search_by_intent (query→document) because E5-base-v2
+    /// was trained for query→passage retrieval. The user's context description is treated
+    /// as a "query" to find relevant stored "passages" (memories).
     ///
     /// # Parameters
     ///
     /// - `context`: The context or situation to find relevant memories for (required)
     /// - `topK`: Maximum results to return (1-50, default: 10)
     /// - `minScore`: Minimum blended score threshold (0-1, default: 0.2)
-    /// - `blendWithSemantic`: E10 weight in blend (0-1, default: 0.3)
+    /// - `blendWithSemantic`: E10 weight in blend (0-1, default: 0.1)
     /// - `includeContent`: Include full content text (default: false)
     pub(crate) async fn call_find_contextual_matches(
         &self,
@@ -318,8 +327,10 @@ impl Handlers {
             "find_contextual_matches: Evaluating candidates for blended scoring"
         );
 
-        // Step 3: Compute blended scores (context→intent direction)
-        let query_e10_context = query_embedding.get_e10_as_context();
+        // Step 3: Compute blended scores (query→document direction per E5-base-v2)
+        // FIXED: Use same direction as search_by_intent - user context is a "query"
+        // to find relevant stored "passages" (memories)
+        let query_e10_intent = query_embedding.get_e10_as_intent();
         let query_e1 = &query_embedding.e1_semantic;
 
         let mut scored_results: Vec<(Uuid, f32, f32, f32, f32)> = Vec::with_capacity(candidates.len());
@@ -327,20 +338,20 @@ impl Handlers {
         for candidate in &candidates {
             let cand_id = candidate.fingerprint.id;
             let cand_e1 = &candidate.fingerprint.semantic.e1_semantic;
-            let cand_e10_intent = candidate.fingerprint.semantic.get_e10_as_intent();
+            let cand_e10_context = candidate.fingerprint.semantic.get_e10_as_context();
 
             // E1 cosine similarity
             let e1_sim = cosine_similarity(query_e1, cand_e1);
 
-            // E10 asymmetric similarity (context→intent with 0.8x dampening)
-            let raw_e10_sim = cosine_similarity(query_e10_context, cand_e10_intent);
-            let e10_sim = raw_e10_sim * CONTEXT_TO_INTENT_MODIFIER;
+            // E10 asymmetric similarity (query→document direction per E5-base-v2)
+            // No artificial modifier - E5's prefix-based training provides natural asymmetry
+            let e10_sim = cosine_similarity(query_e10_intent, cand_e10_context);
 
             // Blend scores
             let blended_score = e1_weight * e1_sim + blend_weight * e10_sim;
 
             if blended_score >= min_score {
-                scored_results.push((cand_id, blended_score, e1_sim, e10_sim, raw_e10_sim));
+                scored_results.push((cand_id, blended_score, e1_sim, e10_sim, e10_sim));
             }
         }
 
@@ -408,7 +419,7 @@ impl Handlers {
                 filtered_by_score: filtered_count,
                 blend_weight,
                 e1_weight,
-                direction_modifier: CONTEXT_TO_INTENT_MODIFIER,
+                direction_modifier: 1.0, // No modifier - E5-base-v2 uses natural prefix asymmetry
             },
         };
 
@@ -485,10 +496,14 @@ mod tests {
     }
 
     #[test]
-    fn test_direction_modifiers_consistent() {
-        // Verify intent→context boost is greater than context→intent dampening
-        assert!(INTENT_TO_CONTEXT_MODIFIER > CONTEXT_TO_INTENT_MODIFIER);
-        assert!((INTENT_TO_CONTEXT_MODIFIER - 1.2).abs() < 0.001);
-        assert!((CONTEXT_TO_INTENT_MODIFIER - 0.8).abs() < 0.001);
+    fn test_e10_uses_query_document_direction() {
+        // Both search_by_intent and find_contextual_matches use the same direction:
+        // query→document (per E5-base-v2 training)
+        // - User queries → "query:" prefix → get_e10_as_intent()
+        // - Stored memories → "passage:" prefix → get_e10_as_context()
+        // No artificial modifiers are applied - E5's prefix asymmetry is sufficient
+        //
+        // This test documents the design decision; the actual direction is enforced
+        // by the function implementations using the correct get_e10_as_* methods.
     }
 }

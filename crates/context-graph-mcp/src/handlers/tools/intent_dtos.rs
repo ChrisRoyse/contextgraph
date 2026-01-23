@@ -5,9 +5,10 @@
 //! - find_contextual_matches: Find memories relevant to a context using E10
 //!
 //! Constitution References:
-//! - ARCH-15: Uses asymmetric E10 with separate intent/context encodings
+//! - ARCH-12: E1 is the semantic foundation, E10 enhances
+//! - ARCH-15: Uses E5-base-v2's query/passage prefix-based asymmetry
 //! - E10 ENHANCES E1 semantic search via blendWithSemantic parameter
-//! - Direction modifiers: intent→context=1.2, context→intent=0.8
+//! - Direction modifiers set to 1.0 (neutral) - E5's prefix training provides natural asymmetry
 
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
@@ -26,36 +27,37 @@ pub const MAX_INTENT_SEARCH_TOP_K: usize = 50;
 pub const DEFAULT_MIN_INTENT_SCORE: f32 = 0.2;
 
 /// Default blend weight for E10 vs E1 semantic.
-/// 0.3 means 70% E1 semantic + 30% E10 intent/context.
-pub const DEFAULT_BLEND_WITH_SEMANTIC: f32 = 0.3;
+/// 0.1 means 90% E1 semantic + 10% E10 intent/context.
+/// Reduced from 0.3 based on benchmark findings showing E10 optimal at ~0.1.
+pub const DEFAULT_BLEND_WITH_SEMANTIC: f32 = 0.1;
 
-/// Intent→Context direction modifier.
-/// Per plan: intent→context = 1.2x boost.
-pub const INTENT_TO_CONTEXT_MODIFIER: f32 = 1.2;
+/// Intent→Context direction modifier (NEUTRAL).
+/// Set to 1.0 (no modification) - E5-base-v2's prefix-based training provides natural asymmetry.
+/// Previously 1.2 when using random projection; now unnecessary with real E5 embeddings.
+#[allow(dead_code)]
+pub const INTENT_TO_CONTEXT_MODIFIER: f32 = 1.0;
 
-/// Context→Intent direction modifier (dampening).
-/// Per plan: context→intent = 0.8x dampening.
-pub const CONTEXT_TO_INTENT_MODIFIER: f32 = 0.8;
+/// Context→Intent direction modifier (NEUTRAL).
+/// Set to 1.0 (no modification) - E5-base-v2's prefix-based training provides natural asymmetry.
+/// Previously 0.8 when using random projection; now unnecessary with real E5 embeddings.
+#[allow(dead_code)]
+pub const CONTEXT_TO_INTENT_MODIFIER: f32 = 1.0;
 
 /// Configurable direction modifiers for E10 asymmetric similarity.
 ///
-/// Allows tuning the asymmetry between intent→context and context→intent directions.
-/// The expected asymmetry ratio is intent_to_context / context_to_intent.
+/// NOTE: With E5-base-v2, direction modifiers are no longer needed - the model's
+/// prefix-based training ("query:" vs "passage:") provides natural asymmetry.
+/// Both values default to 1.0 (neutral). This struct is kept for backwards
+/// compatibility and potential future experimentation.
 ///
-/// Default values: intent_to_context = 1.2, context_to_intent = 0.8
-/// Expected ratio: 1.5 (= 1.2 / 0.8)
-///
-/// # Usage for Tuning
-///
-/// ```rust
-/// let modifiers = DirectionModifiers::new(1.3, 0.7); // More aggressive asymmetry
-/// let expected_ratio = modifiers.expected_ratio(); // 1.857
-/// ```
+/// Default values: intent_to_context = 1.0, context_to_intent = 1.0
+/// Expected ratio: 1.0 (= 1.0 / 1.0) - symmetric, letting E5 handle asymmetry
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+#[allow(dead_code)]
 pub struct DirectionModifiers {
-    /// Modifier for intent→context direction (boost)
+    /// Modifier for intent→context direction (default 1.0 - neutral)
     pub intent_to_context: f32,
-    /// Modifier for context→intent direction (dampening)
+    /// Modifier for context→intent direction (default 1.0 - neutral)
     pub context_to_intent: f32,
 }
 
@@ -68,12 +70,13 @@ impl Default for DirectionModifiers {
     }
 }
 
+#[allow(dead_code)]
 impl DirectionModifiers {
     /// Create new direction modifiers with custom values.
     ///
     /// # Arguments
-    /// * `intent_to_context` - Modifier for intent→context (typically > 1.0)
-    /// * `context_to_intent` - Modifier for context→intent (typically < 1.0)
+    /// * `intent_to_context` - Modifier for intent→context (default 1.0)
+    /// * `context_to_intent` - Modifier for context→intent (default 1.0)
     pub fn new(intent_to_context: f32, context_to_intent: f32) -> Self {
         Self {
             intent_to_context,
@@ -471,28 +474,33 @@ mod tests {
     }
 
     #[test]
-    fn test_direction_modifiers() {
-        assert!((INTENT_TO_CONTEXT_MODIFIER - 1.2).abs() < 0.001);
-        assert!((CONTEXT_TO_INTENT_MODIFIER - 0.8).abs() < 0.001);
+    fn test_direction_modifiers_neutral() {
+        // Direction modifiers are now 1.0 (neutral) since E5-base-v2
+        // handles asymmetry via prefix-based training
+        assert!((INTENT_TO_CONTEXT_MODIFIER - 1.0).abs() < 0.001);
+        assert!((CONTEXT_TO_INTENT_MODIFIER - 1.0).abs() < 0.001);
     }
 
     #[test]
     fn test_default_blend_ensures_e1_dominant() {
-        // Default 0.3 means 70% E1, 30% E10
+        // Default 0.1 means 90% E1, 10% E10
         let e1_weight = 1.0 - DEFAULT_BLEND_WITH_SEMANTIC;
         assert!(e1_weight > DEFAULT_BLEND_WITH_SEMANTIC);
+        assert!((DEFAULT_BLEND_WITH_SEMANTIC - 0.1).abs() < 0.001);
     }
 
     #[test]
     fn test_direction_modifiers_struct_default() {
         let modifiers = DirectionModifiers::default();
-        assert!((modifiers.intent_to_context - 1.2).abs() < 0.001);
-        assert!((modifiers.context_to_intent - 0.8).abs() < 0.001);
-        assert!((modifiers.expected_ratio() - 1.5).abs() < 0.001);
+        // Both default to 1.0 (neutral) for E5-base-v2
+        assert!((modifiers.intent_to_context - 1.0).abs() < 0.001);
+        assert!((modifiers.context_to_intent - 1.0).abs() < 0.001);
+        assert!((modifiers.expected_ratio() - 1.0).abs() < 0.001);
     }
 
     #[test]
     fn test_direction_modifiers_custom() {
+        // Custom modifiers can still be used for experimentation
         let modifiers = DirectionModifiers::new(1.4, 0.6);
         assert!((modifiers.expected_ratio() - 2.333).abs() < 0.01);
     }
@@ -501,18 +509,18 @@ mod tests {
     fn test_direction_modifiers_apply() {
         let modifiers = DirectionModifiers::default();
 
-        // Intent→Context: 0.5 * 1.2 = 0.6
+        // With default 1.0 modifiers, output equals input (neutral)
         let i2c = modifiers.apply_intent_to_context(0.5);
-        assert!((i2c - 0.6).abs() < 0.001);
+        assert!((i2c - 0.5).abs() < 0.001);
 
-        // Context→Intent: 0.5 * 0.8 = 0.4
         let c2i = modifiers.apply_context_to_intent(0.5);
-        assert!((c2i - 0.4).abs() < 0.001);
+        assert!((c2i - 0.5).abs() < 0.001);
     }
 
     #[test]
     fn test_direction_modifiers_clamping() {
-        let modifiers = DirectionModifiers::default();
+        // Test with a custom modifier that would exceed 1.0
+        let modifiers = DirectionModifiers::new(1.5, 0.5);
 
         // Should clamp to 1.0 max
         let high = modifiers.apply_intent_to_context(0.9);

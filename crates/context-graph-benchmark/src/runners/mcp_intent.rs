@@ -4,14 +4,14 @@
 //!
 //! 1. **Phase 1: E10 Enhancement Value** - Measure how much E10 improves E1-only
 //! 2. **Phase 2: MCP Tool Integration** - End-to-end tool benchmarks
-//! 3. **Phase 3: Asymmetric Validation** - Validate direction modifiers (1.2/0.8)
+//! 3. **Phase 3: Asymmetric Validation** - Validate direction handling (E5-base-v2 provides natural asymmetry via prefixes)
 //! 4. **Phase 4: Constitutional Compliance** - Verify ARCH rules
 //!
 //! ## Philosophy: E1-Foundation + E10-Enhancement
 //!
 //! - E1 is THE semantic foundation - all retrieval starts with E1
 //! - E10 ENHANCES E1 - adds intent/context dimension, doesn't replace
-//! - Default blend: 70% E1, 30% E10 (configurable)
+//! - Default blend: 90% E1, 10% E10 (configurable)
 
 use std::collections::HashMap;
 use std::time::Instant;
@@ -55,10 +55,11 @@ pub struct MCPIntentBenchmarkConfig {
     /// K values for retrieval metrics.
     pub k_values: Vec<usize>,
 
-    /// Blend values to sweep [0.1, 0.2, 0.3, 0.4, 0.5].
+    /// Blend values to sweep [0.05, 0.1, 0.15, 0.2, 0.25, 0.3].
     pub blend_values: Vec<f64>,
 
     /// Direction modifiers to validate.
+    /// E5-base-v2 handles asymmetry via prefixes - neutral modifiers (1.0/1.0).
     pub intent_to_context_modifier: f32,
     pub context_to_intent_modifier: f32,
 }
@@ -72,9 +73,11 @@ impl Default for MCPIntentBenchmarkConfig {
             run_asymmetric_phase: true,
             run_compliance_phase: true,
             k_values: vec![1, 5, 10, 20],
-            blend_values: vec![0.1, 0.2, 0.3, 0.4, 0.5],
-            intent_to_context_modifier: 1.2,
-            context_to_intent_modifier: 0.8,
+            // Updated blend sweep to focus on lower weights (around 0.1 default)
+            blend_values: vec![0.05, 0.1, 0.15, 0.2, 0.25, 0.3],
+            // Neutral modifiers - E5-base-v2 handles asymmetry via query:/passage: prefixes
+            intent_to_context_modifier: 1.0,
+            context_to_intent_modifier: 1.0,
         }
     }
 }
@@ -235,7 +238,7 @@ impl MCPIntentBenchmarkRunner {
 
         // Blend sweep
         let mut blend_sweep: Vec<BlendSweepPoint> = Vec::new();
-        let mut best_blend = 0.3;
+        let mut best_blend = 0.1;  // Updated: E10 enhances E1 at 10% weight
         let mut best_mrr = 0.0;
 
         for &blend in &self.config.blend_values {
@@ -257,8 +260,8 @@ impl MCPIntentBenchmarkRunner {
             });
         }
 
-        // Compute E1+E10 blend MRR at default blend (0.3)
-        let e1_e10_blend_mrr = self.compute_blended_mrr(&all_queries, &dataset.memories, 0.3);
+        // Compute E1+E10 blend MRR at default blend (0.1)
+        let e1_e10_blend_mrr = self.compute_blended_mrr(&all_queries, &dataset.memories, 0.1);
 
         // Improvement percentage
         let improvement_percent = if e1_only_mrr > 0.0 {
@@ -600,11 +603,11 @@ impl MCPIntentBenchmarkRunner {
             let observed_ratio = if context_to_intent > f32::EPSILON {
                 (intent_to_context / context_to_intent) as f64
             } else {
-                1.5 // Default if context_to_intent is zero
+                1.0 // Default if context_to_intent is zero (E5-base-v2 handles asymmetry via prefixes)
             };
 
-            // Check if within tolerance
-            let expected_ratio = 1.5;
+            // Check if within tolerance - E5-base-v2 provides natural asymmetry via prefixes
+            let expected_ratio = 1.0;
             let tolerance = 0.15;
             let passed = (observed_ratio - expected_ratio).abs() <= tolerance;
 
@@ -768,16 +771,16 @@ mod tests {
         let runner = MCPIntentBenchmarkRunner::new(config);
         let results = runner.run();
 
-        // Asymmetric ratio should be ~1.5 (1.2/0.8)
+        // Asymmetric ratio should be ~1.0 (E5-base-v2 handles asymmetry via prefixes)
         let ratio = results.metrics.asymmetric.ratio;
         assert!(
-            (ratio - 1.5).abs() < 0.2,
-            "Ratio should be ~1.5, got {}",
+            (ratio - 1.0).abs() < 0.2,
+            "Ratio should be ~1.0, got {}",
             ratio
         );
 
         println!("[VERIFIED] Asymmetric validation:");
-        println!("  Ratio: {:.2} (expected 1.5)", ratio);
+        println!("  Ratio: {:.2} (expected 1.0 - E5-base-v2 handles asymmetry via prefixes)", ratio);
         println!("  Compliant: {}", results.metrics.asymmetric.compliant);
     }
 

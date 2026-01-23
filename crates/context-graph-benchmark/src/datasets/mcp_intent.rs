@@ -580,7 +580,7 @@ impl MCPIntentDatasetGenerator {
                 expected_domain: domain,
                 ground_truth_ids,
                 ground_truth_scores,
-                blend_weight: 0.3,
+                blend_weight: 0.1,  // Updated: E10 enhances E1 at 10% weight
             });
         }
 
@@ -619,7 +619,7 @@ impl MCPIntentDatasetGenerator {
                 expected_domain: domain,
                 ground_truth_ids,
                 ground_truth_scores,
-                blend_weight: 0.3,
+                blend_weight: 0.1,  // Updated: E10 enhances E1 at 10% weight
             });
         }
 
@@ -647,8 +647,9 @@ impl MCPIntentDatasetGenerator {
                 intent_e10_embedding: intent_e10,
                 context_e10_embedding: context_e10,
                 base_similarity,
-                expected_intent_to_context: base_similarity * 1.2,
-                expected_context_to_intent: base_similarity * 0.8,
+                // E5-base-v2 handles asymmetry via prefixes - no artificial modifiers
+                expected_intent_to_context: base_similarity * 1.0,
+                expected_context_to_intent: base_similarity * 1.0,
                 domain,
             });
         }
@@ -811,13 +812,13 @@ mod tests {
         for pair in &dataset.asymmetric_pairs {
             let expected_ratio = pair.expected_intent_to_context / pair.expected_context_to_intent;
             assert!(
-                (expected_ratio - 1.5).abs() < 0.01,
-                "Asymmetric ratio should be 1.5 (1.2/0.8), got {}",
+                (expected_ratio - 1.0).abs() < 0.01,
+                "Asymmetric ratio should be 1.0 (neutral - E5-base-v2 handles via prefixes), got {}",
                 expected_ratio
             );
         }
 
-        println!("[VERIFIED] Asymmetric pairs have 1.2/0.8 modifier ratio");
+        println!("[VERIFIED] Asymmetric pairs have neutral 1.0/1.0 modifier ratio (E5-base-v2 handles asymmetry via prefixes)");
     }
 
     #[test]

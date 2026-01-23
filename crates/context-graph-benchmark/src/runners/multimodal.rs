@@ -7,7 +7,7 @@
 //!
 //! 1. **Intent Detection**: Accuracy of distinguishing intent from context
 //! 2. **Context Matching**: MRR/P@K for intent→context retrieval
-//! 3. **Asymmetric Validation**: Verify 1.2/0.8 direction modifiers
+//! 3. **Asymmetric Validation**: Verify direction handling (E5-base-v2 provides natural asymmetry via prefixes)
 //! 4. **Ablation**: Compare E1+E10 vs E1 only
 
 use std::time::Instant;
@@ -488,8 +488,8 @@ impl E10MultimodalBenchmarkRunner {
             // Compute observed ratio
             let observed_ratio = intent_to_context_sim / context_to_intent_sim;
 
-            // Check if within tolerance of expected 1.5
-            let passed = (observed_ratio - 1.5).abs() < 0.01;
+            // Check if within tolerance of expected 1.0 (E5-base-v2 handles asymmetry via prefixes)
+            let passed = (observed_ratio - 1.0).abs() < 0.01;
 
             results.push(AsymmetricRetrievalResult {
                 base_similarity: base_sim,
@@ -511,7 +511,7 @@ impl E10MultimodalBenchmarkRunner {
         // Compute actual MRR for each configuration using the dataset
         let e1_only_mrr = self.compute_mrr_e1_only(dataset);
         let e10_only_mrr = self.compute_mrr_e10_only(dataset);
-        let e1_e10_blend_mrr = self.compute_mrr_blended(dataset, 0.3); // Default blend
+        let e1_e10_blend_mrr = self.compute_mrr_blended(dataset, 0.1); // Updated: E10 enhances E1 at 10% weight
         let full_13_space_mrr = self.compute_mrr_full_13_space(dataset);
 
         // Compute E10 contribution
@@ -859,15 +859,16 @@ mod tests {
         let runner = E10MultimodalBenchmarkRunner::new(config);
         let results = runner.run();
 
-        // Verify asymmetry
+        // Verify asymmetry - E5-base-v2 handles via prefixes, expect ratio ~1.0
         let asymmetric = &results.metrics.asymmetric_retrieval;
         assert!(asymmetric.formula_compliant);
-        assert!((asymmetric.observed_asymmetry_ratio - 1.5).abs() < 0.1);
-        assert_eq!(asymmetric.intent_to_context_modifier, 1.2);
-        assert_eq!(asymmetric.context_to_intent_modifier, 0.8);
+        assert!((asymmetric.observed_asymmetry_ratio - 1.0).abs() < 0.1);
+        // Neutral modifiers - E5-base-v2 handles asymmetry via query:/passage: prefixes
+        assert_eq!(asymmetric.intent_to_context_modifier, 1.0);
+        assert_eq!(asymmetric.context_to_intent_modifier, 1.0);
 
         println!(
-            "[VERIFIED] Asymmetric validation: ratio={:.2}, compliant={}",
+            "[VERIFIED] Asymmetric validation: ratio={:.2}, compliant={} (E5-base-v2 handles asymmetry via prefixes)",
             asymmetric.observed_asymmetry_ratio, asymmetric.formula_compliant
         );
     }

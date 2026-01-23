@@ -101,7 +101,7 @@ impl Default for E10EnhancementMetrics {
             e1_only_mrr: 0.0,
             e1_e10_blend_mrr: 0.0,
             improvement_percent: 0.0,
-            optimal_blend: 0.3,
+            optimal_blend: 0.1,  // Updated: E10 enhances E1 at 10% weight
             blend_sweep: Vec::new(),
             e1_strong_refine_rate: 0.0,
             e1_weak_broaden_rate: 0.0,
@@ -296,7 +296,8 @@ impl Default for AsymmetricValidationMetrics {
         Self {
             total_pairs: 0,
             ratio: 0.0,
-            expected_ratio: 1.5,
+            // E5-base-v2 handles asymmetry via prefixes - expected ratio is 1.0
+            expected_ratio: 1.0,
             compliant: false,
             intent_to_context_mrr: 0.0,
             context_to_intent_mrr: 0.0,
@@ -316,7 +317,8 @@ impl AsymmetricValidationMetrics {
 
         let avg_ratio: f64 = pair_results.iter().map(|p| p.observed_ratio).sum::<f64>() / total as f64;
 
-        let expected = 1.5;
+        // E5-base-v2 handles asymmetry via prefixes - expected ratio is 1.0
+        let expected = 1.0;
         let tolerance = 0.15;
         let compliant = (avg_ratio - expected).abs() <= tolerance;
 
@@ -537,21 +539,22 @@ mod tests {
 
     #[test]
     fn test_asymmetric_validation() {
+        // E5-base-v2 handles asymmetry via prefixes - ratio should be ~1.0
         let pairs = vec![
             AsymmetricPairResult {
                 base_similarity: 0.8,
-                intent_to_context_score: 0.96, // 0.8 * 1.2
-                context_to_intent_score: 0.64, // 0.8 * 0.8
-                observed_ratio: 1.5,
+                intent_to_context_score: 0.8, // 0.8 * 1.0 (neutral)
+                context_to_intent_score: 0.8, // 0.8 * 1.0 (neutral)
+                observed_ratio: 1.0,
                 passed: true,
             },
         ];
 
         let metrics = AsymmetricValidationMetrics::compute(pairs);
         assert!(metrics.compliant);
-        assert!((metrics.ratio - 1.5).abs() < 0.01);
+        assert!((metrics.ratio - 1.0).abs() < 0.01);
 
-        println!("[VERIFIED] Asymmetric validation: ratio={:.2}", metrics.ratio);
+        println!("[VERIFIED] Asymmetric validation: ratio={:.2} (E5-base-v2 handles asymmetry via prefixes)", metrics.ratio);
     }
 
     #[test]

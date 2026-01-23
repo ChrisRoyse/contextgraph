@@ -181,10 +181,12 @@ impl Default for AsymmetricRetrievalMetrics {
             context_to_intent_wins: 0,
             ties: 0,
             observed_asymmetry_ratio: 0.0,
-            expected_asymmetry_ratio: 1.5,
+            // E5-base-v2 handles asymmetry via prefixes - expected ratio is 1.0
+            expected_asymmetry_ratio: 1.0,
             formula_compliant: false,
-            intent_to_context_modifier: 1.2,
-            context_to_intent_modifier: 0.8,
+            // Neutral modifiers - E5-base-v2 handles asymmetry via query:/passage: prefixes
+            intent_to_context_modifier: 1.0,
+            context_to_intent_modifier: 1.0,
             same_direction_modifier: 1.0,
             e10_contribution_percentage: 0.0,
         }
@@ -473,8 +475,8 @@ pub fn compute_asymmetric_retrieval_metrics(
     // Compute observed asymmetry ratio
     let avg_ratio: f64 = results.iter().map(|r| r.observed_ratio).sum::<f64>() / total as f64;
 
-    // Check formula compliance (should be ~1.5 = 1.2/0.8)
-    let expected_ratio = 1.5;
+    // Check formula compliance - E5-base-v2 handles asymmetry via prefixes, expected ratio ~1.0
+    let expected_ratio = 1.0;
     let tolerance = 0.1;
     let formula_compliant = (avg_ratio - expected_ratio).abs() < tolerance;
 
@@ -489,8 +491,9 @@ pub fn compute_asymmetric_retrieval_metrics(
         observed_asymmetry_ratio: avg_ratio,
         expected_asymmetry_ratio: expected_ratio,
         formula_compliant,
-        intent_to_context_modifier: 1.2,
-        context_to_intent_modifier: 0.8,
+        // Neutral modifiers - E5-base-v2 handles asymmetry via query:/passage: prefixes
+        intent_to_context_modifier: 1.0,
+        context_to_intent_modifier: 1.0,
         same_direction_modifier: 1.0,
         e10_contribution_percentage,
     }
@@ -555,19 +558,20 @@ mod tests {
 
     #[test]
     fn test_asymmetric_metrics() {
+        // E5-base-v2 handles asymmetry via prefixes - ratio should be ~1.0
         let results = vec![
             AsymmetricRetrievalResult {
                 base_similarity: 0.8,
-                intent_to_context_similarity: 0.96, // 0.8 * 1.2
-                context_to_intent_similarity: 0.64, // 0.8 * 0.8
-                observed_ratio: 1.5,
+                intent_to_context_similarity: 0.8, // 0.8 * 1.0 (neutral)
+                context_to_intent_similarity: 0.8, // 0.8 * 1.0 (neutral)
+                observed_ratio: 1.0,
                 passed: true,
             },
             AsymmetricRetrievalResult {
                 base_similarity: 0.6,
-                intent_to_context_similarity: 0.72,
-                context_to_intent_similarity: 0.48,
-                observed_ratio: 1.5,
+                intent_to_context_similarity: 0.6,
+                context_to_intent_similarity: 0.6,
+                observed_ratio: 1.0,
                 passed: true,
             },
         ];
@@ -575,12 +579,12 @@ mod tests {
         let metrics = compute_asymmetric_retrieval_metrics(&results);
 
         assert_eq!(metrics.total_queries, 2);
-        assert_eq!(metrics.intent_to_context_wins, 2);
-        assert_eq!(metrics.context_to_intent_wins, 0);
+        // With 1.0/1.0 modifiers, scores are equal so we expect ties
+        assert_eq!(metrics.ties, 2);
         assert!(metrics.formula_compliant);
-        assert!((metrics.observed_asymmetry_ratio - 1.5).abs() < 0.01);
+        assert!((metrics.observed_asymmetry_ratio - 1.0).abs() < 0.01);
 
-        println!("[VERIFIED] Asymmetric metrics: ratio={}, compliant={}",
+        println!("[VERIFIED] Asymmetric metrics: ratio={}, compliant={} (E5-base-v2 handles asymmetry via prefixes)",
             metrics.observed_asymmetry_ratio, metrics.formula_compliant);
     }
 

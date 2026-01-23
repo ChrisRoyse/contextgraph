@@ -143,24 +143,24 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
         ],
     ),
 
-    // Intent Search: "What was the goal?" queries - E10 primary, E1 secondary
+    // Intent Search: "What was the goal?" queries - E1 primary, E10 enhances
     // Use for intent-aware retrieval: "what work had the same goal?",
     // "find memories with similar purpose", "what was trying to be accomplished?"
-    // E10 (V_multimodality) captures cross-modal intent alignment
-    // Per E10 Upgrade: Enables intent-aware search directly via search_graph
+    // E10 (E5-base-v2) provides query→document asymmetric enhancement
+    // Per E10 Optimization: Reduced from 0.25 to 0.10 based on benchmark findings
     (
         "intent_search",
         [
-            0.40, // E1_Semantic (still foundation per ARCH-12)
+            0.50, // E1_Semantic (foundation per ARCH-12, boosted)
             0.0,  // E2_Temporal_Recent - NOT for semantic search per AP-71
             0.0,  // E3_Temporal_Periodic - NOT for semantic search per AP-71
             0.0,  // E4_Temporal_Positional - NOT for semantic search per AP-71
             0.10, // E5_Causal (intent often has causal structure)
             0.05, // E6_Sparse (keyword backup)
-            0.10, // E7_Code (code intent/purpose)
+            0.15, // E7_Code (code intent/purpose, boosted)
             0.05, // E8_Graph (relational)
             0.0,  // E9_HDC
-            0.25, // E10_Multimodal (PRIMARY - intent/context awareness)
+            0.10, // E10_Multimodal (ENHANCES E1, reduced from 0.25)
             0.05, // E11_Entity (entities in intent)
             0.0,  // E12_Late_Interaction (Stage 3 rerank only per AP-73)
             0.0,  // E13_SPLADE (Stage 1 recall only per AP-74)
@@ -169,21 +169,21 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
 
     // Intent Enhanced: Stronger E10 weighting for explicit intent-aware queries
     // Use when intentMode != "none" in search_graph for asymmetric E10 reranking
-    // E10 weight 0.30 (vs 0.25 in intent_search) for more aggressive intent matching
-    // Per E10 Multimodal Upgrade Plan: Phase 2 intent-enhanced profile
+    // E10 weight 0.15 (vs 0.10 in intent_search) for stronger intent matching
+    // Per E10 Optimization: Reduced from 0.30 to 0.15 based on benchmark findings
     (
         "intent_enhanced",
         [
-            0.35, // E1_Semantic (foundation per ARCH-12)
+            0.45, // E1_Semantic (foundation per ARCH-12, boosted)
             0.0,  // E2_Temporal_Recent - NOT for semantic search per AP-71
             0.0,  // E3_Temporal_Periodic - NOT for semantic search per AP-71
             0.0,  // E4_Temporal_Positional - NOT for semantic search per AP-71
             0.10, // E5_Causal (intent often has causal structure)
             0.05, // E6_Sparse (keyword backup)
-            0.10, // E7_Code (code intent/purpose)
+            0.15, // E7_Code (code intent/purpose, boosted)
             0.05, // E8_Graph (relational)
             0.0,  // E9_HDC
-            0.30, // E10_Multimodal (ENHANCED - stronger intent weighting)
+            0.15, // E10_Multimodal (ENHANCED - reduced from 0.30)
             0.05, // E11_Entity (entities in intent)
             0.0,  // E12_Late_Interaction (Stage 3 rerank only per AP-73)
             0.0,  // E13_SPLADE (Stage 1 recall only per AP-74)
@@ -906,11 +906,11 @@ mod tests {
 
     #[test]
     fn test_intent_search_e10_weight() {
-        // E10 should be 0.25 in intent_search
+        // E10 should be 0.10 in intent_search (reduced from 0.25 per E10 optimization)
         let weights = get_weight_profile("intent_search").unwrap();
         assert!(
-            (weights[9] - 0.25).abs() < 0.001,
-            "E10 should be 0.25 in intent_search (got {})",
+            (weights[9] - 0.10).abs() < 0.001,
+            "E10 should be 0.10 in intent_search (got {})",
             weights[9]
         );
         println!("[VERIFIED] intent_search has E10={:.2}", weights[9]);
@@ -918,11 +918,11 @@ mod tests {
 
     #[test]
     fn test_intent_enhanced_e10_weight() {
-        // E10 should be 0.30 in intent_enhanced (higher than intent_search)
+        // E10 should be 0.15 in intent_enhanced (reduced from 0.30 per E10 optimization)
         let weights = get_weight_profile("intent_enhanced").unwrap();
         assert!(
-            (weights[9] - 0.30).abs() < 0.001,
-            "E10 should be 0.30 in intent_enhanced (got {})",
+            (weights[9] - 0.15).abs() < 0.001,
+            "E10 should be 0.15 in intent_enhanced (got {})",
             weights[9]
         );
         println!("[VERIFIED] intent_enhanced has E10={:.2}", weights[9]);

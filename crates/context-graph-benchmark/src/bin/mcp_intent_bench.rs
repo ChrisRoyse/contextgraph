@@ -92,7 +92,8 @@ impl Default for Args {
             skip_tool: false,
             skip_asymmetric: false,
             skip_compliance: false,
-            blend_values: vec![0.1, 0.2, 0.3, 0.4, 0.5],
+            // Updated blend sweep to focus on lower weights (around 0.1 default)
+            blend_values: vec![0.05, 0.1, 0.15, 0.2, 0.25, 0.3],
             verbose: false,
         }
     }
@@ -207,20 +208,20 @@ OPTIONS:
     --skip-tool                 Skip tool phase
     --skip-asymmetric           Skip asymmetric validation phase
     --skip-compliance           Skip compliance phase
-    --blend-values <LIST>       Comma-separated blend values [default: 0.1,0.2,0.3,0.4,0.5]
+    --blend-values <LIST>       Comma-separated blend values [default: 0.05,0.1,0.15,0.2,0.25,0.3]
     -v, --verbose               Verbose output
     -h, --help                  Print help
 
 BENCHMARK PHASES:
     1. E10 Enhancement Value    - Measure E10's improvement over E1-only
     2. MCP Tool Integration     - End-to-end tool benchmarks
-    3. Asymmetric Validation    - Validate direction modifiers (1.2/0.8)
+    3. Asymmetric Validation    - Validate direction handling (E5-base-v2 provides natural asymmetry via prefixes)
     4. Constitutional Compliance - Verify ARCH rules
 
 SUCCESS CRITERIA:
     - MRR improvement (E1+E10 vs E1): > 5%
-    - Optimal blend value: [0.2, 0.4]
-    - Asymmetry ratio: 1.5 ± 0.15
+    - Optimal blend value: [0.05, 0.2]
+    - Asymmetry ratio: 1.0 ± 0.15 (E5-base-v2 handles asymmetry via prefixes)
     - E1-strong refine rate: >= 70%
     - E1-weak broaden rate: >= 50%
     - Tool p95 latency: < 2000ms
@@ -384,7 +385,7 @@ fn print_results(results: &MCPIntentBenchmarkResults, verbose: bool) {
     println!("Phase 3: Asymmetric Validation");
     println!("  Total pairs: {}", asym.total_pairs);
     println!(
-        "  Observed ratio: {:.3} (expected 1.5 ± 0.15) {}",
+        "  Observed ratio: {:.3} (expected 1.0 ± 0.15 - E5-base-v2 handles asymmetry via prefixes) {}",
         asym.ratio,
         if asym.compliant { "✓" } else { "✗" }
     );

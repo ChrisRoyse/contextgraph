@@ -1,11 +1,12 @@
 //! Intent tool definitions (search_by_intent, find_contextual_matches, detect_intent_drift, get_session_intent_history).
 //!
-//! E10 Priority 1 Enhancement: Leverage asymmetric E10 embeddings for intent-aware retrieval.
+//! E10 Query→Document Retrieval: Uses E5-base-v2 for asymmetric retrieval.
 //!
 //! Constitution Compliance:
-//! - ARCH-15: Uses asymmetric E10 with separate intent/context encodings
+//! - ARCH-12: E1 is the semantic foundation, E10 enhances
+//! - ARCH-15: Uses E5-base-v2's query/passage prefix-based asymmetry
 //! - E10 ENHANCES E1 semantic search (not replaces) via blendWithSemantic parameter
-//! - Direction modifiers: intent→context=1.2, context→intent=0.8
+//! - Both tools use query→document direction (user input as "query:", memories as "passage:")
 //!
 //! Phase 5 Enhancement: Intent drift detection across sessions.
 //! - detect_intent_drift: Check if current intent has shifted from recent pattern
@@ -20,10 +21,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // search_by_intent - Find memories with similar intent
         ToolDefinition::new(
             "search_by_intent",
-            "Find memories that share similar intent or purpose using asymmetric E10 similarity. \
+            "Find memories that match a query or goal using E10 (E5-base-v2) asymmetric retrieval. \
              Useful for \"what work had the same goal?\" queries. ENHANCES E1 semantic search \
-             with intent awareness via blendWithSemantic parameter. Uses 1.2x intent→context boost. \
-             Default blend of 0.3 means 70% E1 semantic + 30% E10 intent.",
+             with query→document matching via blendWithSemantic parameter. User query encoded \
+             as 'query:', memories as 'passage:'. Default blend of 0.1 means 90% E1 + 10% E10.",
             json!({
                 "type": "object",
                 "required": ["query"],
@@ -48,10 +49,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "blendWithSemantic": {
                         "type": "number",
-                        "description": "Blend weight for E10 intent vs E1 semantic (0-1, default: 0.3). \
-                                        0.0 = pure E1 semantic, 1.0 = pure E10 intent. \
-                                        Default 0.3 means 70% E1 + 30% E10.",
-                        "default": 0.3,
+                        "description": "Blend weight for E10 vs E1 semantic (0-1, default: 0.1). \
+                                        0.0 = pure E1 semantic, 1.0 = pure E10. \
+                                        Default 0.1 means 90% E1 + 10% E10.",
+                        "default": 0.1,
                         "minimum": 0,
                         "maximum": 1
                     },
@@ -67,10 +68,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // find_contextual_matches - Find memories relevant to a context
         ToolDefinition::new(
             "find_contextual_matches",
-            "Find memories relevant to a given context or situation using E10 context embeddings. \
+            "Find memories relevant to a given context or situation using E10 (E5-base-v2). \
              Use for \"what's relevant to this situation?\" queries. ENHANCES E1 semantic search \
-             with contextual awareness. Uses 0.8x context→intent dampening per asymmetric pattern. \
-             Default blend of 0.3 means 70% E1 semantic + 30% E10 context.",
+             with query→document matching (same direction as search_by_intent). \
+             Default blend of 0.1 means 90% E1 semantic + 10% E10.",
             json!({
                 "type": "object",
                 "required": ["context"],
@@ -95,10 +96,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "blendWithSemantic": {
                         "type": "number",
-                        "description": "Blend weight for E10 context vs E1 semantic (0-1, default: 0.3). \
-                                        0.0 = pure E1 semantic, 1.0 = pure E10 context. \
-                                        Default 0.3 means 70% E1 + 30% E10.",
-                        "default": 0.3,
+                        "description": "Blend weight for E10 vs E1 semantic (0-1, default: 0.1). \
+                                        0.0 = pure E1 semantic, 1.0 = pure E10. \
+                                        Default 0.1 means 90% E1 + 10% E10.",
+                        "default": 0.1,
                         "minimum": 0,
                         "maximum": 1
                     },
@@ -233,10 +234,10 @@ mod tests {
             .as_object()
             .unwrap();
 
-        // Verify defaults
+        // Verify defaults (blendWithSemantic reduced to 0.1 per E10 optimization)
         assert_eq!(props["topK"]["default"], 10);
         assert_eq!(props["minScore"]["default"], 0.2);
-        assert_eq!(props["blendWithSemantic"]["default"], 0.3);
+        assert_eq!(props["blendWithSemantic"]["default"], 0.1);
         assert_eq!(props["includeContent"]["default"], false);
     }
 
@@ -286,10 +287,10 @@ mod tests {
             .as_object()
             .unwrap();
 
-        // Verify defaults
+        // Verify defaults (blendWithSemantic reduced to 0.1 per E10 optimization)
         assert_eq!(props["topK"]["default"], 10);
         assert_eq!(props["minScore"]["default"], 0.2);
-        assert_eq!(props["blendWithSemantic"]["default"], 0.3);
+        assert_eq!(props["blendWithSemantic"]["default"], 0.1);
         assert_eq!(props["includeContent"]["default"], false);
     }
 
@@ -407,24 +408,24 @@ mod tests {
     }
 
     #[test]
-    fn test_direction_modifiers_documented() {
+    fn test_query_document_direction_documented() {
         let tools = definitions();
 
-        // search_by_intent should mention 1.2x boost
+        // search_by_intent should mention query→document or E5-base-v2
         let search = tools.iter().find(|t| t.name == "search_by_intent").unwrap();
         assert!(
-            search.description.contains("1.2"),
-            "search_by_intent should document 1.2x intent→context boost"
+            search.description.contains("E5-base-v2") || search.description.contains("query"),
+            "search_by_intent should document E5-base-v2 or query→document pattern"
         );
 
-        // find_contextual_matches should mention 0.8x dampening
+        // find_contextual_matches should mention same direction as search_by_intent
         let find = tools
             .iter()
             .find(|t| t.name == "find_contextual_matches")
             .unwrap();
         assert!(
-            find.description.contains("0.8"),
-            "find_contextual_matches should document 0.8x context→intent dampening"
+            find.description.contains("E5-base-v2") || find.description.contains("same direction"),
+            "find_contextual_matches should document E5-base-v2 or same direction"
         );
     }
 }

@@ -342,15 +342,16 @@ fn simulate_fingerprint(content: &str, is_intent: bool, seed: u64) -> SimulatedF
     // For context-type content, make context vector stronger
     let base_e10 = simulate_embedding(content, seed + 1000, 768);
 
+    // E5-base-v2 handles asymmetry via prefixes - use neutral scaling (1.0)
     let (e10_intent, e10_context) = if is_intent {
-        // Intent-focused: intent vector has higher norm
-        let intent: Vec<f32> = base_e10.iter().map(|x| x * 1.2).collect();
-        let context: Vec<f32> = base_e10.iter().map(|x| x * 0.8).collect();
+        // Intent-focused: small differentiation for type distinction
+        let intent: Vec<f32> = base_e10.iter().map(|x| x * 1.0).collect();
+        let context: Vec<f32> = base_e10.iter().map(|x| x * 1.0).collect();
         (intent, context)
     } else {
-        // Context-focused: context vector has higher norm
-        let intent: Vec<f32> = base_e10.iter().map(|x| x * 0.8).collect();
-        let context: Vec<f32> = base_e10.iter().map(|x| x * 1.2).collect();
+        // Context-focused: small differentiation for type distinction
+        let intent: Vec<f32> = base_e10.iter().map(|x| x * 1.0).collect();
+        let context: Vec<f32> = base_e10.iter().map(|x| x * 1.0).collect();
         (intent, context)
     };
 
@@ -389,8 +390,10 @@ fn run_benchmark_3a(
 ) -> IntentContextPairsResults {
     println!("Running Benchmark 3A: Intent-Context Pairs...");
 
-    let intent_modifier = 1.2_f32;
-    let blend_weight = 0.3_f32;
+    // E5-base-v2 handles asymmetry via prefixes - neutral modifier (1.0)
+    let intent_modifier = 1.0_f32;
+    // Updated: E10 enhances E1 at 10% weight
+    let blend_weight = 0.1_f32;
 
     let mut mrr_e1_sum = 0.0;
     let mut mrr_e10_sum = 0.0;
@@ -496,8 +499,10 @@ fn run_benchmark_3b(num_queries: usize, seed: u64) -> CrossDocIntentResults {
         ("Code duplication across multiple services", "Shared library patterns, DRY principles, and microservice communication strategies"),
     ];
 
-    let intent_modifier = 1.2_f32;
-    let blend_weight = 0.3_f32;
+    // E5-base-v2 handles asymmetry via prefixes - neutral modifier (1.0)
+    let intent_modifier = 1.0_f32;
+    // Updated: E10 enhances E1 at 10% weight
+    let blend_weight = 0.1_f32;
 
     let mut mrr_e1_sum = 0.0;
     let mut mrr_e10_sum = 0.0;

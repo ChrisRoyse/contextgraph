@@ -296,17 +296,14 @@ pub enum IntentDirection {
 impl IntentDirection {
     /// Get direction modifier when comparing query_direction to result_direction.
     ///
-    /// Following E5/E8 pattern with 1.2/0.8 modifiers:
-    /// - intent→context: 1.2 (query intent finds relevant context)
-    /// - context→intent: 0.8 (context query finds related intent, dampened)
-    /// - same_direction: 1.0 (no modification)
+    /// E5-base-v2 provides natural asymmetry via "query:"/"passage:" prefixes.
+    /// No artificial modifiers needed - all directions use 1.0.
+    /// The embedder's prefix-based training handles query→document direction.
     pub fn direction_modifier(query_direction: Self, result_direction: Self) -> f32 {
         match (query_direction, result_direction) {
-            // Query is intent looking for context: AMPLIFY
-            (Self::Intent, Self::Context) => 1.2,
-            // Query is context looking for intent: DAMPEN
-            (Self::Context, Self::Intent) => 0.8,
-            // Same direction or unknown: NO CHANGE
+            // All directions use neutral 1.0 - E5-base-v2 handles asymmetry via prefixes
+            (Self::Intent, Self::Context) => 1.0,
+            (Self::Context, Self::Intent) => 1.0,
             _ => 1.0,
         }
     }
@@ -827,16 +824,16 @@ mod tests {
 
     #[test]
     fn test_direction_modifiers() {
-        // intent→context: 1.2
+        // intent→context: 1.0 (E5-base-v2 handles asymmetry via prefixes)
         assert_eq!(
             IntentDirection::direction_modifier(IntentDirection::Intent, IntentDirection::Context),
-            1.2
+            1.0
         );
 
-        // context→intent: 0.8
+        // context→intent: 1.0 (neutral - E5-base-v2 handles asymmetry via prefixes)
         assert_eq!(
             IntentDirection::direction_modifier(IntentDirection::Context, IntentDirection::Intent),
-            0.8
+            1.0
         );
 
         // same direction: 1.0
@@ -845,7 +842,7 @@ mod tests {
             1.0
         );
 
-        println!("[VERIFIED] Direction modifiers match Constitution spec (1.2/0.8/1.0)");
+        println!("[VERIFIED] Direction modifiers are neutral (1.0/1.0/1.0) - E5-base-v2 handles asymmetry via prefixes");
     }
 
     #[test]
