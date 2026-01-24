@@ -135,16 +135,10 @@ impl ExtractionMetrics {
             true_positives as f64 / ground_truth.len() as f64
         };
 
-        let f1_score = if precision + recall > 0.0 {
-            2.0 * (precision * recall) / (precision + recall)
-        } else {
-            0.0
-        };
-
         Self {
             precision,
             recall,
-            f1_score,
+            f1_score: compute_f1(precision, recall),
             canonicalization_accuracy: 0.0, // Computed separately
             true_positives,
             false_positives,
@@ -176,11 +170,7 @@ impl ExtractionMetrics {
             0.0
         };
 
-        let f1_score = if precision + recall > 0.0 {
-            2.0 * (precision * recall) / (precision + recall)
-        } else {
-            0.0
-        };
+        let f1_score = compute_f1(precision, recall);
 
         let canonicalization_sum: f64 = metrics.iter().map(|m| m.canonicalization_accuracy).sum();
         let canonicalization_accuracy = canonicalization_sum / metrics.len() as f64;
@@ -230,23 +220,22 @@ impl EntityTypeMetrics {
     }
 
     fn recompute(&mut self) {
-        self.precision = if self.true_positives + self.false_positives > 0 {
-            self.true_positives as f64 / (self.true_positives + self.false_positives) as f64
-        } else {
-            0.0
-        };
+        let tp = self.true_positives as f64;
+        let fp = self.false_positives as f64;
+        let fn_ = self.false_negatives as f64;
 
-        self.recall = if self.true_positives + self.false_negatives > 0 {
-            self.true_positives as f64 / (self.true_positives + self.false_negatives) as f64
-        } else {
-            0.0
-        };
+        self.precision = if tp + fp > 0.0 { tp / (tp + fp) } else { 0.0 };
+        self.recall = if tp + fn_ > 0.0 { tp / (tp + fn_) } else { 0.0 };
+        self.f1_score = compute_f1(self.precision, self.recall);
+    }
+}
 
-        self.f1_score = if self.precision + self.recall > 0.0 {
-            2.0 * (self.precision * self.recall) / (self.precision + self.recall)
-        } else {
-            0.0
-        };
+/// Compute F1 score from precision and recall.
+fn compute_f1(precision: f64, recall: f64) -> f64 {
+    if precision + recall > 0.0 {
+        2.0 * precision * recall / (precision + recall)
+    } else {
+        0.0
     }
 }
 
@@ -442,24 +431,18 @@ impl ScoreDistribution {
         let mut sorted = scores.to_vec();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-        let mean = scores.iter().sum::<f32>() / scores.len() as f32;
-        let variance = scores.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / scores.len() as f32;
-        let std_dev = variance.sqrt();
-
-        let min = sorted[0];
-        let max = sorted[sorted.len() - 1];
-        let median = sorted[sorted.len() / 2];
-        let p25 = sorted[sorted.len() / 4];
-        let p75 = sorted[(sorted.len() * 3) / 4];
+        let n = scores.len();
+        let mean = scores.iter().sum::<f32>() / n as f32;
+        let variance = scores.iter().map(|x| (x - mean).powi(2)).sum::<f32>() / n as f32;
 
         Self {
             mean,
-            std_dev,
-            min,
-            max,
-            median,
-            p25,
-            p75,
+            std_dev: variance.sqrt(),
+            min: sorted[0],
+            max: sorted[n - 1],
+            median: sorted[n / 2],
+            p25: sorted[n / 4],
+            p75: sorted[(n * 3) / 4],
         }
     }
 }
@@ -591,22 +574,15 @@ impl LatencyStats {
         let mut sorted = latencies.to_vec();
         sorted.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
 
-        let mean = latencies.iter().sum::<f64>() / latencies.len() as f64;
-        let min = sorted[0];
-        let max = sorted[sorted.len() - 1];
-
-        let p50_idx = sorted.len() / 2;
-        let p95_idx = (sorted.len() * 95) / 100;
-        let p99_idx = (sorted.len() * 99) / 100;
-
+        let n = sorted.len();
         Self {
-            mean,
-            min,
-            max,
-            p50: sorted[p50_idx],
-            p95: sorted[p95_idx.min(sorted.len() - 1)],
-            p99: sorted[p99_idx.min(sorted.len() - 1)],
-            samples: latencies.len(),
+            mean: latencies.iter().sum::<f64>() / n as f64,
+            min: sorted[0],
+            max: sorted[n - 1],
+            p50: sorted[n / 2],
+            p95: sorted[(n * 95 / 100).min(n - 1)],
+            p99: sorted[(n * 99 / 100).min(n - 1)],
+            samples: n,
         }
     }
 }

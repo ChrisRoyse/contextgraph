@@ -1,4 +1,4 @@
-//! Intent tool definitions (search_by_intent, find_contextual_matches, detect_intent_drift, get_session_intent_history).
+//! Intent tool definitions (search_by_intent, find_contextual_matches).
 //!
 //! E10 Query→Document Retrieval: Uses E5-base-v2 for asymmetric retrieval.
 //!
@@ -7,10 +7,6 @@
 //! - ARCH-15: Uses E5-base-v2's query/passage prefix-based asymmetry
 //! - E10 ENHANCES E1 semantic search (not replaces) via blendWithSemantic parameter
 //! - Both tools use query→document direction (user input as "query:", memories as "passage:")
-//!
-//! Phase 5 Enhancement: Intent drift detection across sessions.
-//! - detect_intent_drift: Check if current intent has shifted from recent pattern
-//! - get_session_intent_history: Get intent trajectory for a session
 
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
@@ -115,76 +111,6 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         ),
-        // detect_intent_drift - Check for intent shift in session (Phase 5)
-        ToolDefinition::new(
-            "detect_intent_drift",
-            "Detect if the current query/intent has shifted significantly from the recent intent pattern. \
-             Uses E10 intent embeddings to track intent trajectory across the session. \
-             Returns drift score (0-1) and alerts when threshold is exceeded. \
-             Useful for detecting topic changes, session summarization, and context relevance scoring.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "sessionId": {
-                        "type": "string",
-                        "description": "Session ID to check for drift. If omitted, uses CLAUDE_SESSION_ID env var."
-                    },
-                    "currentIntent": {
-                        "type": "string",
-                        "description": "Current query/intent to compare against recent pattern. If omitted, uses last recorded intent."
-                    },
-                    "threshold": {
-                        "type": "number",
-                        "description": "Drift threshold (0-1, default: 0.4). Drift is detected when (1 - similarity) > threshold. Higher = less sensitive.",
-                        "default": 0.4,
-                        "minimum": 0,
-                        "maximum": 1
-                    },
-                    "windowSize": {
-                        "type": "integer",
-                        "description": "Number of recent intents to compute centroid from (default: 5).",
-                        "default": 5,
-                        "minimum": 1,
-                        "maximum": 20
-                    }
-                },
-                "additionalProperties": false
-            }),
-        ),
-        // get_session_intent_history - Get intent trajectory for session (Phase 5)
-        ToolDefinition::new(
-            "get_session_intent_history",
-            "Get the intent trajectory for a session, including all recorded intents and drift events. \
-             Returns intent snapshots with timestamps, categories, and pairwise similarities. \
-             Useful for understanding session flow, debugging drift detection, and session summarization.",
-            json!({
-                "type": "object",
-                "properties": {
-                    "sessionId": {
-                        "type": "string",
-                        "description": "Session ID to get history for. If omitted, uses CLAUDE_SESSION_ID env var."
-                    },
-                    "limit": {
-                        "type": "integer",
-                        "description": "Maximum number of recent intents to return (1-100, default: 20).",
-                        "default": 20,
-                        "minimum": 1,
-                        "maximum": 100
-                    },
-                    "includeStats": {
-                        "type": "boolean",
-                        "description": "Include trajectory statistics (avg similarity, drift rate, etc). Default: true.",
-                        "default": true
-                    },
-                    "includePairwiseSimilarities": {
-                        "type": "boolean",
-                        "description": "Include similarity between consecutive intents. Default: false.",
-                        "default": false
-                    }
-                },
-                "additionalProperties": false
-            }),
-        ),
     ]
 }
 
@@ -194,7 +120,9 @@ mod tests {
 
     #[test]
     fn test_intent_tool_count() {
-        assert_eq!(definitions().len(), 4);
+        // Only 2 implemented tools: search_by_intent, find_contextual_matches
+        // detect_intent_drift and get_session_intent_history were removed (not implemented)
+        assert_eq!(definitions().len(), 2);
     }
 
     #[test]
@@ -346,68 +274,6 @@ mod tests {
             assert_eq!(blend["minimum"], 0);
             assert_eq!(blend["maximum"], 1);
         }
-    }
-
-    #[test]
-    fn test_drift_detection_tools_exist() {
-        let tools = definitions();
-
-        // Verify drift detection tools exist
-        assert!(
-            tools.iter().any(|t| t.name == "detect_intent_drift"),
-            "detect_intent_drift tool should exist"
-        );
-        assert!(
-            tools.iter().any(|t| t.name == "get_session_intent_history"),
-            "get_session_intent_history tool should exist"
-        );
-    }
-
-    #[test]
-    fn test_detect_intent_drift_schema() {
-        let tools = definitions();
-        let tool = tools.iter().find(|t| t.name == "detect_intent_drift").unwrap();
-
-        let props = tool
-            .input_schema
-            .get("properties")
-            .unwrap()
-            .as_object()
-            .unwrap();
-
-        // Check properties exist
-        assert!(props.contains_key("sessionId"));
-        assert!(props.contains_key("currentIntent"));
-        assert!(props.contains_key("threshold"));
-        assert!(props.contains_key("windowSize"));
-
-        // Check defaults
-        assert_eq!(props["threshold"]["default"], 0.4);
-        assert_eq!(props["windowSize"]["default"], 5);
-    }
-
-    #[test]
-    fn test_get_session_intent_history_schema() {
-        let tools = definitions();
-        let tool = tools.iter().find(|t| t.name == "get_session_intent_history").unwrap();
-
-        let props = tool
-            .input_schema
-            .get("properties")
-            .unwrap()
-            .as_object()
-            .unwrap();
-
-        // Check properties exist
-        assert!(props.contains_key("sessionId"));
-        assert!(props.contains_key("limit"));
-        assert!(props.contains_key("includeStats"));
-        assert!(props.contains_key("includePairwiseSimilarities"));
-
-        // Check defaults
-        assert_eq!(props["limit"]["default"], 20);
-        assert_eq!(props["includeStats"]["default"], true);
-        assert_eq!(props["includePairwiseSimilarities"]["default"], false);
     }
 
     #[test]

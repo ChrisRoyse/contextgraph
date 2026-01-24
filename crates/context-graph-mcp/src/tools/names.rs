@@ -71,3 +71,12 @@ pub const INFER_RELATIONSHIP: &str = "infer_relationship";
 pub const FIND_RELATED_ENTITIES: &str = "find_related_entities";
 pub const VALIDATE_KNOWLEDGE: &str = "validate_knowledge";
 pub const GET_ENTITY_GRAPH: &str = "get_entity_graph";
+
+// ========== EMBEDDER-FIRST SEARCH TOOLS (Constitution v6.3) ==========
+// Enables searching using any of the 13 embedders as the primary perspective.
+// Each embedder sees the knowledge graph differently - sometimes E11 finds
+// what E1 misses, or E7 (code) reveals patterns E5 (causal) doesn't see.
+pub const SEARCH_BY_EMBEDDER: &str = "search_by_embedder";
+pub const GET_EMBEDDER_CLUSTERS: &str = "get_embedder_clusters";
+pub const COMPARE_EMBEDDER_VIEWS: &str = "compare_embedder_views";
+pub const LIST_EMBEDDER_INDEXES: &str = "list_embedder_indexes";

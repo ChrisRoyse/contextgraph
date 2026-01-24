@@ -4,67 +4,65 @@
       "precision": 1.0,
       "recall": 1.0,
       "f1_score": 1.0,
-      "canonicalization_accuracy": 0.9146341463414634,
-      "true_positives": 1785,
+      "canonicalization_accuracy": 1.0,
+      "true_positives": 1973,
       "false_positives": 0,
       "false_negatives": 0,
       "documents_evaluated": 100,
       "by_entity_type": {}
     },
     "retrieval": {
-      "mrr_e1_only": 1.0,
-      "mrr_e11_only": 1.0,
+      "mrr_e1_only": 0.995,
+      "mrr_e11_only": 0.9516666666666665,
       "mrr_e1_e11_hybrid": 1.0,
-      "e11_contribution_pct": 0.0,
+      "e11_contribution_pct": 0.5025125628140708,
       "entity_overlap_correlation": 0.0,
       "precision_at_k": {},
       "recall_at_k": {},
-      "queries_evaluated": 50
+      "queries_evaluated": 100
     },
     "transe": {
-      "valid_triple_avg_score": -1.5121943,
-      "invalid_triple_avg_score": -1.5868515,
-      "separation_score": 0.0746572,
+      "valid_triple_avg_score": -1.0303289,
+      "invalid_triple_avg_score": -1.0359063,
+      "separation_score": 0.005577445,
+      "separation_ratio": 0.30774245,
       "relationship_inference_mrr": 1.0,
       "knowledge_validation_accuracy": 0.78125,
       "valid_triples_evaluated": 28,
       "invalid_triples_evaluated": 100,
       "valid_score_distribution": {
-        "mean": -1.5121943,
-        "std_dev": 0.10637638,
-        "min": -1.684704,
-        "max": -1.2606012,
-        "median": -1.5299073,
-        "p25": -1.5961341,
-        "p75": -1.4372963
+        "mean": -1.0303289,
+        "std_dev": 0.012049551,
+        "min": -1.0603551,
+        "max": -1.0108441,
+        "median": -1.0322485,
+        "p25": -1.0361153,
+        "p75": -1.0202584
       },
       "invalid_score_distribution": {
-        "mean": -1.5868515,
-        "std_dev": 0.0831501,
-        "min": -1.7362503,
-        "max": -1.1967251,
-        "median": -1.5983698,
-        "p25": -1.6435977,
-        "p75": -1.5398321
+        "mean": -1.0359063,
+        "std_dev": 0.018123742,
+        "min": -1.0856398,
+        "max": -0.9971448,
+        "median": -1.0348583,
+        "p25": -1.0477031,
+        "p75": -1.0223764
       }
     },
     "graph": {
       "nodes_discovered": 50,
-      "edges_inferred": 616,
-      "avg_edge_score": 0.08398537,
-      "edge_score_std_dev": 0.08186297,
+      "edges_inferred": 555,
+      "avg_edge_score": 0.22227742,
+      "edge_score_std_dev": 0.1535362,
       "entity_type_distribution": {
-        "Unknown": 47,
-        "Cloud": 1,
-        "ProgrammingLanguage": 1,
-        "TechnicalTerm": 1
+        "Unknown": 50
       },
       "relationship_type_distribution": {
-        "strongly_related_to": 124,
-        "related_to": 256,
-        "co_occurs_with": 236
+        "related_to": 250,
+        "co_occurs_with": 215,
+        "strongly_related_to": 90
       },
-      "graph_density": 0.25142857142857145,
+      "graph_density": 0.22653061224489796,
       "connected_components": 0
     },
     "performance": {
@@ -134,30 +132,26 @@
     }
   },
   "timings": {
-    "total_ms": 233700,
-    "dataset_load_ms": 3,
-    "embedding_ms": 3913,
-    "extraction_benchmark_ms": 2,
-    "retrieval_benchmark_ms": 98312,
-    "transe_benchmark_ms": 91975,
-    "validation_benchmark_ms": 39486,
-    "graph_benchmark_ms": 6
+    "total_ms": 569632,
+    "dataset_load_ms": 5,
+    "embedding_ms": 3946,
+    "extraction_benchmark_ms": 1,
+    "retrieval_benchmark_ms": 179464,
+    "transe_benchmark_ms": 266512,
+    "validation_benchmark_ms": 119694,
+    "graph_benchmark_ms": 7
   },
   "dataset_stats": {
     "num_documents": 100,
     "docs_with_entities": 100,
-    "total_entities": 1785,
-    "unique_entities": 819,
-    "avg_entities_per_doc": 17.85,
+    "total_entities": 1973,
+    "unique_entities": 1003,
+    "avg_entities_per_doc": 19.73,
     "num_valid_triples": 28,
     "num_invalid_triples": 100,
-    "num_entity_pairs": 50,
+    "num_entity_pairs": 100,
     "entity_type_distribution": {
-      "TechnicalTerm": 34,
-      "Framework": 9,
-      "ProgrammingLanguage": 100,
-      "Cloud": 6,
-      "Unknown": 1636
+      "Unknown": 1973
     }
   },
   "extraction_results": {
@@ -165,8 +159,8 @@
       "precision": 1.0,
       "recall": 1.0,
       "f1_score": 1.0,
-      "canonicalization_accuracy": 0.9146341463414634,
-      "true_positives": 1785,
+      "canonicalization_accuracy": 1.0,
+      "true_positives": 1973,
       "false_positives": 0,
       "false_negatives": 0,
       "documents_evaluated": 100,
@@ -177,9 +171,11 @@
         "doc_id": "8acab003-5200-91fa-fa5f-b811859c4f6c",
         "text_snippet": "Anarchism is a political philosophy and movement that is skeptical of all justifications for authori...",
         "predicted_entities": [
-          "typescript",
           "anarchism",
+          "nation-states",
+          "left-wing",
           "humans",
+          "although",
           "enlightenment",
           "during",
           "various",
@@ -192,9 +188,11 @@
           "spanish"
         ],
         "ground_truth_entities": [
-          "typescript",
           "anarchism",
+          "nation-states",
+          "left-wing",
           "humans",
+          "although",
           "enlightenment",
           "during",
           "various",
@@ -213,7 +211,6 @@
         "doc_id": "641cde56-51a3-8b9f-1f12-856880ad2925",
         "text_snippet": "had a significant role in workers' struggles for emancipation. Various anarchist schools of thought ...",
         "predicted_entities": [
-          "typescript",
           "various",
           "anarchists",
           "paris",
@@ -222,16 +219,22 @@
           "civil",
           "war",
           "spanish",
+          "anti-capitalist",
+          "anti-war",
+          "anti-globalisation",
           "evolutionary",
           "many",
           "etymology",
           "ancient",
           "greek",
+          "an-",
+          "-ism",
           "anarchism",
-          "english"
+          "english",
+          "1642",
+          "1539"
         ],
         "ground_truth_entities": [
-          "typescript",
           "various",
           "anarchists",
           "paris",
@@ -240,13 +243,20 @@
           "civil",
           "war",
           "spanish",
+          "anti-capitalist",
+          "anti-war",
+          "anti-globalisation",
           "evolutionary",
           "many",
           "etymology",
           "ancient",
           "greek",
+          "an-",
+          "-ism",
           "anarchism",
-          "english"
+          "english",
+          "1642",
+          "1539"
         ],
         "precision": 1.0,
         "recall": 1.0
@@ -255,11 +265,14 @@
         "doc_id": "d437095c-f0cd-a4cf-01d9-26b963a18e63",
         "text_snippet": "The etymological origin of anarchism is from the Ancient Greek anarkhia, meaning \"without a ruler\", ...",
         "predicted_entities": [
-          "typescript",
           "ancient",
           "greek",
+          "an-",
+          "-ism",
           "anarchism",
           "english",
+          "1642",
+          "1539",
           "various",
           "french",
           "revolution",
@@ -270,16 +283,22 @@
           "weitling",
           "pierre-joseph",
           "proudhon",
+          "mid-19th",
+          "since",
           "france",
           "united",
-          "states"
+          "states",
+          "free-market"
         ],
         "ground_truth_entities": [
-          "typescript",
           "ancient",
           "greek",
+          "an-",
+          "-ism",
           "anarchism",
           "english",
+          "1642",
+          "1539",
           "various",
           "french",
           "revolution",
@@ -290,9 +309,12 @@
           "weitling",
           "pierre-joseph",
           "proudhon",
+          "mid-19th",
+          "since",
           "france",
           "united",
-          "states"
+          "states",
+          "free-market"
         ],
         "precision": 1.0,
         "recall": 1.0
@@ -301,26 +323,32 @@
         "doc_id": "e068ecef-a036-9318-4ab5-ac4999b8225e",
         "text_snippet": "often been used as a synonym for anarchism and its use as a synonym is still common outside the Unit...",
         "predicted_entities": [
-          "typescript",
           "united",
           "states",
+          "free-market",
           "left",
           "marxists",
           "additionally",
           "anarchism",
+          "anti-authoritarian",
+          "state-oriented",
           "scholars",
-          "many"
+          "many",
+          "anarcho-capitalism"
         ],
         "ground_truth_entities": [
-          "typescript",
           "united",
           "states",
+          "free-market",
           "left",
           "marxists",
           "additionally",
           "anarchism",
+          "anti-authoritarian",
+          "state-oriented",
           "scholars",
-          "many"
+          "many",
+          "anarcho-capitalism"
         ],
         "precision": 1.0,
         "recall": 1.0
@@ -329,12 +357,13 @@
         "doc_id": "c706904d-a70f-f70b-465a-16d93f1c3a2b",
         "text_snippet": "dichotomies between the two. Some scholars describe anarchism as having many influences from liberal...",
         "predicted_entities": [
-          "react",
-          "typescript",
           "many",
+          "anarcho-capitalism",
           "major",
+          "non-coercive",
           "history",
           "pre-modern",
+          "before",
           "china",
           "greece",
           "taoist",
@@ -347,12 +376,13 @@
           "anarchic"
         ],
         "ground_truth_entities": [
-          "typescript",
-          "react",
           "many",
+          "anarcho-capitalism",
           "major",
+          "non-coercive",
           "history",
           "pre-modern",
+          "before",
           "china",
           "greece",
           "taoist",
@@ -371,9 +401,6 @@
         "doc_id": "a12a6203-4df4-f870-e2e7-e10a8213c8dd",
         "text_snippet": "most notable precursors to anarchism in the ancient world were in China and Greece. In China, philos...",
         "predicted_entities": [
-          "rest_api",
-          "typescript",
-          "aws",
           "china",
           "greece",
           "taoist",
@@ -399,12 +426,10 @@
           "emperor",
           "kavad",
           "basra",
+          "anti-state",
           "renewed"
         ],
         "ground_truth_entities": [
-          "rest_api",
-          "typescript",
-          "aws",
           "china",
           "greece",
           "taoist",
@@ -430,6 +455,7 @@
           "emperor",
           "kavad",
           "basra",
+          "anti-state",
           "renewed"
         ],
         "precision": 1.0,
@@ -439,8 +465,6 @@
         "doc_id": "703aff2d-6ed1-0e7e-1372-7ec5a921d46a",
         "text_snippet": "later gave birth to religious anarchism. In the Sasanian Empire, Mazdak called for an egalitarian so...",
         "predicted_entities": [
-          "rest_api",
-          "typescript",
           "sasanian",
           "empire",
           "mazdak",
@@ -448,11 +472,14 @@
           "kavad",
           "basra",
           "europe",
+          "anti-state",
           "renewed",
           "renaissance",
           "reformation",
+          "anti-authoritarian",
           "france",
           "enlightenment",
+          "1848",
           "modern",
           "during",
           "french",
@@ -465,11 +492,12 @@
           "stirner's",
           "pierre-joseph",
           "proudhon's",
+          "well-defined",
+          "1880",
+          "1914",
           "spanish"
         ],
         "ground_truth_entities": [
-          "rest_api",
-          "typescript",
           "sasanian",
           "empire",
           "mazdak",
@@ -477,11 +505,14 @@
           "kavad",
           "basra",
           "europe",
+          "anti-state",
           "renewed",
           "renaissance",
           "reformation",
+          "anti-authoritarian",
           "france",
           "enlightenment",
+          "1848",
           "modern",
           "during",
           "french",
@@ -494,6 +525,9 @@
           "stirner's",
           "pierre-joseph",
           "proudhon's",
+          "well-defined",
+          "1880",
+          "1914",
           "spanish"
         ],
         "precision": 1.0,
@@ -503,10 +537,12 @@
         "doc_id": "3494a403-b17f-18d2-2364-df4abbd2a234",
         "text_snippet": "way to individualism and Pierre-Joseph Proudhon's theory of mutualism found fertile soil in France. ...",
         "predicted_entities": [
-          "typescript",
           "pierre-joseph",
           "proudhon's",
           "france",
+          "well-defined",
+          "1880",
+          "1914",
           "spanish",
           "civil",
           "war",
@@ -517,6 +553,7 @@
           "workingmen's",
           "association",
           "first",
+          "1864",
           "karl",
           "marx",
           "general",
@@ -526,19 +563,23 @@
           "federation",
           "bakuninists",
           "marxists",
+          "1872",
           "hague",
           "congress",
           "anarchists",
           "second",
+          "1896",
           "marx's",
           "st",
           "imier"
         ],
         "ground_truth_entities": [
-          "typescript",
           "pierre-joseph",
           "proudhon's",
           "france",
+          "well-defined",
+          "1880",
+          "1914",
           "spanish",
           "civil",
           "war",
@@ -549,6 +590,7 @@
           "workingmen's",
           "association",
           "first",
+          "1864",
           "karl",
           "marx",
           "general",
@@ -558,10 +600,12 @@
           "federation",
           "bakuninists",
           "marxists",
+          "1872",
           "hague",
           "congress",
           "anarchists",
           "second",
+          "1896",
           "marx's",
           "st",
           "imier"
@@ -573,12 +617,12 @@
         "doc_id": "06a9d159-bee0-4db9-2d53-9cd7b98f04cc",
         "text_snippet": "Hague Congress. Anarchists were treated similarly in the Second International, being ultimately expe...",
         "predicted_entities": [
-          "typescript",
           "hague",
           "congress",
           "anarchists",
           "second",
           "international",
+          "1896",
           "bakunin",
           "marx's",
           "first",
@@ -588,10 +632,13 @@
           "peter",
           "kropotkin",
           "russian",
+          "anarcho-communism",
           "anarcho-communists",
+          "1871",
           "paris",
           "commune",
           "china",
+          "pro-science",
           "tokyo",
           "east",
           "asian",
@@ -599,17 +646,19 @@
           "latin",
           "america",
           "argentina",
+          "anarcho-syndicalism",
+          "left-wing",
           "during",
           "french",
           "communards"
         ],
         "ground_truth_entities": [
-          "typescript",
           "hague",
           "congress",
           "anarchists",
           "second",
           "international",
+          "1896",
           "bakunin",
           "marx's",
           "first",
@@ -619,10 +668,13 @@
           "peter",
           "kropotkin",
           "russian",
+          "anarcho-communism",
           "anarcho-communists",
+          "1871",
           "paris",
           "commune",
           "china",
+          "pro-science",
           "tokyo",
           "east",
           "asian",
@@ -630,6 +682,8 @@
           "latin",
           "america",
           "argentina",
+          "anarcho-syndicalism",
+          "left-wing",
           "during",
           "french",
           "communards"
@@ -641,8 +695,8 @@
         "doc_id": "13fc0748-8a1f-37d6-8abf-260890f90efd",
         "text_snippet": "stronghold for anarcho-syndicalism, where it became the most prominent left-wing ideology. During th...",
         "predicted_entities": [
-          "typescript",
-          "expressjs",
+          "anarcho-syndicalism",
+          "left-wing",
           "during",
           "french",
           "communards",
@@ -651,6 +705,7 @@
           "even",
           "immigration",
           "act",
+          "1903",
           "anarchist",
           "exclusion",
           "illegalism",
@@ -669,8 +724,8 @@
           "russia"
         ],
         "ground_truth_entities": [
-          "typescript",
-          "expressjs",
+          "anarcho-syndicalism",
+          "left-wing",
           "during",
           "french",
           "communards",
@@ -679,6 +734,7 @@
           "even",
           "immigration",
           "act",
+          "1903",
           "anarchist",
           "exclusion",
           "illegalism",
@@ -703,23 +759,25 @@
   },
   "retrieval_results": {
     "metrics": {
-      "mrr_e1_only": 1.0,
-      "mrr_e11_only": 1.0,
+      "mrr_e1_only": 0.995,
+      "mrr_e11_only": 0.9516666666666665,
       "mrr_e1_e11_hybrid": 1.0,
-      "e11_contribution_pct": 0.0,
+      "e11_contribution_pct": 0.5025125628140708,
       "entity_overlap_correlation": 0.0,
       "precision_at_k": {},
       "recall_at_k": {},
-      "queries_evaluated": 50
+      "queries_evaluated": 100
     },
     "query_results": [
       {
         "query_id": "8acab003-5200-91fa-fa5f-b811859c4f6c",
         "query_text": "Anarchism is a political philosophy and movement t...",
         "query_entities": [
-          "typescript",
           "anarchism",
+          "nation-states",
+          "left-wing",
           "humans",
+          "although",
           "enlightenment",
           "during",
           "various",
@@ -739,7 +797,6 @@
         "query_id": "641cde56-51a3-8b9f-1f12-856880ad2925",
         "query_text": "had a significant role in workers' struggles for e...",
         "query_entities": [
-          "typescript",
           "various",
           "anarchists",
           "paris",
@@ -748,13 +805,20 @@
           "civil",
           "war",
           "spanish",
+          "anti-capitalist",
+          "anti-war",
+          "anti-globalisation",
           "evolutionary",
           "many",
           "etymology",
           "ancient",
           "greek",
+          "an-",
+          "-ism",
           "anarchism",
-          "english"
+          "english",
+          "1642",
+          "1539"
         ],
         "e1_mrr": 1.0,
         "e11_mrr": 1.0,
@@ -764,11 +828,14 @@
         "query_id": "d437095c-f0cd-a4cf-01d9-26b963a18e63",
         "query_text": "The etymological origin of anarchism is from the A...",
         "query_entities": [
-          "typescript",
           "ancient",
           "greek",
+          "an-",
+          "-ism",
           "anarchism",
           "english",
+          "1642",
+          "1539",
           "various",
           "french",
           "revolution",
@@ -779,9 +846,12 @@
           "weitling",
           "pierre-joseph",
           "proudhon",
+          "mid-19th",
+          "since",
           "france",
           "united",
-          "states"
+          "states",
+          "free-market"
         ],
         "e1_mrr": 1.0,
         "e11_mrr": 1.0,
@@ -791,15 +861,18 @@
         "query_id": "e068ecef-a036-9318-4ab5-ac4999b8225e",
         "query_text": "often been used as a synonym for anarchism and its...",
         "query_entities": [
-          "typescript",
           "united",
           "states",
+          "free-market",
           "left",
           "marxists",
           "additionally",
           "anarchism",
+          "anti-authoritarian",
+          "state-oriented",
           "scholars",
-          "many"
+          "many",
+          "anarcho-capitalism"
         ],
         "e1_mrr": 1.0,
         "e11_mrr": 1.0,
@@ -809,12 +882,13 @@
         "query_id": "c706904d-a70f-f70b-465a-16d93f1c3a2b",
         "query_text": "dichotomies between the two. Some scholars describ...",
         "query_entities": [
-          "typescript",
-          "react",
           "many",
+          "anarcho-capitalism",
           "major",
+          "non-coercive",
           "history",
           "pre-modern",
+          "before",
           "china",
           "greece",
           "taoist",
@@ -827,16 +901,13 @@
           "anarchic"
         ],
         "e1_mrr": 1.0,
-        "e11_mrr": 1.0,
+        "e11_mrr": 0.3333333333333333,
         "hybrid_mrr": 1.0
       },
       {
         "query_id": "a12a6203-4df4-f870-e2e7-e10a8213c8dd",
         "query_text": "most notable precursors to anarchism in the ancien...",
         "query_entities": [
-          "rest_api",
-          "typescript",
-          "aws",
           "china",
           "greece",
           "taoist",
@@ -862,6 +933,7 @@
           "emperor",
           "kavad",
           "basra",
+          "anti-state",
           "renewed"
         ],
         "e1_mrr": 1.0,
@@ -872,8 +944,6 @@
         "query_id": "703aff2d-6ed1-0e7e-1372-7ec5a921d46a",
         "query_text": "later gave birth to religious anarchism. In the Sa...",
         "query_entities": [
-          "rest_api",
-          "typescript",
           "sasanian",
           "empire",
           "mazdak",
@@ -881,11 +951,14 @@
           "kavad",
           "basra",
           "europe",
+          "anti-state",
           "renewed",
           "renaissance",
           "reformation",
+          "anti-authoritarian",
           "france",
           "enlightenment",
+          "1848",
           "modern",
           "during",
           "french",
@@ -898,6 +971,9 @@
           "stirner's",
           "pierre-joseph",
           "proudhon's",
+          "well-defined",
+          "1880",
+          "1914",
           "spanish"
         ],
         "e1_mrr": 1.0,
@@ -908,10 +984,12 @@
         "query_id": "3494a403-b17f-18d2-2364-df4abbd2a234",
         "query_text": "way to individualism and Pierre-Joseph Proudhon's ...",
         "query_entities": [
-          "typescript",
           "pierre-joseph",
           "proudhon's",
           "france",
+          "well-defined",
+          "1880",
+          "1914",
           "spanish",
           "civil",
           "war",
@@ -922,6 +1000,7 @@
           "workingmen's",
           "association",
           "first",
+          "1864",
           "karl",
           "marx",
           "general",
@@ -931,10 +1010,12 @@
           "federation",
           "bakuninists",
           "marxists",
+          "1872",
           "hague",
           "congress",
           "anarchists",
           "second",
+          "1896",
           "marx's",
           "st",
           "imier"
@@ -947,12 +1028,12 @@
         "query_id": "06a9d159-bee0-4db9-2d53-9cd7b98f04cc",
         "query_text": "Hague Congress. Anarchists were treated similarly ...",
         "query_entities": [
-          "typescript",
           "hague",
           "congress",
           "anarchists",
           "second",
           "international",
+          "1896",
           "bakunin",
           "marx's",
           "first",
@@ -962,10 +1043,13 @@
           "peter",
           "kropotkin",
           "russian",
+          "anarcho-communism",
           "anarcho-communists",
+          "1871",
           "paris",
           "commune",
           "china",
+          "pro-science",
           "tokyo",
           "east",
           "asian",
@@ -973,6 +1057,8 @@
           "latin",
           "america",
           "argentina",
+          "anarcho-syndicalism",
+          "left-wing",
           "during",
           "french",
           "communards"
@@ -985,8 +1071,8 @@
         "query_id": "13fc0748-8a1f-37d6-8abf-260890f90efd",
         "query_text": "stronghold for anarcho-syndicalism, where it becam...",
         "query_entities": [
-          "typescript",
-          "expressjs",
+          "anarcho-syndicalism",
+          "left-wing",
           "during",
           "french",
           "communards",
@@ -995,6 +1081,7 @@
           "even",
           "immigration",
           "act",
+          "1903",
           "anarchist",
           "exclusion",
           "illegalism",
@@ -1020,7 +1107,6 @@
         "query_id": "512e6752-f2e1-4bf3-9bb8-a35e5884779b",
         "query_text": "from Petrograd and Moscow fled to Ukraine, before ...",
         "query_entities": [
-          "typescript",
           "petrograd",
           "moscow",
           "ukraine",
@@ -1046,6 +1132,8 @@
           "spanish",
           "cnt",
           "fai",
+          "1936",
+          "anarchist-inspired",
           "barcelona",
           "spain"
         ],
@@ -1057,9 +1145,10 @@
         "query_id": "9d0b9f15-11d9-e0fb-3889-1f9aa994edbb",
         "query_text": "tradition of Spanish anarchism led to anarchists p...",
         "query_entities": [
-          "typescript",
           "spanish",
           "revolution",
+          "1936",
+          "anarchist-inspired",
           "barcelona",
           "spain",
           "soviet",
@@ -1075,7 +1164,9 @@
           "marxism–leninism",
           "cold",
           "during",
+          "anti-nuclear",
           "left",
+          "anti-capitalist",
           "anarchism"
         ],
         "e1_mrr": 1.0,
@@ -1086,12 +1177,14 @@
         "query_id": "d2222c36-dee6-67ff-2fc6-80c2a5821ea2",
         "query_text": "this time, anarchism found a presence in other mov...",
         "query_entities": [
-          "typescript",
+          "anti-nuclear",
           "left",
+          "anti-capitalist",
           "anarchism",
           "crass",
           "sex",
           "pistols",
+          "anarcha-feminism",
           "black",
           "eurocentric",
           "northern",
@@ -1099,6 +1192,8 @@
           "latin",
           "america",
           "around",
+          "anti-war",
+          "anti-globalisation",
           "anarchists",
           "world",
           "trade",
@@ -1118,14 +1213,13 @@
         "query_id": "f76440b3-59d2-d17d-9843-84a95a691dcd",
         "query_text": "Eight and the World Economic Forum. During the pro...",
         "query_entities": [
-          "typescript",
-          "java",
           "eight",
           "world",
           "economic",
           "forum",
           "during",
           "internet",
+          "1999",
           "seattle",
           "wto",
           "anarchist",
@@ -1142,7 +1236,9 @@
           "honeywell",
           "food",
           "bombs",
-          "monsanto"
+          "de-funding",
+          "monsanto",
+          "seed-saving"
         ],
         "e1_mrr": 1.0,
         "e11_mrr": 1.0,
@@ -1152,27 +1248,35 @@
         "query_id": "d03c7efc-1c00-28d0-3d16-d31535b35fac",
         "query_text": "groups work: direct action, working together and i...",
         "query_entities": [
-          "rest_api",
-          "typescript",
+          "de-funding",
           "monsanto",
+          "seed-saving",
           "honeywell",
+          "non-humans",
           "thought",
           "anarchist"
         ],
-        "e1_mrr": 1.0,
-        "e11_mrr": 1.0,
+        "e1_mrr": 0.5,
+        "e11_mrr": 0.5,
         "hybrid_mrr": 1.0
       },
       {
         "query_id": "84cd7192-0f35-94fa-08bc-dd3020bf1e3f",
         "query_text": "emphasises negative liberty in opposing restraints...",
         "query_entities": [
-          "rest_api",
-          "typescript",
+          "post-classical",
+          "anarcha-feminism",
+          "post-anarchism",
           "beyond",
           "anarchism",
           "anarchism's",
-          "much"
+          "anti-capitalism",
+          "anarcho-capitalism",
+          "far-left",
+          "much",
+          "anti-authoritarian",
+          "anti-statist",
+          "left-wing"
         ],
         "e1_mrr": 1.0,
         "e11_mrr": 1.0,
@@ -1182,14 +1286,18 @@
         "query_id": "c365b9b7-2783-6651-c3e3-0b02320f6261",
         "query_text": "community and individuality sets it apart from ana...",
         "query_entities": [
-          "typescript",
-          "react",
+          "anarcho-capitalism",
           "anarchism",
+          "far-left",
           "much",
+          "anti-authoritarian",
+          "anti-statist",
+          "left-wing",
           "one",
           "fernando",
           "tarrida",
           "mármol",
+          "1889",
           "belief",
           "despite",
           "classical",
@@ -1203,13 +1311,15 @@
         "query_id": "0acf1d68-bc02-c1bb-1d63-714b06eb238c",
         "query_text": "rather as tendencies that intermingle and are conn...",
         "query_entities": [
-          "typescript",
           "classical",
           "inceptive",
           "mutualism",
+          "18th-century",
           "pierre-joseph",
           "proudhon",
+          "what",
           "property",
+          "1840",
           "collectivist",
           "mikhail",
           "bakunin"
@@ -1222,7 +1332,6 @@
         "query_id": "f3fbbd41-49b1-d94c-14c3-0c1cc439e394",
         "query_text": "is a revolutionary socialist form of anarchism com...",
         "query_entities": [
-          "typescript",
           "mikhail",
           "bakunin",
           "collectivist",
@@ -1246,12 +1355,11 @@
         "query_id": "77761350-3e81-9a72-1925-c8d48bd17a0c",
         "query_text": "in the theoretical work of Peter Kropotkin, whose ...",
         "query_entities": [
-          "typescript",
-          "rest_api",
-          "aws",
           "peter",
           "kropotkin",
           "anarcho-syndicalism",
+          "self-managed",
+          "self-management",
           "individualist",
           "early",
           "william",
@@ -1266,6 +1374,7 @@
           "post-classical",
           "anarchist",
           "interest",
+          "anti-globalisation",
           "anarchism"
         ],
         "e1_mrr": 1.0,
@@ -1276,10 +1385,10 @@
         "query_id": "ba658ada-5b74-85f7-0f64-88d067554997",
         "query_text": "social movements of the left. Interest in the anar...",
         "query_entities": [
-          "typescript",
-          "rest_api",
           "interest",
+          "anti-globalisation",
           "anarchism",
+          "anti-capitalist",
           "contemporary",
           "various",
           "gender"
@@ -1292,8 +1401,9 @@
         "query_id": "0e60436f-b779-b0c7-6889-2799e6e50104",
         "query_text": "stable constellations of anarchist principles\", th...",
         "query_entities": [
-          "typescript",
           "gender",
+          "anarcha-feminists",
+          "anarcho-communists",
           "anarchists",
           "bolshevism",
           "islam",
@@ -1311,7 +1421,6 @@
         "query_id": "91bcdc35-ddc8-8b90-1398-f1d68396b73a",
         "query_text": "within the state, resulting in the questioning of ...",
         "query_entities": [
-          "typescript",
           "tactics",
           "anarchists",
           "establishment",
@@ -1333,7 +1442,6 @@
         "query_id": "392883ae-e023-e6af-1ebb-f7b782c93528",
         "query_text": "only did they confront state armed forces, as in S...",
         "query_entities": [
-          "typescript",
           "spain",
           "ukraine",
           "assassination",
@@ -1342,6 +1450,7 @@
           "galleanists",
           "anarchist",
           "anarcho-pacifists",
+          "non-violence",
           "emma",
           "goldman",
           "errico",
@@ -1355,8 +1464,6 @@
         "query_id": "93c6afb6-bbc5-f69f-8a1b-4526bbb19e2a",
         "query_text": "This attitude was quite prominent a century ago wh...",
         "query_entities": [
-          "typescript",
-          "react",
           "emma",
           "goldman",
           "errico",
@@ -1379,22 +1486,26 @@
         "query_id": "f6a60d0e-2dc2-ec5b-75c4-5908a96795a5",
         "query_text": "rejecting the nonviolence tactic adopted since the...",
         "query_entities": [
-          "rest_api",
-          "typescript",
           "kropotkin",
           "bonanno",
           "french",
           "invisible",
           "committee",
           "members",
+          "2008",
           "overall",
           "canada",
           "greece",
           "mexico",
           "militant",
+          "anti-fascist",
           "evolutionary",
           "anarchists",
-          "decision-making"
+          "self-managing",
+          "counter-institutions",
+          "non-hierarchical",
+          "decision-making",
+          "anti-authoritarian"
         ],
         "e1_mrr": 1.0,
         "e11_mrr": 1.0,
@@ -1404,9 +1515,15 @@
         "query_id": "74a8059f-5e6c-564d-9d4c-b6d152d844a4",
         "query_text": "commonly employ direct action. This can take the f...",
         "query_entities": [
-          "typescript",
+          "self-managing",
+          "counter-institutions",
+          "non-hierarchical",
           "decision-making",
+          "anti-authoritarian",
           "contemporary-era",
+          "big-a",
+          "small-a",
+          "classical-era",
           "peter",
           "kropotkin",
           "pierre-joseph",
@@ -1422,7 +1539,7 @@
         "query_id": "c8e415fa-cc9d-619a-4110-7908a4fd6eac",
         "query_text": "will later theorize. The decision-making process o...",
         "query_entities": [
-          "typescript",
+          "decision-making",
           "anarchists",
           "one",
           "minorities",
@@ -1438,7 +1555,6 @@
         "query_id": "b9818e10-029d-d7bb-7579-d9c90beb7a66",
         "query_text": "are used, and anarchists have gone online in the W...",
         "query_entities": [
-          "typescript",
           "world",
           "wide",
           "web",
@@ -1460,25 +1576,23 @@
         "query_id": "76bd1686-f73c-bc04-1fec-d503fd32e9bf",
         "query_text": "and build social bonds. Adding up these tactics wh...",
         "query_entities": [
-          "typescript",
-          "rest_api",
           "adding",
           "key",
           "marxism",
           "anarchists",
+          "self-interest",
           "phenomena",
+          "anarcho-primitivism",
           "objection"
         ],
         "e1_mrr": 1.0,
-        "e11_mrr": 1.0,
+        "e11_mrr": 0.5,
         "hybrid_mrr": 1.0
       },
       {
         "query_id": "920337f7-1389-5a16-fdb1-111196c5929b",
         "query_text": "and the democratic process may be sharply criticis...",
         "query_entities": [
-          "typescript",
-          "rest_api",
           "objection",
           "anarchists",
           "instead",
@@ -1498,9 +1612,6 @@
         "query_id": "781ebce3-6592-e8be-0af2-7cae788652c8",
         "query_text": "ruling class is distinct from the rest of society....",
         "query_entities": [
-          "rest_api",
-          "aws",
-          "typescript",
           "specific",
           "robert",
           "paul",
@@ -1515,26 +1626,30 @@
           "sexuality",
           "sexual",
           "benjamin",
-          "tucker"
+          "tucker",
+          "1890",
+          "1920"
         ],
         "e1_mrr": 1.0,
-        "e11_mrr": 1.0,
+        "e11_mrr": 0.5,
         "hybrid_mrr": 1.0
       },
       {
         "query_id": "873ea43a-9240-7a8f-0777-8f5345f309d7",
         "query_text": "developing. Sexual violence was a concern for anar...",
         "query_entities": [
-          "typescript",
-          "aws",
           "sexual",
           "benjamin",
           "tucker",
+          "1890",
+          "1920",
           "free",
           "europe",
           "united",
           "states",
           "anarchist",
+          "pro-choice",
+          "non-anarchist",
           "during"
         ],
         "e1_mrr": 1.0,
@@ -1545,10 +1660,11 @@
         "query_id": "36ed1ad4-39fa-7384-973d-2a09b19f3438",
         "query_text": "that arose from free love. Anarchist feminists wer...",
         "query_entities": [
-          "typescript",
-          "rest_api",
           "anarchist",
+          "pro-choice",
+          "non-anarchist",
           "during",
+          "post-structuralist",
           "education",
           "anarchists",
           "william",
@@ -1562,8 +1678,6 @@
         "query_id": "c877c74b-3207-3eb0-944d-526d315d5c6f",
         "query_text": "social liberation. Education The interest of anarc...",
         "query_entities": [
-          "rest_api",
-          "typescript",
           "education",
           "anarchists",
           "anarchist",
@@ -1575,6 +1689,7 @@
           "stirner",
           "false",
           "principle",
+          "1901",
           "catalan",
           "francisco",
           "ferrer",
@@ -1598,8 +1713,6 @@
         "query_id": "af7b3983-68ea-31f1-0bca-aba8f9536924",
         "query_text": "consciousness among students. The school closed af...",
         "query_entities": [
-          "typescript",
-          "rest_api",
           "ferrer",
           "nonetheless",
           "christian",
@@ -1610,6 +1723,7 @@
           "neill",
           "summerhill",
           "school",
+          "1921",
           "anarchist",
           "late",
           "paul",
@@ -1627,7 +1741,6 @@
         "query_id": "e7fd6197-5fbe-12b4-f7a9-464950b9aa44",
         "query_text": "possible under capitalism, along with other critiq...",
         "query_entities": [
-          "typescript",
           "late",
           "paul",
           "goodman",
@@ -1636,6 +1749,7 @@
           "colin",
           "ward",
           "contemporary",
+          "modern-day",
           "judith",
           "suissa",
           "free",
@@ -1662,7 +1776,6 @@
         "query_id": "0f39e534-fc77-bf09-ac79-0ffba376afbf",
         "query_text": "College in Brighton, England, and the Paideia Scho...",
         "query_entities": [
-          "typescript",
           "college",
           "brighton",
           "england",
@@ -1670,11 +1783,13 @@
           "school",
           "spain",
           "apocalyptics",
+          "neo-romanticism",
           "anarchists",
           "leo",
           "tolstoy",
           "herbert",
           "read",
+          "non-artist",
           "breaking",
           "spell",
           "history",
@@ -1686,6 +1801,8 @@
           "ninjas",
           "chris",
           "robé",
+          "anarchist-inflected",
+          "movement-based",
           "throughout",
           "peter",
           "kropotkin",
@@ -1706,7 +1823,7 @@
         "query_id": "3cc39c32-e086-dcda-1716-a22c3aa39c99",
         "query_text": "increasingly structured movement-based video activ...",
         "query_entities": [
-          "typescript",
+          "movement-based",
           "throughout",
           "peter",
           "kropotkin",
@@ -1718,11 +1835,14 @@
           "berneri",
           "anarchy",
           "three",
+          "19th-century",
+          "neo-impressionist",
           "les",
           "osny",
           "camille",
           "pissarro",
           "criticism",
+          "self-govern",
           "philosopher",
           "bertrand",
           "russell"
@@ -1735,16 +1855,17 @@
         "query_id": "86a5f7b5-b03f-f5c8-faf2-60ae4c9663a5",
         "query_text": "that humans cannot self-govern and so a state is n...",
         "query_entities": [
-          "rest_api",
-          "typescript",
+          "self-govern",
           "philosopher",
           "bertrand",
           "russell",
           "another",
+          "self-governing",
           "thomas",
           "hobbes",
           "robert",
           "nozick",
+          "night-watchman",
           "anarchists"
         ],
         "e1_mrr": 1.0,
@@ -1755,14 +1876,15 @@
         "query_id": "43b429a8-a42c-eecb-041a-fb895cd8a0b3",
         "query_text": "Nozick argued that a \"night-watchman state\", or mi...",
         "query_entities": [
-          "typescript",
           "nozick",
+          "night-watchman",
           "anarchists",
           "anarcho-primitivists",
           "philosophy",
           "andrew",
           "fiala",
           "secondly",
+          "self-contradictory",
           "anarchism"
         ],
         "e1_mrr": 1.0,
@@ -1773,11 +1895,12 @@
         "query_id": "b5f8d3df-6906-a111-51e2-857cfd1c1e18",
         "query_text": "as unfeasible or utopian since the state cannot be...",
         "query_entities": [
-          "typescript",
+          "self-contradictory",
           "anarchism",
           "lastly",
           "fiala",
           "philosophical",
+          "pro-anarchist",
           "john",
           "simmons",
           "moral",
@@ -1801,7 +1924,6 @@
         "query_id": "3f52f136-9ee6-fae3-0e54-da8067ae205d",
         "query_text": "this does not imply that anarchism is the inevitab...",
         "query_entities": [
-          "typescript",
           "problem",
           "political",
           "authority",
@@ -1815,7 +1937,9 @@
           "classical",
           "friedrich",
           "engels",
-          "marxism"
+          "marxism",
+          "anti-authoritarianism",
+          "counter-revolutionary"
         ],
         "e1_mrr": 1.0,
         "e11_mrr": 1.0,
@@ -1825,11 +1949,12 @@
         "query_id": "58999699-74a5-e98c-5b7d-33c45e378b05",
         "query_text": "respectively. Classical anarchism has been critici...",
         "query_entities": [
-          "typescript",
           "classical",
           "friedrich",
           "engels",
           "marxism",
+          "anti-authoritarianism",
+          "counter-revolutionary",
           "academic",
           "john",
           "molyneux",
@@ -1858,7 +1983,6 @@
         "query_id": "d185b4e9-84fc-9b01-9937-5ea9972fe1a2",
         "query_text": "was resolved through coexistence and intertwining....",
         "query_entities": [
-          "typescript",
           "see",
           "anarchism",
           "governance",
@@ -1872,6 +1996,7 @@
           "tertiary",
           "further",
           "criticism",
+          "137",
           "anarchistic",
           "external",
           "anarchy",
@@ -1895,27 +2020,24 @@
         "query_id": "951bb0fa-c6a0-163d-3909-c7c319919ea6",
         "query_text": "Albedo (; ) is the fraction of sunlight that is di...",
         "query_entities": [
-          "angular",
-          "typescript",
           "albedo",
           "surface",
           "je",
           "ee",
           "earth's",
           "sun",
+          "bi-hemispherical",
           "unless",
           "due"
         ],
         "e1_mrr": 1.0,
-        "e11_mrr": 1.0,
+        "e11_mrr": 0.5,
         "hybrid_mrr": 1.0
       },
       {
         "query_id": "432dea37-af08-8236-4aaf-a6de0223fc3b",
         "query_text": "(as obtained from flux measurements) to daily, mon...",
         "query_entities": [
-          "rest_api",
-          "typescript",
           "unless",
           "due",
           "ice–albedo",
@@ -1933,8 +2055,6 @@
         "query_id": "03976396-97ce-d6bb-8a90-7c85cb5c64ea",
         "query_text": "change. Albedo is an important concept in climatol...",
         "query_entities": [
-          "rest_api",
-          "typescript",
           "albedo",
           "earth",
           "terrestrial",
@@ -1958,7 +2078,6 @@
         "query_id": "4075e8f8-5d60-cb41-e3f7-5ca40820c3c9",
         "query_text": "surface albedo is regularly estimated via Earth ob...",
         "query_entities": [
-          "typescript",
           "earth",
           "nasa's",
           "modis",
@@ -1968,9 +2087,12 @@
           "suomi",
           "npp",
           "jpss",
+          "directional-hemispherical",
+          "bi-hemispherical",
           "brdf",
           "bdrf",
-          "earth's"
+          "earth's",
+          "so-called"
         ],
         "e1_mrr": 1.0,
         "e11_mrr": 1.0,
@@ -1980,10 +2102,1541 @@
         "query_id": "79987b97-1819-06d7-69c9-f3a52f4d7b96",
         "query_text": ". If only the continental land masses became cover...",
         "query_entities": [
-          "typescript",
+          "earth",
+          "so-called",
+          "2021",
+          "co-caused",
+          "however",
+          "white-sky",
+          "black-sky",
+          "blue-sky",
+          "directional-hemispherical",
+          "bi-hemispherical"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "3e588387-fd07-8f3d-4b0e-dd3c5ed35d10",
+        "query_text": "zenith angle, , sometimes referred to as black-sky...",
+        "query_entities": [
+          "black-sky",
+          "bi-hemispherical",
+          "white-sky",
+          "blue-sky",
+          "human",
+          "campra",
+          "earth’s",
+          "almería",
+          "spain",
+          "2008",
+          "high-albedo",
+          "follow-up",
+          "co2-eq"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "58d77d4c-d83d-b94f-eb4e-aedcdc864856",
+        "query_text": "roofs. A 2008 study found that this anthropogenic ...",
+        "query_entities": [
+          "2008",
+          "high-albedo",
+          "follow-up",
+          "co2-eq",
+          "deliberately",
+          "ouyang",
+          "44",
+          "gt",
+          "co2",
+          "intentionally",
+          "earth's",
+          "pdrc",
+          "efforts",
+          "pdrcs",
+          "90",
+          "examples",
+          "illumination",
+          "albedo"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "7ca84298-cdb0-86fa-dfe0-5fe100439ad1",
+        "query_text": "passive daytime radiative cooling (PDRC). Efforts ...",
+        "query_entities": [
+          "pdrc",
+          "efforts",
+          "pdrcs",
+          "90",
+          "examples",
+          "illumination",
+          "albedo",
+          "earth's",
+          "insolation",
+          "arctic",
+          "antarctic",
+          "sahara",
+          "desert",
+          "tropical",
+          "sub-tropical"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "639f9692-d6ea-9ce1-3388-95f28b259abb",
+        "query_text": "to low insolation, whereas areas such as the Sahar...",
+        "query_entities": [
+          "sahara",
+          "desert",
+          "tropical",
+          "sub-tropical",
+          "arctic",
+          "earth",
+          "climate",
+          "albedo",
+          "self-reinforcing"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 0.5,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "f281f0c2-193a-d4bb-46f9-b42815bc07ba",
+        "query_text": "effect. Climate and weather Albedo affects climate...",
+        "query_entities": [
+          "climate",
+          "albedo",
+          "earth",
+          "self-reinforcing",
+          "water-vapour",
+          "albedo–temperature",
+          "however"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 0.3333333333333333,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "04b84212-2f11-023b-7b94-da1b10ec0507",
+        "query_text": "eventually warm air masses and a more direct angle...",
+        "query_entities": [
+          "snow",
+          "antarctica",
+          "snow-covered",
+          "sea"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 0.5,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "56f0fc38-e512-a3b1-346e-652b7cfa4222",
+        "query_text": "than that of sea water. Sea water absorbs more sol...",
+        "query_entities": [
+          "sea",
+          "snow-covered",
+          "cryoconite",
+          "small-scale",
+          "albedo"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "2a1aac2f-3e35-a8eb-97c7-a56d2f5eaa14",
+        "query_text": "albedo, can lead to large errors in energy estimat...",
+        "query_entities": [
+          "snow-covered",
+          "small-scale",
+          "albedo",
+          "light-coloured",
+          "solar",
+          "a-si:h",
+          "c-si)-based",
+          "spectral-integrated",
+          "research",
+          "10",
+          "90",
+          "spectral",
+          "20",
+          "c-si"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "66851230-0bc7-6935-9d29-a5a729c02395",
+        "query_text": "but such effects were substantially lower for syst...",
+        "query_entities": [
+          "spectral",
+          "20",
+          "c-si",
+          "22",
+          "human-made",
+          "pitched-roof",
+          "trees",
+          "forests"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "8bb09c9d-2750-d43c-05e9-cbcb7f066179",
+        "query_text": "counterbalanced in that reforestation can decrease...",
+        "query_entities": [
+          "trees",
+          "scientists",
+          "mid-to-high-latitude",
+          "modeling",
+          "snow-covered",
+          "10",
+          "50",
+          "deciduous",
+          "variation"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "ecb5ac94-27fc-264e-fe2c-8f2e85b265d7",
+        "query_text": "albedos of treeless areas are 10% to 50% higher th...",
+        "query_entities": [
+          "10",
+          "50",
+          "deciduous",
+          "variation",
+          "studies",
+          "hadley",
+          "centre",
+          "siberia",
+          "water",
+          "fresnel"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 0.5,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "3df65822-e8c1-0f74-fbd6-77c423c59898",
+        "query_text": "new forests in high latitudes (e.g., Siberia) were...",
+        "query_entities": [
+          "siberia",
+          "water",
+          "fresnel",
+          "reflectivity-vs.-incident-angle",
+          "although",
           "earth",
           "however",
-          "white-sky"
+          "note"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "fe4f910d-148c-5460-69a6-cce5068881ce",
+        "query_text": "waviness causes an appreciable reduction. Because ...",
+        "query_entities": [
+          "note",
+          "fresh",
+          "fresnel",
+          "snow",
+          "clouds",
+          "cloud",
+          "different",
+          "earth",
+          "albedo",
+          "kuwaiti",
+          "iraqi"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "42d815ec-48d7-e2ae-fa90-f532cfad0e69",
+        "query_text": "serve as blankets to trap warmth.\" Albedo and clim...",
+        "query_entities": [
+          "albedo",
+          "kuwaiti",
+          "iraqi",
+          "aerosol",
+          "aerosols",
+          "earth's",
+          "spracklen",
+          "increased"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "a703f039-2df6-537a-7bc6-154bc0ecf901",
+        "query_text": "a subset of the aerosol population called cloud co...",
+        "query_entities": [
+          "increased",
+          "delhi",
+          "black",
+          "another",
+          "albedo-related",
+          "intergovernmental",
+          "panel",
+          "climate",
+          "change",
+          "arctic",
+          "astronomical",
+          "optical"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "06d178db-9e93-356f-dc4f-4675e8c972b7",
+        "query_text": "its effect on the albedo. Astronomical albedo In a...",
+        "query_entities": [
+          "astronomical",
+          "optical",
+          "solar",
+          "system",
+          "enceladus",
+          "saturn",
+          "another",
+          "high-albedo",
+          "eris",
+          "many"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "76e4b888-2596-7fc8-ef00-60f8794de6c5",
+        "query_text": "one of the highest known optical albedos of any bo...",
+        "query_entities": [
+          "solar",
+          "system",
+          "another",
+          "high-albedo",
+          "eris",
+          "many",
+          "moon",
+          "non-lambertian",
+          "although",
+          "two",
+          "v-band",
+          "bond",
+          "hapke",
+          "semi-empirically"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "77836e91-a424-6fdb-f87d-720d3c947cab",
+        "query_text": "observer) and the Bond albedo (measuring total pro...",
+        "query_entities": [
+          "bond",
+          "hapke",
+          "semi-empirically",
+          "one",
+          "single-scattering",
+          "radar",
+          "moon",
+          "sc"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "f6c0c5eb-c666-a7eb-18e0-4ae0a0224d6a",
+        "query_text": "microwave (or radar) pulse is transmitted toward a...",
+        "query_entities": [
+          "moon",
+          "sc",
+          "oc",
+          "cross-section",
+          "cross-sectional",
+          "first-surface",
+          "mirror-like"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "9d9bce24-657d-586b-481d-a0fb05c6c9a9",
+        "query_text": "be a significant SC component in the echo caused b...",
+        "query_entities": [
+          "sc",
+          "oc",
+          "cross-sectional",
+          "radar",
+          "solar",
+          "system",
+          "moon",
+          "mercury",
+          "mars",
+          "venus",
+          "comet",
+          "p/2005",
+          "jq5",
+          "oc+sc",
+          "relationship",
+          "first-order",
+          "fresnel",
+          "history",
+          "johann",
+          "heinrich",
+          "lambert",
+          "1760",
+          "photometria",
+          "see",
+          "cool",
+          "daisyworld",
+          "emissivity",
+          "exitance",
+          "global",
+          "ice–albedo"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "92b749d5-c63b-eb97-8a1d-e88ff0d79a1a",
+        "query_text": "meter or so (a few wavelengths of the radar wavele...",
+        "query_entities": [
+          "history",
+          "johann",
+          "heinrich",
+          "lambert",
+          "1760",
+          "photometria",
+          "see",
+          "cool",
+          "daisyworld",
+          "emissivity",
+          "exitance",
+          "global",
+          "ice–albedo",
+          "irradiance",
+          "kirchhoff's",
+          "opposition",
+          "polar",
+          "see-saw",
+          "radar",
+          "solar",
+          "references",
+          "external",
+          "albedo",
+          "project",
+          "encyclopedia",
+          "earth",
+          "nasa",
+          "modis",
+          "brdf/albedo",
+          "ocean",
+          "look-up-table",
+          "surface",
+          "meteosat",
+          "lunar",
+          "land",
+          "climate",
+          "climatology",
+          "electromagnetic",
+          "meteorological",
+          "radiometry",
+          "scattering",
+          "radiation"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "3b981139-d024-2594-c471-628785fb82c9",
+        "query_text": "A, or a, is the first letter and the first vowel o...",
+        "query_entities": [
+          "latin",
+          "english",
+          "european",
+          "ancient",
+          "greek",
+          "alpha",
+          "double-storey",
+          "single-storey",
+          "history",
+          "phoenician",
+          "proto-sinaitic",
+          "egyptian"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "c0701648-6ef2-90b8-5966-0f637d2fa20d",
+        "query_text": "consisted entirely of consonants (for that reason,...",
+        "query_entities": [
+          "proto-sinaitic",
+          "egyptian",
+          "greeks",
+          "phoenician",
+          "semitic",
+          "greek",
+          "dark",
+          "ages",
+          "bc",
+          "etruscans",
+          "italian",
+          "peninsula",
+          "romans"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "ca076239-b8ca-0d24-8121-b80823c1b4fd",
+        "query_text": "modern capital letter, although many local varieti...",
+        "query_entities": [
+          "etruscans",
+          "greek",
+          "italian",
+          "peninsula",
+          "romans",
+          "etruscan",
+          "latin",
+          "english",
+          "typographic",
+          "during",
+          "roman",
+          "first",
+          "due",
+          "variants",
+          "semi-uncial"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "012e38b5-7fa6-a9e4-f863-0d90e8cc415f",
+        "query_text": "of the monumental, but there are still many surviv...",
+        "query_entities": [
+          "variants",
+          "semi-uncial",
+          "roman",
+          "empire",
+          "ad",
+          "western",
+          "europe",
+          "among",
+          "italy",
+          "merovingian",
+          "france",
+          "visigothic",
+          "spain",
+          "insular",
+          "anglo-irish",
+          "anglo-saxon",
+          "great",
+          "britain",
+          "caroline",
+          "present-day",
+          "book-making",
+          "15th-century",
+          "italic",
+          "script",
+          "fifth-century"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "e8b05eb3-029d-0675-4cb8-f6a6638ec446",
+        "query_text": "known today. These variants, the Italic and Roman ...",
+        "query_entities": [
+          "italic",
+          "roman",
+          "caroline",
+          "script",
+          "fifth-century",
+          "greek",
+          "irish",
+          "english",
+          "many",
+          "graphic"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "b597da68-4ccc-a842-3e42-88fa09c5cfd7",
+        "query_text": "resulting in the modern handwritten form. Graphic ...",
+        "query_entities": [
+          "graphic",
+          "italic",
+          "roman",
+          "latin",
+          "international",
+          "phonetic",
+          "alphabet",
+          "english",
+          "near-open",
+          "greek",
+          "middle",
+          "great",
+          "vowel",
+          "shift",
+          "mary",
+          "general",
+          "american"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "c9ccf3cc-b6ff-8e01-db9e-98b2304da3e4",
+        "query_text": "Middle English lengthening followed by the Great V...",
+        "query_entities": [
+          "middle",
+          "english",
+          "great",
+          "vowel",
+          "shift",
+          "mary",
+          "general",
+          "american",
+          "aaron",
+          "however",
+          "third-most-commonly",
+          "french",
+          "spanish",
+          "portuguese",
+          "latin",
+          "saanich",
+          "á",
+          "close-mid",
+          "international",
+          "phonetic",
+          "alphabet"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "5c8d7c23-40a4-68df-295a-301da0ca55c7",
+        "query_text": "languages In most languages that use the Latin alp...",
+        "query_entities": [
+          "latin",
+          "saanich",
+          "á",
+          "close-mid",
+          "international",
+          "phonetic",
+          "alphabet",
+          "x-sampa",
+          "moreover",
+          "1637",
+          "rené",
+          "descartes"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "97b7b5ec-ded7-c95d-cd4b-6963dec1b92a",
+        "query_text": "and this convention is still often followed, espec...",
+        "query_entities": [
+          "a-list",
+          "greek",
+          "english",
+          "finally",
+          "related",
+          "descendants",
+          "latin",
+          "æ",
+          "ae",
+          "å"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "d096b2a0-7ee4-5c38-1218-90075f38e656",
+        "query_text": "article, used to introduce noun phrases. Finally, ...",
+        "query_entities": [
+          "finally",
+          "related",
+          "descendants",
+          "latin",
+          "æ",
+          "ae",
+          "å",
+          "ǻ",
+          "ḁ",
+          "ă",
+          "ặ",
+          "ắ",
+          "ằ",
+          "ẳ",
+          "ẵ",
+          "ȃ",
+          "â",
+          "ậ",
+          "ấ",
+          "ầ",
+          "ẫ",
+          "ẩ",
+          "ả",
+          "ǎ",
+          "ⱥ",
+          "ȧ",
+          "ǡ",
+          "ạ",
+          "ä",
+          "ǟ",
+          "à",
+          "ȁ",
+          "á",
+          "ā",
+          "ã",
+          "ą",
+          "phonetic",
+          "international",
+          "alphabet",
+          "ɑ",
+          "ipa",
+          "ɐ",
+          "turned",
+          "near-open",
+          "λ"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "0e0a0728-1918-98ac-dbb7-445c996f1300",
+        "query_text": "which represents an open back unrounded vowel in t...",
+        "query_entities": [
+          "ipa",
+          "latin",
+          "ɐ",
+          "turned",
+          "near-open",
+          "λ",
+          "open-mid",
+          "ɒ",
+          "modifier",
+          "small",
+          "non-standard",
+          "international",
+          "phonetic",
+          "alphabet",
+          "uralic",
+          "upa",
+          "unicode",
+          "subscript",
+          "indo-european",
+          "reversed-schwa",
+          "teuthonista",
+          "ꞻ",
+          "glottal",
+          "ugaritic",
+          "derived",
+          "å",
+          "ångström",
+          "argentine"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "fb6337b5-a312-1bf8-7b61-73378659b973",
+        "query_text": "Ꞻ ꞻ : Glottal A, used in the transliteration o...",
+        "query_entities": [
+          "ꞻ",
+          "glottal",
+          "ugaritic",
+          "derived",
+          "å",
+          "ångström",
+          "argentine",
+          "ⓐ",
+          "ancestors",
+          "semitic",
+          "aleph",
+          "α",
+          "greek",
+          "alpha",
+          "а",
+          "cyrillic",
+          "coptic",
+          "old",
+          "italic",
+          "latin",
+          "runic",
+          "gothic",
+          "ա",
+          "armenian",
+          "ayb",
+          "code",
+          "16",
+          "10",
+          "notes",
+          "footnotes",
+          "references",
+          "external",
+          "history",
+          "alphabet",
+          "iso",
+          "vowel"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "857294d8-c9a3-4e72-6068-8a8378af80fb",
+        "query_text": "Alabama () is a state in the Southeastern region o...",
+        "query_entities": [
+          "alabama",
+          "southeastern",
+          "united",
+          "states",
+          "tennessee",
+          "georgia",
+          "florida",
+          "gulf",
+          "mexico",
+          "mississippi",
+          "24th-most",
+          "u.s",
+          "yellowhammer",
+          "state",
+          "heart",
+          "dixie",
+          "cotton",
+          "alabama's",
+          "montgomery",
+          "huntsville",
+          "mobile",
+          "french",
+          "creoles",
+          "1702",
+          "louisiana",
+          "greater",
+          "birmingham",
+          "originally",
+          "present-day",
+          "spanish",
+          "british",
+          "1763",
+          "american",
+          "revolutionary",
+          "war",
+          "spain",
+          "west",
+          "1813",
+          "december",
+          "1819",
+          "during"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "b2865934-4463-9d5c-fdf9-d0a514a654ee",
+        "query_text": "until the French acquired it in the early eighteen...",
+        "query_entities": [
+          "french",
+          "british",
+          "1763",
+          "american",
+          "revolutionary",
+          "war",
+          "spain",
+          "mobile",
+          "spanish",
+          "west",
+          "florida",
+          "1813",
+          "december",
+          "1819",
+          "alabama",
+          "during",
+          "african",
+          "1861",
+          "united",
+          "states",
+          "confederate",
+          "america",
+          "montgomery",
+          "union",
+          "1868",
+          "following",
+          "civil",
+          "similar",
+          "alabamian",
+          "jim",
+          "crow",
+          "high-profile",
+          "selma",
+          "world",
+          "ii",
+          "nasa's",
+          "marshall",
+          "space",
+          "flight",
+          "center",
+          "huntsville",
+          "alabama's"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "0e9509be-10ea-90cb-9de9-c504f1188a9e",
+        "query_text": "Selma to Montgomery march made the state a major f...",
+        "query_entities": [
+          "selma",
+          "montgomery",
+          "during",
+          "world",
+          "war",
+          "ii",
+          "alabama",
+          "nasa's",
+          "marshall",
+          "space",
+          "flight",
+          "center",
+          "huntsville",
+          "alabama's",
+          "mid-to-late",
+          "tennessee",
+          "valley",
+          "mobile",
+          "bay",
+          "politically",
+          "deep",
+          "south",
+          "southern",
+          "within",
+          "american",
+          "etymology",
+          "european-american",
+          "river",
+          "muskogean-speaking",
+          "coosa",
+          "tallapoosa"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "bcd5ba8d-4b48-e57c-3c00-478fee251b67",
+        "query_text": "state was derived from the Alabama people, a Musko...",
+        "query_entities": [
+          "alabama",
+          "muskogean-speaking",
+          "coosa",
+          "tallapoosa",
+          "hernando",
+          "soto",
+          "1540",
+          "garcilaso",
+          "vega",
+          "knight",
+          "elvas",
+          "rodrigo",
+          "ranjel",
+          "alibamu",
+          "limamu",
+          "1702",
+          "french",
+          "alabamo",
+          "albama",
+          "alebamon",
+          "alibama",
+          "alibamou",
+          "alabamu",
+          "allibamou",
+          "native",
+          "american",
+          "u.s",
+          "26",
+          "sources",
+          "choctaw"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "dd6c5eb4-6fa1-7687-e90a-4a217404a8b7",
+        "query_text": "U.S.; an estimated 26 states have names of Native ...",
+        "query_entities": [
+          "u.s",
+          "26",
+          "native",
+          "american",
+          "sources",
+          "choctaw",
+          "1842",
+          "jacksonville",
+          "republican",
+          "rest",
+          "alexander",
+          "beaufort",
+          "meek",
+          "experts",
+          "muskogean",
+          "history",
+          "pre-european",
+          "indigenous",
+          "european",
+          "trade",
+          "ohio",
+          "river",
+          "burial",
+          "mound",
+          "period",
+          "1000bce700ce",
+          "mississippian",
+          "1000",
+          "1600",
+          "ce",
+          "moundville",
+          "archaeological",
+          "site",
+          "alabama",
+          "second-largest",
+          "middle"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "e7035ca7-4fcf-46b9-b20b-593a77df69cf",
+        "query_text": "(1000BCE700CE) and continued until European contac...",
+        "query_entities": [
+          "1000bce700ce",
+          "european",
+          "mississippian",
+          "1000",
+          "1600",
+          "ce",
+          "moundville",
+          "archaeological",
+          "site",
+          "alabama",
+          "second-largest",
+          "middle",
+          "cahokia",
+          "present-day",
+          "illinois",
+          "analysis",
+          "southeastern",
+          "ceremonial",
+          "complex",
+          "secc",
+          "contrary",
+          "mesoamerican",
+          "among",
+          "native",
+          "american",
+          "cherokee",
+          "iroquoian",
+          "muskogean-speaking",
+          "alibamu",
+          "chickasaw",
+          "choctaw",
+          "creek",
+          "koasati",
+          "muskogee",
+          "spanish",
+          "europeans",
+          "north",
+          "america"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "c9436e21-40f9-0ad0-0490-b1ff95aac966",
+        "query_text": "Iroquoian language people; and the Muskogean-speak...",
+        "query_entities": [
+          "iroquoian",
+          "muskogean-speaking",
+          "alabama",
+          "alibamu",
+          "chickasaw",
+          "choctaw",
+          "creek",
+          "koasati",
+          "muskogee",
+          "european",
+          "spanish",
+          "europeans",
+          "north",
+          "america",
+          "hernando",
+          "soto",
+          "mabila",
+          "1540",
+          "160",
+          "french",
+          "old",
+          "mobile",
+          "1702",
+          "1711",
+          "1763",
+          "la",
+          "louisiane",
+          "british",
+          "seven",
+          "years",
+          "war",
+          "west",
+          "florida",
+          "1783",
+          "united",
+          "states",
+          "american",
+          "revolutionary",
+          "spain",
+          "u.s",
+          "april",
+          "13",
+          "1813",
+          "thomas",
+          "bassett"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "a825e150-e079-aa9d-df96-b090455bbfdc",
+        "query_text": "between the United States and Spain. The latter re...",
+        "query_entities": [
+          "united",
+          "states",
+          "spain",
+          "1783",
+          "spanish",
+          "mobile",
+          "u.s",
+          "april",
+          "13",
+          "1813",
+          "thomas",
+          "bassett",
+          "british",
+          "revolutionary",
+          "tombigbee",
+          "district",
+          "river",
+          "clarke",
+          "county",
+          "washington",
+          "what",
+          "baldwin",
+          "west",
+          "florida",
+          "republic",
+          "1810",
+          "mississippi",
+          "territory",
+          "1812",
+          "two-thirds",
+          "alabama",
+          "yazoo",
+          "province",
+          "georgia",
+          "1767",
+          "following",
+          "war"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "91d42599-7f97-a935-42d4-ed531481354d",
+        "query_text": "as the Yazoo lands beginning during the British co...",
+        "query_entities": [
+          "yazoo",
+          "british",
+          "province",
+          "georgia",
+          "1767",
+          "following",
+          "revolutionary",
+          "war",
+          "mobile",
+          "one-third",
+          "alabama",
+          "mississippi",
+          "territory",
+          "1798",
+          "1804",
+          "spain",
+          "spanish",
+          "west",
+          "florida",
+          "adams–onís",
+          "treaty",
+          "united",
+          "states",
+          "1819",
+          "before",
+          "mississippi's",
+          "december",
+          "10",
+          "1817",
+          "congress",
+          "march",
+          "st",
+          "stephens",
+          "14",
+          "huntsville",
+          "constitutional",
+          "convention",
+          "july5",
+          "august"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "68e3f1c7-4318-3c70-8c92-bdcbd28643f8",
+        "query_text": "3, 1817. St. Stephens, now abandoned, served as th...",
+        "query_entities": [
+          "1817",
+          "st",
+          "stephens",
+          "1819",
+          "alabama",
+          "december",
+          "14",
+          "congress",
+          "huntsville",
+          "constitutional",
+          "convention",
+          "july5",
+          "august",
+          "1820",
+          "cahaba",
+          "dallas",
+          "county",
+          "1825",
+          "fever",
+          "union",
+          "part",
+          "southeastern",
+          "upper",
+          "south",
+          "black",
+          "belt"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "3f50dc98-ddf0-26ba-b4e0-3f5ebdfc04b3",
+        "query_text": "them as the cotton plantations in Alabama expanded...",
+        "query_entities": [
+          "alabama",
+          "black",
+          "belt",
+          "1810",
+          "1830",
+          "native",
+          "american",
+          "indian",
+          "removal",
+          "act",
+          "congress",
+          "1826",
+          "1846",
+          "tuscaloosa",
+          "alabama's",
+          "january",
+          "30",
+          "montgomery",
+          "december",
+          "1847",
+          "stephen",
+          "decatur",
+          "button",
+          "philadelphia",
+          "1849",
+          "1851",
+          "barachias",
+          "holt",
+          "exeter",
+          "maine",
+          "civil",
+          "war",
+          "reconstruction",
+          "1860"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "ccc28215-c8b3-7c3f-3b59-756a11eaf936",
+        "query_text": "The first structure burned down in 1849, but was r...",
+        "query_entities": [
+          "1849",
+          "1851",
+          "montgomery",
+          "barachias",
+          "holt",
+          "exeter",
+          "maine",
+          "civil",
+          "war",
+          "reconstruction",
+          "1860",
+          "african",
+          "americans",
+          "january",
+          "11",
+          "1861",
+          "alabama",
+          "union",
+          "confederate",
+          "states",
+          "america",
+          "confederacy's",
+          "american",
+          "although",
+          "huntsville",
+          "nathan",
+          "bedford",
+          "forrest's",
+          "hopkinsville",
+          "kentucky",
+          "yellowhammer",
+          "army",
+          "alabama's",
+          "amendment",
+          "1865"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "0332e3de-24dd-9a07-e39f-e1945fb63774",
+        "query_text": "on the sleeves, collar and coattails. This led to ...",
+        "query_entities": [
+          "yellowhammer",
+          "alabama",
+          "confederate",
+          "army",
+          "alabama's",
+          "amendment",
+          "1865",
+          "union",
+          "1868",
+          "1867",
+          "1874",
+          "african",
+          "americans",
+          "congress",
+          "african-american",
+          "jeremiah",
+          "haralson",
+          "benjamin",
+          "turner",
+          "james",
+          "rapier",
+          "following",
+          "during",
+          "reconstruction",
+          "legislators",
+          "organized",
+          "republicans",
+          "besides",
+          "short-lived",
+          "ku",
+          "klux",
+          "klan",
+          "pale",
+          "faces",
+          "knights",
+          "white",
+          "camellia",
+          "red",
+          "shirts",
+          "league"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "c4f20405-08c0-2e98-df07-3754bf0c3baa",
+        "query_text": "railroad projects, although these were plagued wit...",
+        "query_entities": [
+          "organized",
+          "republicans",
+          "besides",
+          "short-lived",
+          "ku",
+          "klux",
+          "klan",
+          "pale",
+          "faces",
+          "knights",
+          "white",
+          "camellia",
+          "red",
+          "shirts",
+          "league",
+          "reconstruction",
+          "alabama",
+          "1874",
+          "democrats",
+          "1875",
+          "blaine",
+          "amendment",
+          "religious-affiliated",
+          "railroad",
+          "1891",
+          "1901",
+          "constitution",
+          "african",
+          "americans",
+          "native",
+          "european",
+          "1903",
+          "1900"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "1dec85e7-f4d9-1347-a4f6-4569a5e78c64",
+        "query_text": "through making voter registration difficult, requi...",
+        "query_entities": [
+          "1901",
+          "1903",
+          "african",
+          "americans",
+          "alabama",
+          "1900",
+          "1911",
+          "1915",
+          "1928",
+          "1945",
+          "1941",
+          "nearly",
+          "blacks",
+          "despite",
+          "1965"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "c2d71099-e9d5-40f2-7095-0106db3d42e1",
+        "query_text": "Nearly all Blacks had lost the ability to vote. De...",
+        "query_entities": [
+          "nearly",
+          "blacks",
+          "despite",
+          "1965",
+          "rural-dominated",
+          "alabama",
+          "african",
+          "americans",
+          "partially",
+          "south",
+          "rosenwald",
+          "fund",
+          "schools",
+          "one-third",
+          "black",
+          "beginning",
+          "1913",
+          "80",
+          "american",
+          "387"
+        ],
+        "e1_mrr": 1.0,
+        "e11_mrr": 1.0,
+        "hybrid_mrr": 1.0
+      },
+      {
+        "query_id": "cf486da8-4c5a-49d7-33d7-c563989cf2d2",
+        "query_text": "themselves twice, by raising additional monies to ...",
+        "query_entities": [
+          "beginning",
+          "1913",
+          "80",
+          "rosenwald",
+          "schools",
+          "alabama",
+          "african",
+          "american",
+          "387",
+          "1937",
+          "several",
+          "national",
+          "register",
+          "historic",
+          "places",
+          "continued",
+          "americans",
+          "great",
+          "migration",
+          "south",
+          "reflecting",
+          "1910",
+          "1920",
+          "birmingham",
+          "magic",
+          "city",
+          "36th-largest"
         ],
         "e1_mrr": 1.0,
         "e11_mrr": 1.0,
@@ -1993,30 +3646,31 @@
   },
   "transe_results": {
     "metrics": {
-      "valid_triple_avg_score": -1.5121943,
-      "invalid_triple_avg_score": -1.5868515,
-      "separation_score": 0.0746572,
+      "valid_triple_avg_score": -1.0303289,
+      "invalid_triple_avg_score": -1.0359063,
+      "separation_score": 0.005577445,
+      "separation_ratio": 0.30774245,
       "relationship_inference_mrr": 1.0,
       "knowledge_validation_accuracy": 0.0,
       "valid_triples_evaluated": 28,
       "invalid_triples_evaluated": 100,
       "valid_score_distribution": {
-        "mean": -1.5121943,
-        "std_dev": 0.10637638,
-        "min": -1.684704,
-        "max": -1.2606012,
-        "median": -1.5299073,
-        "p25": -1.5961341,
-        "p75": -1.4372963
+        "mean": -1.0303289,
+        "std_dev": 0.012049551,
+        "min": -1.0603551,
+        "max": -1.0108441,
+        "median": -1.0322485,
+        "p25": -1.0361153,
+        "p75": -1.0202584
       },
       "invalid_score_distribution": {
-        "mean": -1.5868515,
-        "std_dev": 0.0831501,
-        "min": -1.7362503,
-        "max": -1.1967251,
-        "median": -1.5983698,
-        "p25": -1.6435977,
-        "p75": -1.5398321
+        "mean": -1.0359063,
+        "std_dev": 0.018123742,
+        "min": -1.0856398,
+        "max": -0.9971448,
+        "median": -1.0348583,
+        "p25": -1.0477031,
+        "p75": -1.0223764
       }
     },
     "valid_triple_scores": [
@@ -2024,1307 +3678,1307 @@
         "subject": "Tokio",
         "predicate": "depends_on",
         "object": "Rust",
-        "score": -1.6223865,
+        "score": -1.0330037,
         "is_valid_ground_truth": true
       },
       {
         "subject": "Axum",
         "predicate": "depends_on",
         "object": "Tokio",
-        "score": -1.634527,
+        "score": -1.0361153,
         "is_valid_ground_truth": true
       },
       {
         "subject": "Actix",
         "predicate": "depends_on",
         "object": "Tokio",
-        "score": -1.5527829,
+        "score": -1.0343057,
         "is_valid_ground_truth": true
       },
       {
         "subject": "Django",
         "predicate": "uses",
         "object": "Python",
-        "score": -1.3768406,
+        "score": -1.0126797,
         "is_valid_ground_truth": true
       },
       {
         "subject": "FastAPI",
         "predicate": "uses",
         "object": "Python",
-        "score": -1.5507959,
+        "score": -1.0118505,
         "is_valid_ground_truth": true
       },
       {
         "subject": "Flask",
         "predicate": "uses",
         "object": "Python",
-        "score": -1.3958265,
+        "score": -1.017867,
         "is_valid_ground_truth": true
       },
       {
         "subject": "React",
         "predicate": "uses",
         "object": "JavaScript",
-        "score": -1.4963347,
+        "score": -1.0347376,
         "is_valid_ground_truth": true
       },
       {
         "subject": "Vue.js",
         "predicate": "uses",
         "object": "JavaScript",
-        "score": -1.4372963,
+        "score": -1.0108441,
         "is_valid_ground_truth": true
       },
       {
         "subject": "Angular",
         "predicate": "uses",
         "object": "TypeScript",
-        "score": -1.5385935,
+        "score": -1.0409551,
         "is_valid_ground_truth": true
       },
       {
         "subject": "Next.js",
         "predicate": "extends",
         "object": "React",
-        "score": -1.5961341,
+        "score": -1.0268533,
         "is_valid_ground_truth": true
       },
       {
         "subject": "PostgreSQL",
         "predicate": "is_type",
         "object": "Database",
-        "score": -1.4584947,
+        "score": -1.02528,
         "is_valid_ground_truth": true
       },
       {
         "subject": "MySQL",
         "predicate": "is_type",
         "object": "Database",
-        "score": -1.2902977,
+        "score": -1.0283558,
         "is_valid_ground_truth": true
       },
       {
         "subject": "MongoDB",
         "predicate": "is_type",
         "object": "Database",
-        "score": -1.3731662,
+        "score": -1.0358329,
         "is_valid_ground_truth": true
       },
       {
         "subject": "Redis",
         "predicate": "is_type",
         "object": "Database",
-        "score": -1.5974828,
+        "score": -1.0322485,
         "is_valid_ground_truth": true
       },
       {
         "subject": "RocksDB",
         "predicate": "is_type",
         "object": "Database",
-        "score": -1.4409957,
+        "score": -1.0335245,
         "is_valid_ground_truth": true
       },
       {
         "subject": "S3",
         "predicate": "part_of",
         "object": "AWS",
-        "score": -1.3889942,
+        "score": -1.0176411,
         "is_valid_ground_truth": true
       },
       {
         "subject": "EC2",
         "predicate": "part_of",
         "object": "AWS",
-        "score": -1.2606012,
+        "score": -1.0230842,
         "is_valid_ground_truth": true
       },
       {
         "subject": "Lambda",
         "predicate": "part_of",
         "object": "AWS",
-        "score": -1.5670413,
+        "score": -1.0443773,
         "is_valid_ground_truth": true
       },
       {
         "subject": "BigQuery",
         "predicate": "part_of",
         "object": "GCP",
-        "score": -1.6008642,
+        "score": -1.0202584,
         "is_valid_ground_truth": true
       },
       {
         "subject": "Kubernetes",
         "predicate": "alternative_to",
         "object": "Docker",
-        "score": -1.4975675,
+        "score": -1.0355462,
         "is_valid_ground_truth": true
       },
       {
         "subject": "Claude",
         "predicate": "created_by",
         "object": "Anthropic",
-        "score": -1.684704,
+        "score": -1.0473808,
         "is_valid_ground_truth": true
       },
       {
         "subject": "GPT",
         "predicate": "created_by",
         "object": "OpenAI",
-        "score": -1.5477052,
+        "score": -1.023631,
         "is_valid_ground_truth": true
       },
       {
         "subject": "GitHub",
         "predicate": "owned_by",
         "object": "Microsoft",
-        "score": -1.5299073,
+        "score": -1.0603551,
         "is_valid_ground_truth": true
       },
       {
         "subject": "GraphQL",
         "predicate": "alternative_to",
         "object": "REST",
-        "score": -1.5930337,
+        "score": -1.0129039,
         "is_valid_ground_truth": true
       },
       {
         "subject": "gRPC",
         "predicate": "alternative_to",
         "object": "REST",
-        "score": -1.5160792,
+        "score": -1.0229062,
         "is_valid_ground_truth": true
       },
       {
         "subject": "ColBERT",
         "predicate": "is_type",
         "object": "TechnicalTerm",
-        "score": -1.6238289,
+        "score": -1.0468255,
         "is_valid_ground_truth": true
       },
       {
         "subject": "SPLADE",
         "predicate": "is_type",
         "object": "TechnicalTerm",
-        "score": -1.5256126,
+        "score": -1.0423081,
         "is_valid_ground_truth": true
       },
       {
         "subject": "HNSW",
         "predicate": "is_type",
         "object": "TechnicalTerm",
-        "score": -1.6435425,
+        "score": -1.0375385,
         "is_valid_ground_truth": true
       }
     ],
     "invalid_triple_scores": [
       {
-        "subject": "PostgreSQL",
-        "predicate": "works_at",
-        "object": "Google",
-        "score": -1.5759597,
+        "subject": "Rust",
+        "predicate": "depends_on",
+        "object": "Tokio",
+        "score": -1.0223764,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "Rust",
-        "predicate": "created_by",
-        "object": "JavaScript",
-        "score": -1.6472204,
+        "subject": "Tokio",
+        "predicate": "depends_on",
+        "object": "Axum",
+        "score": -1.0127202,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Tokio",
+        "predicate": "depends_on",
+        "object": "Actix",
+        "score": -1.0250093,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Python",
+        "predicate": "uses",
+        "object": "Django",
+        "score": -1.0498053,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Python",
+        "predicate": "uses",
+        "object": "FastAPI",
+        "score": -1.0465503,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Python",
+        "predicate": "uses",
+        "object": "Flask",
+        "score": -1.0406835,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "JavaScript",
+        "predicate": "uses",
+        "object": "React",
+        "score": -1.0207447,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "JavaScript",
+        "predicate": "uses",
+        "object": "Vue.js",
+        "score": -1.0522845,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "TypeScript",
+        "predicate": "uses",
+        "object": "Angular",
+        "score": -1.0157775,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "React",
+        "predicate": "extends",
+        "object": "Next.js",
+        "score": -1.044451,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Database",
+        "predicate": "is_type",
+        "object": "PostgreSQL",
+        "score": -1.0073147,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Database",
+        "predicate": "is_type",
+        "object": "MySQL",
+        "score": -1.0077469,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Database",
+        "predicate": "is_type",
+        "object": "MongoDB",
+        "score": -1.0378793,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Database",
+        "predicate": "is_type",
+        "object": "Redis",
+        "score": -1.0224625,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Database",
+        "predicate": "is_type",
+        "object": "RocksDB",
+        "score": -1.019409,
         "is_valid_ground_truth": false
       },
       {
         "subject": "AWS",
-        "predicate": "extends",
-        "object": "Python",
-        "score": -1.634893,
+        "predicate": "part_of",
+        "object": "S3",
+        "score": -1.0238711,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "AWS",
+        "predicate": "part_of",
+        "object": "EC2",
+        "score": -1.024525,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "AWS",
+        "predicate": "part_of",
+        "object": "Lambda",
+        "score": -1.0558052,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "GCP",
+        "predicate": "part_of",
+        "object": "BigQuery",
+        "score": -1.029858,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Docker",
+        "predicate": "alternative_to",
+        "object": "Kubernetes",
+        "score": -1.0799913,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Anthropic",
+        "predicate": "created_by",
+        "object": "Claude",
+        "score": -1.0344483,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "OpenAI",
+        "predicate": "created_by",
+        "object": "GPT",
+        "score": -1.0344193,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Microsoft",
+        "predicate": "owned_by",
+        "object": "GitHub",
+        "score": -1.050439,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "REST",
+        "predicate": "alternative_to",
+        "object": "GraphQL",
+        "score": -1.0319334,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "REST",
+        "predicate": "alternative_to",
+        "object": "gRPC",
+        "score": -1.0579442,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "TechnicalTerm",
+        "predicate": "is_type",
+        "object": "ColBERT",
+        "score": -1.0471447,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "TechnicalTerm",
+        "predicate": "is_type",
+        "object": "SPLADE",
+        "score": -1.0489566,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "TechnicalTerm",
+        "predicate": "is_type",
+        "object": "HNSW",
+        "score": -1.0322795,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Tokio",
+        "predicate": "uses",
+        "object": "Rust",
+        "score": -1.0040833,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Axum",
+        "predicate": "uses",
+        "object": "Tokio",
+        "score": -1.0337585,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Actix",
+        "predicate": "uses",
+        "object": "Tokio",
+        "score": -1.0339836,
         "is_valid_ground_truth": false
       },
       {
         "subject": "Django",
         "predicate": "depends_on",
+        "object": "Python",
+        "score": -1.0503405,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "FastAPI",
+        "predicate": "depends_on",
+        "object": "Python",
+        "score": -1.0368084,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Flask",
+        "predicate": "depends_on",
+        "object": "Python",
+        "score": -1.0408765,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "React",
+        "predicate": "depends_on",
+        "object": "JavaScript",
+        "score": -1.0388526,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Vue.js",
+        "predicate": "depends_on",
+        "object": "JavaScript",
+        "score": -1.0338447,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Angular",
+        "predicate": "depends_on",
+        "object": "TypeScript",
+        "score": -1.0294459,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Next.js",
+        "predicate": "depends_on",
         "object": "React",
-        "score": -1.6895407,
+        "score": -1.0306901,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "PostgreSQL",
+        "predicate": "depends_on",
+        "object": "Database",
+        "score": -1.0220884,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "MySQL",
+        "predicate": "depends_on",
+        "object": "Database",
+        "score": -1.0274166,
         "is_valid_ground_truth": false
       },
       {
         "subject": "MongoDB",
-        "predicate": "uses",
-        "object": "PostgreSQL",
-        "score": -1.4953337,
+        "predicate": "depends_on",
+        "object": "Database",
+        "score": -1.0369139,
         "is_valid_ground_truth": false
       },
       {
         "subject": "Redis",
-        "predicate": "alternative_to",
-        "object": "Rust",
-        "score": -1.5770011,
+        "predicate": "depends_on",
+        "object": "Database",
+        "score": -1.0384294,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "Tokio",
-        "predicate": "part_of",
-        "object": "Python",
-        "score": -1.6195464,
+        "subject": "RocksDB",
+        "predicate": "depends_on",
+        "object": "Database",
+        "score": -1.0405052,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "GPT",
-        "predicate": "created_by",
-        "object": "Anthropic",
-        "score": -1.6757038,
+        "subject": "S3",
+        "predicate": "depends_on",
+        "object": "AWS",
+        "score": -1.0151142,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "Claude",
-        "predicate": "created_by",
-        "object": "OpenAI",
-        "score": -1.6637785,
+        "subject": "EC2",
+        "predicate": "depends_on",
+        "object": "AWS",
+        "score": -1.0213895,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Lambda",
+        "predicate": "depends_on",
+        "object": "AWS",
+        "score": -1.0508871,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "BigQuery",
+        "predicate": "depends_on",
+        "object": "GCP",
+        "score": -1.0165236,
         "is_valid_ground_truth": false
       },
       {
         "subject": "Kubernetes",
         "predicate": "depends_on",
-        "object": "FastAPI",
-        "score": -1.6213503,
+        "object": "Docker",
+        "score": -1.0433829,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "guerrillas",
-        "predicate": "part_of",
-        "object": "marxism–leninism",
-        "score": -1.6011802,
+        "subject": "Claude",
+        "predicate": "depends_on",
+        "object": "Anthropic",
+        "score": -1.0388334,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "white",
-        "predicate": "works_at",
-        "object": "black",
-        "score": -1.1967251,
+        "subject": "GPT",
+        "predicate": "depends_on",
+        "object": "OpenAI",
+        "score": -1.0294946,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "stoics",
-        "predicate": "created_by",
-        "object": "suomi",
-        "score": -1.4615167,
+        "subject": "GitHub",
+        "predicate": "depends_on",
+        "object": "Microsoft",
+        "score": -1.0575113,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "engels",
+        "subject": "GraphQL",
+        "predicate": "depends_on",
+        "object": "REST",
+        "score": -1.0116318,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "gRPC",
+        "predicate": "depends_on",
+        "object": "REST",
+        "score": -1.0277376,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "ColBERT",
+        "predicate": "depends_on",
+        "object": "TechnicalTerm",
+        "score": -1.0477031,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "SPLADE",
+        "predicate": "depends_on",
+        "object": "TechnicalTerm",
+        "score": -1.0469773,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "HNSW",
+        "predicate": "depends_on",
+        "object": "TechnicalTerm",
+        "score": -1.0408516,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "AWS",
+        "predicate": "depends_on",
+        "object": "Flask",
+        "score": -1.0276253,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Database",
         "predicate": "uses",
-        "object": "north",
-        "score": -1.6125236,
+        "object": "Next.js",
+        "score": -1.0742246,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "moundville",
-        "predicate": "uses",
-        "object": "fund",
-        "score": -1.5398321,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "honeywell",
-        "predicate": "depends_on",
-        "object": "register",
-        "score": -1.6584692,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "burial",
-        "predicate": "works_at",
-        "object": "peter",
-        "score": -1.6085274,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "blacks",
-        "predicate": "alternative_to",
-        "object": "guerrillas",
-        "score": -1.5300236,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "different",
-        "predicate": "works_at",
-        "object": "aws",
-        "score": -1.5731857,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "any",
-        "predicate": "implements",
-        "object": "church",
-        "score": -1.534978,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "gender",
-        "predicate": "depends_on",
-        "object": "greek",
-        "score": -1.6007336,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "site",
-        "predicate": "uses",
-        "object": "moderna",
-        "score": -1.6617526,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "armenian",
-        "predicate": "depends_on",
-        "object": "decision-making",
-        "score": -1.5585611,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "louisiana",
-        "predicate": "depends_on",
-        "object": "confederation",
-        "score": -1.6070138,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "alabama",
-        "predicate": "part_of",
-        "object": "explanatory",
-        "score": -1.5864366,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "republican",
-        "predicate": "part_of",
-        "object": "politically",
-        "score": -1.3582667,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "scattering",
-        "predicate": "implements",
-        "object": "europe",
-        "score": -1.6752115,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "anarchists",
-        "predicate": "works_at",
-        "object": "history",
-        "score": -1.5096405,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "global",
-        "predicate": "created_by",
-        "object": "russia",
-        "score": -1.4749471,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "however",
-        "predicate": "depends_on",
-        "object": "italian",
-        "score": -1.6605288,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "african",
-        "predicate": "works_at",
-        "object": "α",
-        "score": -1.5905657,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "yazoo",
-        "predicate": "depends_on",
-        "object": "system",
-        "score": -1.6061313,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "raz",
-        "predicate": "implements",
-        "object": "drawing",
-        "score": -1.5761216,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "false",
-        "predicate": "uses",
-        "object": "uralic",
-        "score": -1.6440871,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "tokyo",
-        "predicate": "implements",
-        "object": "humans",
-        "score": -1.6594996,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "variation",
-        "predicate": "part_of",
-        "object": "dixie",
-        "score": -1.704917,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "expressjs",
+        "subject": "Next.js",
         "predicate": "extends",
-        "object": "robé",
-        "score": -1.6383559,
+        "object": "ColBERT",
+        "score": -1.0576354,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "michael",
+        "subject": "Anthropic",
+        "predicate": "part_of",
+        "object": "React",
+        "score": -1.0154018,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Angular",
+        "predicate": "created_by",
+        "object": "HNSW",
+        "score": -1.0273665,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "gRPC",
+        "predicate": "alternative_to",
+        "object": "GCP",
+        "score": -1.033076,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Kubernetes",
+        "predicate": "works_at",
+        "object": "Angular",
+        "score": -1.0550928,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "GraphQL",
+        "predicate": "implements",
+        "object": "SPLADE",
+        "score": -1.0436264,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "S3",
+        "predicate": "is_type",
+        "object": "REST",
+        "score": -1.0114802,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "MySQL",
+        "predicate": "depends_on",
+        "object": "RocksDB",
+        "score": -1.0175138,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "BigQuery",
         "predicate": "uses",
+        "object": "OpenAI",
+        "score": -1.01325,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "React",
+        "predicate": "extends",
+        "object": "Kubernetes",
+        "score": -1.0856398,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Docker",
+        "predicate": "part_of",
+        "object": "Tokio",
+        "score": -1.0306665,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "REST",
+        "predicate": "created_by",
+        "object": "GPT",
+        "score": -1.0267344,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "EC2",
+        "predicate": "alternative_to",
+        "object": "TypeScript",
+        "score": -1.0363673,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "GPT",
+        "predicate": "works_at",
+        "object": "TechnicalTerm",
+        "score": -1.035697,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Claude",
+        "predicate": "implements",
+        "object": "S3",
+        "score": -1.0455601,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Django",
+        "predicate": "is_type",
+        "object": "Actix",
+        "score": -1.0341831,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "Flask",
+        "predicate": "depends_on",
+        "object": "Django",
+        "score": -1.0209558,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "JavaScript",
+        "predicate": "uses",
+        "object": "Database",
+        "score": -0.9971448,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "beyond",
+        "predicate": "uses",
+        "object": "immigration",
+        "score": -1.005386,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "robert",
+        "predicate": "extends",
+        "object": "simmons",
+        "score": -1.0478648,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "christian",
+        "predicate": "alternative_to",
+        "object": "catholic",
+        "score": -1.0161709,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "canada",
+        "predicate": "uses",
+        "object": "reformation",
+        "score": -1.0232722,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "forests",
+        "predicate": "uses",
+        "object": "specific",
+        "score": -1.0050104,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "descendants",
+        "predicate": "depends_on",
         "object": "small-scale",
-        "score": -1.5642402,
+        "score": -1.0425167,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "hopkinsville",
+        "subject": "tolstoy",
         "predicate": "works_at",
-        "object": "honeywell",
-        "score": -1.5346224,
+        "object": "seed-saving",
+        "score": -1.044066,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "muskogee",
+        "subject": "exitance",
         "predicate": "works_at",
-        "object": "scattering",
-        "score": -1.7006166,
+        "object": "astronomical",
+        "score": -1.072699,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "continued",
-        "predicate": "uses",
-        "object": "period",
-        "score": -1.5389827,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "graphic",
-        "predicate": "works_at",
-        "object": "russian",
-        "score": -1.5241721,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "meek",
-        "predicate": "created_by",
-        "object": "scattering",
-        "score": -1.7362503,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "ancestors",
-        "predicate": "depends_on",
-        "object": "jq5",
-        "score": -1.6462933,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "college",
-        "predicate": "alternative_to",
-        "object": "solar",
-        "score": -1.5661467,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "earth’s",
-        "predicate": "uses",
-        "object": "enlightenment",
-        "score": -1.6431019,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "encyclopedia",
+        "subject": "cyrillic",
         "predicate": "implements",
-        "object": "bolshevism",
-        "score": -1.7011523,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "tuscaloosa",
-        "predicate": "created_by",
-        "object": "west",
-        "score": -1.608283,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "blaine",
-        "predicate": "depends_on",
-        "object": "iso",
-        "score": -1.5918275,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "principle",
-        "predicate": "implements",
-        "object": "anarchy",
-        "score": -1.574073,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "any",
-        "predicate": "alternative_to",
-        "object": "ugaritic",
-        "score": -1.6337153,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "knights",
-        "predicate": "extends",
-        "object": "problem",
-        "score": -1.5542603,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "garcilaso",
-        "predicate": "uses",
-        "object": "free",
-        "score": -1.5392267,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "confederation",
-        "predicate": "created_by",
-        "object": "summerhill",
-        "score": -1.7021756,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "michael",
-        "predicate": "extends",
-        "object": "p/2005",
-        "score": -1.5557301,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "montgomery",
-        "predicate": "part_of",
-        "object": "suissa",
-        "score": -1.6481059,
+        "object": "1901",
+        "score": -1.0655153,
         "is_valid_ground_truth": false
       },
       {
         "subject": "russia",
-        "predicate": "works_at",
-        "object": "district",
-        "score": -1.5711699,
+        "predicate": "is_type",
+        "object": "catalan",
+        "score": -1.0368928,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "ȁ",
+        "subject": "mabila",
+        "predicate": "alternative_to",
+        "object": "la",
+        "score": -1.0491359,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "philosophy",
         "predicate": "part_of",
-        "object": "cruz",
-        "score": -1.6289148,
+        "object": "english",
+        "score": -1.0506,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "spracklen",
+        "subject": "1920",
+        "predicate": "uses",
+        "object": "derived",
+        "score": -1.0045743,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "socrates",
+        "predicate": "works_at",
+        "object": "skool",
+        "score": -1.0152719,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "1914",
+        "predicate": "alternative_to",
+        "object": "indigenous",
+        "score": -1.0126584,
+        "is_valid_ground_truth": false
+      },
+      {
+        "subject": "friedrich",
         "predicate": "depends_on",
-        "object": "food",
-        "score": -1.6084058,
+        "object": "renewed",
+        "score": -1.0534734,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "les",
-        "predicate": "alternative_to",
-        "object": "co2",
-        "score": -1.6654726,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "kavad",
+        "subject": "oc+sc",
         "predicate": "created_by",
-        "object": "christian",
-        "score": -1.5112264,
+        "object": "muslim",
+        "score": -1.0348583,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "nozick",
+        "subject": "so-called",
         "predicate": "alternative_to",
-        "object": "justice",
-        "score": -1.6689487,
+        "object": "proto-sinaitic",
+        "score": -1.0466347,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "kentucky",
-        "predicate": "alternative_to",
-        "object": "through",
-        "score": -1.5485989,
+        "subject": "peter",
+        "predicate": "is_type",
+        "object": "directional-hemispherical",
+        "score": -1.0781708,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "kuwaiti",
-        "predicate": "created_by",
-        "object": "louisiana",
-        "score": -1.5203799,
+        "subject": "anti-statist",
+        "predicate": "part_of",
+        "object": "dark",
+        "score": -1.0604706,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "terrestrial",
+        "subject": "photometria",
         "predicate": "extends",
-        "object": "florida",
-        "score": -1.6929281,
+        "object": "relationship",
+        "score": -1.0487698,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "july5",
-        "predicate": "implements",
-        "object": "anarchistic",
-        "score": -1.4841329,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "ǻ",
-        "predicate": "uses",
-        "object": "objection",
-        "score": -1.4848657,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "catalan",
-        "predicate": "depends_on",
-        "object": "optical",
-        "score": -1.587681,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "various",
-        "predicate": "depends_on",
-        "object": "earth’s",
-        "score": -1.5842708,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "optical",
-        "predicate": "alternative_to",
-        "object": "citations",
-        "score": -1.7152992,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "crass",
-        "predicate": "uses",
-        "object": "berneri",
-        "score": -1.6998433,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "property",
-        "predicate": "alternative_to",
-        "object": "native",
-        "score": -1.6223892,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "human",
-        "predicate": "implements",
-        "object": "continued",
-        "score": -1.543288,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "deep",
-        "predicate": "uses",
-        "object": "register",
-        "score": -1.6293485,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "property",
-        "predicate": "depends_on",
-        "object": "npp",
-        "score": -1.6191788,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "florida",
-        "predicate": "uses",
-        "object": "examples",
-        "score": -1.3873004,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "act",
-        "predicate": "uses",
-        "object": "stalin",
-        "score": -1.6669226,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "much",
-        "predicate": "works_at",
-        "object": "rest",
-        "score": -1.4732546,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "stirner's",
-        "predicate": "extends",
-        "object": "act",
-        "score": -1.5915833,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "radiometry",
-        "predicate": "alternative_to",
-        "object": "albama",
-        "score": -1.5946231,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "visigothic",
-        "predicate": "implements",
-        "object": "marshall",
-        "score": -1.6859204,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "immigration",
-        "predicate": "works_at",
-        "object": "ee",
-        "score": -1.5319663,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "national",
-        "predicate": "works_at",
-        "object": "ouyang",
-        "score": -1.5162646,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "part",
-        "predicate": "implements",
-        "object": "earth's",
-        "score": -1.6136628,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "opposition",
-        "predicate": "depends_on",
-        "object": "project",
-        "score": -1.4922961,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "vowel",
-        "predicate": "alternative_to",
-        "object": "history",
-        "score": -1.6435977,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "overall",
-        "predicate": "part_of",
-        "object": "ă",
-        "score": -1.5615821,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "alibamou",
-        "predicate": "extends",
-        "object": "pistols",
-        "score": -1.5983698,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "january",
-        "predicate": "part_of",
-        "object": "under",
-        "score": -1.3987529,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "northern",
-        "predicate": "depends_on",
-        "object": "louisiana",
-        "score": -1.544169,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "portuguese",
-        "predicate": "depends_on",
-        "object": "state",
-        "score": -1.5093596,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "kropotkin",
-        "predicate": "works_at",
-        "object": "march",
-        "score": -1.6018937,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "thoreau",
+        "subject": "mound",
         "predicate": "created_by",
-        "object": "bc",
-        "score": -1.5743717,
+        "object": "1937",
+        "score": -1.0565338,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "marxism–leninism",
-        "predicate": "part_of",
-        "object": "turner",
-        "score": -1.6225504,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "gender",
-        "predicate": "alternative_to",
-        "object": "makhnovshchina",
-        "score": -1.61379,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "p/2005",
-        "predicate": "alternative_to",
-        "object": "turner",
-        "score": -1.662499,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "legislators",
-        "predicate": "part_of",
-        "object": "robert",
-        "score": -1.6079371,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "gustav",
+        "subject": "klan",
         "predicate": "works_at",
-        "object": "river",
-        "score": -1.581712,
+        "object": "camellia",
+        "score": -1.0387589,
         "is_valid_ground_truth": false
       },
       {
-        "subject": "unless",
-        "predicate": "alternative_to",
-        "object": "despite",
-        "score": -1.4298732,
-        "is_valid_ground_truth": false
-      },
-      {
-        "subject": "americans",
-        "predicate": "created_by",
-        "object": "self-managed",
-        "score": -1.601496,
+        "subject": "moral",
+        "predicate": "implements",
+        "object": "anglo-saxon",
+        "score": -1.0691572,
         "is_valid_ground_truth": false
       }
     ],
     "relationship_inferences": [
       {
-        "head": "typescript",
-        "tail": "spanish",
-        "predicted_relation": "part_of",
-        "expected_relation": null,
-        "score": -1.5125612,
-        "rank": 1
-      },
-      {
         "head": "enlightenment",
-        "tail": "war",
+        "tail": "various",
         "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.4530137,
+        "score": -1.0272353,
         "rank": 1
       },
       {
-        "head": "typescript",
-        "tail": "humans",
-        "predicted_relation": "uses",
-        "expected_relation": null,
-        "score": -1.6487958,
-        "rank": 1
-      },
-      {
-        "head": "humans",
+        "head": "left-wing",
         "tail": "spanish",
-        "predicted_relation": "part_of",
-        "expected_relation": null,
-        "score": -1.5052581,
-        "rank": 1
-      },
-      {
-        "head": "humans",
-        "tail": "enlightenment",
         "predicted_relation": "extends",
         "expected_relation": null,
-        "score": -1.4744602,
+        "score": -1.0249894,
         "rank": 1
       },
       {
-        "head": "anarchism",
-        "tail": "russian",
-        "predicted_relation": "depends_on",
+        "head": "nation-states",
+        "tail": "paris",
+        "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.5469295,
-        "rank": 1
-      },
-      {
-        "head": "typescript",
-        "tail": "anarchists",
-        "predicted_relation": "created_by",
-        "expected_relation": null,
-        "score": -1.5520351,
+        "score": -1.0107578,
         "rank": 1
       },
       {
         "head": "enlightenment",
         "tail": "commune",
-        "predicted_relation": "is_type",
+        "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.6038407,
+        "score": -1.0317603,
         "rank": 1
       },
       {
-        "head": "anarchism",
-        "tail": "enlightenment",
+        "head": "left-wing",
+        "tail": "paris",
         "predicted_relation": "extends",
         "expected_relation": null,
-        "score": -1.420988,
-        "rank": 1
-      },
-      {
-        "head": "enlightenment",
-        "tail": "civil",
-        "predicted_relation": "depends_on",
-        "expected_relation": null,
-        "score": -1.5098625,
-        "rank": 1
-      },
-      {
-        "head": "humans",
-        "tail": "various",
-        "predicted_relation": "uses",
-        "expected_relation": null,
-        "score": -1.3696694,
-        "rank": 1
-      },
-      {
-        "head": "during",
-        "tail": "war",
-        "predicted_relation": "alternative_to",
-        "expected_relation": null,
-        "score": -1.4675096,
-        "rank": 1
-      },
-      {
-        "head": "typescript",
-        "tail": "russian",
-        "predicted_relation": "part_of",
-        "expected_relation": null,
-        "score": -1.4692323,
-        "rank": 1
-      },
-      {
-        "head": "enlightenment",
-        "tail": "during",
-        "predicted_relation": "uses",
-        "expected_relation": null,
-        "score": -1.4432379,
+        "score": -1.022299,
         "rank": 1
       },
       {
         "head": "anarchism",
         "tail": "humans",
-        "predicted_relation": "depends_on",
-        "expected_relation": null,
-        "score": -1.6247755,
-        "rank": 1
-      },
-      {
-        "head": "typescript",
-        "tail": "civil",
-        "predicted_relation": "part_of",
-        "expected_relation": null,
-        "score": -1.5468532,
-        "rank": 1
-      },
-      {
-        "head": "typescript",
-        "tail": "paris",
-        "predicted_relation": "part_of",
-        "expected_relation": null,
-        "score": -1.6220001,
-        "rank": 1
-      },
-      {
-        "head": "typescript",
-        "tail": "various",
         "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.4368237,
+        "score": -1.0032413,
         "rank": 1
       },
       {
-        "head": "typescript",
-        "tail": "anarchism",
-        "predicted_relation": "created_by",
-        "expected_relation": null,
-        "score": -1.5394429,
-        "rank": 1
-      },
-      {
-        "head": "enlightenment",
+        "head": "nation-states",
         "tail": "russian",
-        "predicted_relation": "is_type",
+        "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.5524266,
+        "score": -1.0003474,
+        "rank": 1
+      },
+      {
+        "head": "commune",
+        "tail": "civil",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0048789,
+        "rank": 1
+      },
+      {
+        "head": "commune",
+        "tail": "russian",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0170537,
         "rank": 1
       },
       {
         "head": "during",
         "tail": "civil",
-        "predicted_relation": "alternative_to",
-        "expected_relation": null,
-        "score": -1.519647,
-        "rank": 1
-      },
-      {
-        "head": "humans",
-        "tail": "russian",
-        "predicted_relation": "is_type",
-        "expected_relation": null,
-        "score": -1.4691427,
-        "rank": 1
-      },
-      {
-        "head": "typescript",
-        "tail": "during",
-        "predicted_relation": "part_of",
-        "expected_relation": null,
-        "score": -1.4886669,
-        "rank": 1
-      },
-      {
-        "head": "humans",
-        "tail": "anarchists",
-        "predicted_relation": "is_type",
-        "expected_relation": null,
-        "score": -1.370423,
-        "rank": 1
-      },
-      {
-        "head": "humans",
-        "tail": "paris",
-        "predicted_relation": "extends",
-        "expected_relation": null,
-        "score": -1.583281,
-        "rank": 1
-      },
-      {
-        "head": "during",
-        "tail": "anarchists",
-        "predicted_relation": "alternative_to",
-        "expected_relation": null,
-        "score": -1.4853845,
-        "rank": 1
-      },
-      {
-        "head": "typescript",
-        "tail": "war",
         "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.5406803,
+        "score": -1.003851,
         "rank": 1
       },
       {
-        "head": "anarchism",
-        "tail": "spanish",
-        "predicted_relation": "depends_on",
+        "head": "anarchists",
+        "tail": "russian",
+        "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.5180985,
+        "score": -1.0062971,
         "rank": 1
       },
       {
-        "head": "anarchism",
+        "head": "humans",
         "tail": "anarchists",
         "predicted_relation": "implements",
         "expected_relation": null,
-        "score": -1.2077447,
+        "score": -1.0458794,
         "rank": 1
       },
       {
-        "head": "anarchism",
-        "tail": "war",
+        "head": "nation-states",
+        "tail": "although",
         "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.4389226,
-        "rank": 1
-      },
-      {
-        "head": "anarchism",
-        "tail": "commune",
-        "predicted_relation": "depends_on",
-        "expected_relation": null,
-        "score": -1.6409762,
-        "rank": 1
-      },
-      {
-        "head": "during",
-        "tail": "commune",
-        "predicted_relation": "alternative_to",
-        "expected_relation": null,
-        "score": -1.6114291,
+        "score": -1.0081456,
         "rank": 1
       },
       {
         "head": "enlightenment",
+        "tail": "civil",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0051428,
+        "rank": 1
+      },
+      {
+        "head": "left-wing",
+        "tail": "commune",
+        "predicted_relation": "extends",
+        "expected_relation": null,
+        "score": -1.0351019,
+        "rank": 1
+      },
+      {
+        "head": "anarchism",
+        "tail": "paris",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0088675,
+        "rank": 1
+      },
+      {
+        "head": "paris",
+        "tail": "russian",
+        "predicted_relation": "alternative_to",
+        "expected_relation": null,
+        "score": -1.0172625,
+        "rank": 1
+      },
+      {
+        "head": "anarchism",
+        "tail": "civil",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0037968,
+        "rank": 1
+      },
+      {
+        "head": "anarchism",
+        "tail": "anarchists",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -0.99610966,
+        "rank": 1
+      },
+      {
+        "head": "anarchism",
         "tail": "spanish",
         "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.5454843,
+        "score": -1.0197392,
         "rank": 1
       },
       {
-        "head": "during",
-        "tail": "paris",
-        "predicted_relation": "alternative_to",
-        "expected_relation": null,
-        "score": -1.5913683,
-        "rank": 1
-      },
-      {
-        "head": "anarchism",
-        "tail": "during",
+        "head": "left-wing",
+        "tail": "although",
         "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.5226613,
+        "score": -1.0063236,
         "rank": 1
       },
       {
-        "head": "enlightenment",
-        "tail": "various",
-        "predicted_relation": "uses",
-        "expected_relation": null,
-        "score": -1.4328697,
-        "rank": 1
-      },
-      {
-        "head": "during",
-        "tail": "russian",
-        "predicted_relation": "is_type",
-        "expected_relation": null,
-        "score": -1.508146,
-        "rank": 1
-      },
-      {
-        "head": "during",
-        "tail": "various",
-        "predicted_relation": "alternative_to",
-        "expected_relation": null,
-        "score": -1.4456388,
-        "rank": 1
-      },
-      {
-        "head": "humans",
+        "head": "left-wing",
         "tail": "civil",
-        "predicted_relation": "part_of",
+        "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.45875,
+        "score": -1.0035201,
         "rank": 1
       },
       {
         "head": "humans",
-        "tail": "commune",
-        "predicted_relation": "is_type",
-        "expected_relation": null,
-        "score": -1.5357972,
-        "rank": 1
-      },
-      {
-        "head": "anarchism",
-        "tail": "various",
-        "predicted_relation": "uses",
-        "expected_relation": null,
-        "score": -1.4781309,
-        "rank": 1
-      },
-      {
-        "head": "typescript",
         "tail": "enlightenment",
-        "predicted_relation": "created_by",
-        "expected_relation": null,
-        "score": -1.6286961,
-        "rank": 1
-      },
-      {
-        "head": "enlightenment",
-        "tail": "paris",
-        "predicted_relation": "uses",
-        "expected_relation": null,
-        "score": -1.627639,
-        "rank": 1
-      },
-      {
-        "head": "typescript",
-        "tail": "commune",
-        "predicted_relation": "created_by",
-        "expected_relation": null,
-        "score": -1.6380627,
-        "rank": 1
-      },
-      {
-        "head": "anarchism",
-        "tail": "civil",
         "predicted_relation": "depends_on",
         "expected_relation": null,
-        "score": -1.4189583,
+        "score": -1.0517812,
+        "rank": 1
+      },
+      {
+        "head": "nation-states",
+        "tail": "during",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0022553,
+        "rank": 1
+      },
+      {
+        "head": "left-wing",
+        "tail": "various",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0368601,
+        "rank": 1
+      },
+      {
+        "head": "during",
+        "tail": "various",
+        "predicted_relation": "depends_on",
+        "expected_relation": null,
+        "score": -1.0276654,
+        "rank": 1
+      },
+      {
+        "head": "humans",
+        "tail": "war",
+        "predicted_relation": "part_of",
+        "expected_relation": null,
+        "score": -1.0009422,
+        "rank": 1
+      },
+      {
+        "head": "nation-states",
+        "tail": "left-wing",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.021252,
+        "rank": 1
+      },
+      {
+        "head": "although",
+        "tail": "civil",
+        "predicted_relation": "implements",
+        "expected_relation": null,
+        "score": -0.99860114,
+        "rank": 1
+      },
+      {
+        "head": "although",
+        "tail": "various",
+        "predicted_relation": "depends_on",
+        "expected_relation": null,
+        "score": -1.020193,
         "rank": 1
       },
       {
         "head": "humans",
         "tail": "during",
-        "predicted_relation": "part_of",
+        "predicted_relation": "depends_on",
         "expected_relation": null,
-        "score": -1.4032041,
+        "score": -0.9981379,
         "rank": 1
       },
       {
         "head": "enlightenment",
         "tail": "anarchists",
-        "predicted_relation": "is_type",
-        "expected_relation": null,
-        "score": -1.3943797,
-        "rank": 1
-      },
-      {
-        "head": "humans",
-        "tail": "war",
         "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.4649488,
+        "score": -1.0382107,
         "rank": 1
       },
       {
-        "head": "during",
-        "tail": "spanish",
-        "predicted_relation": "alternative_to",
+        "head": "nation-states",
+        "tail": "anarchists",
+        "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.513304,
+        "score": -1.0365703,
         "rank": 1
       },
       {
         "head": "anarchism",
-        "tail": "paris",
+        "tail": "various",
         "predicted_relation": "uses",
         "expected_relation": null,
-        "score": -1.6722621,
+        "score": -1.029315,
+        "rank": 1
+      },
+      {
+        "head": "anarchists",
+        "tail": "commune",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.034966,
+        "rank": 1
+      },
+      {
+        "head": "humans",
+        "tail": "although",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0036077,
+        "rank": 1
+      },
+      {
+        "head": "although",
+        "tail": "spanish",
+        "predicted_relation": "depends_on",
+        "expected_relation": null,
+        "score": -1.0203396,
+        "rank": 1
+      },
+      {
+        "head": "humans",
+        "tail": "commune",
+        "predicted_relation": "implements",
+        "expected_relation": null,
+        "score": -1.02528,
+        "rank": 1
+      },
+      {
+        "head": "anarchism",
+        "tail": "left-wing",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0164742,
+        "rank": 1
+      },
+      {
+        "head": "nation-states",
+        "tail": "enlightenment",
+        "predicted_relation": "extends",
+        "expected_relation": null,
+        "score": -1.047584,
+        "rank": 1
+      },
+      {
+        "head": "various",
+        "tail": "civil",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.002373,
+        "rank": 1
+      },
+      {
+        "head": "commune",
+        "tail": "war",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0028962,
+        "rank": 1
+      },
+      {
+        "head": "left-wing",
+        "tail": "enlightenment",
+        "predicted_relation": "implements",
+        "expected_relation": null,
+        "score": -1.0414578,
+        "rank": 1
+      },
+      {
+        "head": "although",
+        "tail": "anarchists",
+        "predicted_relation": "implements",
+        "expected_relation": null,
+        "score": -1.0470804,
+        "rank": 1
+      },
+      {
+        "head": "anarchism",
+        "tail": "commune",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0315843,
+        "rank": 1
+      },
+      {
+        "head": "humans",
+        "tail": "russian",
+        "predicted_relation": "alternative_to",
+        "expected_relation": null,
+        "score": -1.0054576,
+        "rank": 1
+      },
+      {
+        "head": "paris",
+        "tail": "civil",
+        "predicted_relation": "uses",
+        "expected_relation": null,
+        "score": -1.0051508,
+        "rank": 1
+      },
+      {
+        "head": "although",
+        "tail": "war",
+        "predicted_relation": "implements",
+        "expected_relation": null,
+        "score": -1.0010291,
+        "rank": 1
+      },
+      {
+        "head": "anarchism",
+        "tail": "nation-states",
+        "predicted_relation": "created_by",
+        "expected_relation": null,
+        "score": -1.0280634,
+        "rank": 1
+      },
+      {
+        "head": "during",
+        "tail": "paris",
+        "predicted_relation": "depends_on",
+        "expected_relation": null,
+        "score": -1.0108355,
         "rank": 1
       }
     ]
   },
   "validation_results": {
     "accuracy": 0.78125,
-    "optimal_threshold": -1.0,
+    "optimal_threshold": -0.9331175,
     "confusion_matrix": {
       "true_positives": 0,
       "true_negatives": 100,
@@ -3335,32 +4989,21 @@
   "graph_results": {
     "metrics": {
       "nodes_discovered": 50,
-      "edges_inferred": 616,
-      "avg_edge_score": 0.08398537,
-      "edge_score_std_dev": 0.08186297,
+      "edges_inferred": 555,
+      "avg_edge_score": 0.22227742,
+      "edge_score_std_dev": 0.1535362,
       "entity_type_distribution": {
-        "Unknown": 47,
-        "Cloud": 1,
-        "ProgrammingLanguage": 1,
-        "TechnicalTerm": 1
+        "Unknown": 50
       },
       "relationship_type_distribution": {
-        "strongly_related_to": 124,
-        "related_to": 256,
-        "co_occurs_with": 236
+        "related_to": 250,
+        "co_occurs_with": 215,
+        "strongly_related_to": 90
       },
-      "graph_density": 0.25142857142857145,
+      "graph_density": 0.22653061224489796,
       "connected_components": 0
     },
     "top_entities": [
-      [
-        "typescript",
-        98
-      ],
-      [
-        "rest_api",
-        34
-      ],
       [
         "anarchists",
         21
@@ -3378,7 +5021,7 @@
         14
       ],
       [
-        "spain",
+        "spanish",
         13
       ],
       [
@@ -3386,7 +5029,7 @@
         13
       ],
       [
-        "war",
+        "spain",
         13
       ],
       [
@@ -3394,32 +5037,28 @@
         13
       ],
       [
-        "spanish",
+        "war",
         13
-      ],
-      [
-        "albedo",
-        12
       ],
       [
         "french",
         12
       ],
       [
-        "latin",
-        11
+        "albedo",
+        12
       ],
       [
         "states",
         11
       ],
       [
-        "united",
-        10
+        "latin",
+        11
       ],
       [
-        "international",
-        9
+        "united",
+        10
       ],
       [
         "earth",
@@ -3434,11 +5073,15 @@
         9
       ],
       [
-        "world",
-        8
+        "international",
+        9
       ],
       [
         "kropotkin",
+        8
+      ],
+      [
+        "world",
         8
       ],
       [
@@ -3446,7 +5089,7 @@
         8
       ],
       [
-        "civil",
+        "african",
         7
       ],
       [
@@ -3454,39 +5097,11 @@
         7
       ],
       [
-        "african",
+        "civil",
         7
       ],
       [
-        "aws",
-        6
-      ],
-      [
-        "one",
-        6
-      ],
-      [
-        "revolution",
-        6
-      ],
-      [
-        "general",
-        6
-      ],
-      [
-        "americans",
-        6
-      ],
-      [
         "alphabet",
-        6
-      ],
-      [
-        "congress",
-        6
-      ],
-      [
-        "america",
         6
       ],
       [
@@ -3494,11 +5109,7 @@
         6
       ],
       [
-        "mobile",
-        6
-      ],
-      [
-        "huntsville",
+        "anti-authoritarian",
         6
       ],
       [
@@ -3506,7 +5117,19 @@
         6
       ],
       [
+        "congress",
+        6
+      ],
+      [
         "earth's",
+        6
+      ],
+      [
+        "left-wing",
+        6
+      ],
+      [
+        "mobile",
         6
       ],
       [
@@ -3514,7 +5137,7 @@
         6
       ],
       [
-        "revolutionary",
+        "general",
         6
       ],
       [
@@ -3522,7 +5145,31 @@
         6
       ],
       [
-        "native",
+        "america",
+        6
+      ],
+      [
+        "americans",
+        6
+      ],
+      [
+        "one",
+        6
+      ],
+      [
+        "huntsville",
+        6
+      ],
+      [
+        "revolutionary",
+        6
+      ],
+      [
+        "revolution",
+        6
+      ],
+      [
+        "another",
         5
       ],
       [
@@ -3530,7 +5177,11 @@
         5
       ],
       [
-        "black",
+        "british",
+        5
+      ],
+      [
+        "native",
         5
       ],
       [
@@ -3538,142 +5189,142 @@
         5
       ],
       [
+        "u.s",
+        5
+      ],
+      [
+        "union",
+        5
+      ],
+      [
         "godwin",
         5
       ],
       [
-        "solar",
-        5
-      ],
-      [
-        "france",
-        5
-      ],
-      [
-        "december",
+        "west",
         5
       ]
     ],
     "top_relationships": [
       [
-        "rest_api",
-        "typescript",
+        "alabama",
+        "american",
         "strongly_related_to",
         1.0
       ],
       [
-        "anarchists",
-        "typescript",
+        "states",
+        "united",
         "strongly_related_to",
-        0.61764705
-      ],
-      [
-        "during",
-        "typescript",
-        "strongly_related_to",
-        0.47058824
-      ],
-      [
-        "alabama",
-        "typescript",
-        "strongly_related_to",
-        0.47058824
-      ],
-      [
-        "anarchism",
-        "typescript",
-        "strongly_related_to",
-        0.4117647
-      ],
-      [
-        "typescript",
-        "war",
-        "strongly_related_to",
-        0.38235295
+        0.90909094
       ],
       [
         "spanish",
-        "typescript",
+        "war",
         "strongly_related_to",
-        0.38235295
+        0.90909094
+      ],
+      [
+        "alabama",
+        "war",
+        "strongly_related_to",
+        0.72727275
       ],
       [
         "spain",
-        "typescript",
+        "spanish",
         "strongly_related_to",
-        0.38235295
+        0.6363636
+      ],
+      [
+        "african",
+        "alabama",
+        "strongly_related_to",
+        0.6363636
+      ],
+      [
+        "civil",
+        "war",
+        "strongly_related_to",
+        0.6363636
+      ],
+      [
+        "spain",
+        "united",
+        "strongly_related_to",
+        0.6363636
       ],
       [
         "anarchist",
-        "typescript",
+        "anarchists",
         "strongly_related_to",
-        0.38235295
+        0.6363636
       ],
       [
-        "american",
-        "typescript",
+        "states",
+        "war",
         "strongly_related_to",
-        0.3529412
+        0.6363636
       ],
       [
-        "french",
-        "typescript",
+        "spain",
+        "war",
         "strongly_related_to",
-        0.3529412
+        0.6363636
+      ],
+      [
+        "spain",
+        "states",
+        "strongly_related_to",
+        0.6363636
+      ],
+      [
+        "english",
+        "greek",
+        "strongly_related_to",
+        0.6363636
       ],
       [
         "albedo",
-        "typescript",
+        "earth",
         "strongly_related_to",
-        0.3529412
+        0.54545456
       ],
       [
-        "latin",
-        "typescript",
+        "anarchists",
+        "during",
         "strongly_related_to",
-        0.32352942
-      ],
-      [
-        "states",
-        "typescript",
-        "strongly_related_to",
-        0.32352942
+        0.54545456
       ],
       [
         "alabama",
-        "american",
+        "mobile",
         "strongly_related_to",
-        0.32352942
+        0.54545456
       ],
       [
-        "states",
+        "african",
+        "americans",
+        "strongly_related_to",
+        0.54545456
+      ],
+      [
+        "alabama",
+        "huntsville",
+        "strongly_related_to",
+        0.54545456
+      ],
+      [
         "united",
-        "strongly_related_to",
-        0.29411766
-      ],
-      [
-        "spanish",
         "war",
         "strongly_related_to",
-        0.29411766
+        0.54545456
       ],
       [
-        "typescript",
-        "united",
+        "alabama",
+        "americans",
         "strongly_related_to",
-        0.29411766
-      ],
-      [
-        "international",
-        "typescript",
-        "strongly_related_to",
-        0.2647059
-      ],
-      [
-        "earth",
-        "typescript",
-        "strongly_related_to",
-        0.2647059
+        0.54545456
       ]
     ]
   },
@@ -3687,7 +5338,7 @@
       "num_entity_pairs": 100
     },
     "max_chunks": 100,
-    "num_queries": 50,
+    "num_queries": 100,
     "seed": 42,
     "run_all": true,
     "run_extraction": true,

@@ -143,20 +143,132 @@ topics:
 # MCP TOOLS
 # ═══════════════════════════════════════════════════════════════
 mcp_tools:
+  # CORE SEARCH: Primary retrieval operations
   search: [search_graph, search_causes, search_connections, search_by_intent]
+
+  # EMBEDDER-FIRST SEARCH: Any embedder as primary perspective (NEW)
+  # Enables AI agents to explore the knowledge graph from any of the 13 perspectives
+  embedder_search:
+    - search_by_embedder      # Generic: search using any embedder (E1-E13) as primary
+    - get_embedder_clusters   # Explore clusters in any embedder's space
+    - compare_embedder_views  # Compare how different embedders see the same query
+    - list_embedder_indexes   # List available embedders and their index stats
+
+  # SPECIALIZED SEARCH: Per-embedder tools with custom logic
+  semantic: [search_graph]              # E1
+  causal: [search_causes, get_causal_chain]    # E5 with asymmetric similarity
+  keyword: [search_by_keywords]         # E6 sparse
+  code: [search_code]                   # E7 code-aware
+  graph: [search_connections, get_graph_path]  # E8 structural
+  entity: [search_by_entities, extract_entities, infer_relationship, find_related_entities, validate_knowledge, get_entity_graph]  # E11 KEPLER
+  intent: [search_by_intent, find_contextual_matches]  # E10 multiplicative boost
+
+  # MEMORY OPERATIONS
   memory: [store_memory, inject_context, get_memetic_status]
   sequence: [get_conversation_context, get_session_timeline, traverse_memory_chain]
-  topic: [get_topic_portfolio, get_topic_stability, detect_topics]
-  causal: [get_causal_chain, search_causes]
-  graph: [get_graph_path, search_connections]
-  intent: [search_by_intent, find_contextual_matches, detect_intent_drift]
-  entity: [extract_entities, search_by_entities, infer_relationship, find_related_entities, validate_knowledge, get_entity_graph]
-  maintenance: [trigger_consolidation, trigger_dream, merge_concepts, forget_concept]
+
+  # TOPIC & CLUSTER OPERATIONS
+  topic: [get_topic_portfolio, get_topic_stability, detect_topics, get_divergence_alerts]
+
+  # MAINTENANCE
+  maintenance: [trigger_consolidation, trigger_dream, merge_concepts, forget_concept, boost_importance]
 
   search_strategies:
     E1Only: "Fast, simple semantic queries"
     MultiSpace: "E1 + enhancers via RRF - use when E1 blind spots matter"
     Pipeline: "E13 recall → E1 dense → E12 rerank - maximum precision"
+    EmbedderFirst: "Any embedder as primary perspective - explore blind spots"
+
+# ═══════════════════════════════════════════════════════════════
+# EMBEDDER-FIRST SEARCH (NEW)
+# ═══════════════════════════════════════════════════════════════
+# Core insight: Each embedder sees the knowledge graph from a unique perspective.
+# Sometimes E1 (semantic) misses what E11 (entity) finds, or E7 (code) discovers
+# patterns E5 (causal) doesn't see. Embedder-first search lets AI agents choose
+# which perspective to prioritize for a given query.
+
+embedder_first_search:
+  philosophy: |
+    The 13 embedders are 13 lenses on the same knowledge. By default, E1 (semantic)
+    is the foundation, but sometimes another perspective reveals what E1 misses.
+
+    Example: "What framework does Tokio relate to?"
+    - E1 (semantic): finds "async", "runtime" → generic matches
+    - E11 (entity): finds "Rust", "Actix" → entity relationships
+    - E8 (graph): finds "imports", "depends on" → structural relationships
+    - E7 (code): finds "tokio::spawn", "#[tokio::main]" → code patterns
+
+    Embedder-first search lets the AI choose the most relevant perspective.
+
+  tool_specs:
+    search_by_embedder:
+      description: "Search using any embedder (E1-E13) as the primary perspective"
+      params:
+        query: "Search query"
+        embedder: "E1|E2|E3|E4|E5|E6|E7|E8|E9|E10|E11|E12|E13"
+        topK: "1-100 (default 10)"
+        minSimilarity: "0.0-1.0 (default 0.0)"
+        includeContent: "boolean (default false)"
+        includeAllScores: "boolean - return scores from all 13 embedders"
+      use_cases:
+        - "E11 search when looking for entity relationships E1 misses"
+        - "E7 search when looking for code patterns"
+        - "E5 search for causal relationships without asymmetric complexity"
+        - "E8 search for graph structure (imports, dependencies)"
+
+    get_embedder_clusters:
+      description: "Explore clusters in a specific embedder's space"
+      params:
+        embedder: "E1|E2|...E13"
+        minClusterSize: "default 3"
+        topClusters: "default 10"
+      use_cases:
+        - "Find code clusters (E7) to see related implementations"
+        - "Find entity clusters (E11) to see related concepts"
+        - "Find temporal clusters (E2) to see recency patterns"
+
+    compare_embedder_views:
+      description: "Compare how different embedders rank the same query"
+      params:
+        query: "Search query"
+        embedders: "[E1, E5, E7, E11]" # Subset to compare
+        topK: "default 5"
+      output: |
+        Shows rankings from each embedder side-by-side:
+        - E1 top 5: [memory1, memory2, ...]
+        - E5 top 5: [memory3, memory1, ...]
+        - Agreement score: how much embedders agree
+        - Unique finds: memories found by only one embedder
+      use_cases:
+        - "Understand E1 blind spots by comparing with E11"
+        - "See what causal (E5) finds that semantic (E1) misses"
+
+    list_embedder_indexes:
+      description: "List all embedder indexes with stats"
+      output:
+        per_embedder:
+          - embedder: "E1-E13"
+          - dimension: "vector dimension or 'sparse'"
+          - index_type: "HNSW|Inverted|MaxSim"
+          - vector_count: "number of indexed vectors"
+          - index_size_mb: "approximate size"
+          - gpu_resident: "true|false"
+
+  # Per-embedder direct search (what each finds)
+  embedder_perspectives:
+    E1_semantic: "Dense semantic similarity - foundation"
+    E2_recency: "Temporal freshness - recent memories first"
+    E3_periodic: "Time-of-day patterns - daily/weekly cycles"
+    E4_sequence: "Conversation order - before/after relationships"
+    E5_causal: "Cause-effect relationships - why X caused Y"
+    E6_keyword: "Exact keyword matches - precise terminology"
+    E7_code: "Code patterns - function signatures, AST structure"
+    E8_graph: "Structural relationships - imports, dependencies"
+    E9_hdc: "Noise-robust structure - typos, variations"
+    E10_intent: "Goal alignment - similar purpose, different words"
+    E11_entity: "Entity knowledge - named entities, relationships"
+    E12_precision: "Exact phrase matches - token-level precision"
+    E13_expansion: "Term expansion - synonyms, related terms"
 
 # ═══════════════════════════════════════════════════════════════
 # RETRIEVAL PIPELINE

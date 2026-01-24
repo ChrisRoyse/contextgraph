@@ -30,7 +30,7 @@ use context_graph_core::entity::{EntityLink, EntityMetadata, EntityType};
 
 /// Extract potential entity mentions from text.
 /// KEPLER embeddings handle actual entity relationship discovery.
-fn extract_entity_mentions(text: &str) -> EntityMetadata {
+pub fn extract_entity_mentions(text: &str) -> EntityMetadata {
     let mut entities = Vec::new();
     let mut seen = HashSet::new();
 
@@ -74,15 +74,15 @@ fn is_common_word(word: &str) -> bool {
     COMMON.contains(&word.to_lowercase().as_str())
 }
 
-fn entity_type_to_string(et: EntityType) -> String {
+fn entity_type_to_string(et: EntityType) -> &'static str {
     match et {
-        EntityType::ProgrammingLanguage => "ProgrammingLanguage".to_string(),
-        EntityType::Framework => "Framework".to_string(),
-        EntityType::Database => "Database".to_string(),
-        EntityType::Cloud => "Cloud".to_string(),
-        EntityType::Company => "Company".to_string(),
-        EntityType::TechnicalTerm => "TechnicalTerm".to_string(),
-        EntityType::Unknown => "Unknown".to_string(),
+        EntityType::ProgrammingLanguage => "ProgrammingLanguage",
+        EntityType::Framework => "Framework",
+        EntityType::Database => "Database",
+        EntityType::Cloud => "Cloud",
+        EntityType::Company => "Company",
+        EntityType::TechnicalTerm => "TechnicalTerm",
+        EntityType::Unknown => "Unknown",
     }
 }
 
@@ -157,18 +157,14 @@ impl From<&EntityLink> for EntityLinkSerializable {
         Self {
             surface_form: link.surface_form.clone(),
             canonical_id: link.canonical_id.clone(),
-            entity_type: entity_type_to_string(link.entity_type),
+            entity_type: entity_type_to_string(link.entity_type).to_string(),
         }
     }
 }
 
 impl From<EntityLink> for EntityLinkSerializable {
     fn from(link: EntityLink) -> Self {
-        Self {
-            surface_form: link.surface_form,
-            canonical_id: link.canonical_id,
-            entity_type: entity_type_to_string(link.entity_type),
-        }
+        Self::from(&link)
     }
 }
 
@@ -490,7 +486,55 @@ impl E11EntityDatasetLoader {
         let mut rng = ChaCha8Rng::seed_from_u64(self.config.seed);
 
         // Known valid relations from technical domain
-        let known_valid_triples = vec![
+        let known_valid_triples = Self::get_known_valid_triples();
+
+        // Generate invalid triples by corrupting valid triples
+        let relations = Self::get_known_relations();
+        let known_invalid_triples = self.generate_corrupted_triples(&known_valid_triples, &relations);
+
+        ground_truth.valid_triples.extend(known_valid_triples.clone());
+        ground_truth.invalid_triples.extend(known_invalid_triples);
+
+        // Add random invalid triples from document entities for generalization testing
+        let all_entities: Vec<String> = documents
+            .iter()
+            .flat_map(|d| d.entities.iter().map(|e| e.canonical_id.clone()))
+            .collect::<HashSet<_>>()
+            .into_iter()
+            .collect();
+
+        let target_invalid = self.config.num_invalid_triples.min(ground_truth.invalid_triples.len() + 50);
+
+        while ground_truth.invalid_triples.len() < target_invalid && all_entities.len() >= 2 {
+            let head_idx = rng.gen_range(0..all_entities.len());
+            let tail_idx = rng.gen_range(0..all_entities.len());
+
+            if head_idx == tail_idx {
+                continue;
+            }
+
+            let rel_idx = rng.gen_range(0..relations.len());
+            let triple = KnowledgeTriple::invalid(
+                &all_entities[head_idx],
+                relations[rel_idx],
+                &all_entities[tail_idx],
+                "document_random",
+            );
+
+            // Avoid duplicates with valid triples
+            let is_duplicate = known_valid_triples.iter().any(|t| {
+                t.subject == triple.subject && t.predicate == triple.predicate && t.object == triple.object
+            });
+
+            if !is_duplicate {
+                ground_truth.invalid_triples.push(triple);
+            }
+        }
+    }
+
+    /// Get predefined valid triples from technical domain knowledge base.
+    fn get_known_valid_triples() -> Vec<KnowledgeTriple> {
+        vec![
             // Programming language relations
             KnowledgeTriple::valid("Tokio", "depends_on", "Rust", "KB"),
             KnowledgeTriple::valid("Axum", "depends_on", "Tokio", "KB"),
@@ -502,45 +546,51 @@ impl E11EntityDatasetLoader {
             KnowledgeTriple::valid("Vue.js", "uses", "JavaScript", "KB"),
             KnowledgeTriple::valid("Angular", "uses", "TypeScript", "KB"),
             KnowledgeTriple::valid("Next.js", "extends", "React", "KB"),
-
             // Database relations
             KnowledgeTriple::valid("PostgreSQL", "is_type", "Database", "KB"),
             KnowledgeTriple::valid("MySQL", "is_type", "Database", "KB"),
             KnowledgeTriple::valid("MongoDB", "is_type", "Database", "KB"),
             KnowledgeTriple::valid("Redis", "is_type", "Database", "KB"),
             KnowledgeTriple::valid("RocksDB", "is_type", "Database", "KB"),
-
             // Cloud relations
             KnowledgeTriple::valid("S3", "part_of", "AWS", "KB"),
             KnowledgeTriple::valid("EC2", "part_of", "AWS", "KB"),
             KnowledgeTriple::valid("Lambda", "part_of", "AWS", "KB"),
             KnowledgeTriple::valid("BigQuery", "part_of", "GCP", "KB"),
             KnowledgeTriple::valid("Kubernetes", "alternative_to", "Docker", "KB"),
-
             // Company relations
             KnowledgeTriple::valid("Claude", "created_by", "Anthropic", "KB"),
             KnowledgeTriple::valid("GPT", "created_by", "OpenAI", "KB"),
             KnowledgeTriple::valid("GitHub", "owned_by", "Microsoft", "KB"),
-
             // Technical term relations
             KnowledgeTriple::valid("GraphQL", "alternative_to", "REST", "KB"),
             KnowledgeTriple::valid("gRPC", "alternative_to", "REST", "KB"),
             KnowledgeTriple::valid("ColBERT", "is_type", "TechnicalTerm", "KB"),
             KnowledgeTriple::valid("SPLADE", "is_type", "TechnicalTerm", "KB"),
             KnowledgeTriple::valid("HNSW", "is_type", "TechnicalTerm", "KB"),
-        ];
+        ]
+    }
 
-        // Generate invalid triples by CORRUPTING valid triples
-        // This ensures we test with entities that exist in the valid set
-        // Three corruption strategies:
-        // 1. Swap head and tail (reverses the relationship)
-        // 2. Wrong relation (same entities, different predicate)
-        // 3. Cross-triple corruption (mix entities from different valid triples)
-        let mut known_invalid_triples = Vec::new();
+    /// Get known relation types.
+    fn get_known_relations() -> Vec<&'static str> {
+        vec![
+            "depends_on", "uses", "extends", "part_of", "created_by",
+            "alternative_to", "works_at", "implements", "is_type",
+        ]
+    }
 
-        // Strategy 1: Swap head/tail of valid triples
-        for triple in &known_valid_triples {
-            known_invalid_triples.push(KnowledgeTriple::invalid(
+    /// Generate invalid triples by corrupting valid ones.
+    /// Strategies: swap head/tail, wrong relation, cross-triple mixing.
+    fn generate_corrupted_triples(
+        &self,
+        valid_triples: &[KnowledgeTriple],
+        relations: &[&str],
+    ) -> Vec<KnowledgeTriple> {
+        let mut invalid = Vec::new();
+
+        // Strategy 1: Swap head/tail
+        for triple in valid_triples {
+            invalid.push(KnowledgeTriple::invalid(
                 &triple.object,
                 &triple.predicate,
                 &triple.subject,
@@ -548,94 +598,53 @@ impl E11EntityDatasetLoader {
             ));
         }
 
-        // Strategy 2: Wrong relations - use different predicates
-        let relations = vec![
-            "depends_on", "uses", "extends", "part_of", "created_by",
-            "alternative_to", "works_at", "implements", "is_type",
-        ];
-        for triple in &known_valid_triples {
-            for relation in &relations {
-                if *relation != triple.predicate {
-                    known_invalid_triples.push(KnowledgeTriple::invalid(
-                        &triple.subject,
-                        *relation,
-                        &triple.object,
-                        "wrong_relation",
-                    ));
-                    break; // Only add one wrong relation per valid triple
-                }
+        // Strategy 2: Wrong relation (first different predicate)
+        for triple in valid_triples {
+            if let Some(wrong_rel) = relations.iter().find(|&&r| r != triple.predicate) {
+                invalid.push(KnowledgeTriple::invalid(
+                    &triple.subject,
+                    *wrong_rel,
+                    &triple.object,
+                    "wrong_relation",
+                ));
             }
         }
 
-        // Strategy 3: Cross-triple corruption - mix entities from different triples
-        let entities: Vec<&str> = known_valid_triples
+        // Strategy 3: Cross-triple corruption
+        let entities: Vec<&str> = valid_triples
             .iter()
-            .flat_map(|t| vec![t.subject.as_str(), t.object.as_str()])
-            .collect::<std::collections::HashSet<_>>()
+            .flat_map(|t| [t.subject.as_str(), t.object.as_str()])
+            .collect::<HashSet<_>>()
             .into_iter()
             .collect();
 
         for i in 0..entities.len().min(20) {
             let head_idx = (i * 7) % entities.len();
             let tail_idx = (i * 11 + 3) % entities.len();
+
+            if head_idx == tail_idx {
+                continue;
+            }
+
             let rel_idx = i % relations.len();
+            let triple = KnowledgeTriple::invalid(
+                entities[head_idx],
+                relations[rel_idx],
+                entities[tail_idx],
+                "cross_triple",
+            );
 
-            if head_idx != tail_idx {
-                let triple = KnowledgeTriple::invalid(
-                    entities[head_idx],
-                    relations[rel_idx],
-                    entities[tail_idx],
-                    "cross_triple",
-                );
+            // Avoid duplicates with valid triples
+            let is_valid = valid_triples.iter().any(|t| {
+                t.subject == triple.subject && t.predicate == triple.predicate && t.object == triple.object
+            });
 
-                // Avoid duplicates with valid triples
-                let is_valid = known_valid_triples.iter().any(|t| {
-                    t.subject == triple.subject && t.predicate == triple.predicate && t.object == triple.object
-                });
-                if !is_valid {
-                    known_invalid_triples.push(triple);
-                }
+            if !is_valid {
+                invalid.push(triple);
             }
         }
 
-        ground_truth.valid_triples.extend(known_valid_triples);
-        ground_truth.invalid_triples.extend(known_invalid_triples);
-
-        // Optionally add random invalid triples from document entities
-        // These test generalization to unknown entities
-        let all_entities: Vec<String> = documents
-            .iter()
-            .flat_map(|d| d.entities.iter().map(|e| e.canonical_id.clone()))
-            .collect::<HashSet<_>>()
-            .into_iter()
-            .collect();
-
-        let mut invalid_count = ground_truth.invalid_triples.len();
-        let target_invalid = self.config.num_invalid_triples.min(invalid_count + 50);
-        while invalid_count < target_invalid && all_entities.len() >= 2 {
-            let head_idx = rng.gen_range(0..all_entities.len());
-            let tail_idx = rng.gen_range(0..all_entities.len());
-            let rel_idx = rng.gen_range(0..relations.len());
-
-            if head_idx != tail_idx {
-                let triple = KnowledgeTriple::invalid(
-                    &all_entities[head_idx],
-                    relations[rel_idx],
-                    &all_entities[tail_idx],
-                    "document_random",
-                );
-
-                // Check it's not accidentally valid
-                let is_duplicate = ground_truth.valid_triples.iter().any(|t| {
-                    t.subject == triple.subject && t.predicate == triple.predicate && t.object == triple.object
-                });
-
-                if !is_duplicate {
-                    ground_truth.invalid_triples.push(triple);
-                    invalid_count += 1;
-                }
-            }
-        }
+        invalid
     }
 
     /// Generate entity pairs for relationship inference testing.

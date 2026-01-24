@@ -3,12 +3,6 @@
 //! This module provides the benchmark runner for evaluating the E11 entity
 //! embedder (KEPLER, RoBERTa-base + TransE on Wikidata5M, 768D) and its MCP tool integrations.
 //!
-//! ## KEPLER vs MiniLM (Old E11)
-//!
-//! KEPLER is trained with TransE objective on Wikidata5M (4.8M entities, 20M triples),
-//! making TransE operations (h + r ≈ t) semantically meaningful. Unlike the previous
-//! MiniLM model, relationship inference and knowledge validation actually work.
-//!
 //! ## Benchmarks
 //!
 //! - **Benchmark A: Entity Extraction** - Tests extract_entities tool accuracy
@@ -29,53 +23,7 @@ use serde::{Deserialize, Serialize};
 use tracing::info;
 use uuid::Uuid;
 
-use context_graph_core::entity::{EntityLink, EntityMetadata};
-use std::collections::HashSet;
-
-/// Extract potential entity mentions from text.
-fn extract_entity_mentions(text: &str) -> EntityMetadata {
-    let mut entities = Vec::new();
-    let mut seen = HashSet::new();
-
-    for word in text.split_whitespace() {
-        let clean = word.trim_matches(|c: char| !c.is_alphanumeric() && c != '_' && c != '-');
-        if clean.len() < 2 {
-            continue;
-        }
-
-        let first_char = clean.chars().next().unwrap_or('a');
-        let is_capitalized = first_char.is_uppercase();
-        let is_all_caps = clean.len() > 1 && clean.chars().all(|c| c.is_uppercase() || c.is_numeric());
-        let has_special = clean.contains('_') || clean.contains('-');
-
-        if (is_capitalized || is_all_caps || has_special) && !is_common_word(clean) {
-            let canonical = clean.to_lowercase();
-            if !seen.contains(&canonical) {
-                seen.insert(canonical.clone());
-                entities.push(EntityLink::new(clean));
-            }
-        }
-    }
-
-    EntityMetadata::from_entities(entities)
-}
-
-fn is_common_word(word: &str) -> bool {
-    const COMMON: &[&str] = &[
-        "the", "a", "an", "is", "are", "was", "were", "be", "been", "being",
-        "have", "has", "had", "do", "does", "did", "will", "would", "could",
-        "should", "may", "might", "must", "can", "to", "of", "in", "for", "on",
-        "with", "at", "by", "from", "up", "about", "into", "over", "after",
-        "this", "that", "these", "those", "then", "than", "when", "where",
-        "why", "how", "all", "each", "every", "both", "few", "more", "most",
-        "other", "some", "such", "no", "not", "only", "same", "so", "and",
-        "but", "if", "or", "because", "as", "until", "while", "it", "its",
-        "they", "them", "their", "he", "she", "him", "her", "his", "i", "me",
-        "my", "we", "us", "our", "you", "your", "here", "there", "now", "use",
-        "using", "used", "new", "also", "just", "get", "make", "like", "time",
-    ];
-    COMMON.contains(&word.to_lowercase().as_str())
-}
+use context_graph_core::entity::EntityMetadata;
 
 #[cfg(feature = "real-embeddings")]
 use std::sync::Arc;
@@ -106,6 +54,7 @@ use context_graph_embeddings::{get_warm_provider, initialize_global_warm_provide
 
 use crate::datasets::e11_entity::{
     E11EntityBenchmarkDataset, E11EntityDatasetConfig, E11EntityDatasetLoader,
+    extract_entity_mentions,
 };
 
 #[cfg(feature = "real-embeddings")]
@@ -986,63 +935,24 @@ impl E11EntityBenchmarkRunner {
             }
         }
 
-        // Find optimal threshold ADAPTIVELY based on actual score distributions
-        // This works for any document type, not just tech domain
-        let valid_avg = if valid_scores.is_empty() {
-            0.0f32
-        } else {
-            valid_scores.iter().sum::<f32>() / valid_scores.len() as f32
-        };
-
-        let invalid_avg = if invalid_scores.is_empty() {
-            0.0f32
-        } else {
-            invalid_scores.iter().sum::<f32>() / invalid_scores.len() as f32
-        };
-
-        // Start with midpoint of distributions as baseline threshold
-        let midpoint = (valid_avg + invalid_avg) / 2.0;
-
-        // Search around the midpoint with adaptive step sizes
-        let search_range = (valid_avg - invalid_avg).abs().max(0.1);
-        let step = search_range / 10.0;
-
-        let mut best_threshold = midpoint;
-        let mut best_accuracy = 0.0f64;
-
-        for i in -10..=10 {
-            let threshold = midpoint + (i as f32) * step;
-            let accuracy = TransEMetrics::compute_validation_accuracy(
-                &valid_scores,
-                &invalid_scores,
-                threshold,
-            );
-            if accuracy > best_accuracy {
-                best_accuracy = accuracy;
-                best_threshold = threshold;
-            }
-        }
+        // Find optimal threshold adaptively based on score distributions
+        let (best_threshold, best_accuracy) = find_optimal_threshold(&valid_scores, &invalid_scores);
 
         // Compute confusion matrix at optimal threshold
-        let true_positives = valid_scores.iter().filter(|&&s| s > best_threshold).count();
-        let false_negatives = valid_scores.iter().filter(|&&s| s <= best_threshold).count();
-        let true_negatives = invalid_scores.iter().filter(|&&s| s <= best_threshold).count();
-        let false_positives = invalid_scores.iter().filter(|&&s| s > best_threshold).count();
-
         let confusion_matrix = ConfusionMatrix {
-            true_positives,
-            true_negatives,
-            false_positives,
-            false_negatives,
+            true_positives: valid_scores.iter().filter(|&&s| s > best_threshold).count(),
+            false_negatives: valid_scores.iter().filter(|&&s| s <= best_threshold).count(),
+            true_negatives: invalid_scores.iter().filter(|&&s| s <= best_threshold).count(),
+            false_positives: invalid_scores.iter().filter(|&&s| s > best_threshold).count(),
         };
 
         info!(
             accuracy = best_accuracy,
             threshold = best_threshold,
-            tp = true_positives,
-            tn = true_negatives,
-            fp = false_positives,
-            fn_ = false_negatives,
+            tp = confusion_matrix.true_positives,
+            tn = confusion_matrix.true_negatives,
+            fp = confusion_matrix.false_positives,
+            fn_ = confusion_matrix.false_negatives,
             "E11EntityBenchmarkRunner: Validation benchmark complete"
         );
 
@@ -1101,13 +1011,7 @@ impl E11EntityBenchmarkRunner {
         for ((e1, e2), count) in &cooccurrences {
             if top_entity_set.contains(e1) && top_entity_set.contains(e2) {
                 let weight = *count as f32 / max_cooccur;
-                let relation = if *count >= 5 {
-                    "strongly_related_to"
-                } else if *count >= 2 {
-                    "related_to"
-                } else {
-                    "co_occurs_with"
-                };
+                let relation = cooccurrence_relation(*count);
                 edges.push((e1.clone(), e2.clone(), relation.to_string(), weight));
             }
         }
@@ -1142,6 +1046,43 @@ impl E11EntityBenchmarkRunner {
             top_entities,
             top_relationships,
         })
+    }
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/// Find optimal classification threshold by searching around the midpoint of distributions.
+#[cfg(feature = "real-embeddings")]
+fn find_optimal_threshold(valid_scores: &[f32], invalid_scores: &[f32]) -> (f32, f64) {
+    let avg = |scores: &[f32]| -> f32 {
+        if scores.is_empty() { 0.0 } else { scores.iter().sum::<f32>() / scores.len() as f32 }
+    };
+
+    let valid_avg = avg(valid_scores);
+    let invalid_avg = avg(invalid_scores);
+    let midpoint = (valid_avg + invalid_avg) / 2.0;
+    let step = (valid_avg - invalid_avg).abs().max(0.1) / 10.0;
+
+    (-10..=10)
+        .map(|i| {
+            let threshold = midpoint + (i as f32) * step;
+            let accuracy = TransEMetrics::compute_validation_accuracy(valid_scores, invalid_scores, threshold);
+            (threshold, accuracy)
+        })
+        .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal))
+        .unwrap_or((midpoint, 0.0))
+}
+
+/// Determine relationship strength label based on co-occurrence count.
+fn cooccurrence_relation(count: usize) -> &'static str {
+    if count >= 5 {
+        "strongly_related_to"
+    } else if count >= 2 {
+        "related_to"
+    } else {
+        "co_occurs_with"
     }
 }
 

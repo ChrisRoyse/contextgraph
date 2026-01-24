@@ -1,8 +1,10 @@
-# Context Graph PRD v6.2 (GPU-First 13-Perspectives Multi-Space System)
+# Context Graph PRD v6.3 (GPU-First 13-Perspectives Multi-Space System)
 
 **Platform**: Claude Code CLI | **Architecture**: GPU-First | **Hardware**: RTX 5090 32GB + CUDA 13.1
 
 **Core Insight**: 13 embedders = 13 unique perspectives on every memory, all warm-loaded on GPU
+
+**New in v6.3**: Embedder-first search - AI agents can now search using any of the 13 embedders as the primary perspective, not just E1
 
 ---
 
@@ -116,6 +118,7 @@ Query → E13 GPU sparse (10K) → E1 GPU dense (1K) → GPU RRF (100) → cuML 
 | E1Only | Simple semantic queries | E1 only |
 | MultiSpace | E1 blind spots matter | E1 + enhancers via RRF |
 | Pipeline | Maximum precision | E13 → E1 → E12 |
+| EmbedderFirst | Explore specific perspective | Any embedder as primary |
 
 **Enhancer Routing**:
 - E5: Causal queries ("why", "what caused")
@@ -267,6 +270,52 @@ Native Claude Code hooks via `.claude/settings.json`:
 | `trigger_dream` | NREM replay + REM exploration |
 | `merge_concepts` | Manual memory merge |
 | `forget_concept` | Soft delete (30-day recovery) |
+
+### 8.3 Embedder-First Search (NEW)
+
+**Core Insight**: Each of the 13 embedders sees the knowledge graph from a unique perspective. By default, E1 (semantic) is the foundation, but sometimes another perspective reveals what E1 misses.
+
+**Example**: Query "What framework does Tokio relate to?"
+| Embedder | Finds | Why This Matters |
+|----------|-------|------------------|
+| E1 (semantic) | "async", "runtime" | Generic semantic matches |
+| E11 (entity) | "Rust", "Actix" | Entity relationships via KEPLER |
+| E8 (graph) | "imports", "depends on" | Structural relationships |
+| E7 (code) | `tokio::spawn`, `#[tokio::main]` | Code patterns |
+
+**Embedder-First Tools**:
+
+| Tool | Purpose | Key Params |
+|------|---------|------------|
+| `search_by_embedder` | Search using any embedder (E1-E13) as primary | embedder, query, topK, includeAllScores |
+| `get_embedder_clusters` | Explore clusters in a specific embedder's space | embedder, minClusterSize, topClusters |
+| `compare_embedder_views` | Compare rankings from multiple embedders | query, embedders[], topK |
+| `list_embedder_indexes` | List all embedder indexes with GPU stats | - |
+
+**Use Cases**:
+- **E11 search**: Find entity relationships that E1 misses ("Diesel" = database ORM for Rust)
+- **E7 search**: Find code patterns and implementations
+- **E5 search**: Explore causal relationships (why X caused Y)
+- **E8 search**: Find structural relationships (imports, dependencies)
+- **Compare views**: Understand blind spots by seeing how different embedders rank the same query
+
+### 8.4 Per-Embedder Perspectives
+
+| Embedder | Perspective | What It Finds |
+|----------|-------------|---------------|
+| E1 | Semantic | Dense semantic similarity - foundation |
+| E2 | Recency | Temporal freshness - recent memories first |
+| E3 | Periodic | Time-of-day patterns - daily/weekly cycles |
+| E4 | Sequence | Conversation order - before/after relationships |
+| E5 | Causal | Cause-effect relationships - why X caused Y |
+| E6 | Keyword | Exact keyword matches - precise terminology |
+| E7 | Code | Code patterns - function signatures, AST structure |
+| E8 | Graph | Structural relationships - imports, dependencies |
+| E9 | HDC | Noise-robust structure - typos, variations |
+| E10 | Intent | Goal alignment - similar purpose, different words |
+| E11 | Entity | Entity knowledge - named entities, relationships (KEPLER) |
+| E12 | Precision | Exact phrase matches - token-level precision |
+| E13 | Expansion | Term expansion - synonyms, related terms |
 
 ---
 
