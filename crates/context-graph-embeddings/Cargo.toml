@@ -14,6 +14,7 @@ context-graph-cuda = { path = "../context-graph-cuda" }
 
 # Async runtime
 tokio = { workspace = true }
+futures = "0.3"
 
 # Serialization
 serde = { workspace = true }

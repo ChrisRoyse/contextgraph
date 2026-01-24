@@ -160,26 +160,26 @@ fn test_tokenizer_families() {
 
 #[test]
 fn test_invalid_u8_conversion() {
-    // Before: attempt conversion of invalid value
-    let result = ModelId::try_from(13u8);
+    // Before: attempt conversion of invalid value (14 is outside valid range 0-13)
+    let result = ModelId::try_from(14u8);
 
     // After: verify error
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err(), "Invalid ModelId: must be 0-12");
-    println!("Edge Case 1 PASSED: Invalid u8 (13) correctly rejected");
+    assert_eq!(result.unwrap_err(), "Invalid ModelId: must be 0-13");
+    println!("Edge Case 1 PASSED: Invalid u8 (14) correctly rejected");
 }
 
 #[test]
 fn test_maximum_enum_value() {
-    // Before: get max valid value
-    let max_valid = ModelId::Splade as u8;
+    // Before: get max valid value (Kepler = 13 is now the max)
+    let max_valid = ModelId::Kepler as u8;
     println!("Before: max valid u8 = {}", max_valid);
 
     // After: verify round-trip
     let recovered = ModelId::try_from(max_valid).expect("max valid should convert");
-    assert_eq!(recovered, ModelId::Splade);
+    assert_eq!(recovered, ModelId::Kepler);
     println!("After: recovered = {:?}", recovered);
-    println!("Edge Case 2 PASSED: Maximum value (12) converts correctly");
+    println!("Edge Case 2 PASSED: Maximum value (13) converts correctly");
 }
 
 #[test]

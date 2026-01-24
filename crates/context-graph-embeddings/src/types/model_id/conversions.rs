@@ -24,7 +24,8 @@ impl TryFrom<u8> for ModelId {
             10 => Ok(Self::Entity),
             11 => Ok(Self::LateInteraction),
             12 => Ok(Self::Splade),
-            _ => Err("Invalid ModelId: must be 0-12"),
+            13 => Ok(Self::Kepler),
+            _ => Err("Invalid ModelId: must be 0-13"),
         }
     }
 }
@@ -59,6 +60,7 @@ impl TryFrom<&str> for ModelId {
             "Entity" => Ok(Self::Entity),
             "LateInteraction" => Ok(Self::LateInteraction),
             "Splade" | "SPLADE" => Ok(Self::Splade),
+            "Kepler" | "KEPLER" => Ok(Self::Kepler),
             _ => Err("Invalid ModelId string"),
         }
     }
@@ -130,6 +132,7 @@ impl From<ModelId> for Embedder {
             ModelId::Hdc => Embedder::Hdc,
             ModelId::Multimodal => Embedder::Multimodal,
             ModelId::Entity => Embedder::Entity,
+            ModelId::Kepler => Embedder::Entity, // KEPLER is the new E11, maps to Entity embedder
             ModelId::LateInteraction => Embedder::LateInteraction,
             ModelId::Splade => Embedder::KeywordSplade,
         }

@@ -696,9 +696,9 @@ mod tests {
         let mut query = SemanticFingerprint::zeroed();
         let mut memory = SemanticFingerprint::zeroed();
 
-        // Set entity embeddings with unit distance
-        query.e11_entity = vec![0.0; 384];
-        memory.e11_entity = vec![0.0; 384];
+        // Set entity embeddings with unit distance (KEPLER = 768D)
+        query.e11_entity = vec![0.0; 768];
+        memory.e11_entity = vec![0.0; 768];
         memory.e11_entity[0] = 1.0; // Distance = 1.0
 
         let sim = compute_similarity_for_space(Embedder::Entity, &query, &memory);

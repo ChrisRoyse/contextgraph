@@ -63,11 +63,13 @@ pub use pretrained::{
     CausalModel,
     // CodeModel (E7) - Qodo-Embed-1-1.5B (Qwen2-based)
     CodeModel,
-    // EntityModel (E11) - MiniLM entity
+    // EntityModel (E11 legacy) - MiniLM entity (deprecated, use KeplerModel)
     EntityModel,
     // GraphModel (E8) - sentence-transformers/all-MiniLM-L6-v2
     GraphModel,
     ImageProcessor,
+    // KeplerModel (E11) - RoBERTa-base + TransE on Wikidata5M (768D)
+    KeplerModel,
     // LateInteractionModel (E12) - ColBERT
     LateInteractionModel,
     // MultimodalModel (E10) - CLIP
@@ -98,6 +100,11 @@ pub use pretrained::{
     GRAPH_LATENCY_BUDGET_MS,
     GRAPH_MAX_TOKENS,
     GRAPH_MODEL_NAME,
+    // KEPLER (E11) constants
+    KEPLER_DIMENSION,
+    KEPLER_LATENCY_BUDGET_MS,
+    KEPLER_MAX_TOKENS,
+    KEPLER_MODEL_NAME,
     LATE_INTERACTION_DIMENSION,
     LATE_INTERACTION_LATENCY_BUDGET_MS,
     LATE_INTERACTION_MAX_TOKENS,

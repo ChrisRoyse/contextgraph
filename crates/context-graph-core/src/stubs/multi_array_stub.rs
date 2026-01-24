@@ -289,7 +289,7 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
         fingerprint.e8_graph = Self::fill_dense_embedding(content, 384, 7);
         fingerprint.e9_hdc = Self::fill_dense_embedding(content, 1024, 8); // HDC projected
         fingerprint.e10_multimodal = Self::fill_dense_embedding(content, 768, 9);
-        fingerprint.e11_entity = Self::fill_dense_embedding(content, 384, 10);
+        fingerprint.e11_entity = Self::fill_dense_embedding(content, 768, 10); // KEPLER
 
         // Fill sparse embeddings
         fingerprint.e6_sparse = Self::generate_sparse_vector(content);
@@ -550,7 +550,7 @@ mod tests {
         assert_eq!(fp.e8_graph.len(), 384);
         assert_eq!(fp.e9_hdc.len(), 1024); // HDC projected
         assert_eq!(fp.e10_multimodal.len(), 768);
-        assert_eq!(fp.e11_entity.len(), 384);
+        assert_eq!(fp.e11_entity.len(), 768); // KEPLER
     }
 
     /// Test that sparse vectors are generated correctly.

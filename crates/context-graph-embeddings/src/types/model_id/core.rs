@@ -20,7 +20,8 @@ use super::tokenizer::TokenizerFamily;
 /// | Graph | paraphrase-MiniLM | 384 | Pretrained |
 /// | Hdc | Hyperdimensional | 10K-bit | Custom |
 /// | Multimodal | CLIP | 768 | Pretrained |
-/// | Entity | all-MiniLM | 384 | Pretrained |
+/// | Entity | all-MiniLM | 384 | Pretrained (DEPRECATED) |
+/// | Kepler | KEPLER (RoBERTa + TransE) | 768 | Pretrained |
 /// | LateInteraction | ColBERT | 128/token | Pretrained |
 /// | Splade | SPLADE v3 | ~30K sparse | Pretrained |
 ///
@@ -57,11 +58,15 @@ pub enum ModelId {
     /// E10: Multimodal using openai/clip-vit-large-patch14 (768D)
     Multimodal = 9,
     /// E11: Entity using sentence-transformers/all-MiniLM-L6-v2 (384D)
+    /// DEPRECATED: Use Kepler instead for meaningful TransE operations.
     Entity = 10,
     /// E12: Late interaction using colbert-ir/colbertv2.0 (128D per token)
     LateInteraction = 11,
     /// E13: SPLADE v3 sparse embedding for Stage 1 recall in 5-stage pipeline
     Splade = 12,
+    /// E11 (new): KEPLER - RoBERTa-base trained with TransE on Wikidata5M (768D)
+    /// Replaces Entity (all-MiniLM-L6-v2) for meaningful knowledge graph operations.
+    Kepler = 13,
 }
 
 impl ModelId {
@@ -85,6 +90,7 @@ impl ModelId {
             Self::Entity => 384,
             Self::LateInteraction => 128, // Per-token dimension
             Self::Splade => 30522,        // SPLADE v3 vocab size
+            Self::Kepler => 768,          // KEPLER (RoBERTa-base)
         }
     }
 
@@ -102,6 +108,7 @@ impl ModelId {
             Self::Sparse => 1536,  // 30K -> 1536 via learned projection
             Self::Hdc => 1024,     // 10K-bit -> 1024 via projection
             Self::Splade => 1536,  // 30K -> 1536 via learned projection (same as E6)
+            Self::Kepler => 768,   // No projection needed
             _ => self.dimension(), // No projection needed (Code is now native 1536D)
         }
     }
@@ -140,6 +147,7 @@ impl ModelId {
             | Self::TemporalPositional
             | Self::Hdc => usize::MAX, // Custom models: no token limit
             Self::Splade => 512,    // SPLADE v3 uses BERT tokenizer limit
+            Self::Kepler => 512,    // KEPLER uses RoBERTa tokenizer limit
             _ => 512,               // Standard BERT-family limit
         }
     }
@@ -158,6 +166,7 @@ impl ModelId {
             Self::Graph => TokenizerFamily::BertWordpiece,    // MiniLM uses BERT
             Self::Multimodal => TokenizerFamily::ClipBpe,     // CLIP has its own BPE
             Self::Entity => TokenizerFamily::BertWordpiece,   // all-MiniLM uses BERT
+            Self::Kepler => TokenizerFamily::RobertaBpe,      // KEPLER uses RoBERTa/GPT-2 BPE
             Self::LateInteraction => TokenizerFamily::BertWordpiece, // ColBERT uses BERT
             Self::Splade => TokenizerFamily::BertWordpiece,   // SPLADE v3 uses BERT
             Self::TemporalRecent
@@ -214,6 +223,7 @@ impl ModelId {
             Self::Hdc => 1,
             Self::Multimodal => 15,
             Self::Entity => 2,
+            Self::Kepler => 5,          // Slightly slower than Entity due to larger model
             Self::LateInteraction => 8,
             Self::Splade => 3, // Similar to E6 Sparse
         }
@@ -236,6 +246,7 @@ impl ModelId {
             Self::Hdc => "hdc",
             Self::Multimodal => "multimodal",
             Self::Entity => "entity",
+            Self::Kepler => "kepler",
             Self::LateInteraction => "late_interaction",
             Self::Splade => "splade",
         }

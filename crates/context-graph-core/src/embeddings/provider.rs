@@ -518,7 +518,7 @@ mod tests {
         assert_eq!(fp.e10_multimodal_as_intent.len(), 768, "E10 intent should be 768D");
         assert_eq!(fp.e10_multimodal_as_context.len(), 768, "E10 context should be 768D");
         assert!(fp.e10_multimodal.is_empty(), "E10 legacy should be empty in new format");
-        assert_eq!(fp.e11_entity.len(), 384, "E11 should be 384D");
+        assert_eq!(fp.e11_entity.len(), 768, "E11 should be 768D (KEPLER)");
         // E12 should have tokens
         assert!(!fp.e12_late_interaction.is_empty(), "E12 should have tokens");
         for token in &fp.e12_late_interaction {

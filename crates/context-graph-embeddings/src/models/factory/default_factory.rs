@@ -12,8 +12,8 @@ use crate::models::custom::{
     HdcModel, TemporalPeriodicModel, TemporalPositionalModel, TemporalRecentModel,
 };
 use crate::models::pretrained::{
-    CausalModel, CodeModel, EntityModel, GraphModel, LateInteractionModel, MultimodalModel,
-    SemanticModel, SparseModel,
+    CausalModel, CodeModel, EntityModel, GraphModel, KeplerModel, LateInteractionModel,
+    MultimodalModel, SemanticModel, SparseModel,
 };
 
 // ============================================================================
@@ -118,6 +118,7 @@ impl DefaultModelFactory {
             ModelId::Graph => "graph",
             ModelId::Multimodal => "multimodal",
             ModelId::Entity => "entity",
+            ModelId::Kepler => "kepler",
             ModelId::LateInteraction => "late-interaction",
             ModelId::Splade => "splade-v3",
             // Custom models don't need model files
@@ -168,6 +169,10 @@ impl DefaultModelFactory {
             }
             ModelId::Entity => {
                 let model = EntityModel::new(&model_path, config.clone())?;
+                Ok(Box::new(model))
+            }
+            ModelId::Kepler => {
+                let model = KeplerModel::new(&model_path, config.clone())?;
                 Ok(Box::new(model))
             }
             ModelId::LateInteraction => {

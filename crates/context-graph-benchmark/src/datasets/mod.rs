@@ -5,6 +5,7 @@
 
 pub mod causal;
 pub mod e1_semantic;
+pub mod e11_entity;
 pub mod generator;
 pub mod ground_truth;
 pub mod mcp_intent;
@@ -36,6 +37,11 @@ pub use mcp_intent::{
     MCPIntentDatasetGenerator, MCPIntentDatasetStats,
 };
 pub use topic_clusters::{TopicCluster, TopicGenerator};
+pub use e11_entity::{
+    E11EntityBenchmarkDataset, E11EntityDatasetConfig, E11EntityDatasetLoader,
+    E11EntityDatasetStats, EntityDocument, EntityGroundTruth, EntityLinkSerializable,
+    EntityPair, KnowledgeTriple,
+};
 
 use std::collections::{HashMap, HashSet};
 use uuid::Uuid;

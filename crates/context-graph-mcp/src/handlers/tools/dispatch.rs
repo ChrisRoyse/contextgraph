@@ -124,6 +124,16 @@ impl Handlers {
                 self.call_find_contextual_matches(id, arguments).await
             }
 
+            // ========== ENTITY TOOLS (E11 Entity Integration) ==========
+            tool_names::EXTRACT_ENTITIES => self.call_extract_entities(id, arguments).await,
+            tool_names::SEARCH_BY_ENTITIES => self.call_search_by_entities(id, arguments).await,
+            tool_names::INFER_RELATIONSHIP => self.call_infer_relationship(id, arguments).await,
+            tool_names::FIND_RELATED_ENTITIES => {
+                self.call_find_related_entities(id, arguments).await
+            }
+            tool_names::VALIDATE_KNOWLEDGE => self.call_validate_knowledge(id, arguments).await,
+            tool_names::GET_ENTITY_GRAPH => self.call_get_entity_graph(id, arguments).await,
+
             // Unknown tool
             _ => JsonRpcResponse::error(
                 id,

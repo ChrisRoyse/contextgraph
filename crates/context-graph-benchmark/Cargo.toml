@@ -19,6 +19,7 @@ context-graph-storage = { path = "../context-graph-storage" }
 # Async runtime
 tokio = { workspace = true }
 async-trait = { workspace = true }
+futures = "0.3"
 
 # Serialization
 serde = { workspace = true }
@@ -152,3 +153,7 @@ path = "src/bin/e4_hybrid_session_bench.rs"
 [[bin]]
 name = "e1-semantic-bench"
 path = "src/bin/e1_semantic_bench.rs"
+
+[[bin]]
+name = "e11-entity-bench"
+path = "src/bin/e11_entity_bench.rs"

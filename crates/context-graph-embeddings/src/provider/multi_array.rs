@@ -568,7 +568,10 @@ pub struct ProductionMultiArrayProvider {
     /// Per E10 Upgrade: Uses ContextualDualEmbedderAdapter to produce genuinely different
     /// vectors for intent vs context roles.
     e10_contextual: Arc<ContextualDualEmbedderAdapter>,
-    /// E11: Entity embedder (MiniLM, 384D)
+    /// E11: Entity embedder (KEPLER, 768D)
+    ///
+    /// KEPLER is RoBERTa-base trained with TransE on Wikidata5M (4.8M entities, 20M triples).
+    /// Unlike the previous MiniLM model, TransE operations (h + r ≈ t) are semantically meaningful.
     e11_entity: Arc<dyn SingleEmbedder>,
     /// E12: Late-Interaction embedder (ColBERT, 128D per token)
     e12_late_interaction: Arc<dyn TokenEmbedder>,
@@ -631,7 +634,8 @@ impl ProductionMultiArrayProvider {
         let e10_contextual_model =
             ContextualModel::new(&models_dir.join("contextual"), config.clone())?;
 
-        let e11_model = factory.create_model(ModelId::Entity, &config)?;
+        // E11: Use KEPLER (RoBERTa-base + TransE) for entity embeddings
+        let e11_model = factory.create_model(ModelId::Kepler, &config)?;
         let e12_model = factory.create_model(ModelId::LateInteraction, &config)?;
         let e13_model = factory.create_model(ModelId::Splade, &config)?;
 
@@ -698,7 +702,7 @@ impl ProductionMultiArrayProvider {
 
         let e11_entity: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
             e11_model,
-            ModelId::Entity,
+            ModelId::Kepler,
             E11_DIM,
         ));
         let e12_late_interaction: Arc<dyn TokenEmbedder> = Arc::new(TokenEmbedderAdapter::new(
@@ -719,7 +723,7 @@ impl ProductionMultiArrayProvider {
             ModelId::Graph.as_str().to_string(),
             ModelId::Hdc.as_str().to_string(),
             ModelId::Multimodal.as_str().to_string(),
-            ModelId::Entity.as_str().to_string(),
+            ModelId::Kepler.as_str().to_string(), // E11: KEPLER (was Entity/MiniLM)
             ModelId::LateInteraction.as_str().to_string(),
             ModelId::Splade.as_str().to_string(),
         ];
@@ -1124,20 +1128,203 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
 
     /// Generate fingerprints for multiple contents in batch.
     ///
-    /// Processes contents sequentially but with parallel embedder execution per content.
-    /// For large batches, consider chunking to avoid memory pressure.
+    /// Processes contents concurrently using tokio::spawn for GPU parallelism.
+    /// All 13 embedders run in parallel for each content, and contents are
+    /// processed concurrently across multiple GPU streams.
     ///
     /// # Performance Target
     ///
     /// 64 contents: <100ms per item average
+    ///
+    /// # GPU Optimization
+    ///
+    /// Uses concurrent tokio tasks to maximize GPU utilization. Each task
+    /// runs embed_all() which itself runs all 13 embedders in parallel.
     async fn embed_batch_all(
         &self,
         contents: &[String],
     ) -> CoreResult<Vec<MultiArrayEmbeddingOutput>> {
+        use futures::future::join_all;
+
+        // Clone self for spawned tasks (Arc references are cheap to clone)
+        let e1 = Arc::clone(&self.e1_semantic);
+        let e2 = Arc::clone(&self.e2_temporal_recent);
+        let e3 = Arc::clone(&self.e3_temporal_periodic);
+        let e4 = Arc::clone(&self.e4_temporal_positional);
+        let e5 = Arc::clone(&self.e5_causal);
+        let e6 = Arc::clone(&self.e6_sparse);
+        let e7 = Arc::clone(&self.e7_code);
+        let e8 = Arc::clone(&self.e8_graph);
+        let e9 = Arc::clone(&self.e9_hdc);
+        let e10 = Arc::clone(&self.e10_contextual);
+        let e11 = Arc::clone(&self.e11_entity);
+        let e12 = Arc::clone(&self.e12_late_interaction);
+        let e13 = Arc::clone(&self.e13_splade);
+        let model_ids = self.model_ids.clone();
+
+        // Spawn concurrent tasks for each content
+        let tasks: Vec<_> = contents
+            .iter()
+            .map(|content| {
+                let content = content.clone();
+                let e1 = Arc::clone(&e1);
+                let e2 = Arc::clone(&e2);
+                let e3 = Arc::clone(&e3);
+                let e4 = Arc::clone(&e4);
+                let e5 = Arc::clone(&e5);
+                let e6 = Arc::clone(&e6);
+                let e7 = Arc::clone(&e7);
+                let e8 = Arc::clone(&e8);
+                let e9 = Arc::clone(&e9);
+                let e10 = Arc::clone(&e10);
+                let e11 = Arc::clone(&e11);
+                let e12 = Arc::clone(&e12);
+                let e13 = Arc::clone(&e13);
+                let model_ids = model_ids.clone();
+
+                tokio::spawn(async move {
+                    let start = Instant::now();
+
+                    // Run all 13 embedders in parallel for this content
+                    let (
+                        (r1, d1),
+                        (r2, d2),
+                        (r3, d3),
+                        (r4, d4),
+                        (r5, d5),
+                        (r6, d6),
+                        (r7, d7),
+                        (r8, d8),
+                        (r9, d9),
+                        (r10, d10),
+                        (r11, d11),
+                        (r12, d12),
+                        (r13, d13),
+                    ) = tokio::join!(
+                        Self::timed_embed("E1_Semantic", {
+                            let c = content.clone();
+                            async move { e1.embed(&c).await }
+                        }),
+                        Self::timed_embed("E2_TemporalRecent", {
+                            let c = content.clone();
+                            async move { e2.embed(&c).await }
+                        }),
+                        Self::timed_embed("E3_TemporalPeriodic", {
+                            let c = content.clone();
+                            async move { e3.embed(&c).await }
+                        }),
+                        Self::timed_embed("E4_TemporalPositional", {
+                            let c = content.clone();
+                            async move { e4.embed(&c).await }
+                        }),
+                        Self::timed_embed("E5_Causal_Dual", {
+                            let c = content.clone();
+                            async move { e5.embed_dual(&c).await }
+                        }),
+                        Self::timed_embed("E6_Sparse", {
+                            let c = content.clone();
+                            async move { e6.embed_sparse(&c).await }
+                        }),
+                        Self::timed_embed("E7_Code", {
+                            let c = content.clone();
+                            async move { e7.embed(&c).await }
+                        }),
+                        Self::timed_embed("E8_Graph_Dual", {
+                            let c = content.clone();
+                            async move { e8.embed_dual(&c).await }
+                        }),
+                        Self::timed_embed("E9_HDC", {
+                            let c = content.clone();
+                            async move { e9.embed(&c).await }
+                        }),
+                        Self::timed_embed("E10_Contextual_Dual", {
+                            let c = content.clone();
+                            async move { e10.embed_dual(&c).await }
+                        }),
+                        Self::timed_embed("E11_Entity", {
+                            let c = content.clone();
+                            async move { e11.embed(&c).await }
+                        }),
+                        Self::timed_embed("E12_LateInteraction", {
+                            let c = content.clone();
+                            async move { e12.embed_tokens(&c).await }
+                        }),
+                        Self::timed_embed("E13_SPLADE", {
+                            let c = content.clone();
+                            async move { e13.embed_sparse(&c).await }
+                        }),
+                    );
+
+                    // Collect results
+                    let e1_vec = r1?;
+                    let e2_vec = r2?;
+                    let e3_vec = r3?;
+                    let e4_vec = r4?;
+                    let (e5_cause_vec, e5_effect_vec) = r5?;
+                    let e6_sparse = r6?;
+                    let e7_vec = r7?;
+                    let (e8_source_vec, e8_target_vec) = r8?;
+                    let e9_vec = r9?;
+                    let (e10_intent_vec, e10_context_vec) = r10?;
+                    let e11_vec = r11?;
+                    let e12_tokens = r12?;
+                    let e13_sparse = r13?;
+
+                    let total_latency = start.elapsed();
+
+                    let fingerprint = SemanticFingerprint {
+                        e1_semantic: e1_vec,
+                        e2_temporal_recent: e2_vec,
+                        e3_temporal_periodic: e3_vec,
+                        e4_temporal_positional: e4_vec,
+                        e5_causal_as_cause: e5_cause_vec,
+                        e5_causal_as_effect: e5_effect_vec,
+                        e5_causal: Vec::new(),
+                        e6_sparse,
+                        e7_code: e7_vec,
+                        e8_graph_as_source: e8_source_vec,
+                        e8_graph_as_target: e8_target_vec,
+                        e8_graph: Vec::new(),
+                        e9_hdc: e9_vec,
+                        e10_multimodal_as_intent: e10_intent_vec,
+                        e10_multimodal_as_context: e10_context_vec,
+                        e10_multimodal: Vec::new(),
+                        e11_entity: e11_vec,
+                        e12_late_interaction: e12_tokens,
+                        e13_splade: e13_sparse,
+                    };
+
+                    let per_embedder_latency =
+                        [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13];
+
+                    Ok::<_, CoreError>(MultiArrayEmbeddingOutput {
+                        fingerprint,
+                        total_latency,
+                        per_embedder_latency,
+                        model_ids,
+                    })
+                })
+            })
+            .collect();
+
+        // Wait for all tasks to complete
+        let task_results = join_all(tasks).await;
+
+        // Collect results, propagating any errors
         let mut results = Vec::with_capacity(contents.len());
-        for content in contents {
-            results.push(self.embed_all(content).await?);
+        for result in task_results {
+            match result {
+                Ok(Ok(output)) => results.push(output),
+                Ok(Err(e)) => return Err(e),
+                Err(e) => {
+                    return Err(CoreError::Internal(format!(
+                        "Batch embedding task failed: {}",
+                        e
+                    )))
+                }
+            }
         }
+
         Ok(results)
     }
 

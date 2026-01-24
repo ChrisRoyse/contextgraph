@@ -16,6 +16,7 @@ pub mod clustering;
 pub mod divergence;
 pub mod e1_semantic;
 pub mod e4_hybrid_session;
+pub mod e11_entity;
 pub mod mcp_intent;
 pub mod multimodal;
 pub mod performance;
@@ -52,6 +53,12 @@ pub use mcp_intent::{
 pub use validation::{
     ValidationMetrics, ToolValidationMetrics, TestCaseResult,
     BoundaryTestConfig, BoundaryTestValue, sequence_tool_boundary_configs,
+};
+pub use e11_entity::{
+    E11EntityMetrics, E11PerformanceMetrics, EntityGraphMetrics, EntityRetrievalMetrics,
+    EntityTypeMetrics, ExtractionMetrics, LatencyStats, RetrievalApproachComparison,
+    ScoreDistribution, TransEMetrics, thresholds as e11_thresholds,
+    compute_mrr as e11_compute_mrr, compute_ndcg_at_k as e11_compute_ndcg,
 };
 
 /// Combined metrics for a single benchmark run.

@@ -70,6 +70,7 @@ impl ModelFactory for DefaultModelFactory {
             | ModelId::Graph
             | ModelId::Multimodal
             | ModelId::Entity
+            | ModelId::Kepler
             | ModelId::LateInteraction
             | ModelId::Splade => self.create_pretrained_model(model_id, config),
 

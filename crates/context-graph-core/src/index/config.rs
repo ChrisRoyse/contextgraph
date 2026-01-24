@@ -44,8 +44,8 @@ pub const E9_DIM: usize = 1024;
 /// E10 Multimodal: 768D (CLIP)
 pub const E10_DIM: usize = 768;
 
-/// E11 Entity: 384D (MiniLM)
-pub const E11_DIM: usize = 384;
+/// E11 Entity: 768D (KEPLER RoBERTa-base + TransE)
+pub const E11_DIM: usize = 768;
 
 /// E12 Late Interaction: 128D per token (ColBERT)
 pub const E12_TOKEN_DIM: usize = 128;
@@ -128,7 +128,7 @@ pub enum EmbedderIndex {
     E9HDC,
     /// E10: 768D multimodal
     E10Multimodal,
-    /// E11: 384D entity
+    /// E11: 768D entity (KEPLER)
     E11Entity,
     /// E12: ColBERT (NOT HNSW)
     E12LateInteraction,

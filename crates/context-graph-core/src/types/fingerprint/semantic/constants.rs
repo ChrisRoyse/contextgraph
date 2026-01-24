@@ -14,7 +14,7 @@
 //! | E8 | MiniLM (Graph) | 384 |
 //! | E9 | HDC (projected) | 1024 |
 //! | E10 | CLIP | 768 |
-//! | E11 | MiniLM (Entity) | 384 |
+//! | E11 | KEPLER (Entity) | 768 |
 //! | E12 | ColBERT (Late-Interaction) | 128 per token |
 //! | E13 | SPLADE v3 (Sparse) | 30522 vocab |
 
@@ -52,8 +52,9 @@ pub const E9_DIM: usize = 1024;
 /// E10: Multimodal (CLIP) embedding dimension.
 pub const E10_DIM: usize = 768;
 
-/// E11: Entity (MiniLM for facts) embedding dimension.
-pub const E11_DIM: usize = 384;
+/// E11: Entity (KEPLER for knowledge graph) embedding dimension.
+/// Updated from 384D (MiniLM) to 768D (KEPLER RoBERTa-base + TransE).
+pub const E11_DIM: usize = 768;
 
 /// E12: Late-Interaction (ColBERT) per-token embedding dimension.
 pub const E12_TOKEN_DIM: usize = 128;
@@ -71,6 +72,6 @@ pub const NUM_EMBEDDERS: usize = 13;
 /// Total dense dimensions (excluding E6 sparse, E12 variable-length, and E13 sparse).
 ///
 /// Calculated as: E1 + E2 + E3 + E4 + E5 + E7 + E8 + E9 + E10 + E11
-/// = 1024 + 512 + 512 + 512 + 768 + 1536 + 384 + 1024 + 768 + 384 = 7424
+/// = 1024 + 512 + 512 + 512 + 768 + 1536 + 384 + 1024 + 768 + 768 = 7808
 pub const TOTAL_DENSE_DIMS: usize =
     E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E7_DIM + E8_DIM + E9_DIM + E10_DIM + E11_DIM;

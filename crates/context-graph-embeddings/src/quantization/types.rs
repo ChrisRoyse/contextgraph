@@ -67,7 +67,8 @@ impl QuantizationMethod {
             ModelId::TemporalPeriodic => Self::Float8E4M3, // E3
             ModelId::TemporalPositional => Self::Float8E4M3, // E4
             ModelId::Graph => Self::Float8E4M3,          // E8
-            ModelId::Entity => Self::Float8E4M3,         // E11
+            ModelId::Entity => Self::Float8E4M3,         // E11 (deprecated)
+            ModelId::Kepler => Self::PQ8,                // E11 (new KEPLER, 768D like Causal)
 
             // Binary: Hyperdimensional computing
             ModelId::Hdc => Self::Binary, // E9

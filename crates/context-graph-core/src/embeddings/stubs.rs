@@ -151,7 +151,7 @@ impl StubSingleEmbedder {
         Self::new(Embedder::Multimodal)
     }
 
-    /// Create stub embedder for E11 (Entity, 384D).
+    /// Create stub embedder for E11 (Entity/KEPLER, 768D).
     pub fn for_e11() -> Self {
         Self::new(Embedder::Entity)
     }
@@ -496,7 +496,7 @@ mod tests {
         assert_eq!(StubSingleEmbedder::for_e8().dimension(), 384);
         assert_eq!(StubSingleEmbedder::for_e9().dimension(), 1024);
         assert_eq!(StubSingleEmbedder::for_e10().dimension(), 768);
-        assert_eq!(StubSingleEmbedder::for_e11().dimension(), 384);
+        assert_eq!(StubSingleEmbedder::for_e11().dimension(), 768); // KEPLER
     }
 
     // ========================================================================

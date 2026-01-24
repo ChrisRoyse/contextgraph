@@ -225,7 +225,7 @@ pub struct SemanticFingerprint {
     #[serde(default)]
     pub e10_multimodal: Vec<f32>,
 
-    /// E11: Entity (MiniLM for facts) - 384D dense embedding.
+    /// E11: Entity (KEPLER for knowledge graph) - 768D dense embedding.
     pub e11_entity: Vec<f32>,
 
     /// E12: Late-Interaction (ColBERT) - 128D per token, variable token count.

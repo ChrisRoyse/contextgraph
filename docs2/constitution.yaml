@@ -1,1311 +1,177 @@
-# Context Graph Constitution v6.2.0 (Fingerprint Architecture + E10 Multiplicative Boost)
-# E1 Semantic Foundation | 12 Enhancement Layers | Emergent Topics | Native Hooks
-# ===============================================================================
+# Context Graph Constitution v6.3.0
+# 13-Perspectives Collaboration | E1 Foundation | Native Hooks
+# ═══════════════════════════════════════════════════════════════
+
+# CORE PHILOSOPHY: 13 embedders = 13 unique perspectives on every memory
+# Each finds what OTHERS MISS. Combined = superior answers.
 #
-# CORE PHILOSOPHY: The 13 embedders create FINGERPRINTS for memories.
-# E1 (V_meaning) is THE semantic foundation. Other embedders ENHANCE E1,
-# they don't compete with it. This is a foundation+enhancement model.
-#
-# v6.2.0 CHANGES: E10 now uses multiplicative boost (ARCH-28 to ARCH-33)
-# instead of linear blending. E10 ENHANCES E1 based on intent alignment,
-# it doesn't compete with E1 in weighted fusion. See mcp.intent_tools section.
+# Example: Query "What databases work with Rust?"
+# - E1 finds: "database" or "Rust" semantically
+# - E11 finds: "Diesel" (knows Diesel IS a database ORM - E1 missed this)
+# - E7 finds: code using sqlx, diesel crates
+# - Combined: Better answer than any single embedder
 
-meta:
-  v: "6.2.0"
-  name: "Ultimate Context Graph"
-  desc: "13-embedding fingerprint system with E1 semantic foundation, enhanced by 12 specialized embedders for rich memory representation"
-  paradigm: "E1-Foundation + Enhancement Layers for Semantic Fingerprinting"
-  hook_architecture: "NATIVE Claude Code hooks ONLY (via .claude/settings.json)"
+# ═══════════════════════════════════════════════════════════════
+# EMBEDDERS (13 Perspectives)
+# ═══════════════════════════════════════════════════════════════
+embedders:
+  # FOUNDATION
+  E1: { name: V_meaning, dim: 1024, finds: "Semantic similarity", misses: "Entities, code patterns, causal links" }
 
-  # CORE DESIGN PHILOSOPHY
-  # The 13 embedders exist to create rich FINGERPRINTS for memories.
-  # E1 (V_meaning) is THE semantic embedder - the foundation of understanding.
-  # The other 12 embedders ENHANCE E1's semantic foundation with specialized intelligence:
-  # - They add dimensions of understanding (causal, temporal, structural, etc.)
-  # - They do NOT compete with E1 - they AUGMENT it
-  # - This is a foundation+enhancement model, NOT a peer fusion model
+  # SEMANTIC ENHANCERS (topic_weight: 1.0)
+  E5: { name: V_causality, dim: 768, finds: "Causal chains (why X caused Y)", misses_by_E1: "Direction lost" }
+  E6: { name: V_selectivity, sparse: true, finds: "Exact keyword matches", misses_by_E1: "Diluted by averaging" }
+  E7: { name: V_correctness, dim: 1536, finds: "Code patterns, function signatures", misses_by_E1: "Treats code as NL" }
+  E10: { name: V_multimodality, dim: 768, finds: "Same-goal work (different words)", integration: "Multiplicative boost on E1" }
+  E12: { name: V_precision, per_token: true, finds: "Exact phrase matches", use: "Reranking only" }
+  E13: { name: V_keyword_precision, sparse: true, finds: "Term expansions (fast→quick)", use: "Stage 1 recall" }
 
-# ABBREVIATIONS
-# TF=Teleological Fingerprint, TP=Topic Profile (13D)
-# TS=Topic Stability, TPF=Topic Portfolio
-# weighted_agreement=Sum of category-weighted cluster membership
-# E1-E13=Embedder spaces, HDBSCAN=Density clustering, BIRCH=Online clustering
+  # RELATIONAL ENHANCERS (topic_weight: 0.5)
+  E8: { name: V_connectivity, dim: 384, finds: "Graph structure (X imports Y)" }
+  E11: { name: V_factuality, dim: 384, finds: "Entity knowledge (Diesel=database ORM)" }
 
-# ===============================================================================
-# TECH STACK
-# ===============================================================================
-stack:
-  lang: { rust: "1.75+", edition: "2021", cuda: "13.1" }
-  gpu: { target: "RTX 5090", vram: "32GB", compute: "12.0" }
-  deps: [tokio@1.35+, serde@1.0+, uuid@1.6+, chrono@0.4+, rmcp@0.1+, cudarc@0.10+, faiss@0.12+gpu, rocksdb@0.21+, scylladb@1.0+, hdbscan@0.5+, birch@0.3+]
-  db:
-    primary: { dev: rocksdb, prod: scylladb }
-    indexes: { per_embedder: "13x HNSW", matryoshka_128d: HNSW, splade_inverted: inverted, topic: "13D topic_profile HNSW" }
-    temporal: timescaledb
-    cache: redis7+
+  # TEMPORAL CONTEXT (topic_weight: 0.0, POST-RETRIEVAL ONLY)
+  E2: { name: V_freshness, dim: 512, finds: "Recency" }
+  E3: { name: V_periodicity, dim: 512, finds: "Time-of-day patterns" }
+  E4: { name: V_ordering, dim: 512, finds: "Sequence (before/after)" }
 
-# ===============================================================================
-# DIRECTORY STRUCTURE
-# ===============================================================================
-dirs:
-  crates/:
-    context-graph-mcp/: "tools/, resources/, handlers/, adapters/"
-    context-graph-core/: "graph/, search/, utl/, session/, curation/, teleological/, topic/, clustering/, dream/"
-    context-graph-cuda/: "kernels/, hnsw/, neuromod/"
-    context-graph-embeddings/: "models/, fingerprint/"
-    context-graph-storage/: "rocksdb/, scylla/, indexes/, temporal/"
-    context-graph-cli/: "commands/, hooks/"
-  specs/: [functional/, technical/, tasks/]
-  tests/: [integration/, benchmarks/, fixtures/, chaos/, validation/]
-  hooks/: [session-start.sh, pre-tool-use.sh, post-tool-use.sh, user-prompt-submit.sh, stop.sh, session-end.sh]
+  # STRUCTURAL (topic_weight: 0.5)
+  E9: { name: V_robustness, dim: 1024, finds: "Noise-robust structure" }
 
-# ===============================================================================
-# ARCHITECTURAL RULES (Critical - must not violate)
-# ===============================================================================
+# ═══════════════════════════════════════════════════════════════
+# ARCHITECTURAL RULES (MUST follow)
+# ═══════════════════════════════════════════════════════════════
 arch_rules:
-  ARCH-01: "TeleologicalArray is atomic - store all 13 embeddings or nothing"
-  ARCH-02: "Apples-to-apples only - compare E1<->E1, E4<->E4, never E1<->E5"
-  ARCH-03: "Autonomous operation - goals emerge from topic clustering, no manual goal setting"
-  ARCH-04: "Temporal embedders (E2-E4) NEVER count toward topic detection - metadata only"
-  ARCH-05: "All 13 embedders required - missing embedder is fatal error"
-  ARCH-06: "All memory ops through MCP tools - no direct DB access"
-  ARCH-07: "NATIVE Claude Code hooks (.claude/settings.json) control memory lifecycle - NOT internal/built-in hooks"
-  ARCH-08: "CUDA GPU required for production - no CPU fallbacks"
-  ARCH-09: "Topic threshold is weighted_agreement >= 2.5 (not raw space count)"
-  ARCH-10: "Divergence detection uses SEMANTIC embedders only (E1, E5, E6, E7, E10, E12, E13)"
-  ARCH-11: "Memory sources: HookDescription, ClaudeResponse, MDFileChunk"
+  # Core
+  ARCH-01: "TeleologicalArray is atomic - all 13 embeddings or nothing"
+  ARCH-02: "Apples-to-apples only - compare E1↔E1, never E1↔E5"
+  ARCH-04: "Temporal (E2-E4) NEVER count toward topics"
+  ARCH-05: "All 13 embedders required - missing = fatal"
+  ARCH-06: "All memory ops through MCP tools only"
+  ARCH-09: "Topic threshold: weighted_agreement >= 2.5"
+  ARCH-10: "Divergence detection: SEMANTIC embedders only (E1,E5,E6,E7,E10,E12,E13)"
 
-  # FINGERPRINT ARCHITECTURE (Core Philosophy)
-  ARCH-12: "E1 is THE semantic foundation - all retrieval starts with E1, other embedders enhance"
-  ARCH-13: "Search strategies: E1Only (default), MultiSpace (E1 + enhancers), Pipeline (E1 + stages)"
-  ARCH-14: "Weight profiles MUST have E2-E4=0.0 (temporal), E12=0.0 (rerank-only), E13=0.0 (recall-only) for semantic scoring profiles"
-  ARCH-15: "Recency boost is applied POST-retrieval as: final = semantic*(1-boost) + temporal*boost"
-  ARCH-16: "E1 provides baseline retrieval; enhancement embedders (E5,E6,E7,E10) add specialized precision"
-  ARCH-17: "When E1 returns strong matches (sim>0.8), enhancement embedders refine; when weak, they broaden"
+  # Retrieval Pipeline
+  ARCH-12: "E1 is foundation - all retrieval starts with E1"
+  ARCH-13: "Strategies: E1Only (default), MultiSpace (E1+enhancers), Pipeline (E13→E1→E12)"
+  ARCH-17: "Strong E1 (>0.8): enhancers refine. Weak E1 (<0.4): enhancers broaden"
+  ARCH-18: "E5 Causal: asymmetric similarity (cause→effect direction matters)"
+  ARCH-21: "Multi-space fusion: use Weighted RRF, not weighted sum"
 
-  # Embedder-Specific Optimizations (from retrieval research)
-  ARCH-18: "E5 Causal MUST use asymmetric similarity with separate cause/effect vector encodings - cause→effect direction matters"
-  ARCH-19: "E7 Code MUST detect query type (Code2Code vs Text2Code) and use appropriate encoder for each"
-  ARCH-20: "E11 Entity SHOULD use entity linking for disambiguation when possible, not just embedding similarity"
-  ARCH-21: "Multi-space fusion SHOULD use Weighted Reciprocal Rank Fusion (RRF), not weighted score sum"
+  # E10 Multiplicative Boost
+  ARCH-28: "E10 uses multiplicative boost: E1 * (1 + boost), NOT linear blending"
+  ARCH-29: "E10 boost adapts: strong E1=5%, medium=10%, weak=15%"
+  ARCH-30: "E10 alignment: >0.5=boost, <0.5=reduce, =0.5=neutral"
+  ARCH-33: "E10 multiplier clamped to [0.8, 1.2]"
 
-  # Temporal Embedder Usage (E2/E3/E4) - POST-RETRIEVAL ONLY
-  ARCH-22: "E2 recency MUST support configurable decay functions (linear, exponential, step) for freshness scoring"
-  ARCH-23: "E3 periodic MUST be used for time-of-day/day-of-week pattern matching via cosine similarity"
-  ARCH-24: "E4 sequence MUST be used for before/after temporal ordering with directional filtering"
-  ARCH-25: "Temporal boosts MUST be applied POST-retrieval as score adjustments, NOT in similarity fusion"
-  ARCH-26: "Session filtering MUST use session_id from SourceMetadata for same-session retrieval"
-  ARCH-27: "Temporal scale (micro/meso/macro/long/archival) determines decay half-life defaults"
+  # Temporal (POST-RETRIEVAL ONLY)
+  ARCH-25: "Temporal boosts POST-retrieval only, NOT in similarity fusion"
 
-  # E10 Intent/Context Enhancement (Multiplicative Boost Model)
-  ARCH-28: "E10 MUST use multiplicative boost (not linear blending) to ENHANCE E1 - formula: E1 * (1 + boost)"
-  ARCH-29: "E10 boost strength MUST adapt to E1 quality: strong E1 (>0.8) = 5%, medium (0.4-0.8) = 10%, weak (<0.4) = 15%"
-  ARCH-30: "E10 intent alignment MUST be centered at 0.5: >0.5 = aligned (boost up), <0.5 = misaligned (reduce), =0.5 = neutral"
-  ARCH-31: "E10 weight MUST be 0.0 in intent_search/intent_enhanced weight profiles - E10 operates POST-retrieval only"
-  ARCH-32: "E10 uses E5-base-v2 with query:/passage: prefixes for natural asymmetry - no artificial direction modifiers needed"
-  ARCH-33: "E10 multiplier MUST be clamped to [0.8, 1.2] (±20% max adjustment) to prevent E10 from dominating E1"
-
-# ===============================================================================
-# CODING STANDARDS
-# ===============================================================================
-naming:
-  files: { rust: snake_case.rs, cuda: snake_case.cu, tests: "{mod}_test.rs" }
-  types: PascalCase
-  funcs: { rust: snake_case_verb_first }
-  vars: { local: snake_case, const: SCREAMING_SNAKE }
-
-rust_standards:
-  error_handling: ["thiserror for library", "anyhow for app", "Never panic in lib", "Propagate with ?"]
-  async_patterns: ["tokio runtime", "spawn for parallel", "spawn_blocking for CPU-bound"]
-  type_safety: ["newtype for domain IDs", "NonZeroU* for counts", "enums over booleans"]
-
-rules:
-  - "One type/module, max 500 lines"
-  - "Result<T,E>, thiserror derivation"
-  - "Never unwrap() in prod; use expect() with context"
-  - "tokio async, Arc<RwLock<T>> for shared state"
-  - "Max 5 unsafe blocks/module"
-  - "CUDA FFI only in context-graph-cuda"
-
-# ===============================================================================
+# ═══════════════════════════════════════════════════════════════
 # ANTI-PATTERNS (FORBIDDEN)
-# ===============================================================================
+# ═══════════════════════════════════════════════════════════════
 forbidden:
-  # Critical - Architecture
-  AP-02: "No cross-embedder comparison (E1<->E5)"
-  AP-03: "No dimension projection (1024D->512D)"
-  AP-04: "No partial TeleologicalArray storage"
+  AP-02: "No cross-embedder comparison (E1↔E5)"
+  AP-04: "No partial TeleologicalArray"
   AP-05: "No embedding fusion into single vector"
-  AP-06: "No direct DB access - MCP tools only"
-  AP-07: "No CPU fallback in production"
-  AP-08: "No sync I/O in async context"
-  AP-09: "No unbounded caches"
-  AP-10: "No NaN/Infinity in similarity scores"
+  AP-60: "Temporal (E2-E4) MUST NOT count toward topics"
+  AP-73: "Temporal MUST NOT be used in similarity fusion"
+  AP-74: "E12 ColBERT: reranking ONLY, not initial retrieval"
+  AP-75: "E13 SPLADE: Stage 1 recall ONLY, not final ranking"
+  AP-77: "E5 MUST NOT use symmetric cosine - causal is directional"
+  AP-79: "MUST NOT use simple weighted sum - use Weighted RRF"
+  AP-80: "E10 MUST NOT use linear blending - makes E10 compete with E1"
+  AP-84: "E10 MUST NOT override E1 - when E1=0, result=0"
 
-  # Critical - Topic System
-  AP-60: "Temporal embedders (E2-E4) MUST NOT count toward topic detection"
-  AP-61: "Topic threshold MUST be weighted_agreement >= 2.5, not raw count"
-  AP-62: "Divergence alerts MUST only use SEMANTIC embedders"
-  AP-63: "NEVER trigger divergence from temporal proximity differences"
-  AP-64: "Relational/Structural embedders count at 0.5x weight ONLY"
-  AP-65: "No manual topic/goal setting - topics emerge from clustering"
-
-  # Critical - Dream Triggers
-  AP-70: "Dream triggers MUST use entropy > 0.7 AND churn > 0.5"
-  AP-71: "Dream NREM/REM returning stubs forbidden"
-  AP-72: "nrem.rs/rem.rs TODO stubs MUST be implemented"
-
-  # Critical - Multi-Space Search (TASK-MULTISPACE)
-  # References:
-  # - Pinecone Cascading Retrieval: https://www.pinecone.io/blog/cascading-retrieval/
-  # - ACM TOIS Fusion: https://dl.acm.org/doi/10.1145/3596512
-  # - ColBERT Late Interaction: https://weaviate.io/blog/late-interaction-overview
-  # - SPLADE Sparse Expansion: https://www.pinecone.io/learn/splade/
-  AP-73: "Temporal embedders (E2-E4) MUST NOT be used in similarity scoring fusion - temporal proximity != topical similarity"
-  AP-74: "E12 ColBERT MUST only be used for re-ranking, NOT initial retrieval"
-  AP-75: "E13 SPLADE MUST be used for Stage 1 recall, NOT final ranking"
-  AP-76: "Multi-stage retrieval pipeline MUST use: Stage 1 (sparse recall) → Stage 2 (dense scoring) → Stage 3 (optional rerank)"
-
-  # Embedder-specific anti-patterns (from optimization research)
-  AP-77: "E5 Causal MUST NOT use symmetric cosine similarity - causal relationships are directional"
-  AP-78: "E7 Code MUST NOT treat code queries and NL-about-code queries identically"
-  AP-79: "Multi-space scoring MUST NOT use simple weighted sum - use Weighted RRF for rank preservation"
-
-  # E10 Intent/Context anti-patterns (CRITICAL - multiplicative boost model)
-  AP-80: "E10 MUST NOT use linear blending (e1_weight*e1 + e10_weight*e10) - this makes E10 COMPETE with E1"
-  AP-81: "E10 MUST NOT have non-zero weight in intent_search/intent_enhanced profiles - E10 operates POST-retrieval"
-  AP-82: "E10 MUST NOT use artificial direction modifiers (1.2/0.8) - E5-base-v2 handles asymmetry via prefixes"
-  AP-83: "E10 MUST NOT produce scores > 1.0 or < 0.0 - always clamp final enhanced score to [0.0, 1.0]"
-  AP-84: "E10 MUST NOT override E1 foundation - when E1=0, enhanced score MUST be 0 regardless of E10"
-  AP-85: "E10 boost MUST NOT exceed ±20% (multiplier 0.8-1.2) - E10 enhances E1, doesn't replace it"
-
-  # High
-  AP-11: "Check existing utils before creating helpers"
-  AP-12: "No magic numbers - use named constants"
-  AP-14: "No .unwrap() in library code"
-
-  # Hook Architecture (Critical)
-  AP-50: "NO internal/built-in Claude Code hooks - NATIVE hooks via .claude/settings.json ONLY"
-  AP-51: "NO Universal LLM Adapter - Claude Code native MCP only"
-  AP-52: "NO custom Claude Code source modifications for hook integration"
-  AP-53: "Hook logic MUST be in shell scripts calling context-graph-cli"
-
-# ===============================================================================
-# SECURITY
-# ===============================================================================
-security:
-  SEC-01: "Validate/sanitize all input"
-  SEC-02: { rule: "Scrub PII pre-embed", patterns: [api_key, password, bearer_token, ssn, credit_card] }
-  SEC-03: { anomaly_threshold: "3.0 std", content_align_min: 0.4 }
-  SEC-04: { rule: "Detect prompt injection", patterns: ["ignore previous", "disregard system", "you are now"] }
-  SEC-06: "Soft delete 30-day recovery"
-  SEC-07: "Secrets from env vars only"
-
-# ===============================================================================
-# PERFORMANCE BUDGETS
-# ===============================================================================
-perf:
-  # NOTE: These are REALISTIC budgets based on actual RTX 5090 single-GPU measurements
-  # Running 13 embedding models sequentially on single GPU is compute-bound
-  latency:
-    inject_context: "<2000ms p95"   # Includes embedding + search + retrieval
-    single_embed: "<1000ms"         # All 13 models on single GPU (sequential)
-    batch_embed_64: "<3000ms"       # Memory-bound, 64 items × 13 models
-    faiss_1M_k100: "<5ms"           # Pure FAISS is fast, but includes overhead
-    dream_wake: "<100ms"            # Wake from sleep state
-    cli_startup: "<400ms"           # Binary load + initialization
-    mcp_search: "<2000ms p95"       # Full search_graph operation
-    mcp_store: "<2500ms p95"        # Full store_memory operation
-  throughput: { embed_batch: ">20/sec", search_batch_100: "<50ms" }  # Realistic for single GPU
-  memory: { gpu: "<24GB", graph_cap: ">10M nodes" }
-  quality: { topic_stability: ">0.6", attack_detection: ">95%", info_loss: "<15%" }
-
-# ===============================================================================
-# TESTING
-# ===============================================================================
-testing:
-  coverage: { unit: "90%", integration: "80%", docs: "80%" }
-  gates:
-    pre-commit: [fmt --check, clippy -D warnings, test --lib]
-    pre-merge: [test --all, bench --no-run, "coverage>=90%"]
-    pre-deploy: [integration pass, "bench regression<5%", chaos pass]
-
-# ===============================================================================
+# ═══════════════════════════════════════════════════════════════
 # TOPIC SYSTEM
-# ===============================================================================
-topic_system:
-  overview: "Topics emerge from multi-space clustering, no manual goal setting"
-
-  # -------------------------------------------------------------------------
-  # EMBEDDER CATEGORIES (Foundation + Enhancement Model)
-  # -------------------------------------------------------------------------
-  # The 13 embedders form a FINGERPRINT with E1 as the foundation.
-  # Categories define how each embedder ENHANCES E1's semantic understanding.
-  embedder_categories:
-    FOUNDATION:
-      embedders: [E1]
-      topic_weight: 1.0
-      role: "THE semantic foundation - all retrieval starts here"
-      divergence_detection: true
-      count: 1
-      properties:
-        - "Primary semantic understanding (V_meaning)"
-        - "Always searched first (entry_embedder)"
-        - "Default fallback when other embedders unavailable"
-        - "Highest weight in general queries (35-40%)"
-        - "Other embedders ENHANCE this, they don't replace it"
-
-    SEMANTIC_ENHANCERS:
-      embedders: [E5, E6, E7, E10, E12, E13]
-      topic_weight: 1.0
-      role: "Enhance E1 with specialized semantic dimensions"
-      divergence_detection: true
-      count: 6
-      enhancement_type: "Additive specialized intelligence on top of E1"
-      properties:
-        - "E5 (V_causality): Adds WHY understanding - causal reasoning"
-        - "E6 (V_selectivity): Adds KEYWORD precision - specific terms"
-        - "E7 (V_correctness): Adds CODE intelligence - technical patterns"
-        - "E10 (V_multimodality): Adds INTENT understanding via MULTIPLICATIVE BOOST (ARCH-28)"
-        - "E12 (V_precision): Adds EXACT MATCH - token-level reranking"
-        - "E13 (V_keyword_precision): Adds TERM EXPANSION - related keywords"
-      e10_note: |
-        E10 is unique among SEMANTIC_ENHANCERS: it uses multiplicative boost (ARCH-28)
-        rather than weighted fusion. E10 weight is 0.0 in intent profiles (ARCH-31).
-        E10 operates POST-RETRIEVAL to enhance E1 scores based on intent alignment.
-
-    TEMPORAL_CONTEXT:
-      embedders: [E2, E3, E4]
-      topic_weight: 0.0
-      role: "POST-RETRIEVAL context only - NEVER in similarity fusion"
-      divergence_detection: false
-      count: 3
-      enhancement_type: "Metadata enrichment after E1-based retrieval"
-      rationale: "Temporal proximity != semantic relationship"
-      properties:
-        - "E2 (V_freshness): WHEN created - recency boost"
-        - "E3 (V_periodicity): TIME PATTERNS - cyclical matching"
-        - "E4 (V_ordering): SEQUENCE - before/after relationships"
-        - "Applied as post-retrieval score adjustments"
-        - "Power the sequence tools (get_conversation_context, etc.)"
-
-    RELATIONAL_ENHANCERS:
-      embedders: [E8, E11]
-      topic_weight: 0.5
-      role: "Enhance E1 with relationship context"
-      divergence_detection: false
-      count: 2
-      enhancement_type: "Structural/entity relationships layered on E1"
-      properties:
-        - "E8 (V_connectivity): Adds GRAPH structure understanding"
-        - "E11 (V_factuality): Adds ENTITY relationship understanding"
-        - "Support topics but cannot define them alone"
-
-    STRUCTURAL_CONTEXT:
-      embedders: [E9]
-      topic_weight: 0.5
-      role: "Enhance E1 with format/structure awareness"
-      divergence_detection: false
-      count: 1
-      enhancement_type: "Noise-robust structural patterns"
-      properties:
-        - "E9 (V_robustness): Hyperdimensional format encoding"
-        - "Provides structural fingerprint component"
-        - "Supports topics but cannot define them alone"
-
-  # -------------------------------------------------------------------------
-  # WEIGHTED AGREEMENT FORMULA
-  # -------------------------------------------------------------------------
+# ═══════════════════════════════════════════════════════════════
+topics:
   weighted_agreement:
-    formula: "weighted_agreement = Sum(topic_weight_i x is_clustered_i)"
-    max_value: 8.5  # 7x1.0 (semantic) + 2x0.5 (relational) + 1x0.5 (structural)
-    breakdown:
-      semantic_max: 7.0  # 7 embedders x 1.0 weight
-      relational_max: 1.0  # 2 embedders x 0.5 weight
-      structural_max: 0.5  # 1 embedder x 0.5 weight
-      temporal_contribution: 0.0  # ALWAYS zero
-
-  # -------------------------------------------------------------------------
-  # TOPIC DETECTION
-  # -------------------------------------------------------------------------
-  topic_detection:
+    formula: "Sum(topic_weight_i × is_clustered_i)"
     threshold: 2.5
-    examples:
-      - "3 semantic spaces agreeing = 3.0 -> TOPIC"
-      - "2 semantic + 1 relational = 2.5 -> TOPIC"
-      - "2 semantic spaces only = 2.0 -> NOT TOPIC"
-      - "5 temporal spaces = 0.0 -> NOT TOPIC (excluded)"
-      - "1 semantic + 3 relational = 2.5 -> TOPIC"
-    confidence: "topic_confidence = weighted_agreement / 8.5"
+    max: 8.5  # 7×1.0 (semantic) + 2×0.5 (relational) + 1×0.5 (structural)
+    temporal_contribution: 0.0  # ALWAYS
 
-  # -------------------------------------------------------------------------
-  # TOPIC PORTFOLIO
-  # -------------------------------------------------------------------------
-  topic_portfolio:
-    description: "Emergent topics discovered via clustering, no manual setting"
-    structure:
-      topics: "HashMap<TopicId, TopicMetrics>"
-      history: "VecDeque<TopicSnapshot>"
-    profile_dimensions: 13  # All embedders stored, only semantic/relational/structural for detection
+  categories:
+    SEMANTIC: { embedders: [E1,E5,E6,E7,E10,E12,E13], weight: 1.0 }
+    RELATIONAL: { embedders: [E8,E11], weight: 0.5 }
+    STRUCTURAL: { embedders: [E9], weight: 0.5 }
+    TEMPORAL: { embedders: [E2,E3,E4], weight: 0.0 }  # Never for topics
 
-  # -------------------------------------------------------------------------
-  # TOPIC STABILITY
-  # -------------------------------------------------------------------------
-  topic_stability:
-    metrics:
-      churn_rate: "[0.0-1.0] where 0.0=stable, 1.0=completely new topics"
-      entropy: "[0.0-1.0] topic distribution entropy"
-      membership_stability: "How stable topic memberships are"
-      centroid_stability: "How stable topic centroids are"
-    phases:
-      Emerging: "New topic forming"
-      Stable: "Established topic"
-      Declining: "Topic losing members"
-      Merging: "Topics consolidating"
-    thresholds:
-      healthy: "churn < 0.3"
-      warning: "churn in [0.3, 0.5)"
-      unstable: "churn >= 0.5"
+  divergence_detection: "SEMANTIC embedders only"
 
-  # -------------------------------------------------------------------------
-  # DIVERGENCE DETECTION
-  # -------------------------------------------------------------------------
-  divergence_detection:
-    description: "Detect when current activity differs from recent work"
-    scope: "SEMANTIC embedders ONLY (E1, E5, E6, E7, E10, E12, E13)"
-    excluded:
-      - "Temporal (E2-E4): Working at different times is not divergence"
-      - "Relational (E8, E11): Different entities is not inherently divergent"
-      - "Structural (E9): Different structure is not semantic divergence"
-    thresholds:
-      E1_semantic: { high: "> 0.75", low: "< 0.3" }
-      E5_causal: { high: "> 0.70", low: "< 0.25" }
-      E6_sparse: { high: "> 0.60", low: "< 0.2" }
-      E7_code: { high: "> 0.80", low: "< 0.35" }
-      E10_multimodal: { high: "> 0.70", low: "< 0.3" }
-      E12_late_interaction: { high: "> 0.70", low: "< 0.3" }
-      E13_splade: { high: "> 0.60", low: "< 0.2" }
-    injection_format: |
-      DIVERGENCE DETECTED
-      Recent activity in [semantic_space]: "[memory content summary]"
-      Current appears different - similarity: {score}
-
-  # -------------------------------------------------------------------------
-  # TEMPORAL CONTEXT ENRICHMENT
-  # -------------------------------------------------------------------------
-  temporal_enrichment:
-    description: "Temporal embedders provide POST-RETRIEVAL boosts and filtering"
-    badges:
-      same_session: "E2 similarity > 0.8 -> 'From same session'"
-      same_day: "E3 similarity > 0.7 -> 'From today'"
-      same_period: "E4 similarity > 0.6 -> 'Around same time'"
-    usage: "POST-RETRIEVAL scoring adjustments, NOT similarity fusion"
-
-    # E2 Recency Options (ARCH-19)
-    e2_recency:
-      decay_functions:
-        linear: "score = max(0, 1 - age/max_age)"
-        exponential: "score = exp(-age * 0.693 / half_life)"
-        step: "Fresh(<5min)=1.0, Recent(<1h)=0.8, Today(<1d)=0.5, Older=0.1"
-        no_decay: "score = 1.0 (disabled)"
-      default_half_life: 86400  # 1 day in seconds
-      time_window: "Optional start_ms/end_ms for hard filtering"
-
-    # E3 Periodic Options (ARCH-20)
-    e3_periodic:
-      target_hour: "0-23 for hour-of-day matching"
-      target_day_of_week: "0-6 (Sun-Sat) for day-of-week matching"
-      auto_detect: "Use current time as target"
-      weight: "[0.0-1.0] boost weight for periodic matches"
-      usage: "Find memories from similar times of day/week"
-
-    # E4 Sequence Options (ARCH-21)
-    e4_sequence:
-      anchor_id: "Memory UUID to find before/after"
-      direction: "Before, After, Both"
-      max_distance: "Maximum sequence positions away"
-      weight: "[0.0-1.0] boost weight for sequence proximity"
-      usage: "Reconstruct conversation flow, find related work"
-
-    # Multi-Scale Temporal (ARCH-24)
-    temporal_scales:
-      micro: { desc: "Seconds to minutes", half_life: 300 }     # 5 minutes
-      meso: { desc: "Hours", half_life: 3600 }                  # 1 hour
-      macro: { desc: "Days", half_life: 86400 }                 # 1 day
-      long: { desc: "Weeks", half_life: 604800 }                # 1 week
-      archival: { desc: "Months+", half_life: 2592000 }         # 30 days
-
-# ===============================================================================
-# MEMORY SOURCES
-# ===============================================================================
-memory_sources:
-  HookDescription:
-    trigger: "Every hook event"
-    content: "Claude's description of what it's doing"
-    embedding: "All 13 embedders"
-
-  ClaudeResponse:
-    trigger: "SessionEnd, Stop hooks"
-    content: "End-of-session answers, significant responses"
-    embedding: "All 13 embedders"
-
-  MDFileChunk:
-    trigger: "File system events (create/modify .md files)"
-    content: "Chunks from markdown files"
-    embedding: "All 13 embedders"
-    chunking:
-      chunk_size: 200  # words
-      overlap: 50  # words (25%)
-      boundary: "Preserve sentence boundaries when possible"
-
-# ===============================================================================
-# CLUSTERING
-# ===============================================================================
-clustering:
-  algorithms:
-    batch: "HDBSCAN per embedding space"
-    online: "BIRCH CF-trees for incremental updates"
-  parameters:
-    min_cluster_size: 3
-    silhouette_threshold: 0.3
-  cross_space_synthesis:
-    method: "Weighted agreement across spaces"
-    topic_threshold: 2.5
-    confidence: "weighted_agreement / 8.5"
-
-# ===============================================================================
-# TELEOLOGICAL ARCHITECTURE (FINGERPRINT SYSTEM)
-# ===============================================================================
-teleological:
-  core: "13-embedding array IS the teleological vector (fingerprint)"
-  topic_profile: "TP = [A(E1,V)..A(E13,V)] # 13D alignment scores, searchable"
-
-  # ---------------------------------------------------------------------------
-  # FINGERPRINT PHILOSOPHY
-  # ---------------------------------------------------------------------------
-  # The 13 embedders create a FINGERPRINT - a rich, multi-dimensional signature
-  # for each memory. This is NOT 13 competing perspectives trying to "vote" on
-  # meaning. Instead, it is ONE semantic foundation (E1) ENHANCED by 12 specialized
-  # intelligence dimensions.
-  #
-  # Think of it like a person's identity:
-  # - E1 (Core Identity): WHO they are fundamentally
-  # - Enhancement Layers: ADDITIONAL facets that enrich understanding
-  #   - E5: WHY they act (motivations, causes)
-  #   - E7: WHAT they can do (skills, capabilities)
-  #   - E8: WHO they know (relationships)
-  #   - E2-E4: WHEN they did things (temporal context)
-  #   - etc.
-  #
-  # The fingerprint captures the FULL identity, but E1 is always the anchor.
-
-  fingerprint_philosophy:
-    core_principle: "E1 is THE semantic foundation; other embedders ENHANCE, not compete"
-    architecture: "Foundation + Enhancement Layers"
-
-    foundation:
-      embedder: E1
-      name: "V_meaning"
-      role: "Primary semantic understanding - WHAT the content means"
-      properties:
-        - "Always searched first (entry_embedder)"
-        - "Fallback when other embedders unavailable"
-        - "Highest weight in general semantic queries (35-40%)"
-        - "Provides baseline retrieval that others refine"
-
-    enhancement_layers:
-      semantic_enhancers:
-        description: "Add specialized semantic dimensions to E1's foundation"
-        embedders:
-          E5: { name: "V_causality", enhances: "WHY - causal relationships, reasoning chains" }
-          E6: { name: "V_selectivity", enhances: "KEYWORDS - specific terms and jargon" }
-          E7: { name: "V_correctness", enhances: "CODE - technical accuracy and patterns" }
-          E10: { name: "V_multimodality", enhances: "INTENT - cross-modal understanding via multiplicative boost (ARCH-28)", model: "E5-base-v2", integration: "POST-RETRIEVAL boost, NOT weighted fusion (AP-80)" }
-          E12: { name: "V_precision", enhances: "EXACT MATCH - token-level precision" }
-          E13: { name: "V_keyword_precision", enhances: "TERM EXPANSION - related keywords" }
-
-      relational_enhancers:
-        description: "Add relationship context to E1's understanding"
-        embedders:
-          E8: { name: "V_connectivity", enhances: "STRUCTURE - graph relationships" }
-          E11: { name: "V_factuality", enhances: "ENTITIES - named entity relationships" }
-
-      temporal_context:
-        description: "Add time-based metadata (POST-RETRIEVAL only, never in similarity)"
-        embedders:
-          E2: { name: "V_freshness", enhances: "RECENCY - how recent" }
-          E3: { name: "V_periodicity", enhances: "PATTERNS - cyclical timing" }
-          E4: { name: "V_ordering", enhances: "SEQUENCE - before/after relationships" }
-
-      structural_context:
-        description: "Add format/structure awareness"
-        embedders:
-          E9: { name: "V_robustness", enhances: "FORMAT - noise-robust structural patterns" }
-
-  embedder_purposes:
-    E1: { purpose: "V_meaning", role: "FOUNDATION", desc: "Primary semantic understanding" }
-    E2: { purpose: "V_freshness", role: "TEMPORAL_CONTEXT", desc: "Recency metadata" }
-    E3: { purpose: "V_periodicity", role: "TEMPORAL_CONTEXT", desc: "Cyclical patterns" }
-    E4: { purpose: "V_ordering", role: "TEMPORAL_CONTEXT", desc: "Sequence ordering" }
-    E5: { purpose: "V_causality", role: "SEMANTIC_ENHANCER", desc: "Causal reasoning" }
-    E6: { purpose: "V_selectivity", role: "SEMANTIC_ENHANCER", desc: "Keyword precision" }
-    E7: { purpose: "V_correctness", role: "SEMANTIC_ENHANCER", desc: "Code/technical" }
-    E8: { purpose: "V_connectivity", role: "RELATIONAL_ENHANCER", desc: "Graph structure" }
-    E9: { purpose: "V_robustness", role: "STRUCTURAL_CONTEXT", desc: "Format patterns" }
-    E10: { purpose: "V_multimodality", role: "SEMANTIC_ENHANCER", desc: "Cross-modal intent via multiplicative boost (ARCH-28 to ARCH-33)", model: "E5-base-v2", integration: "POST-RETRIEVAL" }
-    E11: { purpose: "V_factuality", role: "RELATIONAL_ENHANCER", desc: "Entity facts" }
-    E12: { purpose: "V_precision", role: "SEMANTIC_ENHANCER", desc: "Late interaction" }
-    E13: { purpose: "V_keyword_precision", role: "SEMANTIC_ENHANCER", desc: "SPLADE expansion" }
-
-  # Topics emerge AUTONOMOUSLY from clustering
-  # Manual goal/topic setting is FORBIDDEN
-  # Valid: TeleologicalFingerprint<->TeleologicalFingerprint, TP<->TP, Ei<->Ei
-  # Invalid: Manual topic definition, E1<->E7 comparison
-
-# ===============================================================================
-# 4-LAYER BIO-NERVOUS SYSTEM
-# ===============================================================================
-layers:
-  L1_Sensing: { lat: "<5ms", components: [13-model embed, PII scrub, adversarial detect] }
-  L3_Memory:  { lat: "<1ms", components: [MHN, FAISS GPU], capacity: "2^768 patterns" }
-  L4_Learning: { freq: "100Hz", components: [UTL optimizer, neuromod controller] }
-  L5_Coherence: { sync: "10ms", components: [Topic synthesis, context distiller, broadcast] }
-
-# ===============================================================================
-# NEUROMODULATION
-# ===============================================================================
-neuromod:
-  Dopamine:     { param: retrieval_sharpness, range: "[1,5]", effect: "higher=sharp retrieval" }
-  Serotonin:    { param: similarity.space_weights, range: "[0,1]", effect: "higher=more spaces" }
-  Noradrenaline: { param: attention.temp, range: "[0.5,2]", effect: "higher=flat attention" }
-  Acetylcholine: { param: utl.lr, range: "[0.001,0.002]", effect: "higher=faster update" }
-
-# ===============================================================================
-# DREAM LAYER
-# ===============================================================================
-dream:
-  trigger:
-    conditions:
-      - "entropy > 0.7 for 5+ min"
-      - "churn > 0.5 AND entropy > 0.7"
-    constraints:
-      activity: "<0.15"
-      idle: "10min"
-      gpu: "<80%"
-
-  phases:
-    nrem:
-      duration: "3min"
-      purpose: "Hebbian learning replay"
-      formula: "Delta_w_ij = eta x phi_i x phi_j for high-importance edges"
-      params: { learning_rate: 0.01, weight_decay: 0.001, weight_floor: 0.05, weight_cap: 1.0 }
-      recency_bias: 0.8
-
-    rem:
-      duration: "2min"
-      purpose: "Blind spot discovery via hyperbolic random walk"
-      model: "Poincare ball"
-      params: { dimensions: 64, curvature: -1.0, step_size: 0.1, max_steps: 100 }
-      temperature: 2.0
-      blind_spot: { min_semantic_distance: 0.7, require_shared_causal: true, new_edge_weight: 0.3 }
-
-  constraints: { queries: 100, semantic_leap: 0.7, abort_on_query: true, wake: "<100ms", gpu: "<30%" }
-
-  amortized:
-    trigger: "3+ hop path traversed >= 5 times"
-    min_hops: 3
-    min_traversals: 5
-    confidence_threshold: 0.7
-
-# ===============================================================================
-# UTL (Unified Theory of Learning)
-# ===============================================================================
-utl:
-  canonical: "L = f((Delta_S x Delta_C) . w_e . cos phi) -> L in [0,1]"
-  multi_embed: "L_multi = sigmoid(2.0 . (Sum_i tau_i lambda_S . Delta_S_i) . (Sum_j tau_j lambda_C . Delta_C_j) . w_e . cos phi)"
-  params: { Delta_S: "[0,1] entropy", Delta_C: "[0,1] coherence", tau: "[0,1] teleological weight", w_e: "[0.5,1.5] emotional", phi: "[0,pi] phase" }
-
-  lifecycle:
-    infancy:  { n: "0-50",   lambda_Delta_S: 0.7, lambda_Delta_C: 0.3 }
-    growth:   { n: "50-500", lambda_Delta_S: 0.5, lambda_Delta_C: 0.5 }
-    maturity: { n: "500+",   lambda_Delta_S: 0.3, lambda_Delta_C: 0.7 }
-
-  delta_methods:
-    Delta_S: { E1: "GMM+Mahalanobis", E5: "Asymmetric KNN", E7: "GMM+KNN hybrid", E9: "Hamming", E10: "Cross-modal KNN", E11: "TransE ||h+r-t||", E12: "Token KNN", E13: "Jaccard", default: "KNN" }
-    Delta_C: "0.4xConnectivity + 0.4xClusterFit + 0.2xConsistency"
-
-# ===============================================================================
-# META-UTL (Self-Aware Learning)
-# ===============================================================================
-meta_utl:
-  awareness: [storage_prediction, retrieval_prediction, parameter_optimization]
-
-  self_correction:
-    rule: "prediction_error > 0.2 triggers lambda adjustment"
-    formula: "lambda_new = lambda_old + alpha x (target - actual)"
-    alpha_source: "acetylcholine_level / ACH_BASELINE"
-    constraint: "lambda_S + lambda_C = 1.0, bounds [0.1, 0.9]"
-    escalation: "accuracy < 0.7 for 100 ops -> BayesianLambdaOptimizer"
-
-  predictors:
-    storage_impact: { input: "fingerprint+context", output: "Delta_L", accuracy: ">0.85" }
-    retrieval_quality: { input: "query+top_k", output: "relevance", accuracy: ">0.80" }
-
-  domain_tracking: [Code, Medical, Legal, Creative, Research, General]
-
-# ===============================================================================
-# ADAPTIVE THRESHOLD CALIBRATION (ATC)
-# ===============================================================================
-adaptive_thresholds:
-  priors:
-    theta_topic: [2.5, "[1.5,4.0]"]  # Topic threshold
-    theta_high_sim: [0.75, "[0.60,0.90]"]  # High similarity
-    theta_low_sim: [0.30, "[0.20,0.45]"]  # Low similarity (divergence)
-    theta_dup: [0.90, "[0.80,0.98]"]  # Duplicate detection
-    theta_churn: [0.50, "[0.30,0.70]"]  # Churn threshold
-    theta_entropy: [0.70, "[0.50,0.85]"]  # Entropy threshold
-
-  levels:
-    L1_EWMA: { freq: "per-query", formula: "theta_ewma=alpha x theta_obs+(1-alpha) x theta_ewma" }
-    L2_Temp: { freq: hourly, formula: "sigma(logit(raw)/T)" }
-    L3_Bandit: { freq: session, method: "Thompson sampling Beta(alpha,beta)" }
-    L4_Bayesian: { freq: weekly, surrogate: "GP", acquisition: "EI" }
-
-  calibration: { ECE: "<0.05", MCE: "<0.10", Brier: "<0.10" }
-  alerts: { "ECE>0.10": L2, "drift>3.0": L4 }
-
-# ===============================================================================
+# ═══════════════════════════════════════════════════════════════
 # MCP TOOLS
-# ===============================================================================
-mcp:
-  version: "2024-11-05"
-  transport: [stdio, sse]
+# ═══════════════════════════════════════════════════════════════
+mcp_tools:
+  search: [search_graph, search_causes, search_connections, search_by_intent]
+  memory: [store_memory, inject_context, get_memetic_status]
+  sequence: [get_conversation_context, get_session_timeline, traverse_memory_chain]
+  topic: [get_topic_portfolio, get_topic_stability, detect_topics]
+  causal: [get_causal_chain, search_causes]
+  graph: [get_graph_path, search_connections]
+  intent: [search_by_intent, find_contextual_matches, detect_intent_drift]
+  maintenance: [trigger_consolidation, trigger_dream, merge_concepts, forget_concept]
 
-  # -------------------------------------------------------------------------
-  # SEARCH_GRAPH TEMPORAL PARAMETERS (ARCH-19 to ARCH-24)
-  # -------------------------------------------------------------------------
-  search_graph_temporal_params:
-    # E2 Recency Parameters
-    temporalWeight: { type: number, range: "[0.0-1.0]", default: 0.0, desc: "Global weight for temporal boosts (0=disabled)" }
-    decayFunction: { type: string, values: ["linear", "exponential", "step", "none"], default: "exponential", desc: "E2 decay function" }
-    decayHalfLifeSecs: { type: integer, default: 86400, desc: "Half-life for exponential decay" }
+  search_strategies:
+    E1Only: "Fast, simple semantic queries"
+    MultiSpace: "E1 + enhancers via RRF - use when E1 blind spots matter"
+    Pipeline: "E13 recall → E1 dense → E12 rerank - maximum precision"
 
-    # Time Window Filtering
-    lastHours: { type: integer, desc: "Shortcut: filter to last N hours" }
-    lastDays: { type: integer, desc: "Shortcut: filter to last N days" }
-    sessionId: { type: string, desc: "Filter to specific session" }
+# ═══════════════════════════════════════════════════════════════
+# RETRIEVAL PIPELINE
+# ═══════════════════════════════════════════════════════════════
+retrieval:
+  stages:
+    S1: "E13 SPLADE sparse recall → 10K candidates"
+    S2: "E1 Matryoshka ANN → 1K candidates"
+    S3: "RRF across semantic spaces → 100 candidates"
+    S4: "Topic alignment (weighted_agreement >= 2.5) → 50"
+    S5: "E12 MaxSim rerank → 10 final results"
 
-    # E3 Periodic Parameters
-    periodicBoost: { type: number, range: "[0.0-1.0]", default: 0.0, desc: "Weight for E3 periodic matching" }
-    targetHour: { type: integer, range: "[0-23]", desc: "Target hour for periodic matching" }
-    targetDayOfWeek: { type: integer, range: "[0-6]", desc: "Target day (0=Sun) for periodic matching" }
+  # When to use which enhancer
+  use_E5: "Causal queries (why, what caused)"
+  use_E7: "Code queries (implementations, functions)"
+  use_E10: "Intent queries (same goal, similar purpose)"
+  use_E11: "Entity queries (specific named things)"
+  use_E6_E13: "Keyword queries (exact terms, jargon)"
 
-    # E4 Sequence Parameters
-    sequenceAnchor: { type: uuid, desc: "Memory ID to find before/after" }
-    sequenceDirection: { type: string, values: ["before", "after", "both"], default: "both", desc: "Sequence direction" }
+# ═══════════════════════════════════════════════════════════════
+# MEMORY SOURCES
+# ═══════════════════════════════════════════════════════════════
+memory_sources:
+  HookDescription: "Claude's description of tool use"
+  ClaudeResponse: "Session summaries, significant responses"
+  MDFileChunk: "Markdown file chunks (200 words, 50 overlap)"
 
-    # Temporal Scale
-    temporalScale: { type: string, values: ["micro", "meso", "macro", "long", "archival"], default: "macro", desc: "Temporal reasoning scale" }
+# ═══════════════════════════════════════════════════════════════
+# DREAM CONSOLIDATION
+# ═══════════════════════════════════════════════════════════════
+dream:
+  trigger: "entropy > 0.7 AND churn > 0.5"
+  nrem: "Hebbian replay - strengthen high-importance edges"
+  rem: "Hyperbolic random walk - discover blind spots"
 
-  core_tools:
-    topic:
-      - get_topic_portfolio
-      - get_topic_stability
-      - get_topic_metrics
-      - get_weighted_agreement
-      - search_by_topic
-    retrieval:
-      - search_graph
-      - inject_context
-      - get_relevant_memories
-      - detect_divergence
-    clustering:
-      - get_cluster_status
-      - get_cross_space_synthesis
-    memory:
-      - store_memory
-      - memory_retrieve
-      - get_memetic_status
-    adaptive:
-      - get_threshold_status
-      - get_calibration_metrics
-      - trigger_recalibration
-    dream:
-      - trigger_dream
-      - get_dream_status
-    maintenance:
-      - get_health_status
-      - trigger_healing
-      - get_pruning_candidates
-      - execute_prune
-      - trigger_consolidation
+# ═══════════════════════════════════════════════════════════════
+# KEY THRESHOLDS
+# ═══════════════════════════════════════════════════════════════
+thresholds:
+  topic: 2.5           # weighted_agreement for topic detection
+  high_sim: 0.75       # High similarity
+  low_sim: 0.30        # Divergence threshold
+  duplicate: 0.90      # Duplicate detection
+  entropy_dream: 0.70  # Dream trigger
+  churn_dream: 0.50    # Dream trigger
 
-  # -------------------------------------------------------------------------
-  # MCP TOOL INTEGRATION (Fingerprint-Optimized)
-  # -------------------------------------------------------------------------
-  # Tools are organized around the E1-foundation philosophy:
-  # - Core search always starts with E1, other embedders enhance
-  # - Specialized tools expose specific enhancement dimensions
-  # - Temporal tools are POST-RETRIEVAL (sequence, context)
-  fingerprint_integration:
-    core_retrieval:
-      tool: search_graph
-      philosophy: |
-        E1 provides the baseline semantic retrieval.
-        Enhancement embedders (E5,E6,E7,E10) add precision via RRF.
-        Temporal (E2-E4) applied post-retrieval only.
-      strategies:
-        E1Only: "Default - pure E1 semantic matching"
-        MultiSpace: "E1 + enhancement embedders via weighted RRF"
-        Pipeline: "E13 recall → E1 dense → E12 rerank"
-
-    enhancement_tools:
-      causal_tools:
-        tools: [search_causes, get_causal_chain]
-        embedder: E5
-        philosophy: "E5 ENHANCES E1 results with causal reasoning"
-        flow: "E1 retrieval → E5 asymmetric reranking → causal direction filtering"
-
-      sequence_tools:
-        tools: [get_conversation_context, get_session_timeline, traverse_memory_chain, compare_session_states]
-        embedder: E4
-        philosophy: "E4 provides temporal ordering AFTER E1 retrieval"
-        flow: "E1 semantic anchor → E4 sequence traversal → chronological results"
-
-      graph_tools:
-        tools: [search_connections, get_graph_path]
-        embedder: E8
-        philosophy: "E8 ENHANCES E1 with structural relationships"
-        flow: "E1 semantic search → E8 graph expansion → path discovery"
-
-    optimal_patterns:
-      general_search:
-        strategy: E1Only
-        rationale: "E1 alone sufficient for most queries"
-        when: "Simple semantic queries, keyword lookup"
-
-      specialized_search:
-        strategy: MultiSpace
-        rationale: "Enhancement embedders add precision when needed"
-        when: "Code queries (E7), causal queries (E5), entity queries (E11)"
-
-      high_precision:
-        strategy: Pipeline
-        rationale: "Full 3-stage retrieval for best results"
-        when: "Critical retrieval, few results needed"
-
-      temporal_context:
-        strategy: "E1 retrieval + post-retrieval temporal boost"
-        rationale: "Temporal embedders measure TIME, not TOPIC"
-        when: "Recent memories needed, session context"
-
-      intent_search:
-        strategy: "E1 retrieval + E10 multiplicative boost"
-        rationale: "E10 ENHANCES E1 based on intent alignment, doesn't compete"
-        when: "Intent-aware queries: 'what work had same goal?', 'find similar purpose'"
-
-  # -------------------------------------------------------------------------
-  # E10 INTENT TOOLS (Multiplicative Boost Architecture)
-  # -------------------------------------------------------------------------
-  # E10 (V_multimodality) uses E5-base-v2 for asymmetric query→document retrieval.
-  # Per ARCH-28 to ARCH-33, E10 ENHANCES E1 via multiplicative boost, NOT linear blending.
-  intent_tools:
-    tools:
-      - search_by_intent
-      - find_contextual_matches
-      - detect_intent_drift
-      - get_session_intent_history
-
-    architecture:
-      model: "E5-base-v2 (intfloat/e5-base-v2)"
-      asymmetry: "query:/passage: prefixes provide natural query→document asymmetry"
-      direction_modifiers: "1.0/1.0 (neutral) - E5-base-v2 training handles asymmetry"
-
-    # ---------------------------------------------------------------------------
-    # MULTIPLICATIVE BOOST MODEL (ARCH-28)
-    # ---------------------------------------------------------------------------
-    # OLD (Linear Blending - FORBIDDEN per AP-80):
-    #   blended_score = e1_weight * e1_sim + blend_weight * e10_sim
-    #   Problem: E10 COMPETES with E1 in the weighted sum
-    #
-    # NEW (Multiplicative Boost - REQUIRED per ARCH-28):
-    #   boost_strength = adaptive_strength(e1_sim)  # ARCH-29
-    #   intent_alignment = (e10_sim - 0.5) * 2.0    # ARCH-30: Range [-1, +1]
-    #   boost = clamp(boost_strength * intent_alignment, -0.2, 0.2)  # ARCH-33
-    #   enhanced_score = e1_sim * (1.0 + boost)     # E10 ENHANCES E1
-    #
-    # Key Properties:
-    # - E1=0 → enhanced=0 (E1 is THE foundation, AP-84)
-    # - E10=0.5 → no change (neutral intent)
-    # - E10>0.5 → boost E1 up (aligned intent)
-    # - E10<0.5 → reduce E1 (misaligned intent)
-    multiplicative_boost:
-      formula: "enhanced_score = E1 * (1 + boost)"
-      boost_formula: "boost = clamp(boost_strength * intent_alignment, -0.2, 0.2)"
-      intent_alignment_formula: "intent_alignment = (E10_sim - 0.5) * 2.0"
-
-      adaptive_boost_strength:
-        description: "ARCH-29: Boost strength adapts to E1 quality"
-        strong_e1:
-          condition: "E1 > 0.8"
-          strength: 0.05
-          rationale: "Light touch - E1 already found good matches, just refine"
-        medium_e1:
-          condition: "E1 in [0.4, 0.8]"
-          strength: 0.10
-          rationale: "Medium enhancement - E1 found decent matches, help distinguish"
-        weak_e1:
-          condition: "E1 < 0.4"
-          strength: 0.15
-          rationale: "Strong enhancement - E1 struggling, E10 can help broaden"
-
-      intent_alignment:
-        description: "ARCH-30: E10 similarity centered at 0.5"
-        neutral_point: 0.5
-        aligned: "E10 > 0.5 → positive alignment → boost E1 up"
-        misaligned: "E10 < 0.5 → negative alignment → reduce E1"
-        neutral: "E10 = 0.5 → no change to E1"
-        range: "[-1.0, +1.0] after transformation"
-
-      bounds:
-        description: "ARCH-33: Clamp to prevent E10 dominating E1"
-        min_boost: -0.20
-        max_boost: 0.20
-        min_multiplier: 0.80
-        max_multiplier: 1.20
-        final_score_range: "[0.0, 1.0]"
-
-    # ---------------------------------------------------------------------------
-    # INTENT BOOST CONFIG (Implementation)
-    # ---------------------------------------------------------------------------
-    intent_boost_config:
-      location: "crates/context-graph-mcp/src/handlers/tools/intent_dtos.rs"
-      struct: "IntentBoostConfig"
-      defaults:
-        strong_e1_boost: 0.05
-        medium_e1_boost: 0.10
-        weak_e1_boost: 0.15
-        boost_range: 0.20
-        neutral_point: 0.5
-        enabled: true
-      presets:
-        default: "Standard adaptive boost"
-        conservative: "Minimal E10 influence (0.02/0.05/0.08, range 0.10)"
-        aggressive: "Stronger E10 influence (0.10/0.15/0.25, range 0.30)"
-        disabled: "Passthrough E1 scores unchanged"
-
-    # ---------------------------------------------------------------------------
-    # WEIGHT PROFILE INTEGRATION (ARCH-31)
-    # ---------------------------------------------------------------------------
-    weight_profiles:
-      intent_search:
-        e10_weight: 0.0  # E10 operates via multiplicative boost, NOT weighted fusion
-        e1_weight: 0.55  # Boosted to compensate for E10 weight redistribution
-        rationale: "E10=0 in fusion prevents competition; multiplicative boost applied post-retrieval"
-
-      intent_enhanced:
-        e10_weight: 0.0  # Same as intent_search
-        e1_weight: 0.55  # Same as intent_search
-        boost_config: "IntentBoostConfig::aggressive()"
-        rationale: "Stronger E10 influence via aggressive multiplicative boost"
-
-    # ---------------------------------------------------------------------------
-    # E5-BASE-V2 ASYMMETRY (ARCH-32)
-    # ---------------------------------------------------------------------------
-    e5_base_v2_asymmetry:
-      description: "E5-base-v2 provides natural asymmetry via prefix-based training"
-      query_prefix: "query:"
-      passage_prefix: "passage:"
-      direction: "query → document (user input as query, memories as passage)"
-      artificial_modifiers: "NOT NEEDED (1.0/1.0 neutral)"
-      rationale: |
-        E5-base-v2 was trained with asymmetric prefixes:
-        - "query:" for search queries
-        - "passage:" for documents/passages
-        This provides natural query→document asymmetry without artificial modifiers.
-        Previously used 1.2/0.8 modifiers are now 1.0/1.0 (neutral).
-
-# ===============================================================================
-# 13-MODEL EMBEDDINGS (FINGERPRINT SYSTEM)
-# ===============================================================================
-embeddings:
-  paradigm: "FINGERPRINT - E1 foundation + 12 enhancement layers; ~17KB quantized"
-
-  # ---------------------------------------------------------------------------
-  # FINGERPRINT STRUCTURE
-  # ---------------------------------------------------------------------------
-  # The 13 embedders create a FINGERPRINT - a rich signature for each memory.
-  # E1 is THE semantic foundation; other embedders add specialized intelligence.
-  #
-  # Retrieval always starts with E1. Enhancement embedders add precision:
-  # - E5 adds WHY (causal reasoning)
-  # - E7 adds CODE intelligence
-  # - E6/E13 add KEYWORD precision
-  # - E2-E4 add TEMPORAL context (post-retrieval only)
-
-  models:
-    # FOUNDATION (always searched first)
-    E1_Semantic: { dim: 1024, type: dense, quant: "PQ-8", category: FOUNDATION, topic_weight: 1.0, use: "Primary semantic meaning", role: "FOUNDATION - retrieval starts here" }
-
-    # SEMANTIC ENHANCERS (add specialized understanding to E1)
-    E5_Causal: { dim: 768, type: dense, quant: "PQ-8", asymmetric: true, category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "WHY - causal reasoning", role: "Enhances E1 with causality" }
-    E6_Sparse: { dim: "~30K 5%", type: sparse, category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "KEYWORDS - specific terms", role: "Stage 1 recall, enhances E1 precision" }
-    E7_Code: { dim: 1536, type: dense, quant: "PQ-8", category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "CODE - technical patterns", role: "Enhances E1 for code queries" }
-    E10_Multimodal: { dim: 768, type: dense, quant: "PQ-8", category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "INTENT - cross-modal", role: "Enhances E1 via multiplicative boost (ARCH-28)", model: "E5-base-v2", asymmetric: true, integration: "POST-RETRIEVAL multiplicative boost, NOT weighted fusion" }
-    E12_LateInteraction: { dim: "128D/tok", type: dense_per_token, category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "EXACT MATCH - token precision", role: "Stage 3 rerank, enhances E1 precision" }
-    E13_SPLADE: { dim: "~30K sparse", type: sparse, category: SEMANTIC_ENHANCER, topic_weight: 1.0, use: "TERM EXPANSION - related keywords", role: "Stage 1 recall, expands E1 coverage" }
-
-    # TEMPORAL CONTEXT (POST-RETRIEVAL ONLY - never in similarity fusion)
-    E2_TemporalRecent: { dim: 512, type: dense, quant: Float8, category: TEMPORAL_CONTEXT, topic_weight: 0.0, use: "RECENCY - how recent", role: "Post-retrieval boost only" }
-    E3_TemporalPeriodic: { dim: 512, type: dense, quant: Float8, category: TEMPORAL_CONTEXT, topic_weight: 0.0, use: "PATTERNS - time cycles", role: "Post-retrieval boost only" }
-    E4_TemporalPositional: { dim: 512, type: dense, quant: Float8, category: TEMPORAL_CONTEXT, topic_weight: 0.0, use: "SEQUENCE - ordering", role: "Powers sequence tools" }
-
-    # RELATIONAL ENHANCERS (add relationship context to E1)
-    E8_Graph: { dim: 384, type: dense, quant: Float8, category: RELATIONAL_ENHANCER, topic_weight: 0.5, use: "GRAPH - connectivity", role: "Powers graph tools, supports E1" }
-    E11_Entity: { dim: 384, type: dense, quant: Float8, category: RELATIONAL_ENHANCER, topic_weight: 0.5, use: "ENTITIES - named relationships", role: "Enhances E1 with entity facts" }
-
-    # STRUCTURAL CONTEXT (add format awareness to E1)
-    E9_HDC: { dim: "10K->1024", type: binary, category: STRUCTURAL_CONTEXT, topic_weight: 0.5, use: "FORMAT - structure patterns", role: "Noise-robust fingerprint component" }
-
-  fingerprint:
-    structure: "[E1..E13]"
-    foundation: "E1 (V_meaning)"
-    topic_profile: "[A(E1,V)..A(E13,V)]"
-    philosophy: "E1 provides baseline; others add specialized dimensions"
-
-  retrieval: # 5-Stage (<60ms @ 1M)
-    S1: { desc: "BM25+E13 sparse", out: "10K", lat: "<5ms" }
-    S2: { desc: "E1[..128] Matryoshka ANN", out: "1K", lat: "<10ms" }
-    S3: { desc: "RRF across 13 spaces", out: "100", lat: "<20ms" }
-    S4: { desc: "Topic alignment (weighted_agreement >= 2.5)", out: "50", lat: "<10ms" }
-    S5: { desc: "E12 MaxSim precision", out: "10", lat: "<15ms" }
-
-# ===============================================================================
-# STORAGE
-# ===============================================================================
-storage:
-  primary: { dev: rocksdb, prod: scylladb }
-  schema: ["id:UUID", "embeddings:BYTEA", "topic_profile:REAL[13]", "source:ENUM(HookDescription,ClaudeResponse,MDFileChunk)", "coherence:REAL", "created_at:TIMESTAMPTZ", "session_id:VARCHAR", "session_sequence:BIGINT", "chunk_metadata:JSONB"]
-  # session_id: Claude Code session ID for temporal filtering (ARCH-23)
-  # session_sequence: Order within session for E4 sequence queries
-  indexes:
-    L2A_sparse: "E13 SPLADE inverted"
-    L2B_matryoshka: "E1[..128] HNSW M:32"
-    L2C_per_embedder: "13x HNSW quantized"
-    L2D_topic: "13D topic_profile HNSW"
-
-# ===============================================================================
-# PROGRESSIVE FEATURE ACTIVATION
-# ===============================================================================
-progressive_tiers:
-  tier_0: { memories: 0, features: ["Storage", "Basic retrieval"], defaults: { cluster: -1, topic_profile: "[0.5;13]", stability: 1.0 } }
-  tier_1: { memories: "1-2", features: ["Pairwise similarity"] }
-  tier_2: { memories: "3-9", features: ["Basic clustering"] }
-  tier_3: { memories: "10-29", features: ["Multiple clusters", "Divergence detection"] }
-  tier_4: { memories: "30-99", features: ["Reliable statistics"] }
-  tier_5: { memories: "100-499", features: ["Sub-clustering", "Trend analysis"] }
-  tier_6: { memories: "500+", features: ["Full personalization"] }
-
-# ===============================================================================
-# INJECTION STRATEGY
-# ===============================================================================
-injection:
-  priorities:
-    P1: { type: "Divergence Alerts", condition: "Low similarity in SEMANTIC spaces to recent", budget: "~200 tokens" }
-    P2: { type: "High-Relevance Topics", condition: "weighted_agreement >= 2.5", budget: "~400 tokens" }
-    P3: { type: "Related Memories", condition: "weighted_agreement in [1.0, 2.5)", budget: "~300 tokens" }
-    P4: { type: "Recent Context", content: "Last session summary", budget: "~200 tokens" }
-    P5: { type: "Temporal Enrichment", content: "Same-session/period badges (metadata only)", budget: "~50 tokens" }
-
-  relevance_score:
-    formula: "Sum(category_weight_i x embedder_weight_i x max(0, similarity_i - threshold_i))"
-    category_weights:
-      SEMANTIC: 1.0
-      TEMPORAL: 0.0  # Excluded from relevance
-      RELATIONAL: 0.5
-      STRUCTURAL: 0.5
-    embedder_weights:
-      E1: 1.0
-      E5: 0.9
-      E7: 0.85
-      E6: 0.7
-      E10: 0.8
-      E12: 0.75
-      E13: 0.7
-      E8: 0.6
-      E9: 0.5
-      E11: 0.6
-
-  recency_factors:
-    "<1h": 1.3
-    "<1d": 1.2
-    "<7d": 1.1
-    "<30d": 1.0
-    ">90d": 0.8
-
-  diversity_bonus:
-    "weighted_agreement >= 5.0": 1.5  # Strong topic signal
-    "weighted_agreement in [2.5, 5.0)": 1.2  # Topic threshold met
-    "weighted_agreement in [1.0, 2.5)": 1.0  # Related
-    "weighted_agreement < 1.0": 0.8  # Weak
-
-# ===============================================================================
-# BIAS MITIGATION
-# ===============================================================================
-bias_mitigation:
-  thompson_sampling:
-    exploration_budget: "15%"
-    prior: "Beta(1,1) for new clusters"
-    update: "accessed -> alpha+=1, not accessed -> beta+=1"
-
-  mmr_diversity:
-    lambda: 0.7
-    formula: "MMR = lambda x relevance - (1-lambda) x max_similarity_to_selected"
-
-  inverse_propensity:
-    weight: "1 / propensity"
-    propensity: "exposure_count / total_queries (floor 0.1)"
-
-# ===============================================================================
-# CLAUDE CODE CLI INTEGRATION (EXCLUSIVE TARGET)
-# ===============================================================================
-# This system is designed EXCLUSIVELY for Claude Code CLI
-# No support for other LLMs, universal adapters, or generic interfaces
-#
-# CRITICAL: NATIVE CLAUDE CODE HOOKS ONLY
-# ===============================================================================
-# Integration uses NATIVE Claude Code hooks configured via .claude/settings.json
-# These are NOT internal/built-in hooks - we use the official Claude Code hook system
-# Shell script executors call context-graph-cli commands
-# NO custom Claude Code modifications required - works with standard Claude Code
-
-claude_code:
-  target: "Claude Code CLI ONLY"
-  paradigm: "NATIVE hooks + skills + MCP = autonomous topic discovery"
-
-  # -------------------------------------------------------------------------
-  # NATIVE HOOK ARCHITECTURE (CRITICAL)
-  # -------------------------------------------------------------------------
-  native_hooks:
-    config_file: ".claude/settings.json"
-    script_location: "hooks/*.sh"
-    cli_binary: "context-graph-cli"
-    rationale: "71% effort reduction vs custom hook infrastructure"
-
-  # -------------------------------------------------------------------------
-  # HOOK CONFIGURATION (.claude/settings.json)
-  # -------------------------------------------------------------------------
-  hooks:
-    SessionStart:
-      timeout_ms: 5000
-      type: command
-      command: "./hooks/session-start.sh"
-      actions:
-        - "Load topic portfolio from persistence"
-        - "Initialize topic stability tracker"
-        - "Warm FAISS indexes"
-        - "Inject portfolio summary + recent divergences"
-
-    UserPromptSubmit:
-      timeout_ms: 2000
-      type: command
-      command: "./hooks/user-prompt-submit.sh"
-      actions:
-        - "Capture prompt text as memory"
-        - "Embed with all 13 embedders"
-        - "Search for similar memories (semantic spaces)"
-        - "Detect divergence from recent activity"
-        - "Inject: similar memories + divergence alerts"
-
-    PreToolUse:
-      timeout_ms: 500
-      type: command
-      command: "./hooks/pre-tool-use.sh"
-      matcher: "Edit|Write|Bash"
-      actions:
-        - "Capture tool description"
-        - "Inject brief relevant context"
-
-    PostToolUse:
-      timeout_ms: 3000
-      type: command
-      command: "./hooks/post-tool-use.sh"
-      matcher: "*"
-      async: true
-      actions:
-        - "Capture tool description + output summary"
-        - "Embed with all 13 embedders"
-        - "Store as HookDescription memory"
-        - "Update BIRCH clustering online"
-
-    Stop:
-      timeout_ms: 3000
-      type: command
-      command: "./hooks/stop.sh"
-      actions:
-        - "Capture Claude's response summary"
-        - "Store as ClaudeResponse memory"
-
-    SessionEnd:
-      timeout_ms: 30000
-      type: command
-      command: "./hooks/session-end.sh"
-      actions:
-        - "Capture session summary"
-        - "Persist topic portfolio"
-        - "Run HDBSCAN batch clustering"
-        - "Check consolidation triggers"
-        - "Run dream if entropy > 0.7 AND churn > 0.5"
-        - "Update adaptive thresholds"
-
-  # -------------------------------------------------------------------------
-  # SKILLS (.claude/skills/*/SKILL.md)
-  # -------------------------------------------------------------------------
-  skills:
-    topic-explorer:
-      location: ".claude/skills/topic-explorer/SKILL.md"
-      model: sonnet
-      user_invocable: true
-      description: |
-        Explore emergent topic portfolio, topic stability metrics,
-        and weighted agreement scores. Use when querying what topics
-        exist, checking stability, or understanding topic relationships.
-        Keywords: topics, portfolio, stability, churn, weighted agreement
-
-    memory-inject:
-      location: ".claude/skills/memory-inject/SKILL.md"
-      model: haiku
-      user_invocable: true
-      description: |
-        Retrieve and inject contextual memories for the current task.
-        Automatically distills content to fit token budget. Use when
-        starting tasks, needing background, or restoring context.
-        Keywords: memory, context, inject, retrieve, recall, background
-
-    semantic-search:
-      location: ".claude/skills/semantic-search/SKILL.md"
-      model: haiku
-      user_invocable: true
-      description: |
-        Search the knowledge graph using multi-space retrieval.
-        Supports semantic, causal, code, and entity search modes.
-        Keywords: search, find, query, lookup, semantic, causal
-
-    dream-consolidation:
-      location: ".claude/skills/dream-consolidation/SKILL.md"
-      model: sonnet
-      user_invocable: true
-      description: |
-        Trigger memory consolidation via dream phases. NREM replays
-        high-importance patterns. REM discovers blind spots via
-        hyperbolic random walk. Use when entropy high or churn high.
-        Keywords: dream, consolidate, nrem, rem, blind spots, entropy, churn
-      triggers:
-        - "entropy > 0.7 for 5+ min"
-        - "entropy > 0.7 AND churn > 0.5"
-
-    curation:
-      location: ".claude/skills/curation/SKILL.md"
-      model: sonnet
-      user_invocable: true
-      description: |
-        Curate the knowledge graph by merging, annotating, or forgetting
-        concepts. Process curation tasks from get_memetic_status.
-        Keywords: curate, merge, forget, annotate, prune, duplicate
-
-  # -------------------------------------------------------------------------
-  # CLI COMMANDS (context-graph-cli)
-  # -------------------------------------------------------------------------
-  cli:
-    binary: "context-graph-cli"
-    commands:
-      session:
-        start: "Initialize session, load topic portfolio"
-        end: "Persist state, run consolidation if needed"
-        params: "--session-id <id>"
-      topic:
-        portfolio: "Get current topic portfolio"
-        stability: "Get topic stability metrics"
-        search: "Search by topic"
-      inject-context:
-        description: "Generate context for injection"
-        params: "--format compact|standard|verbose"
-      inject-brief:
-        description: "Brief context for PreToolUse"
-      capture-memory:
-        description: "Capture and embed memory"
-        params: "--source hook|response|mdfile"
-      capture-response:
-        description: "Capture Claude response"
-      divergence:
-        detect: "Detect divergence from recent"
-        recent: "Get recent activity"
-
-  # -------------------------------------------------------------------------
-  # FILE STRUCTURE (NATIVE HOOKS)
-  # -------------------------------------------------------------------------
-  file_structure:
-    native_hook_config:
-      - ".claude/settings.json"
-    shell_script_executors:
-      - "hooks/session-start.sh"
-      - "hooks/pre-tool-use.sh"
-      - "hooks/post-tool-use.sh"
-      - "hooks/user-prompt-submit.sh"
-      - "hooks/stop.sh"
-      - "hooks/session-end.sh"
-    skills:
-      - ".claude/skills/topic-explorer/SKILL.md"
-      - ".claude/skills/memory-inject/SKILL.md"
-      - ".claude/skills/semantic-search/SKILL.md"
-      - ".claude/skills/dream-consolidation/SKILL.md"
-      - ".claude/skills/curation/SKILL.md"
-    cli:
-      - "crates/context-graph-cli/src/main.rs"
-      - "crates/context-graph-cli/src/commands/session.rs"
-      - "crates/context-graph-cli/src/commands/topic.rs"
-      - "crates/context-graph-cli/src/commands/inject.rs"
-      - "crates/context-graph-cli/src/commands/capture.rs"
-
-  # -------------------------------------------------------------------------
-  # PERFORMANCE REQUIREMENTS
-  # -------------------------------------------------------------------------
-  performance:
-    hooks:
-      session_start: "<5s total"
-      pre_tool: "<500ms"
-      post_tool: "<3s (async OK)"
-      user_prompt: "<2s"
-      stop: "<3s"
-      session_end: "<30s"
-    cli:
-      brief_output: "<100ms"
-      inject_context: "<2s"
-      capture_memory: "<500ms"
-    topic:
-      portfolio_query: "<100ms"
-      stability_check: "<50ms"
-      weighted_agreement: "<10ms"
-      dream_wake: "<100ms"
-
-# ===============================================================================
-# SUCCESS CRITERIA
-# ===============================================================================
-success:
-  topic_system:
-    weighted_agreement: "Correctly computed per ARCH-09"
-    temporal_exclusion: "E2-E4 contribute 0.0 to topics"
-    divergence_detection: "Only SEMANTIC spaces trigger alerts"
-    topic_stability: ">= 0.6 average"
-    emergent_topics: "Discovered via clustering, no manual input"
-
-  performance:
-    full_retrieval: "<2000ms p95"       # Realistic with 13-model embedding
-    embedding_13: "<1000ms p95"         # Sequential 13 models on single GPU
-    pre_tool_hook: "<500ms p95"         # Fast path, no embedding
-    memory_per_array: "<17KB quantized"
-
-  memory_capture:
-    hook_descriptions: "Captured and embedded"
-    claude_responses: "Captured at session end"
-    md_chunks: "200 words, 50 overlap"
+# ═══════════════════════════════════════════════════════════════
+# HOOKS (Native Claude Code)
+# ═══════════════════════════════════════════════════════════════
+hooks:
+  config: ".claude/settings.json"
+  SessionStart: "Load topic portfolio, warm indexes"
+  UserPromptSubmit: "Embed prompt, search, detect divergence, inject context"
+  PreToolUse: "Inject brief relevant context"
+  PostToolUse: "Capture + embed as HookDescription"
+  Stop: "Capture response summary"
+  SessionEnd: "Persist state, run HDBSCAN, check dream triggers"

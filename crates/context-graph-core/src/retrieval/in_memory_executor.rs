@@ -428,7 +428,7 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
             SpaceInfo::dense_hnsw(7, 384, 0, true),  // E8 Graph
             SpaceInfo::dense_hnsw(8, 1024, 0, true), // E9 HDC (projected)
             SpaceInfo::dense_hnsw(9, 768, 0, true),  // E10 Multimodal
-            SpaceInfo::dense_hnsw(10, 384, 0, true), // E11 Entity
+            SpaceInfo::dense_hnsw(10, 768, 0, true), // E11 Entity (KEPLER)
             SpaceInfo::dense_hnsw(11, 128, 0, true), // E12 Late-Interaction
             SpaceInfo::sparse_inverted(12, 0, true), // E13 SPLADE
         ]

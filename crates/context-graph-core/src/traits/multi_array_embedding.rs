@@ -474,7 +474,7 @@ pub trait MultiArrayEmbeddingProvider: Send + Sync {
             384,  // E8: Graph (MiniLM)
             1024, // E9: HDC (projected)
             768,  // E10: Multimodal (CLIP)
-            384,  // E11: Entity (MiniLM)
+            768,  // E11: Entity (KEPLER)
             128,  // E12: Late-Interaction (ColBERT per-token)
             0,    // E13: SPLADE v3 - variable
         ]
@@ -790,7 +790,7 @@ mod tests {
         assert_eq!(dims[7], 384, "E8 graph should be 384D");
         assert_eq!(dims[8], 1024, "E9 HDC should be 1024D (projected)");
         assert_eq!(dims[9], 768, "E10 multimodal should be 768D");
-        assert_eq!(dims[10], 384, "E11 entity should be 384D");
+        assert_eq!(dims[10], 768, "E11 entity should be 768D (KEPLER)");
         assert_eq!(
             dims[11], 128,
             "E12 late-interaction should be 128D per token"
@@ -908,7 +908,7 @@ mod tests {
         assert_eq!(fp.e10_multimodal_as_intent.len(), 768);
         assert_eq!(fp.e10_multimodal_as_context.len(), 768);
         assert!(fp.e10_multimodal.is_empty()); // Legacy field empty in new format
-        assert_eq!(fp.e11_entity.len(), 384);
+        assert_eq!(fp.e11_entity.len(), 768); // KEPLER
         assert!(fp.e12_late_interaction.is_empty()); // Token-level starts empty
         assert!(fp.e13_splade.is_empty()); // Sparse starts empty
     }

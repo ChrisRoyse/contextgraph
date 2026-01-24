@@ -705,8 +705,16 @@ async fn main() -> Result<()> {
             run_stdio_to_tcp_proxy(daemon_port).await?;
         } else {
             // No daemon - start one and then proxy to it
+            // CRITICAL: Always use warm_first=false in daemon mode
+            // This allows the TCP server to start immediately and respond to MCP
+            // initialize requests while models load in background (~115s).
+            // The LazyMultiArrayProvider handles embedding requests gracefully
+            // until models are ready.
             info!("No daemon found, starting new daemon server...");
-            start_daemon_server(config, warm_first, daemon_port).await?;
+            if warm_first {
+                info!("Daemon mode overrides warm_first to false for immediate startup");
+            }
+            start_daemon_server(config, false, daemon_port).await?;
             info!("Daemon started, connecting as proxy...");
             run_stdio_to_tcp_proxy(daemon_port).await?;
         }

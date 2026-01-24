@@ -102,7 +102,7 @@ pub enum Embedder {
     Hdc = 8,
     /// E10: Multimodal via CLIP (768D dense)
     Multimodal = 9,
-    /// E11: Entity via MiniLM (384D dense)
+    /// E11: Entity via KEPLER (768D dense)
     Entity = 10,
     /// E12: Late interaction ColBERT MaxSim (128D per token)
     LateInteraction = 11,

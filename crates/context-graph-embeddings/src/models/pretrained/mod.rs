@@ -17,6 +17,7 @@ mod code;
 mod contextual;
 mod entity;
 mod graph;
+pub mod kepler;
 mod late_interaction;
 mod multimodal;
 mod semantic;
@@ -44,6 +45,9 @@ pub use code::{
 };
 pub use entity::{
     EntityModel, ENTITY_DIMENSION, ENTITY_LATENCY_BUDGET_MS, ENTITY_MAX_TOKENS, ENTITY_MODEL_NAME,
+};
+pub use kepler::{
+    KeplerModel, KEPLER_DIMENSION, KEPLER_LATENCY_BUDGET_MS, KEPLER_MAX_TOKENS, KEPLER_MODEL_NAME,
 };
 pub use graph::{
     GraphModel, GRAPH_DIMENSION, GRAPH_LATENCY_BUDGET_MS, GRAPH_MAX_TOKENS, GRAPH_MODEL_NAME,

@@ -7,6 +7,7 @@ pub mod causal;
 pub mod comparative;
 pub mod e1_semantic;
 pub mod e4_hybrid_session;
+pub mod e11_entity;
 pub mod failfast;
 pub mod graph_realdata;
 pub mod mcp_intent;
@@ -71,4 +72,11 @@ pub use e4_hybrid_session::{
     E4HybridSessionBenchmarkConfig, E4HybridSessionBenchmarkResults, E4HybridSessionBenchmarkRunner,
     E4HybridBenchmarkTimings, E4HybridDatasetStats, LegacyComparisonResults,
     TimestampBaselineResults as E4TimestampBaselineResults, ValidationSummary as E4ValidationSummary,
+};
+pub use e11_entity::{
+    E11EntityBenchmarkConfig, E11EntityBenchmarkResults, E11EntityBenchmarkRunner,
+    E11EntityBenchmarkTimings, E11EntityDatasetStats as E11RunnerDatasetStats,
+    ExtractionBenchmarkResults, RetrievalBenchmarkResults, TransEBenchmarkResults,
+    ValidationBenchmarkResults, GraphBenchmarkResults, QueryResult, TripleScoreResult,
+    RelationshipInferenceResult, SampleExtraction, ConfusionMatrix,
 };

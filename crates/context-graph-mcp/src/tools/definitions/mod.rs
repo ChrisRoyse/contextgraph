@@ -1,14 +1,16 @@
-//! Tool definitions per PRD v6 Section 10 (28 tools total).
+//! Tool definitions per PRD v6 Section 10 (36 tools total).
 //!
 //! Includes 18 original tools plus 4 sequence tools for E4 integration
 //! plus 2 causal tools for E5 Priority 1 enhancement
 //! plus 2 graph tools for E8 upgrade (Phase 4)
-//! plus 2 intent tools for E10 upgrade (intent/context dual embeddings).
+//! plus 4 intent tools for E10 upgrade (intent/context dual embeddings + drift detection)
+//! plus 6 entity tools for E11 integration (extract, search, infer, find, validate, graph).
 
 pub(crate) mod causal;
 pub(crate) mod core;
 pub(crate) mod curation;
 pub(crate) mod dream;
+pub(crate) mod entity;
 pub(crate) mod file_watcher;
 pub(crate) mod graph;
 pub(crate) mod intent;
@@ -20,7 +22,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(28);
+    let mut tools = Vec::with_capacity(36);
 
     // Core tools (5)
     tools.extend(core::definitions());
@@ -49,8 +51,11 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Graph tools (2) - E8 upgrade (Phase 4)
     tools.extend(graph::definitions());
 
-    // Intent tools (2) - E10 upgrade (intent/context dual embeddings)
+    // Intent tools (4) - E10 upgrade (intent/context dual embeddings)
     tools.extend(intent::definitions());
+
+    // Entity tools (6) - E11 integration
+    tools.extend(entity::definitions());
 
     tools
 }
@@ -61,7 +66,7 @@ mod tests {
 
     #[test]
     fn test_total_tool_count() {
-        assert_eq!(get_tool_definitions().len(), 28);
+        assert_eq!(get_tool_definitions().len(), 36);
     }
 
     #[test]
@@ -105,9 +110,18 @@ mod tests {
             // Graph tools (2) - E8 upgrade (Phase 4)
             "search_connections",
             "get_graph_path",
-            // Intent tools (2) - E10 upgrade
+            // Intent tools (4) - E10 upgrade
             "search_by_intent",
             "find_contextual_matches",
+            "detect_intent_drift",
+            "get_session_intent_history",
+            // Entity tools (6) - E11 integration
+            "extract_entities",
+            "search_by_entities",
+            "infer_relationship",
+            "find_related_entities",
+            "validate_knowledge",
+            "get_entity_graph",
         ];
 
         for name in expected {
@@ -152,6 +166,7 @@ mod tests {
         assert_eq!(sequence::definitions().len(), 4);
         assert_eq!(causal::definitions().len(), 2);
         assert_eq!(graph::definitions().len(), 2);
-        assert_eq!(intent::definitions().len(), 2);
+        assert_eq!(intent::definitions().len(), 4);
+        assert_eq!(entity::definitions().len(), 6);
     }
 }

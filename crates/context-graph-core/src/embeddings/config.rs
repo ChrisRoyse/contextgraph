@@ -205,10 +205,10 @@ pub static EMBEDDER_CONFIGS: [EmbedderConfig; 13] = [
         is_sparse: false,
         is_token_level: false,
     },
-    // E11: Entity (384D, Cosine, Float8) - Category: Relational
+    // E11: Entity/KEPLER (768D, Cosine, PQ8) - Category: Relational
     EmbedderConfig {
         embedder: Embedder::Entity,
-        dimension: E11_DIM, // 384
+        dimension: E11_DIM, // 768 (KEPLER)
         distance_metric: DistanceMetric::Cosine,
         quantization: QuantizationConfig::Float8,
         is_asymmetric: false,

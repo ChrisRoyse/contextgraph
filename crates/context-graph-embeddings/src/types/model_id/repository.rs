@@ -20,6 +20,7 @@ impl ModelId {
             Self::Graph => Some("sentence-transformers/paraphrase-MiniLM-L6-v2"),
             Self::Multimodal => Some("openai/clip-vit-large-patch14"),
             Self::Entity => Some("sentence-transformers/all-MiniLM-L6-v2"),
+            Self::Kepler => Some("THU-KEG/KEPLER-Wiki5M-KE"), // KEPLER knowledge embeddings
             Self::LateInteraction => Some("colbert-ir/colbertv2.0"),
             Self::Splade => Some("prithivida/Splade_PP_en_v1"),
             Self::TemporalRecent
@@ -44,6 +45,7 @@ impl ModelId {
             Self::Hdc => "hdc",
             Self::Multimodal => "multimodal",
             Self::Entity => "entity",
+            Self::Kepler => "kepler",
             Self::LateInteraction => "late-interaction",
             Self::Splade => "splade-v3",
         }

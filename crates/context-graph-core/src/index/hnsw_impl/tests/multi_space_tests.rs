@@ -30,7 +30,7 @@ fn create_test_fingerprint() -> SemanticFingerprint {
         e10_multimodal_as_intent: random_vector(768),
         e10_multimodal_as_context: random_vector(768),
         e10_multimodal: Vec::new(), // Legacy field, empty by default
-        e11_entity: random_vector(384),
+        e11_entity: random_vector(768), // KEPLER
         e12_late_interaction: vec![random_vector(128); 3],
         e13_splade: SparseVector::new(vec![100, 200, 300], vec![0.5, 0.3, 0.2]).unwrap(),
     }

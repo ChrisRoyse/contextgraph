@@ -57,3 +57,11 @@ pub const GET_GRAPH_PATH: &str = "get_graph_path";
 // ========== INTENT TOOLS (E10 Intent/Context Upgrade) ==========
 pub const SEARCH_BY_INTENT: &str = "search_by_intent";
 pub const FIND_CONTEXTUAL_MATCHES: &str = "find_contextual_matches";
+
+// ========== ENTITY TOOLS (E11 Entity Integration) ==========
+pub const EXTRACT_ENTITIES: &str = "extract_entities";
+pub const SEARCH_BY_ENTITIES: &str = "search_by_entities";
+pub const INFER_RELATIONSHIP: &str = "infer_relationship";
+pub const FIND_RELATED_ENTITIES: &str = "find_related_entities";
+pub const VALIDATE_KNOWLEDGE: &str = "validate_knowledge";
+pub const GET_ENTITY_GRAPH: &str = "get_entity_graph";
