@@ -148,3 +148,7 @@ path = "src/bin/validation_realdata_bench.rs"
 [[bin]]
 name = "e4-hybrid-session-bench"
 path = "src/bin/e4_hybrid_session_bench.rs"
+
+[[bin]]
+name = "e1-semantic-bench"
+path = "src/bin/e1_semantic_bench.rs"

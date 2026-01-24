@@ -1,0 +1,232 @@
+{
+  "metrics": {
+    "retrieval": {
+      "precision_at": {
+        "5": 0.875,
+        "20": 0.875,
+        "1": 0.875,
+        "10": 0.875
+      },
+      "recall_at": {
+        "5": 0.032138573266068504,
+        "1": 0.0064277146532136994,
+        "20": 0.12855429306427402,
+        "10": 0.06427714653213701
+      },
+      "mrr": 0.875,
+      "ndcg_at": {
+        "5": 0.875,
+        "1": 0.875,
+        "10": 0.875,
+        "20": 0.875
+      },
+      "map": 0.3128815301829778,
+      "query_count": 80
+    },
+    "topic_separation": {
+      "intra_topic_similarity": 0.8245015009424354,
+      "inter_topic_similarity": 0.7872080214188552,
+      "separation_ratio": 1.0473743642199718,
+      "silhouette_score": 0.1435702581621624,
+      "boundary_f1": 0.6159645959678741,
+      "num_topics": 7,
+      "num_pairs_evaluated": 9990,
+      "intra_distribution": [
+        0.8245015009424354,
+        0.03275031801871462
+      ],
+      "inter_distribution": [
+        0.7872080214188552,
+        0.022304965967412212
+      ]
+    },
+    "noise_robustness": {
+      "mrr_degradation": [
+        [
+          0.0,
+          0.875
+        ],
+        [
+          0.1,
+          0.875
+        ],
+        [
+          0.2,
+          0.875
+        ],
+        [
+          0.3,
+          0.875
+        ]
+      ],
+      "precision_degradation": [],
+      "robustness_threshold": null,
+      "avg_relative_degradation": 0.0,
+      "meets_robustness_target": true
+    },
+    "domain_coverage": {
+      "per_domain_metrics": {
+        "General": {
+          "precision_at": {
+            "20": 0.875,
+            "10": 0.875,
+            "1": 0.875,
+            "5": 0.875
+          },
+          "recall_at": {
+            "5": 0.032138573266068504,
+            "10": 0.06427714653213701,
+            "1": 0.0064277146532136994,
+            "20": 0.12855429306427402
+          },
+          "mrr": 0.875,
+          "ndcg_at": {
+            "1": 0.875,
+            "20": 0.875,
+            "5": 0.875,
+            "10": 0.875
+          },
+          "map": 0.3128815301829778,
+          "query_count": 80
+        }
+      },
+      "mrr_variance": 0.0,
+      "worst_domain": "General",
+      "best_domain": "General",
+      "all_domains_pass": true
+    },
+    "composite": {
+      "overall_score": 0.6393073917124441,
+      "retrieval_score": 0.6723192866330343,
+      "separation_score": 0.26376559019743445,
+      "robustness_score": 1.0,
+      "coverage_score": 0.9124999999999999,
+      "all_targets_met": false,
+      "targets_met_count": 3,
+      "targets_total": 4
+    }
+  },
+  "ablation": {
+    "e1_only_mrr": 0.0,
+    "e1_e5_mrr": null,
+    "e1_e7_mrr": null,
+    "e1_all_semantic_mrr": null,
+    "full_multispace_mrr": null,
+    "e1_is_best_foundation": true,
+    "enhancements": {}
+  },
+  "per_query_type": {
+    "SameTopic": {
+      "precision_at": {
+        "20": 1.0,
+        "1": 1.0,
+        "5": 1.0,
+        "10": 1.0
+      },
+      "recall_at": {
+        "5": 0.036729798018364006,
+        "20": 0.14691919207345602,
+        "10": 0.07345959603672801,
+        "1": 0.007345959603672799
+      },
+      "mrr": 1.0,
+      "ndcg_at": {
+        "10": 1.0,
+        "1": 1.0,
+        "5": 1.0,
+        "20": 1.0
+      },
+      "map": 0.3575788916376889,
+      "query_count": 70
+    },
+    "OffTopic": {
+      "precision_at": {
+        "20": 0.0,
+        "5": 0.0,
+        "10": 0.0,
+        "1": 0.0
+      },
+      "recall_at": {
+        "5": 0.0,
+        "1": 0.0,
+        "10": 0.0,
+        "20": 0.0
+      },
+      "mrr": 0.0,
+      "ndcg_at": {
+        "1": 0.0,
+        "5": 0.0,
+        "10": 0.0,
+        "20": 0.0
+      },
+      "map": 0.0,
+      "query_count": 10
+    }
+  },
+  "timings": {
+    "total_ms": 2298,
+    "retrieval_ms": 121,
+    "separation_ms": 1569,
+    "noise_robustness_ms": 366,
+    "domain_analysis_ms": 121,
+    "ablation_ms": 0
+  },
+  "config": {
+    "k_values": [
+      1,
+      5,
+      10,
+      20
+    ],
+    "noise_levels": [
+      0.0,
+      0.1,
+      0.2,
+      0.3
+    ],
+    "run_ablation": true,
+    "run_domain_analysis": true,
+    "num_separation_pairs": 5000,
+    "seed": 42,
+    "show_progress": true
+  },
+  "dataset_stats": {
+    "num_documents": 1000,
+    "num_queries": 0,
+    "num_topics": 7,
+    "num_domains": 1,
+    "num_docs_with_embeddings": 1000,
+    "embedding_dimension": 1024
+  },
+  "validation": {
+    "all_passed": false,
+    "checks_passed": 3,
+    "checks_total": 4,
+    "checks": [
+      {
+        "description": "MRR >= 0.70",
+        "expected": ">= 0.70",
+        "actual": "0.875",
+        "passed": true
+      },
+      {
+        "description": "P@10 >= 0.60",
+        "expected": ">= 0.60",
+        "actual": "0.875",
+        "passed": true
+      },
+      {
+        "description": "Topic separation ratio >= 1.5",
+        "expected": ">= 1.5",
+        "actual": "1.05",
+        "passed": false
+      },
+      {
+        "description": "MRR >= 0.55 at 0.2 noise",
+        "expected": ">= 0.55",
+        "actual": "0.875",
+        "passed": true
+      }
+    ]
+  }
+}

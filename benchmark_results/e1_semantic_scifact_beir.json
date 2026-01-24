@@ -1,0 +1,13 @@
+{
+  "dataset": "data/beir_scifact",
+  "embed_time_ms": 4483053,
+  "expected_mrr10": 68.8,
+  "expected_ndcg10": 72.24,
+  "load_time_ms": 12,
+  "map": 67.5203992492036,
+  "mrr10": 68.29616402116402,
+  "ndcg10": 71.28070482210863,
+  "num_documents": 5183,
+  "num_queries": 300,
+  "total_time_ms": 4589391
+}

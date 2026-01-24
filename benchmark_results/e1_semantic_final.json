@@ -1,0 +1,218 @@
+{
+  "metrics": {
+    "retrieval": {
+      "precision_at": {
+        "5": 0.875,
+        "10": 0.875,
+        "20": 0.875,
+        "1": 0.875
+      },
+      "recall_at": {
+        "10": 0.10399666773616349,
+        "5": 0.051998333868081746,
+        "20": 0.20799333547232698,
+        "1": 0.010399666773616353
+      },
+      "mrr": 0.875,
+      "ndcg_at": {
+        "1": 0.875,
+        "5": 0.875,
+        "20": 0.875,
+        "10": 0.875
+      },
+      "map": 0.42054131413304285,
+      "query_count": 40
+    },
+    "topic_separation": {
+      "intra_topic_similarity": 0.8273597762114306,
+      "inter_topic_similarity": 0.7856151388224972,
+      "separation_ratio": 1.0531362435956892,
+      "silhouette_score": 0.17120210357191123,
+      "boundary_f1": 0.6245083207261724,
+      "num_topics": 6,
+      "num_pairs_evaluated": 10395,
+      "intra_distribution": [
+        0.8273597762114306,
+        0.03762003282086087
+      ],
+      "inter_distribution": [
+        0.7856151388224972,
+        0.024251219345311662
+      ]
+    },
+    "noise_robustness": {
+      "mrr_degradation": [
+        [
+          0.0,
+          0.875
+        ],
+        [
+          0.1,
+          0.875
+        ],
+        [
+          0.2,
+          0.875
+        ],
+        [
+          0.3,
+          0.875
+        ]
+      ],
+      "precision_degradation": [],
+      "robustness_threshold": null,
+      "avg_relative_degradation": 0.0,
+      "meets_robustness_target": true
+    },
+    "domain_coverage": {
+      "per_domain_metrics": {
+        "General": {
+          "precision_at": {
+            "1": 0.875,
+            "10": 0.875,
+            "5": 0.875,
+            "20": 0.875
+          },
+          "recall_at": {
+            "5": 0.051998333868081746,
+            "20": 0.20799333547232698,
+            "10": 0.10399666773616349,
+            "1": 0.010399666773616353
+          },
+          "mrr": 0.875,
+          "ndcg_at": {
+            "1": 0.875,
+            "5": 0.875,
+            "20": 0.875,
+            "10": 0.875
+          },
+          "map": 0.42054131413304285,
+          "query_count": 40
+        }
+      },
+      "mrr_variance": 0.0,
+      "worst_domain": "General",
+      "best_domain": "General",
+      "all_domains_pass": true
+    },
+    "composite": {
+      "overall_score": 0.6457371439374648,
+      "retrieval_score": 0.6822491669340409,
+      "separation_score": 0.2719582572128283,
+      "robustness_score": 1.0,
+      "coverage_score": 0.9124999999999999,
+      "all_targets_met": false,
+      "targets_met_count": 3,
+      "targets_total": 4
+    }
+  },
+  "ablation": null,
+  "per_query_type": {
+    "SameTopic": {
+      "precision_at": {
+        "5": 1.0,
+        "1": 1.0,
+        "20": 1.0,
+        "10": 1.0
+      },
+      "recall_at": {
+        "1": 0.011885333455561546,
+        "5": 0.05942666727780771,
+        "20": 0.23770666911123084,
+        "10": 0.11885333455561542
+      },
+      "mrr": 1.0,
+      "ndcg_at": {
+        "5": 1.0,
+        "1": 1.0,
+        "10": 1.0,
+        "20": 1.0
+      },
+      "map": 0.48061864472347754,
+      "query_count": 35
+    },
+    "OffTopic": {
+      "precision_at": {
+        "5": 0.0,
+        "20": 0.0,
+        "10": 0.0,
+        "1": 0.0
+      },
+      "recall_at": {
+        "10": 0.0,
+        "1": 0.0,
+        "20": 0.0,
+        "5": 0.0
+      },
+      "mrr": 0.0,
+      "ndcg_at": {
+        "1": 0.0,
+        "5": 0.0,
+        "10": 0.0,
+        "20": 0.0
+      },
+      "map": 0.0,
+      "query_count": 5
+    }
+  },
+  "timings": {
+    "total_ms": 596,
+    "retrieval_ms": 32,
+    "separation_ms": 408,
+    "noise_robustness_ms": 94,
+    "domain_analysis_ms": 30,
+    "ablation_ms": null
+  },
+  "config": {
+    "k_values": [
+      1,
+      5,
+      10,
+      20
+    ],
+    "noise_levels": [
+      0.0,
+      0.1,
+      0.2,
+      0.3
+    ],
+    "run_ablation": false,
+    "run_domain_analysis": true,
+    "num_separation_pairs": 5000,
+    "seed": 42,
+    "show_progress": true
+  },
+  "dataset_stats": {
+    "num_documents": 500,
+    "num_queries": 0,
+    "num_topics": 6,
+    "num_domains": 1,
+    "num_docs_with_embeddings": 500,
+    "embedding_dimension": 1024
+  },
+  "validation": {
+    "all_passed": true,
+    "checks_passed": 3,
+    "checks_total": 3,
+    "checks": [
+      {
+        "description": "MRR >= 0.70",
+        "expected": ">= 0.70",
+        "actual": "0.875",
+        "passed": true
+      },
+      {
+        "description": "P@10 >= 0.60",
+        "expected": ">= 0.60",
+        "actual": "0.875",
+        "passed": true
+      },
+      {
+        "description": "MRR >= 0.55 at 0.2 noise",
+        "expected": ">= 0.55",
+        "actual": "0.875",
+        "passed": true
+      }
+    ]
+  }
+}

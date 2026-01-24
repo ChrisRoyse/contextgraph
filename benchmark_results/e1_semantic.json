@@ -1,0 +1,362 @@
+{
+  "metrics": {
+    "retrieval": {
+      "precision_at": {
+        "10": 0.625,
+        "5": 0.95,
+        "20": 0.425,
+        "1": 0.95
+      },
+      "recall_at": {
+        "5": 0.7100641025641026,
+        "20": 0.8300000000000001,
+        "1": 0.14201282051282055,
+        "10": 0.7701282051282051
+      },
+      "mrr": 0.95,
+      "ndcg_at": {
+        "1": 0.95,
+        "20": 0.95,
+        "5": 0.95,
+        "10": 0.95
+      },
+      "map": 0.95,
+      "query_count": 20
+    },
+    "topic_separation": {
+      "intra_topic_similarity": 0.22620623473256402,
+      "inter_topic_similarity": 0.0003875245461013138,
+      "separation_ratio": 10.0,
+      "silhouette_score": 0.1907433544916207,
+      "boundary_f1": 1.0,
+      "num_topics": 50,
+      "num_pairs_evaluated": 10375,
+      "intra_distribution": [
+        0.22620623473256402,
+        0.02885856747203478
+      ],
+      "inter_distribution": [
+        0.0003875245461013138,
+        0.0309805401809753
+      ]
+    },
+    "noise_robustness": {
+      "mrr_degradation": [
+        [
+          0.0,
+          0.95
+        ],
+        [
+          0.1,
+          0.95
+        ],
+        [
+          0.2,
+          0.95
+        ],
+        [
+          0.3,
+          0.95
+        ]
+      ],
+      "precision_degradation": [],
+      "robustness_threshold": null,
+      "avg_relative_degradation": 0.0,
+      "meets_robustness_target": true
+    },
+    "domain_coverage": {
+      "per_domain_metrics": {
+        "General": {
+          "precision_at": {
+            "10": 0.6428571428571429,
+            "5": 0.8571428571428571,
+            "20": 0.4857142857142857,
+            "1": 0.8571428571428571
+          },
+          "recall_at": {
+            "20": 0.6857142857142858,
+            "1": 0.10241758241758243,
+            "5": 0.5120879120879122,
+            "10": 0.5956043956043956
+          },
+          "mrr": 0.8571428571428571,
+          "ndcg_at": {
+            "20": 0.8571428571428571,
+            "5": 0.8571428571428571,
+            "1": 0.8571428571428571,
+            "10": 0.8571428571428571
+          },
+          "map": 0.8571428571428571,
+          "query_count": 7
+        },
+        "DataScience": {
+          "precision_at": {
+            "10": 0.6,
+            "1": 1.0,
+            "20": 0.4,
+            "5": 1.0
+          },
+          "recall_at": {
+            "20": 0.8800000000000001,
+            "10": 0.8400000000000001,
+            "5": 0.82,
+            "1": 0.164
+          },
+          "mrr": 1.0,
+          "ndcg_at": {
+            "5": 1.0,
+            "1": 1.0,
+            "10": 1.0,
+            "20": 1.0
+          },
+          "map": 1.0,
+          "query_count": 5
+        },
+        "Documentation": {
+          "precision_at": {
+            "1": 1.0,
+            "10": 0.5,
+            "20": 0.25,
+            "5": 1.0
+          },
+          "recall_at": {
+            "10": 1.0,
+            "1": 0.2,
+            "5": 1.0,
+            "20": 1.0
+          },
+          "mrr": 1.0,
+          "ndcg_at": {
+            "1": 1.0,
+            "5": 1.0,
+            "10": 1.0,
+            "20": 1.0
+          },
+          "map": 1.0,
+          "query_count": 1
+        },
+        "Code": {
+          "precision_at": {
+            "20": 0.4375,
+            "1": 1.0,
+            "10": 0.625,
+            "5": 1.0
+          },
+          "recall_at": {
+            "20": 0.85,
+            "1": 0.15500000000000003,
+            "5": 0.775,
+            "10": 0.8
+          },
+          "mrr": 1.0,
+          "ndcg_at": {
+            "5": 1.0,
+            "20": 1.0,
+            "10": 1.0,
+            "1": 1.0
+          },
+          "map": 1.0,
+          "query_count": 4
+        },
+        "Infrastructure": {
+          "precision_at": {
+            "20": 0.3666666666666667,
+            "1": 1.0,
+            "5": 1.0,
+            "10": 0.6666666666666666
+          },
+          "recall_at": {
+            "20": 1.0,
+            "10": 0.9444444444444445,
+            "1": 0.16111111111111112,
+            "5": 0.8055555555555557
+          },
+          "mrr": 1.0,
+          "ndcg_at": {
+            "5": 1.0,
+            "10": 1.0,
+            "1": 1.0,
+            "20": 1.0
+          },
+          "map": 1.0,
+          "query_count": 3
+        }
+      },
+      "mrr_variance": 0.0032653061224489814,
+      "worst_domain": "General",
+      "best_domain": "Infrastructure",
+      "all_domains_pass": true
+    },
+    "composite": {
+      "overall_score": 0.8954514105919706,
+      "retrieval_score": 0.8237820512820513,
+      "separation_score": 0.8988429193114525,
+      "robustness_score": 1.0,
+      "coverage_score": 0.9628571428571429,
+      "all_targets_met": true,
+      "targets_met_count": 4,
+      "targets_total": 4
+    }
+  },
+  "ablation": null,
+  "per_query_type": {
+    "SameTopic": {
+      "precision_at": {
+        "20": 0.25,
+        "1": 1.0,
+        "10": 0.5,
+        "5": 1.0
+      },
+      "recall_at": {
+        "1": 0.2,
+        "5": 1.0,
+        "10": 1.0,
+        "20": 1.0
+      },
+      "mrr": 1.0,
+      "ndcg_at": {
+        "20": 1.0,
+        "10": 1.0,
+        "1": 1.0,
+        "5": 1.0
+      },
+      "map": 1.0,
+      "query_count": 13
+    },
+    "RelatedTopic": {
+      "precision_at": {
+        "1": 1.0,
+        "20": 1.0,
+        "10": 1.0,
+        "5": 1.0
+      },
+      "recall_at": {
+        "20": 0.4,
+        "5": 0.1,
+        "10": 0.2,
+        "1": 0.02
+      },
+      "mrr": 1.0,
+      "ndcg_at": {
+        "1": 1.0,
+        "5": 1.0,
+        "20": 1.0,
+        "10": 1.0
+      },
+      "map": 1.0,
+      "query_count": 4
+    },
+    "CrossDomain": {
+      "precision_at": {
+        "5": 1.0,
+        "10": 1.0,
+        "1": 1.0,
+        "20": 0.625
+      },
+      "recall_at": {
+        "5": 0.40064102564102566,
+        "10": 0.8012820512820513,
+        "1": 0.08012820512820512,
+        "20": 1.0
+      },
+      "mrr": 1.0,
+      "ndcg_at": {
+        "10": 1.0,
+        "1": 1.0,
+        "5": 1.0,
+        "20": 1.0
+      },
+      "map": 1.0,
+      "query_count": 2
+    },
+    "OffTopic": {
+      "precision_at": {
+        "10": 0.0,
+        "20": 0.0,
+        "1": 0.0,
+        "5": 0.0
+      },
+      "recall_at": {
+        "10": 0.0,
+        "1": 0.0,
+        "20": 0.0,
+        "5": 0.0
+      },
+      "mrr": 0.0,
+      "ndcg_at": {
+        "20": 0.0,
+        "1": 0.0,
+        "5": 0.0,
+        "10": 0.0
+      },
+      "map": 0.0,
+      "query_count": 1
+    }
+  },
+  "timings": {
+    "total_ms": 3183,
+    "retrieval_ms": 152,
+    "separation_ms": 2259,
+    "noise_robustness_ms": 463,
+    "domain_analysis_ms": 153,
+    "ablation_ms": null
+  },
+  "config": {
+    "k_values": [
+      1,
+      5,
+      10,
+      20
+    ],
+    "noise_levels": [
+      0.0,
+      0.1,
+      0.2,
+      0.3
+    ],
+    "run_ablation": false,
+    "run_domain_analysis": true,
+    "num_separation_pairs": 5000,
+    "seed": 42,
+    "show_progress": true
+  },
+  "dataset_stats": {
+    "num_documents": 250,
+    "num_queries": 20,
+    "num_topics": 50,
+    "num_domains": 5,
+    "num_docs_with_embeddings": 250,
+    "embedding_dimension": 1024
+  },
+  "validation": {
+    "all_passed": true,
+    "checks_passed": 4,
+    "checks_total": 4,
+    "checks": [
+      {
+        "description": "MRR >= 0.70",
+        "expected": ">= 0.70",
+        "actual": "0.950",
+        "passed": true
+      },
+      {
+        "description": "P@10 >= 0.60",
+        "expected": ">= 0.60",
+        "actual": "0.625",
+        "passed": true
+      },
+      {
+        "description": "Topic separation ratio >= 1.5",
+        "expected": ">= 1.5",
+        "actual": "10.00",
+        "passed": true
+      },
+      {
+        "description": "MRR >= 0.55 at 0.2 noise",
+        "expected": ">= 0.55",
+        "actual": "0.950",
+        "passed": true
+      }
+    ]
+  }
+}

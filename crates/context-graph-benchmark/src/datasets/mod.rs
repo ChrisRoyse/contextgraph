@@ -4,6 +4,7 @@
 //! evaluating retrieval and clustering performance.
 
 pub mod causal;
+pub mod e1_semantic;
 pub mod generator;
 pub mod ground_truth;
 pub mod mcp_intent;

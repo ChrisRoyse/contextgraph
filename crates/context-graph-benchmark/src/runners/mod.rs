@@ -5,6 +5,7 @@
 
 pub mod causal;
 pub mod comparative;
+pub mod e1_semantic;
 pub mod e4_hybrid_session;
 pub mod failfast;
 pub mod graph_realdata;

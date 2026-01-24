@@ -9,10 +9,12 @@
 //! - **Temporal**: E2/E3/E4 embedder effectiveness metrics
 //! - **Causal**: E5 embedder effectiveness metrics (direction detection, asymmetric retrieval)
 //! - **Validation**: Input validation overhead and correctness metrics
+//! - **E1 Semantic**: Foundation embedder retrieval and topic separation metrics
 
 pub mod causal;
 pub mod clustering;
 pub mod divergence;
+pub mod e1_semantic;
 pub mod e4_hybrid_session;
 pub mod mcp_intent;
 pub mod multimodal;
