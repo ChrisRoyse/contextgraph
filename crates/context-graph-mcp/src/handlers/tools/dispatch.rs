@@ -140,6 +140,18 @@ impl Handlers {
             tool_names::VALIDATE_KNOWLEDGE => self.call_validate_knowledge(id, arguments).await,
             tool_names::GET_ENTITY_GRAPH => self.call_get_entity_graph(id, arguments).await,
 
+            // ========== EMBEDDER-FIRST SEARCH TOOLS (Constitution v6.3) ==========
+            tool_names::SEARCH_BY_EMBEDDER => self.call_search_by_embedder(id, arguments).await,
+            tool_names::GET_EMBEDDER_CLUSTERS => {
+                self.call_get_embedder_clusters(id, arguments).await
+            }
+            tool_names::COMPARE_EMBEDDER_VIEWS => {
+                self.call_compare_embedder_views(id, arguments).await
+            }
+            tool_names::LIST_EMBEDDER_INDEXES => {
+                self.call_list_embedder_indexes(id, arguments).await
+            }
+
             // Unknown tool
             _ => JsonRpcResponse::error(
                 id,

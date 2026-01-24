@@ -16,6 +16,7 @@
 //! - search_connections, get_graph_path (graph_tools.rs) - E8 Upgrade Phase 4
 //! - search_by_intent, find_contextual_matches (intent_tools.rs) - E10 Intent/Context Upgrade
 //! - extract_entities, search_by_entities, infer_relationship, find_related_entities, validate_knowledge, get_entity_graph (entity_tools.rs) - E11 Entity Integration
+//! - search_by_embedder, get_embedder_clusters, compare_embedder_views, list_embedder_indexes (embedder_tools.rs) - Constitution v6.3 Embedder-First Search
 
 mod causal_tools;
 mod code_tools;
@@ -23,6 +24,7 @@ mod consolidation;
 mod curation_tools;
 mod dispatch;
 mod dream_tools;
+mod embedder_tools;
 mod entity_tools;
 mod file_watcher_tools;
 mod graph_tools;
@@ -39,6 +41,7 @@ pub mod causal_dtos;
 pub mod code_dtos;
 pub mod curation_dtos;
 pub mod dream_dtos;
+pub mod embedder_dtos;
 pub mod entity_dtos;
 pub mod graph_dtos;
 pub mod intent_dtos;
