@@ -8,10 +8,8 @@
 //! - `warmup`: Pre-load embedding models into VRAM (TASK-EMB-WARMUP)
 //! - `topic`: Topic portfolio and stability commands
 //! - `divergence`: Divergence detection commands
-//! - `dream`: Dream consolidation commands
 
 pub mod divergence;
-pub mod dream;
 pub mod hooks;
 pub mod memory;
 pub mod session;

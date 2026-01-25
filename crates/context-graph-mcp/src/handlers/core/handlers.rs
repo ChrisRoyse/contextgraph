@@ -1,6 +1,6 @@
 //! Handlers struct definition and constructors.
 //!
-//! PRD v6 Section 10 - Handlers for all 14 MCP tools.
+//! PRD v6 Section 10 - Handlers for all 12 MCP tools.
 //!
 //! TASK-INTEG-TOPIC: Added clustering dependencies for topic tools integration.
 //! E4-FIX: Added session sequence counter for proper E4 (V_ordering) embeddings.
@@ -22,11 +22,10 @@ use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
 /// Request handlers for MCP protocol.
 ///
-/// PRD v6 Section 10 - Supports all 14 MCP tools:
+/// PRD v6 Section 10 - Supports all 12 MCP tools:
 /// - Core: inject_context, store_memory, get_memetic_status, search_graph, trigger_consolidation
 /// - Topic: get_topic_portfolio, get_topic_stability, detect_topics, get_divergence_alerts
 /// - Curation: merge_concepts, forget_concept, boost_importance
-/// - Dream: trigger_dream, get_dream_status
 pub struct Handlers {
     /// Teleological memory store - stores TeleologicalFingerprint with 13 embeddings.
     pub(in crate::handlers) teleological_store: Arc<dyn TeleologicalMemoryStore>,

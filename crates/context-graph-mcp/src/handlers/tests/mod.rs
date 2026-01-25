@@ -41,7 +41,6 @@
 
 mod content_storage_verification;
 mod curation_tools_fsv;
-mod dream_tools_integration;
 mod error_codes;
 #[cfg(feature = "cuda")]
 mod gpu_embedding_verification;
@@ -581,18 +580,7 @@ pub(crate) fn make_request(
 }
 
 // ============================================================================
-// TASK-GAP-001: Removed dead GWT/MetaUtl code (deleted in commit fab0622)
+// TASK-GAP-001: Removed obsolete test helper code
 // ============================================================================
-// The following functions were removed as they referenced deleted modules:
-// - create_test_handlers_with_warm_gwt()
-// - create_test_handlers_with_warm_gwt_rocksdb()
-// - create_test_handlers_with_all_components()
-//
-// These functions used:
-// - crate::handlers::core::MetaUtlTracker (deleted)
-// - crate::handlers::gwt_providers (deleted)
-// - crate::handlers::gwt_traits (deleted)
-// - Handlers::with_gwt() (deleted)
-// - Handlers::with_gwt_and_subsystems() (deleted)
-//
-// When GWT/MetaUtl is reimplemented per PRD v6, new test helpers will be added.
+// Legacy test helpers were removed as they referenced deleted modules.
+// Current tests use the simplified handler construction per constitution v6.

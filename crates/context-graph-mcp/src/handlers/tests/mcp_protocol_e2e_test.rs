@@ -11,7 +11,7 @@
 //! ## Test Coverage
 //!
 //! 1. Initialize handshake (MCP lifecycle)
-//! 2. List all 14 tools (MCP capability discovery)
+//! 2. List all 12 tools (MCP capability discovery)
 //! 3. Call each tool with valid inputs
 //! 4. Full State Verification of stored data
 //!
@@ -94,11 +94,11 @@ async fn test_e2e_mcp_handshake_with_gpu() {
     println!("=== HANDSHAKE COMPLETE ===\n");
 }
 
-/// Verify all 14 MCP tools are listed.
+/// Verify all 12 MCP tools are listed.
 #[tokio::test]
 #[cfg(feature = "cuda")]
-async fn test_e2e_tools_list_all_14_tools() {
-    println!("\n=== E2E TEST: Verify All 14 Tools Listed ===");
+async fn test_e2e_tools_list_all_12_tools() {
+    println!("\n=== E2E TEST: Verify All 12 Tools Listed ===");
 
     let (handlers, _store, _tempdir) =
         create_test_handlers_with_real_embeddings_store_access().await;
@@ -114,7 +114,7 @@ async fn test_e2e_tools_list_all_14_tools() {
         .as_array()
         .expect("tools must be array");
 
-    // Expected 14 tools per CLAUDE.md
+    // Expected 12 tools per CLAUDE.md
     let expected_tools: HashSet<&str> = [
         "inject_context",
         "store_memory",
@@ -128,8 +128,6 @@ async fn test_e2e_tools_list_all_14_tools() {
         "merge_concepts",
         "forget_concept",
         "boost_importance",
-        "trigger_dream",
-        "get_dream_status",
     ]
     .into_iter()
     .collect();
@@ -160,12 +158,12 @@ async fn test_e2e_tools_list_all_14_tools() {
     }
 
     assert!(
-        tools.len() >= 14,
-        "Expected at least 14 tools, found {}",
+        tools.len() >= 12,
+        "Expected at least 12 tools, found {}",
         tools.len()
     );
 
-    println!("=== ALL 14 TOOLS VERIFIED ===\n");
+    println!("=== ALL 12 TOOLS VERIFIED ===\n");
 }
 
 /// Full E2E workflow: store memories, search, get status.
@@ -651,100 +649,11 @@ async fn test_e2e_curation_tools_workflow() {
     println!("\n=== CURATION TOOLS WORKFLOW COMPLETE ===\n");
 }
 
-/// E2E Dream tools workflow.
-#[tokio::test]
-#[cfg(feature = "cuda")]
-async fn test_e2e_dream_tools_workflow() {
-    println!("\n=== E2E TEST: Dream Tools Workflow with GPU ===");
-
-    let (handlers, _store, _tempdir) =
-        create_test_handlers_with_real_embeddings_store_access().await;
-
-    // Store some memories for dream processing
-    for i in 0..5 {
-        let params = json!({
-            "name": "store_memory",
-            "arguments": {
-                "content": format!("Dream test memory {} about consolidation patterns", i),
-                "importance": 0.8
-            }
-        });
-        let request = make_request("tools/call", Some(JsonRpcId::Number(i)), Some(params));
-        let response = handlers.dispatch(request).await;
-        assert!(response.error.is_none(), "store_memory {} failed", i);
-    }
-    println!("Stored 5 memories for dream processing");
-
-    // trigger_dream (dry run to avoid long wait)
-    println!("\n--- trigger_dream (dry_run) ---");
-    let dream_params = json!({
-        "name": "trigger_dream",
-        "arguments": {
-            "blocking": true,
-            "dry_run": true,
-            "max_duration_secs": 60
-        }
-    });
-    let dream_request = make_request(
-        "tools/call",
-        Some(JsonRpcId::Number(10)),
-        Some(dream_params),
-    );
-    let dream_response = handlers.dispatch(dream_request).await;
-
-    assert!(
-        dream_response.error.is_none(),
-        "trigger_dream must not error: {:?}",
-        dream_response.error
-    );
-    let dream_result = dream_response
-        .result
-        .expect("trigger_dream must return result");
-    let is_error = dream_result
-        .get("isError")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    assert!(!is_error, "trigger_dream should not return tool error");
-
-    let dream_data = extract_mcp_tool_data(&dream_result);
-    let dream_id = dream_data.get("dream_id");
-    println!("trigger_dream: success, dream_id={:?}", dream_id);
-
-    // get_dream_status
-    println!("\n--- get_dream_status ---");
-    let status_params = json!({
-        "name": "get_dream_status",
-        "arguments": {}
-    });
-    let status_request = make_request(
-        "tools/call",
-        Some(JsonRpcId::Number(11)),
-        Some(status_params),
-    );
-    let status_response = handlers.dispatch(status_request).await;
-
-    assert!(
-        status_response.error.is_none(),
-        "get_dream_status must not error"
-    );
-    let status_result = status_response
-        .result
-        .expect("get_dream_status must return result");
-    let is_error = status_result
-        .get("isError")
-        .and_then(|v| v.as_bool())
-        .unwrap_or(false);
-    assert!(!is_error, "get_dream_status should not return tool error");
-    println!("get_dream_status: success");
-
-    println!("\n=== DREAM TOOLS WORKFLOW COMPLETE ===\n");
-}
-
 /// Complete E2E test covering all tools.
 #[tokio::test]
 #[cfg(feature = "cuda")]
-async fn test_e2e_all_14_tools_callable() {
-    println!("\n=== E2E TEST: All 14 Tools Callable with GPU ===");
+async fn test_e2e_all_12_tools_callable() {
+    println!("\n=== E2E TEST: All 12 Tools Callable with GPU ===");
 
     let (handlers, _store, _tempdir) =
         create_test_handlers_with_real_embeddings_store_access().await;
@@ -946,32 +855,14 @@ async fn test_e2e_all_14_tools_callable() {
     // merge_concepts requires 2+ valid IDs, skip for now
     successful_tools.insert("merge_concepts"); // Tested in dedicated test
 
-    // Dream tools (2)
-    println!("\n--- Dream Tools ---");
-    if call_tool(
-        &handlers,
-        "trigger_dream",
-        json!({
-            "blocking": true,
-            "dry_run": true
-        }),
-    )
-    .await
-    {
-        successful_tools.insert("trigger_dream");
-    }
-    if call_tool(&handlers, "get_dream_status", json!({})).await {
-        successful_tools.insert("get_dream_status");
-    }
-
     // Summary
     println!("\n=== SUMMARY ===");
-    println!("Successful tools: {}/14", successful_tools.len());
+    println!("Successful tools: {}/12", successful_tools.len());
     for tool in &successful_tools {
         println!("  ✓ {}", tool);
     }
 
-    let expected = 14;
+    let expected = 12;
     let actual = successful_tools.len();
     assert!(
         actual >= expected,
@@ -980,7 +871,7 @@ async fn test_e2e_all_14_tools_callable() {
         actual
     );
 
-    println!("\n=== ALL 14 TOOLS CALLABLE ===\n");
+    println!("\n=== ALL 12 TOOLS CALLABLE ===\n");
 }
 
 // =============================================================================
@@ -1000,19 +891,17 @@ fn evidence_of_e2e_test_coverage() {
     println!("===============================================================================");
     println!("Tests Implemented:");
     println!("  1. test_e2e_mcp_handshake_with_gpu - Full MCP handshake verification");
-    println!("  2. test_e2e_tools_list_all_14_tools - Verify all 14 tools listed");
+    println!("  2. test_e2e_tools_list_all_12_tools - Verify all 12 tools listed");
     println!("  3. test_e2e_core_tools_workflow - Core tools with FSV");
     println!("  4. test_e2e_topic_tools_workflow - Topic detection tools");
     println!("  5. test_e2e_curation_tools_workflow - Memory curation tools");
-    println!("  6. test_e2e_dream_tools_workflow - Dream consolidation tools");
-    println!("  7. test_e2e_all_14_tools_callable - Complete tool coverage");
+    println!("  6. test_e2e_all_12_tools_callable - Complete tool coverage");
     println!("===============================================================================");
-    println!("14 MCP Tools Covered:");
+    println!("12 MCP Tools Covered:");
     println!("  Core (5): inject_context, store_memory, get_memetic_status,");
     println!("            search_graph, trigger_consolidation");
     println!("  Topic (4): get_topic_portfolio, get_topic_stability,");
     println!("             detect_topics, get_divergence_alerts");
     println!("  Curation (3): merge_concepts, forget_concept, boost_importance");
-    println!("  Dream (2): trigger_dream, get_dream_status");
     println!("===============================================================================");
 }

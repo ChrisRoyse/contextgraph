@@ -41,10 +41,9 @@ use clap::Args;
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
-use context_graph_core::gwt::session_snapshot::{
-    store_in_cache, SessionCache, SessionSnapshot,
+use crate::commands::hooks::session_state::{
+    store_in_cache, CoherenceState, SessionCache, SessionSnapshot,
 };
-use context_graph_core::gwt::state_machine::CoherenceState;
 
 /// Arguments for `session restore-identity` command
 #[derive(Args, Debug)]

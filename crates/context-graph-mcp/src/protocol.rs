@@ -147,10 +147,10 @@ pub mod error_codes {
     /// Pipeline breakdown metrics not yet implemented
     pub const PIPELINE_METRICS_UNAVAILABLE: i32 = -32052;
 
-    // GWT error codes (-32060 to -32069) - TASK-GWT-001
-    // Note: Consciousness error codes removed in PRD v6 - use topic-based coherence instead
-    /// GWT system not initialized or unavailable
-    pub const GWT_NOT_INITIALIZED: i32 = -32060;
+    // Coherence error codes (-32060 to -32069)
+    // Note: Use topic-based coherence per PRD v6
+    /// Coherence system not initialized or unavailable
+    pub const COHERENCE_NOT_INITIALIZED: i32 = -32060;
     /// Coherence network error (step failed, invalid phase, etc.)
     pub const COHERENCE_ERROR: i32 = -32061;
     /// Workspace selection or broadcast error
@@ -164,23 +164,10 @@ pub mod error_codes {
     /// Topic stability check failed
     pub const TOPIC_STABILITY_ERROR: i32 = -32067;
 
-    // Dream consolidation error codes (-32070 to -32079) - TASK-DREAM-MCP
-    /// Dream controller/scheduler not initialized
-    pub const DREAM_NOT_INITIALIZED: i32 = -32070;
-    /// Dream cycle start/trigger failed
-    pub const DREAM_CYCLE_ERROR: i32 = -32071;
-    /// Dream abort failed
-    pub const DREAM_ABORT_ERROR: i32 = -32072;
-    /// Amortized learning error
-    pub const AMORTIZED_LEARNING_ERROR: i32 = -32073;
-    /// Manual dream trigger request failed (Full State Verification failed)
-    /// TASK-35: Returned when check_triggers() does not return Manual after request_manual_trigger()
-    pub const DREAM_TRIGGER_FAILED: i32 = -32074;
+    // GPU monitoring error codes (-32075 to -32079)
     /// GpuMonitor not initialized - use with_gpu_monitor() or with_default_gwt()
-    /// TASK-37: Returned when get_gpu_status is called without GpuMonitor configured
     pub const GPU_MONITOR_NOT_INITIALIZED: i32 = -32075;
     /// GPU utilization query failed
-    /// TASK-37: Returned when GpuMonitor.get_utilization() returns an error
     pub const GPU_QUERY_FAILED: i32 = -32076;
 
     // Neuromodulation error codes (-32080 to -32089) - TASK-NEUROMOD-MCP
@@ -188,7 +175,7 @@ pub mod error_codes {
     pub const NEUROMOD_NOT_INITIALIZED: i32 = -32080;
     /// Neuromodulator adjustment failed
     pub const NEUROMOD_ADJUSTMENT_ERROR: i32 = -32081;
-    /// Acetylcholine is read-only (managed by GWT)
+    /// Acetylcholine is read-only
     pub const NEUROMOD_ACH_READ_ONLY: i32 = -32082;
 
     // Steering error codes (-32090 to -32099) - TASK-STEERING-001
@@ -323,12 +310,12 @@ pub mod methods {
     /// Get meta-learned optimized weights
     pub const META_UTL_OPTIMIZED_WEIGHTS: &str = "meta_utl/optimized_weights";
 
-    // GWT operations (TASK-GWT-001)
-    // Note: Consciousness methods removed in PRD v6 - use topic-based coherence instead
+    // Coherence operations
+    // Note: Use topic-based coherence per PRD v6
     /// Get workspace status and active memory
-    pub const GWT_WORKSPACE_STATUS: &str = "gwt/workspace_status";
+    pub const COHERENCE_WORKSPACE_STATUS: &str = "coherence/workspace_status";
     /// Get meta-cognitive loop status
-    pub const GWT_META_COGNITIVE_STATUS: &str = "gwt/meta_cognitive_status";
+    pub const COHERENCE_META_STATUS: &str = "coherence/meta_status";
 }
 
 #[cfg(test)]

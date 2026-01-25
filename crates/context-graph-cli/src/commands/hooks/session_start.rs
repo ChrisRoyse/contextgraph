@@ -18,11 +18,7 @@ use std::time::{Instant, SystemTime, UNIX_EPOCH};
 
 use tracing::{debug, error, info, warn};
 
-use context_graph_core::gwt::{store_in_cache, SessionCache, SessionSnapshot};
-
-/// Number of embedder spaces (13 per PRD v6.0.0 constitution).
-/// Per-space clustering handles coordination.
-const NUM_EMBEDDERS: usize = 13;
+use super::session_state::{store_in_cache, SessionCache, SessionSnapshot, NUM_EMBEDDERS};
 
 use super::args::SessionStartArgs;
 use super::error::{HookError, HookResult};

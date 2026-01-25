@@ -26,6 +26,7 @@ pub mod post_tool_use;
 pub mod pre_tool_use;
 pub mod session_end;
 pub mod session_start;
+pub mod session_state;
 #[allow(dead_code)]
 mod types;
 pub mod user_prompt_submit;

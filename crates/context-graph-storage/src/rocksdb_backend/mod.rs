@@ -37,7 +37,6 @@ mod error;
 mod helpers;
 mod index_ops;
 mod memex_impl;
-mod memory_provider;
 mod node_ops;
 
 #[cfg(test)]
@@ -63,6 +62,3 @@ pub use error::{StorageError, StorageResult};
 
 // Re-export main struct
 pub use core::RocksDbMemex;
-
-// Re-export memory provider (TASK-007)
-pub use memory_provider::GraphMemoryProvider;

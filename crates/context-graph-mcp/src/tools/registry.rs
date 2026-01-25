@@ -93,7 +93,7 @@ impl Default for ToolRegistry {
 ///
 /// Uses existing definitions from tools/definitions/ modules.
 ///
-/// 22 tools are exposed:
+/// 20 tools are exposed:
 ///
 /// | Category | Count | Source |
 /// |----------|-------|--------|
@@ -101,7 +101,6 @@ impl Default for ToolRegistry {
 /// | Merge | 1 | definitions/merge.rs |
 /// | Curation | 2 | definitions/curation.rs |
 /// | Topic | 4 | definitions/topic.rs |
-/// | Dream | 2 | definitions/dream.rs |
 /// | File Watcher | 4 | definitions/file_watcher.rs |
 /// | Sequence | 4 | definitions/sequence.rs (E4 integration) |
 pub fn register_all_tools() -> ToolRegistry {
@@ -129,11 +128,6 @@ pub fn register_all_tools() -> ToolRegistry {
         registry.register(tool);
     }
 
-    // Register dream tools (2): trigger_dream, get_dream_status
-    for tool in definitions::dream::definitions() {
-        registry.register(tool);
-    }
-
     // Register file watcher tools (4): list_watched_files, get_file_watcher_stats, delete_file_content, reconcile_files
     for tool in definitions::file_watcher::definitions() {
         registry.register(tool);
@@ -144,11 +138,11 @@ pub fn register_all_tools() -> ToolRegistry {
         registry.register(tool);
     }
 
-    // Verify expected tool count (18 original + 4 sequence = 22 total)
+    // Verify expected tool count (16 original + 4 sequence = 20 total)
     let actual_count = registry.len();
     assert_eq!(
-        actual_count, 22,
-        "Expected 22 tools (18 original + 4 sequence), got {}. Check definitions modules.",
+        actual_count, 20,
+        "Expected 20 tools (16 original + 4 sequence), got {}. Check definitions modules.",
         actual_count
     );
 
@@ -170,8 +164,8 @@ mod tests {
     #[test]
     fn test_register_all_tools_count() {
         let registry = register_all_tools();
-        // 18 original tools + 4 sequence tools = 22 total
-        assert_eq!(registry.len(), 22, "Must have exactly 22 tools (18 original + 4 sequence)");
+        // 16 original tools + 4 sequence tools = 20 total
+        assert_eq!(registry.len(), 20, "Must have exactly 20 tools (16 original + 4 sequence)");
     }
 
     #[test]
@@ -200,8 +194,8 @@ mod tests {
     fn test_list_returns_all_tools_sorted() {
         let registry = register_all_tools();
         let tools = registry.list();
-        // 18 original tools + 4 sequence tools = 22 total
-        assert_eq!(tools.len(), 22);
+        // 16 original tools + 4 sequence tools = 20 total
+        assert_eq!(tools.len(), 20);
 
         for i in 1..tools.len() {
             assert!(tools[i - 1].name <= tools[i].name);
@@ -209,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn test_all_22_tools_registered() {
+    fn test_all_20_tools_registered() {
         let registry = register_all_tools();
         let expected_tools = [
             // Core (5)
@@ -228,9 +222,6 @@ mod tests {
             "get_topic_stability",
             "detect_topics",
             "get_divergence_alerts",
-            // Dream (2)
-            "trigger_dream",
-            "get_dream_status",
             // File Watcher (4)
             "list_watched_files",
             "get_file_watcher_stats",

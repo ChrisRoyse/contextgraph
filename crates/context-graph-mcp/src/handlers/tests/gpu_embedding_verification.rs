@@ -3,7 +3,6 @@
 //! CRITICAL: These tests verify REAL GPU embeddings per constitution.yaml:
 //! - ARCH-08: "CUDA GPU required for production - no CPU fallbacks"
 //! - AP-07: "No CPU fallback in production"
-//! - AP-71: "Dream NREM/REM returning stubs forbidden"
 //! - ARCH-05: "All 13 embedders required - missing embedder is fatal error"
 //!
 //! These tests MUST:

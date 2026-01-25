@@ -1,6 +1,6 @@
 //! TASK-TELEO-014: FeedbackLearner Implementation
 //!
-//! Implements GWT (Global Workspace Theory) feedback learning loop. The service
+//! Implements feedback learning loop for the teleological system. The service
 //! collects feedback events from embedder interactions and uses gradient-based
 //! learning to adjust embedder weights for improved teleological alignment.
 //!
@@ -10,13 +10,11 @@
 //! 2. Compute gradients from accumulated feedback
 //! 3. Apply momentum-based gradient updates
 //! 4. Track per-embedder adjustment values
-//! 5. Integrate with GWT coherence feedback
+//! 5. Integrate with coherence feedback
 //!
-//! # From teleoplan.md
-//!
-//! "GWT feedback provides the 'reward signal' - when a retrieval leads to successful
+//! Feedback provides the 'reward signal' - when a retrieval leads to successful
 //! task completion (high coherence), we reinforce the embedder weights that
-//! contributed most to that retrieval."
+//! contributed most to that retrieval.
 
 mod config;
 mod learner;

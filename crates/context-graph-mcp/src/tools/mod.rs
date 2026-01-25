@@ -12,7 +12,6 @@
 //!   - `core`: Core tools (inject_context, store_memory, search_graph, get_memetic_status)
 //!   - `topic`: Topic tools (get_topic_portfolio, get_topic_stability, detect_topics, get_divergence_alerts)
 //!   - `curation`: Curation tools (merge_concepts, forget_concept, boost_importance)
-//!   - `dream`: Dream consolidation tools (trigger_dream, get_dream_status)
 
 pub mod aliases;
 pub mod definitions;

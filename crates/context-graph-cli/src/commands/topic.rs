@@ -367,12 +367,11 @@ fn print_stability(result: &serde_json::Value) {
         }
     }
 
-    // Recommendations
+    // Status
     println!();
     if dream_recommended {
-        println!("! Dream consolidation RECOMMENDED");
+        println!("! High entropy/churn detected");
         println!("  (entropy > 0.7 AND churn > 0.5)");
-        println!("  Run: context-graph-cli dream trigger");
     } else {
         println!("Topic structure is stable.");
     }

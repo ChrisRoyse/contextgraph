@@ -158,7 +158,6 @@ async fn test_fsv_topic_stability_default_parameters() {
         "churn_rate",
         "entropy",
         "phases",
-        "dream_recommended",
         "high_churn_warning",
         "average_churn",
     ];
@@ -187,17 +186,7 @@ async fn test_fsv_topic_stability_default_parameters() {
         entropy
     );
 
-    // VERIFY DREAM RECOMMENDATION LOGIC (AP-70)
-    let dream_recommended = data.get("dream_recommended").unwrap().as_bool().unwrap();
-    let expected_dream = entropy > 0.7 && churn_rate > 0.5;
-    assert_eq!(
-        dream_recommended, expected_dream,
-        "Per AP-70: dream_recommended must be (entropy > 0.7 AND churn > 0.5). \
-         Got entropy={}, churn={}, expected={}",
-        entropy, churn_rate, expected_dream
-    );
-
-    println!("[FSV PASS] get_topic_stability returns valid metrics with correct AP-70 logic");
+    println!("[FSV PASS] get_topic_stability returns valid metrics");
 }
 
 /// FSV Test: Verify get_divergence_alerts returns no alerts for empty database

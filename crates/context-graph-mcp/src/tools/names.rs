@@ -30,10 +30,6 @@ pub const MERGE_CONCEPTS: &str = "merge_concepts";
 pub const FORGET_CONCEPT: &str = "forget_concept";
 pub const BOOST_IMPORTANCE: &str = "boost_importance";
 
-// ========== DREAM TOOLS (PRD Section 10.1) ==========
-pub const TRIGGER_DREAM: &str = "trigger_dream";
-pub const GET_DREAM_STATUS: &str = "get_dream_status";
-
 // ========== FILE WATCHER TOOLS (File index management) ==========
 pub const LIST_WATCHED_FILES: &str = "list_watched_files";
 pub const GET_FILE_WATCHER_STATS: &str = "get_file_watcher_stats";

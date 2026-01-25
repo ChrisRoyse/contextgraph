@@ -9,7 +9,6 @@
 //! Constitution Compliance:
 //! - ARCH-09: Topic threshold is weighted_agreement >= 2.5
 //! - AP-60: Temporal embedders (E2-E4) weight = 0.0 in topic detection
-//! - AP-70: Dream recommended when entropy > 0.7 AND churn > 0.5
 
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
@@ -38,8 +37,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // get_topic_stability
         ToolDefinition::new(
             "get_topic_stability",
-            "Get portfolio-level stability metrics including churn rate, entropy, and phase breakdown. \
-             Dream consolidation is recommended when entropy > 0.7 AND churn > 0.5 (per AP-70).",
+            "Get portfolio-level stability metrics including churn rate, entropy, and phase breakdown.",
             json!({
                 "type": "object",
                 "properties": {

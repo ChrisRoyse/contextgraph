@@ -78,15 +78,6 @@ enum Commands {
         #[command(subcommand)]
         action: commands::divergence::DivergenceCommands,
     },
-    /// Dream consolidation commands
-    ///
-    /// Execute NREM/REM dream cycles for memory consolidation.
-    /// NREM: Hebbian replay strengthening
-    /// REM: Hyperbolic random walk discovering blind spots
-    Dream {
-        #[command(subcommand)]
-        action: commands::dream::DreamCommands,
-    },
     /// Initialize context-graph hooks for Claude Code
     ///
     /// Creates .claude/settings.json and .claude/hooks/ directory with
@@ -139,7 +130,6 @@ async fn main() {
         Commands::Memory { action } => commands::memory::handle_memory_command(action).await,
         Commands::Topic { action } => commands::topic::handle_topic_command(action).await,
         Commands::Divergence { action } => commands::divergence::handle_divergence_command(action).await,
-        Commands::Dream { action } => commands::dream::handle_dream_command(action).await,
         Commands::Setup(args) => commands::setup::handle_setup(args).await,
         Commands::Warmup(args) => commands::warmup::handle_warmup(args).await,
         Commands::Watch(args) => commands::watch::handle_watch(args).await,

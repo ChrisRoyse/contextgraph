@@ -37,7 +37,7 @@ use clap::Args;
 use serde::Deserialize;
 use tracing::{debug, info, warn};
 
-use context_graph_core::gwt::session_snapshot::{store_in_cache, SessionCache, SessionSnapshot};
+use crate::commands::hooks::session_state::{store_in_cache, SessionCache, SessionSnapshot};
 
 /// Arguments for `session persist-identity` command
 #[derive(Args, Debug)]
@@ -154,7 +154,7 @@ fn home_dir() -> Option<PathBuf> {
 mod tests {
     use super::*;
     use crate::commands::test_utils::GLOBAL_IDENTITY_LOCK;
-    use context_graph_core::gwt::session_snapshot::store_in_cache;
+    use crate::commands::hooks::session_state::store_in_cache;
 
     // =========================================================================
     // TC-SESSION-17: Success Path (Silent Output)

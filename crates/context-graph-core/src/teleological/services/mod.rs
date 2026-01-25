@@ -12,7 +12,7 @@
 //! - **GroupAggregator** (011): 13D → 6D group aggregation
 //! - **FusionEngine** (012): Multi-embedding fusion orchestration
 //! - **MultiSpaceRetriever** (013): Teleological-aware retrieval
-//! - **FeedbackLearner** (014): GWT feedback learning loop
+//! - **FeedbackLearner** (014): Coherence feedback learning loop
 //! - **ProfileManager** (015): Task-specific profile management
 
 pub mod correlation_extractor;

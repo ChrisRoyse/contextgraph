@@ -89,9 +89,7 @@ impl std::str::FromStr for Domain {
 /// # Constitution Reference
 /// See `docs2/constitution.yaml` sections:
 /// - `adaptive_thresholds.priors` for base ranges
-/// - `gwt.workspace` for GWT thresholds
 /// - `dream.trigger`, `dream.phases` for dream thresholds
-/// - `utl.classification` for classification thresholds
 #[derive(Debug, Clone)]
 pub struct DomainThresholds {
     pub domain: Domain,
@@ -104,8 +102,8 @@ pub struct DomainThresholds {
     pub theta_edge: f32,      // [0.50, 0.85] Edge creation
     pub confidence_bias: f32, // Domain confidence adjustment
 
-    // === NEW: GWT thresholds (3) ===
-    pub theta_gate: f32,          // [0.65, 0.95] GW broadcast gate
+    // === Coherence thresholds (3) ===
+    pub theta_gate: f32,          // [0.65, 0.95] Coherence gate
     pub theta_hypersync: f32,     // [0.90, 0.99] Hypersync detection
     pub theta_fragmentation: f32, // [0.35, 0.65] Fragmentation warning
 
@@ -133,9 +131,7 @@ impl DomainThresholds {
     ///
     /// Threshold values are computed based on domain strictness (0.0 = loose, 1.0 = strict).
     /// Constitution references:
-    /// - GWT: gwt.workspace.coherence_threshold
     /// - Dream: dream.trigger.activity, dream.phases.rem.blind_spot
-    /// - Classification: utl.classification
     pub fn new(domain: Domain) -> Self {
         let strictness = domain.strictness();
 
@@ -144,8 +140,8 @@ impl DomainThresholds {
         let theta_acc = 0.70 + (strictness * 0.08); // [0.70, 0.78]
         let theta_warn = 0.55 + (strictness * 0.05); // [0.55, 0.60]
 
-        // === NEW: GWT thresholds ===
-        // Stricter domains have higher gates (harder to broadcast)
+        // === Coherence thresholds ===
+        // Stricter domains have higher gates
         let theta_gate = 0.75 + (strictness * 0.15); // [0.75, 0.90]
         let theta_hypersync = 0.93 + (strictness * 0.04); // [0.93, 0.97]
         let theta_fragmentation = 0.50 - (strictness * 0.10); // [0.40, 0.50]
@@ -216,7 +212,7 @@ impl DomainThresholds {
         self.theta_dup = blend(self.theta_dup, similar.theta_dup);
         self.theta_edge = blend(self.theta_edge, similar.theta_edge);
 
-        // NEW: GWT thresholds
+        // Coherence thresholds
         self.theta_gate = blend(self.theta_gate, similar.theta_gate);
         self.theta_hypersync = blend(self.theta_hypersync, similar.theta_hypersync);
         self.theta_fragmentation = blend(self.theta_fragmentation, similar.theta_fragmentation);
@@ -272,7 +268,7 @@ impl DomainThresholds {
             return false;
         }
 
-        // === NEW: GWT thresholds ===
+        // === Coherence thresholds ===
         if !(0.65..=0.95).contains(&self.theta_gate) {
             return false;
         }
@@ -349,7 +345,7 @@ impl DomainThresholds {
         self.theta_dup = self.theta_dup.clamp(0.80, 0.98);
         self.theta_edge = self.theta_edge.clamp(0.50, 0.85);
 
-        // NEW: GWT thresholds
+        // Coherence thresholds
         self.theta_gate = self.theta_gate.clamp(0.65, 0.95);
         self.theta_hypersync = self.theta_hypersync.clamp(0.90, 0.99);
         self.theta_fragmentation = self.theta_fragmentation.clamp(0.35, 0.65);

@@ -16,7 +16,7 @@ use std::time::Instant;
 
 use tracing::{debug, error, info, warn};
 
-use context_graph_core::gwt::{store_in_cache, SessionCache, SessionSnapshot};
+use super::session_state::{store_in_cache, SessionCache, SessionSnapshot};
 
 use super::args::PromptSubmitArgs;
 use super::error::{HookError, HookResult};

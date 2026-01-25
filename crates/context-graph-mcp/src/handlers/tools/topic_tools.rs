@@ -10,7 +10,6 @@
 //! - AP-60: Temporal embedders (E2-E4) weight = 0.0 in topic detection
 //! - AP-62: Only SEMANTIC embedders for divergence alerts
 //! - ARCH-09: Topic threshold is weighted_agreement >= 2.5
-//! - AP-70: Dream recommended when entropy > 0.7 AND churn > 0.5
 //!
 //! TASK-INTEG-TOPIC: Integrated with MultiSpaceClusterManager and TopicStabilityTracker.
 
@@ -239,7 +238,7 @@ impl Handlers {
 
     /// Handle get_topic_stability tool call.
     ///
-    /// Returns stability metrics including churn, entropy, and dream recommendation.
+    /// Returns stability metrics including churn, entropy, and phase breakdown.
     ///
     /// # Arguments
     /// * `id` - JSON-RPC request ID
@@ -250,9 +249,6 @@ impl Handlers {
     ///
     /// # Implements
     /// REQ-MCP-002
-    ///
-    /// # Constitution Compliance
-    /// - AP-70: Dream recommended when entropy > 0.7 AND churn > 0.5
     pub(crate) async fn call_get_topic_stability(
         &self,
         id: Option<JsonRpcId>,
@@ -289,9 +285,6 @@ impl Handlers {
         // Entropy is no longer tracked via UTL processor
         let entropy = 0.0_f32;
 
-        // Per AP-70: Dream recommended when entropy > 0.7 AND churn > 0.5
-        // Since entropy is no longer tracked, this will be false unless churn alone triggers it
-        let dream_recommended = TopicStabilityResponse::should_recommend_dream(entropy, churn_rate);
         let high_churn_warning = TopicStabilityResponse::is_high_churn(churn_rate);
 
         // Get phase breakdown from cluster manager topics
@@ -303,7 +296,6 @@ impl Handlers {
             churn_rate,
             entropy,
             phases,
-            dream_recommended,
             high_churn_warning,
             average_churn,
         };
@@ -312,7 +304,6 @@ impl Handlers {
             churn_rate = response.churn_rate,
             entropy = response.entropy,
             average_churn = response.average_churn,
-            dream_recommended = response.dream_recommended,
             high_churn_warning = response.high_churn_warning,
             "get_topic_stability: Returning stability response"
         );

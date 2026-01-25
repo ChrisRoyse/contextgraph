@@ -2,7 +2,7 @@
 //!
 //! Per PRD v6 Section 10.2, verifies:
 //! - get_topic_portfolio: Returns topic portfolio with tier info
-//! - get_topic_stability: Returns stability metrics and dream recommendation
+//! - get_topic_stability: Returns stability metrics (entropy, churn)
 //! - detect_topics: Enforces minimum memory requirement (3)
 //! - get_divergence_alerts: Returns alerts from SEMANTIC embedders only
 //!
@@ -10,7 +10,6 @@
 //! - ARCH-09: Topic threshold is weighted_agreement >= 2.5
 //! - AP-60: Temporal embedders (E2-E4) weight = 0.0
 //! - AP-62: Only SEMANTIC embedders for divergence alerts
-//! - AP-70: Dream recommended when entropy > 0.7 AND churn > 0.5
 
 use serde_json::json;
 
@@ -179,10 +178,6 @@ async fn test_get_topic_stability_default_hours() {
     );
     assert!(data.get("phases").is_some(), "Response must contain phases");
     assert!(
-        data.get("dream_recommended").is_some(),
-        "Response must contain dream_recommended"
-    );
-    assert!(
         data.get("high_churn_warning").is_some(),
         "Response must contain high_churn_warning"
     );
@@ -190,25 +185,6 @@ async fn test_get_topic_stability_default_hours() {
         data.get("average_churn").is_some(),
         "Response must contain average_churn"
     );
-
-    // Per AP-70: dream_recommended = entropy > 0.7 AND churn > 0.5
-    // With default (zero) values, dream should NOT be recommended
-    let dream_recommended = data.get("dream_recommended").unwrap().as_bool().unwrap();
-    let churn_rate = data.get("churn_rate").unwrap().as_f64().unwrap();
-    let entropy = data.get("entropy").unwrap().as_f64().unwrap();
-
-    // Dream only recommended when BOTH conditions met
-    if entropy > 0.7 && churn_rate > 0.5 {
-        assert!(
-            dream_recommended,
-            "Per AP-70: dream MUST be recommended when entropy > 0.7 AND churn > 0.5"
-        );
-    } else {
-        assert!(
-            !dream_recommended,
-            "Per AP-70: dream NOT recommended unless both thresholds exceeded"
-        );
-    }
 
     println!("[PASS] get_topic_stability returns valid response with default hours");
 }

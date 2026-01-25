@@ -1,4 +1,4 @@
-//! Tool definitions per PRD v6 Section 10 (42 tools total).
+//! Tool definitions per PRD v6 Section 10 (40 tools total).
 //!
 //! Includes 18 original tools plus 4 sequence tools for E4 integration
 //! plus 2 causal tools for E5 Priority 1 enhancement
@@ -14,7 +14,6 @@ pub(crate) mod causal;
 pub(crate) mod code;
 pub(crate) mod core;
 pub(crate) mod curation;
-pub(crate) mod dream;
 pub(crate) mod embedder;
 pub(crate) mod entity;
 pub(crate) mod file_watcher;
@@ -30,7 +29,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(42);
+    let mut tools = Vec::with_capacity(40);
 
     // Core tools (5)
     tools.extend(core::definitions());
@@ -43,9 +42,6 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
 
     // Topic tools (4)
     tools.extend(topic::definitions());
-
-    // Dream tools (2)
-    tools.extend(dream::definitions());
 
     // File watcher tools (4)
     tools.extend(file_watcher::definitions());
@@ -86,8 +82,8 @@ mod tests {
 
     #[test]
     fn test_total_tool_count() {
-        // 42 tools: 36 base + 4 embedder-first search tools + 2 temporal tools
-        assert_eq!(get_tool_definitions().len(), 42);
+        // 40 tools: 34 base + 4 embedder-first search tools + 2 temporal tools
+        assert_eq!(get_tool_definitions().len(), 40);
     }
 
     #[test]
@@ -112,9 +108,6 @@ mod tests {
             "get_topic_stability",
             "detect_topics",
             "get_divergence_alerts",
-            // Dream tools (2)
-            "trigger_dream",
-            "get_dream_status",
             // File watcher tools (4)
             "list_watched_files",
             "get_file_watcher_stats",
@@ -192,7 +185,6 @@ mod tests {
         assert_eq!(merge::definitions().len(), 1);
         assert_eq!(curation::definitions().len(), 2);
         assert_eq!(topic::definitions().len(), 4);
-        assert_eq!(dream::definitions().len(), 2);
         assert_eq!(file_watcher::definitions().len(), 4);
         assert_eq!(sequence::definitions().len(), 4);
         assert_eq!(causal::definitions().len(), 2);

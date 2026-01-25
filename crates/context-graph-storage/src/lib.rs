@@ -51,9 +51,6 @@ pub use rocksdb_backend::{
     DEFAULT_MAX_OPEN_FILES,
 };
 
-// Re-export GraphMemoryProvider for NREM dream phase (TASK-007)
-pub use rocksdb_backend::GraphMemoryProvider;
-
 // Re-export Memex trait and StorageHealth (TASK-M02-026)
 pub use memex::{Memex, StorageHealth};
 

@@ -1,4 +1,4 @@
-//! TELEO-014: GWT Feedback Learning Loop Service.
+//! TELEO-014: Feedback Learning Loop Service.
 //!
 //! Collects feedback from embedder interactions and uses gradient-based learning
 //! to optimize embedder weights for improved teleological alignment.
@@ -7,7 +7,7 @@ use super::config::FeedbackLearnerConfig;
 use super::types::{FeedbackEvent, FeedbackType, LearningResult};
 use crate::teleological::types::NUM_EMBEDDERS;
 
-/// TELEO-014: GWT Feedback Learning Loop Service.
+/// TELEO-014: Feedback Learning Loop Service.
 ///
 /// Collects feedback from embedder interactions and uses gradient-based learning
 /// to optimize embedder weights for improved teleological alignment.

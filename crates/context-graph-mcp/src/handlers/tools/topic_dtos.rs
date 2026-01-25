@@ -10,7 +10,6 @@
 //! - ARCH-09: Topic threshold is weighted_agreement >= 2.5
 //! - AP-60: Temporal embedders (E2-E4) NEVER count toward topic detection
 //! - AP-62: Divergence alerts use SEMANTIC embedders only (E1, E5, E6, E7, E10, E12, E13)
-//! - AP-70: Dream triggers when entropy > 0.7 AND churn > 0.5
 
 // Allow unused items - constants and methods are defined for constitution compliance
 // and will be used when full clustering integration is complete
@@ -44,11 +43,8 @@ pub const MAX_WEIGHTED_AGREEMENT: f32 = 8.5;
 /// Topic threshold per ARCH-09.
 pub const TOPIC_THRESHOLD: f32 = 2.5;
 
-/// Churn threshold for dream trigger per AP-70.
+/// Churn threshold for high churn warning.
 pub const CHURN_THRESHOLD: f32 = 0.5;
-
-/// Entropy threshold for dream trigger per AP-70.
-pub const ENTROPY_THRESHOLD: f32 = 0.7;
 
 /// Severity thresholds for divergence alerts.
 /// High severity when avg delta exceeds this value.
@@ -364,10 +360,6 @@ pub struct TopicStabilityResponse {
     /// Breakdown by lifecycle phase
     pub phases: PhaseBreakdown,
 
-    /// Whether dream consolidation is recommended
-    /// Per AP-70: entropy > 0.7 AND churn > 0.5
-    pub dream_recommended: bool,
-
     /// Warning flag for high churn (churn >= 0.5)
     pub high_churn_warning: bool,
 
@@ -376,14 +368,6 @@ pub struct TopicStabilityResponse {
 }
 
 impl TopicStabilityResponse {
-    /// Check if dream consolidation is recommended.
-    ///
-    /// Per AP-70: entropy > 0.7 AND churn > 0.5
-    #[inline]
-    pub fn should_recommend_dream(entropy: f32, churn: f32) -> bool {
-        entropy > ENTROPY_THRESHOLD && churn > CHURN_THRESHOLD
-    }
-
     /// Check if high churn warning should be shown.
     #[inline]
     pub fn is_high_churn(churn: f32) -> bool {
@@ -746,16 +730,6 @@ mod tests {
     }
 
     #[test]
-    fn test_topic_stability_response_dream_recommendation() {
-        // Both high entropy AND high churn needed per AP-70
-        assert!(TopicStabilityResponse::should_recommend_dream(0.8, 0.6));
-        assert!(!TopicStabilityResponse::should_recommend_dream(0.8, 0.4));
-        assert!(!TopicStabilityResponse::should_recommend_dream(0.6, 0.6));
-        assert!(!TopicStabilityResponse::should_recommend_dream(0.6, 0.4));
-        println!("[PASS] Dream recommendation requires entropy > 0.7 AND churn > 0.5 (AP-70)");
-    }
-
-    #[test]
     fn test_phase_breakdown_serialization() {
         let phases = PhaseBreakdown {
             emerging: 2,
@@ -952,8 +926,7 @@ mod tests {
         // Max weighted agreement = 7*1.0 + 2*0.5 + 1*0.5 = 8.5
         assert!((MAX_WEIGHTED_AGREEMENT - 8.5).abs() < f32::EPSILON);
 
-        // AP-70: Dream triggers when entropy > 0.7 AND churn > 0.5
-        assert!((ENTROPY_THRESHOLD - 0.7).abs() < f32::EPSILON);
+        // Churn threshold for high churn warning
         assert!((CHURN_THRESHOLD - 0.5).abs() < f32::EPSILON);
 
         println!("[PASS] Constants match constitution requirements");

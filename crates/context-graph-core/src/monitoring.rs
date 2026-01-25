@@ -386,7 +386,7 @@ pub struct HealthMetrics {
 /// - **Perception (L1_Sensing)** - Multi-modal input processing with PII scrubbing
 /// - **Memory (L3_Memory)** - Teleological memory with 13-embedding semantic fingerprints
 /// - **Action (L4_Learning)** - UTL-driven weight optimization with consolidation triggers
-/// - **Meta (L5_Coherence)** - Per-space clustering coordination and Global Workspace broadcast
+/// - **Meta (L5_Coherence)** - Per-space clustering coordination
 #[async_trait]
 pub trait LayerStatusProvider: Send + Sync + 'static {
     /// Get the status of the perception layer (L1_Sensing).

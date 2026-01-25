@@ -13,7 +13,7 @@ pub const THRESHOLD_NAMES: &[&str] = &[
     "theta_warn",
     "theta_dup",
     "theta_edge",
-    // GWT thresholds (3)
+    // Coherence thresholds (3)
     "theta_gate",
     "theta_hypersync",
     "theta_fragmentation",
@@ -62,7 +62,7 @@ impl ThresholdAccessor for AdaptiveThresholdCalibration {
             "theta_warn" => thresholds.theta_warn,
             "theta_dup" => thresholds.theta_dup,
             "theta_edge" => thresholds.theta_edge,
-            // GWT thresholds
+            // Coherence thresholds
             "theta_gate" => thresholds.theta_gate,
             "theta_hypersync" => thresholds.theta_hypersync,
             "theta_fragmentation" => thresholds.theta_fragmentation,

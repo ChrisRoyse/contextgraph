@@ -1,14 +1,14 @@
 //! TASK-TELEO-007: SynergyService Implementation
 //!
 //! Computes cross-embedding synergies in real-time. The service manages the 13x13
-//! synergy matrix, updating weights based on co-activation patterns and GWT feedback.
+//! synergy matrix, updating weights based on co-activation patterns and coherence feedback.
 //!
 //! # Core Responsibilities
 //!
 //! 1. Compute synergy values between embedding pairs
 //! 2. Update synergy weights from usage patterns
 //! 3. Apply task-specific synergy modulation
-//! 4. Integrate with GWT coherence feedback
+//! 4. Integrate with coherence feedback
 //!
 //! # From teleoplan.md
 //!
@@ -33,8 +33,8 @@ pub struct SynergyConfig {
     pub max_synergy: f32,
     /// Decay factor for unused synergy pairs
     pub decay_factor: f32,
-    /// Enable GWT-aware synergy modulation
-    pub gwt_modulation: bool,
+    /// Enable coherence-aware synergy modulation
+    pub coherence_modulation: bool,
 }
 
 impl Default for SynergyConfig {
@@ -44,7 +44,7 @@ impl Default for SynergyConfig {
             min_synergy: 0.1,
             max_synergy: 1.0,
             decay_factor: 0.99,
-            gwt_modulation: true,
+            coherence_modulation: true,
         }
     }
 }
@@ -58,7 +58,7 @@ pub struct SynergyFeedback {
     pub success: bool,
     /// Strength of co-activation [0.0, 1.0]
     pub activation_strength: f32,
-    /// Optional GWT coherence score at time of activation
+    /// Optional coherence score at time of activation
     pub coherence_score: Option<f32>,
 }
 
@@ -216,10 +216,10 @@ impl SynergyService {
             let base = self.matrix.get_synergy(i, j);
             let boost = feedback.activation_strength * 0.1;
 
-            // GWT modulation: high coherence = stronger learning
-            let gwt_factor = feedback.coherence_score.map_or(1.0, |c| 0.8 + 0.4 * c);
+            // Coherence modulation: high coherence = stronger learning
+            let coherence_factor = feedback.coherence_score.map_or(1.0, |c| 0.8 + 0.4 * c);
 
-            (base + boost * gwt_factor).min(self.config.max_synergy)
+            (base + boost * coherence_factor).min(self.config.max_synergy)
         } else {
             // Slight decrease for unsuccessful co-activations
             let base = self.matrix.get_synergy(i, j);
