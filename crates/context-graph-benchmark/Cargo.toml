@@ -166,3 +166,8 @@ required-features = ["real-embeddings"]
 [[bin]]
 name = "e7-bench"
 path = "src/bin/e7_bench.rs"
+
+[[bin]]
+name = "code-fingerprint-bench"
+path = "src/bin/code_fingerprint_bench.rs"
+required-features = ["real-embeddings"]
