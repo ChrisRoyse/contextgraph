@@ -24,6 +24,9 @@ async-trait = { workspace = true }
 # Logging
 tracing = { workspace = true }
 
+# UUID for memory IDs
+uuid = { workspace = true }
+
 # Float utilities for numerical stability
 half = { version = "2.4", features = ["num-traits"] }
 

@@ -16,7 +16,13 @@
 //! - Sufficient buffer sizes for string outputs
 
 pub mod cuda_driver;
-pub mod faiss;
+pub mod knn;
+
+// FAISS module disabled - crashes on WSL2 with CUDA 13.1 due to
+// static initialization bugs. Using custom GPU k-NN kernel instead.
+// pub mod faiss;
 
 pub use cuda_driver::*;
-pub use faiss::*;
+pub use knn::*;
+
+// pub use faiss::*;

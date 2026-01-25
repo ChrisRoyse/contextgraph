@@ -48,11 +48,15 @@ mod timestamp;
 #[cfg(test)]
 mod tests;
 
-// Re-export public API for backwards compatibility
+// Re-export public API for library consumers
+// Some exports not yet used internally but available for external consumers
+#[allow(unused_imports)]
 pub use constants::{
     DEFAULT_BASE, HYBRID_MODE_DEFAULT, POSITION_ENCODING_DIMENSION, SESSION_SIGNATURE_DIMENSION,
     TEMPORAL_POSITIONAL_DIMENSION,
 };
 pub use model::TemporalPositionalModel;
+#[allow(unused_imports)]
 pub use session_signature::{compute_session_signature, compute_session_signature_or_default};
+#[allow(unused_imports)]
 pub use timestamp::{HybridPositionInfo, PositionInfo};

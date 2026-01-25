@@ -38,33 +38,29 @@ pub const DEFAULT_CODE_BLEND: f32 = 0.4;
 // CODE SEARCH MODE
 // ============================================================================
 
-/// Code search mode for controlling E1/E7 strategy.
+/// Code search mode for controlling E1/E7 scoring strategy.
 ///
-/// Per ARCH-13, multiple strategies are supported:
-/// - E1Only/Hybrid: E1 semantic with optional E7 blending (default)
-/// - E7Only: Pure E7 code search (for heavily code-specific queries)
-/// - E1WithE7Rerank: E1 retrieval with E7 reranking
-/// - Pipeline: Full E13→E1→E12 pipeline with E7 enhancement
+/// Per ARCH-12: E1 is the semantic foundation, E7 enhances with code understanding.
+/// All modes produce scores in [0, 1] range.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum CodeSearchMode {
-    /// Blend E1 semantic and E7 code scores (current default behavior).
-    /// Uses weight: (1-blend)*E1 + blend*E7
+    /// Blend E1 semantic and E7 code scores.
+    /// Score = (1-blend)*E1 + blend*E7
+    /// Best for: balanced code search with semantic understanding.
     #[default]
     Hybrid,
 
-    /// E7 code search only (for heavily code-specific queries).
+    /// Pure E7 code search (ignores E1 semantic).
     /// Best for: function signatures, impl blocks, struct/enum definitions.
     E7Only,
 
-    /// E1 semantic retrieval with E7 reranking.
-    /// Uses E1 for initial retrieval, then E7 to rerank top candidates.
+    /// E1 primary (90%) with E7 tiebreaker (10%).
     /// Best for: natural language queries about code functionality.
     E1WithE7Rerank,
 
-    /// Full pipeline: E13 sparse recall → E1 dense → E7 code → E12 rerank.
-    /// Maximum precision but higher latency.
-    /// Best for: precise code search with exact term matching.
+    /// Currently equivalent to Hybrid.
+    /// Reserved for future full pipeline: E13 sparse -> E1 dense -> E7 code -> E12 rerank.
     Pipeline,
 }
 
@@ -77,33 +73,6 @@ impl fmt::Display for CodeSearchMode {
             CodeSearchMode::Pipeline => write!(f, "pipeline"),
         }
     }
-}
-
-impl CodeSearchMode {
-    /// Parse from string representation.
-    pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_lowercase().as_str() {
-            "hybrid" | "default" => Some(Self::Hybrid),
-            "e7only" | "e7_only" | "e7" => Some(Self::E7Only),
-            "e1withe7rerank" | "e1_with_e7_rerank" | "rerank" => Some(Self::E1WithE7Rerank),
-            "pipeline" | "full" => Some(Self::Pipeline),
-            _ => None,
-        }
-    }
-
-    /// Get description for the mode.
-    pub fn description(&self) -> &'static str {
-        match self {
-            CodeSearchMode::Hybrid => "Blend E1 semantic and E7 code scores",
-            CodeSearchMode::E7Only => "Pure E7 code search for code-specific queries",
-            CodeSearchMode::E1WithE7Rerank => "E1 retrieval with E7 reranking",
-            CodeSearchMode::Pipeline => "Full E13→E1→E7→E12 pipeline for maximum precision",
-        }
-    }
-}
-
-fn default_search_mode() -> CodeSearchMode {
-    CodeSearchMode::Hybrid
 }
 
 // ============================================================================
@@ -168,7 +137,7 @@ pub struct SearchCodeRequest {
     /// - "e7Only": Pure E7 code search
     /// - "e1WithE7Rerank": E1 retrieval with E7 reranking
     /// - "pipeline": Full E13→E1→E7→E12 pipeline
-    #[serde(rename = "searchMode", default = "default_search_mode")]
+    #[serde(rename = "searchMode", default)]
     pub search_mode: CodeSearchMode,
 
     /// Optional language hint to boost language-specific results.
@@ -357,6 +326,54 @@ pub struct SearchCodeResponse {
 
     /// Metadata about the search.
     pub metadata: CodeSearchMetadata,
+
+    /// Code entity results from CodeStore (if code pipeline is enabled).
+    /// E7-WIRING: Added for direct code search results.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "codeEntities")]
+    pub code_entities: Option<Vec<CodeEntityResult>>,
+}
+
+// ============================================================================
+// CODE ENTITY RESULTS (E7-WIRING)
+// ============================================================================
+
+/// A code entity search result from CodeStore.
+///
+/// E7-WIRING: Added for direct code search via E7 embeddings.
+#[derive(Debug, Clone, Serialize)]
+pub struct CodeEntityResult {
+    /// Entity UUID.
+    pub id: String,
+
+    /// Entity name (function, struct, etc.).
+    pub name: String,
+
+    /// Entity type (Function, Struct, Trait, etc.).
+    #[serde(rename = "entityType")]
+    pub entity_type: String,
+
+    /// E7 similarity score.
+    pub score: f32,
+
+    /// File path where entity is defined.
+    #[serde(rename = "filePath")]
+    pub file_path: String,
+
+    /// Line number where entity starts.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "startLine")]
+    pub start_line: Option<usize>,
+
+    /// Line number where entity ends.
+    #[serde(skip_serializing_if = "Option::is_none", rename = "endLine")]
+    pub end_line: Option<usize>,
+
+    /// Code content (if requested).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+
+    /// Parent scope chain (e.g., ["mod foo", "impl Bar"]).
+    #[serde(skip_serializing_if = "Option::is_none", rename = "scopeChain")]
+    pub scope_chain: Option<Vec<String>>,
 }
 
 #[cfg(test)]

@@ -10,6 +10,13 @@
 //! 1. Detecting causal markers (cause/effect indicators) in text
 //! 2. Returning token indices for global attention assignment
 //! 3. Enabling different attention patterns for cause vs effect embeddings
+//!
+//! # Note
+//!
+//! This module is prepared for enhanced global attention patterns.
+//! Currently the forward pass uses simpler uniform attention.
+
+#![allow(dead_code)] // Prepared for enhanced causal attention integration
 
 use tokenizers::Encoding;
 

@@ -22,6 +22,7 @@
 //! - `EmbeddingProviderAdapter`: Blocked until TASK-F007 implements multi-array provider.
 
 pub mod adapters;
+pub mod gpu_clustering;
 pub mod handlers;
 pub mod middleware;
 pub mod protocol;

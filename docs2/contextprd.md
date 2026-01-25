@@ -1,8 +1,10 @@
-# Context Graph PRD v6.3 (GPU-First 13-Perspectives Multi-Space System)
+# Context Graph PRD v6.4 (GPU-First 13-Perspectives Multi-Space System)
 
 **Platform**: Claude Code CLI | **Architecture**: GPU-First | **Hardware**: RTX 5090 32GB + CUDA 13.1
 
 **Core Insight**: 13 embedders = 13 unique perspectives on every memory, all warm-loaded on GPU
+
+**New in v6.4**: Code Embedding Separation - Dedicated E7 pipeline for code with AST-aware chunking, tree-sitter parsing, and separate storage from teleological memories
 
 **New in v6.3**: Embedder-first search - AI agents can now search using any of the 13 embedders as the primary perspective, not just E1
 
@@ -282,6 +284,86 @@ Importance = BM25_saturated(log(1+access_count)) × e^(-λ × days)
 
 ---
 
+## 5.4 CODE EMBEDDING SEPARATION
+
+Code entities are stored in a **separate pipeline** from the 13-embedder teleological system. E7 (Qodo-Embed-1-1.5B) serves as the primary embedder for code, enabling specialized code search without polluting the memory graph.
+
+### Why Separate Code?
+
+| Challenge with Mixed Storage | Solution with Separation |
+|------------------------------|--------------------------|
+| Code syntax treated as NL noise | E7 treats code as structured signal |
+| Word-based chunking breaks functions | AST-aware chunking preserves boundaries |
+| Topic detection confused by code | Code excluded from topic clustering |
+| Function signatures diluted | Signature-specific search supported |
+
+### Architecture
+
+```
+Source File → Git Watcher → Tree-sitter AST → Code Entities → E7 Embeddings → CodeStore
+                                    ↓
+                          (Separate from TeleologicalStore)
+```
+
+### Code Entity Types
+
+| Type | Description | Example |
+|------|-------------|---------|
+| Function | Standalone function | `fn parse_config()` |
+| Method | Function in impl block | `impl Config { fn load() }` |
+| Struct | Struct definition | `struct Config { ... }` |
+| Enum | Enum definition | `enum Status { ... }` |
+| Trait | Trait definition | `trait Parser { ... }` |
+| Impl | Impl block | `impl Parser for Config` |
+
+### AST Chunking (Tree-sitter)
+
+Per Qodo best practices and cAST paper (EMNLP 2025):
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| Target size | 500 chars | Qodo recommendation for code |
+| Min size | 100 chars | Avoid tiny fragments |
+| Max size | 1000 chars | Prevent semantic dilution |
+| Parent context | Included | Methods include parent struct |
+| Imports | Included | Relevant imports in each chunk |
+
+### Storage Schema
+
+```
+CodeStore {
+  code_entities: CF        // Metadata: name, language, signature, visibility
+  code_e7_embeddings: CF   // 1536D E7 vectors
+  code_file_index: CF      // File path → entity IDs
+  code_name_index: CF      // Entity name secondary index
+  code_signature_index: CF // Signature secondary index
+}
+```
+
+### Code Search
+
+Code search uses E7 as primary, with optional E1 semantic enhancement:
+
+| Mode | Description | Use Case |
+|------|-------------|----------|
+| `signature` | Match function signatures | "Find functions that take `&str`" |
+| `pattern` | Match code patterns | "Find async functions with `await`" |
+| `semantic` | E7 + E1 blended | "Find authentication code" |
+
+**Default blend weight**: 0.4 (40% E1 semantic, 60% E7 code)
+
+### GPU Memory
+
+The E7 code model (~3GB) is loaded **separately** from the 8GB budget for the 13 teleological models:
+
+| Allocation | Size | Notes |
+|------------|------|-------|
+| 13 Teleological Models | 8GB | Warm-loaded at startup |
+| E7 Code Model (Separate) | 3GB | Dedicated, not shared |
+| Total for Embedders | ~11GB | Leaves 21GB for indexes/buffers |
+
+---
+
 ## 6. INJECTION STRATEGY
 
 ### 6.1 Priority Order
@@ -335,7 +417,23 @@ Native Claude Code hooks via `.claude/settings.json`:
 | `store_memory` | Store with embeddings | content, importance, rationale |
 | `inject_context` | Retrieval + injection | query, max_tokens |
 
-### 8.2 Topic & Maintenance
+### 8.2 Code Search Operations
+
+| Tool | Purpose | Key Params |
+|------|---------|------------|
+| `search_code` | E7-first code search | query, topK, blendWithSemantic, languageHint |
+| `search_code_entities` | Search by entity type | entityType, name, signature |
+| `get_code_entity` | Get entity by ID | entityId, includeEmbedding |
+| `list_code_files` | List indexed code files | pathPattern, language |
+
+**Code Search Modes**:
+| Mode | Description | E7/E1 Blend |
+|------|-------------|-------------|
+| `signature` | Match function signatures | 80% E7, 20% E1 |
+| `pattern` | Match code patterns | 70% E7, 30% E1 |
+| `semantic` | Semantic code search | 60% E7, 40% E1 |
+
+### 8.3 Topic & Maintenance
 
 | Tool | Purpose |
 |------|---------|

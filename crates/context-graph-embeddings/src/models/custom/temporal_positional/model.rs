@@ -264,6 +264,7 @@ impl TemporalPositionalModel {
     /// Compute the transformer-style positional encoding for a given timestamp.
     ///
     /// Legacy method for backward compatibility.
+    #[allow(dead_code)]
     fn compute_positional_encoding(&self, timestamp: DateTime<Utc>) -> Vec<f32> {
         compute_positional_encoding(timestamp, self.base, self.d_model)
     }
@@ -271,6 +272,7 @@ impl TemporalPositionalModel {
     /// Extract timestamp from ModelInput.
     ///
     /// Legacy method for backward compatibility.
+    #[allow(dead_code)]
     fn extract_timestamp(&self, input: &ModelInput) -> DateTime<Utc> {
         extract_timestamp(input)
     }

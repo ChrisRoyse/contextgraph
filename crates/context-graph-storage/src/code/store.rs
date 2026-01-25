@@ -1,10 +1,25 @@
-//! CodeStore implementation for code entity and E7 embedding storage.
+//! CodeStore implementation for code entity and fingerprint storage.
+//!
+//! # Constitution Compliance
+//!
+//! - ARCH-01: "TeleologicalArray is atomic - all 13 embeddings or nothing"
+//! - ARCH-05: "All 13 embedders required - missing = fatal"
+//! - Code entities stored in SEPARATE database from teleological memories
+//! - But each entity gets the FULL 13-embedder treatment
+//! - E7 (V_correctness) provides code-specific patterns
+//!
+//! # Storage Architecture
+//!
+//! Each code entity is stored with its full SemanticFingerprint (all 13 embeddings).
+//! This enables multi-space search: E7 for code patterns, E1 for semantic meaning,
+//! E5 for causal understanding, etc.
 
 use super::error::{CodeStorageError, CodeStorageResult};
 use crate::teleological::column_families::{
     CF_CODE_ENTITIES, CF_CODE_E7_EMBEDDINGS, CF_CODE_FILE_INDEX, CF_CODE_NAME_INDEX,
     CF_CODE_SIGNATURE_INDEX,
 };
+use context_graph_core::types::fingerprint::SemanticFingerprint;
 use context_graph_core::types::{CodeEntity, CodeFileIndexEntry, CodeLanguage, CodeStats};
 use rocksdb::{ColumnFamily, IteratorMode, DB};
 use sha2::{Digest, Sha256};
@@ -15,15 +30,21 @@ use tracing::{debug, info, instrument, warn};
 use uuid::Uuid;
 
 /// E7 embedding dimension (Qodo-Embed-1-1.5B).
+/// Kept for validation - E7 within SemanticFingerprint should be 1536D.
 pub const E7_CODE_DIM: usize = 1536;
 
-/// CodeStore provides storage for code entities and their E7 embeddings.
+/// CodeStore provides storage for code entities with full SemanticFingerprint.
 ///
 /// # Architecture
 /// - Uses separate column families from teleological storage
-/// - E7 embeddings are stored directly (not as part of TeleologicalFingerprint)
+/// - Full SemanticFingerprint (all 13 embeddings) stored per entity
+/// - This enables multi-space search: E7 for code, E1 for semantic, etc.
 /// - Secondary indexes for efficient name and signature search
 /// - File-level tracking for change detection and cleanup
+///
+/// # Constitution Compliance
+/// - ARCH-01: TeleologicalArray is atomic - all 13 embeddings stored together
+/// - Separate from teleological store, but same embedding structure
 ///
 /// # Thread Safety
 /// CodeStore uses `Arc<DB>` and is `Send + Sync`.
@@ -123,25 +144,37 @@ impl CodeStore {
     // Entity CRUD Operations
     // =========================================================================
 
-    /// Store a code entity with its E7 embedding.
+    /// Store a code entity with its full SemanticFingerprint.
     ///
     /// # Arguments
     /// * `entity` - The code entity to store
-    /// * `embedding` - E7 embedding vector (must be 1536D)
+    /// * `fingerprint` - Complete 13-embedding fingerprint
     ///
     /// # Errors
-    /// Returns error if embedding dimension is wrong or storage fails.
-    #[instrument(skip(self, entity, embedding), fields(id = %entity.id, name = %entity.name))]
+    /// Returns error if fingerprint is incomplete or storage fails.
+    ///
+    /// # Constitution Compliance
+    /// - ARCH-01: Stores all 13 embeddings together atomically
+    /// - ARCH-05: Validates fingerprint has all required embeddings
+    #[instrument(skip(self, entity, fingerprint), fields(id = %entity.id, name = %entity.name))]
     pub fn store(
         &self,
         entity: &CodeEntity,
-        embedding: &[f32],
+        fingerprint: &SemanticFingerprint,
     ) -> CodeStorageResult<()> {
-        // Validate embedding dimension
-        if embedding.len() != E7_CODE_DIM {
+        // Validate fingerprint has all 13 embeddings (ARCH-05)
+        if !fingerprint.is_complete() {
+            return Err(CodeStorageError::InvalidDimension {
+                expected: 13,
+                actual: 0, // Incomplete fingerprint
+            });
+        }
+
+        // Validate E7 dimension specifically
+        if fingerprint.e7_code.len() != E7_CODE_DIM {
             return Err(CodeStorageError::InvalidDimension {
                 expected: E7_CODE_DIM,
-                actual: embedding.len(),
+                actual: fingerprint.e7_code.len(),
             });
         }
 
@@ -151,16 +184,17 @@ impl CodeStore {
         let entity_bytes = bincode::serialize(entity)
             .map_err(|e| CodeStorageError::serialization(e.to_string()))?;
 
-        // Serialize embedding (native f32 bytes)
-        let embedding_bytes = Self::serialize_embedding(embedding);
+        // Serialize full fingerprint (all 13 embeddings)
+        let fingerprint_bytes = bincode::serialize(fingerprint)
+            .map_err(|e| CodeStorageError::serialization(e.to_string()))?;
 
         // Store entity
         self.db
             .put_cf(&self.cf_entities()?, id_bytes, &entity_bytes)?;
 
-        // Store embedding
+        // Store fingerprint (in the "embeddings" CF, now stores full fingerprint)
         self.db
-            .put_cf(&self.cf_embeddings()?, id_bytes, &embedding_bytes)?;
+            .put_cf(&self.cf_embeddings()?, id_bytes, &fingerprint_bytes)?;
 
         // Update file index
         self.update_file_index(&entity.file_path, entity.id, &entity.language)?;
@@ -178,7 +212,8 @@ impl CodeStore {
             name = %entity.name,
             entity_type = %entity.entity_type,
             file = %entity.file_path,
-            "Stored code entity"
+            fingerprint_size_bytes = fingerprint_bytes.len(),
+            "Stored code entity with full 13-embedding fingerprint"
         );
 
         Ok(())
@@ -209,40 +244,55 @@ impl CodeStore {
         self.get(id)?.ok_or(CodeStorageError::not_found(id))
     }
 
-    /// Get the E7 embedding for an entity.
+    /// Get the full SemanticFingerprint for an entity.
     ///
     /// # Arguments
     /// * `id` - Entity UUID
     ///
     /// # Returns
-    /// The embedding vector if found.
-    pub fn get_embedding(&self, id: Uuid) -> CodeStorageResult<Option<Vec<f32>>> {
+    /// The complete 13-embedding fingerprint if found.
+    pub fn get_fingerprint(&self, id: Uuid) -> CodeStorageResult<Option<SemanticFingerprint>> {
         let id_bytes = id.as_bytes();
 
         match self.db.get_cf(&self.cf_embeddings()?, id_bytes)? {
             Some(bytes) => {
-                let embedding = Self::deserialize_embedding(&bytes)?;
-                Ok(Some(embedding))
+                let fingerprint: SemanticFingerprint = bincode::deserialize(&bytes)
+                    .map_err(|e| CodeStorageError::deserialization(e.to_string()))?;
+                Ok(Some(fingerprint))
             }
             None => Ok(None),
         }
     }
 
-    /// Get entity and its embedding together.
-    pub fn get_with_embedding(
+    /// Get just the E7 embedding for an entity (convenience method).
+    ///
+    /// # Arguments
+    /// * `id` - Entity UUID
+    ///
+    /// # Returns
+    /// The E7 (1536D) embedding if found.
+    ///
+    /// # Note
+    /// For full multi-space search, use `get_fingerprint()` instead.
+    pub fn get_e7_embedding(&self, id: Uuid) -> CodeStorageResult<Option<Vec<f32>>> {
+        self.get_fingerprint(id).map(|opt| opt.map(|fp| fp.e7_code))
+    }
+
+    /// Get entity and its full fingerprint together.
+    pub fn get_with_fingerprint(
         &self,
         id: Uuid,
-    ) -> CodeStorageResult<Option<(CodeEntity, Vec<f32>)>> {
+    ) -> CodeStorageResult<Option<(CodeEntity, SemanticFingerprint)>> {
         let entity = match self.get(id)? {
             Some(e) => e,
             None => return Ok(None),
         };
 
-        let embedding = self
-            .get_embedding(id)?
+        let fingerprint = self
+            .get_fingerprint(id)?
             .ok_or(CodeStorageError::embedding_not_found(id))?;
 
-        Ok(Some((entity, embedding)))
+        Ok(Some((entity, fingerprint)))
     }
 
     /// Delete a code entity and its embedding.
@@ -475,6 +525,155 @@ impl CodeStore {
         }
     }
 
+    /// Search entities by fingerprint similarity.
+    ///
+    /// Performs a linear scan over all fingerprints and returns the top-K
+    /// most similar entities by cosine similarity.
+    ///
+    /// # Arguments
+    /// * `query_fingerprint` - Query fingerprint (all 13 embeddings)
+    /// * `top_k` - Maximum number of results to return
+    /// * `min_similarity` - Minimum similarity threshold (0.0 to 1.0)
+    /// * `use_e7_primary` - If true, use E7 (code) for scoring; else use E1 (semantic)
+    ///
+    /// # Returns
+    /// Vector of (entity_id, similarity_score) pairs, sorted by decreasing similarity.
+    ///
+    /// # Note
+    /// This is a linear scan implementation. For large codebases, consider
+    /// building an HNSW index for better performance.
+    pub fn search_by_fingerprint(
+        &self,
+        query_fingerprint: &SemanticFingerprint,
+        top_k: usize,
+        min_similarity: f32,
+        use_e7_primary: bool,
+    ) -> CodeStorageResult<Vec<(Uuid, f32)>> {
+        // Select query embedding based on mode
+        let query = if use_e7_primary {
+            &query_fingerprint.e7_code
+        } else {
+            &query_fingerprint.e1_semantic
+        };
+
+        if query.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Pre-compute query norm for cosine similarity
+        let query_norm = Self::vector_norm(query);
+        if query_norm < f32::EPSILON {
+            return Ok(Vec::new());
+        }
+
+        // Collect all candidates with similarity scores
+        let cf = self.cf_embeddings()?;
+        let iter = self.db.iterator_cf(&cf, IteratorMode::Start);
+
+        let mut candidates: Vec<(Uuid, f32)> = Vec::new();
+
+        for item in iter {
+            let (key, value) = item?;
+
+            // Parse UUID from key
+            if key.len() != 16 {
+                continue;
+            }
+            let id = Uuid::from_slice(&key).map_err(|e| {
+                CodeStorageError::deserialization(format!("Invalid UUID in fingerprint index: {}", e))
+            })?;
+
+            // Deserialize fingerprint
+            let stored_fp: SemanticFingerprint = bincode::deserialize(&value)
+                .map_err(|e| CodeStorageError::deserialization(e.to_string()))?;
+
+            // Select stored embedding based on mode
+            let stored_embedding = if use_e7_primary {
+                &stored_fp.e7_code
+            } else {
+                &stored_fp.e1_semantic
+            };
+
+            // Compute cosine similarity
+            let similarity = Self::cosine_similarity_with_norm(query, stored_embedding, query_norm);
+
+            if similarity >= min_similarity {
+                candidates.push((id, similarity));
+            }
+        }
+
+        // Sort by similarity descending and take top_k
+        candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        candidates.truncate(top_k);
+
+        debug!(
+            candidates_found = candidates.len(),
+            top_k = top_k,
+            min_similarity = min_similarity,
+            use_e7 = use_e7_primary,
+            "CodeStore: search_by_fingerprint completed"
+        );
+
+        Ok(candidates)
+    }
+
+    /// Search entities by fingerprint and return full entity data.
+    ///
+    /// Convenience wrapper around `search_by_fingerprint` that also fetches
+    /// the entity data for each result.
+    ///
+    /// # Arguments
+    /// * `query_fingerprint` - Query fingerprint (all 13 embeddings)
+    /// * `top_k` - Maximum number of results to return
+    /// * `min_similarity` - Minimum similarity threshold (0.0 to 1.0)
+    /// * `use_e7_primary` - If true, use E7 (code) for scoring; else use E1 (semantic)
+    ///
+    /// # Returns
+    /// Vector of (entity, similarity_score) pairs.
+    pub fn search_by_fingerprint_with_entities(
+        &self,
+        query_fingerprint: &SemanticFingerprint,
+        top_k: usize,
+        min_similarity: f32,
+        use_e7_primary: bool,
+    ) -> CodeStorageResult<Vec<(CodeEntity, f32)>> {
+        let results = self.search_by_fingerprint(query_fingerprint, top_k, min_similarity, use_e7_primary)?;
+
+        let mut entities_with_scores = Vec::with_capacity(results.len());
+        for (id, score) in results {
+            if let Some(entity) = self.get(id)? {
+                entities_with_scores.push((entity, score));
+            }
+        }
+
+        Ok(entities_with_scores)
+    }
+
+    // =========================================================================
+    // Vector Math Helpers
+    // =========================================================================
+
+    /// Compute the L2 norm of a vector.
+    fn vector_norm(v: &[f32]) -> f32 {
+        v.iter().map(|x| x * x).sum::<f32>().sqrt()
+    }
+
+    /// Compute cosine similarity with pre-computed query norm.
+    fn cosine_similarity_with_norm(query: &[f32], candidate: &[f32], query_norm: f32) -> f32 {
+        if query.len() != candidate.len() {
+            return 0.0;
+        }
+
+        let dot: f32 = query.iter().zip(candidate.iter()).map(|(a, b)| a * b).sum();
+        let candidate_norm = Self::vector_norm(candidate);
+
+        if candidate_norm < f32::EPSILON {
+            return 0.0;
+        }
+
+        (dot / (query_norm * candidate_norm)).clamp(-1.0, 1.0)
+    }
+
     // =========================================================================
     // Statistics
     // =========================================================================
@@ -674,32 +873,8 @@ impl CodeStore {
     }
 
     // =========================================================================
-    // Serialization Helpers
+    // Utility Helpers
     // =========================================================================
-
-    fn serialize_embedding(embedding: &[f32]) -> Vec<u8> {
-        let mut bytes = Vec::with_capacity(embedding.len() * 4);
-        for &val in embedding {
-            bytes.extend_from_slice(&val.to_le_bytes());
-        }
-        bytes
-    }
-
-    fn deserialize_embedding(bytes: &[u8]) -> CodeStorageResult<Vec<f32>> {
-        if bytes.len() % 4 != 0 {
-            return Err(CodeStorageError::deserialization(format!(
-                "Invalid embedding bytes length: {}",
-                bytes.len()
-            )));
-        }
-
-        let mut embedding = Vec::with_capacity(bytes.len() / 4);
-        for chunk in bytes.chunks_exact(4) {
-            let arr: [u8; 4] = chunk.try_into().unwrap();
-            embedding.push(f32::from_le_bytes(arr));
-        }
-        Ok(embedding)
-    }
 
     fn hash_signature(signature: &str) -> [u8; 32] {
         let mut hasher = Sha256::new();
@@ -810,8 +985,14 @@ mod tests {
         )
     }
 
-    fn create_test_embedding() -> Vec<f32> {
-        vec![0.1; E7_CODE_DIM]
+    /// Create a test fingerprint with proper E7 dimension.
+    ///
+    /// Uses zeroed base and sets E7 to a non-zero vector for testing.
+    fn create_test_fingerprint() -> SemanticFingerprint {
+        let mut fp = SemanticFingerprint::zeroed();
+        // Set E7 to a recognizable test pattern
+        fp.e7_code = vec![0.1; E7_CODE_DIM];
+        fp
     }
 
     #[test]
@@ -820,17 +1001,23 @@ mod tests {
         let store = CodeStore::open(dir.path()).unwrap();
 
         let entity = create_test_entity("my_function");
-        let embedding = create_test_embedding();
+        let fingerprint = create_test_fingerprint();
         let id = entity.id;
 
-        store.store(&entity, &embedding).unwrap();
+        store.store(&entity, &fingerprint).unwrap();
 
         let retrieved = store.get(id).unwrap().unwrap();
         assert_eq!(retrieved.name, "my_function");
         assert_eq!(retrieved.entity_type, CodeEntityType::Function);
 
-        let retrieved_embedding = store.get_embedding(id).unwrap().unwrap();
-        assert_eq!(retrieved_embedding.len(), E7_CODE_DIM);
+        // Verify fingerprint retrieval
+        let retrieved_fp = store.get_fingerprint(id).unwrap().unwrap();
+        assert!(retrieved_fp.is_complete(), "Fingerprint should have all 13 embeddings");
+        assert_eq!(retrieved_fp.e7_code.len(), E7_CODE_DIM);
+
+        // Also test the convenience method
+        let e7_embedding = store.get_e7_embedding(id).unwrap().unwrap();
+        assert_eq!(e7_embedding.len(), E7_CODE_DIM);
     }
 
     #[test]
@@ -839,10 +1026,10 @@ mod tests {
         let store = CodeStore::open(dir.path()).unwrap();
 
         let entity = create_test_entity("to_delete");
-        let embedding = create_test_embedding();
+        let fingerprint = create_test_fingerprint();
         let id = entity.id;
 
-        store.store(&entity, &embedding).unwrap();
+        store.store(&entity, &fingerprint).unwrap();
         assert!(store.exists(id).unwrap());
 
         store.delete(id).unwrap();
@@ -873,8 +1060,8 @@ mod tests {
             7,
         );
 
-        store.store(&entity1, &create_test_embedding()).unwrap();
-        store.store(&entity2, &create_test_embedding()).unwrap();
+        store.store(&entity1, &create_test_fingerprint()).unwrap();
+        store.store(&entity2, &create_test_fingerprint()).unwrap();
 
         let entities = store.get_by_file("/test/myfile.rs").unwrap();
         assert_eq!(entities.len(), 2);
@@ -889,9 +1076,9 @@ mod tests {
         let entity2 = create_test_entity("process_items");
         let entity3 = create_test_entity("handle_event");
 
-        store.store(&entity1, &create_test_embedding()).unwrap();
-        store.store(&entity2, &create_test_embedding()).unwrap();
-        store.store(&entity3, &create_test_embedding()).unwrap();
+        store.store(&entity1, &create_test_fingerprint()).unwrap();
+        store.store(&entity2, &create_test_fingerprint()).unwrap();
+        store.store(&entity3, &create_test_fingerprint()).unwrap();
 
         let results = store.search_by_name("process", 10).unwrap();
         assert_eq!(results.len(), 2);
@@ -921,8 +1108,8 @@ mod tests {
             7,
         );
 
-        store.store(&entity1, &create_test_embedding()).unwrap();
-        store.store(&entity2, &create_test_embedding()).unwrap();
+        store.store(&entity1, &create_test_fingerprint()).unwrap();
+        store.store(&entity2, &create_test_fingerprint()).unwrap();
 
         let deleted = store.delete_file("/test/to_delete.rs").unwrap();
         assert_eq!(deleted, 2);
@@ -939,8 +1126,8 @@ mod tests {
         let entity1 = create_test_entity("func1");
         let entity2 = create_test_entity("func2");
 
-        store.store(&entity1, &create_test_embedding()).unwrap();
-        store.store(&entity2, &create_test_embedding()).unwrap();
+        store.store(&entity1, &create_test_fingerprint()).unwrap();
+        store.store(&entity2, &create_test_fingerprint()).unwrap();
 
         let stats = store.get_stats().unwrap();
         assert_eq!(stats.total_entities, 2);
@@ -948,18 +1135,50 @@ mod tests {
     }
 
     #[test]
-    fn test_invalid_embedding_dimension() {
+    fn test_invalid_fingerprint() {
         let dir = tempdir().unwrap();
         let store = CodeStore::open(dir.path()).unwrap();
 
         let entity = create_test_entity("test");
-        let wrong_embedding = vec![0.1; 100]; // Wrong dimension
+        // Create incomplete fingerprint by setting E7 to wrong dimension
+        let mut bad_fp = SemanticFingerprint::zeroed();
+        bad_fp.e7_code = vec![0.1; 100]; // Wrong E7 dimension
 
-        let result = store.store(&entity, &wrong_embedding);
+        let result = store.store(&entity, &bad_fp);
         assert!(matches!(
             result,
             Err(CodeStorageError::InvalidDimension { .. })
         ));
+    }
+
+    #[test]
+    fn test_search_by_fingerprint() {
+        let dir = tempdir().unwrap();
+        let store = CodeStore::open(dir.path()).unwrap();
+
+        // Create entities with distinct fingerprints
+        let entity1 = create_test_entity("search_target");
+        let mut fp1 = create_test_fingerprint();
+        fp1.e7_code = vec![1.0; E7_CODE_DIM]; // Normalized unit vector
+
+        let entity2 = create_test_entity("other_func");
+        let mut fp2 = create_test_fingerprint();
+        fp2.e7_code = vec![-0.5; E7_CODE_DIM]; // Different direction
+
+        store.store(&entity1, &fp1).unwrap();
+        store.store(&entity2, &fp2).unwrap();
+
+        // Search with query similar to entity1
+        let mut query_fp = create_test_fingerprint();
+        query_fp.e7_code = vec![0.9; E7_CODE_DIM];
+
+        let results = store.search_by_fingerprint(&query_fp, 10, 0.0, true).unwrap();
+        assert!(!results.is_empty());
+
+        // entity1 should be first (more similar)
+        let (top_id, top_score) = results[0];
+        assert_eq!(top_id, entity1.id);
+        assert!(top_score > 0.9, "Top result should have high similarity");
     }
 
     #[test]

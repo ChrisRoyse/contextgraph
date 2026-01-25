@@ -12,11 +12,13 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::{RwLock, Semaphore};
+use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
 
 // ============================================================================
@@ -49,9 +51,16 @@ use context_graph_core::config::Config;
 use context_graph_core::memory::watcher::GitFileWatcher;
 use context_graph_core::memory::{MemoryCaptureService, MultiArrayEmbeddingAdapter};
 use context_graph_core::memory::store::MemoryStore;
+use context_graph_core::memory::{CodeCaptureService, CodeFileWatcher};
 use context_graph_core::traits::{
     MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor,
 };
+
+// Code watcher dependencies
+use crate::adapters::CodeStoreAdapter;
+use context_graph_embeddings::adapters::E7CodeEmbeddingProvider;
+use context_graph_embeddings::traits::EmbeddingModel;
+use context_graph_storage::code::CodeStore;
 
 use context_graph_embeddings::{
     get_warm_provider, initialize_global_warm_provider, is_warm_initialized, warm_status_message,
@@ -102,6 +111,11 @@ pub struct McpServer {
     /// Active connection counter for monitoring.
     /// TASK-INTEG-018: Atomic counter for observability.
     active_connections: Arc<AtomicUsize>,
+    /// Code watcher background task handle.
+    /// E7-WIRING: Runs periodically to detect file changes and update embeddings.
+    code_watcher_task: Arc<RwLock<Option<JoinHandle<()>>>>,
+    /// Flag to signal code watcher shutdown.
+    code_watcher_running: Arc<AtomicBool>,
 }
 
 impl McpServer {
@@ -363,6 +377,38 @@ impl McpServer {
         let layer_status_provider: Arc<dyn context_graph_core::monitoring::LayerStatusProvider> =
             Arc::new(context_graph_core::monitoring::StubLayerStatusProvider::new());
 
+        // ==========================================================================
+        // 4a. E7-WIRING: Optional Code Pipeline Initialization
+        // ==========================================================================
+        // The code pipeline provides AST-aware code search using E7 embeddings.
+        // When enabled, search_code can return both:
+        // - Results from the teleological store (existing behavior)
+        // - Results from the CodeStore (AST-chunked code entities)
+        //
+        // To enable the code pipeline:
+        // 1. Set CODE_PIPELINE_ENABLED=true environment variable
+        // 2. Ensure CODE_STORE_PATH is set (defaults to db_path/code_store)
+        //
+        // TODO: Add to Config struct for proper configuration management
+        let _code_pipeline_enabled =
+            std::env::var("CODE_PIPELINE_ENABLED").map_or(false, |v| v == "true");
+
+        // E7-WIRING: Code pipeline components are created but not wired by default.
+        // When enabled:
+        // - CodeStore is opened at CODE_STORE_PATH
+        // - E7CodeEmbeddingProvider wraps the CodeModel
+        // - CodeCaptureService orchestrates embed + store
+        // - CodeFileWatcher monitors source files for changes
+        //
+        // The code pipeline is separate from the 13-embedder teleological system:
+        // - CodeStore uses E7-only embeddings (1536D Qodo-Embed)
+        // - TeleologicalStore uses all 13 embeddings including E7
+        //
+        // This separation allows:
+        // - Faster code-specific search (E7 only)
+        // - AST-aware chunking (function/struct boundaries)
+        // - Incremental updates without re-embedding entire files
+
         // TASK-INTEG-TOPIC: Use with_defaults to automatically create clustering components
         let handlers = Handlers::with_defaults(
             Arc::clone(&teleological_store),
@@ -396,6 +442,9 @@ impl McpServer {
             initialized: Arc::new(RwLock::new(false)),
             connection_semaphore,
             active_connections: Arc::new(AtomicUsize::new(0)),
+            // E7-WIRING: Code watcher fields initialized as None/false
+            code_watcher_task: Arc::new(RwLock::new(None)),
+            code_watcher_running: Arc::new(AtomicBool::new(false)),
         })
     }
 
@@ -647,6 +696,210 @@ impl McpServer {
         );
 
         Ok(true)
+    }
+
+    // =========================================================================
+    // E7-WIRING: Code File Watcher
+    // =========================================================================
+
+    /// Start the code file watcher for AST-based code indexing.
+    ///
+    /// E7-WIRING: This method enables the code embedding pipeline which provides:
+    /// - Tree-sitter AST parsing for Rust source files
+    /// - E7 (Qodo-Embed-1-1.5B) embedding for code entities
+    /// - Separate CodeStore for code-specific search
+    ///
+    /// # Configuration
+    ///
+    /// Environment variables:
+    /// - `CODE_PIPELINE_ENABLED=true` - Enable the code pipeline
+    /// - `CODE_STORE_PATH` - Path to CodeStore (defaults to db_path/code_store)
+    /// - `CODE_WATCH_PATHS` - Comma-separated list of paths to watch (defaults to crate roots)
+    ///
+    /// # Returns
+    ///
+    /// `Ok(true)` if watcher started, `Ok(false)` if disabled, `Err` on failure.
+    ///
+    /// # Note
+    ///
+    /// The code pipeline is SEPARATE from the 13-embedder teleological system.
+    /// It stores E7-only embeddings for faster code-specific search.
+    #[allow(dead_code)]
+    pub async fn start_code_watcher(&self) -> Result<bool> {
+        // Check if code pipeline is enabled
+        let enabled = std::env::var("CODE_PIPELINE_ENABLED").map_or(false, |v| v == "true");
+        if !enabled {
+            debug!("Code pipeline disabled (set CODE_PIPELINE_ENABLED=true to enable)");
+            return Ok(false);
+        }
+
+        info!("E7-WIRING: Code pipeline enabled - starting code file watcher...");
+
+        // Wait for embedding models to be ready (E7 is part of the 13-embedder system)
+        if self.models_loading.load(Ordering::SeqCst) {
+            info!("Waiting for embedding models to load before starting code watcher...");
+            for _ in 0..120 {
+                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                if !self.models_loading.load(Ordering::SeqCst) {
+                    break;
+                }
+            }
+            if self.models_loading.load(Ordering::SeqCst) {
+                error!("Embedding models still loading after 60s - skipping code watcher");
+                return Ok(false);
+            }
+        }
+
+        // Check if model loading failed
+        {
+            let failed = self.models_failed.read().await;
+            if let Some(ref err) = *failed {
+                error!("Cannot start code watcher - embedding models failed: {}", err);
+                return Ok(false);
+            }
+        }
+
+        // E7-WIRING: Full implementation
+        // 1. Resolve paths
+        let code_store_path = std::env::var("CODE_STORE_PATH").unwrap_or_else(|_| {
+            let base = Self::resolve_storage_path(&self.config);
+            base.join("code_store").to_string_lossy().to_string()
+        });
+
+        let watch_paths_str = std::env::var("CODE_WATCH_PATHS").unwrap_or_else(|_| ".".to_string());
+        let watch_paths: Vec<PathBuf> = watch_paths_str
+            .split(',')
+            .map(|s| PathBuf::from(s.trim()))
+            .collect();
+
+        // Poll interval (default: 5 seconds)
+        let poll_interval_secs: u64 = std::env::var("CODE_WATCH_INTERVAL")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(5);
+
+        info!(
+            code_store_path = %code_store_path,
+            watch_paths = ?watch_paths,
+            poll_interval_secs = poll_interval_secs,
+            "E7-WIRING: Starting code file watcher"
+        );
+
+        // 2. Open CodeStore and wrap in adapter
+        let raw_store = CodeStore::open(&code_store_path).map_err(|e| {
+            anyhow::anyhow!("Failed to open CodeStore at {}: {}", code_store_path, e)
+        })?;
+        let code_store = Arc::new(CodeStoreAdapter::new(Arc::new(raw_store)));
+        info!("Opened CodeStore at {}", code_store_path);
+
+        // 3. Get existing multi-array provider (all 13 embedders)
+        // E7CodeEmbeddingProvider now requires full MultiArrayEmbeddingProvider per ARCH-01/ARCH-05
+        let multi_array_provider = {
+            let slot = self.multi_array_provider.read().await;
+            match slot.as_ref() {
+                Some(p) => Arc::clone(p),
+                None => {
+                    error!("Multi-array provider not available - models not loaded");
+                    return Ok(false);
+                }
+            }
+        };
+        info!("Using existing multi-array provider for code embedding");
+
+        // 4. Create E7 embedding provider (uses all 13 embedders internally)
+        let e7_provider = Arc::new(E7CodeEmbeddingProvider::new(multi_array_provider));
+
+        // 5. Create CodeCaptureService
+        let session_id = std::env::var("CLAUDE_SESSION_ID").unwrap_or_else(|_| "default".to_string());
+        let capture_service: Arc<CodeCaptureService<E7CodeEmbeddingProvider, CodeStoreAdapter>> =
+            Arc::new(CodeCaptureService::new(
+                e7_provider.clone(),
+                code_store.clone(),
+                session_id.clone(),
+            ));
+
+        // 6. Create and start CodeFileWatcher
+        let mut watcher: CodeFileWatcher<E7CodeEmbeddingProvider, CodeStoreAdapter> =
+            CodeFileWatcher::new(
+                watch_paths.clone(),
+                capture_service,
+                session_id,
+            ).map_err(|e| anyhow::anyhow!("Failed to create CodeFileWatcher: {}", e))?;
+
+        watcher.start().await.map_err(|e| {
+            anyhow::anyhow!("Failed to start CodeFileWatcher: {}", e)
+        })?;
+
+        let stats = watcher.stats().await;
+        info!(
+            files_tracked = stats.files_tracked,
+            watch_paths = ?stats.watch_paths,
+            "CodeFileWatcher initial scan complete"
+        );
+
+        // 7. Spawn background polling task
+        self.code_watcher_running.store(true, Ordering::SeqCst);
+        let running_flag = self.code_watcher_running.clone();
+        let poll_interval = Duration::from_secs(poll_interval_secs);
+
+        let task = tokio::spawn(async move {
+            info!("Code watcher background task started (polling every {}s)", poll_interval_secs);
+
+            while running_flag.load(Ordering::SeqCst) {
+                tokio::time::sleep(poll_interval).await;
+
+                if !running_flag.load(Ordering::SeqCst) {
+                    break;
+                }
+
+                match watcher.process_events().await {
+                    Ok(files_processed) => {
+                        if files_processed > 0 {
+                            info!(files_processed, "Code watcher processed file changes");
+                        } else {
+                            debug!("Code watcher: no changes detected");
+                        }
+                    }
+                    Err(e) => {
+                        error!(error = %e, "Code watcher failed to process events");
+                    }
+                }
+            }
+
+            info!("Code watcher background task stopped");
+        });
+
+        // Store the task handle
+        {
+            let mut task_guard = self.code_watcher_task.write().await;
+            *task_guard = Some(task);
+        }
+
+        info!("E7-WIRING: Code file watcher started successfully");
+        Ok(true)
+    }
+
+    /// Stop the code file watcher.
+    ///
+    /// Signals the background task to stop and waits for it to complete.
+    #[allow(dead_code)]
+    pub async fn stop_code_watcher(&self) {
+        // Signal stop
+        self.code_watcher_running.store(false, Ordering::SeqCst);
+
+        // Wait for task to complete
+        let task = {
+            let mut guard = self.code_watcher_task.write().await;
+            guard.take()
+        };
+
+        if let Some(handle) = task {
+            if let Err(e) = handle.await {
+                error!(error = %e, "Code watcher task failed to join");
+            } else {
+                info!("Code watcher stopped");
+            }
+        }
     }
 
     /// Handle a single JSON-RPC request.

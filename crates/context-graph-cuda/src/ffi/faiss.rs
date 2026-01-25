@@ -310,7 +310,7 @@ fn check_gpu_via_subprocess() -> bool {
     use std::path::Path;
     use std::process::Command;
 
-    // Check if nvidia-smi works (safest check)
+    // Check if nvidia-smi works and reports GPUs
     match Command::new("nvidia-smi")
         .arg("--query-gpu=count")
         .arg("--format=csv,noheader")
@@ -322,17 +322,21 @@ fn check_gpu_via_subprocess() -> bool {
                 if let Ok(count) = stdout.trim().parse::<i32>() {
                     if count > 0 {
                         // nvidia-smi works and found GPUs
-                        // On WSL2, be conservative without test binary
+                        // On WSL2, FAISS may crash due to CUDA version mismatch
+                        // Use subprocess test to verify FAISS works before proceeding
                         if Path::new("/usr/lib/wsl/lib").exists() {
-                            // WSL2 detected - check for FAISS test binary
-                            let faiss_test = "/tmp/test_faiss_gpu_check";
-                            if Path::new(faiss_test).exists() {
-                                if let Ok(test_output) = Command::new(faiss_test).output() {
-                                    return test_output.status.success();
-                                }
+                            // WSL2 detected - test FAISS in subprocess to avoid crash
+                            let test_result = test_faiss_gpu_subprocess();
+                            if !test_result {
+                                tracing::error!(
+                                    target: "context_graph::cuda",
+                                    "FAISS GPU test failed on WSL2. This is likely due to CUDA version mismatch. \
+                                    FAISS must be rebuilt with CUDA 13.1+ for RTX 5090 compatibility. \
+                                    Run: cd /path/to/faiss && cmake -B build -DFAISS_ENABLE_GPU=ON \
+                                    -DCMAKE_CUDA_ARCHITECTURES=120 && cmake --build build"
+                                );
                             }
-                            // No test binary on WSL2 - assume unsafe
-                            return false;
+                            return test_result;
                         }
                         return true;
                     }
@@ -340,6 +344,113 @@ fn check_gpu_via_subprocess() -> bool {
             }
             false
         }
+        Err(_) => false,
+    }
+}
+
+/// Test FAISS GPU in a subprocess to safely detect crashes.
+#[cfg(feature = "cuda")]
+fn test_faiss_gpu_subprocess() -> bool {
+    use std::fs;
+    use std::process::Command;
+
+    // Try to run a simple FAISS GPU test
+    // This test binary should call faiss_get_num_gpus() and exit cleanly
+    let test_binary = "/tmp/faiss_gpu_test_bin";
+
+    // Check if we have a working test binary
+    if std::path::Path::new(test_binary).exists() {
+        match Command::new(test_binary).output() {
+            Ok(output) => {
+                if output.status.success() {
+                    return true;
+                }
+                tracing::debug!(
+                    target: "context_graph::cuda",
+                    "FAISS GPU test binary returned error: {:?}",
+                    output.status.code()
+                );
+                return false;
+            }
+            Err(e) => {
+                tracing::debug!(
+                    target: "context_graph::cuda",
+                    "Failed to run FAISS GPU test binary: {}",
+                    e
+                );
+                return false;
+            }
+        }
+    }
+
+    // No test binary - try to create one
+    // This requires gcc and libfaiss_c
+    let test_source = r#"
+#include <stdio.h>
+int faiss_get_num_gpus(int* n);
+int main() {
+    int n = -1;
+    int ret = faiss_get_num_gpus(&n);
+    if (ret != 0 || n <= 0) return 1;
+    return 0;
+}
+"#;
+
+    let source_path = "/tmp/faiss_gpu_test.c";
+    if fs::write(source_path, test_source).is_err() {
+        tracing::debug!(
+            target: "context_graph::cuda",
+            "Failed to write FAISS GPU test source"
+        );
+        return false;
+    }
+
+    // Determine FAISS library path
+    // Priority: HOME/.local/lib (user-built), then /usr/local/lib
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/home/cabdru".to_string());
+    let user_lib = format!("{}/.local/lib", home);
+    let lib_path = if std::path::Path::new(&user_lib).join("libfaiss_c.so").exists() {
+        user_lib
+    } else {
+        "/usr/local/lib".to_string()
+    };
+
+    // Compile test binary
+    let compile_result = Command::new("gcc")
+        .args([
+            source_path,
+            "-o",
+            test_binary,
+            &format!("-L{}", lib_path),
+            "-lfaiss_c",
+            &format!("-Wl,-rpath,{}", lib_path),
+        ])
+        .output();
+
+    match compile_result {
+        Ok(output) => {
+            if !output.status.success() {
+                tracing::debug!(
+                    target: "context_graph::cuda",
+                    "Failed to compile FAISS GPU test: {}",
+                    String::from_utf8_lossy(&output.stderr)
+                );
+                return false;
+            }
+        }
+        Err(e) => {
+            tracing::debug!(
+                target: "context_graph::cuda",
+                "Failed to run gcc for FAISS GPU test: {}",
+                e
+            );
+            return false;
+        }
+    }
+
+    // Run the test binary
+    match Command::new(test_binary).output() {
+        Ok(output) => output.status.success(),
         Err(_) => false,
     }
 }

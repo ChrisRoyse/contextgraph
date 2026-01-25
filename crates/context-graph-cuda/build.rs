@@ -1,7 +1,7 @@
 //! Build script for CUDA kernel compilation.
 //!
 //! Compiles .cu files in kernels/ directory using nvcc.
-//! Links resulting static library for FFI.
+//! Produces PTX for Driver API (knn.cu) or static libraries for Runtime API.
 //!
 //! # Target Hardware
 //!
@@ -21,6 +21,8 @@
 
 #[cfg(feature = "cuda")]
 use std::env;
+#[cfg(feature = "cuda")]
+use std::fs;
 #[cfg(feature = "cuda")]
 use std::path::PathBuf;
 #[cfg(feature = "cuda")]
@@ -58,8 +60,8 @@ fn compile_cuda_kernels() {
     // Find nvcc
     let nvcc = find_nvcc();
 
-    // Compile poincare_distance.cu
-    compile_kernel(
+    // Compile poincare_distance.cu (still uses Runtime API)
+    compile_kernel_to_lib(
         &nvcc,
         "kernels/poincare_distance.cu",
         "poincare_distance",
@@ -67,14 +69,50 @@ fn compile_cuda_kernels() {
         &out_dir,
     );
 
-    // Compile cone_check.cu
-    compile_kernel(
+    // Compile cone_check.cu (still uses Runtime API)
+    compile_kernel_to_lib(
         &nvcc,
         "kernels/cone_check.cu",
         "cone_check",
         &cuda_arch,
         &out_dir,
     );
+
+    // Compile knn.cu to PTX (uses Driver API to avoid WSL2 cudart bugs)
+    compile_kernel_to_ptx(
+        &nvcc,
+        "kernels/knn.cu",
+        "knn",
+        &cuda_arch,
+        &out_dir,
+    );
+
+    // Link CUDA driver library (libcuda.so)
+    // Required for Driver API (cuInit, cuDeviceGetCount, cuLaunchKernel)
+    println!("cargo:rustc-link-lib=cuda");
+
+    // Add WSL2 CUDA driver path (libcuda.so lives here, not in /usr/local/cuda)
+    if PathBuf::from("/usr/lib/wsl/lib").exists() {
+        println!("cargo:rustc-link-search=native=/usr/lib/wsl/lib");
+    }
+
+    // Add CUDA library path for driver library
+    if let Ok(cuda_path) = env::var("CUDA_PATH") {
+        let lib64_path = PathBuf::from(&cuda_path).join("lib64");
+        if lib64_path.exists() {
+            println!("cargo:rustc-link-search=native={}", lib64_path.display());
+        }
+    } else {
+        for path in &[
+            "/usr/local/cuda/lib64",
+            "/usr/local/cuda/lib",
+            "/opt/cuda/lib64",
+        ] {
+            if PathBuf::from(path).exists() {
+                println!("cargo:rustc-link-search=native={}", path);
+            }
+        }
+    }
 }
 
 #[cfg(feature = "cuda")]
@@ -112,13 +150,104 @@ fn find_nvcc() -> PathBuf {
 
     panic!(
         "nvcc not found. Please install CUDA Toolkit 13.1+ or set CUDA_PATH environment variable.\n\
-         Download from: https://developer.nvidia.com/cuda-downloads\n\
-         Or disable 'cuda' feature to use stub implementations."
+         Download from: https://developer.nvidia.com/cuda-downloads"
     );
 }
 
+/// Compile CUDA kernel to PTX for Driver API loading.
+///
+/// This avoids linking against cudart which has static initialization
+/// bugs on WSL2 with CUDA 13.1.
 #[cfg(feature = "cuda")]
-fn compile_kernel(
+fn compile_kernel_to_ptx(
+    nvcc: &std::path::Path,
+    source: &str,
+    name: &str,
+    arch: &str,
+    out_dir: &std::path::Path,
+) {
+    let ptx_path = out_dir.join(format!("{}.ptx", name));
+
+    // Get additional nvcc flags from environment
+    let extra_flags: Vec<String> = env::var("NVCC_FLAGS")
+        .map(|f| f.split_whitespace().map(String::from).collect())
+        .unwrap_or_default();
+
+    // Extract compute capability from arch (sm_120 -> compute_120)
+    let compute = arch.replace("sm_", "compute_");
+
+    // Compile to PTX
+    // --ptx: Generate PTX assembly
+    // -O3: Highest optimization level
+    // -arch: Target virtual architecture for PTX
+    let mut compile_cmd = Command::new(nvcc);
+    compile_cmd
+        .arg("--ptx")
+        .arg("-O3")
+        .args(["-arch", &compute])
+        .arg("-DNDEBUG")
+        .args(&extra_flags)
+        .args(["-o", ptx_path.to_str().unwrap()])
+        .arg(source);
+
+    println!("cargo:warning=Running PTX compilation: {:?}", compile_cmd);
+
+    let compile_status = compile_cmd
+        .status()
+        .unwrap_or_else(|e| panic!("Failed to run nvcc: {}\nCommand: {:?}", e, compile_cmd));
+
+    if !compile_status.success() {
+        panic!(
+            "CUDA kernel PTX compilation failed for {}\n\
+             nvcc exit code: {:?}\n\
+             Source: {}\n\
+             Target arch: {}",
+            source,
+            compile_status.code(),
+            source,
+            arch
+        );
+    }
+
+    // Read PTX and generate Rust code to embed it
+    let ptx_content = fs::read_to_string(&ptx_path)
+        .unwrap_or_else(|e| panic!("Failed to read PTX file {}: {}", ptx_path.display(), e));
+
+    // Generate Rust module with embedded PTX
+    let rs_path = out_dir.join(format!("{}_ptx.rs", name));
+
+    // Use a different approach to embed PTX: escape the content
+    // This avoids raw string delimiter conflicts
+    let escaped_ptx = ptx_content
+        .replace('\\', "\\\\")
+        .replace('"', "\\\"")
+        .replace('\n', "\\n")
+        .replace('\r', "\\r")
+        .replace('\t', "\\t");
+
+    let rs_content = format!(
+        "// Auto-generated PTX for {} kernel.\n\
+         // This file is generated by build.rs. Do not edit manually.\n\
+         \n\
+         /// PTX code for {} kernels.\n\
+         /// Load with cuModuleLoadData.\n\
+         pub const PTX: &str = \"{}\";\n",
+        name, name, escaped_ptx
+    );
+
+    fs::write(&rs_path, rs_content)
+        .unwrap_or_else(|e| panic!("Failed to write {}: {}", rs_path.display(), e));
+
+    println!(
+        "cargo:warning=Successfully compiled CUDA kernel to PTX: {} -> {}",
+        source,
+        ptx_path.display()
+    );
+}
+
+/// Compile CUDA kernel to static library for Runtime API linking.
+#[cfg(feature = "cuda")]
+fn compile_kernel_to_lib(
     nvcc: &std::path::Path,
     source: &str,
     name: &str,
@@ -134,13 +263,6 @@ fn compile_kernel(
         .unwrap_or_default();
 
     // Compile to object file
-    // -c: Compile only (no linking)
-    // -O3: Highest optimization level
-    // -arch: Target GPU architecture
-    // --compiler-options: Pass flags to host compiler
-    // -fPIC: Position-independent code (required for shared libraries)
-    // --generate-line-info: Preserve line info for debugging
-    // -DNDEBUG: Disable debug assertions in release
     let mut compile_cmd = Command::new(nvcc);
     compile_cmd
         .arg("-c")
@@ -162,17 +284,9 @@ fn compile_kernel(
     if !compile_status.success() {
         panic!(
             "CUDA kernel compilation failed for {}\n\
-             nvcc exit code: {:?}\n\
-             Source: {}\n\
-             Target arch: {}\n\
-             Please check that:\n\
-             1. CUDA Toolkit 13.1+ is installed\n\
-             2. Source file exists and is valid CUDA code\n\
-             3. Target architecture matches your GPU",
+             nvcc exit code: {:?}",
             source,
-            compile_status.code(),
-            source,
-            arch
+            compile_status.code()
         );
     }
 
@@ -184,7 +298,7 @@ fn compile_kernel(
             obj_path.to_str().unwrap(),
         ])
         .status()
-        .expect("Failed to run ar - is it installed?");
+        .expect("Failed to run ar");
 
     if !ar_status.success() {
         panic!(
@@ -199,58 +313,14 @@ fn compile_kernel(
     println!("cargo:rustc-link-search=native={}", out_dir.display());
     println!("cargo:rustc-link-lib=static={}", name);
 
-    // Link CUDA driver library (libcuda.so)
-    // Required for Driver API (cuInit, cuDeviceGetCount) - used instead of Runtime API
-    // to avoid CUDA 13.1 WSL2 segfault bug with cudaGetDeviceCount
-    println!("cargo:rustc-link-lib=cuda");
-
-    // Link CUDA runtime library
-    // cudart: CUDA runtime API (required for kernel launching)
+    // Link CUDA runtime library (required for these kernels)
     println!("cargo:rustc-link-lib=cudart");
 
     // Also link math library for transcendental functions
     println!("cargo:rustc-link-lib=m");
 
     // Link C++ standard library for CUDA runtime symbols
-    // Required for __cxa_guard_acquire, __cxa_guard_release, __gxx_personality_v0
     println!("cargo:rustc-link-lib=stdc++");
-
-    // Add WSL2 CUDA driver path (libcuda.so lives here, not in /usr/local/cuda)
-    // This is critical for WSL2 where the driver is provided by Windows
-    if PathBuf::from("/usr/lib/wsl/lib").exists() {
-        println!("cargo:rustc-link-search=native=/usr/lib/wsl/lib");
-    }
-
-    // Add FAISS library path (/usr/local/lib contains libfaiss_c.so)
-    // Required for FAISS C API bindings in ffi/faiss.rs
-    if PathBuf::from("/usr/local/lib/libfaiss_c.so").exists() {
-        println!("cargo:rustc-link-search=native=/usr/local/lib");
-    } else if PathBuf::from("/usr/lib/libfaiss_c.so").exists() {
-        println!("cargo:rustc-link-search=native=/usr/lib");
-    }
-
-    // Add CUDA library path for cudart
-    if let Ok(cuda_path) = env::var("CUDA_PATH") {
-        let lib64_path = PathBuf::from(&cuda_path).join("lib64");
-        if lib64_path.exists() {
-            println!("cargo:rustc-link-search=native={}", lib64_path.display());
-        }
-        let lib_path = PathBuf::from(&cuda_path).join("lib");
-        if lib_path.exists() {
-            println!("cargo:rustc-link-search=native={}", lib_path.display());
-        }
-    } else {
-        // Common CUDA library paths
-        for path in &[
-            "/usr/local/cuda/lib64",
-            "/usr/local/cuda/lib",
-            "/opt/cuda/lib64",
-        ] {
-            if PathBuf::from(path).exists() {
-                println!("cargo:rustc-link-search=native={}", path);
-            }
-        }
-    }
 
     println!(
         "cargo:warning=Successfully compiled CUDA kernel: {} -> {}",

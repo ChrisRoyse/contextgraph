@@ -14,7 +14,9 @@
 //!
 //! - [`UtlProcessorAdapter`]: Bridges `context_graph_utl::UtlProcessor` to core trait
 //! - [`LazyMultiArrayProvider`]: Wraps provider for lazy loading on MCP startup
+//! - [`CodeStoreAdapter`]: Bridges `CodeStore` to `CodeStorage` trait for code capture
 
+pub mod code_store_adapter;
 pub mod lazy_provider;
 pub mod utl_adapter;
 
@@ -24,3 +26,6 @@ pub use utl_adapter::UtlProcessorAdapter;
 
 // LazyMultiArrayProvider allows immediate MCP startup while models load in background
 pub use lazy_provider::LazyMultiArrayProvider;
+
+// CodeStoreAdapter bridges CodeStore to CodeStorage trait for code capture pipeline
+pub use code_store_adapter::CodeStoreAdapter;

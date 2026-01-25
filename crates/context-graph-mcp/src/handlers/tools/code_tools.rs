@@ -14,6 +14,12 @@
 //! - E7 finds: "Code patterns, function signatures" that E1 misses by "Treating code as NL"
 //! - AP-02: All comparisons within respective spaces (no cross-embedder)
 //! - FAIL FAST: All errors propagate immediately with logging
+//!
+//! ## E7-WIRING Enhancement
+//!
+//! When the code embedding pipeline is available (CodeStore + E7 provider),
+//! search_code can also search directly against code entities stored via
+//! the AST chunker. This provides more accurate results for code-specific queries.
 
 use serde_json::json;
 use tracing::{debug, error, info, warn};
@@ -26,7 +32,7 @@ use crate::protocol::JsonRpcResponse;
 
 use super::code_dtos::{
     CodeSearchMetadata, CodeSearchMode, CodeSearchResult, CodeSourceInfo, DetectedLanguageInfo,
-    SearchCodeRequest, SearchCodeResponse,
+    SearchCodeRequest, SearchCodeResponse, CodeEntityResult,
 };
 
 use super::super::Handlers;
@@ -153,24 +159,24 @@ impl Handlers {
             let e7_sim = cosine_similarity(query_e7, cand_e7);
 
             // Compute final score based on search mode
+            // All modes produce scores in [0, 1] range
             let final_score = match search_mode {
                 CodeSearchMode::Hybrid => {
-                    // Blend scores: (1-blend)*E1 + blend*E7
+                    // Blend: (1-blend)*E1 + blend*E7
                     e1_weight * e1_sim + e7_blend * e7_sim
                 }
                 CodeSearchMode::E7Only => {
-                    // Pure E7 code search
+                    // Pure E7 code search (ignores E1)
                     e7_sim
                 }
                 CodeSearchMode::E1WithE7Rerank => {
-                    // Use E1 as primary with E7 as tiebreaker/booster
-                    // E7 provides a small boost (10%) when it agrees with E1
-                    e1_sim + 0.1 * e7_sim
+                    // E1 primary (90%) with E7 tiebreaker (10%)
+                    // Per ARCH-12: E1 is foundation, E7 enhances
+                    0.9 * e1_sim + 0.1 * e7_sim
                 }
                 CodeSearchMode::Pipeline => {
-                    // For full pipeline, use weighted combination
-                    // E1 foundation with strong E7 enhancement
-                    0.6 * e1_sim + 0.4 * e7_sim
+                    // Same as Hybrid - uses user's blend weight
+                    e1_weight * e1_sim + e7_blend * e7_sim
                 }
             };
 
@@ -190,57 +196,66 @@ impl Handlers {
 
         // Get content if requested
         let contents: Vec<Option<String>> = if request.include_content && !result_ids.is_empty() {
-            match self.teleological_store.get_content_batch(&result_ids).await {
-                Ok(c) => c,
-                Err(e) => {
+            self.teleological_store
+                .get_content_batch(&result_ids)
+                .await
+                .unwrap_or_else(|e| {
                     warn!(error = %e, "search_code: Content retrieval failed");
                     vec![None; result_ids.len()]
-                }
-            }
+                })
         } else {
             vec![None; result_ids.len()]
         };
 
         // Get source metadata
-        let source_metadata = match self
+        let source_metadata = self
             .teleological_store
             .get_source_metadata_batch(&result_ids)
             .await
-        {
-            Ok(m) => m,
-            Err(e) => {
+            .unwrap_or_else(|e| {
                 warn!(error = %e, "search_code: Source metadata retrieval failed");
                 vec![None; result_ids.len()]
-            }
-        };
+            });
 
         // Build response
-        let mut results: Vec<CodeSearchResult> = Vec::with_capacity(scored_results.len());
+        let results: Vec<CodeSearchResult> = scored_results
+            .into_iter()
+            .enumerate()
+            .map(|(i, (memory_id, score, e1_sim, e7_sim))| {
+                let source = source_metadata.get(i).and_then(|m| {
+                    m.as_ref().map(|meta| CodeSourceInfo {
+                        source_type: format!("{}", meta.source_type),
+                        file_path: meta.file_path.clone(),
+                        hook_type: meta.hook_type.clone(),
+                        tool_name: meta.tool_name.clone(),
+                    })
+                });
 
-        for (i, (memory_id, score, e1_sim, e7_sim)) in scored_results.into_iter().enumerate() {
-            let source = source_metadata.get(i).and_then(|m| {
-                m.as_ref().map(|meta| CodeSourceInfo {
-                    source_type: format!("{}", meta.source_type),
-                    file_path: meta.file_path.clone(),
-                    hook_type: meta.hook_type.clone(),
-                    tool_name: meta.tool_name.clone(),
-                })
-            });
+                CodeSearchResult {
+                    memory_id,
+                    score,
+                    e1_similarity: e1_sim,
+                    e7_code_score: e7_sim,
+                    content: contents.get(i).and_then(|c| c.clone()),
+                    source,
+                }
+            })
+            .collect();
 
-            results.push(CodeSearchResult {
-                memory_id,
-                score,
-                e1_similarity: e1_sim,
-                e7_code_score: e7_sim,
-                content: contents.get(i).and_then(|c| c.clone()),
-                source,
-            });
-        }
+        // E7-WIRING: Optionally search CodeStore for code entities
+        let code_entities = if self.has_code_pipeline() {
+            self.search_code_entities(query, top_k, min_score, request.include_content)
+                .await
+                .ok()
+        } else {
+            None
+        };
 
+        let result_count = results.len();
         let response = SearchCodeResponse {
             query: query.clone(),
-            results: results.clone(),
-            count: results.len(),
+            results,
+            count: result_count,
             metadata: CodeSearchMetadata {
                 candidates_evaluated,
                 filtered_by_score: filtered_count,
@@ -250,16 +265,97 @@ impl Handlers {
                 language_hint,
                 detected_language,
             },
+            code_entities,
         };
 
         info!(
             results_found = response.count,
             candidates_evaluated = candidates_evaluated,
             filtered = filtered_count,
+            has_code_entities = response.code_entities.is_some(),
             "search_code: Completed code-enhanced search"
         );
 
         self.tool_result_with_pulse(id, serde_json::to_value(response).unwrap_or_else(|_| json!({})))
+    }
+
+    /// Search CodeStore for code entities using full 13-embedder fingerprint.
+    ///
+    /// E7-WIRING: Direct search against code entities stored via AST chunker.
+    /// Uses E7 (code) as primary embedding for ranking per constitution.
+    ///
+    /// # Arguments
+    /// * `query` - Code query string
+    /// * `top_k` - Maximum results
+    /// * `min_score` - Minimum similarity threshold
+    /// * `include_content` - Whether to include code content
+    ///
+    /// # Returns
+    /// Vector of CodeEntityResult, or error if code pipeline unavailable.
+    ///
+    /// # Constitution Compliance
+    /// - ARCH-01: Uses full SemanticFingerprint (all 13 embeddings)
+    /// - E7 is primary for code search (use_e7_primary=true)
+    async fn search_code_entities(
+        &self,
+        query: &str,
+        top_k: usize,
+        min_score: f32,
+        include_content: bool,
+    ) -> Result<Vec<CodeEntityResult>, String> {
+        // Get code embedding provider
+        let provider = self
+            .code_embedding_provider()
+            .ok_or_else(|| "Code embedding provider not available".to_string())?;
+
+        // Get code store
+        let store = self
+            .code_store()
+            .ok_or_else(|| "Code store not available".to_string())?;
+
+        // Generate full fingerprint for query (all 13 embeddings)
+        let query_fingerprint = provider
+            .embed_code(query, None)
+            .await
+            .map_err(|e| format!("Failed to embed query: {}", e))?;
+
+        // Search code store by fingerprint similarity
+        // use_e7_primary=true: E7 (code) embedding used for ranking
+        let results = store
+            .search_by_fingerprint(&query_fingerprint, top_k, min_score, true)
+            .await
+            .map_err(|e| format!("Failed to search code store: {}", e))?;
+
+        debug!(
+            query_len = query.len(),
+            e7_dim = query_fingerprint.e7_code.len(),
+            results_found = results.len(),
+            include_content = include_content,
+            "search_code_entities: E7-primary code search completed"
+        );
+
+        // Convert to CodeEntityResult
+        let entity_results: Vec<CodeEntityResult> = results
+            .into_iter()
+            .map(|(entity, score)| CodeEntityResult {
+                id: entity.id.to_string(),
+                name: entity.name,
+                entity_type: format!("{}", entity.entity_type),
+                score,
+                file_path: entity.file_path,
+                start_line: Some(entity.line_start),
+                end_line: Some(entity.line_end),
+                content: if include_content {
+                    Some(entity.code)
+                } else {
+                    None
+                },
+                // Module path as scope chain
+                scope_chain: entity.module_path.map(|p| vec![p]),
+            })
+            .collect();
+
+        Ok(entity_results)
     }
 }
 
@@ -282,63 +378,51 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     (dot / (norm_a * norm_b)).clamp(-1.0, 1.0)
 }
 
+/// Language detection patterns: (language_name, indicator_patterns)
+const LANGUAGE_PATTERNS: &[(&str, &[&str])] = &[
+    ("rust", &["impl ", "fn ", "let mut", "struct ", "enum ", "pub fn", "trait ", "cargo", ".rs", "unwrap(", "match "]),
+    ("python", &["def ", "import ", "self.", "__init__", "python", ".py", "pip ", "async def", "await ", "pytest"]),
+    ("javascript", &["function ", "const ", "let ", "var ", "=>", "async ", "await ", ".js", "npm ", "node ", "react", "vue", "angular"]),
+    ("typescript", &["interface ", ": string", ": number", ": boolean", ".ts", "type ", "<T>"]),
+    ("go", &["func ", "package ", "import ", "go ", "goroutine", "chan ", "defer ", ".go", "golang"]),
+    ("java", &["public class", "private ", "protected ", "static void", "extends ", "implements ", ".java", "maven", "gradle", "@Override"]),
+    ("cpp", &["#include", "int main", "void ", "std::", "cout <<", "cin >>", ".cpp", ".hpp", ".h", "template<"]),
+    ("sql", &["select ", "from ", "where ", "join ", "insert ", "update ", "delete ", "create table", "alter ", "sql"]),
+];
+
 /// Detect programming language indicators in query.
 ///
 /// Returns language info with confidence and indicators.
 fn detect_language(query: &str) -> DetectedLanguageInfo {
     let query_lower = query.to_lowercase();
 
-    // Language detection patterns
-    let patterns = [
-        // Rust
-        ("rust", vec!["impl ", "fn ", "let mut", "struct ", "enum ", "pub fn", "trait ", "cargo", ".rs", "unwrap(", "match "]),
-        // Python
-        ("python", vec!["def ", "import ", "self.", "__init__", "python", ".py", "pip ", "async def", "await ", "pytest"]),
-        // JavaScript/TypeScript
-        ("javascript", vec!["function ", "const ", "let ", "var ", "=>", "async ", "await ", ".js", "npm ", "node ", "react", "vue", "angular"]),
-        ("typescript", vec!["interface ", ": string", ": number", ": boolean", ".ts", "type ", "<T>"]),
-        // Go
-        ("go", vec!["func ", "package ", "import ", "go ", "goroutine", "chan ", "defer ", ".go", "golang"]),
-        // Java
-        ("java", vec!["public class", "private ", "protected ", "static void", "extends ", "implements ", ".java", "maven", "gradle", "@Override"]),
-        // C/C++
-        ("cpp", vec!["#include", "int main", "void ", "std::", "cout <<", "cin >>", ".cpp", ".hpp", ".h", "template<"]),
-        // SQL
-        ("sql", vec!["select ", "from ", "where ", "join ", "insert ", "update ", "delete ", "create table", "alter ", "sql"]),
-    ];
+    LANGUAGE_PATTERNS
+        .iter()
+        .filter_map(|(lang, patterns)| {
+            let matched: Vec<String> = patterns
+                .iter()
+                .filter(|p| query_lower.contains(*p))
+                .map(|p| p.trim().to_string())
+                .collect();
 
-    let mut best_match: Option<(&str, Vec<String>, f32)> = None;
-
-    for (lang, indicators) in patterns {
-        let mut matched_indicators = Vec::new();
-
-        for indicator in indicators {
-            if query_lower.contains(indicator) {
-                matched_indicators.push(indicator.trim().to_string());
+            if matched.is_empty() {
+                None
+            } else {
+                let confidence = (matched.len() as f32 / 3.0).min(1.0);
+                Some((lang, matched, confidence))
             }
-        }
-
-        if !matched_indicators.is_empty() {
-            let confidence = (matched_indicators.len() as f32 / 3.0).min(1.0);
-
-            if best_match.is_none() || confidence > best_match.as_ref().unwrap().2 {
-                best_match = Some((lang, matched_indicators, confidence));
-            }
-        }
-    }
-
-    match best_match {
-        Some((lang, indicators, confidence)) => DetectedLanguageInfo {
+        })
+        .max_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(lang, indicators, confidence)| DetectedLanguageInfo {
             primary_language: Some(lang.to_string()),
             confidence,
             indicators,
-        },
-        None => DetectedLanguageInfo {
+        })
+        .unwrap_or(DetectedLanguageInfo {
             primary_language: None,
             confidence: 0.0,
             indicators: Vec::new(),
-        },
-    }
+        })
 }
 
 #[cfg(test)]

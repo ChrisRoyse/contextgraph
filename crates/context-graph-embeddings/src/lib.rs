@@ -50,6 +50,7 @@ compile_error!(
      Or enable the default feature: cargo build (candle is now default)"
 );
 
+pub mod adapters;
 pub mod batch;
 pub mod cache;
 pub mod config;
@@ -112,3 +113,6 @@ pub use pruning::{
 pub use global_provider::{
     get_warm_provider, initialize_global_warm_provider, is_warm_initialized, warm_status_message,
 };
+
+// Adapter re-exports
+pub use adapters::E7CodeEmbeddingProvider;

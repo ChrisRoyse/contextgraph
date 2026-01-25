@@ -571,6 +571,7 @@ mod tests {
     use uuid::Uuid;
 
     use super::super::code_capture::{CodeEmbedderError, CodeEmbeddingProvider, CodeStorage};
+    use crate::types::fingerprint::SemanticFingerprint;
     use crate::types::CodeEntity;
 
     /// Mock embedding provider for testing.
@@ -578,22 +579,23 @@ mod tests {
 
     #[async_trait]
     impl CodeEmbeddingProvider for MockCodeEmbedder {
-        async fn embed_code(&self, _code: &str, _context: Option<&str>) -> Result<Vec<f32>, CodeEmbedderError> {
-            Ok(vec![0.0; 1536])
+        async fn embed_code(&self, _code: &str, _context: Option<&str>) -> Result<SemanticFingerprint, CodeEmbedderError> {
+            // Return a complete zeroed fingerprint (all 13 embeddings)
+            Ok(SemanticFingerprint::zeroed())
         }
 
-        async fn embed_batch(&self, codes: &[(&str, Option<&str>)]) -> Result<Vec<Vec<f32>>, CodeEmbedderError> {
-            Ok(codes.iter().map(|_| vec![0.0; 1536]).collect())
+        async fn embed_batch(&self, codes: &[(&str, Option<&str>)]) -> Result<Vec<SemanticFingerprint>, CodeEmbedderError> {
+            Ok(codes.iter().map(|_| SemanticFingerprint::zeroed()).collect())
         }
 
-        fn dimension(&self) -> usize {
-            1536
+        fn is_ready(&self) -> bool {
+            true
         }
     }
 
     /// Mock storage for testing.
     struct MockCodeStorage {
-        entities: TokioRwLock<StdHashMap<Uuid, (CodeEntity, Vec<f32>)>>,
+        entities: TokioRwLock<StdHashMap<Uuid, (CodeEntity, SemanticFingerprint)>>,
         file_index: TokioRwLock<StdHashMap<String, Vec<Uuid>>>,
     }
 
@@ -608,11 +610,11 @@ mod tests {
 
     #[async_trait]
     impl CodeStorage for MockCodeStorage {
-        async fn store(&self, entity: &CodeEntity, embedding: &[f32]) -> Result<(), String> {
+        async fn store(&self, entity: &CodeEntity, fingerprint: &SemanticFingerprint) -> Result<(), String> {
             let mut entities = self.entities.write().await;
             let mut file_index = self.file_index.write().await;
 
-            entities.insert(entity.id, (entity.clone(), embedding.to_vec()));
+            entities.insert(entity.id, (entity.clone(), fingerprint.clone()));
             file_index
                 .entry(entity.file_path.clone())
                 .or_default()
@@ -651,9 +653,20 @@ mod tests {
             Ok(count)
         }
 
-        async fn get_embedding(&self, id: Uuid) -> Result<Option<Vec<f32>>, String> {
+        async fn get_fingerprint(&self, id: Uuid) -> Result<Option<SemanticFingerprint>, String> {
             let entities = self.entities.read().await;
-            Ok(entities.get(&id).map(|(_, e)| e.clone()))
+            Ok(entities.get(&id).map(|(_, fp)| fp.clone()))
+        }
+
+        async fn search_by_fingerprint(
+            &self,
+            _query_fingerprint: &SemanticFingerprint,
+            _top_k: usize,
+            _min_similarity: f32,
+            _use_e7_primary: bool,
+        ) -> Result<Vec<(CodeEntity, f32)>, String> {
+            // Mock implementation - returns empty for tests
+            Ok(Vec::new())
         }
     }
 

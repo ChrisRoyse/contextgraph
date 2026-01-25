@@ -42,6 +42,24 @@ pub enum CudaError {
         code: i32,
     },
 
+    /// CUDA runtime API error.
+    #[error("CUDA runtime error in {operation}: code {code}")]
+    CudaRuntimeError {
+        /// Operation that failed
+        operation: String,
+        /// CUDA error code
+        code: i32,
+    },
+
+    /// Invalid argument.
+    #[error("Invalid argument '{argument}': {reason}")]
+    InvalidArgument {
+        /// Argument name
+        argument: String,
+        /// Reason why it's invalid
+        reason: String,
+    },
+
     /// Tensor operation failed (candle-core).
     #[error("Tensor operation failed: {0}")]
     TensorError(String),

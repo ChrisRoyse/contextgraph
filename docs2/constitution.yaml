@@ -1,5 +1,5 @@
-# Context Graph Constitution v6.4.0
-# 13-Perspectives Collaboration | E1 Foundation | GPU-First Architecture
+# Context Graph Constitution v6.5.0
+# 13-Perspectives Collaboration | E1 Foundation | GPU-First Architecture | Code Embedding Separation
 # ═══════════════════════════════════════════════════════════════
 
 # GPU-FIRST ARCHITECTURE
@@ -523,6 +523,130 @@ memory_sources:
   HookDescription: "Claude's description of tool use"
   ClaudeResponse: "Session summaries, significant responses"
   MDFileChunk: "Markdown file chunks (200 words, 50 overlap)"
+  CodeEntity: "AST-parsed code entities (functions, structs, traits, impls)"
+
+# ═══════════════════════════════════════════════════════════════
+# CODE EMBEDDING SEPARATION (E7 Primary)
+# ═══════════════════════════════════════════════════════════════
+# Code entities are stored in a SEPARATE pipeline from the 13-embedder
+# teleological system. E7 (Qodo-Embed-1-1.5B) is the primary embedder
+# for code, with optional E1 semantic enhancement.
+#
+# WHY SEPARATE:
+# - Code structure is fundamentally different from natural language
+# - AST-aware chunking preserves syntactic boundaries
+# - E7 is specialized for code patterns, function signatures
+# - Enables code-specific retrieval (signature search, pattern matching)
+# - Reduces noise in the main memory graph
+
+code_embedding:
+  philosophy: |
+    Code deserves its own embedding pipeline. E7 (Qodo-Embed-1-1.5B) is a
+    1.5B parameter model fine-tuned specifically for code understanding.
+    It produces 1536D embeddings that capture:
+    - Function signatures and parameter types
+    - Code patterns and idioms
+    - Structural relationships (impl blocks, trait bounds)
+    - Cross-file dependencies (imports, uses)
+
+    By separating code from the 13-embedder teleological system, we:
+    - Keep the memory graph focused on semantic content
+    - Enable specialized code search with E7 as primary
+    - Avoid polluting topic detection with code noise
+    - Allow AST-aware chunking instead of word-based
+
+  model:
+    name: "Qodo-Embed-1-1.5B"
+    path: "/home/cabdru/contextgraph/models/code-1536"
+    dimension: 1536
+    precision: "FP16"
+    vram_budget: "~3GB"
+    gpu_warm_loaded: true
+
+  ast_chunking:
+    # Per Qodo best practices and cAST paper (EMNLP 2025)
+    target_size: 500      # Non-whitespace characters per chunk
+    min_size: 100         # Avoid tiny fragments
+    max_size: 1000        # Prevent semantic dilution
+    include_parent_context: true   # Include parent struct/class with methods
+    include_imports: true          # Include relevant imports
+
+    # Tree-sitter integration
+    parser: "tree-sitter"
+    supported_languages:
+      rust: { extension: ".rs", grammar: "tree-sitter-rust" }
+      # Future: python, typescript, javascript, go
+
+  entity_types:
+    # Code entities extracted from AST
+    Function: "Standalone function (not a method)"
+    Method: "Function within an impl block"
+    Struct: "Struct definition"
+    Enum: "Enum definition"
+    Trait: "Trait definition"
+    Impl: "Impl block (inherent or trait)"
+    Module: "Module definition"
+    Const: "Const definition"
+    Static: "Static definition"
+    TypeAlias: "Type alias"
+
+  storage:
+    # Separate column families from teleological storage
+    column_families:
+      code_entities: "CodeEntity metadata (name, language, signature, visibility)"
+      code_e7_embeddings: "1536D E7 embeddings"
+      code_file_index: "File path → entity ID mapping"
+      code_name_index: "Entity name secondary index"
+      code_signature_index: "Function/method signature index"
+
+    # Secondary indexes for efficient search
+    indexes:
+      by_name: "Fast lookup by entity name"
+      by_signature: "Fast lookup by function signature"
+      by_file: "Fast cleanup on file changes"
+
+  file_watcher:
+    # Git-based change detection
+    trigger: "git diff --name-only"
+    on_change:
+      - "Read file content"
+      - "Parse AST with tree-sitter"
+      - "Extract code entities"
+      - "Generate E7 embeddings"
+      - "Store in CodeStore"
+      - "Update file index"
+    on_delete:
+      - "Lookup entities by file path"
+      - "Delete all entities for file"
+      - "Remove from indexes"
+
+  search:
+    # Code search uses E7 as primary, optional E1 enhancement
+    primary_embedder: "E7"
+    blend_with_e1: { default: 0.4, range: [0.2, 0.6] }
+    search_modes:
+      signature: "Match function signatures"
+      pattern: "Match code patterns"
+      semantic: "E7 + E1 blended semantic"
+
+    # E7 signal thresholds
+    thresholds:
+      high: 0.80   # Strong code pattern match
+      low: 0.35    # Weak but present code signal
+
+  arch_rules:
+    ARCH-CODE-01: "Code entities stored separately from teleological memories"
+    ARCH-CODE-02: "E7 is primary embedder for code, not part of 13-embedder array"
+    ARCH-CODE-03: "AST chunking preserves syntactic boundaries (functions, structs)"
+    ARCH-CODE-04: "Code file watcher uses git-based change detection"
+    ARCH-CODE-05: "Code search blends E7 (code) with E1 (semantic) for best results"
+    ARCH-CODE-06: "Tree-sitter for AST parsing, NOT regex-based extraction"
+
+  forbidden:
+    AP-CODE-01: "NEVER chunk code by word count - use AST boundaries"
+    AP-CODE-02: "NEVER store code in teleological memory graph"
+    AP-CODE-03: "NEVER use E1 alone for code search - E7 is primary"
+    AP-CODE-04: "NEVER parse code without tree-sitter - no regex extraction"
 
 # ═══════════════════════════════════════════════════════════════
 # DREAM CONSOLIDATION
@@ -578,11 +702,35 @@ gpu:
 
   vram_allocation:
     embedders: "~10GB (all 13 warm-loaded)"
+    code_embedder_e7: "~3GB (Qodo-Embed-1-1.5B, separate from 13)"
     faiss_indexes: "~8GB (HNSW per-space)"
     batch_buffers: "~4GB (inference batches)"
     cuml_workspace: "~2GB (HDBSCAN, clustering)"
-    reserved: "~8GB (headroom for spikes)"
+    reserved: "~5GB (headroom for spikes)"
     total_budget: "32GB"
+
+  # GPU Memory Slot Management
+  # LRU eviction for memory pressure, 8GB budget for 13 models
+  model_slot_management:
+    budget: "8GB for 13 teleological models"
+    e7_separate: "~3GB dedicated (not in 8GB budget)"
+    pressure_levels:
+      normal: "<80% VRAM used"
+      high: "80-95% VRAM used"
+      critical: ">95% VRAM used (triggers LRU eviction)"
+    eviction_policy: "LRU - least recently used model evicted first"
+    per_model_estimates:
+      E1_Semantic: "~200MB"
+      E2_E4_Temporal: "~100MB each (300MB total)"
+      E5_Causal: "~150MB"
+      E6_Sparse: "~50MB"
+      E7_Code: "~300MB (in teleological), ~3GB (dedicated)"
+      E8_Graph: "~75MB"
+      E9_HDC: "~50MB"
+      E10_Multimodal: "~150MB"
+      E11_Entity: "~75MB"
+      E12_LateInteraction: "~200MB"
+      E13_SPLADE: "~50MB"
 
   performance_targets:
     all_13_embed: "<200ms (GPU batch)"

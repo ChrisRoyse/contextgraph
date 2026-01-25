@@ -2,20 +2,22 @@
 //!
 //! This module provides the CodeCaptureService which:
 //! 1. Converts CodeChunks (from ASTChunker) to CodeEntities (for storage)
-//! 2. Calls E7 embedder to generate 1536D code embeddings
-//! 3. Stores entities and embeddings in CodeStore
-//! 4. Provides search capabilities using E7 embeddings
+//! 2. Calls ALL 13 embedders to generate full SemanticFingerprint
+//! 3. Stores entities and fingerprints in CodeStore (separate database)
+//! 4. Provides search capabilities using all 13 embedding spaces
 //!
 //! # Architecture
 //!
 //! ```text
-//! ASTChunker → CodeChunk → CodeCaptureService → CodeEntity + E7 → CodeStore
+//! ASTChunker → CodeChunk → CodeCaptureService → CodeEntity + SemanticFingerprint → CodeStore
 //! ```
 //!
 //! # Constitution Compliance
-//! - E7 (V_correctness): 1536D code patterns, function signatures
-//! - Code embeddings are stored separately from the 13-embedder teleological system
-//! - This enables code-specific retrieval patterns
+//! - ARCH-01: "TeleologicalArray is atomic - all 13 embeddings or nothing"
+//! - ARCH-05: "All 13 embedders required - missing = fatal"
+//! - Code embeddings are stored in SEPARATE database from teleological memories
+//! - But each code entity gets the FULL 13-embedder treatment
+//! - E7 (V_correctness) provides code-specific patterns, other embedders provide context
 
 use std::sync::Arc;
 
@@ -25,6 +27,7 @@ use tracing::{debug, info, instrument};
 use uuid::Uuid;
 
 use super::ast_chunker::{CodeChunk, EntityType as ChunkEntityType};
+use crate::types::fingerprint::SemanticFingerprint;
 use crate::types::{CodeEntity, CodeEntityType, CodeLanguage};
 
 /// Errors from code embedding operations.
@@ -80,36 +83,55 @@ pub type CodeCaptureResult<T> = Result<T, CodeCaptureError>;
 
 /// Trait for code embedding providers.
 ///
-/// Implementations must produce 1536D E7 embeddings for code content.
-/// The E7 model (Qodo-Embed-1-1.5B) is designed specifically for code.
+/// Implementations MUST produce full 13-embedding SemanticFingerprint for code content.
+/// Per constitution (ARCH-01, ARCH-05): All 13 embedders are required, including E7
+/// (Qodo-Embed-1-1.5B) which is specifically designed for code.
+///
+/// # Constitution Compliance
+///
+/// - ARCH-01: "TeleologicalArray is atomic - all 13 embeddings or nothing"
+/// - ARCH-05: "All 13 embedders required - missing = fatal"
+/// - E7 (V_correctness) provides code-specific patterns
+/// - Other embedders (E1 semantic, E5 causal, etc.) provide context
 #[async_trait]
 pub trait CodeEmbeddingProvider: Send + Sync {
-    /// Embed code content into a 1536D E7 embedding.
+    /// Embed code content into a full 13-embedding SemanticFingerprint.
     ///
     /// # Arguments
     /// * `code` - The code content to embed
     /// * `context` - Optional context (file path, scope chain, etc.)
     ///
     /// # Returns
-    /// 1536D embedding vector on success.
-    async fn embed_code(&self, code: &str, context: Option<&str>) -> Result<Vec<f32>, CodeEmbedderError>;
+    /// Complete SemanticFingerprint with all 13 embeddings on success.
+    async fn embed_code(&self, code: &str, context: Option<&str>) -> Result<SemanticFingerprint, CodeEmbedderError>;
 
     /// Embed a batch of code snippets.
     ///
     /// More efficient than calling embed_code multiple times.
-    async fn embed_batch(&self, codes: &[(&str, Option<&str>)]) -> Result<Vec<Vec<f32>>, CodeEmbedderError>;
+    async fn embed_batch(&self, codes: &[(&str, Option<&str>)]) -> Result<Vec<SemanticFingerprint>, CodeEmbedderError>;
 
-    /// Get the embedding dimension (should be 1536 for E7).
-    fn dimension(&self) -> usize;
+    /// Check if all 13 embedders are initialized and ready.
+    fn is_ready(&self) -> bool;
 }
 
 /// Trait for code storage backends.
 ///
 /// Abstracts over the actual storage implementation (CodeStore).
+/// Stores full SemanticFingerprint (all 13 embeddings) per code entity.
+///
+/// # Constitution Compliance
+///
+/// - ARCH-01: "TeleologicalArray is atomic - all 13 embeddings or nothing"
+/// - Code entities stored in SEPARATE database from teleological memories
+/// - But each entity gets the FULL 13-embedder treatment
 #[async_trait]
 pub trait CodeStorage: Send + Sync {
-    /// Store a code entity with its E7 embedding.
-    async fn store(&self, entity: &CodeEntity, embedding: &[f32]) -> Result<(), String>;
+    /// Store a code entity with its full SemanticFingerprint.
+    ///
+    /// # Arguments
+    /// * `entity` - The code entity to store
+    /// * `fingerprint` - Complete 13-embedding fingerprint
+    async fn store(&self, entity: &CodeEntity, fingerprint: &SemanticFingerprint) -> Result<(), String>;
 
     /// Get an entity by ID.
     async fn get(&self, id: Uuid) -> Result<Option<CodeEntity>, String>;
@@ -120,8 +142,26 @@ pub trait CodeStorage: Send + Sync {
     /// Delete all entities for a file.
     async fn delete_file(&self, file_path: &str) -> Result<usize, String>;
 
-    /// Get embedding for an entity.
-    async fn get_embedding(&self, id: Uuid) -> Result<Option<Vec<f32>>, String>;
+    /// Get the full SemanticFingerprint for an entity.
+    async fn get_fingerprint(&self, id: Uuid) -> Result<Option<SemanticFingerprint>, String>;
+
+    /// Search entities by embedding similarity in a specific space.
+    ///
+    /// # Arguments
+    /// * `query_fingerprint` - Query fingerprint (uses E7 for code-specific, E1 for semantic)
+    /// * `top_k` - Maximum number of results to return
+    /// * `min_similarity` - Minimum similarity threshold (0.0 to 1.0)
+    /// * `use_e7_primary` - If true, use E7 (code) as primary; else use E1 (semantic)
+    ///
+    /// # Returns
+    /// Vector of (entity, similarity_score) pairs, sorted by decreasing similarity.
+    async fn search_by_fingerprint(
+        &self,
+        query_fingerprint: &SemanticFingerprint,
+        top_k: usize,
+        min_similarity: f32,
+        use_e7_primary: bool,
+    ) -> Result<Vec<(CodeEntity, f32)>, String>;
 }
 
 /// Code capture service for embedding and storing code.
@@ -150,8 +190,8 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
 
     /// Capture a code chunk and store it.
     ///
-    /// Converts the CodeChunk to a CodeEntity, generates E7 embedding,
-    /// and stores both in the code storage.
+    /// Converts the CodeChunk to a CodeEntity, generates full 13-embedding
+    /// SemanticFingerprint, and stores both in the code storage.
     ///
     /// # Returns
     /// The UUID of the stored entity.
@@ -165,15 +205,15 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
         let entity = self.chunk_to_entity(chunk.clone());
         let id = entity.id;
 
-        // Generate embedding from contextualized text
-        let embedding = self
+        // Generate full 13-embedding fingerprint from contextualized text
+        let fingerprint = self
             .embedder
             .embed_code(&chunk.contextualized_text, None)
             .await?;
 
-        // Store entity and embedding
+        // Store entity and fingerprint
         self.storage
-            .store(&entity, &embedding)
+            .store(&entity, &fingerprint)
             .await
             .map_err(CodeCaptureError::StorageFailed)?;
 
@@ -181,7 +221,7 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
             id = %id,
             name = %entity.name,
             entity_type = %entity.entity_type,
-            "Captured code entity"
+            "Captured code entity with full 13-embedding fingerprint"
         );
 
         Ok(id)
@@ -190,6 +230,7 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
     /// Capture multiple code chunks in batch.
     ///
     /// More efficient than calling capture_chunk for each chunk.
+    /// Each chunk receives a full 13-embedding fingerprint.
     #[instrument(skip(self, chunks), fields(count = chunks.len()))]
     pub async fn capture_batch(&self, chunks: Vec<CodeChunk>) -> CodeCaptureResult<Vec<Uuid>> {
         if chunks.is_empty() {
@@ -214,14 +255,14 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
             .map(|c| (c.contextualized_text.as_str(), None))
             .collect();
 
-        // Generate embeddings in batch
-        let embeddings = self.embedder.embed_batch(&contexts).await?;
+        // Generate full 13-embedding fingerprints in batch
+        let fingerprints = self.embedder.embed_batch(&contexts).await?;
 
-        // Store entities and embeddings
+        // Store entities and fingerprints
         let mut ids = Vec::with_capacity(entities.len());
-        for (entity, embedding) in entities.iter().zip(embeddings.iter()) {
+        for (entity, fingerprint) in entities.iter().zip(fingerprints.iter()) {
             self.storage
-                .store(entity, embedding)
+                .store(entity, fingerprint)
                 .await
                 .map_err(CodeCaptureError::StorageFailed)?;
             ids.push(entity.id);
@@ -230,7 +271,7 @@ impl<E: CodeEmbeddingProvider, S: CodeStorage> CodeCaptureService<E, S> {
         info!(
             captured = ids.len(),
             file = %chunks.first().map(|c| c.metadata.file_path.as_str()).unwrap_or("unknown"),
-            "Captured code entities batch"
+            "Captured code entities batch with 13-embedding fingerprints"
         );
 
         Ok(ids)
@@ -357,8 +398,8 @@ pub struct CodeSearchResult {
     pub entity: CodeEntity,
     /// Similarity score (0.0 to 1.0).
     pub score: f32,
-    /// E7 embedding of the entity.
-    pub embedding: Option<Vec<f32>>,
+    /// Full fingerprint (if requested).
+    pub fingerprint: Option<SemanticFingerprint>,
 }
 
 #[cfg(test)]
@@ -368,27 +409,29 @@ mod tests {
     use tokio::sync::RwLock;
 
     /// Mock embedding provider for testing.
+    /// Returns zeroed SemanticFingerprint for all code.
     struct MockCodeEmbedder;
 
     #[async_trait]
     impl CodeEmbeddingProvider for MockCodeEmbedder {
-        async fn embed_code(&self, _code: &str, _context: Option<&str>) -> Result<Vec<f32>, CodeEmbedderError> {
-            // Return a zeroed 1536D vector for testing
-            Ok(vec![0.0; 1536])
+        async fn embed_code(&self, _code: &str, _context: Option<&str>) -> Result<SemanticFingerprint, CodeEmbedderError> {
+            // Return a zeroed fingerprint for testing
+            Ok(SemanticFingerprint::zeroed())
         }
 
-        async fn embed_batch(&self, codes: &[(&str, Option<&str>)]) -> Result<Vec<Vec<f32>>, CodeEmbedderError> {
-            Ok(codes.iter().map(|_| vec![0.0; 1536]).collect())
+        async fn embed_batch(&self, codes: &[(&str, Option<&str>)]) -> Result<Vec<SemanticFingerprint>, CodeEmbedderError> {
+            Ok(codes.iter().map(|_| SemanticFingerprint::zeroed()).collect())
         }
 
-        fn dimension(&self) -> usize {
-            1536
+        fn is_ready(&self) -> bool {
+            true
         }
     }
 
     /// Mock storage for testing.
+    /// Stores full SemanticFingerprint per entity.
     struct MockCodeStorage {
-        entities: RwLock<HashMap<Uuid, (CodeEntity, Vec<f32>)>>,
+        entities: RwLock<HashMap<Uuid, (CodeEntity, SemanticFingerprint)>>,
         file_index: RwLock<HashMap<String, Vec<Uuid>>>,
     }
 
@@ -403,11 +446,11 @@ mod tests {
 
     #[async_trait]
     impl CodeStorage for MockCodeStorage {
-        async fn store(&self, entity: &CodeEntity, embedding: &[f32]) -> Result<(), String> {
+        async fn store(&self, entity: &CodeEntity, fingerprint: &SemanticFingerprint) -> Result<(), String> {
             let mut entities = self.entities.write().await;
             let mut file_index = self.file_index.write().await;
 
-            entities.insert(entity.id, (entity.clone(), embedding.to_vec()));
+            entities.insert(entity.id, (entity.clone(), fingerprint.clone()));
 
             file_index
                 .entry(entity.file_path.clone())
@@ -447,9 +490,20 @@ mod tests {
             Ok(count)
         }
 
-        async fn get_embedding(&self, id: Uuid) -> Result<Option<Vec<f32>>, String> {
+        async fn get_fingerprint(&self, id: Uuid) -> Result<Option<SemanticFingerprint>, String> {
             let entities = self.entities.read().await;
-            Ok(entities.get(&id).map(|(_, e)| e.clone()))
+            Ok(entities.get(&id).map(|(_, fp)| fp.clone()))
+        }
+
+        async fn search_by_fingerprint(
+            &self,
+            _query_fingerprint: &SemanticFingerprint,
+            _top_k: usize,
+            _min_similarity: f32,
+            _use_e7_primary: bool,
+        ) -> Result<Vec<(CodeEntity, f32)>, String> {
+            // Mock implementation - returns empty for tests
+            Ok(Vec::new())
         }
     }
 
@@ -492,9 +546,11 @@ mod tests {
         assert_eq!(entity.name, "test_func");
         assert_eq!(entity.entity_type, CodeEntityType::Function);
 
-        // Verify embedding was stored
-        let embedding = storage.get_embedding(id).await.unwrap().unwrap();
-        assert_eq!(embedding.len(), 1536);
+        // Verify fingerprint was stored with all 13 embeddings
+        let fingerprint = storage.get_fingerprint(id).await.unwrap().unwrap();
+        assert!(fingerprint.is_complete(), "Fingerprint should have all 13 embeddings");
+        assert_eq!(fingerprint.e7_code.len(), 1536, "E7 should be 1536D");
+        assert_eq!(fingerprint.e1_semantic.len(), 1024, "E1 should be 1024D");
     }
 
     #[tokio::test]

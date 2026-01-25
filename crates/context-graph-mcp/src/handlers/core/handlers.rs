@@ -4,6 +4,7 @@
 //!
 //! TASK-INTEG-TOPIC: Added clustering dependencies for topic tools integration.
 //! E4-FIX: Added session sequence counter for proper E4 (V_ordering) embeddings.
+//! E7-WIRING: Added code embedding pipeline fields for search_code enhancement.
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -13,6 +14,7 @@ use serde_json::json;
 use tracing::{info, warn};
 
 use context_graph_core::clustering::{MultiSpaceClusterManager, TopicStabilityTracker};
+use context_graph_core::memory::{CodeEmbeddingProvider, CodeStorage};
 use context_graph_core::monitoring::LayerStatusProvider;
 use context_graph_core::traits::{
     MultiArrayEmbeddingProvider, TeleologicalMemoryStore, UtlProcessor,
@@ -56,6 +58,20 @@ pub struct Handlers {
     /// Current session ID for session-scoped operations.
     /// E4-FIX: Added to track session context for E4 embeddings.
     current_session_id: Arc<RwLock<Option<String>>>,
+
+    // =========================================================================
+    // Code Embedding Pipeline (E7-WIRING)
+    // =========================================================================
+
+    /// Code storage backend for storing and retrieving code entities.
+    /// Optional - only present if code embedding is enabled.
+    /// E7-WIRING: Added for search_code to query CodeStore directly.
+    pub(in crate::handlers) code_store: Option<Arc<dyn CodeStorage>>,
+
+    /// Code embedding provider (E7 Qodo-Embed-1-1.5B).
+    /// Optional - only present if code embedding is enabled.
+    /// E7-WIRING: Added for generating E7 embeddings for code queries.
+    pub(in crate::handlers) code_embedding_provider: Option<Arc<dyn CodeEmbeddingProvider>>,
 }
 
 impl Handlers {
@@ -87,6 +103,47 @@ impl Handlers {
             // E4-FIX: Initialize session sequence counter and session ID
             session_sequence_counter: Arc::new(AtomicU64::new(0)),
             current_session_id: Arc::new(RwLock::new(None)),
+            // E7-WIRING: Code pipeline disabled by default in with_all
+            code_store: None,
+            code_embedding_provider: None,
+        }
+    }
+
+    /// Create handlers with all dependencies including code embedding pipeline.
+    ///
+    /// E7-WIRING: Extended constructor for full code embedding support.
+    ///
+    /// # Arguments
+    /// * `teleological_store` - Store for TeleologicalFingerprint
+    /// * `utl_processor` - UTL processor for learning metrics
+    /// * `multi_array_provider` - 13-embedding generator
+    /// * `layer_status_provider` - Provider for layer status information
+    /// * `cluster_manager` - Multi-space cluster manager for topic detection
+    /// * `stability_tracker` - Topic stability tracker for portfolio metrics
+    /// * `code_store` - Code storage backend for code entities
+    /// * `code_embedding_provider` - E7 code embedding provider
+    #[allow(dead_code)]
+    pub fn with_code_pipeline(
+        teleological_store: Arc<dyn TeleologicalMemoryStore>,
+        utl_processor: Arc<dyn UtlProcessor>,
+        multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider>,
+        layer_status_provider: Arc<dyn LayerStatusProvider>,
+        cluster_manager: Arc<RwLock<MultiSpaceClusterManager>>,
+        stability_tracker: Arc<RwLock<TopicStabilityTracker>>,
+        code_store: Arc<dyn CodeStorage>,
+        code_embedding_provider: Arc<dyn CodeEmbeddingProvider>,
+    ) -> Self {
+        Self {
+            teleological_store,
+            utl_processor,
+            multi_array_provider,
+            layer_status_provider,
+            cluster_manager,
+            stability_tracker,
+            session_sequence_counter: Arc::new(AtomicU64::new(0)),
+            current_session_id: Arc::new(RwLock::new(None)),
+            code_store: Some(code_store),
+            code_embedding_provider: Some(code_embedding_provider),
         }
     }
 
@@ -119,7 +176,31 @@ impl Handlers {
             // E4-FIX: Initialize session sequence counter and session ID
             session_sequence_counter: Arc::new(AtomicU64::new(0)),
             current_session_id: Arc::new(RwLock::new(None)),
+            // E7-WIRING: Code pipeline disabled by default
+            code_store: None,
+            code_embedding_provider: None,
         }
+    }
+
+    // =========================================================================
+    // Code Pipeline Accessors (E7-WIRING)
+    // =========================================================================
+
+    /// Check if the code embedding pipeline is available.
+    ///
+    /// Returns true if both code_store and code_embedding_provider are configured.
+    pub fn has_code_pipeline(&self) -> bool {
+        self.code_store.is_some() && self.code_embedding_provider.is_some()
+    }
+
+    /// Get the code store if available.
+    pub fn code_store(&self) -> Option<&Arc<dyn CodeStorage>> {
+        self.code_store.as_ref()
+    }
+
+    /// Get the code embedding provider if available.
+    pub fn code_embedding_provider(&self) -> Option<&Arc<dyn CodeEmbeddingProvider>> {
+        self.code_embedding_provider.as_ref()
     }
 
     // =========================================================================

@@ -6,6 +6,7 @@
 //! - Vector similarity search (cosine, dot product)
 //! - Neural attention mechanisms
 //! - Poincaré ball hyperbolic operations
+//! - GPU-accelerated HDBSCAN clustering (ARCH-GPU-05)
 //!
 //! # Constitution AP-007 Compliance
 //!
@@ -39,6 +40,7 @@ pub mod cone;
 pub mod context;
 pub mod error;
 pub mod ffi;
+pub mod hdbscan;
 pub mod ops;
 pub mod poincare;
 pub mod safe;
@@ -56,9 +58,7 @@ pub use cone::{
 pub use cone::{cone_check_batch_gpu, cone_check_single_gpu};
 pub use error::{CudaError, CudaResult};
 pub use ffi::{
-    // FAISS FFI exports
-    check_faiss_result,
-    // Context management (TASK-04)
+    // CUDA Driver API exports
     cuCtxCreate_v2,
     cuCtxDestroy_v2,
     cuCtxGetCurrent,
@@ -71,34 +71,13 @@ pub use ffi::{
     cuDriverGetVersion,
     cuInit,
     cuMemGetInfo_v2,
-    // CUDA Driver API exports
     cuda_result_to_string,
     decode_driver_version,
-    faiss_IndexIVF_set_nprobe,
-    faiss_Index_add_with_ids,
-    faiss_Index_free,
-    faiss_Index_is_trained,
-    faiss_Index_ntotal,
-    faiss_Index_search,
-    faiss_Index_train,
-    faiss_StandardGpuResources_free,
-    faiss_StandardGpuResources_new,
-    faiss_get_num_gpus,
-    faiss_index_cpu_to_gpu,
-    faiss_index_factory,
-    faiss_read_index,
-    faiss_write_index,
-    gpu_available,
     is_cuda_success,
     CUcontext,
     CUdevice,
     CUdevice_attribute,
     CUresult,
-    FaissGpuResourcesProvider,
-    FaissIndex,
-    FaissStandardGpuResources,
-    GpuResources,
-    MetricType,
     CUDA_ERROR_INVALID_DEVICE,
     CUDA_ERROR_NOT_INITIALIZED,
     CUDA_ERROR_NO_DEVICE,
@@ -108,7 +87,11 @@ pub use ffi::{
     CU_DEVICE_ATTRIBUTE_MAX_BLOCK_DIM_X,
     CU_DEVICE_ATTRIBUTE_MAX_THREADS_PER_BLOCK,
     CU_DEVICE_ATTRIBUTE_WARP_SIZE,
-    FAISS_OK,
+    // Custom k-NN kernel
+    cuda_available,
+    cuda_device_count,
+    compute_core_distances_gpu,
+    compute_pairwise_distances_gpu,
 };
 // Safe RAII wrappers (TASK-04)
 pub use safe::{gpu_memory_usage_percent, GpuDevice};
@@ -119,8 +102,6 @@ pub use context::{
     GREEN_CONTEXTS_MIN_COMPUTE_MAJOR, GREEN_CONTEXTS_MIN_COMPUTE_MINOR,
     INFERENCE_PARTITION_PERCENT, MIN_SMS_FOR_PARTITIONING,
 };
-#[cfg(feature = "cuda")]
-pub use ffi::gpu_count_direct;
 pub use ops::VectorOps;
 pub use poincare::{poincare_distance_batch_cpu, poincare_distance_cpu, PoincareCudaConfig};
 #[cfg(feature = "cuda")]
@@ -132,6 +113,12 @@ pub use similarity::{
     embedder_to_group, should_use_gpu_batch, BatchedQueryContext, DimensionGroup,
     DENSE_EMBEDDER_INDICES, GPU_BATCH_THRESHOLD,
 };
+// GPU HDBSCAN clustering (ARCH-GPU-05)
+pub use hdbscan::{
+    ClusterMembership, ClusterSelectionMethod, GpuHdbscanClusterer, GpuHdbscanError,
+    GpuHdbscanResult, GpuKnnIndex, HdbscanParams,
+};
+
 // AP-007: StubVectorOps export is gated to test-only builds
 // Allow deprecated usage in tests - the deprecation warning is intentional for production
 #[cfg(test)]
