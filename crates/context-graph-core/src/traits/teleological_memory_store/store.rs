@@ -170,6 +170,32 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         top_k: usize,
     ) -> CoreResult<Vec<(Uuid, f32)>>;
 
+    /// E6 sparse recall using V_selectivity inverted index.
+    ///
+    /// Stage 1 (Recall) for exact keyword matching. Finds candidates that
+    /// share terms with the query that E1 semantic search might miss due to
+    /// embedding averaging.
+    ///
+    /// Per Constitution: E6 finds "exact keyword matches" that E1 misses by
+    /// "diluting through averaging".
+    ///
+    /// # Arguments
+    /// * `sparse_query` - The E6 sparse vector query
+    /// * `max_candidates` - Maximum number of candidates to return
+    ///
+    /// # Returns
+    /// Vector of (UUID, term_overlap_count) pairs sorted by overlap (descending).
+    /// The count indicates how many query terms matched the document.
+    ///
+    /// # Errors
+    /// - `CoreError::StorageError` - Storage backend failure
+    /// - `CoreError::IndexError` - Inverted index failure
+    async fn search_e6_sparse(
+        &self,
+        sparse_query: &SparseVector,
+        max_candidates: usize,
+    ) -> CoreResult<Vec<(Uuid, usize)>>;
+
     // ==================== Batch Operations ====================
 
     /// Store multiple fingerprints in a batch.

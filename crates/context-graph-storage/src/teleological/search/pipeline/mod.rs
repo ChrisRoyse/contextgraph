@@ -81,12 +81,13 @@ mod tests;
 pub use builder::PipelineBuilder;
 pub use execution::RetrievalPipeline;
 pub use traits::{
-    // E6 sparse index types (per e6upgrade.md)
-    apply_e6_tiebreaker, compute_e6_boost, E6SparseIndex, InMemoryE6SparseIndex,
-    // Original types
+    // Token and SPLADE storage for pipeline stages
     InMemorySpladeIndex, InMemoryTokenStorage, SpladeIndex, TokenStorage,
 };
 pub use types::{
     PipelineCandidate, PipelineConfig, PipelineError, PipelineResult, PipelineStage, StageConfig,
     StageResult,
 };
+
+// Note: E6 sparse index types are test-only and accessed via traits module directly.
+// Production E6 search uses TeleologicalMemoryStore::search_e6_sparse().

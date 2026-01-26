@@ -5,18 +5,27 @@
 //!
 //! # Submodules
 //!
-//! - `ops`: LayerNorm, mean pooling, L2 normalization
-//! - `attention`: Multi-head self-attention with global attention support
+//! - `ops`: LayerNorm, mean pooling, marker-weighted pooling, L2 normalization
+//! - `attention`: Multi-head self-attention (standard, not sliding window)
 //! - `encoder`: Encoder layers and FFN
 //!
 //! # Dual Forward Pass for Asymmetric Embeddings
 //!
-//! The `gpu_forward_dual()` function produces cause and effect embeddings:
-//! 1. Tokenize and detect causal markers
-//! 2. Run encoder once with combined global attention
-//! 3. Pool with cause-weighted mask → apply W_cause → cause_vec
-//! 4. Pool with effect-weighted mask → apply W_effect → effect_vec
+//! The `gpu_forward_dual()` function produces differentiated cause/effect embeddings:
+//! 1. Tokenize input text + detect causal markers (because, causes, therefore, etc.)
+//! 2. Run encoder once with standard attention
+//! 3. Marker-weighted pooling with differentiated weights:
+//!    - Cause embedding: boost cause markers (because, due to), reduce effect markers
+//!    - Effect embedding: boost effect markers (therefore, results in), reduce cause markers
+//! 4. Apply W_cause/W_effect projections
 //! 5. L2 normalize both vectors
+//!
+//! # Asymmetry Sources
+//!
+//! Meaningful asymmetry comes from TWO sources:
+//! 1. **Marker-weighted pooling**: Cause markers get 2.5x weight for cause embedding,
+//!    effect markers get 2.5x weight for effect embedding
+//! 2. **Learned projections**: W_cause and W_effect are perturbed identity matrices
 
 mod attention;
 mod encoder;
@@ -29,11 +38,12 @@ use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::types::ModelId;
 
 use super::config::{LongformerConfig, CAUSAL_MAX_TOKENS};
+use super::marker_detection::detect_causal_markers;
 use super::weights::{CausalProjectionWeights, LongformerWeights};
 
 use encoder::run_encoder;
 pub use ops::layer_norm;
-use ops::{l2_normalize, mean_pooling};
+use ops::{l2_normalize, marker_weighted_pooling, mean_pooling};
 
 /// GPU-accelerated forward pass for Longformer.
 ///
@@ -226,35 +236,34 @@ fn compute_embeddings(
 /// GPU-accelerated dual forward pass for cause/effect embeddings.
 ///
 /// Produces two distinct 768D vectors from a single encoder pass:
-/// - cause_vec: Base embedding projected by W_cause
-/// - effect_vec: Base embedding projected by W_effect
+/// - cause_vec: Marker-weighted pooling emphasizing cause indicators + W_cause projection
+/// - effect_vec: Marker-weighted pooling emphasizing effect indicators + W_effect projection
 ///
 /// # Architecture
 ///
-/// The asymmetry comes solely from learned projections (perturbed identities),
-/// using the same base mean-pooled embedding. This ensures:
-/// - High similarity (0.85-0.97) since same base embedding
-/// - Meaningful asymmetry from different projection perturbations
-/// - Consistent asymmetry ratio (1.2-2.0) for causal retrieval
+/// Asymmetry comes from TWO sources:
+/// 1. Marker-weighted pooling: Different weights for cause/effect marker tokens
+/// 2. Learned projections: W_cause and W_effect with different perturbations
 ///
 /// ```text
 /// Input Text
 ///     |
-/// [Tokenize]
+/// [Tokenize + Detect Causal Markers]
 ///     |
 /// [Compute Embeddings]
 ///     |
 /// [Encoder Layers] (single pass)
 ///     |
-/// [Mean Pooling] (single base embedding)
-///     |
-///     +-------------------+
-///     |                   |
-/// [W_cause Projection] [W_effect Projection]
-///     |                   |
-/// [L2 Normalize]        [L2 Normalize]
-///     |                   |
-/// cause_vec (768D)      effect_vec (768D)
+///     +---------------------------+
+///     |                           |
+/// [Cause-Weighted Pooling]   [Effect-Weighted Pooling]
+/// (boost: because, due to)   (boost: therefore, results in)
+///     |                           |
+/// [W_cause Projection]       [W_effect Projection]
+///     |                           |
+/// [L2 Normalize]             [L2 Normalize]
+///     |                           |
+/// cause_vec (768D)           effect_vec (768D)
 /// ```
 ///
 /// # Arguments
@@ -296,6 +305,24 @@ pub fn gpu_forward_dual(
     let seq_len = token_ids.len().min(max_len);
     let token_ids = &token_ids[..seq_len];
     let attention_mask = &attention_mask[..seq_len];
+
+    // === CAUSAL MARKER DETECTION ===
+    // Detect cause/effect indicator words in the text
+    let markers = detect_causal_markers(text, &encoding);
+
+    // Generate per-token weights for cause and effect embeddings
+    let cause_weights = markers.cause_weights(seq_len);
+    let effect_weights = markers.effect_weights(seq_len);
+
+    // Log marker detection for debugging
+    if markers.cause_marker_indices.len() + markers.effect_marker_indices.len() > 0 {
+        tracing::debug!(
+            "E5 causal markers detected: {} cause, {} effect (strength: {:.2})",
+            markers.cause_marker_indices.len(),
+            markers.effect_marker_indices.len(),
+            markers.causal_strength
+        );
+    }
 
     // === CREATE GPU TENSORS ===
     let input_ids = Tensor::from_slice(token_ids, (1, seq_len), device).map_err(|e| {
@@ -341,15 +368,16 @@ pub fn gpu_forward_dual(
     // === ENCODER LAYERS (single pass) ===
     let hidden_states = run_encoder(embeddings, &attention_mask_tensor, weights, config, seq_len)?;
 
-    // === SINGLE BASE POOLING ===
-    // Use standard mean pooling - asymmetry comes from projections only
-    let base_pooled = mean_pooling(&hidden_states, &attention_mask_tensor)?;
+    // === MARKER-WEIGHTED POOLING ===
+    // Create differentiated embeddings by weighting causal markers differently
+    let cause_pooled = marker_weighted_pooling(&hidden_states, &attention_mask_tensor, &cause_weights)?;
+    let effect_pooled = marker_weighted_pooling(&hidden_states, &attention_mask_tensor, &effect_weights)?;
 
     // === DUAL PROJECTION ===
-    // Apply W_cause projection (perturbed identity 1)
-    let cause_projected = projection.project_cause(&base_pooled)?;
-    // Apply W_effect projection (perturbed identity 2, different perturbation)
-    let effect_projected = projection.project_effect(&base_pooled)?;
+    // Apply W_cause projection to cause-pooled embedding
+    let cause_projected = projection.project_cause(&cause_pooled)?;
+    // Apply W_effect projection to effect-pooled embedding
+    let effect_projected = projection.project_effect(&effect_pooled)?;
 
     // === L2 NORMALIZATION ===
     let cause_normalized = l2_normalize(&cause_projected)?;

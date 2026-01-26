@@ -61,6 +61,25 @@ pub enum GraphError {
     #[error("GPU device not available: {0}")]
     GpuDeviceUnavailable(String),
 
+    /// FAISS GPU is not available.
+    ///
+    /// This error occurs when:
+    /// - `faiss-working` feature is not enabled in context-graph-cuda
+    /// - FAISS library is not installed
+    /// - No GPU available for FAISS
+    ///
+    /// # Resolution
+    ///
+    /// 1. Run `./scripts/rebuild_faiss_gpu.sh` to build FAISS with CUDA 13.1+
+    /// 2. Build with: `cargo build -p context-graph-cuda --features faiss-working`
+    #[error("FAISS GPU unavailable: {reason}. Help: {help}")]
+    FaissGpuUnavailable {
+        /// Why FAISS GPU is unavailable
+        reason: String,
+        /// How to fix the issue
+        help: String,
+    },
+
     // ========== Storage Errors ==========
     /// Failed to open storage at specific path.
     #[error("Failed to open storage at {path}: {cause}")]

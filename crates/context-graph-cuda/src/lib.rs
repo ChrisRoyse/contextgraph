@@ -92,6 +92,15 @@ pub use ffi::{
     cuda_device_count,
     compute_core_distances_gpu,
     compute_pairwise_distances_gpu,
+    // FAISS GPU status
+    is_faiss_gpu_available,
+    faiss_status,
+};
+// Re-export FAISS types when faiss-working feature is enabled
+#[cfg(feature = "faiss-working")]
+pub use ffi::{
+    check_faiss_result, faiss_gpu_available, FaissGpuResourcesProvider, FaissGpuResources,
+    FaissIndex, FaissStandardGpuResources, MetricType, FAISS_OK,
 };
 // Safe RAII wrappers (TASK-04)
 pub use safe::{gpu_memory_usage_percent, GpuDevice};

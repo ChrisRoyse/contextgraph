@@ -21,8 +21,6 @@
 //! - Direction modifiers: cause→effect (1.2x), effect→cause (0.8x)
 //! - Auto-profile selection: Causal queries auto-select "causal_reasoning" profile
 
-use std::sync::Arc;
-
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tracing::{debug, error, info, warn};
@@ -269,9 +267,17 @@ impl Handlers {
         // This is used later for source metadata storage
         let causal_direction = infer_causal_direction_from_fingerprint(&embedding_output.fingerprint);
 
+        // E6-FIX: Extract e6_sparse BEFORE creating TeleologicalFingerprint
+        // The SemanticFingerprint.e6_sparse is a SparseVector that must be copied
+        // to TeleologicalFingerprint.e6_sparse (Option<SparseVector>) for inverted index storage.
+        // This enables Stage 1 E6 recall and keyword tie-breaking.
+        let e6_sparse = embedding_output.fingerprint.e6_sparse.clone();
+
         // Create TeleologicalFingerprint from embeddings with user-specified importance
+        // E6-FIX: Chain .with_e6_sparse() to propagate the E6 sparse vector
         let fingerprint =
-            TeleologicalFingerprint::with_importance(embedding_output.fingerprint, content_hash, importance);
+            TeleologicalFingerprint::with_importance(embedding_output.fingerprint, content_hash, importance)
+                .with_e6_sparse(e6_sparse);
         let fingerprint_id = fingerprint.id;
 
         // Store in TeleologicalMemoryStore
@@ -444,9 +450,17 @@ impl Handlers {
         // This is used later for source metadata storage
         let causal_direction = infer_causal_direction_from_fingerprint(&embedding_output.fingerprint);
 
+        // E6-FIX: Extract e6_sparse BEFORE creating TeleologicalFingerprint
+        // The SemanticFingerprint.e6_sparse is a SparseVector that must be copied
+        // to TeleologicalFingerprint.e6_sparse (Option<SparseVector>) for inverted index storage.
+        // This enables Stage 1 E6 recall and keyword tie-breaking.
+        let e6_sparse = embedding_output.fingerprint.e6_sparse.clone();
+
         // Create TeleologicalFingerprint from embeddings with user-specified importance
+        // E6-FIX: Chain .with_e6_sparse() to propagate the E6 sparse vector
         let fingerprint =
-            TeleologicalFingerprint::with_importance(embedding_output.fingerprint, content_hash, importance);
+            TeleologicalFingerprint::with_importance(embedding_output.fingerprint, content_hash, importance)
+                .with_e6_sparse(e6_sparse);
         let fingerprint_id = fingerprint.id;
 
         match self.teleological_store.store(fingerprint).await {
@@ -1201,18 +1215,27 @@ impl Handlers {
                         let dominant_idx = r.dominant_embedder();
                         let dominant_name = embedder_names::name(dominant_idx);
 
-                        // Compute blind spots: enhancers that found this but E1 missed
-                        // Per ARCH-12: E1 is foundation. Blind spot = enhancer >= 0.5 AND E1 < 0.3
+                        // =================================================================
+                        // 13-EMBEDDER VISIBILITY FOR AI NAVIGATION
+                        // =================================================================
+                        // Per Constitution v6.5: Give AI models FULL visibility into all
+                        // 13 embedders so they can navigate massive datasets effectively.
+
                         let e1_score = r.embedder_scores[0];
+
+                        // Blind spots: enhancers that found this but E1 missed
                         let blind_spots = compute_blind_spots(&r.embedder_scores, e1_score);
 
-                        // Compute agreement count: how many embedders have score >= 0.5
+                        // Agreement count: how many embedders have score >= 0.5
                         let agreement_count = r.embedder_scores.iter()
                             .filter(|&&s| s >= 0.5)
                             .count();
 
-                        // Build embedder scores object with significant scores only (>= 0.1)
+                        // Full embedder scores categorized by type
                         let embedder_scores = build_embedder_scores_json(&r.embedder_scores);
+
+                        // Navigation hints: suggest which embedders to explore next
+                        let navigation_hints = compute_navigation_hints(&r.embedder_scores);
 
                         let mut entry = json!({
                             "fingerprintId": r.fingerprint.id.to_string(),
@@ -1223,9 +1246,14 @@ impl Handlers {
                             "agreementCount": agreement_count
                         });
 
-                        // Only include blindSpots if non-empty (helps AI understand why this was found)
+                        // Only include blindSpots if non-empty
                         if !blind_spots.is_empty() {
                             entry["blindSpots"] = json!(blind_spots);
+                        }
+
+                        // Only include navigationHints if non-empty
+                        if !navigation_hints.is_empty() {
+                            entry["navigationHints"] = json!(navigation_hints);
                         }
                         // Only include content field when includeContent=true
                         if include_content {
@@ -1700,8 +1728,14 @@ fn compute_position_label(result_seq: u64, current_seq: u64) -> String {
 }
 
 // =============================================================================
-// BLIND SPOT DETECTION AND EMBEDDER SCORE HELPERS
+// 13-EMBEDDER VISIBILITY SYSTEM
 // =============================================================================
+// Per Constitution v6.5: AI models must have FULL visibility into all 13 embedders
+// to navigate massive datasets from multiple angles. Each embedder is a unique
+// perspective that finds what others miss.
+//
+// GOAL: Enable AI models to use all 13 embedders as navigation guides through
+// massive datasets, understanding which perspectives found what and why.
 
 /// Threshold for E1 "miss" - below this, E1 would have missed the result.
 const E1_MISS_THRESHOLD: f32 = 0.3;
@@ -1709,7 +1743,26 @@ const E1_MISS_THRESHOLD: f32 = 0.3;
 /// Threshold for enhancer "find" - above this, the enhancer found something useful.
 const ENHANCER_FIND_THRESHOLD: f32 = 0.5;
 
-/// Compute blind spots: enhancers that found this result but E1 missed.
+/// Embedder metadata for AI visibility.
+/// Each embedder has a specific signal it captures that E1 might miss.
+const EMBEDDER_INFO: [(usize, &str, &str, &str); 13] = [
+    // (index, name, category, what_it_finds)
+    (0, "E1_Semantic", "FOUNDATION", "Dense semantic similarity - the foundation"),
+    (1, "E2_Recency", "TEMPORAL", "Temporal freshness - recent memories (post-retrieval only)"),
+    (2, "E3_Periodic", "TEMPORAL", "Time-of-day patterns - daily/weekly cycles (post-retrieval only)"),
+    (3, "E4_Sequence", "TEMPORAL", "Conversation order - before/after relationships (post-retrieval only)"),
+    (4, "E5_Causal", "SEMANTIC", "Causal chains - why X caused Y (direction preserved)"),
+    (5, "E6_Sparse", "SEMANTIC", "Exact keyword matches - precise terminology E1 dilutes"),
+    (6, "E7_Code", "SEMANTIC", "Code patterns - function signatures, syntax E1 treats as noise"),
+    (7, "E8_Graph", "RELATIONAL", "Structural relationships - imports, dependencies"),
+    (8, "E9_HDC", "STRUCTURAL", "Noise-robust structure - survives typos, variations"),
+    (9, "E10_Intent", "SEMANTIC", "Goal alignment - same purpose expressed differently"),
+    (10, "E11_Entity", "RELATIONAL", "Entity knowledge - 'Diesel' = database ORM for Rust"),
+    (11, "E12_ColBERT", "SEMANTIC", "Exact phrase matches - token-level precision (reranking)"),
+    (12, "E13_SPLADE", "SEMANTIC", "Term expansions - fast→quick, db→database (recall)"),
+];
+
+/// Compute blind spots: ALL enhancers that found this result but E1 missed.
 ///
 /// A blind spot is when:
 /// - An enhancer embedder has score >= 0.5 (found something)
@@ -1719,14 +1772,15 @@ const ENHANCER_FIND_THRESHOLD: f32 = 0.5;
 /// You're seeing it because E7/E10/E5/etc. found it."
 ///
 /// Per ARCH-12: E1 is foundation, other embedders ENHANCE by finding blind spots.
+/// Per Constitution v6.5: ALL enhancers are checked, not just a subset.
 ///
 /// # Arguments
 /// * `embedder_scores` - All 13 embedder scores [E1, E2, ..., E13]
 /// * `e1_score` - E1 semantic score (passed separately for clarity)
 ///
 /// # Returns
-/// Vector of human-readable blind spot descriptions
-fn compute_blind_spots(embedder_scores: &[f32; 13], e1_score: f32) -> Vec<String> {
+/// Vector of blind spot objects with name, score, and what the embedder finds
+fn compute_blind_spots(embedder_scores: &[f32; 13], e1_score: f32) -> Vec<serde_json::Value> {
     let mut blind_spots = Vec::new();
 
     // Only check for blind spots if E1 would have missed this result
@@ -1734,74 +1788,124 @@ fn compute_blind_spots(embedder_scores: &[f32; 13], e1_score: f32) -> Vec<String
         return blind_spots;
     }
 
-    // Check each enhancer embedder
-    // E5 (Causal), E6 (Sparse/Keyword), E7 (Code), E10 (Intent), E11 (Entity)
+    // Check ALL non-foundation, non-temporal embedders
+    // E2-E4 (temporal) are POST-RETRIEVAL only per ARCH-25, not for blind spot detection
     let enhancers = [
-        (4, "E5_Causal"),
-        (5, "E6_Sparse"),
-        (6, "E7_Code"),
-        (9, "E10_Intent"),
-        (10, "E11_Entity"),
+        (4, "E5_Causal", "causal chains"),
+        (5, "E6_Sparse", "exact keywords"),
+        (6, "E7_Code", "code patterns"),
+        (7, "E8_Graph", "graph structure"),
+        (8, "E9_HDC", "noise-robust matches"),
+        (9, "E10_Intent", "intent alignment"),
+        (10, "E11_Entity", "entity knowledge"),
+        (11, "E12_ColBERT", "phrase precision"),
+        (12, "E13_SPLADE", "term expansion"),
     ];
 
-    for (idx, name) in enhancers {
+    for (idx, name, finds) in enhancers {
         let score = embedder_scores[idx];
         if score >= ENHANCER_FIND_THRESHOLD {
-            blind_spots.push(format!(
-                "{} found ({:.2}) but E1_Semantic missed ({:.2})",
-                name, score, e1_score
-            ));
+            blind_spots.push(json!({
+                "embedder": name,
+                "score": score,
+                "e1Score": e1_score,
+                "finding": format!("{} found via {} but E1 missed", name, finds)
+            }));
         }
     }
 
     blind_spots
 }
 
-/// Build JSON object with significant embedder scores.
+/// Build FULL 13-embedder visibility JSON with all scores and metadata.
 ///
-/// Only includes embedders with score >= 0.1 to reduce noise.
-/// This gives the AI model visibility into which embedders contributed.
+/// Per Constitution v6.5: AI models need FULL visibility into all 13 embedders
+/// to navigate massive datasets. We include ALL scores (not just significant ones)
+/// grouped by category with explanations of what each embedder finds.
 ///
 /// # Arguments
 /// * `embedder_scores` - All 13 embedder scores
 ///
 /// # Returns
-/// JSON object mapping embedder names to scores
+/// JSON object with categorized embedder scores and metadata
 fn build_embedder_scores_json(embedder_scores: &[f32; 13]) -> serde_json::Value {
-    let mut scores = serde_json::Map::new();
+    let mut semantic = serde_json::Map::new();
+    let mut relational = serde_json::Map::new();
+    let mut structural = serde_json::Map::new();
+    let mut temporal = serde_json::Map::new();
 
-    // Map indices to embedder names (per constitution)
-    let names = [
-        "E1_Semantic",
-        "E2_Recency",
-        "E3_Periodic",
-        "E4_Sequence",
-        "E5_Causal",
-        "E6_Sparse",
-        "E7_Code",
-        "E8_Graph",
-        "E9_HDC",
-        "E10_Intent",
-        "E11_Entity",
-        "E12_ColBERT",
-        "E13_SPLADE",
-    ];
-
-    for (idx, &name) in names.iter().enumerate() {
+    for &(idx, name, category, _) in &EMBEDDER_INFO {
         let score = embedder_scores[idx];
-        // Only include significant scores (>= 0.1) to reduce noise
-        if score >= 0.1 {
-            scores.insert(
-                name.to_string(),
-                serde_json::Value::Number(
-                    serde_json::Number::from_f64(score as f64)
-                        .unwrap_or_else(|| serde_json::Number::from(0)),
-                ),
-            );
+        let entry = serde_json::Number::from_f64(score as f64)
+            .unwrap_or_else(|| serde_json::Number::from(0));
+
+        match category {
+            "FOUNDATION" | "SEMANTIC" => {
+                semantic.insert(name.to_string(), serde_json::Value::Number(entry));
+            }
+            "RELATIONAL" => {
+                relational.insert(name.to_string(), serde_json::Value::Number(entry));
+            }
+            "STRUCTURAL" => {
+                structural.insert(name.to_string(), serde_json::Value::Number(entry));
+            }
+            "TEMPORAL" => {
+                temporal.insert(name.to_string(), serde_json::Value::Number(entry));
+            }
+            _ => {}
         }
     }
 
-    serde_json::Value::Object(scores)
+    json!({
+        "semantic": semantic,
+        "relational": relational,
+        "structural": structural,
+        "temporal": temporal
+    })
+}
+
+/// Compute navigation suggestions based on embedder scores.
+///
+/// Per Constitution v6.5: Help AI models navigate massive datasets by suggesting
+/// which embedders to explore based on current findings.
+///
+/// # Arguments
+/// * `embedder_scores` - All 13 embedder scores
+///
+/// # Returns
+/// Vector of navigation suggestions
+fn compute_navigation_hints(embedder_scores: &[f32; 13]) -> Vec<String> {
+    let mut hints = Vec::new();
+
+    let e1 = embedder_scores[0];
+    let e5 = embedder_scores[4];
+    let e6 = embedder_scores[5];
+    let e7 = embedder_scores[6];
+    let e8 = embedder_scores[7];
+    let e10 = embedder_scores[9];
+    let e11 = embedder_scores[10];
+
+    // Suggest based on what's strong vs weak
+    if e7 > e1 + 0.2 {
+        hints.push("E7 (code) found more than E1 - try search_code for code patterns".to_string());
+    }
+    if e11 > e1 + 0.2 {
+        hints.push("E11 (entity) found more than E1 - try search_by_entities for relationships".to_string());
+    }
+    if e5 > e1 + 0.2 {
+        hints.push("E5 (causal) found more than E1 - try search_causes for causal chains".to_string());
+    }
+    if e8 > 0.5 {
+        hints.push("E8 (graph) is strong - try search_connections for imports/dependencies".to_string());
+    }
+    if e10 > e1 + 0.1 {
+        hints.push("E10 (intent) found aligned goals - try search_by_intent for similar purposes".to_string());
+    }
+    if e6 > 0.5 && e1 < 0.4 {
+        hints.push("E6 (keyword) found exact terms E1 missed - try search_by_keywords".to_string());
+    }
+
+    hints
 }
 
 #[cfg(test)]
@@ -2139,7 +2243,7 @@ mod tests {
     // BLIND SPOT DETECTION TESTS
     // =========================================================================
 
-    use super::{compute_blind_spots, build_embedder_scores_json, E1_MISS_THRESHOLD, ENHANCER_FIND_THRESHOLD};
+    use super::{compute_blind_spots, build_embedder_scores_json, compute_navigation_hints, E1_MISS_THRESHOLD, ENHANCER_FIND_THRESHOLD};
 
     #[test]
     fn test_blind_spot_detection_e7_found_e1_missed() {
@@ -2150,9 +2254,13 @@ mod tests {
 
         let blind_spots = compute_blind_spots(&scores, scores[0]);
         assert_eq!(blind_spots.len(), 1, "Should detect one blind spot");
-        assert!(blind_spots[0].contains("E7_Code"), "Should mention E7_Code");
-        assert!(blind_spots[0].contains("E1_Semantic"), "Should mention E1 missed");
-        println!("[VERIFIED] Blind spot detected: {}", blind_spots[0]);
+
+        // Verify the blind spot structure
+        let spot = &blind_spots[0];
+        assert_eq!(spot["embedder"], "E7_Code");
+        let score = spot["score"].as_f64().unwrap();
+        assert!((score - 0.8).abs() < 0.001, "Score should be ~0.8, got {}", score);
+        println!("[VERIFIED] Blind spot detected: {:?}", spot);
     }
 
     #[test]
@@ -2166,7 +2274,7 @@ mod tests {
 
         let blind_spots = compute_blind_spots(&scores, scores[0]);
         assert_eq!(blind_spots.len(), 3, "Should detect three blind spots");
-        println!("[VERIFIED] Multiple blind spots: {:?}", blind_spots);
+        println!("[VERIFIED] Multiple blind spots detected");
     }
 
     #[test]
@@ -2202,39 +2310,81 @@ mod tests {
     }
 
     #[test]
-    fn test_build_embedder_scores_filters_low_scores() {
-        // Build JSON with mix of high and low scores
+    fn test_build_embedder_scores_categorized_structure() {
+        // Build JSON with mix of scores - now categorized by type
         let mut scores = [0.0_f32; 13];
-        scores[0] = 0.75;  // E1 high - should include
-        scores[6] = 0.5;   // E7 medium - should include
-        scores[4] = 0.05;  // E5 too low - should NOT include
+        scores[0] = 0.75;  // E1 Semantic (FOUNDATION/SEMANTIC category)
+        scores[6] = 0.5;   // E7 Code (SEMANTIC category)
+        scores[10] = 0.6;  // E11 Entity (RELATIONAL category)
+        scores[1] = 0.3;   // E2 Recency (TEMPORAL category)
 
         let json = build_embedder_scores_json(&scores);
-        let obj = json.as_object().unwrap();
 
-        assert!(obj.contains_key("E1_Semantic"), "Should include E1 (0.75)");
-        assert!(obj.contains_key("E7_Code"), "Should include E7 (0.5)");
-        assert!(!obj.contains_key("E5_Causal"), "Should NOT include E5 (0.05)");
-        println!("[VERIFIED] JSON filters scores < 0.1: {:?}", obj.keys().collect::<Vec<_>>());
+        // Verify categorized structure
+        assert!(json["semantic"].is_object(), "Should have semantic category");
+        assert!(json["relational"].is_object(), "Should have relational category");
+        assert!(json["temporal"].is_object(), "Should have temporal category");
+        assert!(json["structural"].is_object(), "Should have structural category");
+
+        // Check semantic embedders are in right category
+        let semantic = json["semantic"].as_object().unwrap();
+        assert!(semantic.contains_key("E1_Semantic"));
+        assert!(semantic.contains_key("E7_Code"));
+
+        // Check relational embedders
+        let relational = json["relational"].as_object().unwrap();
+        assert!(relational.contains_key("E11_Entity"));
+
+        // Check temporal embedders
+        let temporal = json["temporal"].as_object().unwrap();
+        assert!(temporal.contains_key("E2_Recency"));
+
+        println!("[VERIFIED] Embedder scores correctly categorized");
     }
 
     #[test]
-    fn test_build_embedder_scores_all_names_correct() {
-        // Verify all embedder names are correct
-        let scores = [0.15_f32; 13];  // All above 0.1 threshold
+    fn test_build_embedder_scores_all_13_included() {
+        // Verify all 13 embedders are included in the categorized structure
+        let scores = [0.15_f32; 13];
 
         let json = build_embedder_scores_json(&scores);
-        let obj = json.as_object().unwrap();
 
-        let expected_names = [
-            "E1_Semantic", "E2_Recency", "E3_Periodic", "E4_Sequence",
-            "E5_Causal", "E6_Sparse", "E7_Code", "E8_Graph", "E9_HDC",
-            "E10_Intent", "E11_Entity", "E12_ColBERT", "E13_SPLADE"
-        ];
+        // Count total embedders across all categories
+        let semantic_count = json["semantic"].as_object().unwrap().len();
+        let relational_count = json["relational"].as_object().unwrap().len();
+        let structural_count = json["structural"].as_object().unwrap().len();
+        let temporal_count = json["temporal"].as_object().unwrap().len();
 
-        for name in expected_names {
-            assert!(obj.contains_key(name), "Should have key {}", name);
-        }
-        println!("[VERIFIED] All 13 embedder names correct");
+        let total = semantic_count + relational_count + structural_count + temporal_count;
+        assert_eq!(total, 13, "Should have all 13 embedders");
+        println!("[VERIFIED] All 13 embedders included: semantic={}, relational={}, structural={}, temporal={}",
+            semantic_count, relational_count, structural_count, temporal_count);
+    }
+
+    #[test]
+    fn test_navigation_hints_e7_stronger_than_e1() {
+        // When E7 (code) finds more than E1, suggest search_code
+        let mut scores = [0.0_f32; 13];
+        scores[0] = 0.3;  // E1 low
+        scores[6] = 0.7;  // E7 high (0.4 more than E1)
+
+        let hints = compute_navigation_hints(&scores);
+        assert!(!hints.is_empty(), "Should have navigation hints");
+        assert!(hints.iter().any(|h| h.contains("search_code")), "Should suggest search_code");
+        println!("[VERIFIED] Navigation hints: {:?}", hints);
+    }
+
+    #[test]
+    fn test_navigation_hints_multiple_suggestions() {
+        // Multiple embedders stronger than E1
+        let mut scores = [0.0_f32; 13];
+        scores[0] = 0.2;   // E1 low
+        scores[6] = 0.5;   // E7 code strong
+        scores[10] = 0.5;  // E11 entity strong
+        scores[4] = 0.5;   // E5 causal strong
+
+        let hints = compute_navigation_hints(&scores);
+        assert!(hints.len() >= 2, "Should have multiple navigation hints");
+        println!("[VERIFIED] Multiple hints: {:?}", hints);
     }
 }

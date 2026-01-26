@@ -18,6 +18,24 @@
 # CORE PHILOSOPHY: ALL EMBEDDERS ARE SIGNAL
 # ═══════════════════════════════════════════════════════════════
 #
+# SYSTEM GOAL: MULTI-PERSPECTIVE NAVIGATION
+# Use all 13 embedders to navigate massive datasets from multiple angles
+# to optimally find all answers one seeks. Each embedder provides a unique
+# lens on the knowledge graph - the AI model receives FULL VISIBILITY into
+# all 13 embedder scores to guide intelligent exploration.
+#
+# Navigation Principles:
+#   1. FULL VISIBILITY: AI sees all 13 embedder scores per result, categorized by type
+#   2. BLIND SPOT DETECTION: Highlights when enhancers found what E1 missed
+#   3. NAVIGATION HINTS: Suggests which embedder-specific tools to explore next
+#   4. AGREEMENT METRICS: Shows how many embedders agree on a result's relevance
+#
+# The AI model uses this information to:
+#   - Identify which embedders found strong matches for different query aspects
+#   - Navigate to specialized tools (search_code, search_by_entities, etc.)
+#   - Understand blind spots where E1 missed but other embedders found signal
+#   - Make informed decisions about which perspective to explore next
+#
 # FUNDAMENTAL PRINCIPLE: Every embedder provides SIGNAL, never noise.
 # Each of the 13 embedders captures a unique dimension of meaning that
 # E1 (semantic) alone cannot see. No embedder output is noise - each is
@@ -222,6 +240,13 @@ arch_rules:
   ARCH-SIGNAL-03: "Parameter tuning defines signal MEANING - blend weights, thresholds, boosts define each embedder's role"
   ARCH-SIGNAL-04: "Combined signal > any single embedder - multi-perspective retrieval is always superior"
   ARCH-SIGNAL-05: "Enhancers complement E1, never compete - E10 boosts E1, doesn't replace it"
+
+  # Multi-Perspective Navigation (AI VISIBILITY)
+  ARCH-NAV-01: "AI receives FULL VISIBILITY into all 13 embedder scores per result"
+  ARCH-NAV-02: "Embedder scores categorized by type: SEMANTIC, RELATIONAL, STRUCTURAL, TEMPORAL"
+  ARCH-NAV-03: "Blind spots detected: enhancer >= 0.5 AND E1 < 0.3 triggers alert"
+  ARCH-NAV-04: "Navigation hints guide AI to specialized tools based on score patterns"
+  ARCH-NAV-05: "Agreement metrics show embedder consensus for confidence assessment"
 
   # Core
   ARCH-01: "TeleologicalArray is atomic - all 13 embeddings or nothing"

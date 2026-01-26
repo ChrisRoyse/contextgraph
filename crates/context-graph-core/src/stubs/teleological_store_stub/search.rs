@@ -122,4 +122,53 @@ impl InMemoryTeleologicalStore {
         debug!("Sparse search returned {} results", results.len());
         Ok(results)
     }
+
+    /// E6 sparse recall for exact keyword matching.
+    ///
+    /// Returns candidates that share terms with the query, sorted by term overlap count.
+    /// This finds exact keyword matches that E1 semantic search might miss.
+    pub async fn search_e6_sparse_impl(
+        &self,
+        sparse_query: &SparseVector,
+        max_candidates: usize,
+    ) -> CoreResult<Vec<(Uuid, usize)>> {
+        debug!(
+            "E6 sparse recall with max_candidates={}, query nnz={}",
+            max_candidates,
+            sparse_query.nnz()
+        );
+
+        let mut results: Vec<(Uuid, usize)> = Vec::new();
+        let deleted_ids: HashSet<Uuid> = self.deleted.iter().map(|r| *r.key()).collect();
+
+        // Build set of query term indices for fast lookup
+        let query_terms: HashSet<u16> = sparse_query.indices.iter().copied().collect();
+
+        for entry in self.data.iter() {
+            let id = *entry.key();
+            let fp = entry.value();
+
+            if deleted_ids.contains(&id) {
+                continue;
+            }
+
+            // Count overlapping terms between query and document E6 sparse vectors
+            let doc_e6 = &fp.semantic.e6_sparse;
+            let overlap_count: usize = doc_e6
+                .indices
+                .iter()
+                .filter(|idx| query_terms.contains(idx))
+                .count();
+
+            if overlap_count > 0 {
+                results.push((id, overlap_count));
+            }
+        }
+
+        // Sort by overlap count descending
+        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.truncate(max_candidates);
+        debug!("E6 sparse recall returned {} candidates", results.len());
+        Ok(results)
+    }
 }

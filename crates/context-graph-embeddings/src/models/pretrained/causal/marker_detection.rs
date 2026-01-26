@@ -1,24 +1,25 @@
-//! Causal marker detection for Longformer global attention.
+//! Causal marker detection for asymmetric cause/effect embeddings.
 //!
 //! This module detects causal indicator tokens in text to enable
-//! focused global attention on causally-relevant positions.
+//! marker-weighted pooling for asymmetric embeddings.
 //!
 //! # Architecture
 //!
-//! Rather than using uniform rotation (which preserves relative rankings),
-//! this module enables content-dependent global attention by:
+//! Creates meaningful cause/effect asymmetry by:
 //! 1. Detecting causal markers (cause/effect indicators) in text
-//! 2. Returning token indices for global attention assignment
-//! 3. Enabling different attention patterns for cause vs effect embeddings
+//! 2. Creating differentiated weights for marker-weighted pooling
+//! 3. Cause embeddings weight cause markers higher, effect embeddings weight effect markers higher
 //!
-//! # Note
-//!
-//! This module is prepared for enhanced global attention patterns.
-//! Currently the forward pass uses simpler uniform attention.
-
-#![allow(dead_code)] // Prepared for enhanced causal attention integration
+//! This creates embeddings where:
+//! - Cause-role embedding emphasizes cause indicators ("because", "due to", etc.)
+//! - Effect-role embedding emphasizes effect indicators ("therefore", "results in", etc.)
+//! - The asymmetry enables directional causal retrieval
 
 use tokenizers::Encoding;
+
+/// Marker boost factor for weighted pooling.
+/// Cause/effect markers get this multiplier during pooling.
+pub const MARKER_BOOST: f32 = 2.5;
 
 /// Result of causal marker detection.
 #[derive(Debug, Clone, Default)]
@@ -33,6 +34,73 @@ pub struct CausalMarkerResult {
     pub detected_direction: CausalDirection,
     /// Causal strength score [0.0, 1.0]
     pub causal_strength: f32,
+}
+
+impl CausalMarkerResult {
+    /// Create token weights for cause-focused pooling.
+    ///
+    /// Cause markers get boosted weight (MARKER_BOOST), effect markers get reduced weight.
+    /// This creates a cause-role embedding that emphasizes causal antecedents.
+    ///
+    /// # Arguments
+    /// * `seq_len` - Total sequence length
+    ///
+    /// # Returns
+    /// Vector of per-token weights
+    pub fn cause_weights(&self, seq_len: usize) -> Vec<f32> {
+        let mut weights = vec![1.0f32; seq_len];
+
+        // Boost cause markers
+        for &idx in &self.cause_marker_indices {
+            if idx < seq_len {
+                weights[idx] = MARKER_BOOST;
+            }
+        }
+
+        // Reduce effect markers for cause embedding (inverse relationship)
+        for &idx in &self.effect_marker_indices {
+            if idx < seq_len {
+                weights[idx] = 1.0 / MARKER_BOOST.sqrt();
+            }
+        }
+
+        weights
+    }
+
+    /// Create token weights for effect-focused pooling.
+    ///
+    /// Effect markers get boosted weight (MARKER_BOOST), cause markers get reduced weight.
+    /// This creates an effect-role embedding that emphasizes causal consequences.
+    ///
+    /// # Arguments
+    /// * `seq_len` - Total sequence length
+    ///
+    /// # Returns
+    /// Vector of per-token weights
+    pub fn effect_weights(&self, seq_len: usize) -> Vec<f32> {
+        let mut weights = vec![1.0f32; seq_len];
+
+        // Boost effect markers
+        for &idx in &self.effect_marker_indices {
+            if idx < seq_len {
+                weights[idx] = MARKER_BOOST;
+            }
+        }
+
+        // Reduce cause markers for effect embedding (inverse relationship)
+        for &idx in &self.cause_marker_indices {
+            if idx < seq_len {
+                weights[idx] = 1.0 / MARKER_BOOST.sqrt();
+            }
+        }
+
+        weights
+    }
+
+    /// Check if meaningful causal content was detected.
+    pub fn has_causal_content(&self) -> bool {
+        !self.cause_marker_indices.is_empty() || !self.effect_marker_indices.is_empty()
+    }
 }
 
 /// Direction of causal relationship detected in text.

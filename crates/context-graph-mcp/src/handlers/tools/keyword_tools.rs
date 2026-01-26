@@ -19,7 +19,7 @@ use serde_json::json;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions};
+use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions, TeleologicalSearchResult};
 
 use crate::protocol::JsonRpcId;
 use crate::protocol::JsonRpcResponse;
@@ -106,7 +106,30 @@ impl Handlers {
             "search_by_keywords: Extracted keywords from query"
         );
 
-        // Step 2: Search for candidates (3x over-fetch for blended reranking)
+        // Step 2a: E6 inverted index recall - finds exact keyword matches E1 might miss
+        // Per Constitution: E6 finds "exact keyword matches" that E1 misses by "diluting through averaging"
+        let e6_recall_limit = top_k * 5; // Over-fetch for union
+        let e6_candidates = match self
+            .teleological_store
+            .search_e6_sparse(&query_embedding.e6_sparse, e6_recall_limit)
+            .await
+        {
+            Ok(results) => {
+                info!(
+                    e6_recall_count = results.len(),
+                    "search_by_keywords: E6 inverted index returned candidates"
+                );
+                results
+            }
+            Err(e) => {
+                // FAIL FAST: E6 recall failure is a fatal error
+                // Per user requirements: no workarounds or fallbacks
+                error!(error = %e, "search_by_keywords: E6 inverted index recall FAILED");
+                return self.tool_error(id, &format!("E6 inverted index search failed: {}", e));
+            }
+        };
+
+        // Step 2b: E1 semantic search - the foundation per ARCH-12
         let fetch_multiplier = 3;
         let fetch_top_k = top_k * fetch_multiplier;
 
@@ -127,22 +150,55 @@ impl Handlers {
             .with_min_similarity(0.0) // Get all candidates, filter later
             .with_rerank(enable_rerank); // Auto-enable E12 for pipeline
 
-        let candidates = match self
+        let e1_candidates = match self
             .teleological_store
             .search_semantic(&query_embedding, options)
             .await
         {
             Ok(results) => results,
             Err(e) => {
-                error!(error = %e, "search_by_keywords: Candidate search FAILED");
+                error!(error = %e, "search_by_keywords: E1 semantic search FAILED");
                 return self.tool_error(id, &format!("Search failed: {}", e));
             }
         };
 
-        let candidates_evaluated = candidates.len();
+        // Step 2c: Union E6 and E1 candidates - E6 finds what E1 misses!
+        // Build a map of all candidates by ID
+        let mut candidate_map: std::collections::HashMap<Uuid, &TeleologicalSearchResult> =
+            std::collections::HashMap::with_capacity(e1_candidates.len() + e6_candidates.len());
+
+        // Add all E1 candidates
+        for candidate in &e1_candidates {
+            candidate_map.insert(candidate.fingerprint.id, candidate);
+        }
+
+        // E6 candidates that aren't in E1 results need to be fetched
+        // These are the "blind spot" discoveries - exact keyword matches E1 missed
+        let e6_only_ids: Vec<Uuid> = e6_candidates
+            .iter()
+            .filter(|(id, _)| !candidate_map.contains_key(id))
+            .map(|(id, _)| *id)
+            .collect();
+
+        let e6_blind_spot_count = e6_only_ids.len();
+        if e6_blind_spot_count > 0 {
+            info!(
+                e6_blind_spot_count = e6_blind_spot_count,
+                "search_by_keywords: E6 found {} candidates that E1 missed (blind spots)",
+                e6_blind_spot_count
+            );
+        }
+
+        // Note: e6_term_counts would be used for more detailed E6 scoring if needed
+        // Currently we use the e6_candidates directly in the scoring loop
+
+        let candidates_evaluated = candidate_map.len() + e6_only_ids.len();
         debug!(
             candidates_evaluated = candidates_evaluated,
-            "search_by_keywords: Evaluating candidates for keyword scoring"
+            e1_count = e1_candidates.len(),
+            e6_recall_count = e6_candidates.len(),
+            e6_blind_spots = e6_only_ids.len(),
+            "search_by_keywords: Evaluating union of E1+E6 candidates"
         );
 
         // Step 3: Compute keyword-enhanced scores
@@ -157,9 +213,10 @@ impl Handlers {
             None
         };
 
-        let mut scored_results: Vec<(Uuid, f32, f32, f32, u32)> = Vec::with_capacity(candidates.len());
+        let mut scored_results: Vec<(Uuid, f32, f32, f32, u32)> = Vec::with_capacity(e1_candidates.len());
 
-        for candidate in &candidates {
+        // Score E1 candidates (they have full fingerprints)
+        for candidate in &e1_candidates {
             let cand_id = candidate.fingerprint.id;
             let cand_e1 = &candidate.fingerprint.semantic.e1_semantic;
             let cand_e6 = &candidate.fingerprint.semantic.e6_sparse;
@@ -186,6 +243,34 @@ impl Handlers {
 
             if blended_score >= min_score {
                 scored_results.push((cand_id, blended_score, e1_sim, e6_with_expansion, matching_count));
+            }
+        }
+
+        // Score E6-only candidates (blind spots that E1 missed)
+        // These don't have full fingerprints loaded, so we use term overlap count as E6 score
+        // and 0.0 for E1 (since E1 didn't find them, their E1 similarity is likely low)
+        // The E6 score is normalized: term_count / query_terms to get [0, 1] range
+        let query_term_count = query_e6.nnz() as f32;
+        if query_term_count > 0.0 {
+            for (cand_id, term_overlap) in &e6_candidates {
+                // Skip if already scored from E1 results
+                if candidate_map.contains_key(cand_id) {
+                    continue;
+                }
+
+                // E6-only: Use normalized term overlap as E6 score
+                // E1 score is 0 since E1 didn't find this candidate
+                let e1_sim = 0.0;
+                let e6_sim = (*term_overlap as f32) / query_term_count;
+                let matching_count = *term_overlap as u32;
+
+                // Blend scores: (1-blend)*E1 + blend*E6
+                // For E6-only candidates, E6 contribution dominates (E1 is 0)
+                let blended_score = e1_weight * e1_sim + e6_blend * e6_sim;
+
+                if blended_score >= min_score {
+                    scored_results.push((*cand_id, blended_score, e1_sim, e6_sim, matching_count));
+                }
             }
         }
 

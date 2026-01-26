@@ -44,6 +44,10 @@ context-graph-core = { path = "../context-graph-core", features = ["test-utils"]
 default = ["cuda"]
 cuda = []  # REQUIRED: RTX 5090 Blackwell CUDA support (candle integration pending CUDA 13.1 support)
 cudnn = ["cuda"]  # Future: cuDNN support (requires cuda)
+# FAISS GPU support - requires FAISS rebuilt with CUDA 13.1+ and sm_120 support.
+# Enable this ONLY after running: scripts/rebuild_faiss_gpu.sh
+# This feature links against libfaiss_c.so and enables GPU vector indexing.
+faiss-working = ["cuda"]
 
 [build-dependencies]
 # Future: cc = "1.0"

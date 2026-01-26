@@ -1,84 +1,24 @@
 //! Self-attention forward pass for Longformer model.
 //!
 //! This module implements multi-head self-attention with Q, K, V projections.
-//! Supports global attention masking for causal marker tokens.
+//!
+//! # Current Implementation Status
+//!
+//! This implementation uses **standard full attention**, NOT the Longformer sliding
+//! window + global attention mechanism. The asymmetric cause/effect embeddings come
+//! solely from learned projection matrices (W_cause, W_effect), NOT from marker-weighted
+//! attention.
+//!
+//! As of 2026-01-21 benchmarks, E5 contributes -0.7% (negative) on real data because
+//! the perturbed identity projections produce cause/effect vectors with ~0.97-0.99
+//! cosine similarity - essentially no meaningful asymmetry.
 
-use candle_core::{Device, Tensor};
+use candle_core::Tensor;
 
 use crate::error::{EmbeddingError, EmbeddingResult};
 
 use super::super::config::LongformerConfig;
 use super::super::weights::LongformerAttentionWeights;
-
-/// Create a global attention mask tensor from token indices.
-///
-/// Tokens with global attention can attend to ALL other tokens (not just local window).
-/// This is used to give special attention to causal marker tokens.
-///
-/// # Arguments
-///
-/// * `seq_len` - Total sequence length
-/// * `global_indices` - Token indices that should have global attention
-/// * `device` - Device to create tensor on
-///
-/// # Returns
-///
-/// Tensor of shape [1, seq_len] with 1.0 for global attention tokens, 0.0 otherwise
-pub fn create_global_attention_mask(
-    seq_len: usize,
-    global_indices: &[usize],
-    device: &Device,
-) -> EmbeddingResult<Tensor> {
-    // Create a zeros tensor
-    let mut mask_data = vec![0.0f32; seq_len];
-
-    // Set global attention positions to 1.0
-    for &idx in global_indices {
-        if idx < seq_len {
-            mask_data[idx] = 1.0;
-        }
-    }
-
-    Tensor::from_slice(&mask_data, (1, seq_len), device).map_err(|e| EmbeddingError::GpuError {
-        message: format!("Failed to create global attention mask: {}", e),
-    })
-}
-
-/// Create attention weights for marker tokens.
-///
-/// This creates a per-token weight tensor that gives higher weight to
-/// marker tokens during attention computation.
-///
-/// # Arguments
-///
-/// * `seq_len` - Total sequence length
-/// * `marker_indices` - Token indices of causal markers
-/// * `marker_weight` - Weight multiplier for marker tokens (e.g., 2.0)
-/// * `device` - Device to create tensor on
-///
-/// # Returns
-///
-/// Tensor of shape [1, seq_len] with weights for each token
-pub fn create_marker_attention_weights(
-    seq_len: usize,
-    marker_indices: &[usize],
-    marker_weight: f32,
-    device: &Device,
-) -> EmbeddingResult<Tensor> {
-    // Default weight is 1.0 for all tokens
-    let mut weights_data = vec![1.0f32; seq_len];
-
-    // Increase weight for marker tokens
-    for &idx in marker_indices {
-        if idx < seq_len {
-            weights_data[idx] = marker_weight;
-        }
-    }
-
-    Tensor::from_slice(&weights_data, (1, seq_len), device).map_err(|e| EmbeddingError::GpuError {
-        message: format!("Failed to create marker attention weights: {}", e),
-    })
-}
 
 /// Dimensions for Q/K/V projection operations.
 struct ProjectionDims {

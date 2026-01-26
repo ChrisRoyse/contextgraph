@@ -106,6 +106,14 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         self.search_sparse_impl(sparse_query, top_k).await
     }
 
+    async fn search_e6_sparse(
+        &self,
+        sparse_query: &SparseVector,
+        max_candidates: usize,
+    ) -> CoreResult<Vec<(Uuid, usize)>> {
+        self.search_e6_sparse_impl(sparse_query, max_candidates).await
+    }
+
     async fn store_batch(
         &self,
         fingerprints: Vec<TeleologicalFingerprint>,

@@ -11,7 +11,7 @@ use std::path::PathBuf;
 use async_trait::async_trait;
 use uuid::Uuid;
 
-use context_graph_core::error::CoreResult;
+use context_graph_core::error::{CoreError, CoreResult};
 use context_graph_core::traits::{
     TeleologicalMemoryStore, TeleologicalSearchOptions, TeleologicalSearchResult,
     TeleologicalStorageBackend,
@@ -71,6 +71,16 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         top_k: usize,
     ) -> CoreResult<Vec<(Uuid, f32)>> {
         self.search_sparse_async(sparse_query, top_k).await
+    }
+
+    async fn search_e6_sparse(
+        &self,
+        sparse_query: &SparseVector,
+        max_candidates: usize,
+    ) -> CoreResult<Vec<(Uuid, usize)>> {
+        // Delegate to the existing e6_sparse_recall method in inverted_index.rs
+        self.e6_sparse_recall(sparse_query, max_candidates)
+            .map_err(|e| CoreError::IndexError(e.to_string()))
     }
 
     // ==================== Batch Operations ====================

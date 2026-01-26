@@ -219,7 +219,7 @@ impl CausalModel {
         )?;
 
         tracing::info!(
-            "CausalModel loaded: {} layers, hidden_size={}, with causal projections",
+            "CausalModel loaded: {} layers, hidden_size={}, with marker detection + causal projections",
             weights.config.num_hidden_layers,
             weights.config.hidden_size
         );
@@ -273,23 +273,23 @@ impl CausalModel {
     }
 
     // =========================================================================
-    // ASYMMETRIC DUAL EMBEDDING METHODS (ARCH-15 Compliance)
+    // ASYMMETRIC DUAL EMBEDDING METHODS
     // =========================================================================
     //
-    // These methods produce genuinely different cause and effect vectors through:
-    // 1. Causal marker detection (cause/effect indicator tokens)
-    // 2. Marker-weighted pooling (2x weight on relevant markers)
-    // 3. Learned projections (W_cause, W_effect) initialized as perturbed identities
+    // These methods produce differentiated cause/effect vectors using:
     //
-    // This creates meaningful asymmetry for causal retrieval with:
-    // - Target asymmetry ratio: 1.2-2.0 (vs 1.00 with old rotation approach)
-    // - E5 contribution: >5% (vs 0% with old approach)
+    // 1. Causal marker detection (cause: "because", "due to"; effect: "therefore", "results in")
+    // 2. Marker-weighted pooling (2.5x boost on relevant markers)
+    // 3. Learned projections (W_cause, W_effect perturbed identities)
+    //
+    // The marker-weighted pooling creates genuine asymmetry by emphasizing
+    // different parts of the input for cause vs effect embeddings.
     // =========================================================================
 
     /// Embed text as a potential CAUSE in causal relationships.
     ///
-    /// Uses marker-weighted pooling focused on cause indicators and
-    /// applies the W_cause projection matrix.
+    /// Uses marker-weighted pooling with cause indicators boosted (because, due to, etc.)
+    /// and applies the W_cause projection matrix.
     ///
     /// # Arguments
     /// * `content` - Text content to embed as a cause
@@ -303,8 +303,8 @@ impl CausalModel {
 
     /// Embed text as a potential EFFECT in causal relationships.
     ///
-    /// Uses marker-weighted pooling focused on effect indicators and
-    /// applies the W_effect projection matrix.
+    /// Uses marker-weighted pooling with effect indicators boosted (therefore, results in, etc.)
+    /// and applies the W_effect projection matrix.
     ///
     /// # Arguments
     /// * `content` - Text content to embed as an effect
@@ -318,9 +318,10 @@ impl CausalModel {
 
     /// Embed text as BOTH cause and effect roles simultaneously.
     ///
-    /// Produces two distinct 768D vectors from a single encoder pass:
-    /// - cause_vec: Pooled with cause-marker weights, projected by W_cause
-    /// - effect_vec: Pooled with effect-marker weights, projected by W_effect
+    /// Produces two differentiated 768D vectors from a single encoder pass.
+    /// Asymmetry comes from TWO sources:
+    /// 1. Marker-weighted pooling with different weights for cause vs effect
+    /// 2. Learned projection matrices (W_cause, W_effect)
     ///
     /// # Architecture
     ///
@@ -329,17 +330,18 @@ impl CausalModel {
     ///     |
     /// [Tokenize + Detect Causal Markers]
     ///     |
-    /// [Encoder (single pass)]
+    /// [Encoder] (single pass)
     ///     |
-    ///     +------------------------+
-    ///     |                        |
-    /// [Cause-Weighted Pool]   [Effect-Weighted Pool]
-    ///     |                        |
-    /// [W_cause Projection]    [W_effect Projection]
-    ///     |                        |
-    /// [L2 Normalize]          [L2 Normalize]
-    ///     |                        |
-    /// cause_vec (768D)        effect_vec (768D)
+    ///     +---------------------------+
+    ///     |                           |
+    /// [Cause-Weighted Pool]    [Effect-Weighted Pool]
+    /// (boost: because, due to) (boost: therefore, results)
+    ///     |                           |
+    /// [W_cause Projection]     [W_effect Projection]
+    ///     |                           |
+    /// [L2 Normalize]           [L2 Normalize]
+    ///     |                           |
+    /// cause_vec (768D)         effect_vec (768D)
     /// ```
     ///
     /// # Arguments
@@ -347,9 +349,6 @@ impl CausalModel {
     ///
     /// # Returns
     /// Tuple of (cause_vector, effect_vector), each 768D
-    ///
-    /// # Performance
-    /// Single encoder forward pass + dual pooling + projection.
     pub async fn embed_dual(&self, content: &str) -> EmbeddingResult<(Vec<f32>, Vec<f32>)> {
         self.ensure_initialized()?;
 
@@ -398,26 +397,6 @@ impl CausalModel {
         Ok(())
     }
 
-    /// Internal helper to embed text directly via GPU forward pass.
-    ///
-    /// Used by both standard embed() and the dual embedding methods.
-    async fn embed_text_internal(&self, text: &str) -> EmbeddingResult<Vec<f32>> {
-        let state = self
-            .model_state
-            .read()
-            .map_err(|e| EmbeddingError::InternalError {
-                message: format!("CausalModel failed to acquire read lock: {}", e),
-            })?;
-
-        match &*state {
-            ModelState::Loaded { weights, tokenizer, .. } => {
-                gpu_forward(text, weights, tokenizer)
-            }
-            ModelState::Unloaded => Err(EmbeddingError::NotInitialized {
-                model_id: ModelId::Causal,
-            }),
-        }
-    }
 }
 
 #[async_trait]

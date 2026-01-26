@@ -313,7 +313,15 @@ impl Handlers {
             hash
         };
 
-        let merged_fingerprint = TeleologicalFingerprint::new(merged_semantic, content_hash);
+        // E6-FIX: Extract e6_sparse BEFORE creating TeleologicalFingerprint
+        // The merged SemanticFingerprint.e6_sparse contains the merged sparse vector
+        // (union/intersection/weighted_average of source E6 vectors).
+        // This must be copied to TeleologicalFingerprint.e6_sparse for inverted index storage.
+        let e6_sparse = merged_semantic.e6_sparse.clone();
+
+        // E6-FIX: Chain .with_e6_sparse() to propagate the merged E6 sparse vector
+        let merged_fingerprint = TeleologicalFingerprint::new(merged_semantic, content_hash)
+            .with_e6_sparse(e6_sparse);
         let merged_id = merged_fingerprint.id;
 
         // Step 5: Generate reversal hash and store reversal record

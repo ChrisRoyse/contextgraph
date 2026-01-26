@@ -145,8 +145,6 @@ pub struct CausalProjectionWeights {
     pub effect_projection: Tensor,
     /// Effect projection bias: [hidden_size]
     pub effect_bias: Tensor,
-    /// Hidden size for validation
-    pub hidden_size: usize,
 }
 
 impl CausalProjectionWeights {
@@ -223,7 +221,6 @@ impl CausalProjectionWeights {
             cause_bias,
             effect_projection,
             effect_bias,
-            hidden_size,
         })
     }
 

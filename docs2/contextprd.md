@@ -47,6 +47,45 @@ This is a **GPU-first system**. All compute-intensive operations use GPU over CP
 
 ## 1. CORE PHILOSOPHY: ALL EMBEDDERS ARE SIGNAL
 
+### 1.0 System Goal: Multi-Perspective Navigation
+
+**GOAL**: Use all 13 embedders to navigate massive datasets from multiple angles to optimally find all answers one seeks.
+
+Each embedder provides a unique lens on the knowledge graph. The AI model receives **FULL VISIBILITY** into all 13 embedder scores to guide intelligent exploration of the knowledge space.
+
+| Capability | Description |
+|------------|-------------|
+| **Full Visibility** | AI sees all 13 embedder scores per result, categorized by SEMANTIC, RELATIONAL, STRUCTURAL, TEMPORAL |
+| **Blind Spot Detection** | Highlights when enhancers (E5-E13) found what E1 missed (enhancer >= 0.5 AND E1 < 0.3) |
+| **Navigation Hints** | Suggests which embedder-specific tools to explore next based on score patterns |
+| **Agreement Metrics** | Shows how many embedders agree on a result's relevance (agreementCount) |
+
+**How AI Uses This Information**:
+- Identify which embedders found strong matches for different query aspects
+- Navigate to specialized tools (`search_code`, `search_by_entities`, `search_causes`, etc.)
+- Understand blind spots where E1 missed but other embedders found signal
+- Make informed decisions about which perspective to explore next
+
+**Example Response Structure**:
+```json
+{
+  "fingerprintId": "uuid",
+  "similarity": 0.75,
+  "e1Score": 0.25,
+  "embedderScores": {
+    "semantic": { "E1_Semantic": 0.25, "E7_Code": 0.85, ... },
+    "relational": { "E11_Entity": 0.72, ... },
+    "structural": { "E9_HDC": 0.45 },
+    "temporal": { "E2_Recency": 0.90, ... }
+  },
+  "agreementCount": 5,
+  "blindSpots": [
+    { "embedder": "E7_Code", "score": 0.85, "e1Score": 0.25, "finding": "E7_Code found via code patterns but E1 missed" }
+  ],
+  "navigationHints": ["E7 (code) found more than E1 - try search_code for code patterns"]
+}
+```
+
 ### 1.1 The Signal, Not Noise Principle
 
 **FUNDAMENTAL**: Every embedder provides SIGNAL, never noise. Each of the 13 embedders captures a unique dimension of meaning that E1 (semantic) alone cannot see.

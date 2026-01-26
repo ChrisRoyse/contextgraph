@@ -463,14 +463,15 @@ async fn test_embed_dual_returns_two_768d_vectors() {
     );
 }
 
-/// CRITICAL TEST: Verify that cause and effect vectors are DIFFERENT.
+/// Test: Verify that cause and effect vectors are meaningfully different.
 ///
-/// This is the core assertion for ARCH-15 compliance - if vectors are identical,
-/// asymmetric similarity CANNOT function.
+/// With marker-weighted pooling, cause/effect vectors should have meaningful
+/// asymmetry (< 0.95 cosine similarity) when the text contains causal markers.
 #[tokio::test]
 async fn test_embed_dual_produces_different_vectors() {
     let model = create_and_load_model().await;
-    let content = "Smoking causes lung cancer";
+    // Use text with clear causal markers to maximize asymmetry
+    let content = "Smoking causes lung cancer because of tar buildup, therefore leading to respiratory failure";
     let (cause_vec, effect_vec) = model.embed_dual(content).await.expect("embed_dual");
 
     // Calculate cosine similarity between cause and effect vectors
@@ -483,18 +484,16 @@ async fn test_embed_dual_produces_different_vectors() {
     let norm_effect: f32 = effect_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
     let cosine_sim = dot / (norm_cause * norm_effect);
 
-    // Vectors should be similar (same content) but NOT identical
-    // We expect similarity < 0.999 (identical vectors would have similarity ~1.0)
+    // With marker-weighted pooling, we expect meaningful asymmetry
+    // Threshold < 0.98 ensures the marker weighting is having an effect
     assert!(
-        cosine_sim < 0.999,
-        "Cause and effect vectors must be different! \
-         Cosine similarity = {} (vectors are too similar). \
-         ARCH-15 requires asymmetric embeddings for cause vs effect roles.",
+        cosine_sim < 0.98,
+        "Cause and effect vectors should have meaningful asymmetry with marker-weighted pooling! \
+         Cosine similarity = {} (expected < 0.98 for text with causal markers).",
         cosine_sim
     );
 
-    // They should still be reasonably similar (same content, different perspective)
-    // If similarity is too low, something is wrong with the instruction prefix approach
+    // They should still be reasonably similar (same content)
     assert!(
         cosine_sim > 0.5,
         "Cause and effect vectors should still be related! \
@@ -503,7 +502,7 @@ async fn test_embed_dual_produces_different_vectors() {
     );
 
     println!(
-        "[VERIFIED] Cause-Effect cosine similarity: {:.4} (target: 0.5-0.99)",
+        "[OK] Cause-Effect cosine similarity: {:.4} (target: 0.5-0.98 for text with causal markers)",
         cosine_sim
     );
 }

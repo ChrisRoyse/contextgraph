@@ -113,6 +113,68 @@ fn compile_cuda_kernels() {
             }
         }
     }
+
+    // Link FAISS C library when faiss-working feature is enabled
+    #[cfg(feature = "faiss-working")]
+    {
+        link_faiss_library();
+    }
+}
+
+/// Link FAISS C library (libfaiss_c.so).
+///
+/// Searches common installation paths and validates library exists before linking.
+/// Fails fast with clear error message if FAISS is not installed.
+#[cfg(feature = "faiss-working")]
+fn link_faiss_library() {
+    let home = env::var("HOME").unwrap_or_else(|_| "/home".to_string());
+
+    // Search paths in priority order
+    let search_paths = [
+        format!("{}/.local/lib", home),
+        "/usr/local/lib".to_string(),
+        "/usr/lib".to_string(),
+        "/usr/lib/x86_64-linux-gnu".to_string(),
+    ];
+
+    for path in &search_paths {
+        let lib_path = PathBuf::from(path).join("libfaiss_c.so");
+        if lib_path.exists() {
+            println!("cargo:rustc-link-search=native={}", path);
+            println!("cargo:rustc-link-lib=dylib=faiss_c");
+            println!("cargo:rustc-link-lib=dylib=faiss");
+            println!(
+                "cargo:warning=FAISS GPU enabled: linking against {}",
+                lib_path.display()
+            );
+            return;
+        }
+    }
+
+    // FAIL FAST - FAISS library not found
+    let searched = search_paths
+        .iter()
+        .map(|p| format!("  - {}/libfaiss_c.so", p))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    panic!(
+        "\n\
+        FAISS LIBRARY NOT FOUND - BUILD FAILED\n\
+        \n\
+        The 'faiss-working' feature is enabled but libfaiss_c.so was not found.\n\
+        FAISS must be rebuilt with CUDA 13.1+ and sm_120 (RTX 5090) support.\n\
+        \n\
+        To fix this, run:\n\
+          ./scripts/rebuild_faiss_gpu.sh\n\
+        \n\
+        Searched paths:\n\
+        {}\n\
+        \n\
+        If FAISS is installed elsewhere, set LIBRARY_PATH:\n\
+          export LIBRARY_PATH=/path/to/faiss/lib:$LIBRARY_PATH\n",
+        searched
+    );
 }
 
 #[cfg(feature = "cuda")]
