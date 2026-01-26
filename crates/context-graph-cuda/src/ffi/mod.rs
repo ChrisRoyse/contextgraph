@@ -18,11 +18,18 @@
 pub mod cuda_driver;
 pub mod knn;
 
-// FAISS module disabled - crashes on WSL2 with CUDA 13.1 due to
-// static initialization bugs. Using custom GPU k-NN kernel instead.
-// pub mod faiss;
+// FAISS module - requires FAISS rebuilt with lazy CUDA initialization.
+// On WSL2 with CUDA 13.1, the standard FAISS build crashes during static
+// initialization due to cudart bugs. The custom k-NN in knn.rs uses the
+// CUDA Driver API which works correctly.
+//
+// To enable FAISS GPU:
+// 1. Rebuild FAISS from source with: cmake -DFAISS_ENABLE_GPU=ON
+//    -DCMAKE_CUDA_ARCHITECTURES=120 -DBUILD_SHARED_LIBS=ON
+// 2. Ensure FAISS uses lazy CUDA initialization
+// 3. Uncomment: pub mod faiss;
+#[cfg(feature = "faiss-working")]
+pub mod faiss;
 
 pub use cuda_driver::*;
 pub use knn::*;
-
-// pub use faiss::*;

@@ -1,14 +1,17 @@
 //! Memory operation tool implementations (inject_context, store_memory, search_graph).
 //!
-//! # Multi-Space Search (TASK-MULTISPACE)
+//! # Multi-Space Search (ARCH-12, ARCH-21)
 //!
-//! The `search_graph` tool supports three search strategies:
+//! The `search_graph` tool uses the storage layer directly with three strategies:
 //!
-//! - `e1_only`: Original E1-only HNSW search (default, backward compatible)
-//! - `multi_space`: Weighted fusion of semantic embedders
-//! - `pipeline`: Full 3-stage retrieval
+//! - `e1_only`: E1-only HNSW search (fast, simple queries)
+//! - `multi_space`: Weighted RRF fusion of E1 + enhancers (default - uses weight profiles)
+//! - `pipeline`: Full 3-stage retrieval (E13 recall → E1 dense → E12 rerank)
 //!
-//! Temporal embedders (E2-E4) have weight 0.0 in semantic search per AP-71.
+//! E1 is the foundation (ARCH-12). Other embedders ENHANCE E1 by finding blind spots.
+//! Weight profiles control how much each embedder contributes (e.g., code_search boosts E7).
+//!
+//! Temporal embedders (E2-E4) are POST-RETRIEVAL only per ARCH-25, AP-73.
 //!
 //! # E5 Causal Asymmetric Similarity (ARCH-15, AP-77)
 //!
@@ -17,25 +20,12 @@
 //! - Asymmetric vectors: Uses `query.e5_as_cause` vs `doc.e5_as_effect` (or reverse)
 //! - Direction modifiers: cause→effect (1.2x), effect→cause (0.8x)
 //! - Auto-profile selection: Causal queries auto-select "causal_reasoning" profile
-//!
-//! # Autonomous Multi-Embedder Enrichment (ARCH-12, ARCH-21)
-//!
-//! When enrichMode is enabled, the system autonomously:
-//! - Detects query types (causal, code, entity, intent, keyword)
-//! - Selects appropriate enhancer embedders
-//! - Runs E1 foundation + parallel enhancer searches
-//! - Combines results via Weighted RRF
-//! - Reports agreement metrics and blind spots
 
 use std::sync::Arc;
 
 use serde_json::json;
 use sha2::{Digest, Sha256};
 use tracing::{debug, error, info, warn};
-
-use super::enrichment_dtos::EnrichmentMode;
-use super::enrichment_pipeline::EnrichmentPipeline;
-use super::query_type_detector::build_enrichment_config;
 
 use context_graph_core::causal::asymmetric::{
     compute_e5_asymmetric_fingerprint_similarity, detect_causal_query_intent,
@@ -614,33 +604,23 @@ impl Handlers {
             .unwrap_or(false);
 
         // =========================================================================
-        // AUTONOMOUS MULTI-EMBEDDER ENRICHMENT (ARCH-12, ARCH-21)
+        // SEARCH STRATEGY (ARCH-12, ARCH-21)
         // =========================================================================
-        // Parse enrichMode parameter (default: Light for enhanced search)
-        // - Off: E1-only search (legacy behavior)
-        // - Light: E1 + 1-2 enhancers, basic agreement metrics
-        // - Full: All relevant embedders, blind spot detection
-        let enrich_mode = args
-            .get("enrichMode")
-            .and_then(|v| v.as_str())
-            .and_then(EnrichmentMode::from_str)
-            .unwrap_or(EnrichmentMode::Light);
-
-        debug!(
-            enrich_mode = ?enrich_mode,
-            "search_graph: Enrichment mode configured"
-        );
-
-        // TASK-MULTISPACE: Parse search strategy (default: e1_only for backward compatibility)
+        // Parse strategy parameter (default: multi_space for optimal blind spot detection)
+        // - e1_only: E1-only HNSW search (fast, simple queries)
+        // - multi_space: Weighted RRF fusion of E1 + enhancers (default - uses weight profiles)
+        // - pipeline: Full 3-stage retrieval (E13 recall → E1 dense → E12 rerank)
+        //
+        // E1 is the foundation (ARCH-12). Other embedders ENHANCE E1 by finding blind spots.
         let strategy = args
             .get("strategy")
             .and_then(|v| v.as_str())
             .map(|s| match s {
-                "multi_space" => SearchStrategy::MultiSpace,
+                "e1_only" => SearchStrategy::E1Only,
                 "pipeline" => SearchStrategy::Pipeline,
-                _ => SearchStrategy::E1Only, // "e1_only" or unknown
+                _ => SearchStrategy::MultiSpace, // "multi_space" or unknown defaults to multi-space
             })
-            .unwrap_or(SearchStrategy::E1Only);
+            .unwrap_or(SearchStrategy::MultiSpace); // Default to multi-space for optimal results
 
         // TASK-MULTISPACE: Parse weight profile (default: "semantic_search")
         let weight_profile = args
@@ -1073,56 +1053,15 @@ impl Handlers {
         };
 
         // =========================================================================
-        // ENRICHMENT PIPELINE PATH (when enrichMode is enabled)
+        // STORAGE LAYER SEARCH (ARCH-12, ARCH-21)
         // =========================================================================
-        // When enrichMode != Off, use the autonomous multi-embedder enrichment pipeline.
-        // This provides: query type detection, parallel enhancer searches, RRF fusion,
-        // agreement metrics, and blind spot detection.
-        if enrich_mode.is_enabled() {
-            let enrichment_config = build_enrichment_config(&search_query, enrich_mode);
-
-            debug!(
-                enrich_mode = ?enrich_mode,
-                detected_types = ?enrichment_config.detected_types,
-                selected_embedders = ?enrichment_config.selected_embedders,
-                "search_graph: Using enrichment pipeline"
-            );
-
-            let pipeline = EnrichmentPipeline::new(Arc::clone(&self.teleological_store));
-
-            match pipeline
-                .execute(&query_embedding, &enrichment_config, options, include_content)
-                .await
-            {
-                Ok(mut enriched_response) => {
-                    // Set the query in the response
-                    enriched_response.query = query.to_string();
-
-                    // Serialize the enriched response
-                    let response_json = match serde_json::to_value(&enriched_response) {
-                        Ok(json) => json,
-                        Err(e) => {
-                            error!(error = %e, "search_graph: Enriched response serialization FAILED");
-                            return self.tool_error(
-                                id,
-                                &format!("Response serialization failed: {}", e),
-                            );
-                        }
-                    };
-
-                    return self.tool_result(id, response_json);
-                }
-                Err(e) => {
-                    error!(error = %e, "search_graph: Enrichment pipeline FAILED");
-                    return self.tool_error(id, &format!("Enrichment failed: {}", e));
-                }
-            }
-        }
-
-        // =========================================================================
-        // LEGACY PATH (enrichMode = Off)
-        // =========================================================================
-        // Original E1-based search with optional asymmetric reranking.
+        // All search goes through the storage layer which handles:
+        // - E1 foundation search (ARCH-12)
+        // - Multi-space RRF fusion when strategy=multi_space (ARCH-21)
+        // - Weight profile application via resolve_weights()
+        // - All 13 embedder scores computed for each result
+        //
+        // Blind spots and agreement metrics are derived from embedder_scores in response.
         match self
             .teleological_store
             .search_semantic(&query_embedding, options)
@@ -1262,11 +1201,32 @@ impl Handlers {
                         let dominant_idx = r.dominant_embedder();
                         let dominant_name = embedder_names::name(dominant_idx);
 
+                        // Compute blind spots: enhancers that found this but E1 missed
+                        // Per ARCH-12: E1 is foundation. Blind spot = enhancer >= 0.5 AND E1 < 0.3
+                        let e1_score = r.embedder_scores[0];
+                        let blind_spots = compute_blind_spots(&r.embedder_scores, e1_score);
+
+                        // Compute agreement count: how many embedders have score >= 0.5
+                        let agreement_count = r.embedder_scores.iter()
+                            .filter(|&&s| s >= 0.5)
+                            .count();
+
+                        // Build embedder scores object with significant scores only (>= 0.1)
+                        let embedder_scores = build_embedder_scores_json(&r.embedder_scores);
+
                         let mut entry = json!({
                             "fingerprintId": r.fingerprint.id.to_string(),
                             "similarity": r.similarity,
-                            "dominantEmbedder": dominant_name
+                            "dominantEmbedder": dominant_name,
+                            "e1Score": e1_score,
+                            "embedderScores": embedder_scores,
+                            "agreementCount": agreement_count
                         });
+
+                        // Only include blindSpots if non-empty (helps AI understand why this was found)
+                        if !blind_spots.is_empty() {
+                            entry["blindSpots"] = json!(blind_spots);
+                        }
                         // Only include content field when includeContent=true
                         if include_content {
                             entry["content"] = match contents.get(i).and_then(|c| c.as_ref()) {
@@ -1739,6 +1699,111 @@ fn compute_position_label(result_seq: u64, current_seq: u64) -> String {
     }
 }
 
+// =============================================================================
+// BLIND SPOT DETECTION AND EMBEDDER SCORE HELPERS
+// =============================================================================
+
+/// Threshold for E1 "miss" - below this, E1 would have missed the result.
+const E1_MISS_THRESHOLD: f32 = 0.3;
+
+/// Threshold for enhancer "find" - above this, the enhancer found something useful.
+const ENHANCER_FIND_THRESHOLD: f32 = 0.5;
+
+/// Compute blind spots: enhancers that found this result but E1 missed.
+///
+/// A blind spot is when:
+/// - An enhancer embedder has score >= 0.5 (found something)
+/// - E1 (semantic) has score < 0.3 (would have missed it)
+///
+/// This tells the AI model: "This result would NOT have been found by E1 alone.
+/// You're seeing it because E7/E10/E5/etc. found it."
+///
+/// Per ARCH-12: E1 is foundation, other embedders ENHANCE by finding blind spots.
+///
+/// # Arguments
+/// * `embedder_scores` - All 13 embedder scores [E1, E2, ..., E13]
+/// * `e1_score` - E1 semantic score (passed separately for clarity)
+///
+/// # Returns
+/// Vector of human-readable blind spot descriptions
+fn compute_blind_spots(embedder_scores: &[f32; 13], e1_score: f32) -> Vec<String> {
+    let mut blind_spots = Vec::new();
+
+    // Only check for blind spots if E1 would have missed this result
+    if e1_score >= E1_MISS_THRESHOLD {
+        return blind_spots;
+    }
+
+    // Check each enhancer embedder
+    // E5 (Causal), E6 (Sparse/Keyword), E7 (Code), E10 (Intent), E11 (Entity)
+    let enhancers = [
+        (4, "E5_Causal"),
+        (5, "E6_Sparse"),
+        (6, "E7_Code"),
+        (9, "E10_Intent"),
+        (10, "E11_Entity"),
+    ];
+
+    for (idx, name) in enhancers {
+        let score = embedder_scores[idx];
+        if score >= ENHANCER_FIND_THRESHOLD {
+            blind_spots.push(format!(
+                "{} found ({:.2}) but E1_Semantic missed ({:.2})",
+                name, score, e1_score
+            ));
+        }
+    }
+
+    blind_spots
+}
+
+/// Build JSON object with significant embedder scores.
+///
+/// Only includes embedders with score >= 0.1 to reduce noise.
+/// This gives the AI model visibility into which embedders contributed.
+///
+/// # Arguments
+/// * `embedder_scores` - All 13 embedder scores
+///
+/// # Returns
+/// JSON object mapping embedder names to scores
+fn build_embedder_scores_json(embedder_scores: &[f32; 13]) -> serde_json::Value {
+    let mut scores = serde_json::Map::new();
+
+    // Map indices to embedder names (per constitution)
+    let names = [
+        "E1_Semantic",
+        "E2_Recency",
+        "E3_Periodic",
+        "E4_Sequence",
+        "E5_Causal",
+        "E6_Sparse",
+        "E7_Code",
+        "E8_Graph",
+        "E9_HDC",
+        "E10_Intent",
+        "E11_Entity",
+        "E12_ColBERT",
+        "E13_SPLADE",
+    ];
+
+    for (idx, &name) in names.iter().enumerate() {
+        let score = embedder_scores[idx];
+        // Only include significant scores (>= 0.1) to reduce noise
+        if score >= 0.1 {
+            scores.insert(
+                name.to_string(),
+                serde_json::Value::Number(
+                    serde_json::Number::from_f64(score as f64)
+                        .unwrap_or_else(|| serde_json::Number::from(0)),
+                ),
+            );
+        }
+    }
+
+    serde_json::Value::Object(scores)
+}
+
 #[cfg(test)]
 mod tests {
     //! Tests for memory_tools validation logic (BUG-001 and BUG-002 fixes).
@@ -2068,5 +2133,108 @@ mod tests {
         assert!(score >= 0.0, "Score should be >= 0.0");
         assert!(score <= 1.0, "Score should be <= 1.0");
         println!("[VERIFIED] ColBERT MaxSim normalized to [0, 1]: {}", score);
+    }
+
+    // =========================================================================
+    // BLIND SPOT DETECTION TESTS
+    // =========================================================================
+
+    use super::{compute_blind_spots, build_embedder_scores_json, E1_MISS_THRESHOLD, ENHANCER_FIND_THRESHOLD};
+
+    #[test]
+    fn test_blind_spot_detection_e7_found_e1_missed() {
+        // E7 (Code) found with 0.8, E1 missed with 0.2
+        let mut scores = [0.0_f32; 13];
+        scores[0] = 0.2;  // E1 below threshold (0.3)
+        scores[6] = 0.8;  // E7 above threshold (0.5)
+
+        let blind_spots = compute_blind_spots(&scores, scores[0]);
+        assert_eq!(blind_spots.len(), 1, "Should detect one blind spot");
+        assert!(blind_spots[0].contains("E7_Code"), "Should mention E7_Code");
+        assert!(blind_spots[0].contains("E1_Semantic"), "Should mention E1 missed");
+        println!("[VERIFIED] Blind spot detected: {}", blind_spots[0]);
+    }
+
+    #[test]
+    fn test_blind_spot_detection_multiple_enhancers() {
+        // Multiple enhancers found, E1 missed
+        let mut scores = [0.0_f32; 13];
+        scores[0] = 0.15;  // E1 low
+        scores[4] = 0.6;   // E5 Causal found
+        scores[6] = 0.75;  // E7 Code found
+        scores[9] = 0.55;  // E10 Intent found
+
+        let blind_spots = compute_blind_spots(&scores, scores[0]);
+        assert_eq!(blind_spots.len(), 3, "Should detect three blind spots");
+        println!("[VERIFIED] Multiple blind spots: {:?}", blind_spots);
+    }
+
+    #[test]
+    fn test_no_blind_spot_when_e1_found() {
+        // E1 found the result (>= 0.3), so no blind spots
+        let mut scores = [0.0_f32; 13];
+        scores[0] = 0.5;  // E1 found it
+        scores[6] = 0.9;  // E7 also found it
+
+        let blind_spots = compute_blind_spots(&scores, scores[0]);
+        assert!(blind_spots.is_empty(), "No blind spots when E1 >= 0.3");
+        println!("[VERIFIED] No blind spots when E1 found the result");
+    }
+
+    #[test]
+    fn test_no_blind_spot_when_enhancers_low() {
+        // E1 missed but enhancers also low - not a true blind spot
+        let mut scores = [0.0_f32; 13];
+        scores[0] = 0.1;  // E1 missed
+        scores[6] = 0.4;  // E7 also low (< 0.5)
+
+        let blind_spots = compute_blind_spots(&scores, scores[0]);
+        assert!(blind_spots.is_empty(), "No blind spots when enhancers also low");
+        println!("[VERIFIED] No false positives when enhancers are low");
+    }
+
+    #[test]
+    fn test_blind_spot_thresholds() {
+        // Verify thresholds match constitution expectations
+        assert!((E1_MISS_THRESHOLD - 0.3).abs() < 0.001, "E1 miss threshold should be 0.3");
+        assert!((ENHANCER_FIND_THRESHOLD - 0.5).abs() < 0.001, "Enhancer find threshold should be 0.5");
+        println!("[VERIFIED] Thresholds: E1_miss={}, Enhancer_find={}", E1_MISS_THRESHOLD, ENHANCER_FIND_THRESHOLD);
+    }
+
+    #[test]
+    fn test_build_embedder_scores_filters_low_scores() {
+        // Build JSON with mix of high and low scores
+        let mut scores = [0.0_f32; 13];
+        scores[0] = 0.75;  // E1 high - should include
+        scores[6] = 0.5;   // E7 medium - should include
+        scores[4] = 0.05;  // E5 too low - should NOT include
+
+        let json = build_embedder_scores_json(&scores);
+        let obj = json.as_object().unwrap();
+
+        assert!(obj.contains_key("E1_Semantic"), "Should include E1 (0.75)");
+        assert!(obj.contains_key("E7_Code"), "Should include E7 (0.5)");
+        assert!(!obj.contains_key("E5_Causal"), "Should NOT include E5 (0.05)");
+        println!("[VERIFIED] JSON filters scores < 0.1: {:?}", obj.keys().collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn test_build_embedder_scores_all_names_correct() {
+        // Verify all embedder names are correct
+        let scores = [0.15_f32; 13];  // All above 0.1 threshold
+
+        let json = build_embedder_scores_json(&scores);
+        let obj = json.as_object().unwrap();
+
+        let expected_names = [
+            "E1_Semantic", "E2_Recency", "E3_Periodic", "E4_Sequence",
+            "E5_Causal", "E6_Sparse", "E7_Code", "E8_Graph", "E9_HDC",
+            "E10_Intent", "E11_Entity", "E12_ColBERT", "E13_SPLADE"
+        ];
+
+        for name in expected_names {
+            assert!(obj.contains_key(name), "Should have key {}", name);
+        }
+        println!("[VERIFIED] All 13 embedder names correct");
     }
 }

@@ -157,7 +157,7 @@ impl RocksDbTeleologicalStore {
             Self::transform_corruption_error(&path_str, e)
         })?;
 
-        // Create per-embedder index registry (12 HNSW indexes)
+        // Create per-embedder index registry (15 HNSW indexes)
         let index_registry = Arc::new(EmbedderIndexRegistry::new());
 
         info!(
@@ -166,14 +166,20 @@ impl RocksDbTeleologicalStore {
             index_registry.len()
         );
 
-        Ok(Self {
+        let store = Self {
             db: Arc::new(db),
             cache,
             path: path_buf,
             fingerprint_count: RwLock::new(None),
             soft_deleted: RwLock::new(HashMap::new()),
             index_registry,
-        })
+        };
+
+        // CRITICAL: Rebuild HNSW indexes from existing RocksDB fingerprints
+        // Without this, indexes are empty on every restart and multi-space search fails!
+        store.rebuild_indexes_from_store()?;
+
+        Ok(store)
     }
 
     /// Detect and remove stale RocksDB lock files.
@@ -637,6 +643,95 @@ impl RocksDbTeleologicalStore {
         self.db
             .cf_handle(CF_SOURCE_METADATA)
             .expect("CF_SOURCE_METADATA must exist - database initialization failed")
+    }
+}
+
+// ============================================================================
+// Index Rebuilding
+// ============================================================================
+
+impl RocksDbTeleologicalStore {
+    /// Rebuild all HNSW indexes from existing RocksDB fingerprints.
+    ///
+    /// This is called during `open()` to restore indexes on restart.
+    /// The HNSW indexes are in-memory and need to be rebuilt from RocksDB data.
+    ///
+    /// # FAIL FAST: Errors during rebuild cause store open to fail.
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) if rebuilding succeeds, Err if any fingerprint fails to add.
+    fn rebuild_indexes_from_store(&self) -> TeleologicalStoreResult<()> {
+        use crate::teleological::column_families::CF_FINGERPRINTS;
+        use crate::teleological::schema::parse_fingerprint_key;
+        use crate::teleological::serialization::deserialize_teleological_fingerprint;
+
+        let start = std::time::Instant::now();
+
+        let cf = self.get_cf(CF_FINGERPRINTS)?;
+        let iter = self.db.iterator_cf(cf, rocksdb::IteratorMode::Start);
+
+        let mut success_count = 0;
+        let mut error_count = 0;
+
+        for item in iter {
+            let (key, value) = item.map_err(|e| {
+                error!("FAIL FAST: RocksDB iteration failed during index rebuild: {}", e);
+                TeleologicalStoreError::rocksdb_op("iterate", CF_FINGERPRINTS, None, e)
+            })?;
+
+            // Parse fingerprint ID from key
+            let id = parse_fingerprint_key(&key);
+
+            // Skip soft-deleted fingerprints
+            if self.is_soft_deleted(&id) {
+                continue;
+            }
+
+            // Deserialize fingerprint
+            let fp = deserialize_teleological_fingerprint(&value);
+
+            // Add to HNSW indexes - FAIL FAST on error
+            match self.add_to_indexes(&fp) {
+                Ok(()) => {
+                    success_count += 1;
+                }
+                Err(e) => {
+                    error!(
+                        "FAIL FAST: Failed to add fingerprint {} to indexes during rebuild: {}",
+                        id, e
+                    );
+                    error_count += 1;
+                    // Continue to count all errors, but we'll fail at the end
+                }
+            }
+        }
+
+        let elapsed = start.elapsed();
+
+        if error_count > 0 {
+            error!(
+                "FAIL FAST: Index rebuild failed with {} errors out of {} fingerprints in {:?}",
+                error_count, success_count + error_count, elapsed
+            );
+            return Err(TeleologicalStoreError::Internal(format!(
+                "Index rebuild failed: {} fingerprints could not be added to indexes",
+                error_count
+            )));
+        }
+
+        if success_count > 0 {
+            info!(
+                "Rebuilt HNSW indexes: {} fingerprints added to {} indexes in {:?}",
+                success_count,
+                self.index_registry.len(),
+                elapsed
+            );
+        } else {
+            debug!("No fingerprints to rebuild indexes from (empty store)");
+        }
+
+        Ok(())
     }
 }
 

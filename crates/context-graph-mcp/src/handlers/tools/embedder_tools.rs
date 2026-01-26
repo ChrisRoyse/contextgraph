@@ -594,32 +594,13 @@ impl Handlers {
 
         info!("list_embedder_indexes: Listing all 13 embedder indexes");
 
-        // Get memory count for reference
-        let sample_query = "test";
-        let sample_fingerprint = match self.multi_array_provider.embed_all(sample_query).await {
-            Ok(output) => output.fingerprint,
+        // Get actual memory count from store
+        let total_memories = match self.teleological_store.count().await {
+            Ok(count) => count,
             Err(e) => {
-                error!(error = %e, "list_embedder_indexes: Sample embedding FAILED");
-                return self.tool_error(id, &format!("Embedding failed: {}", e));
+                warn!(error = %e, "list_embedder_indexes: Failed to get memory count");
+                0
             }
-        };
-
-        let options = TeleologicalSearchOptions::quick(1)
-            .with_strategy(SearchStrategy::E1Only)
-            .with_min_similarity(0.0);
-
-        // Get approximate memory count
-        let total_memories = match self
-            .teleological_store
-            .search_semantic(&sample_fingerprint, options)
-            .await
-        {
-            Ok(_) => {
-                // We don't have direct access to memory count, estimate from search
-                // This would be replaced with actual count from store
-                0 // Placeholder
-            }
-            Err(_) => 0,
         };
 
         // Build index info for all 13 embedders

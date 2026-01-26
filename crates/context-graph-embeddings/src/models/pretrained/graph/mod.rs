@@ -35,7 +35,6 @@
 //! - `state`: Internal model state management
 //! - `encoding`: Graph-specific encoding utilities (relations, context)
 //! - `projections`: Asymmetric source/target projection weights
-//! - `marker_detection`: Structural relationship marker detection
 //! - `layer_norm`: LayerNorm implementation
 //! - `attention`: Self-attention for encoder layers
 //! - `ffn`: Feed-forward network implementation
@@ -50,7 +49,6 @@ mod encoding;
 mod ffn;
 mod forward;
 mod layer_norm;
-pub mod marker_detection;
 mod model;
 pub mod projections;
 mod state;
@@ -65,9 +63,4 @@ pub use constants::{
     GRAPH_DIMENSION, GRAPH_LATENCY_BUDGET_MS, GRAPH_MAX_TOKENS, GRAPH_MODEL_NAME,
     MAX_CONTEXT_NEIGHBORS,
 };
-pub use marker_detection::{
-    RelationshipDirection, StructuralMarkerResult, detect_graph_query_intent,
-    detect_structural_markers, detect_structural_markers_simple,
-};
 pub use model::GraphModel;
-pub use projections::{GraphProjectionWeights, GRAPH_PROJECTION_SEED};

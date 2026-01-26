@@ -135,18 +135,10 @@ impl SearchByKeywordsRequest {
     pub fn parse_strategy(&self) -> SearchStrategy {
         // User-specified strategy takes precedence
         match self.strategy.as_deref() {
-            Some("pipeline") => return SearchStrategy::Pipeline,
-            Some("multi_space") => return SearchStrategy::MultiSpace,
-            _ => {}
+            Some("pipeline") => SearchStrategy::Pipeline,
+            Some("e1_only") => SearchStrategy::E1Only,
+            _ => SearchStrategy::MultiSpace, // Default to multi-space for E6 enhancement
         }
-
-        // Auto-upgrade precision queries to Pipeline (Phase 4 E12/E13 integration)
-        if super::query_type_detector::should_auto_upgrade_to_pipeline(&self.query) {
-            return SearchStrategy::Pipeline;
-        }
-
-        // Default to MultiSpace
-        SearchStrategy::MultiSpace
     }
 
     /// Validate the request parameters.

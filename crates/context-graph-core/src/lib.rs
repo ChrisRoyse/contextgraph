@@ -52,6 +52,7 @@ pub mod stubs;
 pub mod teleological;
 pub mod traits;
 pub mod types;
+pub mod weights;
 
 // Re-exports for convenience
 pub use config::Config;
@@ -127,4 +128,10 @@ pub use graph::{
 pub use session::{
     IntentDrift, IntentSnapshot, IntentTracker, IntentTrajectoryStats,
     DEFAULT_DRIFT_THRESHOLD, DEFAULT_WINDOW_SIZE,
+};
+
+// Weight profiles - for multi-embedder search weight configuration
+pub use weights::{
+    get_weight_profile, get_profile_names, validate_weights, space_name,
+    WeightProfileError, WEIGHT_PROFILES,
 };

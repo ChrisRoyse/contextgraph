@@ -176,3 +176,7 @@ required-features = ["real-embeddings"]
 name = "e2-manual-verification"
 path = "src/bin/e2_manual_verification.rs"
 required-features = ["real-embeddings"]
+
+[[bin]]
+name = "weight-profile-bench"
+path = "src/bin/weight_profile_bench.rs"

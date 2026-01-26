@@ -65,6 +65,7 @@ use super::types::TeleologicalStoreError;
 
 use context_graph_core::code::CodeQueryType;
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
+use context_graph_core::weights::get_weight_profile;
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -347,7 +348,7 @@ impl RocksDbTeleologicalStore {
         query: &SemanticFingerprint,
         options: &TeleologicalSearchOptions,
     ) -> CoreResult<Vec<TeleologicalSearchResult>> {
-        let weights = self.resolve_weights(options);
+        let weights = self.resolve_weights(options)?;
         let k = (options.top_k * 3).max(50);
 
         // =========================================================================
@@ -625,7 +626,7 @@ impl RocksDbTeleologicalStore {
         // Per ARCH-18: Supports both WeightedSum and WeightedRRF fusion strategies
         // Per ARCH-GPU-06: Use GPU batch similarity when candidate count is high
         // =========================================================================
-        let weights = self.resolve_weights(options);
+        let weights = self.resolve_weights(options)?;
         let code_query_type = options.effective_code_query_type();
 
         // First, fetch all fingerprints for valid candidates
@@ -884,16 +885,31 @@ impl RocksDbTeleologicalStore {
 
     /// Resolve weight profile to weight array.
     ///
-    /// Returns DEFAULT_SEMANTIC_WEIGHTS if profile not found.
-    fn resolve_weights(&self, options: &TeleologicalSearchOptions) -> [f32; 13] {
-        // For now, use default weights. In the future, integrate with weights.rs profiles.
-        // TODO: Look up weight profile from options.weight_profile
-        if let Some(ref _profile) = options.weight_profile {
-            // Weight profiles are defined in MCP crate - use defaults here
-            // The MCP handler can resolve profiles before calling this
-            debug!("Weight profile specified but using defaults in storage layer");
+    /// Returns DEFAULT_SEMANTIC_WEIGHTS if no profile specified.
+    /// Returns error if specified profile is unknown (FAIL FAST).
+    fn resolve_weights(&self, options: &TeleologicalSearchOptions) -> CoreResult<[f32; 13]> {
+        match &options.weight_profile {
+            Some(profile_name) => {
+                let weights = get_weight_profile(profile_name).map_err(|e| {
+                    error!(
+                        profile = %profile_name,
+                        error = %e,
+                        "Failed to resolve weight profile - FAIL FAST"
+                    );
+                    CoreError::ValidationError {
+                        field: "weight_profile".to_string(),
+                        message: format!("Invalid weight profile: {}", e),
+                    }
+                })?;
+
+                info!(profile = %profile_name, "Using weight profile");
+                Ok(weights)
+            }
+            None => {
+                debug!("No weight profile specified, using default semantic weights");
+                Ok(DEFAULT_SEMANTIC_WEIGHTS)
+            }
         }
-        DEFAULT_SEMANTIC_WEIGHTS
     }
 
     /// Search E5 with asymmetric index selection (ARCH-15, AP-77).

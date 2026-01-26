@@ -134,23 +134,14 @@ impl SearchCausesRequest {
     ///
     /// Strategy selection priority:
     /// 1. User-specified strategy takes precedence
-    /// 2. Auto-upgrade to Pipeline if query is a precision query (quoted terms, keyword patterns)
-    /// 3. Default to MultiSpace
+    /// 2. Default to MultiSpace for optimal blind spot detection (ARCH-21)
     pub fn parse_strategy(&self) -> SearchStrategy {
         // User-specified strategy takes precedence
         match self.strategy.as_deref() {
-            Some("pipeline") => return SearchStrategy::Pipeline,
-            Some("multi_space") => return SearchStrategy::MultiSpace,
-            _ => {}
+            Some("pipeline") => SearchStrategy::Pipeline,
+            Some("e1_only") => SearchStrategy::E1Only,
+            _ => SearchStrategy::MultiSpace, // Default to multi-space for optimal blind spot detection
         }
-
-        // Auto-upgrade precision queries to Pipeline (Phase 4 E12/E13 integration)
-        if super::query_type_detector::should_auto_upgrade_to_pipeline(&self.query) {
-            return SearchStrategy::Pipeline;
-        }
-
-        // Default to MultiSpace
-        SearchStrategy::MultiSpace
     }
 
     /// Validate the request parameters.
@@ -655,15 +646,15 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_strategy_auto_upgrade_quoted() {
-        // Quoted terms should auto-upgrade to Pipeline (Phase 4 E12/E13 integration)
+    fn test_parse_strategy_no_strategy_defaults_to_multispace() {
+        // Without explicit strategy, defaults to MultiSpace for optimal blind spot detection
         let req = SearchCausesRequest {
             query: "find \"ConnectionRefused\" error".to_string(),
-            strategy: None, // No explicit strategy
+            strategy: None, // No explicit strategy - defaults to MultiSpace
             ..Default::default()
         };
-        assert_eq!(req.parse_strategy(), SearchStrategy::Pipeline);
-        println!("[PASS] parse_strategy auto-upgrades quoted terms to Pipeline");
+        assert_eq!(req.parse_strategy(), SearchStrategy::MultiSpace);
+        println!("[PASS] parse_strategy defaults to MultiSpace for blind spot detection");
     }
 
     #[test]

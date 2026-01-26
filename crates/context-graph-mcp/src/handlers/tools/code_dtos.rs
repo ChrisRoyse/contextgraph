@@ -189,23 +189,14 @@ impl SearchCodeRequest {
     ///
     /// Strategy selection priority:
     /// 1. User-specified Pipeline mode takes precedence
-    /// 2. Auto-upgrade to Pipeline if query is a precision query (quoted terms, keyword patterns)
-    /// 3. Map other modes to MultiSpace
-    ///
-    /// Note: Code search benefits from Pipeline for exact function names, error messages, etc.
+    /// 2. Default to MultiSpace for E7 enhancement (ARCH-21)
     pub fn parse_strategy(&self) -> SearchStrategy {
         // User-specified Pipeline mode takes precedence
         if self.search_mode == CodeSearchMode::Pipeline {
             return SearchStrategy::Pipeline;
         }
 
-        // Auto-upgrade precision queries to Pipeline (Phase 4 E12/E13 integration)
-        // Even code searches benefit from E12/E13 for exact function names, error strings
-        if super::query_type_detector::should_auto_upgrade_to_pipeline(&self.query) {
-            return SearchStrategy::Pipeline;
-        }
-
-        // Default to MultiSpace for code search
+        // Default to MultiSpace for code search with E7 enhancement
         SearchStrategy::MultiSpace
     }
 
