@@ -38,6 +38,7 @@ pub mod entity;
 pub mod error;
 pub mod fusion;
 pub mod graph;
+pub mod graph_linking;
 pub mod injection;
 pub mod index;
 pub mod marblestone;
@@ -122,6 +123,14 @@ pub use graph::{
     GraphDirection, ConnectivityContext, compute_graph_asymmetric_similarity,
     compute_graph_asymmetric_similarity_simple, compute_e8_asymmetric_fingerprint_similarity,
     compute_e8_asymmetric_full, detect_graph_query_intent, adjust_batch_graph_similarities,
+};
+
+// Graph linking types - K-NN graph construction and multi-relation edges
+// ARCH-18: E5/E8 asymmetric similarity, AP-77: fail fast on symmetric cosine violation
+pub use graph_linking::{
+    DirectedRelation, EdgeError, EdgeResult, EdgeStorageKey, EdgeThresholds,
+    EmbedderEdge, GraphLinkEdgeType, KnnGraph, TypedEdge, TypedEdgeStorageKey,
+    DEFAULT_THRESHOLDS, KNN_K, MIN_KNN_SIMILARITY, NN_DESCENT_ITERATIONS, NN_DESCENT_SAMPLE_RATE,
 };
 
 // Session intent tracking (Phase 5) - E10 intent drift detection

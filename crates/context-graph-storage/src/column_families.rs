@@ -50,7 +50,24 @@ pub mod cf_names {
     /// System metadata column family (rare access, no compression).
     pub const SYSTEM: &str = "system";
 
-    /// All column family names as a slice (8 total per PRD v6).
+    // ========== Graph Linking Column Families (TASK-GRAPHLINK-010) ==========
+
+    /// K-NN edges per embedder.
+    /// Key: [embedder_id: u8][source_uuid: 16 bytes] = 17 bytes
+    /// Value: serialized Vec<EmbedderEdge> (k neighbors)
+    pub const EMBEDDER_EDGES: &str = "embedder_edges";
+
+    /// Multi-relation typed edges.
+    /// Key: [source_uuid: 16 bytes][target_uuid: 16 bytes] = 32 bytes
+    /// Value: serialized TypedEdge
+    pub const TYPED_EDGES: &str = "typed_edges";
+
+    /// Typed edges indexed by edge type (secondary index).
+    /// Key: [edge_type: u8][source_uuid: 16 bytes] = 17 bytes
+    /// Value: target_uuid (16 bytes)
+    pub const TYPED_EDGES_BY_TYPE: &str = "typed_edges_by_type";
+
+    /// All column family names as a slice (11 total: 8 base + 3 graph linking).
     ///
     /// This is the canonical list per constitution.yaml specification.
     pub const ALL: &[&str] = &[
@@ -62,6 +79,9 @@ pub mod cf_names {
         TAGS,
         SOURCES,
         SYSTEM,
+        EMBEDDER_EDGES,
+        TYPED_EDGES,
+        TYPED_EDGES_BY_TYPE,
     ];
 }
 
@@ -191,18 +211,102 @@ pub fn system_options() -> Options {
     opts
 }
 
+/// Create options optimized for K-NN embedder edges (prefix scans by embedder).
+///
+/// # Configuration
+/// - Prefix extractor: 1 byte (embedder_id)
+/// - Block cache: enabled (shared cache reference)
+/// - LZ4 compression: enabled
+///
+/// # Arguments
+/// * `cache` - Shared block cache
+///
+/// # Key Format
+/// [embedder_id: u8][source_uuid: 16 bytes] = 17 bytes
+pub fn embedder_edges_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(1)); // embedder_id prefix
+    opts.create_if_missing(true);
+
+    opts
+}
+
+/// Create options optimized for typed edges (source UUID prefix scans).
+///
+/// # Configuration
+/// - Prefix extractor: 16 bytes (source UUID)
+/// - Block cache: enabled (shared cache reference)
+/// - LZ4 compression: enabled
+///
+/// # Arguments
+/// * `cache` - Shared block cache
+///
+/// # Key Format
+/// [source_uuid: 16 bytes][target_uuid: 16 bytes] = 32 bytes
+pub fn typed_edges_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(16)); // source UUID prefix
+    opts.create_if_missing(true);
+
+    opts
+}
+
+/// Create options optimized for typed edges by type index (edge type prefix scans).
+///
+/// # Configuration
+/// - Prefix extractor: 1 byte (edge_type)
+/// - Block cache: enabled (shared cache reference)
+/// - LZ4 compression: enabled
+///
+/// # Arguments
+/// * `cache` - Shared block cache
+///
+/// # Key Format
+/// [edge_type: u8][source_uuid: 16 bytes] = 17 bytes
+pub fn typed_edges_by_type_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(1)); // edge_type prefix
+    opts.create_if_missing(true);
+
+    opts
+}
+
 /// Get all column family descriptors with optimized options.
 ///
 /// # Arguments
 /// * `block_cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 8 `ColumnFamilyDescriptor`s with optimized options per CF type:
+/// Vector of 11 `ColumnFamilyDescriptor`s with optimized options per CF type:
 /// - `nodes`: Point lookup optimized with bloom filter
 /// - `edges`: Prefix-based range scans
 /// - `embeddings`: Large block size for sequential reads
 /// - `metadata`, `temporal`, `tags`, `sources`: Index optimized
 /// - `system`: No compression for small metadata
+/// - `embedder_edges`: K-NN edges per embedder (1-byte prefix)
+/// - `typed_edges`: Multi-relation typed edges (16-byte prefix)
+/// - `typed_edges_by_type`: Secondary index by edge type (1-byte prefix)
 ///
 /// # Example
 /// ```ignore
@@ -211,7 +315,7 @@ pub fn system_options() -> Options {
 ///
 /// let cache = Cache::new_lru_cache(256 * 1024 * 1024); // 256MB
 /// let descriptors = get_column_family_descriptors(&cache);
-/// assert_eq!(descriptors.len(), 8);
+/// assert_eq!(descriptors.len(), 11);
 /// ```
 pub fn get_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     vec![
@@ -223,10 +327,14 @@ pub fn get_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamilyDes
         ColumnFamilyDescriptor::new(cf_names::TAGS, index_options(block_cache)),
         ColumnFamilyDescriptor::new(cf_names::SOURCES, index_options(block_cache)),
         ColumnFamilyDescriptor::new(cf_names::SYSTEM, system_options()),
+        // Graph linking column families (TASK-GRAPHLINK-010)
+        ColumnFamilyDescriptor::new(cf_names::EMBEDDER_EDGES, embedder_edges_options(block_cache)),
+        ColumnFamilyDescriptor::new(cf_names::TYPED_EDGES, typed_edges_options(block_cache)),
+        ColumnFamilyDescriptor::new(cf_names::TYPED_EDGES_BY_TYPE, typed_edges_by_type_options(block_cache)),
     ]
 }
 
-/// Get ALL column family descriptors: base (8) + teleological.
+/// Get ALL column family descriptors: base (11) + teleological.
 ///
 /// Returns total column families for a fully configured Context Graph database.
 ///
@@ -257,9 +365,10 @@ pub fn get_all_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamil
 }
 
 /// Total number of column families in a fully configured Context Graph database.
-/// Base (8) + Teleological (15) + Quantized Embedder (13) = 36
+/// Base (11: 8 original + 3 graph linking) + Teleological (15) + Quantized Embedder (13) = 39
 /// PRD v6: Autonomous module removed - topics emerge from clustering, not goal hierarchies
-pub const TOTAL_COLUMN_FAMILIES: usize = 36;
+/// TASK-GRAPHLINK-010: Added 3 graph linking CFs (embedder_edges, typed_edges, typed_edges_by_type)
+pub const TOTAL_COLUMN_FAMILIES: usize = 39;
 
 #[cfg(test)]
 mod tests {
@@ -273,13 +382,14 @@ mod tests {
     fn test_cf_names_count() {
         assert_eq!(
             cf_names::ALL.len(),
-            8,
-            "Must have exactly 8 column families per PRD v6"
+            11,
+            "Must have exactly 11 column families (8 base + 3 graph linking)"
         );
     }
 
     #[test]
     fn test_all_contains_all_names() {
+        // Base 8 CFs
         assert!(cf_names::ALL.contains(&cf_names::NODES));
         assert!(cf_names::ALL.contains(&cf_names::EDGES));
         assert!(cf_names::ALL.contains(&cf_names::EMBEDDINGS));
@@ -288,13 +398,17 @@ mod tests {
         assert!(cf_names::ALL.contains(&cf_names::TAGS));
         assert!(cf_names::ALL.contains(&cf_names::SOURCES));
         assert!(cf_names::ALL.contains(&cf_names::SYSTEM));
+        // Graph linking CFs (TASK-GRAPHLINK-010)
+        assert!(cf_names::ALL.contains(&cf_names::EMBEDDER_EDGES));
+        assert!(cf_names::ALL.contains(&cf_names::TYPED_EDGES));
+        assert!(cf_names::ALL.contains(&cf_names::TYPED_EDGES_BY_TYPE));
     }
 
     #[test]
     fn test_cf_names_unique() {
         use std::collections::HashSet;
         let set: HashSet<_> = cf_names::ALL.iter().collect();
-        assert_eq!(set.len(), 8, "All CF names must be unique");
+        assert_eq!(set.len(), 11, "All CF names must be unique");
     }
 
     #[test]
@@ -359,10 +473,10 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_get_descriptors_returns_8() {
+    fn test_get_descriptors_returns_11() {
         let cache = Cache::new_lru_cache(256 * 1024 * 1024);
         let descriptors = get_column_family_descriptors(&cache);
-        assert_eq!(descriptors.len(), 8, "Must return exactly 8 descriptors (PRD v6)");
+        assert_eq!(descriptors.len(), 11, "Must return exactly 11 descriptors (8 base + 3 graph linking)");
     }
 
     #[test]
@@ -429,7 +543,7 @@ mod tests {
         let descriptors = get_column_family_descriptors(&cache);
 
         println!("AFTER: {} descriptors created", descriptors.len());
-        assert_eq!(descriptors.len(), 8);
+        assert_eq!(descriptors.len(), 11);
         println!("RESULT: PASS - Works with minimum cache size");
     }
 
@@ -443,7 +557,7 @@ mod tests {
         let descriptors = get_column_family_descriptors(&cache);
 
         println!("AFTER: {} descriptors created", descriptors.len());
-        assert_eq!(descriptors.len(), 8);
+        assert_eq!(descriptors.len(), 11);
         println!("RESULT: PASS - Zero cache handled gracefully");
     }
 
@@ -464,14 +578,15 @@ mod tests {
         let desc2 = get_column_family_descriptors(&cache);
         println!("  Second batch: {} descriptors", desc2.len());
 
-        assert_eq!(desc1.len(), 8);
-        assert_eq!(desc2.len(), 8);
+        assert_eq!(desc1.len(), 11);
+        assert_eq!(desc2.len(), 11);
         println!("RESULT: PASS - Cache can be reused across multiple descriptor creations");
     }
 
     #[test]
     fn test_cf_name_values_match_spec() {
-        // Verify exact string values match PRD v6 specification
+        // Verify exact string values match specification
+        // Base 8 CFs
         assert_eq!(cf_names::NODES, "nodes");
         assert_eq!(cf_names::EDGES, "edges");
         assert_eq!(cf_names::EMBEDDINGS, "embeddings");
@@ -480,6 +595,10 @@ mod tests {
         assert_eq!(cf_names::TAGS, "tags");
         assert_eq!(cf_names::SOURCES, "sources");
         assert_eq!(cf_names::SYSTEM, "system");
+        // Graph linking CFs (TASK-GRAPHLINK-010)
+        assert_eq!(cf_names::EMBEDDER_EDGES, "embedder_edges");
+        assert_eq!(cf_names::TYPED_EDGES, "typed_edges");
+        assert_eq!(cf_names::TYPED_EDGES_BY_TYPE, "typed_edges_by_type");
     }
 
     #[test]
@@ -491,7 +610,7 @@ mod tests {
         let names: HashSet<_> = descriptors.iter().map(|d| d.name()).collect();
         assert_eq!(
             names.len(),
-            8,
+            11,
             "All descriptor names must be unique, got {} unique names",
             names.len()
         );
@@ -522,12 +641,13 @@ mod tests {
     #[test]
     fn test_total_column_families_constant() {
         // Verify the constant is correct:
-        // 8 base + 15 teleological + 13 quantized = 36
+        // 11 base (8 original + 3 graph linking) + 15 teleological + 13 quantized = 39
         // PRD v6: Autonomous module removed - topics emerge from clustering, not goal hierarchies
         // Teleological: 13 active + 2 legacy = 15
+        // TASK-GRAPHLINK-010: Added 3 graph linking CFs
         assert_eq!(
-            TOTAL_COLUMN_FAMILIES, 36,
-            "Total column families should be 36 (8 base + 15 teleological + 13 quantized)"
+            TOTAL_COLUMN_FAMILIES, 39,
+            "Total column families should be 39 (11 base + 15 teleological + 13 quantized)"
         );
     }
 

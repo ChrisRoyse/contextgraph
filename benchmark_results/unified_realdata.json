@@ -1,12 +1,12 @@
 {
   "metadata": {
     "version": "0.1.0",
-    "start_time": "2026-01-23T21:08:47.097815627Z",
-    "end_time": "2026-01-23T21:14:55.962100235Z",
-    "duration_secs": 398.659260111,
+    "start_time": "2026-01-26T04:43:51.868709514Z",
+    "end_time": "2026-01-26T04:53:50.197954364Z",
+    "duration_secs": 657.946512856,
     "config": {
       "data_dir": "data/hf_benchmark_diverse",
-      "max_chunks": 200,
+      "max_chunks": 1000,
       "checkpoint_dir": "data/hf_benchmark_diverse/checkpoints",
       "checkpoint_interval": 1000,
       "num_queries": 100,
@@ -19,22 +19,13 @@
       "seed": 42,
       "embedders": [
         "E1Semantic",
-        "E2Recency",
-        "E3Periodic",
-        "E4Sequence",
         "E5Causal",
-        "E6Sparse",
         "E7Code",
-        "E8Graph",
-        "E9HDC",
-        "E10Multimodal",
-        "E11Entity",
-        "E12LateInteraction",
-        "E13SPLADE"
+        "E10Multimodal"
       ],
       "output_dir": "benchmark_results",
       "temporal_config": {
-        "base_timestamp_ms": 1769202527097,
+        "base_timestamp_ms": 1769402631868,
         "recency_span_days": 365,
         "recency_half_life_secs": 86400,
         "periodic_enabled": true,
@@ -42,9 +33,9 @@
         "sequence_num_sessions": 100,
         "sequence_chunks_per_session": 20
       },
-      "run_ablation": true,
+      "run_ablation": false,
       "run_fusion_comparison": true,
-      "run_correlation_analysis": true,
+      "run_correlation_analysis": false,
       "batch_size": 32,
       "show_progress": true
     }
@@ -55,172 +46,22 @@
     "num_topics": 100,
     "top_topics": [
       {
-        "name": "politics",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "andronicus",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "bay",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "baseball",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "basic",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "bronze",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "andronikos",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "adam",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
         "name": "abd",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "alexis",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "benjamin",
+        "name": "alexander",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
         "name": "abraham",
-        "chunk_count": 0,
-        "percentage": 0.0
+        "chunk_count": 94,
+        "percentage": 9.4
       },
       {
-        "name": "base",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "aircraft",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "april",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "apollo",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "antonio",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "august",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "afonso",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "economy",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "binomial",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "algebraic",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "ammonius",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "albert",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "bank",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "atari",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "battle",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "apple",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "atlanta",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "alpha",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "blue",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "alternative",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "the",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "alfonso",
+        "name": "aga",
         "chunk_count": 0,
         "percentage": 0.0
       },
@@ -230,32 +71,137 @@
         "percentage": 0.0
       },
       {
-        "name": "absolute",
+        "name": "transport",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "geography",
+        "name": "advanced",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "alessandro",
+        "name": "afonso",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "bill",
+        "name": "atari",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "big",
+        "name": "ahmed",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "armed",
+        "name": "a.",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "april",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "antarctic",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "amalric",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "ann",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "atlanta",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "adam",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "australian",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "alexandria,",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "body",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "alfred",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "brian",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "abba",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "bubble",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "baseball",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "benjamin",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "axiom",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "bronze",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "ada",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "blade",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "alexios",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "blood",
         "chunk_count": 0,
         "percentage": 0.0
       },
@@ -270,92 +216,17 @@
         "percentage": 0.0
       },
       {
-        "name": "blood",
+        "name": "piano",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "abba",
+        "name": "armed",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "abu",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "antarctic",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "aga",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "a",
-        "chunk_count": 12,
-        "percentage": 6.0
-      },
-      {
-        "name": "andrew",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "batman",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "alan",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "black",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "alexandria,",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "amalric",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "amiga",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "anton",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "arthur",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "a.",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "axiom",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "alexander",
+        "name": "big",
         "chunk_count": 0,
         "percentage": 0.0
       },
@@ -365,42 +236,12 @@
         "percentage": 0.0
       },
       {
-        "name": "ajax",
-        "chunk_count": 0,
-        "percentage": 0.0
+        "name": "apollo",
+        "chunk_count": 129,
+        "percentage": 12.9
       },
       {
-        "name": "bruce",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "ann",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "analysis",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "amber",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "boeing",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "andreas",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "national",
+        "name": "august",
         "chunk_count": 0,
         "percentage": 0.0
       },
@@ -410,37 +251,27 @@
         "percentage": 0.0
       },
       {
+        "name": "antipope",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "alessandro",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "history",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "andreas",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
         "name": "audio",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "analog",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "ahmed",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "boston",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "brian",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "alexios",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "binary",
         "chunk_count": 0,
         "percentage": 0.0
       },
@@ -450,22 +281,62 @@
         "percentage": 0.0
       },
       {
-        "name": "australian",
+        "name": "arthur",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "blade",
+        "name": "ammonius",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "demographics",
+        "name": "alternative",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "ada",
+        "name": "bay",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "bank",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "boeing",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "absolute",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "andronicus",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "politics",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "national",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "british",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "binary",
         "chunk_count": 0,
         "percentage": 0.0
       },
@@ -475,12 +346,137 @@
         "percentage": 0.0
       },
       {
-        "name": "alfred",
+        "name": "demographics",
         "chunk_count": 0,
         "percentage": 0.0
       },
       {
-        "name": "piano",
+        "name": "alan",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "list",
+        "chunk_count": 30,
+        "percentage": 3.0
+      },
+      {
+        "name": "apple",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "algebraic",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "amber",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "anton",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "battle",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "binomial",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "black",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "amiga",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "basic",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "andré",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "blue",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "ajax",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "andrew",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "alpha",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "base",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "geography",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "andronikos",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "bruce",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "abu",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "economy",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "alfonso",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "analysis",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "batman",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "antonio",
         "chunk_count": 0,
         "percentage": 0.0
       },
@@ -490,7 +486,52 @@
         "percentage": 0.0
       },
       {
-        "name": "list",
+        "name": "albert",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "analog",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "aircraft",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "alexis",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "bill",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "arizona",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "boston",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "bob",
+        "chunk_count": 0,
+        "percentage": 0.0
+      },
+      {
+        "name": "a",
+        "chunk_count": 12,
+        "percentage": 1.2
+      },
+      {
+        "name": "the",
         "chunk_count": 0,
         "percentage": 0.0
       },
@@ -503,202 +544,31 @@
         "name": "book",
         "chunk_count": 0,
         "percentage": 0.0
-      },
-      {
-        "name": "arizona",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "body",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "history",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "advanced",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "andré",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "transport",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "bob",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "bubble",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "british",
-        "chunk_count": 0,
-        "percentage": 0.0
-      },
-      {
-        "name": "antipope",
-        "chunk_count": 0,
-        "percentage": 0.0
       }
     ],
     "source_datasets": [
       "wikipedia"
     ],
-    "chunks_used": 200,
-    "queries_generated": 92
+    "chunks_used": 1000,
+    "queries_generated": 100
   },
   "per_embedder_results": {
-    "E12LateInteraction": {
-      "embedder_name": "E12LateInteraction",
-      "category": "semantic_enhancer",
-      "topic_weight": 1.0,
-      "mrr_at_10": 1.0,
-      "precision_at_k": {
-        "20": 0.928804347826087,
-        "10": 0.9923913043478262,
-        "1": 1.0,
-        "5": 0.9956521739130434
-      },
-      "recall_at_k": {
-        "5": 0.1718414737436475,
-        "1": 0.03442264257481651,
-        "10": 0.34242306606437006,
-        "20": 0.5774258893280626
-      },
-      "ndcg_at_k": {},
-      "map": 0.0,
-      "hit_rate_at_k": {},
-      "contribution_vs_e1": 0.0,
-      "per_topic_mrr": {},
-      "latency": {
-        "mean_ms": 0.04190217391304346,
-        "p50_ms": 0.04,
-        "p95_ms": 0.049,
-        "p99_ms": 0.171,
-        "total_queries": 92
-      }
-    },
-    "E5Causal": {
-      "embedder_name": "E5Causal",
-      "category": "semantic_enhancer",
-      "topic_weight": 1.0,
-      "mrr_at_10": 0.9927536231884059,
-      "precision_at_k": {
-        "20": 0.9250000000000003,
-        "5": 0.9956521739130434,
-        "1": 0.9891304347826086,
-        "10": 0.9728260869565216
-      },
-      "recall_at_k": {
-        "5": 0.1718414737436475,
-        "10": 0.32178077357425144,
-        "1": 0.034286773009599106,
-        "20": 0.5590002117447764
-      },
-      "ndcg_at_k": {},
-      "map": 0.0,
-      "hit_rate_at_k": {},
-      "contribution_vs_e1": -0.007246376811594124,
-      "per_topic_mrr": {},
-      "latency": {
-        "mean_ms": 0.24372826086956523,
-        "p50_ms": 0.231,
-        "p95_ms": 0.284,
-        "p99_ms": 0.646,
-        "total_queries": 92
-      },
-      "asymmetric_ratio": 1.0
-    },
-    "E6Sparse": {
-      "embedder_name": "E6Sparse",
-      "category": "semantic_enhancer",
-      "topic_weight": 1.0,
-      "mrr_at_10": 1.0,
-      "precision_at_k": {
-        "1": 1.0,
-        "5": 1.0,
-        "20": 0.9396739130434781,
-        "10": 0.9967391304347827
-      },
-      "recall_at_k": {
-        "20": 0.5813258752117442,
-        "10": 0.3412619988706942,
-        "5": 0.1721132128740823,
-        "1": 0.03442264257481651
-      },
-      "ndcg_at_k": {},
-      "map": 0.0,
-      "hit_rate_at_k": {},
-      "contribution_vs_e1": 0.0,
-      "per_topic_mrr": {},
-      "latency": {
-        "mean_ms": 0.35303260869565206,
-        "p50_ms": 0.329,
-        "p95_ms": 0.443,
-        "p99_ms": 1.642,
-        "total_queries": 92
-      }
-    },
-    "E13SPLADE": {
-      "embedder_name": "E13SPLADE",
-      "category": "semantic_enhancer",
-      "topic_weight": 1.0,
-      "mrr_at_10": 1.0,
-      "precision_at_k": {
-        "10": 0.9880434782608695,
-        "5": 0.9956521739130434,
-        "1": 1.0,
-        "20": 0.9353260869565218
-      },
-      "recall_at_k": {
-        "10": 0.33847049689440967,
-        "1": 0.03442264257481651,
-        "5": 0.1718414737436475,
-        "20": 0.5796410926030485
-      },
-      "ndcg_at_k": {},
-      "map": 0.0,
-      "hit_rate_at_k": {},
-      "contribution_vs_e1": 0.0,
-      "per_topic_mrr": {},
-      "latency": {
-        "mean_ms": 0.35217391304347834,
-        "p50_ms": 0.351,
-        "p95_ms": 0.44,
-        "p99_ms": 0.591,
-        "total_queries": 92
-      }
-    },
     "E1Semantic": {
       "embedder_name": "E1Semantic",
       "category": "foundation",
       "topic_weight": 1.0,
       "mrr_at_10": 1.0,
       "precision_at_k": {
-        "5": 1.0,
         "1": 1.0,
-        "10": 1.0,
-        "20": 0.9413043478260867
+        "5": 0.9639999999999997,
+        "20": 0.7365,
+        "10": 0.8620000000000003
       },
       "recall_at_k": {
-        "20": 0.5817334839073964,
-        "10": 0.3442264257481646,
-        "5": 0.1721132128740823,
-        "1": 0.03442264257481651
+        "10": 0.4799275252477924,
+        "1": 0.07400482257226905,
+        "20": 0.619329078492695,
+        "5": 0.3364541768272303
       },
       "ndcg_at_k": {},
       "map": 0.0,
@@ -706,12 +576,74 @@
       "contribution_vs_e1": 0.0,
       "per_topic_mrr": {},
       "latency": {
-        "mean_ms": 0.3857717391304348,
-        "p50_ms": 0.313,
-        "p95_ms": 0.698,
-        "p99_ms": 1.34,
-        "total_queries": 92
+        "mean_ms": 1.499999999999999,
+        "p50_ms": 1.485,
+        "p95_ms": 1.61,
+        "p99_ms": 2.063,
+        "total_queries": 100
       }
+    },
+    "E5Causal": {
+      "embedder_name": "E5Causal",
+      "category": "semantic_enhancer",
+      "topic_weight": 1.0,
+      "mrr_at_10": 0.9515191007822588,
+      "precision_at_k": {
+        "10": 0.7319999999999998,
+        "5": 0.816,
+        "20": 0.628,
+        "1": 0.94
+      },
+      "recall_at_k": {
+        "20": 0.474481535572945,
+        "1": 0.06741829421092452,
+        "5": 0.2287127949810907,
+        "10": 0.3388173159781009
+      },
+      "ndcg_at_k": {},
+      "map": 0.0,
+      "hit_rate_at_k": {},
+      "contribution_vs_e1": -0.048480899217741236,
+      "per_topic_mrr": {},
+      "latency": {
+        "mean_ms": 1.1895599999999993,
+        "p50_ms": 1.189,
+        "p95_ms": 1.234,
+        "p99_ms": 1.996,
+        "total_queries": 100
+      },
+      "asymmetric_ratio": 1.0
+    },
+    "E10Multimodal": {
+      "embedder_name": "E10Multimodal",
+      "category": "semantic_enhancer",
+      "topic_weight": 1.0,
+      "mrr_at_10": 1.0,
+      "precision_at_k": {
+        "5": 0.9599999999999997,
+        "20": 0.7315000000000004,
+        "1": 1.0,
+        "10": 0.8550000000000003
+      },
+      "recall_at_k": {
+        "5": 0.33609033754151596,
+        "1": 0.07400482257226905,
+        "20": 0.6169216994131798,
+        "10": 0.4756561935943713
+      },
+      "ndcg_at_k": {},
+      "map": 0.0,
+      "hit_rate_at_k": {},
+      "contribution_vs_e1": 0.0,
+      "per_topic_mrr": {},
+      "latency": {
+        "mean_ms": 1.1353200000000003,
+        "p50_ms": 1.109,
+        "p95_ms": 1.222,
+        "p99_ms": 1.707,
+        "total_queries": 100
+      },
+      "asymmetric_ratio": 1.0
     },
     "E7Code": {
       "embedder_name": "E7Code",
@@ -719,16 +651,16 @@
       "topic_weight": 1.0,
       "mrr_at_10": 1.0,
       "precision_at_k": {
-        "20": 0.9413043478260867,
+        "5": 0.9679999999999996,
         "1": 1.0,
-        "5": 1.0,
-        "10": 1.0
+        "20": 0.7500000000000001,
+        "10": 0.8670000000000004
       },
       "recall_at_k": {
-        "5": 0.1721132128740823,
-        "20": 0.5817334839073964,
-        "10": 0.3442264257481646,
-        "1": 0.03442264257481651
+        "20": 0.6217044832147375,
+        "1": 0.07400482257226905,
+        "5": 0.3368177162728593,
+        "10": 0.473152024129774
       },
       "ndcg_at_k": {},
       "map": 0.0,
@@ -736,239 +668,16 @@
       "contribution_vs_e1": 0.0,
       "per_topic_mrr": {},
       "latency": {
-        "mean_ms": 0.4933478260869567,
-        "p50_ms": 0.469,
-        "p95_ms": 0.657,
-        "p99_ms": 0.872,
-        "total_queries": 92
+        "mean_ms": 2.3749099999999994,
+        "p50_ms": 2.312,
+        "p95_ms": 2.713,
+        "p99_ms": 3.398,
+        "total_queries": 100
       }
-    },
-    "E4Sequence": {
-      "embedder_name": "E4Sequence",
-      "category": "temporal_context",
-      "topic_weight": 0.0,
-      "mrr_at_10": 0.7631469979296068,
-      "precision_at_k": {
-        "1": 0.6304347826086957,
-        "20": 0.46793478260869564,
-        "10": 0.551086956521739,
-        "5": 0.5717391304347825
-      },
-      "recall_at_k": {
-        "10": 0.31710266278344085,
-        "1": 0.03730107135427504,
-        "20": 0.5301149365508636,
-        "5": 0.1668985333888079
-      },
-      "ndcg_at_k": {},
-      "map": 0.0,
-      "hit_rate_at_k": {},
-      "contribution_vs_e1": -0.23685300207039317,
-      "per_topic_mrr": {},
-      "latency": {
-        "mean_ms": 0.19490217391304357,
-        "p50_ms": 0.158,
-        "p95_ms": 0.329,
-        "p99_ms": 1.024,
-        "total_queries": 92
-      }
-    },
-    "E8Graph": {
-      "embedder_name": "E8Graph",
-      "category": "relational_enhancer",
-      "topic_weight": 0.5,
-      "mrr_at_10": 1.0,
-      "precision_at_k": {
-        "10": 0.9869565217391304,
-        "5": 0.9978260869565218,
-        "1": 1.0,
-        "20": 0.9326086956521739
-      },
-      "recall_at_k": {
-        "1": 0.03442264257481651,
-        "5": 0.17112507058159215,
-        "10": 0.3349255364201013,
-        "20": 0.5761504799548272
-      },
-      "ndcg_at_k": {},
-      "map": 0.0,
-      "hit_rate_at_k": {},
-      "contribution_vs_e1": 0.0,
-      "per_topic_mrr": {},
-      "latency": {
-        "mean_ms": 0.1200760869565217,
-        "p50_ms": 0.116,
-        "p95_ms": 0.17,
-        "p99_ms": 0.268,
-        "total_queries": 92
-      },
-      "asymmetric_ratio": 1.0
-    },
-    "E2Recency": {
-      "embedder_name": "E2Recency",
-      "category": "temporal_context",
-      "topic_weight": 0.0,
-      "mrr_at_10": 0.3815087991718426,
-      "precision_at_k": {
-        "5": 0.19347826086956518,
-        "10": 0.2032608695652173,
-        "20": 0.1972826086956521,
-        "1": 0.21739130434782608
-      },
-      "recall_at_k": {
-        "10": 0.06048338046688635,
-        "1": 0.002980418006026966,
-        "5": 0.028764012877953504,
-        "20": 0.11339062969951147
-      },
-      "ndcg_at_k": {},
-      "map": 0.0,
-      "hit_rate_at_k": {},
-      "contribution_vs_e1": -0.6184912008281573,
-      "per_topic_mrr": {},
-      "latency": {
-        "mean_ms": 0.15606521739130436,
-        "p50_ms": 0.149,
-        "p95_ms": 0.216,
-        "p99_ms": 0.3,
-        "total_queries": 92
-      }
-    },
-    "E3Periodic": {
-      "embedder_name": "E3Periodic",
-      "category": "temporal_context",
-      "topic_weight": 0.0,
-      "mrr_at_10": 1.0,
-      "precision_at_k": {
-        "5": 1.0,
-        "10": 1.0,
-        "20": 1.0,
-        "1": 1.0
-      },
-      "recall_at_k": {
-        "1": 0.005025125628140711,
-        "20": 0.10050251256281408,
-        "5": 0.02512562814070352,
-        "10": 0.05025125628140704
-      },
-      "ndcg_at_k": {},
-      "map": 0.0,
-      "hit_rate_at_k": {},
-      "contribution_vs_e1": 0.0,
-      "per_topic_mrr": {},
-      "latency": {
-        "mean_ms": 0.15781521739130425,
-        "p50_ms": 0.153,
-        "p95_ms": 0.234,
-        "p99_ms": 0.257,
-        "total_queries": 92
-      }
-    },
-    "E9HDC": {
-      "embedder_name": "E9HDC",
-      "category": "structural_context",
-      "topic_weight": 0.5,
-      "mrr_at_10": 0.9621616078753077,
-      "precision_at_k": {
-        "1": 0.9565217391304348,
-        "10": 0.948913043478261,
-        "5": 0.958695652173913,
-        "20": 0.9500000000000004
-      },
-      "recall_at_k": {
-        "10": 0.04866220735785944,
-        "20": 0.09743589743589727,
-        "5": 0.024581939799331064,
-        "1": 0.004905239687848378
-      },
-      "ndcg_at_k": {},
-      "map": 0.0,
-      "hit_rate_at_k": {},
-      "contribution_vs_e1": -0.03783839212469231,
-      "per_topic_mrr": {},
-      "latency": {
-        "mean_ms": 0.31814130434782606,
-        "p50_ms": 0.314,
-        "p95_ms": 0.356,
-        "p99_ms": 0.427,
-        "total_queries": 92
-      }
-    },
-    "E11Entity": {
-      "embedder_name": "E11Entity",
-      "category": "relational_enhancer",
-      "topic_weight": 0.5,
-      "mrr_at_10": 0.9899068322981366,
-      "precision_at_k": {
-        "5": 0.9847826086956522,
-        "10": 0.9782608695652174,
-        "20": 0.9244565217391304,
-        "1": 0.9891304347826086
-      },
-      "recall_at_k": {
-        "1": 0.03428677300959911,
-        "20": 0.5719088791643133,
-        "10": 0.3335396668548839,
-        "5": 0.1694575804630151
-      },
-      "ndcg_at_k": {},
-      "map": 0.0,
-      "hit_rate_at_k": {},
-      "contribution_vs_e1": -0.010093167701863415,
-      "per_topic_mrr": {},
-      "latency": {
-        "mean_ms": 0.12322826086956523,
-        "p50_ms": 0.116,
-        "p95_ms": 0.176,
-        "p99_ms": 0.336,
-        "total_queries": 92
-      }
-    },
-    "E10Multimodal": {
-      "embedder_name": "E10Multimodal",
-      "category": "semantic_enhancer",
-      "topic_weight": 1.0,
-      "mrr_at_10": 0.9844202898550725,
-      "precision_at_k": {
-        "1": 0.9782608695652174,
-        "20": 0.9119565217391304,
-        "10": 0.9565217391304349,
-        "5": 0.9739130434782608
-      },
-      "recall_at_k": {
-        "1": 0.03329863071710899,
-        "10": 0.3156691134952001,
-        "20": 0.5555039525691694,
-        "5": 0.1645168690005645
-      },
-      "ndcg_at_k": {},
-      "map": 0.0,
-      "hit_rate_at_k": {},
-      "contribution_vs_e1": -0.015579710144927539,
-      "per_topic_mrr": {},
-      "latency": {
-        "mean_ms": 0.24034782608695646,
-        "p50_ms": 0.235,
-        "p95_ms": 0.282,
-        "p99_ms": 0.372,
-        "total_queries": 92
-      },
-      "asymmetric_ratio": 1.0
     }
   },
   "fusion_results": {
     "by_strategy": {
-      "E1Only": {
-        "strategy": "E1Only",
-        "embedders_used": [
-          "E1Semantic"
-        ],
-        "mrr_at_10": 1.0,
-        "precision_at_10": 1.0,
-        "recall_at_20": 0.5817334839073964,
-        "latency_ms": 0.3857717391304348,
-        "quality_latency_ratio": 2.592206474880956
-      },
       "MultiSpace": {
         "strategy": "MultiSpace",
         "embedders_used": [
@@ -978,11 +687,22 @@
           "E7Code",
           "E10Multimodal"
         ],
-        "mrr_at_10": 1.0651152173913043,
-        "precision_at_10": 0.958603695652174,
-        "recall_at_20": 1.171626739130435,
-        "latency_ms": 1.9288586956521738,
-        "quality_latency_ratio": 0.5521997126031952
+        "mrr_at_10": 1.0570313594592542,
+        "precision_at_10": 0.9513282235133288,
+        "recall_at_20": 1.1627344954051797,
+        "latency_ms": 7.499999999999995,
+        "quality_latency_ratio": 0.14093751459456733
+      },
+      "E1Only": {
+        "strategy": "E1Only",
+        "embedders_used": [
+          "E1Semantic"
+        ],
+        "mrr_at_10": 1.0,
+        "precision_at_10": 0.8620000000000003,
+        "recall_at_20": 0.619329078492695,
+        "latency_ms": 1.499999999999999,
+        "quality_latency_ratio": 0.6666666666666672
       },
       "Pipeline": {
         "strategy": "Pipeline",
@@ -991,780 +711,23 @@
           "E1Semantic",
           "E12LateInteraction"
         ],
-        "mrr_at_10": 1.1183709782608695,
-        "precision_at_10": 1.062452429347826,
-        "recall_at_20": 1.2248824999999999,
-        "latency_ms": 3.086173913043478,
-        "quality_latency_ratio": 0.3623810613958468
+        "mrr_at_10": 1.109882927432217,
+        "precision_at_10": 1.054388781060606,
+        "recall_at_20": 1.2155860633781421,
+        "latency_ms": 11.999999999999991,
+        "quality_latency_ratio": 0.09249024395268482
       }
     },
     "best_strategy": "Pipeline",
-    "improvement_over_baseline": 0.11837097826086951,
+    "improvement_over_baseline": 0.10988292743221706,
     "recommendations": [
       "Use Pipeline for best quality",
       "E1Only provides best latency when quality requirements are moderate"
     ]
   },
-  "cross_embedder_analysis": {
-    "correlation_matrix": [
-      [
-        1.0,
-        0.387632474427567,
-        1.0,
-        0.7654920771580266,
-        0.9928253694934711,
-        1.0,
-        1.0,
-        1.0,
-        0.9625362454210967,
-        0.9845745444109628,
-        0.9900067646516204,
-        1.0,
-        1.0
-      ],
-      [
-        0.387632474427567,
-        1.0,
-        0.387632474427567,
-        0.5063833918003372,
-        0.3904336919042799,
-        0.387632474427567,
-        0.387632474427567,
-        0.387632474427567,
-        0.4027198729103266,
-        0.3937055620907548,
-        0.39154527854562027,
-        0.387632474427567,
-        0.387632474427567
-      ],
-      [
-        1.0,
-        0.387632474427567,
-        1.0,
-        0.7654920771580266,
-        0.9928253694934711,
-        1.0,
-        1.0,
-        1.0,
-        0.9625362454210967,
-        0.9845745444109628,
-        0.9900067646516204,
-        1.0,
-        1.0
-      ],
-      [
-        0.7654920771580266,
-        0.5063833918003372,
-        0.7654920771580266,
-        1.0,
-        0.7710238886709476,
-        0.7654920771580266,
-        0.7654920771580266,
-        0.7654920771580266,
-        0.7952864952354434,
-        0.7774851396508471,
-        0.7732190369703185,
-        0.7654920771580266,
-        0.7654920771580266
-      ],
-      [
-        0.9928253694934711,
-        0.3904336919042799,
-        0.9928253694934711,
-        0.7710238886709476,
-        1.0,
-        0.9928253694934711,
-        0.9928253694934711,
-        0.9928253694934711,
-        0.9694919922444895,
-        0.9916895505130798,
-        0.9971610265727912,
-        0.9928253694934711,
-        0.9928253694934711
-      ],
-      [
-        1.0,
-        0.387632474427567,
-        1.0,
-        0.7654920771580266,
-        0.9928253694934711,
-        1.0,
-        1.0,
-        1.0,
-        0.9625362454210967,
-        0.9845745444109628,
-        0.9900067646516204,
-        1.0,
-        1.0
-      ],
-      [
-        1.0,
-        0.387632474427567,
-        1.0,
-        0.7654920771580266,
-        0.9928253694934711,
-        1.0,
-        1.0,
-        1.0,
-        0.9625362454210967,
-        0.9845745444109628,
-        0.9900067646516204,
-        1.0,
-        1.0
-      ],
-      [
-        1.0,
-        0.387632474427567,
-        1.0,
-        0.7654920771580266,
-        0.9928253694934711,
-        1.0,
-        1.0,
-        1.0,
-        0.9625362454210967,
-        0.9845745444109628,
-        0.9900067646516204,
-        1.0,
-        1.0
-      ],
-      [
-        0.9625362454210967,
-        0.4027198729103266,
-        0.9625362454210967,
-        0.7952864952354434,
-        0.9694919922444895,
-        0.9625362454210967,
-        0.9625362454210967,
-        0.9625362454210967,
-        1.0,
-        0.9776164241550132,
-        0.9722521903775169,
-        0.9625362454210967,
-        0.9625362454210967
-      ],
-      [
-        0.9845745444109628,
-        0.3937055620907548,
-        0.9845745444109628,
-        0.7774851396508471,
-        0.9916895505130798,
-        0.9845745444109628,
-        0.9845745444109628,
-        0.9845745444109628,
-        0.9776164241550132,
-        1.0,
-        0.9945129463407565,
-        0.9845745444109628,
-        0.9845745444109628
-      ],
-      [
-        0.9900067646516204,
-        0.39154527854562027,
-        0.9900067646516204,
-        0.7732190369703185,
-        0.9971610265727912,
-        0.9900067646516204,
-        0.9900067646516204,
-        0.9900067646516204,
-        0.9722521903775169,
-        0.9945129463407565,
-        1.0,
-        0.9900067646516204,
-        0.9900067646516204
-      ],
-      [
-        1.0,
-        0.387632474427567,
-        1.0,
-        0.7654920771580266,
-        0.9928253694934711,
-        1.0,
-        1.0,
-        1.0,
-        0.9625362454210967,
-        0.9845745444109628,
-        0.9900067646516204,
-        1.0,
-        1.0
-      ],
-      [
-        1.0,
-        0.387632474427567,
-        1.0,
-        0.7654920771580266,
-        0.9928253694934711,
-        1.0,
-        1.0,
-        1.0,
-        0.9625362454210967,
-        0.9845745444109628,
-        0.9900067646516204,
-        1.0,
-        1.0
-      ]
-    ],
-    "embedder_order": [
-      "E1Semantic",
-      "E2Recency",
-      "E3Periodic",
-      "E4Sequence",
-      "E5Causal",
-      "E6Sparse",
-      "E7Code",
-      "E8Graph",
-      "E9HDC",
-      "E10Multimodal",
-      "E11Entity",
-      "E12LateInteraction",
-      "E13SPLADE"
-    ],
-    "complementarity_scores": {},
-    "redundancy_pairs": [
-      [
-        "E1Semantic",
-        "E9HDC",
-        0.9625362454210967
-      ],
-      [
-        "E3Periodic",
-        "E9HDC",
-        0.9625362454210967
-      ],
-      [
-        "E6Sparse",
-        "E9HDC",
-        0.9625362454210967
-      ],
-      [
-        "E7Code",
-        "E9HDC",
-        0.9625362454210967
-      ],
-      [
-        "E8Graph",
-        "E9HDC",
-        0.9625362454210967
-      ],
-      [
-        "E9HDC",
-        "E12LateInteraction",
-        0.9625362454210967
-      ],
-      [
-        "E9HDC",
-        "E13SPLADE",
-        0.9625362454210967
-      ],
-      [
-        "E5Causal",
-        "E9HDC",
-        0.9694919922444895
-      ],
-      [
-        "E9HDC",
-        "E11Entity",
-        0.9722521903775169
-      ],
-      [
-        "E9HDC",
-        "E10Multimodal",
-        0.9776164241550132
-      ],
-      [
-        "E1Semantic",
-        "E10Multimodal",
-        0.9845745444109628
-      ],
-      [
-        "E3Periodic",
-        "E10Multimodal",
-        0.9845745444109628
-      ],
-      [
-        "E6Sparse",
-        "E10Multimodal",
-        0.9845745444109628
-      ],
-      [
-        "E7Code",
-        "E10Multimodal",
-        0.9845745444109628
-      ],
-      [
-        "E8Graph",
-        "E10Multimodal",
-        0.9845745444109628
-      ],
-      [
-        "E10Multimodal",
-        "E12LateInteraction",
-        0.9845745444109628
-      ],
-      [
-        "E10Multimodal",
-        "E13SPLADE",
-        0.9845745444109628
-      ],
-      [
-        "E1Semantic",
-        "E11Entity",
-        0.9900067646516204
-      ],
-      [
-        "E3Periodic",
-        "E11Entity",
-        0.9900067646516204
-      ],
-      [
-        "E6Sparse",
-        "E11Entity",
-        0.9900067646516204
-      ],
-      [
-        "E7Code",
-        "E11Entity",
-        0.9900067646516204
-      ],
-      [
-        "E8Graph",
-        "E11Entity",
-        0.9900067646516204
-      ],
-      [
-        "E11Entity",
-        "E12LateInteraction",
-        0.9900067646516204
-      ],
-      [
-        "E11Entity",
-        "E13SPLADE",
-        0.9900067646516204
-      ],
-      [
-        "E5Causal",
-        "E10Multimodal",
-        0.9916895505130798
-      ],
-      [
-        "E1Semantic",
-        "E5Causal",
-        0.9928253694934711
-      ],
-      [
-        "E3Periodic",
-        "E5Causal",
-        0.9928253694934711
-      ],
-      [
-        "E5Causal",
-        "E6Sparse",
-        0.9928253694934711
-      ],
-      [
-        "E5Causal",
-        "E7Code",
-        0.9928253694934711
-      ],
-      [
-        "E5Causal",
-        "E8Graph",
-        0.9928253694934711
-      ],
-      [
-        "E5Causal",
-        "E12LateInteraction",
-        0.9928253694934711
-      ],
-      [
-        "E5Causal",
-        "E13SPLADE",
-        0.9928253694934711
-      ],
-      [
-        "E10Multimodal",
-        "E11Entity",
-        0.9945129463407565
-      ],
-      [
-        "E5Causal",
-        "E11Entity",
-        0.9971610265727912
-      ],
-      [
-        "E1Semantic",
-        "E3Periodic",
-        1.0
-      ],
-      [
-        "E1Semantic",
-        "E6Sparse",
-        1.0
-      ],
-      [
-        "E1Semantic",
-        "E7Code",
-        1.0
-      ],
-      [
-        "E1Semantic",
-        "E8Graph",
-        1.0
-      ],
-      [
-        "E1Semantic",
-        "E12LateInteraction",
-        1.0
-      ],
-      [
-        "E1Semantic",
-        "E13SPLADE",
-        1.0
-      ],
-      [
-        "E3Periodic",
-        "E6Sparse",
-        1.0
-      ],
-      [
-        "E3Periodic",
-        "E7Code",
-        1.0
-      ],
-      [
-        "E3Periodic",
-        "E8Graph",
-        1.0
-      ],
-      [
-        "E3Periodic",
-        "E12LateInteraction",
-        1.0
-      ],
-      [
-        "E3Periodic",
-        "E13SPLADE",
-        1.0
-      ],
-      [
-        "E6Sparse",
-        "E7Code",
-        1.0
-      ],
-      [
-        "E6Sparse",
-        "E8Graph",
-        1.0
-      ],
-      [
-        "E6Sparse",
-        "E12LateInteraction",
-        1.0
-      ],
-      [
-        "E6Sparse",
-        "E13SPLADE",
-        1.0
-      ],
-      [
-        "E7Code",
-        "E8Graph",
-        1.0
-      ],
-      [
-        "E7Code",
-        "E12LateInteraction",
-        1.0
-      ],
-      [
-        "E7Code",
-        "E13SPLADE",
-        1.0
-      ],
-      [
-        "E8Graph",
-        "E12LateInteraction",
-        1.0
-      ],
-      [
-        "E8Graph",
-        "E13SPLADE",
-        1.0
-      ],
-      [
-        "E12LateInteraction",
-        "E13SPLADE",
-        1.0
-      ]
-    ],
-    "best_complementary_pairs": [
-      [
-        "E1Semantic",
-        "E2Recency",
-        0.8459911249054046
-      ],
-      [
-        "E2Recency",
-        "E3Periodic",
-        0.8459911249054046
-      ],
-      [
-        "E2Recency",
-        "E6Sparse",
-        0.8459911249054046
-      ],
-      [
-        "E2Recency",
-        "E7Code",
-        0.8459911249054046
-      ],
-      [
-        "E2Recency",
-        "E8Graph",
-        0.8459911249054046
-      ],
-      [
-        "E2Recency",
-        "E12LateInteraction",
-        0.8459911249054046
-      ],
-      [
-        "E2Recency",
-        "E13SPLADE",
-        0.8459911249054046
-      ],
-      [
-        "E2Recency",
-        "E5Causal",
-        0.8377040711528179
-      ],
-      [
-        "E2Recency",
-        "E11Entity",
-        0.8344443160442485
-      ],
-      [
-        "E2Recency",
-        "E10Multimodal",
-        0.8281552092554608
-      ]
-    ]
-  },
-  "ablation_results": {
-    "removal_impact": {
-      "E2Recency": {
-        "embedder": "E2Recency",
-        "mrr_change": 0.24739648033126294,
-        "precision_change": 0.22265683229813665,
-        "recall_change": 0.2721361283643893,
-        "p_value": 0.01,
-        "is_significant": true
-      },
-      "E8Graph": {
-        "embedder": "E8Graph",
-        "mrr_change": -0.0,
-        "precision_change": -0.0,
-        "recall_change": -0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E12LateInteraction": {
-        "embedder": "E12LateInteraction",
-        "mrr_change": -0.0,
-        "precision_change": -0.0,
-        "recall_change": -0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E4Sequence": {
-        "embedder": "E4Sequence",
-        "mrr_change": 0.09474120082815729,
-        "precision_change": 0.08526708074534156,
-        "recall_change": 0.10421532091097303,
-        "p_value": 0.01,
-        "is_significant": true
-      },
-      "E7Code": {
-        "embedder": "E7Code",
-        "mrr_change": -0.0,
-        "precision_change": -0.0,
-        "recall_change": -0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E9HDC": {
-        "embedder": "E9HDC",
-        "mrr_change": 0.01513535684987688,
-        "precision_change": 0.013621821164889192,
-        "recall_change": 0.016648892534864568,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E10Multimodal": {
-        "embedder": "E10Multimodal",
-        "mrr_change": 0.006231884057971038,
-        "precision_change": 0.005608695652173934,
-        "recall_change": 0.006855072463768142,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E13SPLADE": {
-        "embedder": "E13SPLADE",
-        "mrr_change": -0.0,
-        "precision_change": -0.0,
-        "recall_change": -0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E3Periodic": {
-        "embedder": "E3Periodic",
-        "mrr_change": -0.0,
-        "precision_change": -0.0,
-        "recall_change": -0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E6Sparse": {
-        "embedder": "E6Sparse",
-        "mrr_change": -0.0,
-        "precision_change": -0.0,
-        "recall_change": -0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E11Entity": {
-        "embedder": "E11Entity",
-        "mrr_change": 0.004037267080745366,
-        "precision_change": 0.0036335403726708293,
-        "recall_change": 0.0044409937888199025,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E5Causal": {
-        "embedder": "E5Causal",
-        "mrr_change": 0.0028985507246376274,
-        "precision_change": 0.0026086956521738647,
-        "recall_change": 0.0031884057971013906,
-        "p_value": 0.1,
-        "is_significant": false
-      }
-    },
-    "addition_impact": {
-      "E13SPLADE": {
-        "embedder": "E13SPLADE",
-        "mrr_change": 0.0,
-        "precision_change": 0.0,
-        "recall_change": 0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E4Sequence": {
-        "embedder": "E4Sequence",
-        "mrr_change": -0.09474120082815729,
-        "precision_change": -0.08526708074534156,
-        "recall_change": -0.10421532091097303,
-        "p_value": 0.01,
-        "is_significant": true
-      },
-      "E2Recency": {
-        "embedder": "E2Recency",
-        "mrr_change": -0.24739648033126294,
-        "precision_change": -0.22265683229813665,
-        "recall_change": -0.2721361283643893,
-        "p_value": 0.01,
-        "is_significant": true
-      },
-      "E11Entity": {
-        "embedder": "E11Entity",
-        "mrr_change": -0.004037267080745366,
-        "precision_change": -0.0036335403726708293,
-        "recall_change": -0.0044409937888199025,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E7Code": {
-        "embedder": "E7Code",
-        "mrr_change": 0.0,
-        "precision_change": 0.0,
-        "recall_change": 0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E6Sparse": {
-        "embedder": "E6Sparse",
-        "mrr_change": 0.0,
-        "precision_change": 0.0,
-        "recall_change": 0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E3Periodic": {
-        "embedder": "E3Periodic",
-        "mrr_change": 0.0,
-        "precision_change": 0.0,
-        "recall_change": 0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E9HDC": {
-        "embedder": "E9HDC",
-        "mrr_change": -0.01513535684987688,
-        "precision_change": -0.013621821164889192,
-        "recall_change": -0.016648892534864568,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E10Multimodal": {
-        "embedder": "E10Multimodal",
-        "mrr_change": -0.006231884057971038,
-        "precision_change": -0.005608695652173934,
-        "recall_change": -0.006855072463768142,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E12LateInteraction": {
-        "embedder": "E12LateInteraction",
-        "mrr_change": 0.0,
-        "precision_change": 0.0,
-        "recall_change": 0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E5Causal": {
-        "embedder": "E5Causal",
-        "mrr_change": -0.0028985507246376274,
-        "precision_change": -0.0026086956521738647,
-        "recall_change": -0.0031884057971013906,
-        "p_value": 0.1,
-        "is_significant": false
-      },
-      "E8Graph": {
-        "embedder": "E8Graph",
-        "mrr_change": 0.0,
-        "precision_change": 0.0,
-        "recall_change": 0.0,
-        "p_value": 0.1,
-        "is_significant": false
-      }
-    },
-    "critical_embedders": [
-      "E2Recency"
-    ],
-    "redundant_embedders": [
-      "E3Periodic",
-      "E5Causal",
-      "E6Sparse",
-      "E7Code",
-      "E8Graph",
-      "E9HDC",
-      "E10Multimodal",
-      "E11Entity",
-      "E12LateInteraction",
-      "E13SPLADE"
-    ]
-  },
   "recommendations": [
-    "Best single embedder: E12_LateInteraction - use as baseline",
-    "Use Pipeline fusion for +11.8% improvement over E1"
+    "Best single embedder: E1_Semantic - use as baseline",
+    "Use Pipeline fusion for +11.0% improvement over E1"
   ],
   "constitutional_compliance": {
     "all_passed": false,
@@ -1773,23 +736,17 @@
         "rule_id": "ARCH-09",
         "description": "Topic threshold weighted_agreement >= 2.5",
         "passed": true,
-        "details": "weighted_sum=8.50, semantic_count=7"
+        "details": "weighted_sum=4.00, semantic_count=4"
       },
       {
         "rule_id": "AP-73",
         "description": "Temporal embedders (E2-E4) not in similarity fusion",
-        "passed": false,
-        "details": "Temporal embedders in fusion: [E2Recency, E3Periodic, E4Sequence]"
+        "passed": true,
+        "details": "Temporal embedders in fusion: []"
       },
       {
         "rule_id": "ASYMMETRIC-E5_Causal",
         "description": "E5_Causal asymmetric ratio within 1.5 +/- 0.15",
-        "passed": false,
-        "details": "ratio=1.000, expected=1.500+/-0.150"
-      },
-      {
-        "rule_id": "ASYMMETRIC-E8_Graph",
-        "description": "E8_Graph asymmetric ratio within 1.5 +/- 0.15",
         "passed": false,
         "details": "ratio=1.000, expected=1.500+/-0.150"
       },
