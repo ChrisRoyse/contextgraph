@@ -21,7 +21,9 @@ use parking_lot::RwLock;
 use uuid::Uuid;
 
 use crate::error::{GraphAgentError, GraphAgentResult};
-use crate::types::{GraphAnalysisResult, GraphLinkDirection, RelationshipType};
+use crate::types::{
+    ContentDomain, GraphAnalysisResult, GraphLinkDirection, RelationshipCategory, RelationshipType,
+};
 
 /// Configuration for the E8 activator.
 #[derive(Debug, Clone)]
@@ -383,6 +385,8 @@ mod tests {
             has_connection: true,
             direction: GraphLinkDirection::AConnectsB,
             relationship_type: RelationshipType::Imports,
+            category: RelationshipCategory::Dependency,
+            domain: ContentDomain::Code,
             confidence: 0.3, // Below threshold
             description: "A imports B".to_string(),
             raw_response: None,
@@ -403,6 +407,8 @@ mod tests {
             has_connection: true,
             direction: GraphLinkDirection::AConnectsB,
             relationship_type: RelationshipType::Imports,
+            category: RelationshipCategory::Dependency,
+            domain: ContentDomain::Code,
             confidence: 0.85,
             description: "A imports B".to_string(),
             raw_response: None,
@@ -425,6 +431,8 @@ mod tests {
             has_connection: true,
             direction: GraphLinkDirection::Bidirectional,
             relationship_type: RelationshipType::References,
+            category: RelationshipCategory::Reference,
+            domain: ContentDomain::General,
             confidence: 0.9,
             description: "Mutual reference".to_string(),
             raw_response: None,

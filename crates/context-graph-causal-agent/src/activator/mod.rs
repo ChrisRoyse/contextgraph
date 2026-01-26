@@ -32,9 +32,10 @@ use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use context_graph_core::causal::{CausalEdge, CausalGraph, CausalNode};
+use context_graph_embeddings::models::CausalModel;
 
 use crate::error::{CausalAgentError, CausalAgentResult};
-use crate::types::{CausalAnalysisResult, CausalLinkDirection};
+use crate::types::{CausalAnalysisResult, CausalLinkDirection, DirectionalEmbeddings};
 
 /// Configuration for the E5 activator.
 #[derive(Debug, Clone)]
@@ -94,21 +95,45 @@ pub struct E5EmbedderActivator {
     /// Causal graph for storing relationships.
     causal_graph: Arc<RwLock<CausalGraph>>,
 
+    /// Real E5 CausalModel for asymmetric embeddings.
+    /// When None, falls back to hash-based placeholders (testing mode).
+    causal_model: Option<Arc<CausalModel>>,
+
     /// Statistics.
     stats: RwLock<ActivationStats>,
 }
 
 impl E5EmbedderActivator {
-    /// Create a new activator with default configuration.
+    /// Create a new activator with default configuration (testing mode, no real embeddings).
     pub fn new(causal_graph: Arc<RwLock<CausalGraph>>) -> Self {
         Self::with_config(causal_graph, ActivatorConfig::default())
     }
 
-    /// Create with custom configuration.
+    /// Create with custom configuration (testing mode, no real embeddings).
     pub fn with_config(causal_graph: Arc<RwLock<CausalGraph>>, config: ActivatorConfig) -> Self {
         Self {
             config,
             causal_graph,
+            causal_model: None,
+            stats: RwLock::new(ActivationStats::default()),
+        }
+    }
+
+    /// Create with a real CausalModel for production use.
+    ///
+    /// # Arguments
+    /// * `causal_graph` - The causal graph for storing relationships
+    /// * `causal_model` - The E5 CausalModel for generating real embeddings
+    /// * `config` - Configuration options
+    pub fn with_model(
+        causal_graph: Arc<RwLock<CausalGraph>>,
+        causal_model: Arc<CausalModel>,
+        config: ActivatorConfig,
+    ) -> Self {
+        Self {
+            config,
+            causal_graph,
+            causal_model: Some(causal_model),
             stats: RwLock::new(ActivationStats::default()),
         }
     }
@@ -173,12 +198,17 @@ impl E5EmbedderActivator {
             }
         }
 
-        // Generate E5 embeddings
-        // In full implementation, this would call CausalModel.embed_dual()
-        let (cause_embedding, effect_embedding) =
-            self.generate_e5_embeddings(cause_content, effect_content).await?;
+        // Generate E5 embeddings with direction awareness
+        let embeddings = self
+            .generate_e5_embeddings(cause_content, effect_content, &analysis.direction)
+            .await?;
 
-        stats.embeddings_generated += 2;
+        // Count embeddings generated (2 for unidirectional, 4 for bidirectional)
+        let emb_count = if embeddings.is_bidirectional() { 4 } else { 2 };
+        stats.embeddings_generated += emb_count;
+
+        let cause_embedding = embeddings.cause_primary.clone();
+        let effect_embedding = embeddings.effect_primary.clone();
 
         // Add edge to causal graph
         self.add_graph_edge(cause_id, effect_id, cause_content, effect_content, analysis)?;
@@ -195,39 +225,154 @@ impl E5EmbedderActivator {
         Ok((cause_embedding, effect_embedding))
     }
 
-    /// Generate E5 asymmetric embeddings for cause and effect.
+    /// Generate E5 asymmetric embeddings for cause and effect with direction awareness.
     ///
-    /// In production, this calls CausalModel.embed_dual().
-    /// For now, generates placeholder embeddings.
+    /// When a real CausalModel is available, uses embed_dual() for genuine asymmetric embeddings.
+    /// Falls back to hash-based placeholders for testing without GPU.
+    ///
+    /// # Arguments
+    /// * `cause_content` - Text content positioned as cause (A in A→B)
+    /// * `effect_content` - Text content positioned as effect (B in A→B)
+    /// * `direction` - LLM-detected causal direction
+    ///
+    /// # Returns
+    /// DirectionalEmbeddings with appropriate vectors for the detected direction
     async fn generate_e5_embeddings(
         &self,
         cause_content: &str,
         effect_content: &str,
-    ) -> CausalAgentResult<(Vec<f32>, Vec<f32>)> {
-        // In full implementation:
-        // ```rust
-        // let causal_model = self.causal_model.as_ref()
-        //     .ok_or(CausalAgentError::EmbeddingError {
-        //         message: "CausalModel not initialized".to_string()
-        //     })?;
-        //
-        // let (cause_as_cause, _cause_as_effect) =
-        //     causal_model.embed_dual(cause_content).await
-        //         .map_err(CausalAgentError::embedding)?;
-        //
-        // let (_effect_as_cause, effect_as_effect) =
-        //     causal_model.embed_dual(effect_content).await
-        //         .map_err(CausalAgentError::embedding)?;
-        //
-        // Ok((cause_as_cause, effect_as_effect))
-        // ```
+        direction: &CausalLinkDirection,
+    ) -> CausalAgentResult<DirectionalEmbeddings> {
+        // Use real CausalModel if available
+        if let Some(ref causal_model) = self.causal_model {
+            return self
+                .generate_real_e5_embeddings(causal_model, cause_content, effect_content, direction)
+                .await;
+        }
 
-        // For now, generate deterministic placeholder embeddings
-        // based on content hash to enable testing
-        let cause_emb = self.hash_to_embedding(cause_content, 768, true);
-        let effect_emb = self.hash_to_embedding(effect_content, 768, false);
+        // Fallback to hash-based embeddings for testing
+        debug!("Using hash-based placeholder embeddings (no CausalModel available)");
+        self.generate_placeholder_embeddings(cause_content, effect_content, direction)
+    }
 
-        Ok((cause_emb, effect_emb))
+    /// Generate real E5 embeddings using CausalModel.
+    ///
+    /// Per ARCH-15: Uses asymmetric E5 with separate cause/effect encodings.
+    /// Per AP-77: Direction modifiers are applied at search time, not embedding time.
+    async fn generate_real_e5_embeddings(
+        &self,
+        causal_model: &Arc<CausalModel>,
+        cause_content: &str,
+        effect_content: &str,
+        direction: &CausalLinkDirection,
+    ) -> CausalAgentResult<DirectionalEmbeddings> {
+        match direction {
+            CausalLinkDirection::ACausesB => {
+                // A is cause, B is effect
+                let cause_vec = causal_model
+                    .embed_as_cause(cause_content)
+                    .await
+                    .map_err(|e| CausalAgentError::EmbeddingError {
+                        message: format!("Failed to embed cause: {}", e),
+                    })?;
+                let effect_vec = causal_model
+                    .embed_as_effect(effect_content)
+                    .await
+                    .map_err(|e| CausalAgentError::EmbeddingError {
+                        message: format!("Failed to embed effect: {}", e),
+                    })?;
+                info!(
+                    cause_dim = cause_vec.len(),
+                    effect_dim = effect_vec.len(),
+                    "Generated real E5 embeddings (A→B)"
+                );
+                Ok(DirectionalEmbeddings::forward(cause_vec, effect_vec))
+            }
+            CausalLinkDirection::BCausesA => {
+                // B is cause, A is effect (swap roles)
+                let cause_vec = causal_model
+                    .embed_as_cause(effect_content)
+                    .await
+                    .map_err(|e| CausalAgentError::EmbeddingError {
+                        message: format!("Failed to embed cause: {}", e),
+                    })?;
+                let effect_vec = causal_model
+                    .embed_as_effect(cause_content)
+                    .await
+                    .map_err(|e| CausalAgentError::EmbeddingError {
+                        message: format!("Failed to embed effect: {}", e),
+                    })?;
+                info!(
+                    cause_dim = cause_vec.len(),
+                    effect_dim = effect_vec.len(),
+                    "Generated real E5 embeddings (B→A)"
+                );
+                Ok(DirectionalEmbeddings::backward(cause_vec, effect_vec))
+            }
+            CausalLinkDirection::Bidirectional => {
+                // Both act as cause AND effect (feedback loop)
+                let (a_cause, a_effect) = causal_model
+                    .embed_dual(cause_content)
+                    .await
+                    .map_err(|e| CausalAgentError::EmbeddingError {
+                        message: format!("Failed to embed A dual: {}", e),
+                    })?;
+                let (b_cause, b_effect) = causal_model
+                    .embed_dual(effect_content)
+                    .await
+                    .map_err(|e| CausalAgentError::EmbeddingError {
+                        message: format!("Failed to embed B dual: {}", e),
+                    })?;
+                info!(
+                    a_dim = a_cause.len(),
+                    b_dim = b_cause.len(),
+                    "Generated real E5 bidirectional embeddings (A↔B)"
+                );
+                Ok(DirectionalEmbeddings::bidirectional(
+                    a_cause, a_effect, b_cause, b_effect,
+                ))
+            }
+            CausalLinkDirection::NoCausalLink => {
+                Err(CausalAgentError::ConfigError {
+                    message: "Cannot generate embeddings for non-causal relationship".to_string(),
+                })
+            }
+        }
+    }
+
+    /// Generate placeholder embeddings based on content hash.
+    ///
+    /// Used for testing when no real CausalModel is available.
+    fn generate_placeholder_embeddings(
+        &self,
+        cause_content: &str,
+        effect_content: &str,
+        direction: &CausalLinkDirection,
+    ) -> CausalAgentResult<DirectionalEmbeddings> {
+        match direction {
+            CausalLinkDirection::ACausesB => {
+                let cause_vec = self.hash_to_embedding(cause_content, 768, true);
+                let effect_vec = self.hash_to_embedding(effect_content, 768, false);
+                Ok(DirectionalEmbeddings::forward(cause_vec, effect_vec))
+            }
+            CausalLinkDirection::BCausesA => {
+                let cause_vec = self.hash_to_embedding(effect_content, 768, true);
+                let effect_vec = self.hash_to_embedding(cause_content, 768, false);
+                Ok(DirectionalEmbeddings::backward(cause_vec, effect_vec))
+            }
+            CausalLinkDirection::Bidirectional => {
+                let a_cause = self.hash_to_embedding(cause_content, 768, true);
+                let a_effect = self.hash_to_embedding(cause_content, 768, false);
+                let b_cause = self.hash_to_embedding(effect_content, 768, true);
+                let b_effect = self.hash_to_embedding(effect_content, 768, false);
+                Ok(DirectionalEmbeddings::bidirectional(
+                    a_cause, a_effect, b_cause, b_effect,
+                ))
+            }
+            CausalLinkDirection::NoCausalLink => Err(CausalAgentError::ConfigError {
+                message: "Cannot generate embeddings for non-causal relationship".to_string(),
+            }),
+        }
     }
 
     /// Generate a deterministic embedding from content hash.
@@ -396,6 +541,7 @@ mod tests {
             direction: CausalLinkDirection::ACausesB,
             confidence: 0.85,
             mechanism: "Direct causation".to_string(),
+            mechanism_type: None,
             raw_response: None,
         };
 
@@ -428,6 +574,7 @@ mod tests {
             direction: CausalLinkDirection::ACausesB,
             confidence: 0.3, // Below threshold
             mechanism: "Weak evidence".to_string(),
+            mechanism_type: None,
             raw_response: None,
         };
 

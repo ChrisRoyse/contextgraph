@@ -2,16 +2,28 @@
 //!
 //! The scanner identifies pairs of memories that may have structural
 //! relationships based on heuristics like:
-//! - Code markers (import, use, require, extends, implements)
-//! - Reference markers (see:, ref:, links to, URLs)
+//! - Domain-specific markers (code, legal, academic, general)
+//! - Reference markers (see:, ref:, links to, URLs, citations)
 //! - Structural proximity (same session, similar file paths, shared entities)
+//!
+//! # Multi-Domain Support
+//!
+//! The scanner uses `DomainMarkers` to detect content domains and
+//! adjust scoring and relationship detection accordingly:
+//! - Code: imports, calls, implements, extends, contains
+//! - Legal: cites, interprets, overrules, supersedes, distinguishes
+//! - Academic: cites, applies, extends, references
+//! - General: all relationship types
 
 use std::collections::HashSet;
 
 use uuid::Uuid;
 
 use crate::error::GraphAgentResult;
-use crate::types::{GraphCandidate, GraphMarkers, MemoryForGraphAnalysis, RelationshipType};
+use crate::types::{
+    ContentDomain, DomainMarkers, GraphCandidate, GraphMarkers, MemoryForGraphAnalysis,
+    RelationshipType,
+};
 
 /// Configuration for the memory scanner.
 #[derive(Debug, Clone)]
@@ -280,16 +292,21 @@ impl MemoryScanner {
         types.into_iter().collect()
     }
 
-    /// Check if content looks like code.
+    /// Check if content looks like code (using DomainMarkers).
     fn looks_like_code(&self, content: &str) -> bool {
-        let code_indicators = [
-            "fn ", "pub ", "let ", "const ", "impl ", "struct ", "enum ", "trait ", "use ",
-            "import ", "export ", "class ", "def ", "function ", "return ", "if ", "for ", "while ",
-            "()", "{}", "[]", "->", "=>", "::", "//", "/*", "#[",
-        ];
+        DomainMarkers::looks_like_code(content)
+    }
 
-        let lower = content.to_lowercase();
-        code_indicators.iter().any(|ind| lower.contains(ind))
+    /// Detect content domain for a memory.
+    #[allow(dead_code)]
+    fn detect_domain(&self, content: &str) -> ContentDomain {
+        DomainMarkers::detect_domain(content)
+    }
+
+    /// Detect content domain for a pair of memories.
+    #[allow(dead_code)]
+    fn detect_domain_pair(&self, content_a: &str, content_b: &str) -> ContentDomain {
+        DomainMarkers::detect_domain_pair(content_a, content_b)
     }
 
     /// Check if two file paths are related.
@@ -413,10 +430,51 @@ mod tests {
     fn test_looks_like_code() {
         let scanner = MemoryScanner::new();
 
+        // Code content
         assert!(scanner.looks_like_code("fn main() { println!(\"hello\"); }"));
         assert!(scanner.looks_like_code("pub struct Foo {}"));
         assert!(scanner.looks_like_code("import React from 'react';"));
+
+        // Non-code content
         assert!(!scanner.looks_like_code("This is just plain text without any code."));
+
+        // Legal content should NOT look like code
+        assert!(!scanner.looks_like_code(
+            "The court held that pursuant to 42 U.S.C. § 1983, the plaintiff..."
+        ));
+    }
+
+    #[test]
+    fn test_domain_detection() {
+        let scanner = MemoryScanner::new();
+
+        // Code domain
+        assert_eq!(
+            scanner.detect_domain("fn main() { use crate::foo; }"),
+            ContentDomain::Code
+        );
+
+        // Legal domain
+        assert_eq!(
+            scanner.detect_domain(
+                "The court held that pursuant to 42 U.S.C. § 1983, the plaintiff..."
+            ),
+            ContentDomain::Legal
+        );
+
+        // Academic domain
+        assert_eq!(
+            scanner.detect_domain(
+                "Smith et al. (2023) found statistical significance (p < 0.05) with n = 150"
+            ),
+            ContentDomain::Academic
+        );
+
+        // General content
+        assert_eq!(
+            scanner.detect_domain("This is just some general text."),
+            ContentDomain::General
+        );
     }
 
     #[test]

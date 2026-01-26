@@ -59,6 +59,7 @@ impl CausalNode {
 /// Directed edge in a causal graph.
 ///
 /// Represents a causal relationship: source causes target.
+/// Enhanced with optional embedding storage for direct E5-based retrieval.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CausalEdge {
     /// Source node (the cause)
@@ -69,17 +70,128 @@ pub struct CausalEdge {
     pub strength: f32,
     /// Description of the causal mechanism
     pub mechanism: String,
+
+    // ========== EMBEDDING STORAGE (Phase 2b) ==========
+    /// Cause embedding (768D E5 vector) for direct retrieval.
+    /// Embedded with CausalModel.embed_as_cause().
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub cause_embedding: Option<Vec<f32>>,
+
+    /// Effect embedding (768D E5 vector) for direct retrieval.
+    /// Embedded with CausalModel.embed_as_effect().
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub effect_embedding: Option<Vec<f32>>,
+
+    // ========== BIDIRECTIONAL SUPPORT ==========
+    /// Whether this edge represents a bidirectional (feedback loop) relationship.
+    /// When true, reverse_embeddings should also be populated.
+    #[serde(default)]
+    pub is_bidirectional: bool,
+
+    /// For bidirectional edges: reverse embeddings (cause_secondary, effect_secondary).
+    /// These allow searching in both directions efficiently.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reverse_embeddings: Option<(Vec<f32>, Vec<f32>)>,
+
+    // ========== LLM PROVENANCE ==========
+    /// LLM confidence score for this relationship [0, 1].
+    /// Separate from strength to preserve original LLM assessment.
+    #[serde(default)]
+    pub llm_confidence: f32,
+
+    /// Type of causal mechanism: "direct", "mediated", "feedback", "temporal".
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mechanism_type: Option<String>,
 }
 
 impl CausalEdge {
-    /// Create a new CausalEdge.
+    /// Create a new CausalEdge with minimal fields.
     pub fn new(source: Uuid, target: Uuid, strength: f32, mechanism: impl Into<String>) -> Self {
         Self {
             source,
             target,
             strength: strength.clamp(0.0, 1.0),
             mechanism: mechanism.into(),
+            cause_embedding: None,
+            effect_embedding: None,
+            is_bidirectional: false,
+            reverse_embeddings: None,
+            llm_confidence: 0.0,
+            mechanism_type: None,
         }
+    }
+
+    /// Create a CausalEdge with embeddings for direct retrieval.
+    ///
+    /// # Arguments
+    /// * `source` - UUID of the cause node
+    /// * `target` - UUID of the effect node
+    /// * `strength` - Causal strength [0, 1]
+    /// * `mechanism` - Description of the causal mechanism
+    /// * `cause_embedding` - E5 cause embedding (768D)
+    /// * `effect_embedding` - E5 effect embedding (768D)
+    pub fn with_embeddings(
+        source: Uuid,
+        target: Uuid,
+        strength: f32,
+        mechanism: impl Into<String>,
+        cause_embedding: Vec<f32>,
+        effect_embedding: Vec<f32>,
+    ) -> Self {
+        Self {
+            source,
+            target,
+            strength: strength.clamp(0.0, 1.0),
+            mechanism: mechanism.into(),
+            cause_embedding: Some(cause_embedding),
+            effect_embedding: Some(effect_embedding),
+            is_bidirectional: false,
+            reverse_embeddings: None,
+            llm_confidence: 0.0,
+            mechanism_type: None,
+        }
+    }
+
+    /// Create a bidirectional CausalEdge (feedback loop).
+    ///
+    /// # Arguments
+    /// * `source` - UUID of node A
+    /// * `target` - UUID of node B
+    /// * `strength` - Causal strength [0, 1]
+    /// * `mechanism` - Description of the feedback mechanism
+    /// * `a_cause` - A embedded as cause (768D)
+    /// * `b_effect` - B embedded as effect (768D)
+    /// * `b_cause` - B embedded as cause (768D)
+    /// * `a_effect` - A embedded as effect (768D)
+    pub fn bidirectional(
+        source: Uuid,
+        target: Uuid,
+        strength: f32,
+        mechanism: impl Into<String>,
+        a_cause: Vec<f32>,
+        b_effect: Vec<f32>,
+        b_cause: Vec<f32>,
+        a_effect: Vec<f32>,
+    ) -> Self {
+        Self {
+            source,
+            target,
+            strength: strength.clamp(0.0, 1.0),
+            mechanism: mechanism.into(),
+            cause_embedding: Some(a_cause),
+            effect_embedding: Some(b_effect),
+            is_bidirectional: true,
+            reverse_embeddings: Some((b_cause, a_effect)),
+            llm_confidence: 0.0,
+            mechanism_type: Some("feedback".to_string()),
+        }
+    }
+
+    /// Set LLM provenance information.
+    pub fn with_llm_provenance(mut self, confidence: f32, mechanism_type: Option<String>) -> Self {
+        self.llm_confidence = confidence.clamp(0.0, 1.0);
+        self.mechanism_type = mechanism_type;
+        self
     }
 
     /// Check if this is a strong causal relationship.
@@ -90,6 +202,16 @@ impl CausalEdge {
     /// Check if this is a weak causal relationship.
     pub fn is_weak(&self) -> bool {
         self.strength < 0.3
+    }
+
+    /// Check if this edge has embeddings stored.
+    pub fn has_embeddings(&self) -> bool {
+        self.cause_embedding.is_some() && self.effect_embedding.is_some()
+    }
+
+    /// Get the embedding dimension (if embeddings are present).
+    pub fn embedding_dimension(&self) -> Option<usize> {
+        self.cause_embedding.as_ref().map(|e| e.len())
     }
 }
 

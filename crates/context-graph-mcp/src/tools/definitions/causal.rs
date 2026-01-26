@@ -9,7 +9,7 @@
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
 
-/// Returns causal tool definitions (2 tools).
+/// Returns causal tool definitions (3 tools).
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         // search_causes - Abductive reasoning to find likely causes
@@ -36,6 +36,48 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "minScore": {
                         "type": "number",
                         "description": "Minimum abductive score threshold (0-1, default: 0.1). Results below this are filtered.",
+                        "default": 0.1,
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "includeContent": {
+                        "type": "boolean",
+                        "description": "Include full content text in results (default: false).",
+                        "default": false
+                    },
+                    "filterCausalDirection": {
+                        "type": "string",
+                        "enum": ["cause", "effect", "unknown"],
+                        "description": "Filter results by persisted causal direction. Omit for no filtering."
+                    }
+                },
+                "additionalProperties": false
+            }),
+        ),
+        // search_effects - Find effects/consequences of a cause
+        ToolDefinition::new(
+            "search_effects",
+            "Find effects/consequences of a given cause using E5 asymmetric embeddings. \
+             Uses 1.2x cause→effect boost (per AP-77) for forward causal reasoning. \
+             Returns ranked effects with predictive scores. Use for \"what will X cause?\" queries.",
+            json!({
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "The cause to find effects for. Describe the action or event whose consequences you want to predict."
+                    },
+                    "topK": {
+                        "type": "integer",
+                        "description": "Maximum number of effects to return (1-50, default: 10).",
+                        "default": 10,
+                        "minimum": 1,
+                        "maximum": 50
+                    },
+                    "minScore": {
+                        "type": "number",
+                        "description": "Minimum predictive score threshold (0-1, default: 0.1). Results below this are filtered.",
                         "default": 0.1,
                         "minimum": 0,
                         "maximum": 1

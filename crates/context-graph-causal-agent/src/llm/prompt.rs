@@ -118,19 +118,92 @@ For each pair, determine if there's a causal relationship.
     /// Hermes 2 Pro is trained for function calling and structured output,
     /// so we keep the prompt focused and direct.
     const fn default_system_prompt() -> &'static str {
-        r#"You are a causal reasoning expert. Analyze statements to identify cause-effect relationships.
+        r#"You are an expert in causal inference for knowledge graphs.
 
-Output JSON with these fields:
-- causal_link: true if there is a causal relationship, false otherwise
-- direction: "A_causes_B", "B_causes_A", "bidirectional", or "none"
-- confidence: 0.0 to 1.0 indicating your confidence
-- mechanism: brief explanation of the causal mechanism
+TASK: Analyze if Statement A and Statement B have a causal relationship.
 
-Guidelines:
-- Causation requires one event to lead to or produce another
-- Correlation alone is not causation
-- Consider temporal ordering: causes precede effects
-- Be conservative: only claim causation when evidence supports it"#
+OUTPUT FORMAT (JSON):
+{
+  "causal_link": true/false,
+  "direction": "A_causes_B" | "B_causes_A" | "bidirectional" | "none",
+  "confidence": 0.0-1.0,
+  "mechanism": "Specific causal mechanism (1-2 sentences)",
+  "mechanism_type": "direct" | "mediated" | "feedback" | "temporal"
+}
+
+MECHANISM EXTRACTION (CRITICAL):
+Bad:  "A causes B" (tautological - useless for retrieval)
+Good: "Increased cortisol impairs hippocampal function" (actionable, searchable)
+
+MECHANISM TYPES:
+- "direct": A directly causes B without intermediaries
+- "mediated": A causes X which causes B (indirect pathway)
+- "feedback": A and B mutually reinforce each other (loops)
+- "temporal": A precedes B in a necessary sequence
+
+DIRECTION DECISION:
+1. Does A describe an ACTION/STATE that could produce B's OUTCOME?
+2. Does B describe an ACTION/STATE that could produce A's OUTCOME?
+3. If A→B only: "A_causes_B"
+4. If B→A only: "B_causes_A"
+5. If both (feedback): "bidirectional"
+6. If neither: "none"
+
+CONFIDENCE CALIBRATION:
+- 0.9-1.0: Established mechanism, interventional evidence
+- 0.7-0.8: Strong evidence, clear pathway
+- 0.5-0.6: Plausible, some confounding possible
+- 0.3-0.4: Weak/indirect, correlation may explain
+- 0.0-0.2: No causal link
+
+IMPORTANT: Correlation, semantic similarity, or topical overlap are NOT causation. Be conservative."#
+    }
+}
+
+impl CausalPromptBuilder {
+    /// Build analysis prompt with few-shot examples for better accuracy.
+    pub fn build_analysis_prompt_with_examples(&self, memory_a: &str, memory_b: &str) -> String {
+        let truncated_a = self.truncate_content(memory_a);
+        let truncated_b = self.truncate_content(memory_b);
+
+        format!(
+            r#"<|im_start|>system
+{}
+<|im_end|>
+<|im_start|>user
+Example 1:
+A: "Aspirin inhibits cyclooxygenase enzymes"
+B: "Reduced prostaglandin synthesis decreases inflammation"
+Answer: {{"causal_link":true,"direction":"A_causes_B","confidence":0.85,"mechanism":"Aspirin's COX inhibition reduces prostaglandin production, which mediates inflammation.","mechanism_type":"mediated"}}
+
+Example 2:
+A: "Patients showed improved cognitive function"
+B: "The drug crosses the blood-brain barrier"
+Answer: {{"causal_link":true,"direction":"B_causes_A","confidence":0.75,"mechanism":"BBB crossing enables drug delivery to neurons, improving function.","mechanism_type":"direct"}}
+
+Example 3:
+A: "Chronic stress elevates cortisol levels"
+B: "High cortisol impairs hippocampal neurogenesis"
+Answer: {{"causal_link":true,"direction":"A_causes_B","confidence":0.80,"mechanism":"Stress-induced cortisol elevation damages hippocampal neurons.","mechanism_type":"mediated"}}
+
+Example 4:
+A: "Inflammation increases pain sensitivity"
+B: "Pain triggers stress response which worsens inflammation"
+Answer: {{"causal_link":true,"direction":"bidirectional","confidence":0.75,"mechanism":"Pain and inflammation form a positive feedback loop.","mechanism_type":"feedback"}}
+
+Example 5:
+A: "The patient has blue eyes"
+B: "The tumor was malignant"
+Answer: {{"causal_link":false,"direction":"none","confidence":0.00,"mechanism":"Eye color and tumor malignancy are biologically unrelated.","mechanism_type":"direct"}}
+
+Now analyze:
+A: "{}"
+B: "{}"
+<|im_end|>
+<|im_start|>assistant
+"#,
+            self.system_prompt, truncated_a, truncated_b
+        )
     }
 }
 

@@ -617,15 +617,20 @@ impl DiscoverGraphRelationshipsRequest {
 
         // Validate relationship_types if provided
         if let Some(ref types) = self.relationship_types {
+            // 20 relationship types (19 + none)
             let valid_types = [
-                "imports",
-                "depends_on",
-                "references",
-                "calls",
-                "implements",
-                "extends",
-                "contains",
-                "used_by",
+                // Containment
+                "contains", "scoped_by",
+                // Dependency
+                "depends_on", "imports", "requires",
+                // Reference
+                "references", "cites", "interprets", "distinguishes",
+                // Implementation
+                "implements", "complies_with", "fulfills",
+                // Extension
+                "extends", "modifies", "supersedes", "overrules",
+                // Invocation
+                "calls", "applies", "used_by",
             ];
             for t in types {
                 if !valid_types.contains(&t.as_str()) {
@@ -671,6 +676,14 @@ pub struct DiscoveredRelationship {
 
     /// Type of relationship detected.
     pub relationship_type: String,
+
+    /// Category of relationship (containment, dependency, reference, etc.).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+
+    /// Content domain (code, legal, academic, general).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
 
     /// Direction of the relationship.
     pub direction: String,
@@ -756,15 +769,20 @@ impl ValidateGraphLinkRequest {
 
         // Validate expected_relationship_type if provided
         if let Some(ref t) = self.expected_relationship_type {
+            // 20 relationship types (19 + none)
             let valid_types = [
-                "imports",
-                "depends_on",
-                "references",
-                "calls",
-                "implements",
-                "extends",
-                "contains",
-                "used_by",
+                // Containment
+                "contains", "scoped_by",
+                // Dependency
+                "depends_on", "imports", "requires",
+                // Reference
+                "references", "cites", "interprets", "distinguishes",
+                // Implementation
+                "implements", "complies_with", "fulfills",
+                // Extension
+                "extends", "modifies", "supersedes", "overrules",
+                // Invocation
+                "calls", "applies", "used_by",
             ];
             if !valid_types.contains(&t.as_str()) {
                 return Err(format!(
@@ -793,6 +811,14 @@ pub struct ValidateGraphLinkResponse {
     /// Detected relationship type (if is_valid).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub relationship_type: Option<String>,
+
+    /// Category of relationship (containment, dependency, reference, etc.).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub category: Option<String>,
+
+    /// Content domain (code, legal, academic, general).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
 
     /// Detected direction of the relationship.
     #[serde(skip_serializing_if = "Option::is_none")]

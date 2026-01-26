@@ -109,6 +109,7 @@ impl Handlers {
 
             // ========== CAUSAL TOOLS (E5 Priority 1 Enhancement) ==========
             tool_names::SEARCH_CAUSES => self.call_search_causes(id, arguments).await,
+            tool_names::SEARCH_EFFECTS => self.call_search_effects(id, arguments).await,
             tool_names::GET_CAUSAL_CHAIN => self.call_get_causal_chain(id, arguments).await,
 
             // ========== GRAPH TOOLS (E8 Upgrade - Phase 4) ==========

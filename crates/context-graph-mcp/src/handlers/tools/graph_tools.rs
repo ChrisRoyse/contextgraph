@@ -657,6 +657,8 @@ impl Handlers {
                     source_id: e.source_id,
                     target_id: e.target_id,
                     relationship_type: e.relationship_type.as_str().to_string(),
+                    category: Some(e.relationship_type.category().as_str().to_string()),
+                    domain: None, // Domain not stored in GraphEdge
                     direction: "a_connects_b".to_string(), // Source → Target
                     confidence: e.confidence,
                     description: e.description.clone(),
@@ -780,6 +782,7 @@ impl Handlers {
                 .await
             {
                 Ok((is_valid, confidence, explanation)) => {
+                    let expected_type = RelationshipType::from_str(expected_type_str);
                     let response = ValidateGraphLinkResponse {
                         is_valid,
                         source_id: source_uuid,
@@ -789,6 +792,12 @@ impl Handlers {
                         } else {
                             None
                         },
+                        category: if is_valid {
+                            Some(expected_type.category().as_str().to_string())
+                        } else {
+                            None
+                        },
+                        domain: None, // Domain not stored
                         direction: if is_valid {
                             Some("a_connects_b".to_string())
                         } else {
@@ -825,6 +834,16 @@ impl Handlers {
                         target_id: target_uuid,
                         relationship_type: if is_valid {
                             Some(analysis.relationship_type.as_str().to_string())
+                        } else {
+                            None
+                        },
+                        category: if is_valid {
+                            Some(analysis.category.as_str().to_string())
+                        } else {
+                            None
+                        },
+                        domain: if is_valid {
+                            Some(analysis.domain.as_str().to_string())
                         } else {
                             None
                         },

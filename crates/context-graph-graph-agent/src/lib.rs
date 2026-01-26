@@ -18,17 +18,24 @@
 //! - Better semantic understanding for graph relationships
 //! - Asymmetric source/target embeddings via learned projections
 //!
+//! # Content Domains
+//!
+//! The agent supports 4 content domains:
+//! - **Code**: Programming code, APIs, software documentation
+//! - **Legal**: Cases, statutes, contracts, regulations
+//! - **Academic**: Research papers, studies, citations
+//! - **General**: Other content
+//!
 //! # Relationship Types
 //!
-//! The agent detects 8 relationship types:
-//! - **imports**: A imports/uses B
-//! - **depends_on**: A depends on B
-//! - **references**: A references B
-//! - **calls**: A calls B
-//! - **implements**: A implements B
-//! - **extends**: A extends B
-//! - **contains**: A contains B
-//! - **used_by**: A is used by B
+//! The agent detects 20 relationship types (19 + None) across 6 categories:
+//!
+//! **Containment**: contains, scoped_by
+//! **Dependency**: depends_on, imports, requires
+//! **Reference**: references, cites, interprets, distinguishes
+//! **Implementation**: implements, complies_with, fulfills
+//! **Extension**: extends, modifies, supersedes, overrules
+//! **Invocation**: calls, applies, used_by
 //!
 //! # Pipeline Flow
 //!
@@ -74,8 +81,8 @@ pub use llm::{prompt::GraphPromptBuilder, GraphRelationshipLLM};
 pub use scanner::{MemoryScanner, ScannerConfig};
 pub use service::{DiscoveryCycleResult, GraphDiscoveryConfig, GraphDiscoveryService, ServiceStatus};
 pub use types::{
-    GraphAnalysisResult, GraphCandidate, GraphLinkDirection, GraphMarkers, MemoryForGraphAnalysis,
-    RelationshipType,
+    ContentDomain, DomainMarkers, GraphAnalysisResult, GraphCandidate, GraphLinkDirection,
+    GraphMarkers, MemoryForGraphAnalysis, RelationshipCategory, RelationshipType,
 };
 
 // Test utilities (feature-gated)

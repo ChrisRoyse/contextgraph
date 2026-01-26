@@ -394,6 +394,93 @@ pub fn rank_causes_by_abduction_raw(
 }
 
 // =============================================================================
+// Predictive Reasoning (Forward Causal Search)
+// =============================================================================
+
+/// Result of predictive reasoning (ranking effects by likelihood).
+#[derive(Debug, Clone)]
+pub struct PredictionResult {
+    /// Candidate effect ID
+    pub effect_id: Uuid,
+    /// Predictive score (likelihood this is the effect)
+    pub score: f32,
+    /// Raw similarity before boost
+    pub raw_similarity: f32,
+}
+
+/// Rank candidate effects by predictive reasoning given a cause.
+///
+/// Prediction: Given cause C, find most likely effects E.
+///
+/// Uses E5 asymmetric pairing with cause→effect direction (1.2 modifier)
+/// to boost scores, reflecting the forward causal relationship.
+///
+/// # Arguments
+///
+/// * `cause_fingerprint` - Fingerprint of the observed cause
+/// * `candidate_effects` - Vector of (UUID, fingerprint) pairs for candidate effects
+///
+/// # Returns
+///
+/// Vector of PredictionResult sorted by score (highest first).
+pub fn rank_effects_by_prediction(
+    cause_fingerprint: &SemanticFingerprint,
+    candidate_effects: &[(Uuid, SemanticFingerprint)],
+) -> Vec<PredictionResult> {
+    let mut results: Vec<PredictionResult> = candidate_effects
+        .iter()
+        .map(|(id, effect_fp)| {
+            // Cause looking for effects: use cause→effect direction
+            // query_is_cause = true because we ARE the cause looking for effects
+            let raw_sim =
+                compute_e5_asymmetric_fingerprint_similarity(cause_fingerprint, effect_fp, true);
+
+            // Apply predictive boost (cause→effect modifier)
+            let adjusted_score = (raw_sim * direction_mod::CAUSE_TO_EFFECT).clamp(0.0, 1.0);
+
+            PredictionResult {
+                effect_id: *id,
+                score: adjusted_score,
+                raw_similarity: raw_sim,
+            }
+        })
+        .collect();
+
+    // Sort by score descending
+    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(Ordering::Equal));
+    results
+}
+
+/// Rank candidate effects using raw embeddings (without SemanticFingerprint).
+///
+/// Simplified version for cases where you have raw E5 embeddings.
+///
+/// # Arguments
+///
+/// * `cause_embedding` - E5 embedding of the observed cause
+/// * `candidate_effects` - Vector of (UUID, embedding) pairs
+///
+/// # Returns
+///
+/// Vector of (UUID, score) pairs sorted by score descending.
+pub fn rank_effects_by_prediction_raw(
+    cause_embedding: &[f32],
+    candidate_effects: &[(Uuid, Vec<f32>)],
+) -> Vec<(Uuid, f32)> {
+    let mut results: Vec<(Uuid, f32)> = candidate_effects
+        .iter()
+        .map(|(id, effect_emb)| {
+            let raw_sim = cosine_similarity(cause_embedding, effect_emb);
+            let adjusted_score = (raw_sim * direction_mod::CAUSE_TO_EFFECT).clamp(0.0, 1.0);
+            (*id, adjusted_score)
+        })
+        .collect();
+
+    results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(Ordering::Equal));
+    results
+}
+
+// =============================================================================
 // Deductive Chain Building
 // =============================================================================
 

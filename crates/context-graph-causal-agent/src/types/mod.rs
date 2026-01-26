@@ -7,6 +7,94 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+// ============================================================================
+// DIRECTIONAL EMBEDDINGS (Phase 2a)
+// ============================================================================
+
+/// Embeddings generated with LLM direction awareness.
+///
+/// Supports forward (A→B), backward (B→A), and bidirectional (A↔B) causal relationships.
+/// For bidirectional relationships, both primary and secondary embeddings are populated.
+#[derive(Debug, Clone)]
+pub struct DirectionalEmbeddings {
+    /// Primary cause embedding (from the detected cause).
+    /// For ACausesB: embed_as_cause(A)
+    /// For BCausesA: embed_as_cause(B)
+    /// For Bidirectional: embed_as_cause(A)
+    pub cause_primary: Vec<f32>,
+
+    /// Primary effect embedding (from the detected effect).
+    /// For ACausesB: embed_as_effect(B)
+    /// For BCausesA: embed_as_effect(A)
+    /// For Bidirectional: embed_as_effect(B)
+    pub effect_primary: Vec<f32>,
+
+    /// For bidirectional: reverse cause embedding (embed_as_cause(B)).
+    pub cause_secondary: Option<Vec<f32>>,
+
+    /// For bidirectional: reverse effect embedding (embed_as_effect(A)).
+    pub effect_secondary: Option<Vec<f32>>,
+
+    /// The detected causal direction.
+    pub direction: CausalLinkDirection,
+}
+
+impl DirectionalEmbeddings {
+    /// Create embeddings for a forward (A causes B) relationship.
+    pub fn forward(cause_vec: Vec<f32>, effect_vec: Vec<f32>) -> Self {
+        Self {
+            cause_primary: cause_vec,
+            effect_primary: effect_vec,
+            cause_secondary: None,
+            effect_secondary: None,
+            direction: CausalLinkDirection::ACausesB,
+        }
+    }
+
+    /// Create embeddings for a backward (B causes A) relationship.
+    pub fn backward(cause_vec: Vec<f32>, effect_vec: Vec<f32>) -> Self {
+        Self {
+            cause_primary: cause_vec,
+            effect_primary: effect_vec,
+            cause_secondary: None,
+            effect_secondary: None,
+            direction: CausalLinkDirection::BCausesA,
+        }
+    }
+
+    /// Create embeddings for a bidirectional (A ↔ B) relationship.
+    ///
+    /// # Arguments
+    /// * `a_cause` - A embedded as cause
+    /// * `a_effect` - A embedded as effect
+    /// * `b_cause` - B embedded as cause
+    /// * `b_effect` - B embedded as effect
+    pub fn bidirectional(
+        a_cause: Vec<f32>,
+        a_effect: Vec<f32>,
+        b_cause: Vec<f32>,
+        b_effect: Vec<f32>,
+    ) -> Self {
+        Self {
+            cause_primary: a_cause,
+            effect_primary: b_effect,
+            cause_secondary: Some(b_cause),
+            effect_secondary: Some(a_effect),
+            direction: CausalLinkDirection::Bidirectional,
+        }
+    }
+
+    /// Check if this is a bidirectional relationship.
+    pub fn is_bidirectional(&self) -> bool {
+        matches!(self.direction, CausalLinkDirection::Bidirectional)
+    }
+
+    /// Get the embedding dimension (should be 768 for E5).
+    pub fn dimension(&self) -> usize {
+        self.cause_primary.len()
+    }
+}
+
 /// Result of LLM causal relationship analysis.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CausalAnalysisResult {
@@ -22,6 +110,10 @@ pub struct CausalAnalysisResult {
     /// Description of the causal mechanism.
     pub mechanism: String,
 
+    /// Type of causal mechanism (direct, mediated, feedback, temporal).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub mechanism_type: Option<MechanismType>,
+
     /// Raw LLM response (for debugging).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub raw_response: Option<String>,
@@ -34,7 +126,48 @@ impl Default for CausalAnalysisResult {
             direction: CausalLinkDirection::NoCausalLink,
             confidence: 0.0,
             mechanism: String::new(),
+            mechanism_type: None,
             raw_response: None,
+        }
+    }
+}
+
+/// Type of causal mechanism detected by the LLM.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum MechanismType {
+    /// A directly causes B without intermediaries.
+    Direct,
+
+    /// A causes X which causes B (indirect pathway).
+    Mediated,
+
+    /// A and B mutually reinforce each other (feedback loops).
+    Feedback,
+
+    /// A precedes B in a necessary sequence.
+    Temporal,
+}
+
+impl MechanismType {
+    /// Convert from string (for parsing LLM output).
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_lowercase().as_str() {
+            "direct" => Some(Self::Direct),
+            "mediated" => Some(Self::Mediated),
+            "feedback" => Some(Self::Feedback),
+            "temporal" => Some(Self::Temporal),
+            _ => None,
+        }
+    }
+
+    /// Convert to string for serialization.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Direct => "direct",
+            Self::Mediated => "mediated",
+            Self::Feedback => "feedback",
+            Self::Temporal => "temporal",
         }
     }
 }

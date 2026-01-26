@@ -1,16 +1,17 @@
 {
-  "total_pairs": 20,
-  "pairs_with_causal_link": 10,
-  "pairs_without_causal_link": 10,
-  "avg_confidence": 0.4,
-  "avg_inference_time_ms": 1768.75,
-  "min_inference_time_ms": 781,
-  "max_inference_time_ms": 3552,
-  "total_time_sec": 35.384669828,
-  "throughput_pairs_per_sec": 0.5652165216523778,
+  "total_pairs": 50,
+  "pairs_with_causal_link": 46,
+  "pairs_without_causal_link": 4,
+  "avg_confidence": 0.691,
+  "avg_inference_time_ms": 1739.54,
+  "min_inference_time_ms": 851,
+  "max_inference_time_ms": 2432,
+  "total_time_sec": 87.005938495,
+  "throughput_pairs_per_sec": 0.5746734172963764,
   "direction_distribution": {
-    "ACausesB": 10,
-    "NoCausalLink": 10
+    "NoCausalLink": 4,
+    "ACausesB": 44,
+    "BCausesA": 2
   },
-  "model_load_time_sec": 1.61835565
+  "model_load_time_sec": 1.8578501219999999
 }

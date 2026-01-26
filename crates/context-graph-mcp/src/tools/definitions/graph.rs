@@ -113,8 +113,9 @@ pub fn definitions() -> Vec<ToolDefinition> {
             "discover_graph_relationships",
             "Discover graph relationships between memories using LLM analysis. \
              Uses the graph-agent with shared CausalDiscoveryLLM (Qwen2.5-3B) for relationship detection. \
-             Supports 8 relationship types: imports, depends_on, references, calls, implements, extends, contains, used_by. \
-             Returns discovered relationships with confidence scores and directions.",
+             Supports 20 relationship types across 4 domains: Code (imports, calls, implements), \
+             Legal (cites, overrules, interprets), Academic (cites, applies, extends), General. \
+             Returns discovered relationships with confidence scores, categories, and directions.",
             json!({
                 "type": "object",
                 "required": ["memory_ids"],
@@ -133,9 +134,29 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "array",
                         "items": {
                             "type": "string",
-                            "enum": ["imports", "depends_on", "references", "calls", "implements", "extends", "contains", "used_by"]
+                            "enum": [
+                                "contains", "scoped_by",
+                                "depends_on", "imports", "requires",
+                                "references", "cites", "interprets", "distinguishes",
+                                "implements", "complies_with", "fulfills",
+                                "extends", "modifies", "supersedes", "overrules",
+                                "calls", "applies", "used_by"
+                            ]
                         },
                         "description": "Filter to specific relationship types. Omit to discover all types."
+                    },
+                    "relationship_categories": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                            "enum": ["containment", "dependency", "reference", "implementation", "extension", "invocation"]
+                        },
+                        "description": "Filter by relationship categories. Omit for all categories."
+                    },
+                    "content_domain": {
+                        "type": "string",
+                        "enum": ["code", "legal", "academic", "general"],
+                        "description": "Hint for content domain. Auto-detected if not specified."
                     },
                     "min_confidence": {
                         "type": "number",
@@ -160,7 +181,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
             "validate_graph_link",
             "Validate a proposed graph link between two memories using LLM analysis. \
              Uses the graph-agent with shared CausalDiscoveryLLM (Qwen2.5-3B) for validation. \
-             Returns validation result with confidence score, detected relationship type, and direction.",
+             Supports 20 relationship types across Code, Legal, Academic, and General domains. \
+             Returns validation result with confidence score, detected relationship type, category, and direction.",
             json!({
                 "type": "object",
                 "required": ["source_id", "target_id"],
@@ -177,7 +199,14 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "expected_relationship_type": {
                         "type": "string",
-                        "enum": ["imports", "depends_on", "references", "calls", "implements", "extends", "contains", "used_by"],
+                        "enum": [
+                            "contains", "scoped_by",
+                            "depends_on", "imports", "requires",
+                            "references", "cites", "interprets", "distinguishes",
+                            "implements", "complies_with", "fulfills",
+                            "extends", "modifies", "supersedes", "overrules",
+                            "calls", "applies", "used_by"
+                        ],
                         "description": "Expected relationship type to validate. Omit to detect any relationship."
                     }
                 },

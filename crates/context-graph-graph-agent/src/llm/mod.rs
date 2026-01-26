@@ -18,7 +18,9 @@ use context_graph_causal_agent::CausalDiscoveryLLM;
 use serde_json::Value;
 
 use crate::error::{GraphAgentError, GraphAgentResult};
-use crate::types::{GraphAnalysisResult, GraphLinkDirection, RelationshipType};
+use crate::types::{
+    ContentDomain, GraphAnalysisResult, GraphLinkDirection, RelationshipCategory, RelationshipType,
+};
 
 use prompt::GraphPromptBuilder;
 
@@ -208,6 +210,20 @@ impl GraphRelationshipLLM {
             })?;
         let relationship_type = RelationshipType::from_str(type_str);
 
+        // Optional: category (string, defaults to relationship_type's category)
+        let category = value
+            .get("category")
+            .and_then(|v| v.as_str())
+            .map(RelationshipCategory::from_str)
+            .unwrap_or_else(|| relationship_type.category());
+
+        // Optional: domain (string, defaults to General)
+        let domain = value
+            .get("domain")
+            .and_then(|v| v.as_str())
+            .map(ContentDomain::from_str)
+            .unwrap_or(ContentDomain::General);
+
         // Required: confidence (number)
         let confidence = value
             .get("confidence")
@@ -231,6 +247,8 @@ impl GraphRelationshipLLM {
             has_connection,
             direction,
             relationship_type,
+            category,
+            domain,
             confidence,
             description,
             raw_response: Some(raw_response.to_string()),
@@ -321,6 +339,20 @@ mod tests {
             })?;
         let relationship_type = RelationshipType::from_str(type_str);
 
+        // Optional: category (defaults to relationship_type's category)
+        let category = value
+            .get("category")
+            .and_then(|v| v.as_str())
+            .map(RelationshipCategory::from_str)
+            .unwrap_or_else(|| relationship_type.category());
+
+        // Optional: domain (defaults to General)
+        let domain = value
+            .get("domain")
+            .and_then(|v| v.as_str())
+            .map(ContentDomain::from_str)
+            .unwrap_or(ContentDomain::General);
+
         // Required: confidence
         let confidence = value
             .get("confidence")
@@ -341,6 +373,8 @@ mod tests {
             has_connection,
             direction,
             relationship_type,
+            category,
+            domain,
             confidence,
             description,
             raw_response: Some(response.to_string()),

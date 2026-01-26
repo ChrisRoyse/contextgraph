@@ -259,6 +259,225 @@ impl Handlers {
         self.tool_result(id, serde_json::to_value(response).unwrap_or_else(|_| json!({})))
     }
 
+    /// search_effects tool implementation.
+    ///
+    /// Performs forward causal reasoning to find likely effects of a given cause.
+    ///
+    /// # Algorithm
+    ///
+    /// 1. Embed the cause query using all 13 embedders
+    /// 2. Search for candidates using causal_reasoning weight profile (5x over-fetch)
+    /// 3. Apply predictive scoring using asymmetric E5 similarity
+    /// 4. Apply 1.2x boost per AP-77 (cause→effect direction)
+    /// 5. Filter by minScore and return top-K ranked effects
+    ///
+    /// # Parameters
+    ///
+    /// - `query`: The cause to find effects for (required)
+    /// - `topK`: Maximum effects to return (1-50, default: 10)
+    /// - `minScore`: Minimum predictive score threshold (0-1, default: 0.1)
+    /// - `includeContent`: Include full content text (default: false)
+    /// - `filterCausalDirection`: Filter by persisted causal direction
+    pub(crate) async fn call_search_effects(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        use super::causal_dtos::{
+            EffectSearchMetadata, EffectSearchResult, SearchEffectsRequest, SearchEffectsResponse,
+            SourceInfo, PREDICTIVE_BOOST,
+        };
+        use context_graph_core::causal::chain::rank_effects_by_prediction;
+
+        // Parse and validate request
+        let request: SearchEffectsRequest = match serde_json::from_value(args.clone()) {
+            Ok(req) => req,
+            Err(e) => {
+                error!(error = %e, "search_effects: Failed to parse request");
+                return self.tool_error(id, &format!("Invalid request: {}", e));
+            }
+        };
+
+        if let Err(e) = request.validate() {
+            error!(error = %e, "search_effects: Validation failed");
+            return self.tool_error(id, &e);
+        }
+
+        let query = &request.query;
+        let top_k = request.top_k;
+        let min_score = request.min_score;
+
+        info!(
+            query_preview = %query.chars().take(50).collect::<String>(),
+            top_k = top_k,
+            min_score = min_score,
+            "search_effects: Starting predictive search"
+        );
+
+        // Step 1: Embed the cause query
+        let query_embedding = match self.multi_array_provider.embed_all(query).await {
+            Ok(output) => output.fingerprint,
+            Err(e) => {
+                error!(error = %e, "search_effects: Query embedding FAILED");
+                return self.tool_error(id, &format!("Query embedding failed: {}", e));
+            }
+        };
+
+        // Step 2: Search for candidates (5x over-fetch for predictive reranking)
+        let fetch_multiplier = 5;
+        let fetch_top_k = top_k * fetch_multiplier;
+
+        let strategy = request.parse_strategy();
+        let enable_rerank = matches!(strategy, SearchStrategy::Pipeline);
+
+        info!(
+            strategy = ?strategy,
+            enable_rerank = enable_rerank,
+            "search_effects: Using search strategy"
+        );
+
+        let options = TeleologicalSearchOptions::quick(fetch_top_k)
+            .with_strategy(strategy)
+            .with_weight_profile("causal_reasoning")
+            .with_min_similarity(0.0)
+            .with_causal_direction(CausalDirection::Effect) // Seeking effects
+            .with_rerank(enable_rerank)
+            .with_rerank_weight(request.rerank_weight);
+
+        let candidates = match self
+            .teleological_store
+            .search_semantic(&query_embedding, options)
+            .await
+        {
+            Ok(results) => results,
+            Err(e) => {
+                error!(error = %e, "search_effects: Candidate search FAILED");
+                return self.tool_error(id, &format!("Search failed: {}", e));
+            }
+        };
+
+        let candidates_evaluated = candidates.len();
+        debug!(
+            candidates_evaluated = candidates_evaluated,
+            "search_effects: Evaluating candidates for predictive scoring"
+        );
+
+        // Step 3: Apply predictive scoring using rank_effects_by_prediction
+        let candidate_pairs: Vec<(Uuid, SemanticFingerprint)> = candidates
+            .iter()
+            .map(|r| (r.fingerprint.id, r.fingerprint.semantic.clone()))
+            .collect();
+
+        let prediction_results = rank_effects_by_prediction(&query_embedding, &candidate_pairs);
+
+        // Step 4: Filter by minScore and prepare response
+        let mut filtered_count = 0;
+        let effects: Vec<EffectSearchResult> = prediction_results
+            .into_iter()
+            .filter_map(|result| {
+                let score = result.score;
+
+                if score < min_score {
+                    filtered_count += 1;
+                    return None;
+                }
+
+                Some(EffectSearchResult {
+                    effect_id: result.effect_id,
+                    score,
+                    raw_similarity: result.raw_similarity,
+                    causal_direction: None,
+                    content: None,
+                    source: None,
+                })
+            })
+            .take(top_k)
+            .collect();
+
+        // Step 5: Optionally filter by causal direction and hydrate content
+        let effect_ids: Vec<Uuid> = effects.iter().map(|e| e.effect_id).collect();
+
+        let source_metadata = match self
+            .teleological_store
+            .get_source_metadata_batch(&effect_ids)
+            .await
+        {
+            Ok(m) => m,
+            Err(e) => {
+                warn!(
+                    error = %e,
+                    "search_effects: Source metadata retrieval failed"
+                );
+                vec![None; effect_ids.len()]
+            }
+        };
+
+        let contents: Vec<Option<String>> = if request.include_content && !effects.is_empty() {
+            match self.teleological_store.get_content_batch(&effect_ids).await {
+                Ok(c) => c,
+                Err(e) => {
+                    warn!(error = %e, "search_effects: Content retrieval failed");
+                    vec![None; effect_ids.len()]
+                }
+            }
+        } else {
+            vec![None; effect_ids.len()]
+        };
+
+        // Populate metadata and content
+        let filter_direction = request.filter_causal_direction.as_deref();
+        let mut final_effects: Vec<EffectSearchResult> = Vec::with_capacity(effects.len());
+
+        for (i, mut effect) in effects.into_iter().enumerate() {
+            if let Some(Some(ref metadata)) = source_metadata.get(i) {
+                effect.causal_direction = metadata.causal_direction.clone();
+                effect.source = Some(SourceInfo {
+                    source_type: format!("{}", metadata.source_type),
+                    file_path: metadata.file_path.clone(),
+                    hook_type: metadata.hook_type.clone(),
+                    tool_name: metadata.tool_name.clone(),
+                });
+            }
+
+            if let Some(filter) = filter_direction {
+                if let Some(ref dir) = effect.causal_direction {
+                    if dir != filter {
+                        filtered_count += 1;
+                        continue;
+                    }
+                }
+            }
+
+            if request.include_content {
+                effect.content = contents.get(i).and_then(|c: &Option<String>| c.clone());
+            }
+
+            final_effects.push(effect);
+        }
+
+        final_effects.truncate(top_k);
+
+        let response = SearchEffectsResponse {
+            query: query.clone(),
+            effects: final_effects.clone(),
+            count: final_effects.len(),
+            metadata: EffectSearchMetadata {
+                candidates_evaluated,
+                filtered_by_score: filtered_count,
+                predictive_boost: PREDICTIVE_BOOST,
+            },
+        };
+
+        info!(
+            effects_found = response.count,
+            candidates_evaluated = candidates_evaluated,
+            filtered = filtered_count,
+            "search_effects: Completed predictive search"
+        );
+
+        self.tool_result(id, serde_json::to_value(response).unwrap_or_else(|_| json!({})))
+    }
+
     /// get_causal_chain tool implementation.
     ///
     /// Builds and visualizes transitive causal chains from an anchor point.

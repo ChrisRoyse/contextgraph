@@ -41,6 +41,10 @@ pub const DEFAULT_MIN_CHAIN_SIMILARITY: f32 = 0.3;
 /// Per AP-77: effect→cause = 0.8
 pub const ABDUCTIVE_DAMPENING: f32 = 0.8;
 
+/// Predictive boost factor (cause→effect direction modifier).
+/// Per AP-77: cause→effect = 1.2
+pub const PREDICTIVE_BOOST: f32 = 1.2;
+
 // ============================================================================
 // REQUEST DTOs
 // ============================================================================
@@ -197,6 +201,132 @@ impl SearchCausesRequest {
         }
 
         // Validate rerank_weight
+        if self.rerank_weight.is_nan() || self.rerank_weight.is_infinite() {
+            return Err("rerankWeight must be a finite number".to_string());
+        }
+
+        if self.rerank_weight < 0.0 || self.rerank_weight > 1.0 {
+            return Err(format!(
+                "rerankWeight must be between 0.0 and 1.0, got {}",
+                self.rerank_weight
+            ));
+        }
+
+        Ok(())
+    }
+}
+
+/// Request parameters for search_effects tool (forward causal reasoning).
+///
+/// # Example JSON
+/// ```json
+/// {
+///   "query": "Deployed new code without testing",
+///   "topK": 10,
+///   "minScore": 0.2,
+///   "includeContent": true
+/// }
+/// ```
+#[derive(Debug, Clone, Deserialize)]
+pub struct SearchEffectsRequest {
+    /// The cause to find effects for (required).
+    /// This should describe the action or event whose consequences you want to predict.
+    pub query: String,
+
+    /// Maximum number of effects to return (1-50, default: 10).
+    #[serde(rename = "topK", default = "default_top_k")]
+    pub top_k: usize,
+
+    /// Minimum predictive score threshold (0-1, default: 0.1).
+    /// Results with scores below this are filtered out.
+    #[serde(rename = "minScore", default = "default_min_score")]
+    pub min_score: f32,
+
+    /// Whether to include full content text in results (default: false).
+    #[serde(rename = "includeContent", default)]
+    pub include_content: bool,
+
+    /// Optional filter for causal direction of results.
+    #[serde(rename = "filterCausalDirection")]
+    pub filter_causal_direction: Option<String>,
+
+    /// Search strategy for retrieval (multi_space or pipeline).
+    #[serde(default)]
+    pub strategy: Option<String>,
+
+    /// E12 rerank weight (0.0-1.0, default: 0.4).
+    #[serde(rename = "rerankWeight", default = "default_rerank_weight")]
+    pub rerank_weight: f32,
+}
+
+impl Default for SearchEffectsRequest {
+    fn default() -> Self {
+        Self {
+            query: String::new(),
+            top_k: DEFAULT_CAUSE_SEARCH_TOP_K,
+            min_score: MIN_CAUSE_SCORE,
+            include_content: false,
+            filter_causal_direction: None,
+            strategy: None,
+            rerank_weight: default_rerank_weight(),
+        }
+    }
+}
+
+impl SearchEffectsRequest {
+    /// Parse the strategy parameter into SearchStrategy enum.
+    pub fn parse_strategy(&self) -> SearchStrategy {
+        match self.strategy.as_deref() {
+            Some("pipeline") => SearchStrategy::Pipeline,
+            Some("e1_only") => SearchStrategy::E1Only,
+            _ => SearchStrategy::MultiSpace,
+        }
+    }
+
+    /// Validate the request parameters.
+    pub fn validate(&self) -> Result<(), String> {
+        if self.query.is_empty() {
+            return Err("query is required and cannot be empty".to_string());
+        }
+
+        if self.top_k < 1 || self.top_k > MAX_CAUSE_SEARCH_TOP_K {
+            return Err(format!(
+                "topK must be between 1 and {}, got {}",
+                MAX_CAUSE_SEARCH_TOP_K, self.top_k
+            ));
+        }
+
+        if self.min_score.is_nan() || self.min_score.is_infinite() {
+            return Err("minScore must be a finite number".to_string());
+        }
+
+        if self.min_score < 0.0 || self.min_score > 1.0 {
+            return Err(format!(
+                "minScore must be between 0.0 and 1.0, got {}",
+                self.min_score
+            ));
+        }
+
+        if let Some(ref dir) = self.filter_causal_direction {
+            let valid = ["cause", "effect", "unknown"];
+            if !valid.contains(&dir.as_str()) {
+                return Err(format!(
+                    "filterCausalDirection must be one of {:?}, got '{}'",
+                    valid, dir
+                ));
+            }
+        }
+
+        if let Some(ref strat) = self.strategy {
+            let valid = ["multi_space", "pipeline", "e1_only"];
+            if !valid.contains(&strat.as_str()) {
+                return Err(format!(
+                    "strategy must be one of {:?}, got '{}'",
+                    valid, strat
+                ));
+            }
+        }
+
         if self.rerank_weight.is_nan() || self.rerank_weight.is_infinite() {
             return Err("rerankWeight must be a finite number".to_string());
         }
@@ -402,6 +532,61 @@ pub struct CauseSearchMetadata {
 
     /// The abductive dampening factor applied (0.8).
     pub abductive_dampening: f32,
+}
+
+/// A single effect result from search_effects.
+#[derive(Debug, Clone, Serialize)]
+pub struct EffectSearchResult {
+    /// UUID of the candidate effect memory.
+    pub effect_id: Uuid,
+
+    /// Predictive score (with 1.2x boost applied).
+    /// Higher scores indicate more likely effects.
+    pub score: f32,
+
+    /// Raw similarity before boost.
+    pub raw_similarity: f32,
+
+    /// Causal direction of this memory (if persisted).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub causal_direction: Option<String>,
+
+    /// Full content text (only if includeContent=true).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+
+    /// Source metadata for provenance.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub source: Option<SourceInfo>,
+}
+
+/// Response for search_effects tool.
+#[derive(Debug, Clone, Serialize)]
+pub struct SearchEffectsResponse {
+    /// The cause query that was analyzed.
+    pub query: String,
+
+    /// Ranked list of candidate effects (highest score first).
+    pub effects: Vec<EffectSearchResult>,
+
+    /// Number of effects returned.
+    pub count: usize,
+
+    /// Metadata about the search.
+    pub metadata: EffectSearchMetadata,
+}
+
+/// Metadata about an effect search operation.
+#[derive(Debug, Clone, Serialize)]
+pub struct EffectSearchMetadata {
+    /// Number of candidates evaluated.
+    pub candidates_evaluated: usize,
+
+    /// Number filtered out by minScore.
+    pub filtered_by_score: usize,
+
+    /// The predictive boost factor applied (1.2).
+    pub predictive_boost: f32,
 }
 
 /// A single hop in a causal chain.

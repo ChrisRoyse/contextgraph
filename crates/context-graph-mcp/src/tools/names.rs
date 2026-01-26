@@ -45,6 +45,7 @@ pub const COMPARE_SESSION_STATES: &str = "compare_session_states";
 
 // ========== CAUSAL TOOLS (E5 Priority 1 Enhancement) ==========
 pub const SEARCH_CAUSES: &str = "search_causes";
+pub const SEARCH_EFFECTS: &str = "search_effects";
 pub const GET_CAUSAL_CHAIN: &str = "get_causal_chain";
 
 // ========== GRAPH TOOLS (E8 Upgrade - Phase 4) ==========

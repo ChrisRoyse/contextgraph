@@ -72,6 +72,10 @@ pub struct LlmConfig {
 
     /// Batch size for processing.
     pub batch_size: u32,
+
+    /// Use few-shot examples in prompts for better accuracy.
+    /// Adds ~200 tokens but improves direction detection.
+    pub use_few_shot: bool,
 }
 
 impl Default for LlmConfig {
@@ -86,7 +90,8 @@ impl Default for LlmConfig {
             causal_grammar_path: PathBuf::from("models/hermes-2-pro/causal_analysis.gbnf"),
             graph_grammar_path: PathBuf::from("models/hermes-2-pro/graph_relationship.gbnf"),
             validation_grammar_path: PathBuf::from("models/hermes-2-pro/validation.gbnf"),
-            batch_size: 512,
+            batch_size: 2048, // Increased for few-shot prompts
+            use_few_shot: true, // Enable few-shot examples by default for better accuracy
         }
     }
 }
@@ -310,10 +315,16 @@ ws ::= [ \t\n\r]*"#
             return Err(CausalAgentError::LlmNotInitialized);
         }
 
-        let prompt = self.prompt_builder.build_analysis_prompt(memory_a, memory_b);
+        // Use few-shot examples for better accuracy when enabled
+        let prompt = if self.config.use_few_shot {
+            self.prompt_builder.build_analysis_prompt_with_examples(memory_a, memory_b)
+        } else {
+            self.prompt_builder.build_analysis_prompt(memory_a, memory_b)
+        };
 
         debug!(
             prompt_len = prompt.len(),
+            use_few_shot = self.config.use_few_shot,
             "Analyzing causal relationship"
         );
 
@@ -530,11 +541,17 @@ ws ::= [ \t\n\r]*"#
             .unwrap_or("")
             .to_string();
 
+        let mechanism_type = json
+            .get("mechanism_type")
+            .and_then(|v| v.as_str())
+            .and_then(crate::types::MechanismType::from_str);
+
         Ok(CausalAnalysisResult {
             has_causal_link,
             direction: CausalLinkDirection::from_str(direction_str),
             confidence: confidence.clamp(0.0, 1.0),
             mechanism,
+            mechanism_type,
             raw_response: Some(response.to_string()),
         })
     }

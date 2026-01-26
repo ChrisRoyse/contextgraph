@@ -1,0 +1,60 @@
+{
+  "timestamp": "2026-01-26T22:48:16.839522818+00:00",
+  "dataset": "Wikipedia/Diverse",
+  "total_pairs": 100,
+  "total_time_sec": 144.65979870500001,
+  "throughput_pairs_per_sec": 0.6912770575875522,
+  "model_load_time_sec": 1.6555276289999998,
+  "adjacent_stats": {
+    "pair_type": "Adjacent",
+    "total": 40,
+    "causal_links": 22,
+    "causal_rate": 0.55,
+    "avg_confidence": 0.39249998,
+    "avg_inference_time_ms": 1636.025,
+    "direction_distribution": {
+      "NoCausalLink": 19,
+      "ACausesB": 21
+    },
+    "mechanism_type_distribution": {
+      "mediated": 18,
+      "direct": 2,
+      "temporal": 20
+    }
+  },
+  "same_topic_stats": {
+    "pair_type": "SameTopic",
+    "total": 30,
+    "causal_links": 2,
+    "causal_rate": 0.06666666666666667,
+    "avg_confidence": 0.05,
+    "avg_inference_time_ms": 1333.6,
+    "direction_distribution": {
+      "ACausesB": 2,
+      "NoCausalLink": 28
+    },
+    "mechanism_type_distribution": {
+      "temporal": 27,
+      "mediated": 1,
+      "direct": 2
+    }
+  },
+  "random_stats": {
+    "pair_type": "Random",
+    "total": 30,
+    "causal_links": 0,
+    "causal_rate": 0.0,
+    "avg_confidence": 0.0,
+    "avg_inference_time_ms": 1305.1333333333334,
+    "direction_distribution": {
+      "NoCausalLink": 30
+    },
+    "mechanism_type_distribution": {
+      "temporal": 29,
+      "direct": 1
+    }
+  },
+  "overall_causal_rate": 0.24,
+  "overall_avg_confidence": 0.17199999,
+  "overall_avg_inference_time_ms": 1446.03
+}
