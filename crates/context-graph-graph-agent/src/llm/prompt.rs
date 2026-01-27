@@ -54,61 +54,67 @@ impl GraphPromptBuilder {
 
         // Auto-detect domain from content
         let domain = DomainMarkers::detect_domain_pair(memory_a, memory_b);
-        let domain_hint = self.domain_hint(domain);
+        let domain_context = self.domain_hint(domain);
 
         format!(
             r#"<|im_start|>system
-You are an expert relationship analyzer for knowledge graphs.
+You are an expert at detecting structural relationships between content.
 
-TASK: Determine if Content A and Content B have a structural relationship.
+TASK: Analyze if Content A has a STRUCTURAL relationship with Content B.
 
-CONTENT DOMAINS:
-- code: Programming code, APIs, software documentation
-- legal: Cases, statutes, contracts, regulations
-- academic: Research papers, studies, citations
-- general: Other content
+CRITICAL RULES:
+1. If contents are UNRELATED or only share topic similarity -> has_connection: false, relationship_type: "none"
+2. Look for EXPLICIT structural links (imports, citations, inheritance), not semantic similarity
+3. Confidence should reflect certainty: 0.5=uncertain, 0.7=likely, 0.9=very certain
+4. When in doubt, output "none" - don't force a relationship
 
-RELATIONSHIP CATEGORIES:
-1. CONTAINMENT: A contains/scopes B (hierarchy)
-   Types: contains, scoped_by
-2. DEPENDENCY: A requires/depends on B
-   Types: depends_on, imports, requires
-3. REFERENCE: A references/cites B (mention)
-   Types: references, cites, interprets, distinguishes
-4. IMPLEMENTATION: A implements/realizes B
-   Types: implements, complies_with, fulfills
-5. EXTENSION: A extends/modifies B
-   Types: extends, modifies, supersedes, overrules
-6. INVOCATION: A applies/uses B
-   Types: calls, applies, used_by
+RELATIONSHIP TYPES (choose the MOST SPECIFIC that applies):
 
-OUTPUT FORMAT (JSON):
-{{
-  "has_connection": true/false,
-  "direction": "a_to_b" | "b_to_a" | "bidirectional" | "none",
-  "relationship_type": "<type>",
-  "category": "<category>",
-  "domain": "code" | "legal" | "academic" | "general",
-  "confidence": 0.0-1.0,
-  "description": "Brief explanation"
-}}
+CODE DOMAIN:
+- imports: A explicitly imports/uses B (e.g., "use crate::B", "from B import")
+- implements: A implements B's interface/trait (e.g., "impl Trait for Struct")
+- extends: A inherits from B (e.g., "class A(B)", "extends B")
+- calls: A invokes B's function (e.g., "B.method()", "call_b()")
+- contains: A is a parent module containing B (e.g., "mod B" inside A)
+- depends_on: A requires B as dependency (e.g., Cargo.toml dependency)
 
-IMPORTANT:
-- Semantic similarity alone is NOT a structural relationship
-- Only identify clear structural/dependency relationships
+LEGAL DOMAIN:
+- cites: A formally cites B with case citation (e.g., "Brown v. Board, 347 U.S. 483")
+- interprets: A explains/construes B's meaning (e.g., "Court interprets statute X...")
+- overrules: A explicitly invalidates/reverses B (e.g., "overruled by...")
+- supersedes: A replaces B as newer version (e.g., "ADA supersedes Rehabilitation Act")
+- distinguishes: A differentiates its facts from B (e.g., "distinguishable from Miranda...")
+- complies_with: A states compliance with B (e.g., "complies with GDPR")
+- applies: A applies B's legal test/doctrine (e.g., "applying Chevron framework")
+
+ACADEMIC DOMAIN:
+- cites: A cites B with author/year (e.g., "Smith et al. (2023)", "doi:...")
+- extends: A builds upon B's findings (e.g., "extends Chen's work by...")
+- applies: A uses B's methodology (e.g., "using grounded theory approach")
+- references: A mentions B for background (e.g., "see Bishop (2006)")
+
+GENERAL:
+- references: A mentions/links to B
+- contains: A includes B as subsection
+- depends_on: A requires B as prerequisite
+- modifies: A overrides/customizes B
+
+OUTPUT JSON FORMAT:
+{{"has_connection": bool, "direction": "a_to_b"|"b_to_a"|"bidirectional"|"none", "relationship_type": "...", "category": "...", "domain": "code"|"legal"|"academic"|"general", "confidence": 0.0-1.0, "description": "why"}}
 <|im_end|>
 <|im_start|>user
-{}Analyze if there is a structural relationship between these contents:
-
+{}
 Content A:
 {}
 
 Content B:
 {}
+
+Analyze: Does A have a structural relationship with B? If unrelated, output none.
 <|im_end|>
 <|im_start|>assistant
 "#,
-            domain_hint, truncated_a, truncated_b
+            domain_context, truncated_a, truncated_b
         )
     }
 
@@ -213,15 +219,17 @@ Content B:
     fn domain_hint(&self, domain: ContentDomain) -> String {
         match domain {
             ContentDomain::Code => {
-                "Domain hint: This appears to be programming code.\nRelevant types: imports, calls, implements, extends, contains, depends_on\n\n".to_string()
+                "[CODE DOMAIN DETECTED]\nFocus on: imports (use/from statements), implements (trait impl), extends (class inheritance), calls (function invocation), contains (module hierarchy), depends_on (Cargo/package deps).\nDO NOT confuse: extends (inheritance) vs implements (interface) - they are different!\n\n".to_string()
             }
             ContentDomain::Legal => {
-                "Domain hint: This appears to be legal content.\nRelevant types: cites, interprets, overrules, supersedes, distinguishes, complies_with\n\n".to_string()
+                "[LEGAL DOMAIN DETECTED]\nFocus on: cites (case citations with U.S./F.3d/etc), interprets (explaining statute meaning), overrules (explicitly invalidating), supersedes (replacing law), distinguishes (differentiating facts), complies_with (regulatory compliance), applies (using legal doctrine).\nDO NOT confuse: cites (formal citation) vs references (general mention)!\n\n".to_string()
             }
             ContentDomain::Academic => {
-                "Domain hint: This appears to be academic/research content.\nRelevant types: cites, applies, extends, references\n\n".to_string()
+                "[ACADEMIC DOMAIN DETECTED]\nFocus on: cites (author/year citations), extends (building on prior work), applies (using methodology), references (background mention).\nDO NOT confuse: cites (et al., doi:) vs references (see also)!\n\n".to_string()
             }
-            ContentDomain::General => String::new(),
+            ContentDomain::General => {
+                "[GENERAL DOMAIN]\nCarefully check if contents have an actual structural link. Semantic similarity alone is NOT a relationship.\n\n".to_string()
+            }
         }
     }
 

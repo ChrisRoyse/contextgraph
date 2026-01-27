@@ -1,60 +1,65 @@
 {
-  "timestamp": "2026-01-26T22:48:16.839522818+00:00",
+  "timestamp": "2026-01-27T00:20:36.251934925+00:00",
   "dataset": "Wikipedia/Diverse",
-  "total_pairs": 100,
-  "total_time_sec": 144.65979870500001,
-  "throughput_pairs_per_sec": 0.6912770575875522,
-  "model_load_time_sec": 1.6555276289999998,
+  "total_pairs": 4818,
+  "total_time_sec": 6076.240223091,
+  "throughput_pairs_per_sec": 0.7929245426621843,
+  "model_load_time_sec": 1.648265858,
   "adjacent_stats": {
     "pair_type": "Adjacent",
-    "total": 40,
-    "causal_links": 22,
-    "causal_rate": 0.55,
-    "avg_confidence": 0.39249998,
-    "avg_inference_time_ms": 1636.025,
+    "total": 2000,
+    "causal_links": 1028,
+    "causal_rate": 0.514,
+    "avg_confidence": 0.37400287,
+    "avg_inference_time_ms": 1411.521,
     "direction_distribution": {
-      "NoCausalLink": 19,
-      "ACausesB": 21
+      "BCausesA": 1,
+      "NoCausalLink": 1014,
+      "ACausesB": 982,
+      "Bidirectional": 3
     },
     "mechanism_type_distribution": {
-      "mediated": 18,
-      "direct": 2,
-      "temporal": 20
+      "mediated": 804,
+      "direct": 215,
+      "temporal": 981
     }
   },
   "same_topic_stats": {
     "pair_type": "SameTopic",
-    "total": 30,
-    "causal_links": 2,
-    "causal_rate": 0.06666666666666667,
-    "avg_confidence": 0.05,
-    "avg_inference_time_ms": 1333.6,
+    "total": 1318,
+    "causal_links": 127,
+    "causal_rate": 0.09635811836115327,
+    "avg_confidence": 0.07465847,
+    "avg_inference_time_ms": 1189.2298937784522,
     "direction_distribution": {
-      "ACausesB": 2,
-      "NoCausalLink": 28
+      "Bidirectional": 1,
+      "NoCausalLink": 1197,
+      "ACausesB": 120
     },
     "mechanism_type_distribution": {
-      "temporal": 27,
-      "mediated": 1,
-      "direct": 2
+      "direct": 60,
+      "temporal": 1159,
+      "mediated": 99
     }
   },
   "random_stats": {
     "pair_type": "Random",
-    "total": 30,
-    "causal_links": 0,
-    "causal_rate": 0.0,
-    "avg_confidence": 0.0,
-    "avg_inference_time_ms": 1305.1333333333334,
+    "total": 1500,
+    "causal_links": 2,
+    "causal_rate": 0.0013333333333333333,
+    "avg_confidence": 0.0010666667,
+    "avg_inference_time_ms": 1120.0193333333334,
     "direction_distribution": {
-      "NoCausalLink": 30
+      "NoCausalLink": 1498,
+      "ACausesB": 2
     },
     "mechanism_type_distribution": {
-      "temporal": 29,
-      "direct": 1
+      "temporal": 1437,
+      "direct": 61,
+      "mediated": 2
     }
   },
-  "overall_causal_rate": 0.24,
-  "overall_avg_confidence": 0.17199999,
-  "overall_avg_inference_time_ms": 1446.03
+  "overall_causal_rate": 0.24014113740141138,
+  "overall_avg_confidence": 0.17600812,
+  "overall_avg_inference_time_ms": 1259.9576587795766
 }
