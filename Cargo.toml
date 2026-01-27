@@ -82,4 +82,10 @@ strip = true
 [profile.dev]
 # Faster compile times for development
 opt-level = 0
-debug = true
+debug = 1                    # Line info only (not full DWARF) - ~40-60% smaller artifacts
+incremental = true
+split-debuginfo = "unpacked" # Keep debuginfo separate (can be deleted independently)
+
+[profile.dev.package."*"]
+# External dependencies don't need full debug info
+debug = false

@@ -124,4 +124,15 @@ contextgraph_data/
 
 # RocksDB runtime data
 data/
+
+# Stale/migration data folders
 contextgraph_data_incompatible_*/
+contextgraph_data_backup_*/
+
+# Large benchmark artifacts (regeneratable)
+benchmark_results/*.json
+benchmark_results/*.md
+
+# Debug artifacts that shouldn't be tracked
+*.rmeta
+*.rlib.rmeta

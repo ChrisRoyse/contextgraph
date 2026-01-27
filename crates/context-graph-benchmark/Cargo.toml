@@ -206,3 +206,7 @@ path = "src/bin/embedder_impact_realdata_bench.rs"
 name = "causal-discovery-mcp-bench"
 path = "src/bin/causal_discovery_mcp_bench.rs"
 required-features = ["real-embeddings"]
+
+[[bin]]
+name = "disk-space-bench"
+path = "src/bin/disk_space_bench.rs"
