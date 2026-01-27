@@ -685,8 +685,9 @@ impl ProductionMultiArrayProvider {
         let e6_model = factory.create_model(ModelId::Sparse, &config)?;
         let e7_model = factory.create_model(ModelId::Code, &config)?;
 
-        // E8: Create GraphModel directly for dual embedding support (E8 Upgrade)
-        let e8_graph_model = GraphModel::new(&models_dir.join("graph"), config.clone())?;
+        // E8: Create GraphModel using shared e5-large-v2 model (VRAM sharing per E8 Upgrade)
+        // The graph model path points to semantic to share the e5-large-v2 weights with E1
+        let e8_graph_model = GraphModel::new(&models_dir.join("semantic"), config.clone())?;
         let e9_model = factory.create_model(ModelId::Hdc, &config)?;
 
         // E10: Create ContextualModel directly for dual embedding support (E10 Upgrade)

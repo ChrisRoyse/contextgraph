@@ -484,8 +484,8 @@ impl McpServer {
             graph_discovery_config,
         ));
 
-        // CAUSAL-HINT: Create LlmCausalHintProvider using shared LLM
-        info!("CAUSAL-HINT: Creating LlmCausalHintProvider (100ms timeout)");
+        // CAUSAL-HINT: Create LlmCausalHintProvider using shared LLM (GPU inference via CUDA)
+        info!("CAUSAL-HINT: Creating LlmCausalHintProvider (2s timeout for GPU inference)");
         let causal_hint_provider: Arc<dyn CausalHintProvider> =
             Arc::new(LlmCausalHintProvider::new(
                 shared_llm, // Move remaining Arc

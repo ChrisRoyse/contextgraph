@@ -85,7 +85,7 @@ impl Default for LlmConfig {
             model_path: PathBuf::from("models/hermes-2-pro/Hermes-2-Pro-Mistral-7B.Q5_K_M.gguf"),
             context_size: 4096,
             temperature: 0.0, // Deterministic for analysis
-            max_tokens: 256,
+            max_tokens: 512, // Increased from 256 to support 1-3 paragraph descriptions
             n_gpu_layers: u32::MAX, // Full GPU offload
             seed: 42,
             causal_grammar_path: PathBuf::from("models/hermes-2-pro/causal_analysis.gbnf"),
@@ -243,14 +243,15 @@ ws ::= [ \t\n\r]*"#
 
     /// Default embedded grammar for single-text causal hint analysis.
     ///
-    /// Simpler than pair analysis - just classifies if text is causal
-    /// and what direction it primarily describes.
+    /// Includes description field for 1-3 paragraph causal relationship descriptions.
+    /// Description enables apples-to-apples semantic search of causal content.
     const fn default_single_text_grammar() -> &'static str {
-        r#"root ::= "{" ws is-causal "," ws direction "," ws confidence "," ws key-phrases ws "}"
+        r#"root ::= "{" ws is-causal "," ws direction "," ws confidence "," ws key-phrases "," ws description ws "}"
 is-causal ::= "\"is_causal\"" ws ":" ws boolean
 direction ::= "\"direction\"" ws ":" ws direction-value
 confidence ::= "\"confidence\"" ws ":" ws number
 key-phrases ::= "\"key_phrases\"" ws ":" ws phrase-array
+description ::= "\"description\"" ws ":" ws string
 direction-value ::= "\"cause\"" | "\"effect\"" | "\"neutral\""
 boolean ::= "true" | "false"
 number ::= "0" ("." [0-9] [0-9]?)? | "1" ("." "0" "0"?)?
@@ -452,7 +453,7 @@ ws ::= [ \t\n\r]*"#
     /// Parse single-text analysis response into CausalHint.
     fn parse_single_text_response(&self, response: &str) -> CausalAgentResult<CausalHint> {
         // The response should be valid JSON thanks to grammar constraint
-        // Format: {"is_causal":true/false,"direction":"cause"/"effect"/"neutral","confidence":0.0-1.0,"key_phrases":[]}
+        // Format: {"is_causal":true/false,"direction":"cause"/"effect"/"neutral","confidence":0.0-1.0,"key_phrases":[],"description":"..."}
 
         #[derive(Deserialize)]
         struct SingleTextResponse {
@@ -460,18 +461,23 @@ ws ::= [ \t\n\r]*"#
             direction: String,
             confidence: f32,
             key_phrases: Vec<String>,
+            #[serde(default)]
+            description: Option<String>,
         }
 
         // Try JSON parsing first (should work due to grammar constraint)
         match serde_json::from_str::<SingleTextResponse>(response) {
             Ok(parsed) => {
                 let direction_hint = CausalDirectionHint::from_str(&parsed.direction);
-                Ok(CausalHint::new(
+                let mut hint = CausalHint::new(
                     parsed.is_causal,
                     direction_hint,
                     parsed.confidence,
                     parsed.key_phrases,
-                ))
+                );
+                // Set description if provided and non-empty
+                hint.description = parsed.description.filter(|d| !d.is_empty());
+                Ok(hint)
             }
             Err(e) => {
                 warn!(
@@ -527,7 +533,23 @@ ws ::= [ \t\n\r]*"#
             })
             .unwrap_or_default();
 
-        Ok(CausalHint::new(is_causal, direction, confidence, key_phrases))
+        // Extract description (between "description":" and the last quote before })
+        let description_re = Regex::new(r#""description"\s*:\s*"((?:[^"\\]|\\.)*)""#).unwrap();
+        let description = description_re
+            .captures(response)
+            .and_then(|c| c.get(1))
+            .map(|m| {
+                // Unescape the string
+                m.as_str()
+                    .replace("\\n", "\n")
+                    .replace("\\\"", "\"")
+                    .replace("\\\\", "\\")
+            })
+            .filter(|d| !d.is_empty());
+
+        let mut hint = CausalHint::new(is_causal, direction, confidence, key_phrases);
+        hint.description = description;
+        Ok(hint)
     }
 
     /// Generate text from a custom prompt.

@@ -228,4 +228,36 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
     ) -> CoreResult<Vec<(Uuid, [Vec<f32>; 13])>> {
         self.scan_fingerprints_for_clustering_async(limit).await
     }
+
+    // ==================== Causal Relationship Storage ====================
+
+    async fn store_causal_relationship(
+        &self,
+        relationship: &context_graph_core::types::CausalRelationship,
+    ) -> CoreResult<Uuid> {
+        RocksDbTeleologicalStore::store_causal_relationship(self, relationship).await
+    }
+
+    async fn get_causal_relationship(
+        &self,
+        id: Uuid,
+    ) -> CoreResult<Option<context_graph_core::types::CausalRelationship>> {
+        RocksDbTeleologicalStore::get_causal_relationship(self, id).await
+    }
+
+    async fn get_causal_relationships_by_source(
+        &self,
+        source_id: Uuid,
+    ) -> CoreResult<Vec<context_graph_core::types::CausalRelationship>> {
+        RocksDbTeleologicalStore::get_causal_relationships_by_source(self, source_id).await
+    }
+
+    async fn search_causal_relationships(
+        &self,
+        query_embedding: &[f32],
+        top_k: usize,
+        direction_filter: Option<&str>,
+    ) -> CoreResult<Vec<(Uuid, f32)>> {
+        RocksDbTeleologicalStore::search_causal_relationships(self, query_embedding, top_k, direction_filter).await
+    }
 }

@@ -239,6 +239,7 @@ impl Handlers {
 
         // CAUSAL-HINT: Get causal hint if provider is available (non-blocking with timeout)
         // Per Phase 5: LLM analyzes content for causal nature, provides hints to E5 embedder
+        // CAUSAL-HINT-FIX: Clone hint before moving into metadata so we can use direction for storage
         let causal_hint = if let Some(provider) = &self.causal_hint_provider {
             if provider.is_available() {
                 match provider.get_hint(&content).await {
@@ -264,6 +265,24 @@ impl Handlers {
         } else {
             None // No provider configured
         };
+
+        // CAUSAL-HINT-FIX: Preserve LLM hint direction for storage (before moving into metadata)
+        // The hint direction comes from the LLM and should be used directly, not inferred from E5 norms
+        let llm_causal_direction: Option<String> = causal_hint.as_ref().and_then(|hint| {
+            if hint.is_useful() {
+                Some(match hint.direction_hint {
+                    context_graph_core::traits::CausalDirectionHint::Cause => "cause".to_string(),
+                    context_graph_core::traits::CausalDirectionHint::Effect => "effect".to_string(),
+                    context_graph_core::traits::CausalDirectionHint::Neutral => "unknown".to_string(),
+                })
+            } else {
+                None
+            }
+        });
+
+        // CAUSAL-RELATIONSHIP: Clone the hint before it moves into metadata
+        // We need the hint later to store the causal relationship with provenance
+        let causal_hint_for_storage = causal_hint.clone();
 
         let metadata = EmbeddingMetadata {
             session_id: session_id.clone(),
@@ -301,9 +320,13 @@ impl Handlers {
         // This must be done before TeleologicalFingerprint::new() moves the semantic fingerprint.
         let cluster_array = embedding_output.fingerprint.to_cluster_array();
 
-        // E5 Phase 5: Infer causal direction BEFORE fingerprint is consumed
-        // This is used later for source metadata storage
-        let causal_direction = infer_causal_direction_from_fingerprint(&embedding_output.fingerprint);
+        // E5 Phase 5: Determine causal direction for storage
+        // CAUSAL-HINT-FIX: Use LLM hint direction if available (high confidence from 7B model)
+        // Fall back to E5 norm inference only when no LLM hint is available
+        let causal_direction = llm_causal_direction.unwrap_or_else(|| {
+            debug!("store_memory: No LLM hint, inferring causal direction from E5 norms");
+            infer_causal_direction_from_fingerprint(&embedding_output.fingerprint)
+        });
 
         // E6-FIX: Extract e6_sparse BEFORE creating TeleologicalFingerprint
         // The SemanticFingerprint.e6_sparse is a SparseVector that must be copied
@@ -409,6 +432,71 @@ impl Handlers {
                         causal_direction = %causal_direction,
                         "store_memory: Source metadata stored for E4 sequence retrieval"
                     );
+                }
+
+                // CAUSAL-RELATIONSHIP: Store LLM-generated causal description with provenance
+                // Per plan: When confidence >= 0.5, embed description and store in CF_CAUSAL_RELATIONSHIPS
+                // Use the causal_hint_for_storage we cloned earlier (before it moved into metadata)
+                if let Some(ref hint) = causal_hint_for_storage {
+                    if hint.is_useful() {
+                        if let Some(ref description) = hint.description {
+                            // Embed the description using E1 (1024D semantic)
+                            match self
+                                .multi_array_provider
+                                .embed_e1_only(description)
+                                .await
+                            {
+                                Ok(desc_embedding) => {
+                                    // Create causal relationship with PROVENANCE
+                                    let causal_rel = context_graph_core::types::CausalRelationship::new(
+                                        description.clone(),
+                                        desc_embedding,
+                                        content.clone(),              // Original source content
+                                        fingerprint_id,               // Source memory ID
+                                        match hint.direction_hint {
+                                            context_graph_core::traits::CausalDirectionHint::Cause => "cause".to_string(),
+                                            context_graph_core::traits::CausalDirectionHint::Effect => "effect".to_string(),
+                                            context_graph_core::traits::CausalDirectionHint::Neutral => "neutral".to_string(),
+                                        },
+                                        hint.confidence,
+                                        hint.key_phrases.clone(),
+                                    );
+
+                                    // Store in dedicated CF
+                                    match self.teleological_store
+                                        .store_causal_relationship(&causal_rel)
+                                        .await
+                                    {
+                                        Ok(causal_id) => {
+                                            info!(
+                                                causal_id = %causal_id,
+                                                source_id = %fingerprint_id,
+                                                direction = %causal_rel.direction,
+                                                desc_len = description.len(),
+                                                "store_memory: Stored causal relationship with provenance"
+                                            );
+                                        }
+                                        Err(e) => {
+                                            // Non-fatal: fingerprint is stored, causal relationship is optional
+                                            warn!(
+                                                fingerprint_id = %fingerprint_id,
+                                                error = %e,
+                                                "store_memory: Failed to store causal relationship (fingerprint saved successfully)"
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    // Non-fatal: E1 embedding for description failed
+                                    warn!(
+                                        fingerprint_id = %fingerprint_id,
+                                        error = %e,
+                                        "store_memory: Failed to embed causal description (fingerprint saved successfully)"
+                                    );
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // Build response, including rationale if provided

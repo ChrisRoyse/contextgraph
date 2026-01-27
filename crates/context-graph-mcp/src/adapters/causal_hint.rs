@@ -51,8 +51,9 @@ pub struct LlmCausalHintProvider {
 }
 
 impl LlmCausalHintProvider {
-    /// Default timeout for hint generation (100ms).
-    pub const DEFAULT_TIMEOUT_MS: u64 = 100;
+    /// Default timeout for hint generation (2s for GPU-based 7B model inference).
+    /// RTX 5090 with Q5_K_M quantization typically takes ~100-500ms per hint.
+    pub const DEFAULT_TIMEOUT_MS: u64 = 2000;
 
     /// Default minimum confidence threshold.
     pub const DEFAULT_MIN_CONFIDENCE: f32 = 0.5;
@@ -162,7 +163,7 @@ mod tests {
 
     #[test]
     fn test_default_constants() {
-        assert_eq!(LlmCausalHintProvider::DEFAULT_TIMEOUT_MS, 100);
+        assert_eq!(LlmCausalHintProvider::DEFAULT_TIMEOUT_MS, 2000);
         assert!((LlmCausalHintProvider::DEFAULT_MIN_CONFIDENCE - 0.5).abs() < f32::EPSILON);
     }
 }

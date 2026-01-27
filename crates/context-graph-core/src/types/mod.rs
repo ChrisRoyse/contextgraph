@@ -1,5 +1,6 @@
 //! Core domain types for the Context Graph system.
 
+pub mod causal_relationship;
 pub mod code_entity;
 pub mod file_index;
 pub mod fingerprint;
@@ -7,6 +8,7 @@ mod graph_edge;
 mod memory_node;
 mod source_metadata;
 
+pub use causal_relationship::CausalRelationship;
 pub use code_entity::{
     CodeEntity, CodeEntityType, CodeFileIndexEntry, CodeLanguage, CodeStats, Visibility,
 };

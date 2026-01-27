@@ -261,6 +261,14 @@ impl CausalDirectionHint {
 ///
 /// Used at store-time to enhance E5 (V_causality) embeddings based on
 /// LLM analysis of whether content describes causes or effects.
+///
+/// # Description Field
+///
+/// When confidence >= 0.5, the LLM generates a 1-3 paragraph description
+/// explaining the causal relationship. This description is:
+/// - Embedded separately using E1 (1024D) for semantic search
+/// - Stored in CF_CAUSAL_RELATIONSHIPS with provenance
+/// - Used for "apples-to-apples" comparison of causal content
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct CausalHint {
     /// Whether content contains causal language.
@@ -271,6 +279,16 @@ pub struct CausalHint {
     pub confidence: f32,
     /// Key causal phrases detected.
     pub key_phrases: Vec<String>,
+    /// LLM-generated 1-3 paragraph description of the causal relationship.
+    ///
+    /// Generated when confidence >= 0.5. Contains:
+    /// - Paragraph 1: What is the causal relationship
+    /// - Paragraph 2: Mechanism/evidence details
+    /// - Paragraph 3: Implications/context
+    ///
+    /// Used for embedding and searching causal relationships with provenance.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
 }
 
 impl CausalHint {
@@ -289,6 +307,24 @@ impl CausalHint {
             direction_hint,
             confidence: confidence.clamp(0.0, 1.0),
             key_phrases,
+            description: None,
+        }
+    }
+
+    /// Create a new causal hint with description.
+    pub fn with_description(
+        is_causal: bool,
+        direction_hint: CausalDirectionHint,
+        confidence: f32,
+        key_phrases: Vec<String>,
+        description: Option<String>,
+    ) -> Self {
+        Self {
+            is_causal,
+            direction_hint,
+            confidence: confidence.clamp(0.0, 1.0),
+            key_phrases,
+            description,
         }
     }
 
@@ -299,6 +335,7 @@ impl CausalHint {
             direction_hint: CausalDirectionHint::Neutral,
             confidence: 1.0,
             key_phrases: Vec::new(),
+            description: None,
         }
     }
 
@@ -579,6 +616,28 @@ pub trait MultiArrayEmbeddingProvider: Send + Sync {
         &self,
         contents: &[String],
     ) -> CoreResult<Vec<MultiArrayEmbeddingOutput>>;
+
+    /// Embed content using only E1 (semantic) embedder.
+    ///
+    /// Efficient for cases where only E1 embedding is needed, avoiding
+    /// the overhead of generating all 13 embeddings.
+    ///
+    /// # Arguments
+    ///
+    /// * `content` - Text to embed
+    ///
+    /// # Returns
+    ///
+    /// E1 embedding as 1024D vector.
+    ///
+    /// # Default Implementation
+    ///
+    /// Falls back to `embed_all` and extracts E1 (wasteful but correct).
+    /// Implementations should override for efficiency.
+    async fn embed_e1_only(&self, content: &str) -> CoreResult<Vec<f32>> {
+        let output = self.embed_all(content).await?;
+        Ok(output.fingerprint.e1_semantic)
+    }
 
     /// Get expected dimensions for each embedder.
     ///

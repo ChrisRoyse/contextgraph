@@ -86,6 +86,6 @@ tower = { version = "0.5", features = ["util"] }
 # No fallback stubs - system fails fast if CUDA unavailable
 default = ["cuda"]
 candle = ["context-graph-embeddings/candle"]
-cuda = ["context-graph-cuda/cuda", "context-graph-embeddings/cuda", "context-graph-storage/cuda", "candle"]
+cuda = ["context-graph-cuda/cuda", "context-graph-embeddings/cuda", "context-graph-storage/cuda", "context-graph-causal-agent/cuda", "candle"]
 # Integration tests requiring real GPU/model files
 integration = []

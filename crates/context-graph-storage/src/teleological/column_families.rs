@@ -1002,17 +1002,127 @@ pub fn get_code_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     ]
 }
 
-/// Get ALL column family descriptors (teleological + embedder + code).
+// =============================================================================
+// CAUSAL RELATIONSHIP COLUMN FAMILIES
+// =============================================================================
+// These column families store LLM-generated causal relationship descriptions
+// with full provenance linking back to source content and fingerprints.
+// =============================================================================
+
+/// Column family for causal relationship storage.
 ///
-/// Returns 33 descriptors total: 15 teleological + 13 quantized embedder + 5 code.
+/// Stores LLM-generated causal relationships with embedded descriptions
+/// for semantic search. Each relationship contains:
+/// - 1-3 paragraph description
+/// - E1 1024D embedding of the description
+/// - Full provenance (source content + fingerprint ID)
+///
+/// Key: UUID (16 bytes) → Value: CausalRelationship serialized via bincode (~5-15KB)
+///
+/// # Storage Details
+/// - 8KB block size (fits 1 relationship per block)
+/// - LZ4 compression (text + embeddings compress well)
+/// - Bloom filter for fast UUID lookups
+/// - Point lookups by causal_relationship_id
+pub const CF_CAUSAL_RELATIONSHIPS: &str = "causal_relationships";
+
+/// Column family for causal relationships by source fingerprint index.
+///
+/// Secondary index enabling "find all causal relationships from memory X" queries.
+/// Essential for provenance traversal and context injection.
+///
+/// Key: source_fingerprint_id (16 bytes) → Value: Vec<Uuid> serialized via bincode
+///
+/// # Storage Details
+/// - LZ4 compression (UUID lists compress well)
+/// - Bloom filter for fast source existence checks
+/// - Point lookups by source fingerprint ID
+pub const CF_CAUSAL_BY_SOURCE: &str = "causal_by_source";
+
+/// All causal relationship column family names (2 total).
+pub const CAUSAL_CFS: &[&str] = &[CF_CAUSAL_RELATIONSHIPS, CF_CAUSAL_BY_SOURCE];
+
+/// Total count of causal CFs.
+pub const CAUSAL_CF_COUNT: usize = 2;
+
+/// Options for causal relationship storage (~5-15KB per relationship).
+///
+/// # Configuration
+/// - 8KB block size (fits 1 relationship per block)
+/// - LZ4 compression (text + embeddings compress ~40%)
+/// - Bloom filter for fast UUID lookups
+/// - 16-byte prefix extractor for UUID keys
+///
+/// # FAIL FAST Policy
+/// No fallback options - let RocksDB error on open if misconfigured.
+pub fn causal_relationships_cf_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_block_size(8 * 1024); // 8KB blocks for ~5-15KB relationships
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(16)); // UUID prefix
+    opts.optimize_for_point_lookup(64); // 64MB hint
+    opts.create_if_missing(true);
+    opts
+}
+
+/// Options for causal-by-source index storage.
+///
+/// # Configuration
+/// - LZ4 compression (UUID lists compress well)
+/// - Bloom filter for fast source existence checks
+/// - 16-byte prefix extractor for source fingerprint UUID keys
+///
+/// # FAIL FAST Policy
+/// No fallback options - let RocksDB error on open if misconfigured.
+pub fn causal_by_source_cf_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(16)); // UUID prefix
+    opts.optimize_for_point_lookup(32); // 32MB hint
+    opts.create_if_missing(true);
+    opts
+}
+
+/// Get all 2 causal relationship column family descriptors.
+///
+/// These CFs store LLM-generated causal descriptions with provenance.
+///
+/// # Arguments
+/// * `cache` - Shared block cache
+///
+/// # Returns
+/// Vector of 2 `ColumnFamilyDescriptor`s for causal relationship storage.
+pub fn get_causal_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
+    vec![
+        ColumnFamilyDescriptor::new(CF_CAUSAL_RELATIONSHIPS, causal_relationships_cf_options(cache)),
+        ColumnFamilyDescriptor::new(CF_CAUSAL_BY_SOURCE, causal_by_source_cf_options(cache)),
+    ]
+}
+
+/// Get ALL column family descriptors (teleological + embedder + code + causal).
+///
+/// Returns 35 descriptors total: 15 teleological + 13 quantized embedder + 5 code + 2 causal.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 33 `ColumnFamilyDescriptor`s.
+/// Vector of 35 `ColumnFamilyDescriptor`s.
 pub fn get_all_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     let mut descriptors = get_all_teleological_cf_descriptors(cache);
     descriptors.extend(get_code_cf_descriptors(cache));
+    descriptors.extend(get_causal_cf_descriptors(cache));
     descriptors
 }

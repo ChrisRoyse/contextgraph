@@ -171,36 +171,54 @@ IMPORTANT: Correlation, semantic similarity, or topical overlap are NOT causatio
 
     /// Default system prompt for single-text causal analysis.
     ///
-    /// Optimized for fast classification (~50ms target latency).
-    /// Returns simpler JSON format than pair analysis.
+    /// Generates structured causal analysis with 1-3 paragraph descriptions.
+    /// Descriptions enable semantic search of causal relationships.
     const fn default_single_text_system_prompt() -> &'static str {
-        r#"You analyze text for causal content.
+        r#"You analyze text for causal content and generate rich causal descriptions.
 
 TASK: Determine if the text describes causes, effects, or is causal in nature.
 
 OUTPUT FORMAT (JSON):
-{"is_causal":true/false,"direction":"cause"/"effect"/"neutral","confidence":0.0-1.0,"key_phrases":[]}
+{"is_causal":true/false,"direction":"cause"/"effect"/"neutral","confidence":0.0-1.0,"key_phrases":[],"description":"..."}
 
 DIRECTION CLASSIFICATION:
 - "cause": Text describes something that CAUSES other things
   Example: "High cortisol levels cause memory impairment"
-  Example: "Smoking increases cancer risk"
 
 - "effect": Text describes something that IS CAUSED by other things
   Example: "Memory impairment results from chronic stress"
-  Example: "Cancer risk is elevated in smokers"
 
 - "neutral": Either non-causal OR equally describes both cause and effect
 
-KEY_PHRASES: Extract 1-3 causal markers (e.g., "causes", "leads to", "results from", "due to")
+KEY_PHRASES: Extract 1-3 causal markers (e.g., "causes", "leads to", "results from")
+
+DESCRIPTION (CRITICAL - generate when confidence >= 0.5):
+Write 1-3 paragraphs explaining the causal relationship.
+
+Paragraph 1 - RELATIONSHIP: State the causal relationship clearly.
+"X causes Y" or "Y is an effect of X"
+
+Paragraph 2 - MECHANISM: Explain HOW or WHY this causal link exists.
+Evidence, process, or mechanism details.
+
+Paragraph 3 - CONTEXT: Implications, scope, or conditions.
+When does this apply? What are the consequences?
+
+Use \n to separate paragraphs within the description string.
+
+If confidence < 0.5, set description to empty string "".
+
+EXAMPLE OUTPUT (causal):
+{"is_causal":true,"direction":"cause","confidence":0.9,"key_phrases":["causes","leads to"],"description":"High cortisol levels cause memory impairment by damaging hippocampal neurons.\n\nThe mechanism involves prolonged glucocorticoid exposure triggering oxidative stress and reducing synaptic plasticity in the hippocampus.\n\nThis relationship is particularly relevant in chronic stress conditions and aging."}
+
+EXAMPLE OUTPUT (non-causal):
+{"is_causal":false,"direction":"neutral","confidence":0.1,"key_phrases":[],"description":""}
 
 CONFIDENCE:
 - 0.9-1.0: Clear causal language with explicit markers
 - 0.7-0.8: Implicit causation, strong language
 - 0.5-0.6: Possible causation, weaker indicators
-- 0.0-0.4: No clear causal content
-
-Be fast and concise. Focus on explicit causal language."#
+- 0.0-0.4: No clear causal content"#
     }
 
     /// Build prompt for analyzing a SINGLE text for causal nature.

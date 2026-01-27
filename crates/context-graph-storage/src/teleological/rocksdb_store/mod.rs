@@ -42,6 +42,7 @@
 //! - `trait_impl`: TeleologicalMemoryStore trait implementation (thin wrapper)
 //! - `tests`: Comprehensive test suite
 
+mod causal_relationships;
 mod content;
 mod crud;
 mod file_index;

@@ -545,4 +545,67 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         &self,
         limit: Option<usize>,
     ) -> CoreResult<Vec<(uuid::Uuid, [Vec<f32>; 13])>>;
+
+    // =========================================================================
+    // Causal Relationship Storage (CF_CAUSAL_RELATIONSHIPS)
+    // =========================================================================
+
+    /// Store a causal relationship with embedded description.
+    ///
+    /// Stores the LLM-generated causal description with its E1 embedding
+    /// and full provenance (source content + fingerprint ID).
+    ///
+    /// # Arguments
+    /// * `relationship` - The causal relationship to store
+    ///
+    /// # Returns
+    /// The UUID of the stored causal relationship.
+    ///
+    /// # Errors
+    /// - `CoreError::StorageError` - Storage backend failure
+    /// - `CoreError::SerializationError` - Serialization failure
+    async fn store_causal_relationship(
+        &self,
+        relationship: &crate::types::CausalRelationship,
+    ) -> CoreResult<Uuid>;
+
+    /// Retrieve a causal relationship by ID.
+    ///
+    /// # Arguments
+    /// * `id` - The causal relationship UUID
+    ///
+    /// # Returns
+    /// The causal relationship if found, None otherwise.
+    async fn get_causal_relationship(
+        &self,
+        id: Uuid,
+    ) -> CoreResult<Option<crate::types::CausalRelationship>>;
+
+    /// Get all causal relationships derived from a source fingerprint.
+    ///
+    /// # Arguments
+    /// * `source_id` - The source fingerprint UUID
+    ///
+    /// # Returns
+    /// Vector of causal relationships with this source.
+    async fn get_causal_relationships_by_source(
+        &self,
+        source_id: Uuid,
+    ) -> CoreResult<Vec<crate::types::CausalRelationship>>;
+
+    /// Search causal relationships by description similarity.
+    ///
+    /// # Arguments
+    /// * `query_embedding` - E1 1024D query embedding
+    /// * `top_k` - Number of results
+    /// * `direction_filter` - Optional filter: "cause", "effect", or None
+    ///
+    /// # Returns
+    /// Vector of (causal_id, similarity) tuples sorted by similarity descending.
+    async fn search_causal_relationships(
+        &self,
+        query_embedding: &[f32],
+        top_k: usize,
+        direction_filter: Option<&str>,
+    ) -> CoreResult<Vec<(Uuid, f32)>>;
 }

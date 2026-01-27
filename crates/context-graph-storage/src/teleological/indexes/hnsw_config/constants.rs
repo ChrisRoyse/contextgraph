@@ -23,8 +23,8 @@ pub const E6_SPARSE_VOCAB: usize = 30_522;
 /// E7 Code: 1536D (Qodo-Embed)
 pub const E7_DIM: usize = 1536;
 
-/// E8 Graph: 384D (MiniLM)
-pub const E8_DIM: usize = 384;
+/// E8 Graph: 1024D (e5-large-v2, shared with E1)
+pub const E8_DIM: usize = 1024;
 
 /// E9 HDC: 1024D (projected from 10K-bit hypervector)
 pub const E9_DIM: usize = 1024;

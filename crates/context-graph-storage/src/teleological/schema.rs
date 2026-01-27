@@ -551,3 +551,93 @@ pub fn parse_session_temporal_key(key: &[u8]) -> i64 {
             .expect("timestamp bytes slice is exactly 8 bytes"),
     )
 }
+
+// =============================================================================
+// CAUSAL RELATIONSHIP KEYS (UUID = 16 bytes)
+// =============================================================================
+
+/// Key for causal_relationships CF: causal_relationship_id UUID as 16 bytes.
+///
+/// Used to store LLM-generated causal relationship descriptions with embeddings.
+///
+/// # Arguments
+/// * `id` - The causal relationship's UUID
+///
+/// # Returns
+/// Exactly 16 bytes (UUID in big-endian format)
+#[inline]
+pub fn causal_relationship_key(id: &Uuid) -> [u8; 16] {
+    *id.as_bytes()
+}
+
+/// Parse causal_relationship key back to UUID.
+///
+/// # Arguments
+/// * `key` - Exactly 16 bytes
+///
+/// # Returns
+/// The parsed UUID
+///
+/// # Panics
+/// Panics if key is not exactly 16 bytes (FAIL FAST).
+#[inline]
+pub fn parse_causal_relationship_key(key: &[u8]) -> Uuid {
+    if key.len() != 16 {
+        panic!(
+            "STORAGE ERROR: causal_relationship key must be 16 bytes, got {} bytes. \
+             Key data: {:02x?}. This indicates corrupted storage or wrong CF access.",
+            key.len(),
+            key
+        );
+    }
+    Uuid::from_slice(key).unwrap_or_else(|e| {
+        panic!(
+            "STORAGE ERROR: Invalid UUID bytes in causal_relationship key. \
+             Error: {}. Key data: {:02x?}.",
+            e, key
+        );
+    })
+}
+
+/// Key for causal_by_source CF: source_fingerprint_id UUID as 16 bytes.
+///
+/// Used for secondary index enabling "find all causal relationships from memory X".
+///
+/// # Arguments
+/// * `source_id` - The source fingerprint's UUID
+///
+/// # Returns
+/// Exactly 16 bytes (UUID in big-endian format)
+#[inline]
+pub fn causal_by_source_key(source_id: &Uuid) -> [u8; 16] {
+    *source_id.as_bytes()
+}
+
+/// Parse causal_by_source key back to source fingerprint UUID.
+///
+/// # Arguments
+/// * `key` - Exactly 16 bytes
+///
+/// # Returns
+/// The parsed UUID
+///
+/// # Panics
+/// Panics if key is not exactly 16 bytes (FAIL FAST).
+#[inline]
+pub fn parse_causal_by_source_key(key: &[u8]) -> Uuid {
+    if key.len() != 16 {
+        panic!(
+            "STORAGE ERROR: causal_by_source key must be 16 bytes, got {} bytes. \
+             Key data: {:02x?}. This indicates corrupted storage or wrong CF access.",
+            key.len(),
+            key
+        );
+    }
+    Uuid::from_slice(key).unwrap_or_else(|e| {
+        panic!(
+            "STORAGE ERROR: Invalid UUID bytes in causal_by_source key. \
+             Error: {}. Key data: {:02x?}.",
+            e, key
+        );
+    })
+}

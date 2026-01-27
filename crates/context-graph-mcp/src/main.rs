@@ -385,6 +385,44 @@ fn apply_overrides(config: &mut Config, cli: &CliArgs) {
         info!("ENV override: transport = {}", transport);
         config.mcp.transport = transport;
     }
+
+    // CRITICAL: Override storage path and enable RocksDB backend
+    // When CONTEXT_GRAPH_STORAGE_PATH is set, use RocksDB instead of in-memory stub
+    if let Ok(storage_path) = env::var("CONTEXT_GRAPH_STORAGE_PATH") {
+        info!("ENV override: storage.path = {}", storage_path);
+        config.storage.path = storage_path;
+        // CRITICAL: Switch from "memory" stub to "rocksdb" real backend
+        if config.storage.backend == "memory" {
+            info!("ENV override: storage.backend = rocksdb (was memory stub)");
+            config.storage.backend = "rocksdb".to_string();
+        }
+    }
+
+    // CRITICAL: Override models path and enable real embeddings
+    // When CONTEXT_GRAPH_MODELS_PATH is set, use real models instead of stub
+    if let Ok(models_path) = env::var("CONTEXT_GRAPH_MODELS_PATH") {
+        info!("ENV override: embedding.model_path = {}", models_path);
+        // Switch from "stub" to real model
+        if config.embedding.model == "stub" {
+            info!("ENV override: embedding.model = e5-large-v2 (was stub)");
+            config.embedding.model = "e5-large-v2".to_string();
+        }
+        // Note: The actual models_path is used by ProductionMultiArrayProvider
+        // which reads from this env var directly in server.rs
+    }
+
+    // CRITICAL: Override index backend when storage is real
+    // If storage is RocksDB, index should be HNSW not memory
+    if config.storage.backend == "rocksdb" && config.index.backend == "memory" {
+        info!("ENV override: index.backend = hnsw (storage is rocksdb)");
+        config.index.backend = "hnsw".to_string();
+    }
+
+    // CRITICAL: Override UTL mode when using real backends
+    if config.storage.backend == "rocksdb" && config.utl.mode == "stub" {
+        info!("ENV override: utl.mode = production (storage is rocksdb)");
+        config.utl.mode = "production".to_string();
+    }
 }
 
 /// Determine warm_first mode from CLI and environment.

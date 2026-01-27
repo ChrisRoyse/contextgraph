@@ -47,6 +47,9 @@ pub const COMPARE_SESSION_STATES: &str = "compare_session_states";
 pub const SEARCH_CAUSES: &str = "search_causes";
 pub const SEARCH_EFFECTS: &str = "search_effects";
 pub const GET_CAUSAL_CHAIN: &str = "get_causal_chain";
+/// Search causal relationships by description similarity with provenance.
+/// Returns LLM-generated descriptions linked to source memories.
+pub const SEARCH_CAUSAL_RELATIONSHIPS: &str = "search_causal_relationships";
 
 // ========== GRAPH TOOLS (E8 Upgrade - Phase 4) ==========
 pub const SEARCH_CONNECTIONS: &str = "search_connections";

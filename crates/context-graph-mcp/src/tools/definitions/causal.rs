@@ -9,9 +9,46 @@
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
 
-/// Returns causal tool definitions (3 tools).
+/// Returns causal tool definitions (4 tools).
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
+        // search_causal_relationships - Search LLM-generated causal descriptions with provenance
+        ToolDefinition::new(
+            "search_causal_relationships",
+            "Search for causal relationships by semantic similarity to query. \
+             Returns LLM-generated 1-3 paragraph descriptions explaining causal mechanisms, \
+             with full provenance linking to source memories. Use for understanding causal \
+             relationships with rich explanations and evidence.",
+            json!({
+                "type": "object",
+                "required": ["query"],
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Natural language query about causal relationships. E.g., 'What causes memory problems?' or 'Effects of stress on health'."
+                    },
+                    "direction": {
+                        "type": "string",
+                        "enum": ["cause", "effect", "all"],
+                        "description": "Filter by causal direction: 'cause' (X causes Y), 'effect' (X is caused by Y), or 'all' (no filter). Default: 'all'.",
+                        "default": "all"
+                    },
+                    "topK": {
+                        "type": "integer",
+                        "description": "Maximum number of results (1-100, default: 10).",
+                        "default": 10,
+                        "minimum": 1,
+                        "maximum": 100
+                    },
+                    "includeSource": {
+                        "type": "boolean",
+                        "description": "Include original source content in results (default: true). Set to false for smaller response.",
+                        "default": true
+                    }
+                },
+                "additionalProperties": false
+            }),
+        ),
         // search_causes - Abductive reasoning to find likely causes
         ToolDefinition::new(
             "search_causes",
@@ -149,7 +186,7 @@ mod tests {
 
     #[test]
     fn test_causal_tool_count() {
-        assert_eq!(definitions().len(), 2);
+        assert_eq!(definitions().len(), 4);
     }
 
     #[test]
