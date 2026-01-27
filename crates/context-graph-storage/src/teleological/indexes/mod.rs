@@ -54,12 +54,12 @@
 //! // Create registry with all 13 HNSW indexes
 //! let registry = EmbedderIndexRegistry::new();
 //!
-//! // Get index for E8 Graph (384D)
+//! // Get index for E8 Graph (1024D)
 //! let index = registry.get(EmbedderIndex::E8Graph).unwrap();
 //!
 //! // Insert and search
 //! let id = Uuid::new_v4();
-//! let vector = vec![0.5f32; 384];
+//! let vector = vec![0.5f32; 1024];
 //! index.insert(id, &vector).unwrap();
 //!
 //! let results = index.search(&vector, 1, None).unwrap();
@@ -162,7 +162,7 @@ mod tests {
         assert_eq!(E5_DIM, 768);
         assert_eq!(E6_SPARSE_VOCAB, 30_522);
         assert_eq!(E7_DIM, 1536);
-        assert_eq!(E8_DIM, 384);
+        assert_eq!(E8_DIM, 1024); // Upgraded from 384D
         assert_eq!(E9_DIM, 1024); // HDC projected dimension
         assert_eq!(E10_DIM, 768);
         assert_eq!(E11_DIM, 768);
@@ -279,7 +279,7 @@ mod tests {
         // Verify HnswEmbedderIndex creation
         let index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
         takes_embedder_index_ops(&index);
-        assert_eq!(index.config().dimension, 384);
+        assert_eq!(index.config().dimension, 1024);
 
         // Verify IndexError export
         let err = IndexError::DimensionMismatch {
@@ -296,8 +296,8 @@ mod tests {
         assert!(result.is_ok());
 
         // Verify validate_vector export
-        let valid_vec = vec![1.0f32; 384];
-        let valid_result = validate_vector(&valid_vec, 384, EmbedderIndex::E8Graph);
+        let valid_vec = vec![1.0f32; 1024];
+        let valid_result = validate_vector(&valid_vec, 1024, EmbedderIndex::E8Graph);
         assert!(valid_result.is_ok());
 
         println!("RESULT: PASS");
@@ -323,7 +323,7 @@ mod tests {
         // Verify insert and search through registry
         let e8_index = registry.get(EmbedderIndex::E8Graph).unwrap();
         let id = Uuid::new_v4();
-        let vector = vec![0.5f32; 384];
+        let vector = vec![0.5f32; 1024];
         e8_index.insert(id, &vector).unwrap();
 
         let results = e8_index.search(&vector, 1, None).unwrap();
@@ -404,9 +404,9 @@ mod tests {
         let wrong_dim = vec![1.0f32; 512];
         assert!(validate_vector(&wrong_dim, 1024, EmbedderIndex::E1Semantic).is_err());
 
-        let mut nan_vec = vec![1.0f32; 384];
+        let mut nan_vec = vec![1.0f32; 1024];
         nan_vec[0] = f32::NAN;
-        assert!(validate_vector(&nan_vec, 384, EmbedderIndex::E8Graph).is_err());
+        assert!(validate_vector(&nan_vec, 1024, EmbedderIndex::E8Graph).is_err());
         println!("    PASS");
 
         // AC7: Thread-safe index operations
@@ -415,8 +415,8 @@ mod tests {
         let index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
-        index.insert(id1, &vec![1.0f32; 384]).unwrap();
-        index.insert(id2, &vec![2.0f32; 384]).unwrap();
+        index.insert(id1, &vec![1.0f32; 1024]).unwrap();
+        index.insert(id2, &vec![2.0f32; 1024]).unwrap();
         assert_eq!(index.len(), 2);
         // Concurrent read would work (tested via RwLock semantics)
         println!("    PASS");
@@ -426,9 +426,9 @@ mod tests {
         println!("AC8: Duplicate ID updates vector in place");
         let index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
         let id = Uuid::new_v4();
-        index.insert(id, &vec![1.0f32; 384]).unwrap();
+        index.insert(id, &vec![1.0f32; 1024]).unwrap();
         assert_eq!(index.len(), 1);
-        index.insert(id, &vec![2.0f32; 384]).unwrap();
+        index.insert(id, &vec![2.0f32; 1024]).unwrap();
         assert_eq!(index.len(), 1);
         println!("    PASS");
 
@@ -472,7 +472,7 @@ mod tests {
         let batch: Vec<(Uuid, Vec<f32>)> = (0..1000)
             .map(|i| {
                 let id = Uuid::new_v4();
-                let vec: Vec<f32> = (0..384).map(|j| ((i + j) as f32) / 10000.0).collect();
+                let vec: Vec<f32> = (0..1024).map(|j| ((i + j) as f32) / 10000.0).collect();
                 (id, vec)
             })
             .collect();
@@ -489,10 +489,10 @@ mod tests {
         let small_index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
         for i in 0..5 {
             small_index
-                .insert(Uuid::new_v4(), &vec![(i as f32) / 5.0; 384])
+                .insert(Uuid::new_v4(), &vec![(i as f32) / 5.0; 1024])
                 .unwrap();
         }
-        let results = small_index.search(&vec![0.5f32; 384], 100, None).unwrap();
+        let results = small_index.search(&vec![0.5f32; 1024], 100, None).unwrap();
         assert_eq!(results.len(), 5); // Only 5 vectors exist
         println!("    Requested k=100, got {} results", results.len());
         println!("    PASS");
@@ -503,12 +503,12 @@ mod tests {
         let rm_index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
         let rm_id1 = Uuid::new_v4();
         let rm_id2 = Uuid::new_v4();
-        rm_index.insert(rm_id1, &vec![0.1f32; 384]).unwrap();
-        rm_index.insert(rm_id2, &vec![0.9f32; 384]).unwrap();
+        rm_index.insert(rm_id1, &vec![0.1f32; 1024]).unwrap();
+        rm_index.insert(rm_id2, &vec![0.9f32; 1024]).unwrap();
 
         rm_index.remove(rm_id1).unwrap();
 
-        let results = rm_index.search(&vec![0.1f32; 384], 10, None).unwrap();
+        let results = rm_index.search(&vec![0.1f32; 1024], 10, None).unwrap();
         let ids: Vec<_> = results.iter().map(|(id, _)| *id).collect();
         assert!(!ids.contains(&rm_id1), "Removed ID should not appear");
         assert!(ids.contains(&rm_id2), "Non-removed ID should appear");
@@ -519,7 +519,7 @@ mod tests {
         println!("Edge 6: Zero vector handling");
         let zero_index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
         let zero_id = Uuid::new_v4();
-        let zero_vec = vec![0.0f32; 384];
+        let zero_vec = vec![0.0f32; 1024];
         // Zero vector is valid (though cosine similarity will be undefined)
         zero_index.insert(zero_id, &zero_vec).unwrap();
         assert_eq!(zero_index.len(), 1);
@@ -530,7 +530,7 @@ mod tests {
         println!();
         println!("Edge 7: Very small float values");
         let tiny_index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
-        let tiny_vec: Vec<f32> = (0..384).map(|_| 1e-38).collect();
+        let tiny_vec: Vec<f32> = (0..1024).map(|_| 1e-38).collect();
         tiny_index.insert(Uuid::new_v4(), &tiny_vec).unwrap();
         println!("    Subnormal floats accepted");
         println!("    PASS");
@@ -539,7 +539,7 @@ mod tests {
         println!();
         println!("Edge 8: Large but finite float values");
         let large_index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
-        let large_vec: Vec<f32> = (0..384).map(|_| 1e38).collect();
+        let large_vec: Vec<f32> = (0..1024).map(|_| 1e38).collect();
         large_index.insert(Uuid::new_v4(), &large_vec).unwrap();
         println!("    Large floats accepted");
         println!("    PASS");
@@ -590,7 +590,7 @@ mod tests {
             (EmbedderIndex::E4TemporalPositional, 512),
             (EmbedderIndex::E5Causal, 768),
             (EmbedderIndex::E7Code, 1536),
-            (EmbedderIndex::E8Graph, 384),
+            (EmbedderIndex::E8Graph, 1024),
             (EmbedderIndex::E9HDC, 1024),
             (EmbedderIndex::E10Multimodal, 768),
             (EmbedderIndex::E11Entity, 768),

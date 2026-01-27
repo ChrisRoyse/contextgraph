@@ -105,7 +105,7 @@ impl SingleEmbedderSearch {
     /// let registry = Arc::new(EmbedderIndexRegistry::new());
     /// let search = SingleEmbedderSearch::new(registry);
     ///
-    /// let query = vec![0.5f32; 384];  // E8Graph is 384D
+    /// let query = vec![0.5f32; 1024];  // E8Graph is 1024D
     /// let results = search.search(EmbedderIndex::E8Graph, &query, 10, None);
     ///
     /// match results {

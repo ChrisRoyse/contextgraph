@@ -180,14 +180,14 @@ pub struct SemanticFingerprint {
     /// E7: Code (Qodo-Embed-1-1.5B) - 1536D dense embedding.
     pub e7_code: Vec<f32>,
 
-    /// E8: Graph (MiniLM for structure) - 384D dense embedding (as source).
+    /// E8: Graph (e5-large-v2) - 1024D dense embedding (as source).
     ///
     /// This vector encodes the text as a potential source in graph relationships.
     /// For asymmetric similarity: query_as_source is compared against doc_as_target.
     /// Example: "Module A imports B" → A is the source.
     pub e8_graph_as_source: Vec<f32>,
 
-    /// E8: Graph (MiniLM for structure) - 384D dense embedding (as target).
+    /// E8: Graph (e5-large-v2) - 1024D dense embedding (as target).
     ///
     /// This vector encodes the text as a potential target in graph relationships.
     /// For asymmetric similarity: query_as_target is compared against doc_as_source.

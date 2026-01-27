@@ -47,7 +47,7 @@ use super::super::indexes::{EmbedderIndex, IndexError};
 pub enum SearchError {
     /// Query vector dimension does not match embedder expectations.
     ///
-    /// Each embedder has a fixed dimension. E1 expects 1024D, E8 expects 384D, etc.
+    /// Each embedder has a fixed dimension. E1 expects 1024D, E8 expects 1024D, etc.
     #[error("Dimension mismatch for {embedder:?}: expected {expected}, got {actual}")]
     DimensionMismatch {
         embedder: EmbedderIndex,

@@ -51,10 +51,10 @@ pub(crate) fn metric_to_usearch(metric: DistanceMetric) -> MetricKind {
 /// use uuid::Uuid;
 ///
 /// let index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
-/// assert_eq!(index.config().dimension, 384);
+/// assert_eq!(index.config().dimension, 1024);
 ///
 /// let id = Uuid::new_v4();
-/// let vector = vec![0.5f32; 384];
+/// let vector = vec![0.5f32; 1024];
 /// index.insert(id, &vector).unwrap();
 ///
 /// let results = index.search(&vector, 1, None).unwrap();

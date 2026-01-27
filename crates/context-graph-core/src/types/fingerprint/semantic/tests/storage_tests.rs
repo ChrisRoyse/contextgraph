@@ -4,8 +4,9 @@ use crate::types::fingerprint::semantic::*;
 use crate::types::fingerprint::SparseVector;
 
 // E5, E8, and E10 now use dual vectors for asymmetric similarity.
-// New dense size = TOTAL_DENSE_DIMS + E5_DIM + E8_DIM + E10_DIM = 7808 + 768 + 384 + 768 = 9728
-// Storage = 9728 * 4 = 38912 bytes
+// New dense size = TOTAL_DENSE_DIMS + E5_DIM + E8_DIM + E10_DIM = 8448 + 768 + 1024 + 768 = 11008
+// Storage = 11008 * 4 = 44032 bytes
+// (E8 upgraded from 384D to 1024D)
 const NEW_DENSE_STORAGE: usize =
     (TOTAL_DENSE_DIMS + E5_DIM + E8_DIM + E10_DIM) * std::mem::size_of::<f32>();
 
@@ -15,9 +16,10 @@ fn test_semantic_fingerprint_storage_size_zeroed() {
     let size = fp.storage_size();
 
     // With dual E5, E8, and E10 vectors, storage includes both directions
-    // TOTAL_DENSE_DIMS = 7808, + E5_DIM + E8_DIM + E10_DIM = 9728
-    // 9728 * 4 bytes = 38912
-    assert_eq!(NEW_DENSE_STORAGE, 38912);
+    // TOTAL_DENSE_DIMS = 8448, + E5_DIM + E8_DIM + E10_DIM = 11008
+    // 11008 * 4 bytes = 44032
+    // (E8 upgraded from 384D to 1024D)
+    assert_eq!(NEW_DENSE_STORAGE, 44032);
     assert_eq!(size, NEW_DENSE_STORAGE);
 }
 

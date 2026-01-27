@@ -258,9 +258,9 @@ mod tests {
         println!("=== TEST: validate_vector rejects NaN ===");
         println!("BEFORE: vector[100]=NaN");
 
-        let mut vector = vec![1.0; 384];
+        let mut vector = vec![1.0; 1024];
         vector[100] = f32::NAN;
-        let result = validate_vector(&vector, 384, EmbedderIndex::E8Graph);
+        let result = validate_vector(&vector, 1024, EmbedderIndex::E8Graph);
 
         println!("AFTER: result={:?}", result);
         assert!(result.is_err());
@@ -280,9 +280,9 @@ mod tests {
         println!("=== TEST: validate_vector rejects Infinity ===");
         println!("BEFORE: vector[0]=Inf");
 
-        let mut vector = vec![1.0; 384];
+        let mut vector = vec![1.0; 1024];
         vector[0] = f32::INFINITY;
-        let result = validate_vector(&vector, 384, EmbedderIndex::E8Graph);
+        let result = validate_vector(&vector, 1024, EmbedderIndex::E8Graph);
 
         println!("AFTER: result={:?}", result);
         assert!(result.is_err());
@@ -303,9 +303,9 @@ mod tests {
         println!("=== TEST: validate_vector rejects negative Infinity ===");
         println!("BEFORE: vector[50]=-Inf");
 
-        let mut vector = vec![1.0; 384];
+        let mut vector = vec![1.0; 1024];
         vector[50] = f32::NEG_INFINITY;
-        let result = validate_vector(&vector, 384, EmbedderIndex::E8Graph);
+        let result = validate_vector(&vector, 1024, EmbedderIndex::E8Graph);
 
         println!("AFTER: result={:?}", result);
         assert!(result.is_err());

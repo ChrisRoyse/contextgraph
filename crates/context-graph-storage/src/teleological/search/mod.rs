@@ -20,7 +20,7 @@
 //! - E4TemporalPositional (512D) - Position-based temporal
 //! - E5Causal (768D) - Causal relationship modeling
 //! - E7Code (1536D) - Code-specific embeddings
-//! - E8Graph (384D) - Graph structure embeddings
+//! - E8Graph (1024D) - Graph structure embeddings
 //! - E9HDC (1024D) - Hyperdimensional computing
 //! - E10Multimodal (768D) - Cross-modal embeddings
 //! - E11Entity (768D) - Named entity embeddings
@@ -67,7 +67,7 @@
 //! let multi_search = MultiEmbedderSearch::new(registry);
 //! let queries: HashMap<EmbedderIndex, Vec<f32>> = [
 //!     (EmbedderIndex::E1Semantic, vec![0.5f32; 1024]),
-//!     (EmbedderIndex::E8Graph, vec![0.5f32; 384]),
+//!     (EmbedderIndex::E8Graph, vec![0.5f32; 1024]),
 //! ].into_iter().collect();
 //!
 //! let results = MultiSearchBuilder::new(queries)

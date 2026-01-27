@@ -15,7 +15,7 @@ fn test_full_state_verification() {
     println!("\n=== FULL STATE VERIFICATION TEST ===");
     println!();
 
-    let dim = 384; // E8Graph dimension
+    let dim = 1024; // E8Graph dimension (upgraded from 384D)
     let id_a = Uuid::parse_str("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa").unwrap();
     let id_b = Uuid::parse_str("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb").unwrap();
     let id_c = Uuid::parse_str("cccccccc-cccc-cccc-cccc-cccccccccccc").unwrap();

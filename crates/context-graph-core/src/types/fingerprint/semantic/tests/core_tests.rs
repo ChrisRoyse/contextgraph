@@ -59,8 +59,9 @@ fn test_semantic_fingerprint_dimensions() {
     let expected_total =
         E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E7_DIM + E8_DIM + E9_DIM + E10_DIM + E11_DIM;
     assert_eq!(TOTAL_DENSE_DIMS, expected_total);
-    // 1024 + 512 + 512 + 512 + 768 + 1536 + 384 + 1024 + 768 + 768 = 7808
-    assert_eq!(TOTAL_DENSE_DIMS, 7808);
+    // 1024 + 512 + 512 + 512 + 768 + 1536 + 1024 + 1024 + 768 + 768 = 8448
+    // (E8 upgraded from 384D to 1024D)
+    assert_eq!(TOTAL_DENSE_DIMS, 8448);
 }
 
 #[test]
@@ -177,7 +178,7 @@ fn test_dimension_constants() {
     assert_eq!(E5_DIM, 768);
     assert_eq!(E6_SPARSE_VOCAB, 30_522);
     assert_eq!(E7_DIM, 1536);
-    assert_eq!(E8_DIM, 384);
+    assert_eq!(E8_DIM, 1024); // Upgraded from MiniLM (384D) to e5-large-v2 (1024D)
     assert_eq!(E9_DIM, 1024); // HDC projected dimension
     assert_eq!(E10_DIM, 768);
     assert_eq!(E11_DIM, 768); // KEPLER (was 384 with MiniLM)

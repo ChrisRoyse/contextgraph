@@ -309,7 +309,7 @@ mod tests {
         assert_eq!(index.config().dimension, 1024);
 
         let index = registry.get_or_panic(EmbedderIndex::E8Graph);
-        assert_eq!(index.config().dimension, 384);
+        assert_eq!(index.config().dimension, 1024); // Upgraded from 384D
 
         println!("RESULT: PASS");
     }
@@ -349,7 +349,7 @@ mod tests {
 
         let dyn_index = dyn_index.unwrap();
         assert_eq!(dyn_index.embedder(), EmbedderIndex::E8Graph);
-        assert_eq!(dyn_index.config().dimension, 384);
+        assert_eq!(dyn_index.config().dimension, 1024); // Upgraded from 384D
 
         println!("RESULT: PASS");
     }
@@ -370,7 +370,7 @@ mod tests {
         // Insert into E8
         let e8_index = registry.get_or_panic(EmbedderIndex::E8Graph);
         let id2 = Uuid::new_v4();
-        let vec2 = vec![0.5f32; 384];
+        let vec2 = vec![0.5f32; 1024];
         e8_index.insert(id2, &vec2).unwrap();
 
         println!(
@@ -446,7 +446,7 @@ mod tests {
         let e8_index = registry.get_or_panic(EmbedderIndex::E8Graph);
         for _ in 0..100 {
             let id = Uuid::new_v4();
-            let vec = vec![1.0f32; 384];
+            let vec = vec![1.0f32; 1024];
             e8_index.insert(id, &vec).unwrap();
         }
 
@@ -473,7 +473,7 @@ mod tests {
         // Insert into E8
         let e8_index = registry.get_or_panic(EmbedderIndex::E8Graph);
         for _ in 0..20 {
-            e8_index.insert(Uuid::new_v4(), &vec![1.0; 384]).unwrap();
+            e8_index.insert(Uuid::new_v4(), &vec![1.0; 1024]).unwrap();
         }
 
         assert_eq!(registry.total_vectors(), 30);
@@ -488,7 +488,7 @@ mod tests {
 
         // Insert some data
         let e8_index = registry.get_or_panic(EmbedderIndex::E8Graph);
-        e8_index.insert(Uuid::new_v4(), &vec![1.0; 384]).unwrap();
+        e8_index.insert(Uuid::new_v4(), &vec![1.0; 1024]).unwrap();
 
         let result = registry.flush_all();
         assert!(result.is_ok());
@@ -520,7 +520,7 @@ mod tests {
             (EmbedderIndex::E4TemporalPositional, 512),
             (EmbedderIndex::E5Causal, 768),
             (EmbedderIndex::E7Code, 1536),
-            (EmbedderIndex::E8Graph, 384),
+            (EmbedderIndex::E8Graph, 1024),
             (EmbedderIndex::E9HDC, 1024),
             (EmbedderIndex::E10Multimodal, 768),
             (EmbedderIndex::E11Entity, 768),

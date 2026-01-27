@@ -168,10 +168,11 @@ pub static EMBEDDER_CONFIGS: [EmbedderConfig; 13] = [
         is_sparse: false,
         is_token_level: false,
     },
-    // E8: Emotional/Graph (384D, Cosine, Float8) - Category: Relational
+    // E8: Emotional/Graph (1024D, Cosine, Float8) - Category: Relational
+    // Upgraded from MiniLM 384D to e5-large-v2 1024D for VRAM efficiency (shares with E1)
     EmbedderConfig {
         embedder: Embedder::Emotional,
-        dimension: E8_DIM, // 384
+        dimension: E8_DIM, // 1024 (upgraded from 384)
         distance_metric: DistanceMetric::Cosine,
         quantization: QuantizationConfig::Float8,
         is_asymmetric: false,

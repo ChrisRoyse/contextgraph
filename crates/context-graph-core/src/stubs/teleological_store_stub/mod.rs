@@ -53,7 +53,7 @@ use uuid::Uuid;
 use crate::clustering::PersistedTopicPortfolio;
 use crate::traits::TeleologicalStorageBackend;
 use crate::types::fingerprint::TeleologicalFingerprint;
-use crate::types::SourceMetadata;
+use crate::types::{CausalRelationship, SourceMetadata};
 
 /// In-memory implementation of TeleologicalMemoryStore.
 ///
@@ -72,6 +72,10 @@ pub struct InMemoryTeleologicalStore {
     pub(crate) source_metadata: DashMap<Uuid, SourceMetadata>,
     /// Topic portfolio storage: session_id -> PersistedTopicPortfolio
     pub(crate) topic_portfolios: DashMap<String, PersistedTopicPortfolio>,
+    /// Causal relationships storage: causal_id -> CausalRelationship
+    pub(crate) causal_relationships: DashMap<Uuid, CausalRelationship>,
+    /// Causal by source index: source_fingerprint_id -> Vec<causal_id>
+    pub(crate) causal_by_source: DashMap<Uuid, Vec<Uuid>>,
     /// Running size estimate in bytes
     pub(crate) size_bytes: AtomicUsize,
 }
@@ -86,6 +90,8 @@ impl InMemoryTeleologicalStore {
             content: DashMap::new(),
             source_metadata: DashMap::new(),
             topic_portfolios: DashMap::new(),
+            causal_relationships: DashMap::new(),
+            causal_by_source: DashMap::new(),
             size_bytes: AtomicUsize::new(0),
         }
     }
@@ -102,6 +108,8 @@ impl InMemoryTeleologicalStore {
             content: DashMap::with_capacity(capacity),
             source_metadata: DashMap::with_capacity(capacity),
             topic_portfolios: DashMap::new(),
+            causal_relationships: DashMap::new(),
+            causal_by_source: DashMap::new(),
             size_bytes: AtomicUsize::new(0),
         }
     }

@@ -50,7 +50,7 @@ use super::types::{
 ///
 /// let mut queries = HashMap::new();
 /// queries.insert(EmbedderIndex::E1Semantic, vec![0.5f32; 1024]);
-/// queries.insert(EmbedderIndex::E8Graph, vec![0.5f32; 384]);
+/// queries.insert(EmbedderIndex::E8Graph, vec![0.5f32; 1024]);
 ///
 /// let results = search.search(queries, 10, None);
 /// ```
@@ -120,7 +120,7 @@ impl MultiEmbedderSearch {
     ///
     /// let mut queries = HashMap::new();
     /// queries.insert(EmbedderIndex::E1Semantic, vec![0.5f32; 1024]);
-    /// queries.insert(EmbedderIndex::E8Graph, vec![0.5f32; 384]);
+    /// queries.insert(EmbedderIndex::E8Graph, vec![0.5f32; 1024]);
     ///
     /// let results = search.search(queries, 10, Some(0.5));
     /// ```

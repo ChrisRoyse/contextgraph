@@ -35,7 +35,7 @@ use super::types::{AggregationStrategy, MultiEmbedderSearchResults, Normalizatio
 ///
 /// let queries: HashMap<EmbedderIndex, Vec<f32>> = [
 ///     (EmbedderIndex::E1Semantic, vec![0.5f32; 1024]),
-///     (EmbedderIndex::E8Graph, vec![0.5f32; 384]),
+///     (EmbedderIndex::E8Graph, vec![0.5f32; 1024]),
 /// ].into_iter().collect();
 ///
 /// let results = MultiSearchBuilder::new(queries)

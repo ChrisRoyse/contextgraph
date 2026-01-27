@@ -503,3 +503,245 @@ impl RocksDbTeleologicalStore {
         Ok(())
     }
 }
+
+// ============================================================================
+// TESTS - Full State Verification
+// ============================================================================
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use context_graph_core::types::CausalRelationship;
+    use tempfile::TempDir;
+
+    /// Direction values for rotating through test relationships.
+    const DIRECTIONS: &[&str] = &["cause", "effect", "bidirectional"];
+
+    /// Test harness providing store and runtime.
+    struct TestHarness {
+        store: RocksDbTeleologicalStore,
+        rt: tokio::runtime::Runtime,
+        _temp_dir: TempDir, // Keep alive for test duration
+    }
+
+    impl TestHarness {
+        fn new() -> Self {
+            let temp_dir = TempDir::new().expect("Failed to create temp dir");
+            let store =
+                RocksDbTeleologicalStore::open(temp_dir.path()).expect("Failed to open store");
+            let rt = tokio::runtime::Runtime::new().expect("Failed to create runtime");
+            Self { store, rt, _temp_dir: temp_dir }
+        }
+    }
+
+    /// Create a test relationship with realistic data.
+    fn create_test_relationship(source_id: Uuid, direction: &str) -> CausalRelationship {
+        CausalRelationship::new(
+            format!(
+                "This causal relationship describes how chronic stress leads to elevated \
+                 cortisol levels. The mechanism involves sustained activation of the HPA axis. \
+                 Direction: {}",
+                direction
+            ),
+            vec![0.1f32; 1024], // E1 1024D embedding
+            "Studies show stress hormones damage hippocampal neurons over time.".to_string(),
+            source_id,
+            direction.to_string(),
+            0.85,
+            vec!["causes".to_string(), "leads to".to_string()],
+        )
+    }
+
+    #[test]
+    fn test_full_state_verification_store_and_get() {
+        let h = TestHarness::new();
+
+        let source_id = Uuid::new_v4();
+        let rel = create_test_relationship(source_id, "cause");
+        let expected_id = rel.id;
+
+        // Store
+        let stored_id = h
+            .rt
+            .block_on(h.store.store_causal_relationship(&rel))
+            .expect("Store failed");
+        assert_eq!(stored_id, expected_id, "Store should return the relationship ID");
+
+        // Get and verify
+        let retrieved = h
+            .rt
+            .block_on(h.store.get_causal_relationship(stored_id))
+            .expect("Get failed")
+            .expect("Relationship not found");
+
+        assert_eq!(retrieved.id, expected_id, "ID mismatch");
+        assert_eq!(retrieved.source_fingerprint_id, source_id, "Source ID mismatch");
+        assert_eq!(retrieved.direction, "cause", "Direction mismatch");
+        assert!((retrieved.confidence - 0.85).abs() < 0.001, "Confidence mismatch");
+        assert_eq!(retrieved.description_embedding.len(), 1024, "Embedding dim mismatch");
+
+        // Count
+        let count = h
+            .rt
+            .block_on(h.store.count_causal_relationships())
+            .expect("Count failed");
+        assert_eq!(count, 1, "Count should be 1");
+    }
+
+    #[test]
+    fn test_full_state_verification_secondary_index() {
+        let h = TestHarness::new();
+
+        // Create multiple relationships for same source
+        let source_id = Uuid::new_v4();
+        let relationships: Vec<_> = DIRECTIONS
+            .iter()
+            .map(|dir| create_test_relationship(source_id, dir))
+            .collect();
+        let expected_ids: Vec<_> = relationships.iter().map(|r| r.id).collect();
+
+        // Store all
+        h.rt.block_on(async {
+            for rel in &relationships {
+                h.store.store_causal_relationship(rel).await.unwrap();
+            }
+        });
+
+        // Verify secondary index
+        let by_source = h
+            .rt
+            .block_on(h.store.get_causal_relationships_by_source(source_id))
+            .expect("Get by source failed");
+
+        assert_eq!(by_source.len(), 3, "Should find 3 relationships");
+
+        let found_ids: std::collections::HashSet<_> = by_source.iter().map(|r| r.id).collect();
+        for id in &expected_ids {
+            assert!(found_ids.contains(id), "Expected ID {} missing", id);
+        }
+    }
+
+    #[test]
+    fn test_full_state_verification_search() {
+        let h = TestHarness::new();
+
+        // Store 10 relationships with slightly different embeddings
+        h.rt.block_on(async {
+            for i in 0..10 {
+                let source_id = Uuid::new_v4();
+                let mut rel = create_test_relationship(source_id, "cause");
+                rel.description_embedding[0] = 0.1 + (i as f32 * 0.01);
+                h.store.store_causal_relationship(&rel).await.unwrap();
+            }
+        });
+
+        let query_embedding = vec![0.1f32; 1024];
+
+        // Search without filter
+        let results = h
+            .rt
+            .block_on(h.store.search_causal_relationships(&query_embedding, 5, None))
+            .expect("Search failed");
+
+        assert!(!results.is_empty(), "Search should return results");
+        assert!(results.len() <= 5, "Should return at most top_k results");
+
+        // Search with direction filter
+        let cause_results = h
+            .rt
+            .block_on(h.store.search_causal_relationships(&query_embedding, 5, Some("cause")))
+            .expect("Search failed");
+
+        assert!(!cause_results.is_empty(), "Filtered search should return results");
+    }
+
+    #[test]
+    fn test_full_state_verification_delete() {
+        let h = TestHarness::new();
+
+        let source_id = Uuid::new_v4();
+        let rel = create_test_relationship(source_id, "cause");
+        let rel_id = rel.id;
+
+        // Store
+        h.rt.block_on(h.store.store_causal_relationship(&rel)).unwrap();
+
+        let count_before = h.rt.block_on(h.store.count_causal_relationships()).unwrap();
+        assert_eq!(count_before, 1, "Should have 1 relationship");
+
+        // Delete
+        let deleted = h
+            .rt
+            .block_on(h.store.delete_causal_relationship(rel_id))
+            .expect("Delete failed");
+        assert!(deleted, "Delete should return true");
+
+        // Verify count is zero
+        let count_after = h.rt.block_on(h.store.count_causal_relationships()).unwrap();
+        assert_eq!(count_after, 0, "Should have 0 relationships");
+
+        // Verify not retrievable
+        let retrieved = h
+            .rt
+            .block_on(h.store.get_causal_relationship(rel_id))
+            .expect("Get failed");
+        assert!(retrieved.is_none(), "Should not find deleted relationship");
+
+        // Verify secondary index cleared
+        let by_source = h
+            .rt
+            .block_on(h.store.get_causal_relationships_by_source(source_id))
+            .expect("Get by source failed");
+        assert!(by_source.is_empty(), "Secondary index should be cleared");
+    }
+
+    #[test]
+    fn test_edge_case_empty_database() {
+        let h = TestHarness::new();
+
+        // Get non-existent
+        let result = h
+            .rt
+            .block_on(h.store.get_causal_relationship(Uuid::new_v4()))
+            .expect("Get failed");
+        assert!(result.is_none(), "Should return None for non-existent ID");
+
+        // Get by source non-existent
+        let by_source = h
+            .rt
+            .block_on(h.store.get_causal_relationships_by_source(Uuid::new_v4()))
+            .expect("Get by source failed");
+        assert!(by_source.is_empty(), "Should return empty vec for non-existent source");
+
+        // Search empty
+        let query = vec![0.1f32; 1024];
+        let results = h
+            .rt
+            .block_on(h.store.search_causal_relationships(&query, 10, None))
+            .expect("Search failed");
+        assert!(results.is_empty(), "Search should return empty on empty database");
+
+        // Count empty
+        let count = h.rt.block_on(h.store.count_causal_relationships()).expect("Count failed");
+        assert_eq!(count, 0, "Count should be 0 on empty database");
+    }
+
+    #[test]
+    fn test_edge_case_large_batch() {
+        let h = TestHarness::new();
+
+        const BATCH_SIZE: usize = 100;
+
+        h.rt.block_on(async {
+            for i in 0..BATCH_SIZE {
+                let source_id = Uuid::new_v4();
+                let direction = DIRECTIONS[i % DIRECTIONS.len()];
+                let rel = create_test_relationship(source_id, direction);
+                h.store.store_causal_relationship(&rel).await.unwrap();
+            }
+        });
+
+        let count = h.rt.block_on(h.store.count_causal_relationships()).expect("Count failed");
+        assert_eq!(count, BATCH_SIZE, "Count should match batch size");
+    }
+}

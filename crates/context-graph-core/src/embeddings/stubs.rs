@@ -133,7 +133,7 @@ impl StubSingleEmbedder {
         Self::new(Embedder::Code)
     }
 
-    /// Create stub embedder for E8 (Emotional/Graph, 384D).
+    /// Create stub embedder for E8 (Emotional/Graph, 1024D - upgraded from 384D).
     ///
     /// Note: The field in SemanticFingerprint is `e8_graph`, but the
     /// canonical enum name is `Embedder::Emotional`.
@@ -421,7 +421,7 @@ mod tests {
         assert_eq!(e7.dimension(), 1536);
 
         let e8 = StubSingleEmbedder::for_e8();
-        assert_eq!(e8.dimension(), 384);
+        assert_eq!(e8.dimension(), 1024); // Upgraded from 384D
     }
 
     #[tokio::test]
@@ -493,7 +493,7 @@ mod tests {
         assert_eq!(StubSingleEmbedder::for_e4().dimension(), 512);
         assert_eq!(StubSingleEmbedder::for_e5().dimension(), 768);
         assert_eq!(StubSingleEmbedder::for_e7().dimension(), 1536);
-        assert_eq!(StubSingleEmbedder::for_e8().dimension(), 384);
+        assert_eq!(StubSingleEmbedder::for_e8().dimension(), 1024); // Upgraded
         assert_eq!(StubSingleEmbedder::for_e9().dimension(), 1024);
         assert_eq!(StubSingleEmbedder::for_e10().dimension(), 768);
         assert_eq!(StubSingleEmbedder::for_e11().dimension(), 768); // KEPLER

@@ -291,7 +291,7 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
         fingerprint.e5_causal = e5_vec; // Legacy field for backward compatibility
         fingerprint.e7_code = Self::fill_dense_embedding(content, 1536, 6);
         // E8: Fill both dual format fields (new) and legacy field for compatibility
-        let e8_vec = Self::fill_dense_embedding(content, 384, 7);
+        let e8_vec = Self::fill_dense_embedding(content, 1024, 7); // Upgraded to 1024D
         fingerprint.e8_graph_as_source = e8_vec.clone();
         fingerprint.e8_graph_as_target = e8_vec.clone();
         fingerprint.e8_graph = e8_vec; // Legacy field for backward compatibility
@@ -559,7 +559,7 @@ mod tests {
         assert_eq!(fp.e4_temporal_positional.len(), 512);
         assert_eq!(fp.e5_causal.len(), 768);
         assert_eq!(fp.e7_code.len(), 1536);
-        assert_eq!(fp.e8_graph.len(), 384);
+        assert_eq!(fp.e8_graph.len(), 1024); // Upgraded from 384D
         assert_eq!(fp.e9_hdc.len(), 1024); // HDC projected
         assert_eq!(fp.e10_multimodal.len(), 768);
         assert_eq!(fp.e11_entity.len(), 768); // KEPLER

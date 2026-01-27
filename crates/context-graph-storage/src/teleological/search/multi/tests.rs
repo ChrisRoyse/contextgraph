@@ -278,7 +278,7 @@ fn test_empty_indexes_return_empty_results() {
     let search = create_test_search();
     let mut queries = HashMap::new();
     queries.insert(EmbedderIndex::E1Semantic, vec![0.5f32; 1024]);
-    queries.insert(EmbedderIndex::E8Graph, vec![0.5f32; 384]);
+    queries.insert(EmbedderIndex::E8Graph, vec![0.5f32; 1024]);
 
     let result = search.search(queries, 10, None);
 
@@ -303,7 +303,7 @@ fn test_search_single_embedder() {
 
     // Insert a vector
     let id = Uuid::new_v4();
-    let vector = vec![0.5f32; 384];
+    let vector = vec![0.5f32; 1024];
     let index = registry.get(EmbedderIndex::E8Graph).unwrap();
     index.insert(id, &vector).unwrap();
 
@@ -336,7 +336,7 @@ fn test_search_multiple_embedders_same_id() {
     let index_e1 = registry.get(EmbedderIndex::E1Semantic).unwrap();
     index_e1.insert(id, &vec_e1).unwrap();
 
-    let vec_e8 = vec![0.5f32; 384];
+    let vec_e8 = vec![0.5f32; 1024];
     let index_e8 = registry.get(EmbedderIndex::E8Graph).unwrap();
     index_e8.insert(id, &vec_e8).unwrap();
 
@@ -375,7 +375,7 @@ fn test_search_multiple_embedders_different_ids() {
     index_e1.insert(id_e1, &vec_e1).unwrap();
 
     let id_e8 = Uuid::new_v4();
-    let vec_e8 = vec![0.5f32; 384];
+    let vec_e8 = vec![0.5f32; 1024];
     let index_e8 = registry.get(EmbedderIndex::E8Graph).unwrap();
     index_e8.insert(id_e8, &vec_e8).unwrap();
 
@@ -412,7 +412,7 @@ fn test_multi_search_builder() {
     let registry = Arc::new(EmbedderIndexRegistry::new());
     let search = MultiEmbedderSearch::new(Arc::clone(&registry));
 
-    let queries: HashMap<EmbedderIndex, Vec<f32>> = [(EmbedderIndex::E8Graph, vec![0.5f32; 384])]
+    let queries: HashMap<EmbedderIndex, Vec<f32>> = [(EmbedderIndex::E8Graph, vec![0.5f32; 1024])]
         .into_iter()
         .collect();
 
@@ -434,7 +434,7 @@ fn test_multi_search_builder() {
 fn test_builder_add_query() {
     println!("=== TEST: MultiSearchBuilder::add_query ===");
 
-    let queries: HashMap<EmbedderIndex, Vec<f32>> = [(EmbedderIndex::E8Graph, vec![0.5f32; 384])]
+    let queries: HashMap<EmbedderIndex, Vec<f32>> = [(EmbedderIndex::E8Graph, vec![0.5f32; 1024])]
         .into_iter()
         .collect();
 
@@ -456,7 +456,7 @@ fn test_latency_recorded() {
 
     let search = create_test_search();
     let mut queries = HashMap::new();
-    queries.insert(EmbedderIndex::E8Graph, vec![0.5f32; 384]);
+    queries.insert(EmbedderIndex::E8Graph, vec![0.5f32; 1024]);
 
     let result = search.search(queries, 10, None).unwrap();
 
@@ -511,11 +511,11 @@ fn test_results_helpers() {
     let id1 = Uuid::new_v4();
     let id2 = Uuid::new_v4();
     let index = registry.get(EmbedderIndex::E8Graph).unwrap();
-    index.insert(id1, &vec![0.5f32; 384]).unwrap();
-    index.insert(id2, &vec![0.3f32; 384]).unwrap();
+    index.insert(id1, &vec![0.5f32; 1024]).unwrap();
+    index.insert(id2, &vec![0.3f32; 1024]).unwrap();
 
     let mut queries = HashMap::new();
-    queries.insert(EmbedderIndex::E8Graph, vec![0.5f32; 384]);
+    queries.insert(EmbedderIndex::E8Graph, vec![0.5f32; 1024]);
 
     let results = search.search(queries, 10, None).unwrap();
 
@@ -542,7 +542,7 @@ fn test_full_state_verification() {
     let id_e8_only = Uuid::parse_str("cccccccc-cccc-cccc-cccc-cccccccccccc").unwrap();
 
     let vec_e1: Vec<f32> = (0..1024).map(|i| (i as f32) / 1024.0).collect();
-    let vec_e8: Vec<f32> = (0..384).map(|i| (i as f32) / 384.0).collect();
+    let vec_e8: Vec<f32> = (0..1024).map(|i| (i as f32) / 1024.0).collect(); // E8 upgraded to 1024D
 
     println!("SETUP:");
     println!("  id_shared: {} (in E1 and E8)", id_shared);
@@ -566,7 +566,7 @@ fn test_full_state_verification() {
     let vec_e1_unique: Vec<f32> = (0..1024).map(|i| ((i + 100) as f32) / 1024.0).collect();
     index_e1.insert(id_e1_only, &vec_e1_unique).unwrap();
 
-    let vec_e8_unique: Vec<f32> = (0..384).map(|i| ((i + 50) as f32) / 384.0).collect();
+    let vec_e8_unique: Vec<f32> = (0..1024).map(|i| ((i + 50) as f32) / 1024.0).collect(); // E8 upgraded to 1024D
     index_e8.insert(id_e8_only, &vec_e8_unique).unwrap();
 
     println!();

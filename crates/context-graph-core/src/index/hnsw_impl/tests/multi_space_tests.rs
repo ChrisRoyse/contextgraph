@@ -23,8 +23,8 @@ fn create_test_fingerprint() -> SemanticFingerprint {
         e5_causal: Vec::new(), // Using new dual format
         e6_sparse: SparseVector::new(vec![100, 200], vec![0.5, 0.3]).unwrap(),
         e7_code: random_vector(1536),
-        e8_graph_as_source: random_vector(384),
-        e8_graph_as_target: random_vector(384),
+        e8_graph_as_source: random_vector(1024),
+        e8_graph_as_target: random_vector(1024),
         e8_graph: Vec::new(), // Legacy field, empty by default
         e9_hdc: random_vector(1024),
         e10_multimodal_as_intent: random_vector(768),

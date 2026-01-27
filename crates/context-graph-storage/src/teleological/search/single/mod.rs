@@ -13,7 +13,7 @@
 //! | E4TemporalPositional | 512D | Who/what |
 //! | E5Causal | 768D | Why/because |
 //! | E7Code | 1536D | Code/tech |
-//! | E8Graph | 384D | Sentiment |
+//! | E8Graph | 1024D | Graph |
 //! | E9HDC | 1024D | Structure |
 //! | E10Multimodal | 768D | Intent |
 //! | E11Entity | 768D | Multi-modal |

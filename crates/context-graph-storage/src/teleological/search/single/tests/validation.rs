@@ -130,7 +130,7 @@ fn test_nan_in_query() {
     println!("=== TEST: NaN in query returns InvalidVector error ===");
 
     let search = create_test_search();
-    let mut query = vec![1.0f32; 384];
+    let mut query = vec![1.0f32; 1024];
     query[100] = f32::NAN;
 
     let result = search.search(EmbedderIndex::E8Graph, &query, 10, None);
@@ -152,7 +152,7 @@ fn test_infinity_in_query() {
     println!("=== TEST: Infinity in query returns InvalidVector error ===");
 
     let search = create_test_search();
-    let mut query = vec![1.0f32; 384];
+    let mut query = vec![1.0f32; 1024];
     query[0] = f32::INFINITY;
 
     let result = search.search(EmbedderIndex::E8Graph, &query, 10, None);
@@ -174,7 +174,7 @@ fn test_neg_infinity_in_query() {
     println!("=== TEST: Negative infinity in query returns InvalidVector error ===");
 
     let search = create_test_search();
-    let mut query = vec![1.0f32; 384];
+    let mut query = vec![1.0f32; 1024];
     query[50] = f32::NEG_INFINITY;
 
     let result = search.search(EmbedderIndex::E8Graph, &query, 10, None);

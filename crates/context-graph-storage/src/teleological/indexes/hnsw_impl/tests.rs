@@ -57,13 +57,13 @@ mod tests {
 
     #[test]
     fn test_hnsw_index_e8_graph() {
-        println!("=== TEST: HNSW index for E8 Graph (384D) ===");
+        println!("=== TEST: HNSW index for E8 Graph (1024D) ===");
 
         let index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
-        assert_eq!(index.config().dimension, 384);
+        assert_eq!(index.config().dimension, 1024); // Upgraded from 384D
 
         let id = Uuid::new_v4();
-        let vector = vec![0.5f32; 384];
+        let vector = vec![0.5f32; 1024];
         index.insert(id, &vector).unwrap();
 
         let results = index.search(&vector, 1, None).unwrap();
@@ -110,10 +110,10 @@ mod tests {
     #[test]
     fn test_nan_vector_fails() {
         println!("=== TEST: NaN vector FAIL FAST ===");
-        println!("BEFORE: Creating E8 index (384D), inserting vector with NaN");
+        println!("BEFORE: Creating E8 index (1024D), inserting vector with NaN");
 
         let index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
-        let mut vector = vec![1.0; 384];
+        let mut vector = vec![1.0; 1024];
         vector[100] = f32::NAN;
 
         let result = index.insert(Uuid::new_v4(), &vector);
@@ -137,7 +137,7 @@ mod tests {
         println!("=== TEST: Infinity vector FAIL FAST ===");
 
         let index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
-        let mut vector = vec![1.0; 384];
+        let mut vector = vec![1.0; 1024];
         vector[0] = f32::INFINITY;
 
         let result = index.insert(Uuid::new_v4(), &vector);
@@ -222,12 +222,12 @@ mod tests {
     #[test]
     fn test_duplicate_id_updates() {
         println!("=== TEST: Duplicate ID updates vector in place ===");
-        println!("BEFORE: Creating E8 index (384D)");
+        println!("BEFORE: Creating E8 index (1024D)");
 
         let index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
         let id = Uuid::new_v4();
-        let vec1: Vec<f32> = vec![1.0; 384];
-        let vec2: Vec<f32> = vec![2.0; 384];
+        let vec1: Vec<f32> = vec![1.0; 1024];
+        let vec2: Vec<f32> = vec![2.0; 1024];
 
         println!("BEFORE: Inserting first vector");
         index.insert(id, &vec1).unwrap();
@@ -261,8 +261,8 @@ mod tests {
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
 
-        index.insert(id1, &vec![1.0; 384]).unwrap();
-        index.insert(id2, &vec![2.0; 384]).unwrap();
+        index.insert(id1, &vec![1.0; 1024]).unwrap();
+        index.insert(id2, &vec![2.0; 1024]).unwrap();
         assert_eq!(index.len(), 2);
 
         let removed = index.remove(id1).unwrap();
@@ -273,7 +273,7 @@ mod tests {
         assert_eq!(index.len(), 1, "After removal, len should be 1");
 
         // Search should not return the removed ID
-        let query = vec![1.0; 384];
+        let query = vec![1.0; 1024];
         let results = index.search(&query, 10, None).unwrap();
         let ids: Vec<_> = results.iter().map(|(id, _)| *id).collect();
         assert!(
@@ -327,9 +327,9 @@ mod tests {
         let initial_memory = index.memory_bytes();
         println!("BEFORE: initial_memory={} bytes", initial_memory);
 
-        // Insert 100 vectors of 384D
+        // Insert 100 vectors of 1024D (E8 upgraded from 384D)
         let items: Vec<(Uuid, Vec<f32>)> = (0..100)
-            .map(|_| (Uuid::new_v4(), vec![1.0f32; 384]))
+            .map(|_| (Uuid::new_v4(), vec![1.0f32; 1024]))
             .collect();
         index.insert_batch(&items).unwrap();
 
@@ -369,12 +369,12 @@ mod tests {
         let index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
 
         // Insert vectors with varying similarity to query
-        let query = vec![1.0; 384];
+        let query = vec![1.0; 1024];
         let id_close = Uuid::new_v4();
         let id_far = Uuid::new_v4();
 
-        let vec_close: Vec<f32> = vec![0.99; 384]; // Very similar
-        let vec_far: Vec<f32> = vec![0.0; 384]; // Very different
+        let vec_close: Vec<f32> = vec![0.99; 1024]; // Very similar
+        let vec_far: Vec<f32> = vec![0.0; 1024]; // Very different
 
         index.insert(id_far, &vec_far).unwrap();
         index.insert(id_close, &vec_close).unwrap();
@@ -402,7 +402,7 @@ mod tests {
         use std::time::Instant;
 
         let index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
-        let dim = 384;
+        let dim = 1024; // E8 upgraded from 384D
 
         // Generate random vectors
         let mut vectors: Vec<(Uuid, Vec<f32>)> = Vec::new();
@@ -475,7 +475,7 @@ mod tests {
         println!("=== TEST: Edge case verification ===");
 
         let index = HnswEmbedderIndex::new(EmbedderIndex::E8Graph);
-        let dim = 384;
+        let dim = 1024; // E8 upgraded from 384D
 
         // Edge case 1: Search with k > len
         println!("  1. Search k > len");
@@ -621,7 +621,7 @@ mod tests {
         println!();
         println!("Test Coverage:");
         println!("  - E1 Semantic (1024D): PASS");
-        println!("  - E8 Graph (384D): PASS");
+        println!("  - E8 Graph (1024D): PASS");
         println!("  - Dimension mismatch: PASS");
         println!("  - NaN vector: PASS");
         println!("  - Infinity vector: PASS");

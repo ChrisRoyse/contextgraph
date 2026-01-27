@@ -334,7 +334,7 @@ pub fn get_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamilyDes
     ]
 }
 
-/// Get ALL column family descriptors: base (11) + teleological.
+/// Get ALL column family descriptors: base (11) + teleological + code + causal.
 ///
 /// Returns total column families for a fully configured Context Graph database.
 ///
@@ -343,9 +343,11 @@ pub fn get_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamilyDes
 ///
 /// # Returns
 /// Vector of `ColumnFamilyDescriptor`s:
-/// - 8 base CFs (nodes, edges, embeddings, metadata, temporal, tags, sources, system)
-/// - Teleological CFs (fingerprints, synergy_matrix, etc.)
+/// - 11 base CFs (nodes, edges, embeddings, metadata, temporal, tags, sources, system, graph linking)
+/// - 15 Teleological CFs (fingerprints, synergy_matrix, etc.)
 /// - 13 quantized embedder CFs (emb_0 through emb_12)
+/// - 5 code CFs (code_entities, code_e7_embeddings, etc.)
+/// - 2 causal CFs (causal_relationships, causal_by_source)
 ///
 /// # Example
 /// ```ignore
@@ -357,18 +359,18 @@ pub fn get_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamilyDes
 /// assert_eq!(descriptors.len(), TOTAL_COLUMN_FAMILIES);
 /// ```
 pub fn get_all_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
-    use crate::teleological::get_all_teleological_cf_descriptors;
+    use crate::teleological::get_all_cf_descriptors;
 
     let mut descriptors = get_column_family_descriptors(block_cache);
-    descriptors.extend(get_all_teleological_cf_descriptors(block_cache));
+    descriptors.extend(get_all_cf_descriptors(block_cache));
     descriptors
 }
 
 /// Total number of column families in a fully configured Context Graph database.
-/// Base (11: 8 original + 3 graph linking) + Teleological (15) + Quantized Embedder (13) = 39
+/// Base (11: 8 original + 3 graph linking) + Teleological (15) + Quantized Embedder (13) + Code (5) + Causal (2) = 46
 /// PRD v6: Autonomous module removed - topics emerge from clustering, not goal hierarchies
 /// TASK-GRAPHLINK-010: Added 3 graph linking CFs (embedder_edges, typed_edges, typed_edges_by_type)
-pub const TOTAL_COLUMN_FAMILIES: usize = 39;
+pub const TOTAL_COLUMN_FAMILIES: usize = 46;
 
 #[cfg(test)]
 mod tests {
@@ -641,13 +643,13 @@ mod tests {
     #[test]
     fn test_total_column_families_constant() {
         // Verify the constant is correct:
-        // 11 base (8 original + 3 graph linking) + 15 teleological + 13 quantized = 39
+        // 11 base (8 original + 3 graph linking) + 15 teleological + 13 quantized + 5 code + 2 causal = 46
         // PRD v6: Autonomous module removed - topics emerge from clustering, not goal hierarchies
         // Teleological: 13 active + 2 legacy = 15
         // TASK-GRAPHLINK-010: Added 3 graph linking CFs
         assert_eq!(
-            TOTAL_COLUMN_FAMILIES, 39,
-            "Total column families should be 39 (11 base + 15 teleological + 13 quantized)"
+            TOTAL_COLUMN_FAMILIES, 46,
+            "Total column families should be 46 (11 base + 15 teleological + 13 quantized + 5 code + 2 causal)"
         );
     }
 
@@ -675,9 +677,10 @@ mod tests {
         let names: HashSet<_> = descriptors.iter().map(|d| d.name()).collect();
         assert_eq!(
             names.len(),
-            TOTAL_COLUMN_FAMILIES,
-            "All {} CF names must be unique",
-            TOTAL_COLUMN_FAMILIES
+            descriptors.len(),
+            "All {} CF names must be unique, got {} unique names",
+            descriptors.len(),
+            names.len()
         );
     }
 

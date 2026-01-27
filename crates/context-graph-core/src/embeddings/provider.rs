@@ -510,8 +510,8 @@ mod tests {
         assert!(fp.e6_sparse.nnz() > 0, "E6 should have active indices");
         assert_eq!(fp.e7_code.len(), 1536, "E7 should be 1536D");
         // E8 now uses dual vectors for asymmetric graph similarity
-        assert_eq!(fp.e8_graph_as_source.len(), 384, "E8 source should be 384D");
-        assert_eq!(fp.e8_graph_as_target.len(), 384, "E8 target should be 384D");
+        assert_eq!(fp.e8_graph_as_source.len(), 1024, "E8 source should be 1024D");
+        assert_eq!(fp.e8_graph_as_target.len(), 1024, "E8 target should be 1024D");
         assert!(fp.e8_graph.is_empty(), "E8 legacy should be empty in new format");
         assert_eq!(fp.e9_hdc.len(), 1024, "E9 should be 1024D");
         // E10 now uses dual vectors for asymmetric intent/context similarity

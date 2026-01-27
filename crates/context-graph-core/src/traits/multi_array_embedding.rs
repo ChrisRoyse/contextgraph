@@ -664,7 +664,7 @@ pub trait MultiArrayEmbeddingProvider: Send + Sync {
             768,  // E5: Causal (Longformer)
             0,    // E6: Sparse (SPLADE) - variable
             1536, // E7: Code (Qodo-Embed-1-1.5B)
-            384,  // E8: Graph (MiniLM)
+            1024, // E8: Graph (e5-large-v2, upgraded from MiniLM 384D)
             1024, // E9: HDC (projected)
             768,  // E10: Multimodal (CLIP)
             768,  // E11: Entity (KEPLER)
@@ -980,7 +980,7 @@ mod tests {
         assert_eq!(dims[4], 768, "E5 causal should be 768D");
         assert_eq!(dims[5], 0, "E6 sparse should be 0 (variable)");
         assert_eq!(dims[6], 1536, "E7 code should be 1536D");
-        assert_eq!(dims[7], 384, "E8 graph should be 384D");
+        assert_eq!(dims[7], 1024, "E8 graph should be 1024D (upgraded from MiniLM)");
         assert_eq!(dims[8], 1024, "E9 HDC should be 1024D (projected)");
         assert_eq!(dims[9], 768, "E10 multimodal should be 768D");
         assert_eq!(dims[10], 768, "E11 entity should be 768D (KEPLER)");
@@ -1093,8 +1093,8 @@ mod tests {
         assert!(fp.e6_sparse.is_empty()); // Sparse starts empty
         assert_eq!(fp.e7_code.len(), 1536);
         // E8 now uses dual vectors for asymmetric graph similarity
-        assert_eq!(fp.e8_graph_as_source.len(), 384);
-        assert_eq!(fp.e8_graph_as_target.len(), 384);
+        assert_eq!(fp.e8_graph_as_source.len(), 1024);
+        assert_eq!(fp.e8_graph_as_target.len(), 1024);
         assert!(fp.e8_graph.is_empty()); // Legacy field empty in new format
         assert_eq!(fp.e9_hdc.len(), 1024); // HDC projected
         // E10 now uses dual vectors for asymmetric intent/context similarity

@@ -34,7 +34,7 @@ fn test_empty_index_returns_empty_results() {
     println!("BEFORE: Searching empty E8Graph index");
 
     let search = create_test_search();
-    let query = vec![0.5f32; 384];
+    let query = vec![0.5f32; 1024];
 
     let result = search.search(EmbedderIndex::E8Graph, &query, 10, None);
 
@@ -53,7 +53,7 @@ fn test_k_zero_returns_empty() {
     println!("=== TEST: k=0 returns empty results ===");
 
     let search = create_test_search();
-    let query = vec![0.5f32; 384];
+    let query = vec![0.5f32; 1024];
 
     let result = search.search(EmbedderIndex::E8Graph, &query, 0, None);
 
@@ -76,7 +76,7 @@ fn test_search_returns_inserted_vector() {
 
     // Insert a vector
     let id = Uuid::new_v4();
-    let vector = vec![0.5f32; 384];
+    let vector = vec![0.5f32; 1024];
     let index = registry.get(EmbedderIndex::E8Graph).unwrap();
     index.insert(id, &vector).unwrap();
 
@@ -104,7 +104,7 @@ fn test_search_identical_vectors_high_similarity() {
     let search = SingleEmbedderSearch::new(Arc::clone(&registry));
 
     let id = Uuid::new_v4();
-    let vector: Vec<f32> = (0..384).map(|i| (i as f32) / 384.0).collect();
+    let vector: Vec<f32> = (0..1024).map(|i| (i as f32) / 1024.0).collect(); // E8 upgraded to 1024D
 
     let index = registry.get(EmbedderIndex::E8Graph).unwrap();
     index.insert(id, &vector).unwrap();
@@ -129,11 +129,11 @@ fn test_search_orthogonal_vectors_low_similarity() {
     let search = SingleEmbedderSearch::new(Arc::clone(&registry));
 
     // Vector A: [1, 0, 0, 0, ...]
-    let mut vec_a = vec![0.0f32; 384];
+    let mut vec_a = vec![0.0f32; 1024];
     vec_a[0] = 1.0;
 
     // Vector B: [0, 1, 0, 0, ...]
-    let mut vec_b = vec![0.0f32; 384];
+    let mut vec_b = vec![0.0f32; 1024];
     vec_b[1] = 1.0;
 
     let id = Uuid::new_v4();
@@ -160,9 +160,9 @@ fn test_search_with_threshold_filters() {
     let search = SingleEmbedderSearch::new(Arc::clone(&registry));
     let index = registry.get(EmbedderIndex::E8Graph).unwrap();
 
-    // Normalized query vector (all positive, normalized)
-    let norm = (384.0_f32).sqrt();
-    let query: Vec<f32> = (0..384).map(|_| 1.0 / norm).collect();
+    // Normalized query vector (all positive, normalized) - E8 upgraded to 1024D
+    let norm = (1024.0_f32).sqrt();
+    let query: Vec<f32> = (0..1024).map(|_| 1.0 / norm).collect();
 
     // High similarity (identical to query)
     let id_high = Uuid::new_v4();
@@ -170,15 +170,15 @@ fn test_search_with_threshold_filters() {
 
     // Medium similarity (rotated 45 degrees - cosine ~0.7)
     let id_med = Uuid::new_v4();
-    let med_norm = (384.0_f32 * 2.0).sqrt();
-    let vec_med: Vec<f32> = (0..384)
-        .map(|i| if i < 192 { 2.0 / med_norm } else { 0.0 })
+    let med_norm = (1024.0_f32 * 2.0).sqrt();
+    let vec_med: Vec<f32> = (0..1024)
+        .map(|i| if i < 512 { 2.0 / med_norm } else { 0.0 })
         .collect();
     index.insert(id_med, &vec_med).unwrap();
 
     // Low similarity (orthogonal - alternating signs)
     let id_low = Uuid::new_v4();
-    let vec_low: Vec<f32> = (0..384)
+    let vec_low: Vec<f32> = (0..1024)
         .map(|i| if i % 2 == 0 { 1.0 / norm } else { -1.0 / norm })
         .collect();
     index.insert(id_low, &vec_low).unwrap();
@@ -217,12 +217,12 @@ fn test_k_greater_than_index_size() {
 
     // Insert 5 vectors
     for _ in 0..5 {
-        let vec = vec![rand_float(); 384];
+        let vec = vec![rand_float(); 1024];
         index.insert(Uuid::new_v4(), &vec).unwrap();
     }
 
     // Request k=1000, but only 5 exist
-    let query = vec![0.5f32; 384];
+    let query = vec![0.5f32; 1024];
     let result = search
         .search(EmbedderIndex::E8Graph, &query, 1000, None)
         .unwrap();
@@ -243,12 +243,12 @@ fn test_threshold_filters_all() {
 
     // Insert some vectors
     for _ in 0..5 {
-        let vec: Vec<f32> = (0..384).map(|i| (i as f32 % 10.0) / 10.0).collect();
+        let vec: Vec<f32> = (0..1024).map(|i| (i as f32 % 10.0) / 10.0).collect(); // E8 upgraded to 1024D
         index.insert(Uuid::new_v4(), &vec).unwrap();
     }
 
     // Use completely different query with threshold 0.99
-    let query = vec![0.0f32; 384];
+    let query = vec![0.0f32; 1024];
     let result = search
         .search(EmbedderIndex::E8Graph, &query, 10, Some(0.99))
         .unwrap();
@@ -305,7 +305,7 @@ fn test_search_default() {
     };
     let search = SingleEmbedderSearch::with_config(Arc::clone(&registry), config);
 
-    let query = vec![0.5f32; 384];
+    let query = vec![0.5f32; 1024];
     let result = search.search_default(EmbedderIndex::E8Graph, &query);
 
     assert!(result.is_ok());
@@ -325,7 +325,7 @@ fn test_search_ids_above_threshold() {
     let index = registry.get(EmbedderIndex::E8Graph).unwrap();
 
     let id = Uuid::new_v4();
-    let vector = vec![0.5f32; 384];
+    let vector = vec![0.5f32; 1024];
     index.insert(id, &vector).unwrap();
 
     let pairs = search
@@ -344,7 +344,7 @@ fn test_latency_recorded() {
     println!("=== TEST: Search latency is recorded ===");
 
     let search = create_test_search();
-    let query = vec![0.5f32; 384];
+    let query = vec![0.5f32; 1024];
 
     let result = search
         .search(EmbedderIndex::E8Graph, &query, 10, None)

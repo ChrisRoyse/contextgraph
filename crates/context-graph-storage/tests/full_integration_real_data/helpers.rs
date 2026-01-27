@@ -52,7 +52,7 @@ pub fn generate_real_sparse_vector(target_nnz: usize) -> SparseVector {
 }
 
 /// Generate a REAL SemanticFingerprint with proper dimensions.
-/// E1: 1024D, E2-E4: 512D, E5: 768D (dual: cause+effect), E6: sparse, E7: 1536D, E8: 384D,
+/// E1: 1024D, E2-E4: 512D, E5: 768D (dual: cause+effect), E6: sparse, E7: 1536D, E8: 1024D,
 /// E9: 1024D (projected), E10: 768D, E11: 768D (KEPLER), E12: 128D tokens, E13: sparse
 pub fn generate_real_semantic_fingerprint() -> SemanticFingerprint {
     let e5_vec = generate_real_unit_vector(768);
@@ -66,8 +66,8 @@ pub fn generate_real_semantic_fingerprint() -> SemanticFingerprint {
         e5_causal: Vec::new(), // Empty - using new dual format
         e6_sparse: generate_real_sparse_vector(100), // ~0.3% sparsity for E6
         e7_code: generate_real_unit_vector(1536),
-        e8_graph_as_source: generate_real_unit_vector(384),
-        e8_graph_as_target: generate_real_unit_vector(384),
+        e8_graph_as_source: generate_real_unit_vector(1024), // Upgraded from 384D
+        e8_graph_as_target: generate_real_unit_vector(1024), // Upgraded from 384D
         e8_graph: Vec::new(), // Legacy field, empty by default
         e9_hdc: generate_real_unit_vector(1024), // HDC projected dimension
         e10_multimodal_as_intent: generate_real_unit_vector(768),

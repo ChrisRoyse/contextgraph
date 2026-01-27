@@ -50,6 +50,10 @@ criterion = { version = "0.5", features = ["html_reports"] }
 name = "maxsim_bench"
 harness = false
 
+[[bench]]
+name = "causal_relationships_bench"
+harness = false
+
 [[example]]
 name = "basic_storage"
 path = "examples/basic_storage.rs"

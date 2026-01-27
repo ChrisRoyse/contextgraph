@@ -244,7 +244,7 @@ pub const CF_EMB_5: &str = "emb_5";
 pub const CF_EMB_6: &str = "emb_6";
 
 /// Column family for E8_Graph (ModelId=7) quantized embeddings.
-/// Quantization: Float8E4M3 (384 bytes from 384D).
+/// Quantization: Float8E4M3 (1024 bytes from 1024D).
 pub const CF_EMB_7: &str = "emb_7";
 
 /// Column family for E9_HDC (ModelId=8) quantized embeddings.

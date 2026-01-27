@@ -398,4 +398,116 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         debug!(count = results.len(), "Scanned fingerprints for clustering");
         Ok(results)
     }
+
+    // ==================== Causal Relationship Storage ====================
+
+    async fn store_causal_relationship(
+        &self,
+        relationship: &crate::types::CausalRelationship,
+    ) -> CoreResult<Uuid> {
+        let id = relationship.id;
+        debug!(causal_id = %id, source_id = %relationship.source_fingerprint_id, "Storing causal relationship");
+
+        // Store in primary map
+        self.causal_relationships.insert(id, relationship.clone());
+
+        // Update secondary index
+        self.causal_by_source
+            .entry(relationship.source_fingerprint_id)
+            .or_insert_with(Vec::new)
+            .push(id);
+
+        Ok(id)
+    }
+
+    async fn get_causal_relationship(
+        &self,
+        id: Uuid,
+    ) -> CoreResult<Option<crate::types::CausalRelationship>> {
+        Ok(self.causal_relationships.get(&id).map(|r| r.clone()))
+    }
+
+    async fn get_causal_relationships_by_source(
+        &self,
+        source_id: Uuid,
+    ) -> CoreResult<Vec<crate::types::CausalRelationship>> {
+        let causal_ids = match self.causal_by_source.get(&source_id) {
+            Some(ids) => ids.clone(),
+            None => return Ok(Vec::new()),
+        };
+
+        let mut results = Vec::with_capacity(causal_ids.len());
+        for causal_id in causal_ids {
+            if let Some(rel) = self.causal_relationships.get(&causal_id) {
+                results.push(rel.clone());
+            }
+        }
+
+        debug!(source_id = %source_id, count = results.len(), "Retrieved causal relationships by source");
+        Ok(results)
+    }
+
+    async fn search_causal_relationships(
+        &self,
+        query_embedding: &[f32],
+        top_k: usize,
+        direction_filter: Option<&str>,
+    ) -> CoreResult<Vec<(Uuid, f32)>> {
+        let mut results: Vec<(Uuid, f32)> = Vec::new();
+
+        for entry in self.causal_relationships.iter() {
+            let rel = entry.value();
+
+            // Apply direction filter if specified
+            if let Some(filter) = direction_filter {
+                if filter != "all" && rel.normalized_direction() != filter {
+                    continue;
+                }
+            }
+
+            // Compute cosine similarity
+            let similarity = compute_cosine_similarity(query_embedding, &rel.description_embedding);
+            results.push((rel.id, similarity));
+        }
+
+        // Sort by similarity descending
+        results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Take top_k
+        results.truncate(top_k);
+
+        debug!(
+            query_dim = query_embedding.len(),
+            top_k = top_k,
+            results_count = results.len(),
+            direction_filter = ?direction_filter,
+            "Searched causal relationships in in-memory store"
+        );
+
+        Ok(results)
+    }
+}
+
+/// Compute cosine similarity between two vectors.
+fn compute_cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
+    if a.len() != b.len() {
+        return 0.0;
+    }
+
+    let mut dot = 0.0f32;
+    let mut norm_a = 0.0f32;
+    let mut norm_b = 0.0f32;
+
+    for i in 0..a.len() {
+        dot += a[i] * b[i];
+        norm_a += a[i] * a[i];
+        norm_b += b[i] * b[i];
+    }
+
+    let denom = (norm_a.sqrt()) * (norm_b.sqrt());
+    if denom < f32::EPSILON {
+        0.0
+    } else {
+        dot / denom
+    }
 }

@@ -27,7 +27,7 @@
 //! | emb_4 | E5_Causal quantized (PQ-8) | UUID (16 bytes) | ~8 bytes |
 //! | emb_5 | E6_Sparse quantized (SparseNative) | UUID (16 bytes) | ~2KB |
 //! | emb_6 | E7_Code quantized (PQ-8) | UUID (16 bytes) | ~8 bytes |
-//! | emb_7 | E8_Graph quantized (Float8) | UUID (16 bytes) | ~384 bytes |
+//! | emb_7 | E8_Graph quantized (Float8) | UUID (16 bytes) | ~1024 bytes |
 //! | emb_8 | E9_HDC quantized (Binary) | UUID (16 bytes) | ~1250 bytes |
 //! | emb_9 | E10_Multimodal quantized (PQ-8) | UUID (16 bytes) | ~8 bytes |
 //! | emb_10 | E11_Entity quantized (PQ8) | UUID (16 bytes) | ~768 bytes |
@@ -59,10 +59,20 @@ pub use column_families::{
     e13_splade_inverted_cf_options,
     e1_matryoshka_128_cf_options,
     fingerprint_cf_options,
+    get_all_cf_descriptors,
     get_all_teleological_cf_descriptors,
+    get_causal_cf_descriptors,
+    get_code_cf_descriptors,
     get_quantized_embedder_cf_descriptors,
     get_teleological_cf_descriptors,
     topic_profile_cf_options,
+    // Causal relationship column families
+    causal_by_source_cf_options,
+    causal_relationships_cf_options,
+    CF_CAUSAL_BY_SOURCE,
+    CF_CAUSAL_RELATIONSHIPS,
+    CAUSAL_CFS,
+    CAUSAL_CF_COUNT,
     // Quantized embedder column families (TASK-EMB-022)
     quantized_embedder_cf_options,
     synergy_matrix_cf_options,
