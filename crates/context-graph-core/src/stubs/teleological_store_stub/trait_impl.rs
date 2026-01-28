@@ -3,6 +3,7 @@
 //! This module contains the full trait implementation that delegates to
 //! the various impl methods in other submodules.
 
+use std::any::Any;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::Ordering;
 
@@ -783,6 +784,12 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         );
 
         Ok(results)
+    }
+
+    // ==================== Type Downcasting ====================
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }
 

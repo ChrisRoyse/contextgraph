@@ -1,4 +1,4 @@
-//! Tool definitions per PRD v6 Section 10 (49 tools total).
+//! Tool definitions per PRD v6 Section 10 (50 tools total).
 //!
 //! Includes 17 original tools (inject_context merged into store_memory)
 //! plus 4 sequence tools for E4 integration
@@ -12,7 +12,8 @@
 //! plus 6 entity tools for E11 integration (extract, search, infer, find, validate, graph)
 //! plus 4 embedder-first search tools for Constitution v6.3
 //! plus 2 temporal tools for E2/E3 (search_recent, search_periodic)
-//! plus 4 graph linking tools (get_memory_neighbors, get_typed_edges, traverse_graph, get_unified_neighbors).
+//! plus 4 graph linking tools (get_memory_neighbors, get_typed_edges, traverse_graph, get_unified_neighbors)
+//! plus 1 maintenance tool (repair_causal_relationships).
 
 pub(crate) mod causal;
 pub(crate) mod causal_discovery;
@@ -26,6 +27,7 @@ pub(crate) mod graph;
 pub(crate) mod graph_link;
 pub(crate) mod intent;
 pub(crate) mod keyword;
+pub(crate) mod maintenance;
 pub(crate) mod merge;
 pub(crate) mod robustness;
 pub(crate) mod sequence;
@@ -36,7 +38,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(49);
+    let mut tools = Vec::with_capacity(50);
 
     // Core tools (4 - inject_context merged into store_memory)
     tools.extend(core::definitions());
@@ -86,8 +88,11 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Temporal tools (2) - E2 recency search, E3 periodic search
     tools.extend(temporal::definitions());
 
-    // Graph linking tools (3) - K-NN navigation and typed edges
+    // Graph linking tools (4) - K-NN navigation and typed edges
     tools.extend(graph_link::definitions());
+
+    // Maintenance tools (1) - Data repair and cleanup
+    tools.extend(maintenance::definitions());
 
     tools
 }
@@ -98,12 +103,13 @@ mod tests {
 
     #[test]
     fn test_total_tool_count() {
-        // 49 tools:
+        // 50 tools:
         // core: 4, merge: 1, curation: 2, topic: 4, file_watcher: 4, sequence: 4,
         // causal: 4, causal_discovery: 2, keyword: 1, code: 1, graph: 4,
-        // robustness: 1, intent: 1, entity: 6, embedder: 4, temporal: 2, graph_link: 4
+        // robustness: 1, intent: 1, entity: 6, embedder: 4, temporal: 2, graph_link: 4,
+        // maintenance: 1
         // (Note: find_contextual_matches merged into search_by_intent, inject_context merged into store_memory)
-        assert_eq!(get_tool_definitions().len(), 49);
+        assert_eq!(get_tool_definitions().len(), 50);
     }
 
     #[test]
@@ -174,6 +180,8 @@ mod tests {
             "get_typed_edges",
             "traverse_graph",
             "get_unified_neighbors",
+            // Maintenance tools (1) - Data repair and cleanup
+            "repair_causal_relationships",
         ];
 
         for name in expected {
@@ -226,5 +234,6 @@ mod tests {
         assert_eq!(embedder::definitions().len(), 4); // Constitution v6.3 embedder-first search
         assert_eq!(temporal::definitions().len(), 2); // E2 recency search, E3 periodic search
         assert_eq!(graph_link::definitions().len(), 4); // K-NN navigation, typed edges, unified neighbors
+        assert_eq!(maintenance::definitions().len(), 1); // Data repair and cleanup
     }
 }

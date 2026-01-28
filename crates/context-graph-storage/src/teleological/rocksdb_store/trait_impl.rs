@@ -6,6 +6,7 @@
 //! - `search.rs` - Search operations
 //! - `persistence.rs` - Batch, statistics, persistence, content
 
+use std::any::Any;
 use std::path::PathBuf;
 
 use async_trait::async_trait;
@@ -325,5 +326,11 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
             top_k,
             config,
         ).await
+    }
+
+    // ==================== Type Downcasting ====================
+
+    fn as_any(&self) -> &dyn Any {
+        self
     }
 }

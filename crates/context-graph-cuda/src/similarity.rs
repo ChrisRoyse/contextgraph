@@ -439,7 +439,7 @@ mod tests {
         let e4 = vec![1.0f32; 512];
         let e5 = vec![1.0f32; 768];
         let e7 = vec![1.0f32; 1536];
-        let e8 = vec![1.0f32; 384];
+        let e8 = vec![1.0f32; 1024];
         let e9 = vec![1.0f32; 1024];
         let e10 = vec![1.0f32; 768];
         let e11 = vec![1.0f32; 768];

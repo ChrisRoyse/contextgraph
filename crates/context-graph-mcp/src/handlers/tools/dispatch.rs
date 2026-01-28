@@ -183,6 +183,11 @@ impl Handlers {
                 self.call_get_unified_neighbors(id, arguments).await
             }
 
+            // ========== MAINTENANCE TOOLS (Data repair and cleanup) ==========
+            tool_names::REPAIR_CAUSAL_RELATIONSHIPS => {
+                self.call_repair_causal_relationships(id).await
+            }
+
             // Unknown tool
             _ => JsonRpcResponse::error(
                 id,

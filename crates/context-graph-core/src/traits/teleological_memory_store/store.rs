@@ -3,6 +3,7 @@
 //! This module defines the core storage trait for the Context Graph system's
 //! teleological memory architecture.
 
+use std::any::Any;
 use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
@@ -716,4 +717,20 @@ pub trait TeleologicalMemoryStore: Send + Sync {
         top_k: usize,
         config: &crate::types::MultiEmbedderConfig,
     ) -> CoreResult<Vec<crate::types::CausalSearchResult>>;
+
+    // ==================== Type Downcasting ====================
+
+    /// Get a reference to self as Any for downcasting.
+    ///
+    /// This enables accessing implementation-specific methods that are not
+    /// part of the trait interface (e.g., repair_corrupted_causal_relationships).
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// if let Some(rocksdb_store) = store.as_any().downcast_ref::<RocksDbTeleologicalStore>() {
+    ///     rocksdb_store.repair_corrupted_causal_relationships().await?;
+    /// }
+    /// ```
+    fn as_any(&self) -> &dyn Any;
 }

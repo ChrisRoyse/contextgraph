@@ -928,6 +928,55 @@ impl RocksDbTeleologicalStore {
     // Delete Operations
     // ========================================================================
 
+    /// Repair corrupted causal relationships by removing entries that fail deserialization.
+    ///
+    /// Scans CF_CAUSAL_RELATIONSHIPS and deletes any entries that cannot be deserialized.
+    /// Useful for cleaning up truncated data after crashes or interrupted writes.
+    ///
+    /// Returns (deleted_count, total_scanned).
+    pub async fn repair_corrupted_causal_relationships(&self) -> CoreResult<(usize, usize)> {
+        let cf = self.cf_causal_relationships();
+        let iter = self.db.iterator_cf(cf, rocksdb::IteratorMode::Start);
+
+        let mut deleted_count = 0;
+        let mut total_scanned = 0;
+        let mut corrupted_keys: Vec<(Box<[u8]>, Option<Uuid>)> = Vec::new();
+
+        for item in iter {
+            total_scanned += 1;
+
+            let (key, value) = match item {
+                Ok((k, v)) => (k, v),
+                Err(e) => {
+                    error!("Failed to iterate causal_relationships during repair: {}", e);
+                    continue;
+                }
+            };
+
+            if bincode::deserialize::<CausalRelationship>(&value).is_err() {
+                let key_id = (key.len() == 16).then(|| Uuid::from_slice(&key).ok()).flatten();
+                warn!(key_len = key.len(), id = ?key_id, "Found corrupted causal relationship");
+                corrupted_keys.push((key, key_id));
+            }
+        }
+
+        for (key, key_id) in corrupted_keys {
+            if let Err(e) = self.db.delete_cf(cf, &key) {
+                error!("Failed to delete corrupted causal relationship: {}", e);
+                continue;
+            }
+
+            deleted_count += 1;
+            if let Some(id) = key_id {
+                let _ = self.causal_e11_index.remove(id);
+            }
+            debug!(id = ?key_id, "Deleted corrupted causal relationship");
+        }
+
+        info!(deleted = deleted_count, scanned = total_scanned, "Causal relationship repair complete");
+        Ok((deleted_count, total_scanned))
+    }
+
     /// Delete a causal relationship by ID.
     ///
     /// Also removes the relationship from the secondary index.

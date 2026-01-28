@@ -58,6 +58,11 @@ pub const TRIGGER_CAUSAL_DISCOVERY: &str = "trigger_causal_discovery";
 /// Get status and statistics of the causal discovery agent.
 pub const GET_CAUSAL_DISCOVERY_STATUS: &str = "get_causal_discovery_status";
 
+// ========== MAINTENANCE TOOLS (Data repair and cleanup) ==========
+/// Repair corrupted causal relationships by removing entries that fail deserialization.
+/// Scans CF_CAUSAL_RELATIONSHIPS and deletes truncated/corrupted entries.
+pub const REPAIR_CAUSAL_RELATIONSHIPS: &str = "repair_causal_relationships";
+
 // ========== GRAPH TOOLS (E8 Upgrade - Phase 4) ==========
 pub const SEARCH_CONNECTIONS: &str = "search_connections";
 pub const GET_GRAPH_PATH: &str = "get_graph_path";

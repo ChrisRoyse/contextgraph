@@ -703,3 +703,295 @@ async fn test_file_index_empty_cases() {
 
     println!("\n=== FSV: PASSED - Empty index edge cases handled correctly ===\n");
 }
+
+// =============================================================================
+// CAUSAL RELATIONSHIP REPAIR TESTS (Full State Verification)
+// =============================================================================
+
+/// Create a valid test causal relationship for repair testing.
+fn create_test_causal_relationship(id: Uuid, source_id: Uuid) -> context_graph_core::types::CausalRelationship {
+    context_graph_core::types::CausalRelationship {
+        id,
+        source_fingerprint_id: source_id,
+        cause_statement: "Test cause statement".to_string(),
+        effect_statement: "Test effect statement".to_string(),
+        explanation: "Test causal relationship explanation".to_string(),
+        mechanism_type: "direct".to_string(),
+        confidence: 0.85,
+        e1_semantic: vec![0.1; 1024],
+        e5_as_cause: vec![0.2; 768],
+        e5_as_effect: vec![0.3; 768],
+        e5_source_cause: vec![0.25; 768],
+        e5_source_effect: vec![0.35; 768],
+        e8_graph_source: vec![0.4; 1024],
+        e8_graph_target: vec![0.5; 1024],
+        e11_entity: vec![0.6; 768],
+        source_content: "Source content for test".to_string(),
+        created_at: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64,
+        source_spans: vec![],
+    }
+}
+
+/// FSV Test: Repair with no corrupted entries (no false positives).
+#[tokio::test]
+async fn test_repair_causal_no_corruption() {
+    println!("\n=== FSV: Repair Causal Relationships (No Corruption) ===\n");
+
+    let tmp = TempDir::new().unwrap();
+    let store = create_initialized_store(tmp.path());
+
+    // Store 3 valid causal relationships
+    let rel1 = create_test_causal_relationship(Uuid::new_v4(), Uuid::new_v4());
+    let rel2 = create_test_causal_relationship(Uuid::new_v4(), Uuid::new_v4());
+    let rel3 = create_test_causal_relationship(Uuid::new_v4(), Uuid::new_v4());
+
+    let id1 = store.store_causal_relationship(&rel1).await.unwrap();
+    let id2 = store.store_causal_relationship(&rel2).await.unwrap();
+    let id3 = store.store_causal_relationship(&rel3).await.unwrap();
+
+    println!("BEFORE REPAIR:");
+    println!("  Stored relationships: {}, {}, {}", id1, id2, id3);
+
+    // Verify all exist before repair
+    assert!(store.get_causal_relationship(id1).await.unwrap().is_some());
+    assert!(store.get_causal_relationship(id2).await.unwrap().is_some());
+    assert!(store.get_causal_relationship(id3).await.unwrap().is_some());
+    println!("  All 3 relationships verified to exist");
+
+    // RUN REPAIR
+    let (deleted_count, total_scanned) = store
+        .repair_corrupted_causal_relationships()
+        .await
+        .expect("Repair should succeed");
+
+    println!("\nAFTER REPAIR:");
+    println!("  Deleted: {}, Scanned: {}", deleted_count, total_scanned);
+
+    // VERIFY: No entries deleted
+    assert_eq!(deleted_count, 0, "Should delete 0 entries (all valid)");
+    assert_eq!(total_scanned, 3, "Should scan 3 entries");
+
+    // PHYSICAL VERIFICATION: All entries still exist
+    assert!(store.get_causal_relationship(id1).await.unwrap().is_some());
+    assert!(store.get_causal_relationship(id2).await.unwrap().is_some());
+    assert!(store.get_causal_relationship(id3).await.unwrap().is_some());
+    println!("  All 3 relationships still exist after repair");
+
+    println!("\n=== FSV: PASSED - No false positives ===\n");
+}
+
+/// FSV Test: Repair empty database (edge case).
+#[tokio::test]
+async fn test_repair_causal_empty_database() {
+    println!("\n=== FSV: Repair Causal Relationships (Empty Database) ===\n");
+
+    let tmp = TempDir::new().unwrap();
+    let store = create_initialized_store(tmp.path());
+
+    println!("BEFORE REPAIR: No causal relationships stored");
+
+    // RUN REPAIR on empty database
+    let (deleted_count, total_scanned) = store
+        .repair_corrupted_causal_relationships()
+        .await
+        .expect("Repair should succeed on empty database");
+
+    println!("AFTER REPAIR: Deleted: {}, Scanned: {}", deleted_count, total_scanned);
+
+    assert_eq!(deleted_count, 0, "Should delete 0 entries");
+    assert_eq!(total_scanned, 0, "Should scan 0 entries");
+
+    println!("\n=== FSV: PASSED - Empty database handled correctly ===\n");
+}
+
+/// FSV Test: Repair with corrupted entries (happy path).
+#[tokio::test]
+async fn test_repair_causal_with_corruption() {
+    use crate::teleological::schema::causal_relationship_key;
+    use rocksdb::IteratorMode;
+
+    println!("\n=== FSV: Repair Causal Relationships (With Corruption) ===\n");
+
+    let tmp = TempDir::new().unwrap();
+    let store = create_initialized_store(tmp.path());
+
+    // Store 2 valid relationships
+    let rel1 = create_test_causal_relationship(Uuid::new_v4(), Uuid::new_v4());
+    let rel2 = create_test_causal_relationship(Uuid::new_v4(), Uuid::new_v4());
+    let id1 = store.store_causal_relationship(&rel1).await.unwrap();
+    let id2 = store.store_causal_relationship(&rel2).await.unwrap();
+
+    // Inject 2 corrupted entries directly into RocksDB
+    let corrupted_id1 = Uuid::new_v4();
+    let corrupted_id2 = Uuid::new_v4();
+    let cf = store.cf_causal_relationships();
+
+    // Write truncated binary data (simulating crash during write)
+    store.db.put_cf(cf, causal_relationship_key(&corrupted_id1), &[0x01, 0x02, 0x03]).unwrap();
+    store.db.put_cf(cf, causal_relationship_key(&corrupted_id2), &[0xff; 50]).unwrap();
+
+    println!("BEFORE REPAIR:");
+    println!("  Valid relationships: {}, {}", id1, id2);
+    println!("  Corrupted entries: {}, {}", corrupted_id1, corrupted_id2);
+
+    // Count entries in CF before repair
+    let count_before = store.db.iterator_cf(cf, IteratorMode::Start).count();
+    println!("  Total entries in CF: {}", count_before);
+    assert_eq!(count_before, 4, "Should have 4 entries (2 valid + 2 corrupted)");
+
+    // Verify valid entries exist
+    assert!(store.get_causal_relationship(id1).await.unwrap().is_some());
+    assert!(store.get_causal_relationship(id2).await.unwrap().is_some());
+
+    // Verify corrupted entries exist as raw bytes
+    assert!(store.db.get_cf(cf, causal_relationship_key(&corrupted_id1)).unwrap().is_some());
+    assert!(store.db.get_cf(cf, causal_relationship_key(&corrupted_id2)).unwrap().is_some());
+    println!("  Corrupted raw data verified to exist");
+
+    // RUN REPAIR
+    let (deleted_count, total_scanned) = store
+        .repair_corrupted_causal_relationships()
+        .await
+        .expect("Repair should succeed");
+
+    println!("\nAFTER REPAIR:");
+    println!("  Deleted: {}, Scanned: {}", deleted_count, total_scanned);
+
+    // VERIFY: Exactly 2 corrupted entries deleted
+    assert_eq!(deleted_count, 2, "Should delete 2 corrupted entries");
+    assert_eq!(total_scanned, 4, "Should scan 4 entries");
+
+    // PHYSICAL VERIFICATION: Count entries in CF after repair
+    let count_after = store.db.iterator_cf(cf, IteratorMode::Start).count();
+    println!("  Total entries in CF after repair: {}", count_after);
+    assert_eq!(count_after, 2, "Should have 2 entries (only valid ones)");
+
+    // VERIFY: Valid entries still exist
+    assert!(store.get_causal_relationship(id1).await.unwrap().is_some());
+    assert!(store.get_causal_relationship(id2).await.unwrap().is_some());
+    println!("  Valid relationships verified to still exist");
+
+    // VERIFY: Corrupted entries removed from database
+    assert!(store.db.get_cf(cf, causal_relationship_key(&corrupted_id1)).unwrap().is_none());
+    assert!(store.db.get_cf(cf, causal_relationship_key(&corrupted_id2)).unwrap().is_none());
+    println!("  Corrupted entries verified to be deleted");
+
+    println!("\n=== FSV: PASSED - Corrupted entries removed, valid preserved ===\n");
+}
+
+/// FSV Test: Repair idempotency (multiple runs should be safe).
+#[tokio::test]
+async fn test_repair_causal_idempotency() {
+    use crate::teleological::schema::causal_relationship_key;
+
+    println!("\n=== FSV: Repair Causal Relationships (Idempotency) ===\n");
+
+    let tmp = TempDir::new().unwrap();
+    let store = create_initialized_store(tmp.path());
+
+    // Store 1 valid relationship
+    let rel1 = create_test_causal_relationship(Uuid::new_v4(), Uuid::new_v4());
+    let id1 = store.store_causal_relationship(&rel1).await.unwrap();
+
+    // Inject 1 corrupted entry
+    let corrupted_id = Uuid::new_v4();
+    let cf = store.cf_causal_relationships();
+    store.db.put_cf(cf, causal_relationship_key(&corrupted_id), &[0xde, 0xad, 0xbe, 0xef]).unwrap();
+
+    println!("RUN 1:");
+    let (deleted1, scanned1) = store.repair_corrupted_causal_relationships().await.unwrap();
+    println!("  Deleted: {}, Scanned: {}", deleted1, scanned1);
+    assert_eq!(deleted1, 1, "First run should delete 1 corrupted entry");
+    assert_eq!(scanned1, 2, "First run should scan 2 entries");
+
+    println!("\nRUN 2 (idempotency check):");
+    let (deleted2, scanned2) = store.repair_corrupted_causal_relationships().await.unwrap();
+    println!("  Deleted: {}, Scanned: {}", deleted2, scanned2);
+    assert_eq!(deleted2, 0, "Second run should delete 0 entries");
+    assert_eq!(scanned2, 1, "Second run should scan 1 entry (only valid)");
+
+    println!("\nRUN 3 (triple check):");
+    let (deleted3, scanned3) = store.repair_corrupted_causal_relationships().await.unwrap();
+    println!("  Deleted: {}, Scanned: {}", deleted3, scanned3);
+    assert_eq!(deleted3, 0, "Third run should delete 0 entries");
+    assert_eq!(scanned3, 1, "Third run should scan 1 entry");
+
+    // PHYSICAL VERIFICATION: Valid entry still exists
+    assert!(store.get_causal_relationship(id1).await.unwrap().is_some());
+    println!("  Valid entry survived multiple repairs");
+
+    println!("\n=== FSV: PASSED - Repair is idempotent ===\n");
+}
+
+/// FSV Test: Various corruption patterns.
+#[tokio::test]
+async fn test_repair_causal_various_corruption_patterns() {
+    use crate::teleological::schema::causal_relationship_key;
+    use rocksdb::IteratorMode;
+
+    println!("\n=== FSV: Repair Causal Relationships (Various Corruption Patterns) ===\n");
+
+    let tmp = TempDir::new().unwrap();
+    let store = create_initialized_store(tmp.path());
+    let cf = store.cf_causal_relationships();
+
+    // Store 1 valid relationship
+    let rel1 = create_test_causal_relationship(Uuid::new_v4(), Uuid::new_v4());
+    let id1 = store.store_causal_relationship(&rel1).await.unwrap();
+
+    // Inject various corruption patterns
+    let patterns: Vec<(&str, Vec<u8>)> = vec![
+        ("empty", vec![]),
+        ("single_byte", vec![0x00]),
+        ("truncated_header", vec![0x01, 0x02, 0x03, 0x04, 0x05]),
+        ("all_zeros", vec![0x00; 100]),
+        ("all_ones", vec![0xff; 100]),
+        ("random_garbage", vec![0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe]),
+    ];
+
+    let mut corrupted_ids = Vec::new();
+    for (name, data) in &patterns {
+        let id = Uuid::new_v4();
+        store.db.put_cf(cf, causal_relationship_key(&id), data).unwrap();
+        corrupted_ids.push((name, id));
+        println!("  Injected {} corruption: {} ({} bytes)", name, id, data.len());
+    }
+
+    println!("\nBEFORE REPAIR:");
+    let count_before = store.db.iterator_cf(cf, IteratorMode::Start).count();
+    println!("  Total entries: {} (1 valid + {} corrupted)", count_before, patterns.len());
+
+    // RUN REPAIR
+    let (deleted_count, total_scanned) = store
+        .repair_corrupted_causal_relationships()
+        .await
+        .expect("Repair should handle all corruption patterns");
+
+    println!("\nAFTER REPAIR:");
+    println!("  Deleted: {}, Scanned: {}", deleted_count, total_scanned);
+
+    // VERIFY
+    assert_eq!(deleted_count, patterns.len(), "Should delete all corrupted entries");
+    assert_eq!(total_scanned, patterns.len() + 1, "Should scan all entries");
+
+    // PHYSICAL VERIFICATION: Count entries in CF
+    let count_after = store.db.iterator_cf(cf, IteratorMode::Start).count();
+    println!("  Total entries after repair: {}", count_after);
+    assert_eq!(count_after, 1, "Should have only 1 valid entry");
+
+    // VERIFY: Each corrupted entry is gone
+    for (name, id) in &corrupted_ids {
+        assert!(store.db.get_cf(cf, causal_relationship_key(id)).unwrap().is_none(),
+            "{} corruption should be deleted", name);
+        println!("  ✓ {} corruption deleted: {}", name, id);
+    }
+
+    // VERIFY: Valid entry preserved
+    assert!(store.get_causal_relationship(id1).await.unwrap().is_some());
+    println!("  ✓ Valid entry preserved");
+
+    println!("\n=== FSV: PASSED - All corruption patterns handled ===\n");
+}
