@@ -24,6 +24,8 @@ use crate::teleological::column_families::{
     QUANTIZED_EMBEDDER_CFS, TELEOLOGICAL_CFS,
 };
 use crate::teleological::indexes::EmbedderIndexRegistry;
+
+use super::causal_hnsw_index::CausalE11Index;
 use crate::teleological::schema::{
     e12_late_interaction_key, e1_matryoshka_128_key, fingerprint_key,
 };
@@ -79,6 +81,10 @@ pub struct RocksDbTeleologicalStore {
     /// E6, E12, E13 use different index types (inverted/MaxSim).
     /// NO FALLBACKS - FAIL FAST on invalid operations.
     pub(crate) index_registry: Arc<EmbedderIndexRegistry>,
+    /// E11 HNSW index for causal relationships.
+    /// Enables O(log n) entity search instead of O(n) brute-force RocksDB scan.
+    /// See causal_hnsw_index.rs for implementation details.
+    pub(crate) causal_e11_index: Arc<CausalE11Index>,
 }
 
 // ============================================================================
@@ -163,6 +169,9 @@ impl RocksDbTeleologicalStore {
         // Create per-embedder index registry (15 HNSW indexes)
         let index_registry = Arc::new(EmbedderIndexRegistry::new());
 
+        // Create E11 HNSW index for causal relationships
+        let causal_e11_index = Arc::new(CausalE11Index::new());
+
         info!(
             "Successfully opened RocksDbTeleologicalStore with {} column families and {} per-embedder indexes",
             TELEOLOGICAL_CFS.len() + QUANTIZED_EMBEDDER_CFS.len(),
@@ -176,11 +185,15 @@ impl RocksDbTeleologicalStore {
             fingerprint_count: RwLock::new(None),
             soft_deleted: RwLock::new(HashMap::new()),
             index_registry,
+            causal_e11_index,
         };
 
         // CRITICAL: Rebuild HNSW indexes from existing RocksDB fingerprints
         // Without this, indexes are empty on every restart and multi-space search fails!
         store.rebuild_indexes_from_store()?;
+
+        // Rebuild E11 HNSW index from existing causal relationships
+        store.rebuild_causal_e11_index()?;
 
         Ok(store)
     }
@@ -732,6 +745,107 @@ impl RocksDbTeleologicalStore {
             );
         } else {
             debug!("No fingerprints to rebuild indexes from (empty store)");
+        }
+
+        Ok(())
+    }
+
+    /// Rebuild E11 HNSW index from existing causal relationships in RocksDB.
+    ///
+    /// This is called during `open()` to restore the causal E11 index on restart.
+    /// The HNSW index is in-memory and needs to be rebuilt from RocksDB data.
+    ///
+    /// # Performance
+    ///
+    /// This scans all causal relationships and inserts those with E11 embeddings
+    /// into the HNSW index. For large collections, this may take a few seconds.
+    ///
+    /// # Returns
+    ///
+    /// Ok(()) if rebuilding succeeds, Err if any critical operation fails.
+    pub(crate) fn rebuild_causal_e11_index(&self) -> TeleologicalStoreResult<()> {
+        use crate::teleological::column_families::CF_CAUSAL_RELATIONSHIPS;
+        use context_graph_core::types::CausalRelationship;
+
+        let start = std::time::Instant::now();
+
+        let cf = self
+            .db
+            .cf_handle(CF_CAUSAL_RELATIONSHIPS)
+            .ok_or_else(|| TeleologicalStoreError::ColumnFamilyNotFound {
+                name: CF_CAUSAL_RELATIONSHIPS.to_string(),
+            })?;
+
+        let iter = self.db.iterator_cf(cf, rocksdb::IteratorMode::Start);
+
+        let mut success_count = 0;
+        let mut skip_count = 0;
+        let mut error_count = 0;
+
+        for item in iter {
+            let (_key, value) = match item {
+                Ok((k, v)) => (k, v),
+                Err(e) => {
+                    error!(
+                        "FAIL FAST: RocksDB iteration failed during causal E11 index rebuild: {}",
+                        e
+                    );
+                    error_count += 1;
+                    continue;
+                }
+            };
+
+            // Deserialize causal relationship
+            let relationship: CausalRelationship = match bincode::deserialize(&value) {
+                Ok(r) => r,
+                Err(e) => {
+                    warn!(
+                        "Failed to deserialize causal relationship during E11 index rebuild: {}",
+                        e
+                    );
+                    error_count += 1;
+                    continue;
+                }
+            };
+
+            // Only index relationships with E11 embeddings
+            if !relationship.has_entity_embedding() {
+                skip_count += 1;
+                continue;
+            }
+
+            // Add to HNSW index
+            match self
+                .causal_e11_index
+                .insert(relationship.id, relationship.e11_embedding())
+            {
+                Ok(()) => {
+                    success_count += 1;
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to add causal relationship {} to E11 HNSW index: {}",
+                        relationship.id, e
+                    );
+                    error_count += 1;
+                }
+            }
+        }
+
+        let elapsed = start.elapsed();
+
+        if error_count > 0 {
+            warn!(
+                "Causal E11 index rebuild completed with {} errors (indexed: {}, skipped: {}) in {:?}",
+                error_count, success_count, skip_count, elapsed
+            );
+        } else if success_count > 0 {
+            info!(
+                "Rebuilt causal E11 HNSW index: {} relationships indexed, {} skipped (no E11) in {:?}",
+                success_count, skip_count, elapsed
+            );
+        } else {
+            debug!("No causal relationships with E11 embeddings to rebuild (indexed: 0, skipped: {})", skip_count);
         }
 
         Ok(())

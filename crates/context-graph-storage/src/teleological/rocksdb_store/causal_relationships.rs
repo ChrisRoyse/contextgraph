@@ -115,6 +115,25 @@ impl RocksDbTeleologicalStore {
         self.update_causal_by_source_index(relationship.source_fingerprint_id, relationship.id)
             .await?;
 
+        // 5. Add to E11 HNSW index if embedding present
+        if relationship.has_entity_embedding() {
+            if let Err(e) = self
+                .causal_e11_index
+                .insert(relationship.id, relationship.e11_embedding())
+            {
+                error!(
+                    "Failed to add causal relationship {} to E11 HNSW index: {}",
+                    relationship.id, e
+                );
+                // Non-fatal - relationship is stored, just not indexed
+            } else {
+                debug!(
+                    causal_id = %relationship.id,
+                    "Added causal relationship to E11 HNSW index"
+                );
+            }
+        }
+
         info!(
             causal_id = %relationship.id,
             source_id = %relationship.source_fingerprint_id,
@@ -661,6 +680,11 @@ impl RocksDbTeleologicalStore {
     /// graph operations. This finds relationships containing similar entities.
     /// KEPLER knows entity relationships that E1 misses (e.g., "Diesel" = Rust ORM).
     ///
+    /// # Performance
+    ///
+    /// Uses HNSW index for O(log n) search instead of O(n) brute-force scan.
+    /// Target performance: <5ms for 5000 relationships (vs ~42ms brute-force).
+    ///
     /// # Arguments
     /// * `query_embedding` - E11 768D KEPLER query embedding
     /// * `top_k` - Number of results
@@ -669,10 +693,41 @@ impl RocksDbTeleologicalStore {
     /// Vector of (causal_id, similarity) tuples sorted by similarity descending.
     ///
     /// # Note
-    /// Only relationships with valid E11 embeddings are searched. Older relationships
-    /// stored without E11 embeddings are skipped. Use `search_causal_relationships()`
+    /// Only relationships with valid E11 embeddings are indexed. Older relationships
+    /// stored without E11 embeddings are not searchable. Use `search_causal_relationships()`
     /// for E1 semantic search as a fallback.
     pub async fn search_causal_e11(
+        &self,
+        query_embedding: &[f32],
+        top_k: usize,
+    ) -> CoreResult<Vec<(Uuid, f32)>> {
+        // Use HNSW index for O(log n) search
+        let results = self.causal_e11_index.search(query_embedding, top_k)?;
+
+        debug!(
+            query_dim = query_embedding.len(),
+            top_k = top_k,
+            results_count = results.len(),
+            index_size = self.causal_e11_index.len(),
+            "Searched causal relationships using E11 HNSW index"
+        );
+
+        Ok(results)
+    }
+
+    /// Search causal relationships using E11 KEPLER entity embeddings (brute-force).
+    ///
+    /// This is the legacy O(n) brute-force implementation kept for testing/comparison.
+    /// Use `search_causal_e11` for production queries.
+    ///
+    /// # Arguments
+    /// * `query_embedding` - E11 768D KEPLER query embedding
+    /// * `top_k` - Number of results
+    ///
+    /// # Returns
+    /// Vector of (causal_id, similarity) tuples sorted by similarity descending.
+    #[allow(dead_code)]
+    pub async fn search_causal_e11_brute_force(
         &self,
         query_embedding: &[f32],
         top_k: usize,
@@ -704,12 +759,12 @@ impl RocksDbTeleologicalStore {
                 }
             };
 
-            // Only search relationships that have E11 embeddings (FIXED: was using E1 as proxy)
+            // Only search relationships that have E11 embeddings
             if !relationship.has_entity_embedding() {
                 continue;
             }
 
-            let doc_embedding = relationship.e11_embedding(); // FIXED: Use real E11 (768D)
+            let doc_embedding = relationship.e11_embedding();
 
             // Validate dimension match (768D)
             if query_embedding.len() != doc_embedding.len() {
@@ -734,7 +789,7 @@ impl RocksDbTeleologicalStore {
             query_dim = query_embedding.len(),
             top_k = top_k,
             results_count = results.len(),
-            "Searched causal relationships using E11 KEPLER entity embeddings"
+            "Searched causal relationships using E11 brute-force (legacy)"
         );
 
         Ok(results)
@@ -908,9 +963,13 @@ impl RocksDbTeleologicalStore {
         self.remove_from_causal_by_source_index(relationship.source_fingerprint_id, id)
             .await?;
 
+        // Remove from E11 HNSW index
+        let removed_from_hnsw = self.causal_e11_index.remove(id);
+
         info!(
             causal_id = %id,
             source_id = %relationship.source_fingerprint_id,
+            removed_from_hnsw = removed_from_hnsw,
             "Deleted causal relationship"
         );
 

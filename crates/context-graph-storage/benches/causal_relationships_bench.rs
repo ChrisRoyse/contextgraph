@@ -899,6 +899,144 @@ fn bench_e11_weight_sensitivity(c: &mut Criterion) {
 }
 
 // ============================================================================
+// BENCHMARKS - E11 HNSW vs Brute-Force Comparison
+// ============================================================================
+
+/// Benchmark: E11 HNSW index vs brute-force search.
+/// This benchmark measures the performance improvement from using HNSW indexing.
+///
+/// # Targets
+///
+/// | Relationships | Brute Force | HNSW Target | Speedup |
+/// |---------------|-------------|-------------|---------|
+/// | 100           | ~395 µs     | ~200 µs     | 2x      |
+/// | 500           | ~2.05 ms    | ~400 µs     | 5x      |
+/// | 1000          | ~4.88 ms    | ~500 µs     | 10x     |
+/// | 5000          | ~42.6 ms    | ~1 ms       | 42x     |
+fn bench_e11_hnsw_vs_brute_force(c: &mut Criterion) {
+    let tiers = [100, 500, 1000, 5000];
+
+    let mut group = c.benchmark_group("causal/e11_hnsw_comparison");
+    group.sample_size(20);
+
+    for tier_size in tiers {
+        let temp_dir = TempDir::new().expect("BENCH ERROR: Failed to create temp directory");
+        let store = RocksDbTeleologicalStore::open(temp_dir.path())
+            .expect("BENCH ERROR: Failed to open RocksDB store");
+
+        let rt =
+            tokio::runtime::Runtime::new().expect("BENCH ERROR: Failed to create tokio runtime");
+        let mut rng = StdRng::seed_from_u64(42);
+
+        // Pre-populate with relationships WITH E11 embeddings
+        println!("Populating {} causal relationships with E11 for HNSW comparison...", tier_size);
+        for i in 0..tier_size {
+            let source_id = Uuid::new_v4();
+            let rel = create_test_relationship_with_e11(&mut rng, source_id, i);
+            rt.block_on(async { store.store_causal_relationship(&rel).await })
+                .expect("BENCH ERROR: Failed to pre-store relationship");
+        }
+
+        // Verify count
+        let count = rt
+            .block_on(async { store.count_causal_relationships().await })
+            .expect("VERIFICATION FAILED: count_causal_relationships failed");
+        assert_eq!(count, tier_size, "VERIFICATION FAILED: Count mismatch");
+
+        let query_embedding = generate_e11_embedding(&mut rng);
+
+        group.throughput(Throughput::Elements(tier_size as u64));
+
+        // Benchmark HNSW search (via search_causal_e11 which now uses HNSW)
+        group.bench_with_input(
+            BenchmarkId::new("hnsw", tier_size),
+            &tier_size,
+            |b, _| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        let results = store
+                            .search_causal_e11(black_box(&query_embedding), 10)
+                            .await
+                            .expect("BENCH ERROR: search_causal_e11 failed");
+                        black_box(results)
+                    })
+                })
+            },
+        );
+
+        // Benchmark brute-force search
+        group.bench_with_input(
+            BenchmarkId::new("brute_force", tier_size),
+            &tier_size,
+            |b, _| {
+                b.iter(|| {
+                    rt.block_on(async {
+                        let results = store
+                            .search_causal_e11_brute_force(black_box(&query_embedding), 10)
+                            .await
+                            .expect("BENCH ERROR: search_causal_e11_brute_force failed");
+                        black_box(results)
+                    })
+                })
+            },
+        );
+    }
+
+    group.finish();
+}
+
+/// Benchmark: E11 HNSW index rebuild time on startup.
+/// Measures how long it takes to rebuild the index from existing relationships.
+fn bench_e11_hnsw_rebuild(c: &mut Criterion) {
+    let tiers = [100, 500, 1000, 5000];
+
+    let mut group = c.benchmark_group("causal/e11_hnsw_rebuild");
+    group.sample_size(10);
+
+    for tier_size in tiers {
+        group.bench_with_input(
+            BenchmarkId::new("rebuild", tier_size),
+            &tier_size,
+            |b, &size| {
+                b.iter_batched(
+                    || {
+                        // Setup: Create a store with relationships, close it
+                        let temp_dir = TempDir::new().expect("BENCH ERROR: Failed to create temp directory");
+                        let path = temp_dir.path().to_path_buf();
+
+                        {
+                            let store = RocksDbTeleologicalStore::open(&path)
+                                .expect("BENCH ERROR: Failed to open RocksDB store");
+                            let rt = tokio::runtime::Runtime::new()
+                                .expect("BENCH ERROR: Failed to create tokio runtime");
+                            let mut rng = StdRng::seed_from_u64(42);
+
+                            for i in 0..size {
+                                let source_id = Uuid::new_v4();
+                                let rel = create_test_relationship_with_e11(&mut rng, source_id, i);
+                                rt.block_on(async { store.store_causal_relationship(&rel).await })
+                                    .expect("BENCH ERROR: Failed to pre-store relationship");
+                            }
+                        }
+                        // Store is dropped, database is closed
+
+                        (path, temp_dir)
+                    },
+                    |(path, _temp_dir)| {
+                        // Benchmark: Reopen store (triggers index rebuild)
+                        let _store = RocksDbTeleologicalStore::open(black_box(&path))
+                            .expect("BENCH ERROR: Failed to reopen RocksDB store");
+                    },
+                    criterion::BatchSize::PerIteration,
+                )
+            },
+        );
+    }
+
+    group.finish();
+}
+
+// ============================================================================
 // BENCHMARKS - Delete Operations
 // ============================================================================
 
@@ -964,5 +1102,8 @@ criterion_group!(
     // Multi-Embedder Fusion benchmarks
     bench_multi_embedder_search,
     bench_e11_weight_sensitivity,
+    // E11 HNSW vs Brute-Force comparison benchmarks
+    bench_e11_hnsw_vs_brute_force,
+    bench_e11_hnsw_rebuild,
 );
 criterion_main!(benches);

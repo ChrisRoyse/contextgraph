@@ -42,6 +42,7 @@
 //! - `trait_impl`: TeleologicalMemoryStore trait implementation (thin wrapper)
 //! - `tests`: Comprehensive test suite
 
+mod causal_hnsw_index;
 mod causal_relationships;
 mod content;
 mod crud;
@@ -68,3 +69,6 @@ pub use types::{TeleologicalStoreConfig, TeleologicalStoreError, TeleologicalSto
 
 // Re-export core file index types for convenience
 pub use context_graph_core::types::file_index::{FileIndexEntry, FileWatcherStats};
+
+// Re-export causal HNSW index
+pub use causal_hnsw_index::CausalE11Index;
