@@ -1,6 +1,7 @@
 # PRD 03: Distribution & Installation
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
+**Version**: 5.1.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust | **Domain**: Legal
+**Design Priority**: ACCURACY FIRST -- legal-domain models downloaded on first use
 
 ---
 
@@ -102,9 +103,9 @@ Reads or creates `~/.claude/settings.json`, merges `mcpServers.casetrack` entry 
 {
   "manifest_version": "1.0",
   "name": "casetrack",
-  "version": "1.0.0",
-  "display_name": "CaseTrack Document Intelligence",
-  "description": "Ingest PDFs, Word docs, Excel spreadsheets, and scans. Search with AI. Every answer cites the source.",
+  "version": "5.1.0",
+  "display_name": "CaseTrack Legal Case Intelligence",
+  "description": "Legal case management intelligence. Ingest case documents -- complaints, motions, briefs, depositions, contracts, orders. Search with AI using legal-domain models. Every answer cites the source. Attorney-client privilege preserved -- 100% local.",
 
   "author": {
     "name": "CaseTrack",
@@ -124,7 +125,7 @@ Reads or creates `~/.claude/settings.json`, merges `mcpServers.casetrack` entry 
     {
       "id": "data_dir",
       "name": "Data Location",
-      "description": "Where to store collections and models on your computer",
+      "description": "Where to store cases and models on your computer",
       "type": "directory",
       "default": "${DOCUMENTS}/CaseTrack",
       "required": true
@@ -167,7 +168,7 @@ Reads or creates `~/.claude/settings.json`, merges `mcpServers.casetrack` entry 
     },
     "network": {
       "domains": ["huggingface.co"],
-      "reason": "Download embedding models on first use"
+      "reason": "Download legal embedding models on first use"
     }
   },
 
@@ -187,19 +188,22 @@ Reads or creates `~/.claude/settings.json`, merges `mcpServers.casetrack` entry 
    +-------------------------------------------------------+
    | Install CaseTrack?                                     |
    |                                                        |
-   | CaseTrack lets you search documents with AI.           |
+   | CaseTrack is legal case management intelligence.       |
+   | Ingest case documents, search with legal-domain AI.    |
+   | Attorney-client privilege preserved -- 100% local.     |
    | All processing happens on your computer.               |
    |                                                        |
    | Data Location:  [~/Documents/CaseTrack            ] [F]|
    | License Key:    [optional - blank for free tier   ] [L]|
    |                                                        |
    | [Y] Read and write files in your Data Location        |
-   | [Y] Download AI models from huggingface.co (~400MB)   |
+   | [Y] Download legal AI models from huggingface.co      |
+   |     (~550MB: Legal-BERT, SPLADE, ColBERT)             |
    | [N] NOT send your documents anywhere                  |
    |                                                        |
    |                         [Cancel]  [Install Extension]  |
    +-------------------------------------------------------+
-4. First Run: Server starts, downloads missing models (~400MB) in background
+4. First Run: Server starts, downloads missing models (~550MB) in background
 5. Ready:     CaseTrack icon appears in Extensions panel
 ```
 
@@ -210,11 +214,11 @@ Reads or creates `~/.claude/settings.json`, merges `mcpServers.casetrack` entry 
 Initialization sequence on first launch:
 
 ```
-1. Create directory structure: models/, collections/ (registry.db created by RocksDB::open)
+1. Create directory structure: models/, cases/ (registry.db created by RocksDB::open)
 2. Check for missing models based on tier; download any missing (with progress logging)
 3. Open or create registry database
 4. Validate license (offline-first)
-5. Log ready state: tier + collection count
+5. Log ready state: tier + case count
 ```
 
 ### 6.1 Model Download Strategy
@@ -233,28 +237,32 @@ pub struct ModelSpec {
 pub const MODELS: &[ModelSpec] = &[
     ModelSpec {
         id: "e1",
-        repo: "BAAI/bge-small-en-v1.5",
+        repo: "nlpaueb/legal-bert-base-uncased",
         files: &["model.onnx", "tokenizer.json"],
-        size_mb: 65,
+        size_mb: 220,
         required: true,
     },
     ModelSpec {
         id: "e6",
         repo: "naver/splade-cocondenser-selfdistil",
         files: &["model.onnx", "tokenizer.json"],
-        size_mb: 55,
+        size_mb: 110,
         required: true,
     },
     ModelSpec {
         id: "e12",
-        repo: "colbert-ir/colbertv2.0-msmarco-passage",
+        repo: "colbert-ir/colbertv2.0",
         files: &["model.onnx", "tokenizer.json"],
-        size_mb: 110,
+        size_mb: 220,
         required: false,
     },
 ];
 // E13 (BM25) requires no model download -- pure algorithm
 ```
+
+**Model download totals:**
+- Free tier: ~330MB (Legal-BERT-base + SPLADE)
+- Pro tier: ~550MB (Legal-BERT-base + SPLADE + ColBERT-v2)
 
 ### 6.2 Download Resilience
 
@@ -310,11 +318,11 @@ casetrack --uninstall
 ```
 
 This command:
-1. Asks for confirmation ("This will remove CaseTrack. Your data will NOT be deleted.")
+1. Asks for confirmation ("This will remove CaseTrack. Your case data will NOT be deleted.")
 2. Removes the binary from PATH
 3. Removes the Claude Code/Desktop configuration entry
 4. Prints location of data directory for manual cleanup
-5. Does NOT delete `~/Documents/CaseTrack/` (user's data is sacred)
+5. Does NOT delete `~/Documents/CaseTrack/` (user's case data is sacred)
 
 ### 8.2 Manual Uninstall
 
@@ -325,10 +333,10 @@ rm ~/.local/bin/casetrack   # macOS/Linux
 
 # Remove Claude Code config (edit ~/.claude/settings.json, remove "casetrack" key)
 
-# Optionally remove data (YOUR CHOICE -- this deletes all collections):
+# Optionally remove data (YOUR CHOICE -- this deletes all cases):
 rm -rf ~/Documents/CaseTrack/
 ```
 
 ---
 
-*CaseTrack PRD v4.0.0 -- Document 3 of 10*
+*CaseTrack PRD v5.1.0 -- Document 3 of 10*

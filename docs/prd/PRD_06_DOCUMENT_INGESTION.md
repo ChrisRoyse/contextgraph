@@ -1,6 +1,6 @@
 # PRD 06: Document Ingestion
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
+**Version**: 5.1.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
 
 ---
 
@@ -13,18 +13,77 @@
 | DOCX | docx-rs | Excellent | `docx-rs` | Preserves structure |
 | DOC (legacy) | Convert via LibreOffice | Good | CLI shelling | Optional, warns user |
 | XLSX/XLS/ODS | calamine | Excellent | `calamine` | Pure Rust, reads all spreadsheet formats |
+| EML | mailparse | Excellent | `mailparse` | Email messages common in litigation |
 | Images (JPG/PNG/TIFF) | Tesseract OCR | Good | `tesseract`, `image` | Single page per image |
 | TXT/RTF | Direct read | Excellent | `std::fs` | Plain text, no metadata |
+
+### 1.1 EML Processing
+
+Email messages (`.eml`) are a critical format in litigation discovery. CaseTrack extracts:
+
+- **Headers**: From, To, CC, BCC, Date, Subject, Message-ID, In-Reply-To
+- **Body**: Plain text and HTML (HTML converted to plain text via `html2text`)
+- **Attachments**: Extracted and ingested as separate documents linked to parent email
+- **Thread reconstruction**: In-Reply-To and References headers build email chains
+
+```rust
+pub struct EmlProcessor;
+
+impl EmlProcessor {
+    pub fn process(&self, path: &Path) -> Result<ParsedDocument> {
+        let raw = fs::read(path)
+            .map_err(|e| CaseTrackError::FileReadError {
+                path: path.to_path_buf(),
+                source: e,
+            })?;
+        let parsed = mailparse::parse_mail(&raw)
+            .map_err(|e| CaseTrackError::EmlParseError {
+                path: path.to_path_buf(),
+                source: e,
+            })?;
+
+        let headers = self.extract_headers(&parsed);
+        let body = self.extract_body(&parsed)?;
+        let attachments = self.extract_attachments(&parsed)?;
+
+        // Email body becomes page 1; each attachment becomes a subsequent page
+        let mut pages = vec![Page {
+            number: 1,
+            content: format!(
+                "From: {}\nTo: {}\nDate: {}\nSubject: {}\n\n{}",
+                headers.from, headers.to, headers.date, headers.subject, body
+            ),
+            paragraphs: self.detect_paragraphs(&body),
+            extraction_method: ExtractionMethod::Native,
+            ocr_confidence: None,
+        }];
+
+        // Attachments are returned separately for individual ingestion
+        Ok(ParsedDocument {
+            id: Uuid::new_v4(),
+            filename: path.file_name().unwrap().to_string_lossy().to_string(),
+            pages,
+            metadata: DocumentMetadataRaw {
+                title: Some(headers.subject),
+                author: Some(headers.from),
+                created_date: Some(headers.date),
+            },
+            file_hash: compute_sha256(path)?,
+            attachments,
+        })
+    }
+}
+```
 
 ---
 
 ## 2. Ingestion Pipeline
 
 ```
-DOCUMENT INGESTION FLOW
+DOCUMENT INGESTION FLOW (Legal Case Management)
 =================================================================================
 
-User: "Ingest ~/Downloads/Report.pdf"
+User: "Ingest ~/Cases/SmithVJones/Complaint.pdf"
                     |
                     v
 +-----------------------------------------------------------------------+
@@ -43,16 +102,31 @@ User: "Ingest ~/Downloads/Report.pdf"
 |    - Extract text with position metadata                              |
 |    - For scanned pages: detect and run OCR                            |
 |    - For spreadsheets: extract sheets, rows, and cell data            |
+|    - For emails (.eml): extract headers, body, attachments            |
 |    - Extract document metadata (title, author, dates)                 |
 |    Output: ParsedDocument { pages: Vec<Page>, metadata }              |
 +-----------------------------------------------------------------------+
                     |
                     v
 +-----------------------------------------------------------------------+
-| 3. CHUNK (provenance is attached here -- THE MOST CRITICAL STEP)       |
-|    - Split into 2000-character chunks                                  |
-|    - 10% overlap (200 chars from end of previous chunk)                |
-|    - Respect paragraph and sentence boundaries                         |
+| 3. DETECT LEGAL DOCUMENT TYPE                                          |
+|    - Classify document into legal category for chunking strategy      |
+|    - Detection by: filename patterns, content heuristics, metadata    |
+|    - Categories: Contract, Deposition, Brief, CourtOpinion,           |
+|      Statute, Correspondence, Discovery, Pleading, Default            |
+|    Output: LegalDocumentType                                          |
++-----------------------------------------------------------------------+
+                    |
+                    v
++-----------------------------------------------------------------------+
+| 4. CHUNK (provenance is attached here -- THE MOST CRITICAL STEP)       |
+|    - Route to legal-aware chunker based on document type (see 7.1)   |
+|    - Contracts: clause-level chunking                                 |
+|    - Depositions: Q&A pair chunking                                   |
+|    - Briefs/Motions: argument-level chunking                          |
+|    - Court opinions: section-level chunking                           |
+|    - Statutes: section/subsection chunking                            |
+|    - Default: paragraph-aware 2000-char chunking                      |
 |    - Attach FULL provenance to EVERY chunk:                            |
 |      * document_path: absolute file path on disk                       |
 |      * document_name: original filename                                |
@@ -63,76 +137,148 @@ User: "Ingest ~/Downloads/Report.pdf"
 |      * sheet_name: sheet name (for spreadsheets)                       |
 |      * row_range: row range (for spreadsheets, e.g., rows 1-45)       |
 |      * column_range: column range (for spreadsheets)                   |
-|      * extraction_method: Native / OCR / Hybrid / Spreadsheet          |
+|      * legal_section: clause number, Q&A index, argument heading       |
+|      * extraction_method: Native / OCR / Hybrid / Spreadsheet / Email  |
 |      * ocr_confidence: quality score for OCR-extracted text             |
 |      * created_at: Unix timestamp of chunk creation                     |
-|      * embedded_at: Unix timestamp (set after Step 4)                   |
+|      * embedded_at: Unix timestamp (set after Step 5)                   |
 |    A chunk without provenance MUST NOT be stored. Period.              |
 |    Output: Vec<Chunk> with Provenance                                  |
 +-----------------------------------------------------------------------+
                     |
                     v
 +-----------------------------------------------------------------------+
-| 4. EMBED                                                               |
-|    - Run each chunk through active embedders (3-6 depending on tier) |
-|    - Batch for efficiency (32 chunks at a time)                      |
-|    - Build BM25 inverted index entries                                |
+| 5. EMBED                                                               |
+|    - Run each chunk through active embedders:                         |
+|      * Legal-BERT-base (E1, 768D) -- primary semantic                 |
+|      * SPLADE (E6) -- sparse keyword matching                         |
+|      * ColBERT-v2 (E12) -- per-token reranking                        |
+|      * BM25 (E13) -- inverted index for recall                        |
+|    - Batch for efficiency (32 chunks at a time)                       |
 |    Output: Vec<ChunkWithEmbeddings>                                   |
 +-----------------------------------------------------------------------+
                     |
                     v
 +-----------------------------------------------------------------------+
-| 5. STORE (provenance chain is sealed here)                             |
-|    - Write chunks + provenance to collection RocksDB (chunks CF)      |
-|      Each chunk stored with its FULL provenance inline                |
-|    - Write embedding vectors to embeddings CF, keyed by chunk_id      |
-|      chunk_id is the bridge: embedding → chunk → provenance → file    |
-|    - Update embedded_at timestamp on each chunk                       |
-|    - Write provenance records to provenance CF (prov:{chunk_uuid})    |
-|    - Update BM25 inverted index                                       |
-|    - Update document metadata (ingested_at, updated_at timestamps)    |
-|    - Update collection stats                                          |
-|    - Optionally copy original file to collection/originals/           |
-|    Output: IngestResult { pages, chunks, duration, timestamps }       |
+| 6. EXTRACT LEGAL ENTITIES                                              |
+|    - Run NER + regex extractors on each chunk                         |
+|    - Legal entity types: Party, Court, Judge, Attorney, Statute,       |
+|      CaseNumber, Jurisdiction, LegalConcept, Remedy, Witness,          |
+|      Exhibit, DocketEntry, Date, Amount, Person, Organization,         |
+|      Location                                                          |
+|    - Deduplicate within document (same entity, different mentions)     |
+|    - Store Entity and EntityMention records in entities CF             |
+|    - Update entity_index for fast lookup                               |
+|    Output: Vec<Entity>, Vec<EntityMention>                             |
 +-----------------------------------------------------------------------+
                     |
                     v
-Response: "Ingested Report.pdf: 45 pages, 234 chunks, 12s"
++-----------------------------------------------------------------------+
+| 7. EXTRACT LEGAL CITATIONS                                             |
+|    - Detect Bluebook-format citations in each chunk                   |
+|    - Case citations: Party v. Party, Vol. Reporter Page (Court Year)  |
+|    - Statute citations: Title U.S.C. § Section                        |
+|    - Regulation citations: Title C.F.R. § Section                     |
+|    - Short-form: Id., supra, infra                                    |
+|    - Store citation records with chunk_id + char offsets               |
+|    - Build citation-to-chunk index for cross-referencing               |
+|    Output: Vec<LegalCitation>, Vec<CitationMention>                    |
++-----------------------------------------------------------------------+
+                    |
+                    v
++-----------------------------------------------------------------------+
+| 8. BUILD KNOWLEDGE GRAPH                                               |
+|    - Entity-to-Chunk edges (from Step 6)                              |
+|    - Citation-to-Chunk edges (from Step 7)                            |
+|    - Cross-document entity matching (same entity across documents)     |
+|    - Citation graph edges (documents citing the same authority)        |
+|    - Document-to-Document edges (shared entities, shared citations)    |
+|    - Compute document-level E1 similarity (SemanticSimilar edges)     |
+|    Output: Vec<DocRelationship>                                        |
++-----------------------------------------------------------------------+
+                    |
+                    v
++-----------------------------------------------------------------------+
+| 9. STORE (provenance chain is sealed here)                             |
+|    - Write chunks + provenance to case RocksDB (chunks CF)            |
+|      Each chunk stored with its FULL provenance inline                |
+|    - Write embedding vectors to embeddings CF, keyed by chunk_id      |
+|      chunk_id is the bridge: embedding -> chunk -> provenance -> file  |
+|    - Update embedded_at timestamp on each chunk                       |
+|    - Write provenance records to provenance CF (prov:{chunk_uuid})    |
+|    - Write entity records to entities CF                               |
+|    - Write citation records to citations CF                            |
+|    - Update BM25 inverted index                                       |
+|    - Update document metadata (ingested_at, updated_at timestamps)    |
+|    - Update case stats                                                 |
+|    - Optionally copy original file to case/originals/                  |
+|    Output: IngestResult { pages, chunks, entities, citations, dur }   |
++-----------------------------------------------------------------------+
+                    |
+                    v
+Response: "Ingested Complaint.pdf: 12 pages, 67 chunks, 23 entities, 8 citations, 4s"
 ```
 
-### 2.1 Post-Chunk Processing: Entity Extraction & Knowledge Graph
+### 2.1 Legal Document Type Detection
 
-After Step 5 (STORE), the pipeline extracts entities and builds the **Context Graph** (see [PRD 04 Section 8](PRD_04_STORAGE_ARCHITECTURE.md)).
+```rust
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum LegalDocumentType {
+    Contract,       // Agreements, leases, NDAs -- clause-level chunking
+    Deposition,     // Transcripts -- Q&A pair chunking
+    Brief,          // Motions, memoranda -- argument-level chunking
+    CourtOpinion,   // Judicial opinions -- section-level chunking
+    Statute,        // Laws, regulations -- section/subsection chunking
+    Correspondence, // Letters, emails -- paragraph-aware chunking
+    Discovery,      // Interrogatories, requests -- numbered item chunking
+    Pleading,       // Complaints, answers -- paragraph/count chunking
+    Default,        // Unrecognized -- paragraph-aware 2000-char chunking
+}
 
-**Step 6 -- EXTRACT ENTITIES**: For each chunk, run regex extractors (dates, amounts, percentages) and NER (persons, organizations, locations). Deduplicate within the document. Store Entity and EntityMention records in `entities` CF, update `entity_index`. Output: `Vec<Entity>`, `Vec<EntityMention>`.
+impl LegalDocumentType {
+    /// Detect document type from filename patterns and content heuristics
+    pub fn detect(filename: &str, content_preview: &str) -> Self {
+        let lower_name = filename.to_lowercase();
+        let lower_content = content_preview.to_lowercase();
 
-**Step 7 -- BUILD DOCUMENT GRAPH EDGES**: Find shared entities (SharedEntities edges) across documents and compute document-level E1 similarity (SemanticSimilar edges). Cross-document entity matching links the same entity appearing in different documents. Store in `doc_graph` and `chunk_graph` CFs. Output: `Vec<DocRelationship>`.
+        // Filename-based detection
+        if lower_name.contains("contract") || lower_name.contains("agreement")
+            || lower_name.contains("lease") || lower_name.contains("nda")
+        {
+            return Self::Contract;
+        }
+        if lower_name.contains("deposition") || lower_name.contains("transcript") {
+            return Self::Deposition;
+        }
+        if lower_name.contains("brief") || lower_name.contains("motion")
+            || lower_name.contains("memorandum")
+        {
+            return Self::Brief;
+        }
+        if lower_name.contains("opinion") || lower_name.contains("order")
+            || lower_name.contains("ruling")
+        {
+            return Self::CourtOpinion;
+        }
 
-**Step 8 -- UPDATE COLLECTION MAP**: Incrementally add new entities, key dates, entity statistics. Recompute CollectionStatistics. Output: Updated CollectionMap.
+        // Content-based heuristics
+        if lower_content.contains("whereas") && lower_content.contains("hereby") {
+            return Self::Contract;
+        }
+        if lower_content.contains("q.") && lower_content.contains("a.") {
+            return Self::Deposition;
+        }
+        if lower_content.contains("argument") && lower_content.contains("conclusion") {
+            return Self::Brief;
+        }
+        if lower_content.contains("holding") && lower_content.contains("affirmed") {
+            return Self::CourtOpinion;
+        }
 
-Complete response: `"Ingested Report.pdf: 45 pages, 234 chunks, 47 entities, 12s"`
-
-#### Entity Types Extracted
-
-| Type | Detection Method | Examples |
-|------|-----------------|----------|
-| Person | NER | "John Smith", "Sarah Chen" |
-| Organization | NER | "Acme Corp", "Finance Department" |
-| Date | Regex + NER | "January 15, 2024", "Q3 2024", "filed on 01/15/2024" |
-| Amount | Regex | "$1,250,000.00", "1.25 million dollars", "15.7%" |
-| Location | NER | "New York, NY", "123 Main Street", "United Kingdom" |
-| Concept | NER | "supply chain optimization", "revenue forecast" |
-
-#### Knowledge Graph Integration During Ingestion
-
-After entity extraction, the pipeline builds knowledge graph connections:
-
-| Step | Description |
-|------|-------------|
-| Entity-to-Chunk edges | Each extracted entity links to the chunk(s) where it appears |
-| Cross-document entity matching | Same entity (e.g., "Acme Corp") across multiple documents creates shared-entity edges |
-| Document relationship edges | Documents sharing 3+ entities are linked with SharedEntities relationship |
-| Entity co-occurrence | Entities appearing in the same chunk are linked with co-occurrence edges |
+        Self::Default
+    }
+}
+```
 
 ---
 
@@ -208,6 +354,7 @@ impl PdfProcessor {
             pages,
             metadata,
             file_hash: compute_sha256(path)?,
+            attachments: vec![],
         })
     }
 
@@ -288,6 +435,7 @@ impl DocxProcessor {
             pages,
             metadata: DocumentMetadataRaw::default(),
             file_hash: compute_sha256(path)?,
+            attachments: vec![],
         })
     }
 }
@@ -372,6 +520,7 @@ impl XlsxProcessor {
             pages,
             metadata: DocumentMetadataRaw::default(),
             file_hash: compute_sha256(path)?,
+            attachments: vec![],
         })
     }
 }
@@ -428,9 +577,194 @@ impl OcrEngine {
 
 ---
 
-## 7. Chunking Strategy
+## 7. Legal-Aware Chunking Strategy
 
-### 7.1 Chunking Rules (MANDATORY)
+### 7.1 Chunking by Legal Document Type (MANDATORY)
+
+Legal documents have distinct structures. Chunking MUST respect these structures to preserve semantic coherence. The chunker selects a strategy based on the `LegalDocumentType` detected in pipeline Step 3.
+
+| Document Type | Chunking Strategy | Unit | Target Size | Overlap |
+|---------------|-------------------|------|-------------|---------|
+| Contract | Clause-level | Numbered section/clause | 1500-2500 chars | None (clause boundaries are hard) |
+| Deposition | Q&A pair | Question + Answer together | 1000-3000 chars | None (Q&A pairs are atomic) |
+| Brief/Motion | Argument-level | Argument heading + body | 1500-2500 chars | 10% at section breaks |
+| Court Opinion | Section-level | Holding, reasoning, history | 1500-2500 chars | 10% at section breaks |
+| Statute | Section/subsection | Statutory section | 1000-2000 chars | None (section boundaries are hard) |
+| Correspondence | Paragraph-aware | Paragraphs | 2000 chars | 10% (200 chars) |
+| Discovery | Numbered item | Request/Interrogatory + Response | 1000-3000 chars | None |
+| Pleading | Paragraph/count | Numbered paragraphs | 2000 chars | 10% (200 chars) |
+| Default | Paragraph-aware | Paragraphs | 2000 chars | 10% (200 chars) |
+
+Character-based (not token-based) for deterministic, reproducible chunking.
+
+**Boundary priority**: (1) legal structure boundary (clause, Q&A pair, section), (2) paragraph break, (3) sentence boundary, (4) word boundary. Never split mid-word. Chunks do NOT cross page boundaries.
+
+### 7.2 Legal Chunking Anti-Patterns (FORBIDDEN)
+
+```
+LEGAL CHUNKING ANTI-PATTERNS -- NEVER DO THESE
+=================================================================================
+
+AP-LEGAL-01: NEVER split a contract clause across chunks.
+  A clause like "Section 4.2(a) Indemnification..." is ONE unit.
+  If a clause exceeds max_chars, it becomes its own oversized chunk
+  rather than being split mid-clause.
+
+AP-LEGAL-02: NEVER split a deposition Q&A pair.
+  "Q. Did you see the defendant on January 5th?
+   A. Yes, I saw him at the office around 3pm."
+  This is ONE chunk. The answer is meaningless without its question.
+
+AP-LEGAL-03: NEVER split a statute subsection.
+  "§ 1291(a)(1) The courts of appeals shall have jurisdiction..."
+  is ONE unit. Splitting mid-subsection destroys legal meaning.
+
+AP-LEGAL-04: NEVER split a court opinion's holding from its reasoning.
+  If they fit together under max_chars, keep them in one chunk.
+
+AP-LEGAL-05: NEVER chunk legal documents by flat character count alone.
+  Always use the legal-aware chunker first. Fall back to default
+  ONLY for unrecognized document types.
+```
+
+### 7.3 Contract Chunking
+
+```rust
+/// Chunks contracts by clause/section boundaries
+pub struct ContractChunker {
+    min_chars: usize,   // 400
+    max_chars: usize,   // 2500
+}
+
+impl ContractChunker {
+    pub fn chunk(&self, doc: &ParsedDocument) -> Vec<Chunk> {
+        let mut chunks = Vec::new();
+        let mut chunk_seq: u32 = 0;
+
+        for page in &doc.pages {
+            let sections = self.detect_clauses(&page.content);
+
+            let mut current_text = String::new();
+            let mut current_section_label = String::new();
+
+            for section in &sections {
+                // If adding this clause would exceed max, emit current chunk
+                if current_text.len() + section.text.len() > self.max_chars
+                    && current_text.len() >= self.min_chars
+                {
+                    chunks.push(self.make_chunk(
+                        doc, page, &current_text, chunk_seq,
+                        &current_section_label,
+                    ));
+                    chunk_seq += 1;
+                    current_text.clear();
+                }
+
+                // A single clause exceeding max gets its own chunk (never split)
+                if section.text.len() > self.max_chars && current_text.is_empty() {
+                    chunks.push(self.make_chunk(
+                        doc, page, &section.text, chunk_seq,
+                        &section.label,
+                    ));
+                    chunk_seq += 1;
+                    continue;
+                }
+
+                if current_text.is_empty() {
+                    current_section_label = section.label.clone();
+                }
+                current_text.push_str(&section.text);
+                current_text.push('\n');
+            }
+
+            if current_text.len() >= self.min_chars {
+                chunks.push(self.make_chunk(
+                    doc, page, &current_text, chunk_seq,
+                    &current_section_label,
+                ));
+                chunk_seq += 1;
+            }
+        }
+
+        chunks
+    }
+
+    /// Detect clause boundaries: "Section 1.2", "Article III", "1.2(a)", etc.
+    fn detect_clauses(&self, content: &str) -> Vec<ClauseSection> {
+        // Regex patterns for common legal clause numbering:
+        //   Section \d+(\.\d+)*
+        //   Article [IVX]+
+        //   \d+\.\d+(\([a-z]\))?
+        //   RECITALS, WHEREAS, NOW THEREFORE
+        // Split content at these boundaries, preserving the heading with its body
+        todo!()
+    }
+}
+```
+
+### 7.4 Deposition Chunking
+
+```rust
+/// Chunks depositions by Q&A pairs -- NEVER split a Q&A pair
+pub struct DepositionChunker {
+    min_chars: usize,   // 200 (some Q&A pairs are short)
+    max_chars: usize,   // 3000 (long answers are kept whole)
+}
+
+impl DepositionChunker {
+    pub fn chunk(&self, doc: &ParsedDocument) -> Vec<Chunk> {
+        let mut chunks = Vec::new();
+        let mut chunk_seq: u32 = 0;
+
+        for page in &doc.pages {
+            let qa_pairs = self.detect_qa_pairs(&page.content);
+
+            let mut current_text = String::new();
+            let mut current_qa_start: u32 = 0;
+
+            for (qa_idx, qa) in qa_pairs.iter().enumerate() {
+                let pair_text = format!("Q. {}\nA. {}\n", qa.question, qa.answer);
+
+                // If adding this Q&A pair would exceed max, emit current chunk
+                if current_text.len() + pair_text.len() > self.max_chars
+                    && current_text.len() >= self.min_chars
+                {
+                    chunks.push(self.make_chunk(
+                        doc, page, &current_text, chunk_seq,
+                        current_qa_start, qa_idx as u32 - 1,
+                    ));
+                    chunk_seq += 1;
+                    current_text.clear();
+                    current_qa_start = qa_idx as u32;
+                }
+
+                current_text.push_str(&pair_text);
+            }
+
+            if current_text.len() >= self.min_chars {
+                chunks.push(self.make_chunk(
+                    doc, page, &current_text, chunk_seq,
+                    current_qa_start, qa_pairs.len() as u32 - 1,
+                ));
+                chunk_seq += 1;
+            }
+        }
+
+        chunks
+    }
+
+    /// Detect Q&A boundaries: lines starting with "Q." or "Q:" followed by "A." or "A:"
+    fn detect_qa_pairs(&self, content: &str) -> Vec<QaPair> {
+        // Pattern: "Q." or "Q:" at line start, followed by text until next "A." or "A:"
+        // The answer continues until the next "Q." or end of content
+        todo!()
+    }
+}
+```
+
+### 7.5 Default Chunking (Paragraph-Aware 2000-char)
+
+For unrecognized document types, CaseTrack falls back to the paragraph-aware chunking strategy.
 
 | Parameter | Value |
 |-----------|-------|
@@ -439,17 +773,13 @@ impl OcrEngine {
 | Min size | 400 characters (no tiny fragments) |
 | Max size | 2200 characters (small overrun to avoid mid-sentence splits) |
 
-Character-based (not token-based) for deterministic, reproducible chunking.
+### 7.6 Provenance Per Chunk (MANDATORY)
 
-**Boundary priority**: (1) paragraph break, (2) sentence boundary, (3) word boundary. Never split mid-word. Chunks do NOT cross page boundaries.
-
-### 7.2 Provenance Per Chunk (MANDATORY)
-
-**Every chunk MUST store its complete provenance at creation time.** Fields: `document_id`, `document_name`, `document_path`, `page`, `paragraph_start/end`, `line_start/end`, `char_start/end`, `extraction_method`, `ocr_confidence`, `sheet_name` (spreadsheets), `row_range` (spreadsheets), `column_range` (spreadsheets), `chunk_index`.
+**Every chunk MUST store its complete provenance at creation time.** Fields: `document_id`, `document_name`, `document_path`, `page`, `paragraph_start/end`, `line_start/end`, `char_start/end`, `extraction_method`, `ocr_confidence`, `sheet_name` (spreadsheets), `row_range` (spreadsheets), `column_range` (spreadsheets), `legal_section` (legal document types), `chunk_index`.
 
 Provenance is: (1) stored in RocksDB with chunk text and embeddings, (2) returned in every search result, (3) queryable via MCP tools, (4) immutable after creation. See [PRD 04 Section 5.2](PRD_04_STORAGE_ARCHITECTURE.md) for the canonical Provenance struct and storage layout.
 
-### 7.3 Chunking Implementation
+### 7.7 Default Chunking Implementation
 
 ```rust
 /// Chunker configuration: 2000 chars, 10% overlap
@@ -677,12 +1007,225 @@ fn split_sentences(text: &str) -> Vec<String> {
 
 ---
 
-## 8. Batch Ingestion (Pro Tier)
+## 8. Legal Entity Extraction
+
+### 8.1 Entity Types Extracted
+
+| Type | Detection Method | Examples |
+|------|-----------------|----------|
+| Party | NER + patterns | "Smith", "Jones Corp", "Plaintiff Smith" |
+| Court | NER + patterns | "S.D.N.Y.", "Ninth Circuit", "Supreme Court of California" |
+| Judge | NER + patterns | "Hon. Jane Smith", "Judge Martinez", "J. Roberts" |
+| Attorney | NER + patterns | "John Doe, Esq.", "Attorney Chen" |
+| Statute | Regex | "42 U.S.C. § 1983", "Cal. Civ. Code § 1714" |
+| CaseNumber | Regex | "2:24-cv-01234", "No. 23-1456" |
+| Jurisdiction | NER + patterns | "Southern District of New York", "State of California" |
+| LegalConcept | NER | "breach of fiduciary duty", "negligence per se" |
+| Remedy | NER + patterns | "injunctive relief", "compensatory damages" |
+| Witness | NER + context | "Witness testified", "deponent stated" |
+| Exhibit | Regex + patterns | "Exhibit A", "Ex. 12", "Plaintiff's Exhibit 3" |
+| DocketEntry | Regex | "Dkt. No. 45", "ECF No. 12" |
+| Date | Regex + NER | "January 15, 2024", "filed on 01/15/2024" |
+| Amount | Regex | "$1,250,000.00", "1.25 million dollars", "15.7%" |
+| Person | NER | "John Smith", "Sarah Chen" |
+| Organization | NER | "Acme Corp", "Department of Justice" |
+| Location | NER | "New York, NY", "123 Main Street" |
+
+### 8.2 Knowledge Graph Integration During Ingestion
+
+After entity extraction, the pipeline builds knowledge graph connections:
+
+| Step | Description |
+|------|-------------|
+| Entity-to-Chunk edges | Each extracted entity links to the chunk(s) where it appears |
+| Cross-document entity matching | Same entity (e.g., "Acme Corp") across multiple documents creates shared-entity edges |
+| Document relationship edges | Documents sharing 3+ entities are linked with SharedEntities relationship |
+| Entity co-occurrence | Entities appearing in the same chunk are linked with co-occurrence edges |
+| Citation graph edges | Documents citing the same authority (case, statute) are linked |
+
+---
+
+## 9. Legal Citation Extraction
+
+### 9.1 Citation Types and Patterns
+
+CaseTrack detects Bluebook-format legal citations and indexes them for cross-referencing across the case file.
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum LegalCitationType {
+    CaseCitation,       // Smith v. Jones, 123 F.3d 456 (9th Cir. 2024)
+    StatuteCitation,    // 42 U.S.C. § 1983
+    RegulationCitation, // 29 C.F.R. § 1630.2
+    ShortForm,          // Id. at 459; supra note 5; infra Part III
+    ConstitutionCitation, // U.S. Const. amend. XIV, § 1
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LegalCitation {
+    pub id: Uuid,
+    pub citation_type: LegalCitationType,
+    pub full_text: String,          // "Smith v. Jones, 123 F.3d 456, 459 (9th Cir. 2024)"
+    pub normalized: String,         // Canonical form for deduplication
+    pub parties: Option<String>,    // "Smith v. Jones" (for case citations)
+    pub volume: Option<String>,     // "123"
+    pub reporter: Option<String>,   // "F.3d"
+    pub page: Option<String>,       // "456"
+    pub pinpoint: Option<String>,   // "459" (specific page within the case)
+    pub court: Option<String>,      // "9th Cir."
+    pub year: Option<String>,       // "2024"
+    pub title: Option<String>,      // "42" (for statute title)
+    pub code: Option<String>,       // "U.S.C." (for statute code)
+    pub section: Option<String>,    // "1983" (for statute section)
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CitationMention {
+    pub citation_id: Uuid,
+    pub chunk_id: Uuid,
+    pub document_id: Uuid,
+    pub char_start: u64,
+    pub char_end: u64,
+}
+```
+
+### 9.2 Citation Detection Patterns
+
+```rust
+/// Regex patterns for Bluebook citation detection
+pub struct CitationExtractor {
+    case_pattern: Regex,
+    statute_pattern: Regex,
+    regulation_pattern: Regex,
+    short_form_pattern: Regex,
+    constitution_pattern: Regex,
+}
+
+impl CitationExtractor {
+    pub fn new() -> Self {
+        Self {
+            // Case citations: Party v. Party, Vol. Reporter Page (Court Year)
+            // Examples: "Smith v. Jones, 123 F.3d 456 (9th Cir. 2024)"
+            //           "Brown v. Board of Education, 347 U.S. 483 (1954)"
+            case_pattern: Regex::new(
+                r"([A-Z][a-zA-Z'.]+(?:\s+[A-Z][a-zA-Z'.]+)*)\s+v\.\s+([A-Z][a-zA-Z'.]+(?:\s+[A-Z][a-zA-Z'.]+)*),\s+(\d+)\s+([A-Z][a-zA-Z.]+(?:\s+\d[a-z]{1,2})?)\s+(\d+)(?:,\s+(\d+))?\s+\(([^)]+)\s+(\d{4})\)"
+            ).unwrap(),
+
+            // Statute citations: Title U.S.C. § Section
+            // Examples: "42 U.S.C. § 1983", "15 U.S.C. §§ 1-7"
+            statute_pattern: Regex::new(
+                r"(\d+)\s+(U\.S\.C\.|U\.S\.C\.A\.|[A-Z][a-z]+\.\s+(?:Civ\.|Crim\.|Pen\.|Bus\.\s+&\s+Prof\.|Gov(?:'t|t)?\.?)\s+Code)\s+§§?\s+([\d]+(?:\([a-z]\)(?:\(\d+\))?)?)"
+            ).unwrap(),
+
+            // Regulation citations: Title C.F.R. § Section
+            // Examples: "29 C.F.R. § 1630.2", "17 C.F.R. § 240.10b-5"
+            regulation_pattern: Regex::new(
+                r"(\d+)\s+C\.F\.R\.\s+§§?\s+([\d]+(?:\.[\d]+)?(?:-[\d]+)?)"
+            ).unwrap(),
+
+            // Short-form citations
+            // Examples: "Id.", "Id. at 459", "supra note 5", "infra Part III"
+            short_form_pattern: Regex::new(
+                r"(?:Id\.(?:\s+at\s+\d+)?|[Ss]upra\s+(?:note\s+\d+|at\s+\d+)|[Ii]nfra\s+(?:Part\s+[IVX]+|at\s+\d+|note\s+\d+))"
+            ).unwrap(),
+
+            // Constitution citations
+            // Examples: "U.S. Const. amend. XIV, § 1", "U.S. Const. art. III, § 2"
+            constitution_pattern: Regex::new(
+                r"U\.S\.\s+Const\.\s+(?:amend\.|art\.)\s+([IVX]+|\d+)(?:,\s+§\s+(\d+))?"
+            ).unwrap(),
+        }
+    }
+
+    pub fn extract(&self, text: &str) -> Vec<LegalCitation> {
+        let mut citations = Vec::new();
+
+        // Extract case citations
+        for cap in self.case_pattern.captures_iter(text) {
+            citations.push(LegalCitation {
+                id: Uuid::new_v4(),
+                citation_type: LegalCitationType::CaseCitation,
+                full_text: cap[0].to_string(),
+                normalized: self.normalize_case_citation(&cap),
+                parties: Some(format!("{} v. {}", &cap[1], &cap[2])),
+                volume: Some(cap[3].to_string()),
+                reporter: Some(cap[4].to_string()),
+                page: Some(cap[5].to_string()),
+                pinpoint: cap.get(6).map(|m| m.as_str().to_string()),
+                court: Some(cap[7].to_string()),
+                year: Some(cap[8].to_string()),
+                title: None,
+                code: None,
+                section: None,
+            });
+        }
+
+        // Extract statute citations
+        for cap in self.statute_pattern.captures_iter(text) {
+            citations.push(LegalCitation {
+                id: Uuid::new_v4(),
+                citation_type: LegalCitationType::StatuteCitation,
+                full_text: cap[0].to_string(),
+                normalized: self.normalize_statute_citation(&cap),
+                parties: None,
+                volume: None,
+                reporter: None,
+                page: None,
+                pinpoint: None,
+                court: None,
+                year: None,
+                title: Some(cap[1].to_string()),
+                code: Some(cap[2].to_string()),
+                section: Some(cap[3].to_string()),
+            });
+        }
+
+        // Extract regulation citations
+        for cap in self.regulation_pattern.captures_iter(text) {
+            citations.push(LegalCitation {
+                id: Uuid::new_v4(),
+                citation_type: LegalCitationType::RegulationCitation,
+                full_text: cap[0].to_string(),
+                normalized: format!("{} C.F.R. § {}", &cap[1], &cap[2]),
+                parties: None,
+                volume: None,
+                reporter: None,
+                page: None,
+                pinpoint: None,
+                court: None,
+                year: None,
+                title: Some(cap[1].to_string()),
+                code: Some("C.F.R.".to_string()),
+                section: Some(cap[2].to_string()),
+            });
+        }
+
+        // Extract short-form citations
+        for cap in self.short_form_pattern.captures_iter(text) {
+            citations.push(LegalCitation {
+                id: Uuid::new_v4(),
+                citation_type: LegalCitationType::ShortForm,
+                full_text: cap[0].to_string(),
+                normalized: cap[0].to_string(),
+                parties: None, volume: None, reporter: None, page: None,
+                pinpoint: None, court: None, year: None,
+                title: None, code: None, section: None,
+            });
+        }
+
+        citations
+    }
+}
+```
+
+---
+
+## 10. Batch Ingestion
 
 ```rust
 /// Ingest all supported files in a directory
 pub async fn ingest_folder(
-    collection: &mut CollectionHandle,
+    case: &mut CaseHandle,
     engine: &EmbeddingEngine,
     folder: &Path,
     recursive: bool,
@@ -695,7 +1238,7 @@ pub async fn ingest_folder(
     for (idx, file) in files.iter().enumerate() {
         tracing::info!("[{}/{}] Ingesting: {}", idx + 1, total, file.display());
 
-        match ingest_single_file(collection, engine, file).await {
+        match ingest_single_file(case, engine, file).await {
             Ok(result) => results.push(result),
             Err(e) => {
                 tracing::error!("Failed to ingest {}: {}", file.display(), e);
@@ -720,6 +1263,7 @@ fn discover_files(folder: &Path, recursive: bool) -> Result<Vec<PathBuf>> {
     let mut files = Vec::new();
     let supported = &[
         "pdf", "docx", "doc", "xlsx", "xls", "ods",
+        "eml",
         "txt", "rtf", "jpg", "jpeg", "png", "tiff", "tif",
     ];
 
@@ -746,14 +1290,14 @@ fn discover_files(folder: &Path, recursive: bool) -> Result<Vec<PathBuf>> {
 
 ---
 
-## 9. Duplicate Detection
+## 11. Duplicate Detection
 
 Check SHA256 hash against existing documents before ingesting. If duplicate found, return error with existing document ID and `--force` hint.
 
 ```rust
-pub fn check_duplicate(collection: &CollectionHandle, file_hash: &str) -> Result<Option<Uuid>> {
-    let cf = collection.db.cf_handle("documents").unwrap();
-    for item in collection.db.iterator_cf(&cf, rocksdb::IteratorMode::Start) {
+pub fn check_duplicate(case: &CaseHandle, file_hash: &str) -> Result<Option<Uuid>> {
+    let cf = case.db.cf_handle("documents").unwrap();
+    for item in case.db.iterator_cf(&cf, rocksdb::IteratorMode::Start) {
         let (_, value) = item?;
         let doc: DocumentMetadata = bincode::deserialize(&value)?;
         if doc.file_hash == file_hash {
@@ -766,7 +1310,7 @@ pub fn check_duplicate(collection: &CollectionHandle, file_hash: &str) -> Result
 
 ---
 
-## 10. Data Types
+## 12. Data Types
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -776,6 +1320,7 @@ pub struct ParsedDocument {
     pub pages: Vec<Page>,
     pub metadata: DocumentMetadataRaw,
     pub file_hash: String,
+    pub attachments: Vec<Attachment>,  // Email attachments
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -808,7 +1353,15 @@ pub enum ExtractionMethod {
     Native,       // Direct text extraction from PDF/DOCX
     Ocr,          // Tesseract OCR
     Spreadsheet,  // calamine spreadsheet extraction
+    Email,        // mailparse email extraction
     Skipped,      // OCR disabled, scanned page skipped
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Attachment {
+    pub filename: String,
+    pub content_type: String,
+    pub data: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -827,6 +1380,8 @@ pub struct IngestResult {
     pub document_name: String,
     pub page_count: u32,
     pub chunk_count: u32,
+    pub entity_count: u32,
+    pub citation_count: u32,
     pub extraction_method: ExtractionMethod,
     pub ocr_pages: u32,
     pub duration_ms: u64,
@@ -835,4 +1390,4 @@ pub struct IngestResult {
 
 ---
 
-*CaseTrack PRD v4.0.0 -- Document 6 of 10*
+*CaseTrack PRD v5.1.0 -- Document 6 of 10*

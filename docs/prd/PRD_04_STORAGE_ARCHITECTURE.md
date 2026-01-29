@@ -1,6 +1,7 @@
 # PRD 04: Storage Architecture
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
+**Version**: 5.1.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust | **Domain**: Legal
+**Design Priority**: ACCURACY FIRST -- 768D embeddings for maximum legal semantic resolution
 
 ---
 
@@ -11,10 +12,11 @@
 - **Embedding models**: Downloaded once, stored in `~/Documents/CaseTrack/models/`
 - **Vector embeddings**: Stored in RocksDB on your device
 - **Document chunks**: Stored in RocksDB on your device
-- **Collection databases**: Each collection is an isolated RocksDB instance
+- **Case databases**: Each case is an isolated RocksDB instance
 - **Original documents**: Optionally copied to your CaseTrack folder
+- **Legal citations**: Extracted and indexed locally
 
-**Nothing is sent to any cloud service. Ever.**
+**Nothing is sent to any cloud service. Ever. Attorney-client privilege preserved.**
 
 ---
 
@@ -26,37 +28,38 @@
 |-- config.toml                              <-- User configuration (optional)
 |-- watches.json                             <-- Folder watch registry (auto-sync)
 |
-|-- models/                                  <-- Embedding models (~400MB)
-|   |-- bge-small-en-v1.5/                     Downloaded on first use
-|   |   |-- model.onnx                         Cached permanently
-|   |   +-- tokenizer.json                     No re-download needed
-|   |-- splade-distil/
-|   +-- colbert-small/
+|-- models/                                  <-- Legal embedding models (~550MB)
+|   |-- legal-bert-base-uncased/               Downloaded on first use
+|   |   |-- model.onnx                         Legal-BERT-base (768D, 110M params)
+|   |   +-- tokenizer.json                     Cached permanently
+|   |-- splade-cocondenser-selfdistil/         SPLADE (~110M params)
+|   +-- colbertv2.0/                           ColBERT-v2 (~110M params, 128D/token)
 |
-|-- registry.db/                             <-- Collection index (RocksDB)
-|   +-- [collection metadata, schema version]
+|-- registry.db/                             <-- Case index (RocksDB)
+|   +-- [case metadata, schema version]
 |
-+-- collections/                             <-- Per-collection databases
++-- cases/                                   <-- Per-case databases
     |
-    |-- {collection-uuid-1}/                 <-- Collection "Project Alpha"
-    |   |-- collection.db/                     (Isolated RocksDB instance)
+    |-- {case-uuid-1}/                       <-- Case "Smith v. Jones"
+    |   |-- case.db/                           (Isolated RocksDB instance)
     |   |   |-- documents     CF              Document metadata
     |   |   |-- chunks        CF              Text chunks (bincode)
     |   |   |-- embeddings    CF              All embedder vectors + chunk text + provenance
-    |   |   |   |-- e1                        384D vectors
-    |   |   |   |-- e6                        Sparse vectors
+    |   |   |   |-- e1                        768D vectors (Legal-BERT-base)
+    |   |   |   |-- e6                        Sparse vectors (SPLADE)
     |   |   |   +-- ...                       All active embedders
     |   |   |-- bm25_index    CF              Inverted index for keyword search
+    |   |   |-- citations     CF              Legal citation index
     |   |   +-- ...                           Additional column families
     |   +-- originals/                        Original files (optional copy)
-    |       |-- Report.pdf
-    |       |-- Summary.docx
-    |       +-- Data.xlsx
+    |       |-- Complaint.pdf
+    |       |-- Motion_to_Dismiss.docx
+    |       +-- Deposition_Smith.pdf
     |
-    |-- {collection-uuid-2}/                 <-- Collection "Q4 Analysis"
+    |-- {case-uuid-2}/                       <-- Case "Johnson Contract Dispute"
     |   +-- ...                                (Completely isolated)
     |
-    +-- {collection-uuid-N}/                 <-- More collections...
+    +-- {case-uuid-N}/                       <-- More cases...
 
 CF = RocksDB Column Family
 ```
@@ -67,19 +70,20 @@ CF = RocksDB Column Family
 
 | Data Type | Size Per Unit | Notes |
 |-----------|---------------|-------|
-| Models (Free tier) | ~120MB total | E1 + E6 (one-time download) |
-| Models (Pro tier) | ~230MB total | All 4 models (one-time download) |
-| Registry DB | ~1MB | Scales with number of collections |
-| Per document page (Free) | ~30KB | 3 embeddings + chunk text + provenance |
-| Per document page (Pro) | ~50KB | 6 embeddings + chunk text + provenance |
-| 100-page collection (Free) | ~3MB | |
-| 100-page collection (Pro) | ~5MB | |
-| 1000-page collection (Pro) | ~50MB | |
+| Models (Free tier) | ~330MB total | Legal-BERT-base + SPLADE (one-time download) |
+| Models (Pro tier) | ~550MB total | All 3 models + BM25 algorithmic (one-time download) |
+| Registry DB | ~1MB | Scales with number of cases |
+| Per document page (Free) | ~40KB | 3 embeddings (768D) + chunk text + provenance + citations |
+| Per document page (Pro) | ~60KB | 6 embeddings (768D) + chunk text + provenance + citations |
+| 100-page case (Free) | ~4MB | |
+| 100-page case (Pro) | ~6MB | |
+| 1000-page case (Pro) | ~60MB | |
 | BM25 index per 1000 chunks | ~2MB | Inverted index |
+| Citation index per 1000 chunks | ~1MB | Legal citation cross-references |
 
 **Example total disk usage:**
-- Free tier, 3 collections of 100 pages each: 165MB (models) + 9MB (data) = **~175MB**
-- Pro tier, 10 collections of 500 pages each: 370MB (models) + 250MB (data) = **~620MB**
+- Free tier, 3 cases of 100 pages each: 330MB (models) + 12MB (data) = **~342MB**
+- Pro tier, 10 cases of 500 pages each: 550MB (models) + 300MB (data) = **~850MB**
 
 ---
 
@@ -95,13 +99,13 @@ CF = RocksDB Column Family
 | Bulk write performance | Excellent | Good | Good |
 | Concurrent reads | Excellent | Limited (WAL) | Excellent |
 | Rust crate quality | Good (rust-rocksdb) | Good (rusqlite) | Fair |
-| Per-collection isolation | Separate DB instances | Separate files | Separate files |
+| Per-case isolation | Separate DB instances | Separate files | Separate files |
 
-RocksDB was chosen for: column families (clean separation of data types), prefix iteration (efficient collection listing), and bulk write performance (ingestion throughput).
+RocksDB was chosen for: column families (clean separation of data types), prefix iteration (efficient case listing), and bulk write performance (ingestion throughput).
 
 ### 4.2 Column Family Schema
 
-Each collection database uses these column families:
+Each case database uses these column families:
 
 ```rust
 pub const COLUMN_FAMILIES: &[&str] = &[
@@ -109,16 +113,21 @@ pub const COLUMN_FAMILIES: &[&str] = &[
     "chunks",           // Text chunk content
     "embeddings",       // All embedder vectors + chunk text + provenance per chunk
     "bm25_index",       // Inverted index for BM25
-    "metadata",         // Collection-level metadata, stats
+    "metadata",         // Case-level metadata, stats
+
+    // === Legal Citations ===
+    "citations",        // Extracted legal citations (case law, statutes, regulations)
+    "citation_index",   // Citation -> chunk mentions index
+    "citation_graph",   // Citation-to-citation relationships (citing, distinguishing, overruling)
 
     // === Context Graph (relationships between documents, chunks, entities) ===
-    "entities",         // Extracted entities (person, organization, date, amount, location, concept)
+    "entities",         // Extracted entities (party, court, judge, attorney, statute, etc.)
     "entity_index",     // Entity -> chunk mentions index
     "references",       // Cross-document references (shared entities, citations, hyperlinks)
     "doc_graph",        // Document-to-document relationships (similarity, reference links)
     "chunk_graph",      // Chunk-to-chunk relationships (similarity edges, co-reference)
     "knowledge_graph",  // Entity-to-entity relationships, entity-to-chunk mappings
-    "collection_map",   // Collection-level summary: key actors, dates, document categories
+    "case_map",         // Case-level summary: key parties, dates, legal issues, document categories
 ];
 ```
 
@@ -127,15 +136,15 @@ pub const COLUMN_FAMILIES: &[&str] = &[
 ```rust
 // === Registry DB Keys ===
 
-// Collection listing
-"collection:{uuid}"                          -> bincode<Collection>
+// Case listing
+"case:{uuid}"                                -> bincode<Case>
 "schema_version"                             -> u32 (current: 1)
 
 // Folder watches (auto-sync)
 "watch:{uuid}"                               -> bincode<FolderWatch>
-"watch_collection:{collection_uuid}:{watch_uuid}" -> watch_uuid  (index: watches by collection)
+"watch_case:{case_uuid}:{watch_uuid}"        -> watch_uuid  (index: watches by case)
 
-// === Collection DB Keys (per column family) ===
+// === Case DB Keys (per column family) ===
 
 // documents CF
 "doc:{uuid}"                       -> bincode<DocumentMetadata>
@@ -149,7 +158,7 @@ pub const COLUMN_FAMILIES: &[&str] = &[
 "emb:{chunk_uuid}"                 -> bincode<ChunkEmbeddingRecord>
 
 // Legacy per-embedder keys (supported for migration)
-"e1:{chunk_uuid}"                  -> [f32; 384] as bytes
+"e1:{chunk_uuid}"                  -> [f32; 768] as bytes
 "e6:{chunk_uuid}"                  -> bincode<SparseVec>
 "e12:{chunk_uuid}"                 -> bincode<TokenEmbeddings>
 
@@ -159,14 +168,30 @@ pub const COLUMN_FAMILIES: &[&str] = &[
 "stats"                            -> bincode<Bm25Stats> (avg doc length, total docs)
 
 // metadata CF
-"collection_info"                  -> bincode<Collection>
-"stats"                            -> bincode<CollectionStats>
+"case_info"                        -> bincode<Case>
+"stats"                            -> bincode<CaseStats>
+
+// === LEGAL CITATIONS COLUMN FAMILIES ===
+
+// citations CF
+"cite:{normalized_citation}"       -> bincode<LegalCitation>
+"cite_type:{type}:{normalized}"    -> normalized_citation  (index: citations by type)
+
+// citation_index CF (bidirectional)
+"cite_chunks:{citation_key}"       -> bincode<Vec<CitationMention>>
+"chunk_cites:{chunk_uuid}"         -> bincode<Vec<CitationRef>>
+
+// citation_graph CF
+"cite_rel:{citation_a}:{rel_type}:{citation_b}" -> bincode<CitationRelationship>
+// rel_type = citing | distinguishing | overruling | following | questioning
 
 // === CONTEXT GRAPH COLUMN FAMILIES ===
 
 // entities CF
 "entity:{type}:{normalized_name}"  -> bincode<Entity>
-// type = person | organization | date | amount | location | concept
+// type = party | court | judge | attorney | statute | case_number | jurisdiction |
+//        legal_concept | remedy | witness | exhibit | docket_entry |
+//        person | organization | date | amount | location
 
 // entity_index CF (bidirectional)
 "ent_chunks:{entity_key}"          -> bincode<Vec<EntityMention>>
@@ -193,10 +218,12 @@ pub const COLUMN_FAMILIES: &[&str] = &[
 "kg_ent_chunks:{entity_key}"       -> bincode<Vec<Uuid>>  (entity-to-chunk mappings)
 "kg_chunk_ents:{chunk_uuid}"       -> bincode<Vec<String>> (chunk-to-entity mappings)
 
-// collection_map CF (rebuilt after ingestion)
-"key_actors"                       -> bincode<Vec<KeyActor>>
+// case_map CF (rebuilt after ingestion)
+"key_parties"                      -> bincode<Vec<PartyInfo>>
 "key_dates"                        -> bincode<Vec<KeyDate>>
 "key_topics"                       -> bincode<Vec<Topic>>
+"legal_issues"                     -> bincode<Vec<LegalIssue>>
+"key_citations"                    -> bincode<Vec<LegalCitation>>
 "doc_categories"                   -> bincode<HashMap<String, Vec<Uuid>>>
 "reference_stats"                  -> bincode<Vec<ReferenceStat>>
 "entity_stats"                     -> bincode<Vec<EntityStat>>
@@ -212,16 +239,16 @@ pub fn rocks_options() -> rocksdb::Options {
     opts.create_if_missing(true);
     opts.create_missing_column_families(true);
 
-    // Memory budget: ~64MB per open database
-    // (allows multiple collections open simultaneously on 8GB machines)
-    let mut block_cache = rocksdb::Cache::new_lru_cache(32 * 1024 * 1024); // 32MB
+    // Memory budget: ~128MB per open database
+    // (allows multiple cases open simultaneously on 16GB machines)
+    let mut block_cache = rocksdb::Cache::new_lru_cache(64 * 1024 * 1024); // 64MB
     let mut table_opts = rocksdb::BlockBasedOptions::default();
     table_opts.set_block_cache(&block_cache);
     table_opts.set_block_size(16 * 1024); // 16KB blocks
     opts.set_block_based_table_factory(&table_opts);
 
-    // Write buffer: 16MB (reduces write amplification)
-    opts.set_write_buffer_size(16 * 1024 * 1024);
+    // Write buffer: 32MB (reduces write amplification)
+    opts.set_write_buffer_size(32 * 1024 * 1024);
     opts.set_max_write_buffer_number(2);
 
     // Compression: LZ4 for speed, Zstd for bottom level
@@ -276,6 +303,7 @@ pub struct DocumentMetadata {
     pub embedder_coverage: Vec<String>,   // e.g., ["e1", "e6"]
     pub entity_count: u32,
     pub reference_count: u32,
+    pub citation_count: u32,              // Legal citations found in this document
 }
 
 /// Unified embedding record: all embedder vectors stored alongside chunk text and provenance
@@ -284,9 +312,9 @@ pub struct ChunkEmbeddingRecord {
     pub chunk_id: Uuid,
     pub text: String,
     pub provenance: Provenance,
-    pub e1_vector: Option<Vec<f32>>,       // 384D dense vector
+    pub e1_vector: Option<Vec<f32>>,       // 768D dense vector (Legal-BERT-base)
     pub e6_vector: Option<SparseVec>,      // SPLADE sparse vector
-    pub e12_vector: Option<TokenEmbeddings>, // ColBERT per-token embeddings
+    pub e12_vector: Option<TokenEmbeddings>, // ColBERT-v2 per-token embeddings (128D/token)
     pub bm25_terms: Option<Vec<String>>,   // Pre-extracted BM25 terms
 }
 ```
@@ -301,19 +329,19 @@ Embedding Vector (e.g., key "e1:{chunk_uuid}")
     |
     +---> chunk_uuid ---> ChunkData (key "chunk:{uuid}")
                            |
-                           +-- text: "Either party may terminate..."
+                           +-- text: "Defendant's motion to dismiss under Rule 12(b)(6)..."
                            +-- provenance: Provenance {
                            |       document_id:        "doc-abc"
-                           |       source_file_path:   "/Users/alex/Projects/Alpha/Contract.pdf"
-                           |       document_filename:  "Contract.pdf"
-                           |       page_number:        12
-                           |       paragraph_number:   8
+                           |       source_file_path:   "/Users/maria/Cases/Smith_v_Jones/Motion_to_Dismiss.pdf"
+                           |       document_filename:  "Motion_to_Dismiss.pdf"
+                           |       page_number:        3
+                           |       paragraph_number:   5
                            |       line_number:        1
                            |       char_start:         2401
                            |       char_end:           4401
                            |       extraction_method:  Native
                            |       ocr_confidence:     None
-                           |       chunk_index:        47
+                           |       chunk_index:        12
                            |       created_at:         1706367600
                            |       embedded_at:        1706367612
                            |   }
@@ -364,7 +392,7 @@ pub fn load_embedding(
 }
 ```
 
-### 5.3 Sparse Vectors (SPLADE)
+### 5.4 Sparse Vectors (SPLADE)
 
 ```rust
 #[derive(Serialize, Deserialize)]
@@ -398,9 +426,84 @@ impl SparseVec {
 
 ---
 
-## 6. Data Versioning & Migration
+## 6. Legal Citation Model
 
-### 6.1 Schema Version Tracking
+Legal citations are first-class entities in CaseTrack, extracted during ingestion and stored in dedicated column families for cross-reference and citation network analysis.
+
+### 6.1 Citation Data Model
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LegalCitation {
+    pub citation_text: String,           // "Smith v. Jones, 123 F.3d 456 (9th Cir. 2020)"
+    pub citation_type: CitationType,
+    pub normalized_form: String,         // Canonical citation form
+    pub parties: Option<(String, String)>, // ("Smith", "Jones")
+    pub reporter: Option<String>,        // "F.3d"
+    pub volume: Option<String>,
+    pub page: Option<String>,
+    pub court: Option<String>,           // "9th Cir."
+    pub year: Option<u32>,
+    pub pinpoint: Option<String>,        // "at 461" for pinpoint cites
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum CitationType {
+    CaseLaw,       // Smith v. Jones, 123 F.3d 456
+    Statute,       // 42 U.S.C. § 1983
+    Regulation,    // 17 C.F.R. § 240.10b-5
+    Constitution,  // U.S. Const. amend. XIV
+    ShortForm,     // Id. at 461; supra note 12
+    Rule,          // Fed. R. Civ. P. 12(b)(6)
+    Treaty,
+    Other,
+}
+```
+
+### 6.2 Citation Mention & Cross-Reference
+
+```rust
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CitationMention {
+    pub chunk_id: Uuid,
+    pub document_id: Uuid,
+    pub char_start: u64,
+    pub char_end: u64,
+    pub context_snippet: String,       // ~100 chars around citation
+    pub treatment: Option<CitationTreatment>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum CitationTreatment {
+    Citing,         // Neutral citation
+    Following,      // Approvingly citing
+    Distinguishing, // Differentiating from
+    Overruling,     // Explicitly overruling
+    Questioning,    // Casting doubt on
+    Discussing,     // Extended discussion
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CitationRef {
+    pub citation_key: String,          // Normalized citation form
+    pub citation_type: CitationType,
+    pub display_text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CitationRelationship {
+    pub source_citation: String,
+    pub target_citation: String,
+    pub relationship: CitationTreatment,
+    pub source_chunks: Vec<Uuid>,
+}
+```
+
+---
+
+## 7. Data Versioning & Migration
+
+### 7.1 Schema Version Tracking
 
 ```rust
 const CURRENT_SCHEMA_VERSION: u32 = 1;
@@ -450,7 +553,7 @@ pub fn check_and_migrate(registry_path: &Path) -> Result<()> {
 }
 ```
 
-### 6.2 Migration Rules
+### 7.2 Migration Rules
 
 1. Migrations are **idempotent** (safe to re-run)
 2. Always **back up** before migrating
@@ -460,9 +563,9 @@ pub fn check_and_migrate(registry_path: &Path) -> Result<()> {
 
 ---
 
-## 7. Isolation Guarantees
+## 8. Isolation Guarantees
 
-### 7.1 Per-Customer Isolation
+### 8.1 Per-Customer Isolation
 
 Every CaseTrack installation is **fully isolated per customer**:
 
@@ -470,47 +573,50 @@ Every CaseTrack installation is **fully isolated per customer**:
 - Each customer has their own `~/Documents/CaseTrack/` directory
 - No data is shared between customers -- there is no server, no cloud, no shared state
 - For Team tier (5 seats), each seat is a separate installation on a separate machine with its own database
-- Customer A's embeddings, vectors, chunks, and provenance records **never touch** Customer B's data
-- There is no central database. Each customer IS their own database.
+- Attorney A's embeddings, vectors, chunks, and provenance records **never touch** Attorney B's data
+- There is no central database. Each attorney IS their own database.
+- **Attorney-client privilege is preserved by design** -- no data leaves the machine
 
 ```
 CUSTOMER ISOLATION
 =================================================================================
 
-Customer A (Sarah's MacBook)         Customer B (Mike's Windows PC)
-~/Documents/CaseTrack/               C:\Users\Mike\Documents\CaseTrack\
-|-- models/                          |-- models/
-|-- registry.db                      |-- registry.db
-+-- collections/                     +-- collections/
-    |-- {sarah-collection-1}/            |-- {mike-collection-1}/
-    +-- {sarah-collection-2}/            |-- {mike-collection-2}/
-                                         +-- {mike-collection-3}/
+Attorney A (Maria's MacBook)             Attorney B (David's Windows PC)
+~/Documents/CaseTrack/                   C:\Users\David\Documents\CaseTrack\
+|-- models/                              |-- models/
+|-- registry.db                          |-- registry.db
++-- cases/                               +-- cases/
+    |-- {smith-v-jones}/                     |-- {johnson-contract}/
+    +-- {doe-v-acme}/                        |-- {martinez-estate}/
+                                              +-- {regulatory-review}/
 
 ZERO shared state. ZERO shared databases. ZERO network communication.
 Each installation is a completely independent system.
+Attorney-client privilege preserved by architecture.
 ```
 
-### 7.2 Per-Collection Isolation
+### 8.2 Per-Case Isolation
 
-Each collection is a **completely independent RocksDB instance**:
+Each case is a **completely independent RocksDB instance**:
 
-- Separate database, embeddings, and index files per collection
-- No cross-collection queries, shared vectors, or embedding bleed
-- Independent lifecycle: deleting Collection A has zero impact on Collection B
-- Portable: copy a collection directory to another machine
-- Cleanly deletable: `rm -rf collections/{uuid}/`
+- Separate database, embeddings, and index files per case
+- No cross-case queries, shared vectors, or embedding bleed
+- Independent lifecycle: deleting Case A has zero impact on Case B
+- Portable: copy a case directory to another machine
+- Cleanly deletable: `rm -rf cases/{uuid}/`
+- **Critical for privilege**: cases for different clients are physically isolated
 
 ```rust
-/// Opening a collection creates or loads its isolated database
-pub struct CollectionHandle {
+/// Opening a case creates or loads its isolated database
+pub struct CaseHandle {
     db: rocksdb::DB,
-    collection_id: Uuid,
-    collection_dir: PathBuf,
+    case_id: Uuid,
+    case_dir: PathBuf,
 }
 
-impl CollectionHandle {
-    pub fn open(collection_dir: &Path) -> Result<Self> {
-        let db_path = collection_dir.join("collection.db");
+impl CaseHandle {
+    pub fn open(case_dir: &Path) -> Result<Self> {
+        let db_path = case_dir.join("case.db");
         let mut opts = rocks_options();
 
         let cfs = COLUMN_FAMILIES.iter()
@@ -521,16 +627,16 @@ impl CollectionHandle {
 
         Ok(Self {
             db,
-            collection_id: Uuid::parse_str(
-                collection_dir.file_name().unwrap().to_str().unwrap()
+            case_id: Uuid::parse_str(
+                case_dir.file_name().unwrap().to_str().unwrap()
             )?,
-            collection_dir: collection_dir.to_path_buf(),
+            case_dir: case_dir.to_path_buf(),
         })
     }
 
-    /// Delete this collection entirely
+    /// Delete this case entirely
     pub fn destroy(self) -> Result<()> {
-        let path = self.collection_dir.clone();
+        let path = self.case_dir.clone();
         drop(self); // Close DB handle first
         fs::remove_dir_all(&path)?;
         Ok(())
@@ -540,11 +646,11 @@ impl CollectionHandle {
 
 ---
 
-## 8. Context Graph Data Models
+## 9. Context Graph Data Models
 
-Entities, references, and relationships extracted during ingestion and stored as graph edges for structured collection navigation.
+Entities, references, and relationships extracted during ingestion and stored as graph edges for structured case navigation.
 
-### 8.1 Entity Model
+### 9.1 Entity Model
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -559,7 +665,27 @@ pub struct Entity {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum EntityType {
-    Person, Organization, Date, Amount, Location, Concept,
+    // Legal-specific entity types
+    Party,
+    Court,
+    Judge,
+    Attorney,
+    Statute,
+    CaseNumber,
+    Jurisdiction,
+    LegalConcept,
+    Remedy,
+    Witness,
+    Exhibit,
+    DocketEntry,
+
+    // General entity types
+    Person,
+    Organization,
+    Date,
+    Amount,
+    Location,
+    Concept,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -573,13 +699,13 @@ pub struct EntityMention {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntityRef {
-    pub entity_key: String,            // "person:john_smith"
+    pub entity_key: String,            // "party:smith" or "judge:williams"
     pub entity_type: EntityType,
     pub name: String,
 }
 ```
 
-### 8.2 Reference Model
+### 9.2 Reference Model
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -593,8 +719,19 @@ pub struct ReferenceRecord {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ReferenceType {
-    InternalCrossRef, ExternalDocument, Hyperlink,
-    Standard, Specification, Other,
+    // Legal reference types
+    CaseLaw,
+    Statute,
+    Regulation,
+    ShortForm,
+
+    // General reference types
+    InternalCrossRef,
+    ExternalDocument,
+    Hyperlink,
+    Standard,
+    Specification,
+    Other,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -611,7 +748,7 @@ pub enum ReferenceRelationship {
 }
 ```
 
-### 8.3 Document Graph Model
+### 9.3 Document Graph Model
 
 ```rust
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -629,19 +766,62 @@ pub enum DocRelType {
 }
 ```
 
-### 8.4 Collection Summary Model
+### 9.4 Case Summary Model
 
 ```rust
-/// High-level collection overview, rebuilt after each ingestion.
+/// High-level case overview, rebuilt after each ingestion.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CollectionSummary {
+pub struct CaseSummary {
+    // Case identification
+    pub key_parties: Vec<PartyInfo>,
+    pub legal_issues: Vec<String>,
+    pub key_citations: Vec<LegalCitation>,
+    pub jurisdiction: Option<String>,
+    pub case_number: Option<String>,
+    pub judge: Option<String>,
+    pub case_type: Option<CaseType>,
+
+    // General summary fields
     pub key_actors: Vec<KeyActor>,
     pub key_dates: Vec<KeyDate>,
     pub key_topics: Vec<Topic>,
     pub document_categories: HashMap<String, Vec<Uuid>>,
     pub top_references: Vec<ReferenceStat>,
     pub top_entities: Vec<EntityStat>,
-    pub statistics: CollectionStatistics,
+    pub statistics: CaseStatistics,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PartyInfo {
+    pub name: String,
+    pub role: PartyRole,           // Plaintiff, Defendant, etc.
+    pub aliases: Vec<String>,
+    pub attorney: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum PartyRole {
+    Plaintiff, Defendant, Petitioner, Respondent,
+    Appellant, Appellee, Intervenor, ThirdParty,
+    CrossClaimant, CrossDefendant, Other,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum CaseType {
+    CivilLitigation,
+    CriminalDefense,
+    ContractDispute,
+    PersonalInjury,
+    FamilyLaw,
+    Immigration,
+    IntellectualProperty,
+    RealEstate,
+    Employment,
+    Bankruptcy,
+    RegulatoryCompliance,
+    CorporateTransaction,
+    EstatePlanning,
+    Other,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -654,6 +834,10 @@ pub struct KeyActor {
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum ActorRole {
+    // Legal-specific roles
+    Attorney, Judge, Party, Witness, Expert,
+
+    // General roles
     Author, Reviewer, Approver, Contributor,
     Owner, Stakeholder, Other,
 }
@@ -670,6 +854,14 @@ pub struct KeyDate {
 pub struct Topic {
     pub name: String,
     pub mention_count: u32,
+    pub relevant_documents: Vec<Uuid>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LegalIssue {
+    pub description: String,
+    pub relevant_statutes: Vec<String>,
+    pub relevant_citations: Vec<String>,
     pub relevant_documents: Vec<Uuid>,
 }
 
@@ -691,12 +883,13 @@ pub struct EntityStat {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CollectionStatistics {
+pub struct CaseStatistics {
     pub total_documents: u32,
     pub total_pages: u32,
     pub total_chunks: u32,
     pub total_entities: u32,
     pub total_references: u32,
+    pub total_citations: u32,
     pub storage_bytes: u64,
     pub document_type_breakdown: HashMap<String, u32>,
     pub embedder_coverage: HashMap<String, u32>,
@@ -705,11 +898,11 @@ pub struct CollectionStatistics {
 
 ---
 
-## 9. Folder Watch & Auto-Sync Storage
+## 10. Folder Watch & Auto-Sync Storage
 
 Watch configurations persist in `~/Documents/CaseTrack/watches.json` (JSON for human readability) to survive server restarts.
 
-### 9.1 Watch Registry
+### 10.1 Watch Registry
 
 ```rust
 #[derive(Serialize, Deserialize)]
@@ -720,7 +913,7 @@ pub struct WatchRegistry {
 #[derive(Serialize, Deserialize)]
 pub struct FolderWatch {
     pub id: Uuid,
-    pub collection_id: Uuid,
+    pub case_id: Uuid,
     pub folder_path: String,           // Absolute path to watched folder
     pub recursive: bool,               // Watch subfolders (default: true)
     pub enabled: bool,                 // Can be paused
@@ -740,69 +933,387 @@ pub enum SyncSchedule {
 }
 ```
 
-### 9.2 Per-Document Sync Metadata
+### 10.2 Per-Document Sync Metadata
 
 Sync uses `file_hash` and `original_path` from `DocumentMetadata` (see Section 5.1) to detect changes:
 
 ```
 FOR each file in watched folder:
   1. Compute SHA256 of file
-  2. Look up file by original_path in collection DB
+  2. Look up file by original_path in case DB
   3. IF not found -> new file -> ingest
   4. IF found AND hash matches -> unchanged -> skip
   5. IF found AND hash differs -> modified -> reindex (delete old, re-ingest)
 
-FOR each document in collection DB with original_path under watched folder:
+FOR each document in case DB with original_path under watched folder:
   6. IF source file no longer exists on disk -> deleted
-     IF auto_remove_deleted -> delete document from collection
+     IF auto_remove_deleted -> delete document from case
      ELSE -> log warning, skip
 ```
 
 ---
 
-## 10. Backup & Export
+## 11. Backup & Export
 
-### 10.1 Collection Export
+### 11.1 Case Export
 
-Collections can be exported as portable archives:
+Cases can be exported as portable archives:
 
 ```
-casetrack export --collection "Project Alpha" --output ~/Desktop/project-alpha.ctcollection
+casetrack export --case "Smith v. Jones" --output ~/Desktop/smith-v-jones.ctcase
 ```
 
-The `.ctcollection` file is a ZIP containing:
-- `collection.db/` -- RocksDB snapshot
+The `.ctcase` file is a ZIP containing:
+- `case.db/` -- RocksDB snapshot
 - `originals/` -- Original documents (if stored)
-- `manifest.json` -- Collection metadata, schema version, embedder versions
+- `manifest.json` -- Case metadata, schema version, embedder versions
 
-### 10.2 Collection Import
+### 11.2 Case Import
 
 ```
-casetrack import ~/Desktop/project-alpha.ctcollection
+casetrack import ~/Desktop/smith-v-jones.ctcase
 ```
 
 1. Validates schema version compatibility
-2. Creates new collection UUID (avoids collisions)
-3. Copies database and originals to `collections/` directory
-4. Registers in collection registry
+2. Creates new case UUID (avoids collisions)
+3. Copies database and originals to `cases/` directory
+4. Registers in case registry
 
 ---
 
-## 11. What's Stored Where (Summary)
+## 12. What's Stored Where (Summary)
 
 | Data Type | Storage Location | Format | Size Per Unit |
 |-----------|------------------|--------|---------------|
-| Collection metadata | `registry.db` | bincode via RocksDB | ~500 bytes/collection |
-| Document metadata | `collections/{id}/collection.db` documents CF | bincode | ~200 bytes/doc |
-| Text chunks (2000 chars) | `collections/{id}/collection.db` chunks CF | bincode | ~2.5KB/chunk (text + provenance metadata) |
-| E1 embeddings (384D) | `collections/{id}/collection.db` embeddings CF | f32 bytes | 1,536 bytes/chunk |
-| E6 sparse vectors | `collections/{id}/collection.db` embeddings CF | bincode sparse | ~500 bytes/chunk |
-| E12 token embeddings | `collections/{id}/collection.db` embeddings CF | bincode | ~8KB/chunk |
-| BM25 inverted index | `collections/{id}/collection.db` bm25_index CF | bincode | ~2MB/1000 chunks |
+| Case metadata | `registry.db` | bincode via RocksDB | ~500 bytes/case |
+| Document metadata | `cases/{id}/case.db` documents CF | bincode | ~250 bytes/doc |
+| Text chunks (2000 chars) | `cases/{id}/case.db` chunks CF | bincode | ~2.5KB/chunk (text + provenance metadata) |
+| E1 embeddings (768D) | `cases/{id}/case.db` embeddings CF | f32 bytes | 3,072 bytes/chunk |
+| E6 sparse vectors | `cases/{id}/case.db` embeddings CF | bincode sparse | ~500 bytes/chunk |
+| E12 token embeddings | `cases/{id}/case.db` embeddings CF | bincode | ~8KB/chunk |
+| BM25 inverted index | `cases/{id}/case.db` bm25_index CF | bincode | ~2MB/1000 chunks |
+| Legal citations | `cases/{id}/case.db` citations CF | bincode | ~200 bytes/citation |
+| Citation index | `cases/{id}/case.db` citation_index CF | bincode | ~500 bytes/citation |
 | Provenance records | Embedded in chunk embedding records | bincode | ~300 bytes/chunk |
-| Original documents | `collections/{id}/originals/` | original files | varies |
-| ONNX models | `models/` | ONNX format | 35-110MB each |
+| Original documents | `cases/{id}/originals/` | original files | varies |
+| ONNX models | `models/` | ONNX format | 110-220MB each |
 
 ---
 
-*CaseTrack PRD v4.0.0 -- Document 4 of 10*
+## 13. Storage Lifecycle Management
+
+CaseTrack runs 100% locally with no cloud cleanup service. Storage management is the user's responsibility, but CaseTrack must make it easy and proactive. Without lifecycle management, attorneys accumulating 50+ cases over years will silently consume 5-10GB+ of disk.
+
+### 13.1 Storage Budget & Monitoring
+
+CaseTrack tracks disk usage at three levels: per-case, total data, and models.
+
+```rust
+/// Storage usage summary returned by get_storage_summary MCP tool
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StorageSummary {
+    /// Total disk usage across all cases + models
+    pub total_bytes: u64,
+    /// Disk usage by models only
+    pub models_bytes: u64,
+    /// Disk usage by all case data (sum of all cases)
+    pub cases_bytes: u64,
+    /// Per-case breakdown, sorted by size descending
+    pub cases: Vec<CaseStorageInfo>,
+    /// Storage budget (configurable, default 10GB)
+    pub budget_bytes: u64,
+    /// Percentage of budget used
+    pub budget_used_pct: f32,
+    /// Warning level: None, Approaching (>70%), Exceeded (>90%)
+    pub warning: StorageWarning,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CaseStorageInfo {
+    pub case_id: Uuid,
+    pub case_name: String,
+    pub status: CaseStatus,
+    pub storage_bytes: u64,
+    pub document_count: u32,
+    pub chunk_count: u32,
+    /// Days since last search or ingestion
+    pub days_inactive: u32,
+    /// Whether this case has stale embeddings (source files changed)
+    pub has_stale_embeddings: bool,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum StorageWarning {
+    None,
+    /// >70% of budget used
+    Approaching,
+    /// >90% of budget used
+    Exceeded,
+}
+```
+
+### 13.2 Startup Storage Check
+
+On every server start, CaseTrack computes total disk usage and logs a warning if it exceeds the configured budget. This is non-blocking and costs ~50ms for typical installations.
+
+```rust
+/// Called during server startup, after license check
+pub fn check_storage_budget(data_dir: &Path, budget_bytes: u64) {
+    let total = compute_total_usage(data_dir);
+    let pct = (total as f64 / budget_bytes as f64 * 100.0) as u32;
+
+    if pct >= 90 {
+        tracing::warn!(
+            "CaseTrack using {:.1}GB of disk ({pct}% of {:.1}GB budget). \
+             Consider archiving closed cases with archive_case or deleting \
+             old cases with delete_case.",
+            total as f64 / 1e9,
+            budget_bytes as f64 / 1e9,
+        );
+    } else if pct >= 70 {
+        tracing::info!(
+            "CaseTrack using {:.1}GB of disk ({pct}% of {:.1}GB budget).",
+            total as f64 / 1e9,
+            budget_bytes as f64 / 1e9,
+        );
+    }
+}
+
+fn compute_total_usage(data_dir: &Path) -> u64 {
+    // Walk data_dir recursively, sum file sizes
+    // Skip symlinks, handle permission errors gracefully
+    walkdir::WalkDir::new(data_dir)
+        .follow_links(false)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum()
+}
+```
+
+The storage budget defaults to 10GB and is configurable in `config.toml`:
+
+```toml
+# ~/Documents/CaseTrack/config.toml
+storage_budget_gb = 10   # Warn when total usage exceeds this
+```
+
+### 13.3 Stale Case Detection
+
+Cases that haven't been searched or modified in 6+ months are surfaced in `list_cases` and `get_storage_summary` with a staleness indicator. The `updated_at` timestamp on the `Case` struct already supports this.
+
+```rust
+impl CaseStorageInfo {
+    pub fn is_stale(&self) -> bool {
+        self.days_inactive >= 180  // 6 months
+    }
+}
+```
+
+`list_cases` sorts stale cases to the bottom and includes the `days_inactive` field. `get_storage_summary` groups cases by status (active, stale, archived) so the AI can recommend cleanup actions.
+
+### 13.4 RocksDB Compaction
+
+RocksDB accumulates SST files and tombstones after `delete_document` and `reindex_document` operations. Without periodic compaction, disk usage can grow 2-3x beyond actual data size.
+
+#### 13.4.1 Auto-Compact on Archive
+
+When a case transitions to `Archived` status, CaseTrack runs a full compaction on all column families. This is a one-time CPU cost (seconds to minutes depending on case size) that can halve storage for inactive cases.
+
+```rust
+impl CaseHandle {
+    /// Compact all column families. Called automatically on archive_case.
+    /// Reclaims space from tombstones and applies Zstd compression to all levels.
+    pub fn compact_all(&self) -> Result<()> {
+        for cf_name in COLUMN_FAMILIES {
+            let cf = self.db.cf_handle(cf_name)
+                .ok_or_else(|| CaseTrackError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    format!("Column family not found: {}", cf_name),
+                )))?;
+            self.db.compact_range_cf(&cf, None::<&[u8]>, None::<&[u8]>);
+        }
+        tracing::info!("Compacted all column families for case {}", self.case_id);
+        Ok(())
+    }
+}
+```
+
+#### 13.4.2 Post-Delete Compaction
+
+After `delete_document` removes a document's chunks, embeddings, entities, citations, and BM25 entries, the affected column families accumulate tombstones. CaseTrack triggers a targeted background compaction on the affected CFs after deletion completes.
+
+```rust
+/// Called after delete_document completes its cascading delete
+fn compact_after_delete(case: &CaseHandle) {
+    // Compact the heaviest CFs: chunks, embeddings, bm25_index
+    // Run in background to avoid blocking the MCP response
+    let db = case.db.clone();
+    tokio::spawn(async move {
+        for cf_name in &["chunks", "embeddings", "bm25_index", "entities", "entity_index"] {
+            if let Some(cf) = db.cf_handle(cf_name) {
+                db.compact_range_cf(&cf, None::<&[u8]>, None::<&[u8]>);
+            }
+        }
+    });
+}
+```
+
+#### 13.4.3 Manual Compaction via MCP Tool
+
+The `compact_case` MCP tool (see [PRD 09](PRD_09_MCP_TOOLS.md)) allows explicit compaction when the user or AI notices bloated storage.
+
+### 13.5 Embedding Cleanup on Tier Downgrade
+
+When a user downgrades from Pro to Free (license expires), the ColBERT (E12) embeddings become dead weight -- they're stored but never used. CaseTrack provides a `strip_embeddings` CLI command to reclaim this space.
+
+```rust
+/// Strip unused embedder vectors from all chunks in a case.
+/// Reclaims ~8KB/chunk for E12 (ColBERT) vectors on downgrade from Pro to Free.
+pub fn strip_embeddings(case: &CaseHandle, embedder: &str) -> Result<StripResult> {
+    let cf = case.db.cf_handle("embeddings")
+        .ok_or_else(|| CaseTrackError::Io(std::io::Error::new(
+            std::io::ErrorKind::NotFound, "embeddings CF not found",
+        )))?;
+
+    let mut stripped = 0u64;
+    let mut bytes_reclaimed = 0u64;
+
+    // Iterate all ChunkEmbeddingRecord entries
+    for item in case.db.iterator_cf(&cf, rocksdb::IteratorMode::Start) {
+        let (key, value) = item?;
+        let mut record: ChunkEmbeddingRecord = bincode::deserialize(&value)?;
+
+        let old_size = value.len() as u64;
+        let changed = match embedder {
+            "e12" => {
+                let had = record.e12_vector.is_some();
+                record.e12_vector = None;
+                had
+            }
+            "e6" => {
+                let had = record.e6_vector.is_some();
+                record.e6_vector = None;
+                had
+            }
+            _ => false,
+        };
+
+        if changed {
+            let new_value = bincode::serialize(&record)?;
+            bytes_reclaimed += old_size - new_value.len() as u64;
+            case.db.put_cf(&cf, &key, &new_value)?;
+            stripped += 1;
+        }
+    }
+
+    // Compact to physically reclaim disk space
+    case.compact_all()?;
+
+    Ok(StripResult { chunks_modified: stripped, bytes_reclaimed })
+}
+```
+
+This is a CLI command, not an MCP tool, because it's a destructive maintenance operation:
+
+```bash
+casetrack strip-embeddings --case "Smith v. Jones" --embedder e12
+```
+
+### 13.6 Cascade Original File Deletion
+
+When `delete_document` removes a document's chunks and embeddings, it must also clean up the original file copy in `originals/` (if it exists). Without this, the `originals/` folder accumulates orphaned files.
+
+```rust
+impl CaseHandle {
+    /// Extended delete_document: cascading delete of chunks, embeddings,
+    /// entities, citations, BM25 entries, AND the original file copy.
+    pub fn delete_document_cascade(&self, doc_id: Uuid) -> Result<()> {
+        let doc = self.get_document(doc_id)?;
+
+        // 1. Delete chunks, embeddings, entities, citations, BM25 (existing logic)
+        self.delete_document_data(doc_id)?;
+
+        // 2. Delete original file copy if it exists
+        let originals_dir = self.case_dir.join("originals");
+        if originals_dir.exists() {
+            let original_file = originals_dir.join(&doc.name);
+            if original_file.exists() {
+                std::fs::remove_file(&original_file)?;
+                tracing::debug!("Removed original file copy: {}", original_file.display());
+            }
+        }
+
+        // 3. Background compaction to reclaim space
+        compact_after_delete(self);
+
+        Ok(())
+    }
+}
+```
+
+### 13.7 Case Export for Archival (`purge_archived`)
+
+For attorneys who want to reclaim maximum disk space from archived cases, CaseTrack provides a CLI command to export archived cases to compressed `.ctcase` ZIP files and then delete the expanded RocksDB. The case can be re-imported later if needed.
+
+```bash
+# Export all archived cases to ZIP, then delete the expanded databases
+casetrack purge-archived --output ~/Desktop/CaseTrack-Archives/
+
+# Export a specific case
+casetrack purge-archived --case "Smith v. Jones" --output ~/Desktop/
+```
+
+The `.ctcase` format is the same ZIP described in Section 11.1 (Case Export). Purging:
+
+1. Validates the case is in `Archived` status (refuses to purge active cases)
+2. Runs `compact_all()` before export (ensures minimal ZIP size)
+3. Exports to `.ctcase` ZIP
+4. Verifies the export file is valid (re-reads manifest, checks file count)
+5. Deletes the expanded case directory
+6. Updates the registry to mark the case as `Purged` with the export path
+
+```rust
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
+pub enum CaseStatus {
+    Active,
+    Closed,
+    Archived,
+    OnHold,
+    /// Case has been exported to .ctcase and the expanded DB deleted.
+    /// The export_path field records where the archive was saved.
+    Purged,
+}
+```
+
+A `Purged` case appears in `list_cases` with its export path but cannot be searched or opened until re-imported.
+
+### 13.8 Storage Lifecycle Summary
+
+| Trigger | Action | Automatic? | Disk Impact |
+|---------|--------|-----------|-------------|
+| Server startup | Log storage usage, warn if >70% budget | Yes | None |
+| `delete_document` | Cascade delete chunks + embeddings + originals + background compact | Yes | Reclaims space |
+| `archive_case` | Full RocksDB compaction on all CFs | Yes | ~30-50% reduction |
+| `delete_case` | Remove entire case directory | Manual (MCP tool) | Full reclaim |
+| `list_cases` / `get_storage_summary` | Surface stale cases (>6 months inactive) | Yes (display) | None |
+| License downgrade (Pro -> Free) | `strip-embeddings --embedder e12` CLI command | Manual | ~60% embedding reduction |
+| Long-term archival | `purge-archived` exports to .ctcase ZIP, deletes DB | Manual (CLI) | ~70-90% reduction |
+| `compact_case` | Manual RocksDB compaction via MCP tool | Manual (MCP tool) | ~20-40% reduction |
+
+### 13.9 Storage Lifecycle Anti-Patterns
+
+| Anti-Pattern | Why Not |
+|-------------|---------|
+| Auto-delete stale cases | Data loss risk; only the attorney decides what to delete |
+| Auto-purge archived cases | Attorney may need quick re-access; export requires explicit action |
+| Background compaction on every write | Write amplification; only compact on delete/archive/manual |
+| Auto-strip embeddings on downgrade | Destructive; the user may re-upgrade and want E12 vectors back |
+| Storage quotas that block operations | Never block an attorney's work; warn instead |
+| Silent disk usage growth | Always surface usage in startup logs and get_storage_summary |
+
+---
+
+*CaseTrack PRD v5.1.0 -- Document 4 of 10*
