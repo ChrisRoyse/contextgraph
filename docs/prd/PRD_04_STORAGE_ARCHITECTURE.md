@@ -351,15 +351,48 @@ pub fn check_and_migrate(registry_path: &Path) -> Result<()> {
 
 ---
 
-## 7. Case Isolation Guarantees
+## 7. Isolation Guarantees
 
-Each case is a **completely independent** RocksDB instance:
+### 7.1 Per-Customer Isolation
 
-- **No cross-case queries**: Search operates within a single case
-- **No shared state**: Cases cannot access each other's data
+Every CaseTrack installation is **fully isolated per customer**:
+
+- CaseTrack installs on each customer's machine independently
+- Each customer has their own `~/Documents/CaseTrack/` directory
+- No data is shared between customers -- there is no server, no cloud, no shared state
+- For Firm tier (5 seats), each seat is a separate installation on a separate machine with its own database
+- Customer A's embeddings, vectors, chunks, and provenance records **never touch** Customer B's data
+- There is no central database. Each customer IS their own database.
+
+```
+CUSTOMER ISOLATION
+=================================================================================
+
+Customer A (Sarah's MacBook)         Customer B (Mike's Windows PC)
+~/Documents/CaseTrack/               C:\Users\Mike\Documents\CaseTrack\
+|-- models/                          |-- models/
+|-- registry.db                      |-- registry.db
++-- cases/                           +-- cases/
+    |-- {sarah-case-1}/                  |-- {mike-case-1}/
+    +-- {sarah-case-2}/                  |-- {mike-case-2}/
+                                         +-- {mike-case-3}/
+
+ZERO shared state. ZERO shared databases. ZERO network communication.
+Each installation is a completely independent system.
+```
+
+### 7.2 Per-Case Isolation
+
+Within a single customer's installation, each case is a **completely independent RocksDB instance**:
+
+- **Separate database per case**: Each case is its own RocksDB instance on disk
+- **Separate embeddings per case**: Embeddings from Case A are in a different database file than Case B
+- **No cross-case queries**: Search operates within a single case only
+- **No shared vectors**: Case A's vectors cannot influence Case B's search results
+- **No embedding bleed**: There is no shared vector index -- each case has its own index files
 - **Independent lifecycle**: Deleting Case A has zero impact on Case B
 - **Portable**: A case directory can be copied to another machine
-- **Cleanly deletable**: `rm -rf cases/{uuid}/` fully removes a case
+- **Cleanly deletable**: `rm -rf cases/{uuid}/` fully removes a case and all its embeddings
 
 ```rust
 /// Opening a case creates or loads its isolated database
@@ -435,7 +468,7 @@ casetrack import ~/Desktop/smith-v-jones.ctcase
 |-----------|------------------|--------|---------------|
 | Case metadata | `registry.db` | bincode via RocksDB | ~500 bytes/case |
 | Document metadata | `cases/{id}/case.db` documents CF | bincode | ~200 bytes/doc |
-| Text chunks | `cases/{id}/case.db` chunks CF | bincode | ~2KB/chunk |
+| Text chunks (2000 chars) | `cases/{id}/case.db` chunks CF | bincode | ~2.5KB/chunk (text + provenance metadata) |
 | E1 embeddings (384D) | `cases/{id}/case.db` embeddings CF | f32 bytes | 1,536 bytes/chunk |
 | E6 sparse vectors | `cases/{id}/case.db` embeddings CF | bincode sparse | ~500 bytes/chunk |
 | E7 embeddings (384D) | `cases/{id}/case.db` embeddings CF | f32 bytes | 1,536 bytes/chunk |

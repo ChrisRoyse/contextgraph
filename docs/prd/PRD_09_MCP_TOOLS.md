@@ -20,6 +20,9 @@
 | `delete_document` | Remove a document from a case | Free | Yes |
 | `search_case` | Search across all documents | Free (limited) | Yes |
 | `find_entity` | Find mentions of a legal entity | Pro | Yes |
+| `get_chunk` | Get a specific chunk with full provenance | Free | Yes |
+| `get_document_chunks` | List all chunks in a document with provenance | Free | Yes |
+| `get_source_context` | Get surrounding text for a chunk (context window) | Free | Yes |
 | `get_status` | Get server status and model info | Free | No |
 
 ---
@@ -494,6 +497,108 @@
   "content": [{
     "type": "text",
     "text": "CaseTrack v1.0.0\n\nLicense: Pro\nActive Case: Smith v. Jones Corp\n\nModels Loaded:\n  E1-Legal (bge-small-en-v1.5): Ready\n  E6-Legal (SPLADE): Ready\n  E7 (MiniLM-L6): Ready\n  E8-Legal (Citation): Ready\n  E11-Legal (Entity): Ready\n  E12 (ColBERT): Ready\n  E13 (BM25): Ready (algorithmic)\n\nStorage: ~/Documents/CaseTrack/\n  Models: 370 MB\n  Cases: 2 (52 MB total)\n  Total: 422 MB\n\nSystem:\n  RAM: 1.4 GB used / 16 GB available\n  OS: macOS 14.2 (Apple M2)\n  Memory Mode: Full"
+  }]
+}
+```
+
+### 2.14 `get_chunk`
+
+```json
+{
+  "name": "get_chunk",
+  "description": "Get a specific chunk by ID with its full text, provenance (source file, page, paragraph, line, character offsets), and embedding status.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "chunk_id": {
+        "type": "string",
+        "description": "UUID of the chunk"
+      }
+    },
+    "required": ["chunk_id"]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "content": [{
+    "type": "text",
+    "text": "Chunk abc-123 (2000 chars)\n\nText:\n\"Either party may terminate this Agreement upon thirty (30) days written notice to the other party...\"\n\nProvenance:\n  Document:   Contract.pdf\n  File Path:  /Users/sarah/Cases/Smith/Contract.pdf\n  Page:       12\n  Paragraphs: 8-9\n  Lines:      1-14\n  Chars:      2401-4401 (within page)\n  Extraction: Native text\n  Chunk Index: 47 of 234\n\nEmbeddings: E1-Legal, E6-Legal, E7, E8-Legal, E11-Legal, E12"
+  }]
+}
+```
+
+---
+
+### 2.15 `get_document_chunks`
+
+```json
+{
+  "name": "get_document_chunks",
+  "description": "List all chunks in a document with their provenance. Shows where every piece of text came from: page, paragraph, line numbers, and character offsets. Use this to understand how a document was chunked and indexed.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "document_name": {
+        "type": "string",
+        "description": "Document name or ID"
+      },
+      "page_filter": {
+        "type": "integer",
+        "description": "Optional: only show chunks from this page number"
+      }
+    },
+    "required": ["document_name"]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "content": [{
+    "type": "text",
+    "text": "Document: Contract.pdf (28 pages, 156 chunks)\nFile Path: /Users/sarah/Cases/Smith/Contract.pdf\n\nChunk 0: p.1, paras 0-3, ll.1-12, chars 0-1987\n  \"AGREEMENT made this 15th day of January 2024 between...\"\n\nChunk 1: p.1, paras 3-6, ll.10-22, chars 1788-3790\n  \"...hereinafter referred to as 'Contractor'. WHEREAS the parties...\"\n  [200-char overlap from chunk 0]\n\nChunk 2: p.2, paras 0-2, ll.1-8, chars 0-1834\n  \"Section 2. SCOPE OF WORK. The Contractor shall provide...\"\n\n... (156 total chunks)"
+  }]
+}
+```
+
+---
+
+### 2.16 `get_source_context`
+
+```json
+{
+  "name": "get_source_context",
+  "description": "Get the surrounding context for a chunk -- the chunks immediately before and after it in the original document. Useful for understanding the full context around a search result.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "chunk_id": {
+        "type": "string",
+        "description": "UUID of the chunk to get context for"
+      },
+      "window": {
+        "type": "integer",
+        "default": 1,
+        "minimum": 1,
+        "maximum": 5,
+        "description": "Number of chunks before and after to include"
+      }
+    },
+    "required": ["chunk_id"]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "content": [{
+    "type": "text",
+    "text": "Context for chunk abc-123 (Contract.pdf, p.12)\n\n--- BEFORE (chunk 46, p.12, paras 6-7) ---\n\"The parties agree that in the event of any dispute arising under this Agreement, they shall first attempt to resolve the dispute through good faith negotiation...\"\n\n--- TARGET (chunk 47, p.12, paras 8-9) ---\n\"Either party may terminate this Agreement upon thirty (30) days written notice to the other party. In the event of material breach, the non-breaching party may terminate immediately upon written notice specifying the breach...\"\n\n--- AFTER (chunk 48, p.13, paras 0-1) ---\n\"Upon termination, all confidential information shall be returned or destroyed within fourteen (14) days. The obligations under Sections 5, 7, and 9 shall survive termination...\""
   }]
 }
 ```

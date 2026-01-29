@@ -468,11 +468,17 @@ The MCP tool returns results in this structure:
       "citation_short": "Contract, p. 12",
       "source": {
         "document": "Contract.pdf",
+        "document_path": "/Users/sarah/Documents/CaseTrack/cases/smith-v-jones/originals/Contract.pdf",
         "document_id": "abc-123",
+        "chunk_id": "chunk-456",
+        "chunk_index": 14,
         "page": 12,
         "paragraph_start": 8,
         "paragraph_end": 8,
-        "lines": "1-4",
+        "line_start": 1,
+        "line_end": 4,
+        "char_start": 24580,
+        "char_end": 26580,
         "bates": null,
         "extraction_method": "Native",
         "ocr_confidence": null

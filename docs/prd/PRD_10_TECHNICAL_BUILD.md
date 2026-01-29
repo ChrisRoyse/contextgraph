@@ -1,6 +1,6 @@
 # PRD 10: Technical Build Guide
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md)
+**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
 
 ---
 
@@ -725,15 +725,24 @@ Every module has unit tests. Key areas:
 mod tests {
     use super::*;
 
-    // Chunking
+    // Chunking (2000-char target, 200-char overlap)
     #[test]
     fn test_chunk_respects_paragraph_boundaries() { ... }
 
     #[test]
-    fn test_chunk_overlap() { ... }
+    fn test_chunk_target_2000_chars() { ... }
 
     #[test]
-    fn test_chunk_min_size() { ... }
+    fn test_chunk_overlap_200_chars() { ... }
+
+    #[test]
+    fn test_chunk_min_400_chars() { ... }
+
+    #[test]
+    fn test_chunk_max_2200_chars() { ... }
+
+    #[test]
+    fn test_chunk_provenance_complete() { ... }  // Every chunk has file path, page, paragraph, line, char offsets
 
     // BM25
     #[test]
@@ -742,12 +751,21 @@ mod tests {
     #[test]
     fn test_bm25_term_frequency() { ... }
 
-    // Provenance
+    // Provenance (must include: file path, document name, page, paragraph, line, char offsets)
     #[test]
     fn test_citation_format() { ... }
 
     #[test]
     fn test_short_citation() { ... }
+
+    #[test]
+    fn test_provenance_includes_file_path() { ... }
+
+    #[test]
+    fn test_provenance_includes_char_offsets() { ... }
+
+    #[test]
+    fn test_provenance_round_trip() { ... }  // Store + retrieve preserves all fields
 
     // RRF
     #[test]
@@ -851,6 +869,38 @@ async fn test_search_returns_relevant_results() {
     assert!(results[0].score > 0.5);
     assert!(results[0].citation.contains("sample.pdf"));
     assert!(results[0].provenance.page > 0);
+
+    // Verify full provenance on every result
+    for result in &results {
+        assert!(!result.provenance.document_name.is_empty());
+        assert!(!result.provenance.document_path.is_empty());
+        assert!(result.provenance.page > 0);
+        assert!(result.provenance.char_start < result.provenance.char_end);
+    }
+}
+
+#[tokio::test]
+async fn test_case_isolation() {
+    // Verify chunks from one case never appear in another case's search
+    let dir = tempdir().unwrap();
+    let mut registry = CaseRegistry::open(dir.path()).unwrap();
+
+    let case_a = registry.create_case(CreateCaseParams {
+        name: "Case A".to_string(), ..Default::default()
+    }).unwrap();
+    let case_b = registry.create_case(CreateCaseParams {
+        name: "Case B".to_string(), ..Default::default()
+    }).unwrap();
+
+    // Ingest into Case A only
+    let handle_a = registry.switch_case(case_a.id).unwrap();
+    ingest_document(&handle_a, &engine, Path::new("tests/fixtures/sample.pdf"), None).await.unwrap();
+    drop(handle_a);
+
+    // Search Case B -- must return zero results
+    let handle_b = registry.switch_case(case_b.id).unwrap();
+    let results = search_engine.search(&handle_b, "termination clause", 10, None).unwrap();
+    assert!(results.is_empty(), "Case B must not contain Case A documents");
 }
 ```
 
@@ -861,7 +911,7 @@ The `tests/fixtures/` directory contains:
 - `sample.docx` -- Word document with headings, paragraphs, lists
 - `scanned.png` -- Image of typed text for OCR testing
 - `empty.pdf` -- Edge case: empty PDF
-- `large_paragraph.txt` -- Edge case: single paragraph >1000 tokens
+- `large_paragraph.txt` -- Edge case: single paragraph >2000 characters
 
 ### 9.4 Running Tests
 
@@ -1099,19 +1149,21 @@ DOCX PROCESSING
   [ ] Paragraph and heading extraction
   [ ] Section break handling
 
-CHUNKING
-  [ ] Implement LegalChunker (paragraph-aware, overlap)
-  [ ] Token counting (fast approximation)
-  [ ] Long paragraph splitting
-  [ ] Provenance attachment per chunk
+CHUNKING (2000-character chunks, 10% overlap -- see PRD 06)
+  [ ] Implement LegalChunker (2000-char target, 200-char overlap, paragraph-aware)
+  [ ] Character counting (not token-based)
+  [ ] Long paragraph splitting (>2200 chars)
+  [ ] Provenance attachment per chunk (file path, document name, page, paragraph, line, char offsets)
+  [ ] Chunk boundary validation (min 400 chars, max 2200 chars)
 
-STORAGE
-  [ ] Store chunks in RocksDB
+STORAGE (Per-case isolated databases -- see PRD 04)
+  [ ] Store chunks in RocksDB (one DB per case)
   [ ] Store document metadata
-  [ ] Store provenance records
+  [ ] Store provenance records (full path, page, paragraph, line, char offsets per chunk)
   [ ] Duplicate detection (SHA256)
   [ ] ingest_document MCP tool
   [ ] list_documents, get_document, delete_document tools
+  [ ] get_chunk, get_document_chunks, get_source_context provenance tools (see PRD 09)
 ```
 
 ### Phase 3: Embedding & Search

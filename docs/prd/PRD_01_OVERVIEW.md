@@ -99,11 +99,14 @@ CaseTrack solves this with:
 
 1. **One-click install**: Single command or MCPB file -- embedders and database included
 2. **100% local storage**: All embeddings and vectors stored on YOUR device in RocksDB
-3. **7 specialized embedders**: Semantic search that understands legal language
-4. **Full provenance**: Every answer cites document, page, paragraph, line
-5. **Claude Code + Desktop integration**: Works with both Claude Code CLI and Claude Desktop app
-6. **Runs anywhere**: Works on an 8GB MacBook Air, no GPU needed
-7. **Affordable**: Free tier is genuinely useful; Pro is $29/month
+3. **Per-case isolation**: Every case has its own separate database -- embeddings from one case NEVER touch another
+4. **Per-customer isolation**: Each customer's installation is fully independent (no shared servers or data)
+5. **7 specialized embedders**: Semantic search that understands legal language
+6. **Full provenance**: Every answer cites the source file path, document name, page, paragraph, and line number
+7. **2000-character chunks**: Documents chunked into 2000-char segments with 10% overlap, each chunk stores its exact origin
+8. **Claude Code + Desktop integration**: Works with both Claude Code CLI and Claude Desktop app
+9. **Runs anywhere**: Works on an 8GB MacBook Air, no GPU needed
+10. **Affordable**: Free tier is genuinely useful; Pro is $29/month
 
 ---
 
@@ -251,13 +254,13 @@ DESIGN PRINCIPLES
 | Term | Definition |
 |------|------------|
 | **BM25** | Best Match 25 -- classical keyword ranking algorithm |
-| **Chunk** | A ~500 token segment of a document, the unit of search |
+| **Chunk** | A 2000-character segment of a document with 10% (200 char) overlap, the unit of search. Every chunk stores full provenance: source file path, document name, page number, paragraph, line number, and character offsets. |
 | **ColBERT** | Contextualized Late Interaction over BERT -- token-level reranking |
 | **Embedder** | A model that converts text to a numerical vector |
 | **MCP** | Model Context Protocol -- standard for AI tool integration |
 | **MCPB** | MCP Bundle -- a ZIP file format for distributing MCP servers |
 | **ONNX** | Open Neural Network Exchange -- cross-platform ML model format |
-| **Provenance** | The exact source location (document, page, paragraph, line) of text |
+| **Provenance** | The exact source location of text: file path, document name, page number, paragraph number, line number, and character offsets. Attached to every chunk and included in every search result and MCP tool response. |
 | **RocksDB** | Embedded key-value database by Meta, used for local storage |
 | **RRF** | Reciprocal Rank Fusion -- method to combine search rankings |
 | **rmcp** | Official Rust MCP SDK |

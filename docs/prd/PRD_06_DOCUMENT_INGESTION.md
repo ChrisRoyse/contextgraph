@@ -48,11 +48,12 @@ User: "Ingest ~/Downloads/Complaint.pdf"
                     v
 +-----------------------------------------------------------------------+
 | 3. CHUNK                                                               |
-|    - Split into ~500 token chunks                                     |
-|    - Respect paragraph and sentence boundaries                        |
-|    - Attach provenance (doc, page, para, line, char offset)          |
-|    - Add 50-token overlap between consecutive chunks                  |
-|    Output: Vec<Chunk> with Provenance                                 |
+|    - Split into 2000-character chunks                                  |
+|    - 10% overlap (200 chars from end of previous chunk)                |
+|    - Respect paragraph and sentence boundaries                         |
+|    - Attach FULL provenance to every chunk:                            |
+|      file path, doc name, page, paragraph, line, char offsets          |
+|    Output: Vec<Chunk> with Provenance                                  |
 +-----------------------------------------------------------------------+
                     |
                     v
@@ -307,90 +308,165 @@ impl OcrEngine {
 
 ## 6. Chunking Strategy
 
-### 6.1 Legal-Aware Chunking
+### 6.1 Chunking Rules (MANDATORY)
+
+```
+CHUNKING SPECIFICATION
+=================================================================================
+
+CHUNK SIZE:    2000 characters (hard target)
+OVERLAP:       10% = 200 characters (from end of previous chunk)
+MIN SIZE:      400 characters (don't emit tiny fragments)
+MAX SIZE:      2200 characters (allow small overrun to avoid mid-sentence splits)
+
+WHY 2000 CHARACTERS:
+  - Large enough to capture full legal paragraphs and clauses
+  - Small enough for focused embedding (semantic dilution above 2500 chars)
+  - Character-based (not token-based) for deterministic, reproducible chunking
+  - 10% overlap ensures context continuity across chunk boundaries
+
+BOUNDARY RULES:
+  1. Prefer splitting at paragraph boundaries
+  2. If no paragraph break, split at sentence boundary (period + space)
+  3. If no sentence break, split at word boundary (space)
+  4. NEVER split mid-word
+  5. Chunks do NOT cross page boundaries (each page starts a new chunk)
+```
+
+### 6.2 Provenance Per Chunk (MANDATORY)
+
+**Every chunk MUST store its complete provenance at creation time.** This is not optional.
+
+```
+PROVENANCE STORED WITH EVERY CHUNK
+=================================================================================
+
+Every chunk records:
+  - document_id:       UUID of the ingested document
+  - document_name:     Original filename ("Contract.pdf")
+  - document_path:     Full filesystem path ("/Users/sarah/Cases/Contract.pdf")
+  - page:              Page number in the original document
+  - paragraph_start:   First paragraph index included in this chunk
+  - paragraph_end:     Last paragraph index included in this chunk
+  - line_start:        First line number in the original page
+  - line_end:          Last line number in the original page
+  - char_start:        Character offset from start of page
+  - char_end:          Character offset from start of page
+  - extraction_method: How text was extracted (Native / OCR)
+  - ocr_confidence:    OCR confidence score (if applicable)
+  - bates_number:      Optional Bates stamp (for litigation)
+  - chunk_index:       Sequential position of this chunk within the document
+
+This provenance is:
+  1. STORED in RocksDB alongside the chunk text and embeddings
+  2. RETURNED in every search result
+  3. QUERYABLE via MCP tools (get_chunk_provenance, get_document_chunks)
+  4. IMMUTABLE once created (never modified after ingestion)
+```
+
+### 6.3 Chunking Implementation
 
 ```rust
+/// Chunker configuration: 2000 chars, 10% overlap
 pub struct LegalChunker {
-    target_tokens: usize,  // 500
-    max_tokens: usize,     // 1000
-    min_tokens: usize,     // 100
-    overlap_tokens: usize, // 50
+    target_chars: usize,   // 2000
+    max_chars: usize,      // 2200 (small overrun to avoid mid-sentence)
+    min_chars: usize,      // 400 (don't emit tiny fragments)
+    overlap_chars: usize,  // 200 (10% of target)
+}
+
+impl Default for LegalChunker {
+    fn default() -> Self {
+        Self {
+            target_chars: 2000,
+            max_chars: 2200,
+            min_chars: 400,
+            overlap_chars: 200,  // 10% overlap
+        }
+    }
 }
 
 impl LegalChunker {
     pub fn chunk(&self, doc: &ParsedDocument) -> Vec<Chunk> {
         let mut chunks = Vec::new();
-        let mut chunk_seq = 0;
+        let mut chunk_seq: u32 = 0;
 
         for page in &doc.pages {
             if page.content.trim().is_empty() {
                 continue;
             }
 
+            // Track character offset within the page
+            let mut page_char_offset: u64 = 0;
+
             let paragraphs = &page.paragraphs;
             let mut current_text = String::new();
-            let mut current_start_para = 0;
-            let mut current_start_line = 0;
-            let mut current_token_count = 0;
+            let mut current_start_para: u32 = 0;
+            let mut current_start_line: u32 = 0;
+            let mut current_char_start: u64 = 0;
 
             for (para_idx, paragraph) in paragraphs.iter().enumerate() {
-                let para_tokens = count_tokens(&paragraph.text);
+                let para_chars = paragraph.text.len();
 
-                // Single paragraph exceeds max? Split it
-                if para_tokens > self.max_tokens {
+                // Single paragraph exceeds max? Split by sentence
+                if para_chars > self.max_chars {
                     // Flush current chunk first
-                    if !current_text.is_empty() {
+                    if current_text.len() >= self.min_chars {
                         chunks.push(self.make_chunk(
                             doc, page, &current_text, chunk_seq,
-                            current_start_para, para_idx.saturating_sub(1),
+                            current_start_para, para_idx.saturating_sub(1) as u32,
                             current_start_line,
+                            current_char_start,
                         ));
                         chunk_seq += 1;
                     }
 
                     // Split long paragraph by sentences
                     let sub_chunks = self.split_long_paragraph(
-                        doc, page, paragraph, para_idx, &mut chunk_seq,
+                        doc, page, paragraph, para_idx as u32,
+                        page_char_offset, &mut chunk_seq,
                     );
                     chunks.extend(sub_chunks);
 
+                    page_char_offset += para_chars as u64;
                     current_text.clear();
-                    current_token_count = 0;
-                    current_start_para = para_idx + 1;
+                    current_start_para = (para_idx + 1) as u32;
+                    current_char_start = page_char_offset;
                     continue;
                 }
 
-                // Would adding this paragraph exceed target?
-                if current_token_count + para_tokens > self.target_tokens
-                    && !current_text.is_empty()
-                    && current_token_count >= self.min_tokens
+                // Would adding this paragraph exceed 2000 chars?
+                if current_text.len() + para_chars > self.target_chars
+                    && current_text.len() >= self.min_chars
                 {
                     // Emit current chunk
                     chunks.push(self.make_chunk(
                         doc, page, &current_text, chunk_seq,
-                        current_start_para, para_idx.saturating_sub(1),
+                        current_start_para, para_idx.saturating_sub(1) as u32,
                         current_start_line,
+                        current_char_start,
                     ));
                     chunk_seq += 1;
 
-                    // Start new chunk with overlap
+                    // Start new chunk with 200-char overlap from end of previous
                     let overlap = self.compute_overlap(&current_text);
                     current_text = overlap;
-                    current_token_count = count_tokens(&current_text);
-                    current_start_para = para_idx;
+                    current_start_para = para_idx as u32;
+                    current_char_start = page_char_offset.saturating_sub(self.overlap_chars as u64);
                 }
 
                 current_text.push_str(&paragraph.text);
                 current_text.push('\n');
-                current_token_count += para_tokens;
+                page_char_offset += para_chars as u64 + 1; // +1 for newline
             }
 
             // Emit remaining text for this page
-            if !current_text.is_empty() && count_tokens(&current_text) >= self.min_tokens {
+            if current_text.len() >= self.min_chars {
                 chunks.push(self.make_chunk(
                     doc, page, &current_text, chunk_seq,
-                    current_start_para, paragraphs.len().saturating_sub(1),
+                    current_start_para, paragraphs.len().saturating_sub(1) as u32,
                     current_start_line,
+                    current_char_start,
                 ));
                 chunk_seq += 1;
             }
@@ -405,56 +481,113 @@ impl LegalChunker {
         page: &Page,
         text: &str,
         sequence: u32,
-        para_start: usize,
-        para_end: usize,
-        line_start: usize,
+        para_start: u32,
+        para_end: u32,
+        line_start: u32,
+        char_start: u64,
     ) -> Chunk {
-        let line_end = line_start + text.lines().count();
+        let line_end = line_start + text.lines().count() as u32;
+        let char_end = char_start + text.len() as u64;
 
         Chunk {
             id: Uuid::new_v4(),
             document_id: doc.id,
             text: text.to_string(),
             sequence,
-            token_count: count_tokens(text) as u32,
+            char_count: text.len() as u32,
             provenance: Provenance {
                 document_id: doc.id,
                 document_name: doc.filename.clone(),
-                document_path: None,
+                document_path: doc.original_path.clone(),
                 page: page.number,
-                paragraph_start: para_start as u32,
-                paragraph_end: para_end as u32,
-                line_start: line_start as u32,
-                line_end: line_end as u32,
-                char_start: 0,   // Computed during storage
-                char_end: 0,
+                paragraph_start: para_start,
+                paragraph_end: para_end,
+                line_start,
+                line_end,
+                char_start,
+                char_end,
                 extraction_method: page.extraction_method,
                 ocr_confidence: page.ocr_confidence,
                 bates_number: None,
+                chunk_index: sequence,
             },
         }
     }
 
+    /// Take last 200 characters as overlap for next chunk
     fn compute_overlap(&self, text: &str) -> String {
-        // Take last N tokens as overlap
-        let words: Vec<&str> = text.split_whitespace().collect();
-        let overlap_words = words.len().min(self.overlap_tokens);
-        words[words.len() - overlap_words..].join(" ")
+        if text.len() <= self.overlap_chars {
+            return text.to_string();
+        }
+        let start = text.len() - self.overlap_chars;
+        // Find nearest word boundary after the cut point
+        let boundary = text[start..].find(' ').map(|i| start + i + 1).unwrap_or(start);
+        text[boundary..].to_string()
+    }
+
+    /// Split a paragraph longer than 2200 chars into sentence-bounded chunks
+    fn split_long_paragraph(
+        &self,
+        doc: &ParsedDocument,
+        page: &Page,
+        paragraph: &Paragraph,
+        para_idx: u32,
+        char_offset: u64,
+        chunk_seq: &mut u32,
+    ) -> Vec<Chunk> {
+        let mut chunks = Vec::new();
+        let sentences = split_sentences(&paragraph.text);
+        let mut current = String::new();
+        let mut local_offset = 0u64;
+
+        for sentence in &sentences {
+            if current.len() + sentence.len() > self.target_chars && current.len() >= self.min_chars {
+                chunks.push(self.make_chunk(
+                    doc, page, &current, *chunk_seq,
+                    para_idx, para_idx,
+                    0, // line tracking within paragraph
+                    char_offset + local_offset,
+                ));
+                *chunk_seq += 1;
+
+                let overlap = self.compute_overlap(&current);
+                local_offset += (current.len() - overlap.len()) as u64;
+                current = overlap;
+            }
+            current.push_str(sentence);
+        }
+
+        if current.len() >= self.min_chars {
+            chunks.push(self.make_chunk(
+                doc, page, &current, *chunk_seq,
+                para_idx, para_idx,
+                0,
+                char_offset + local_offset,
+            ));
+            *chunk_seq += 1;
+        }
+
+        chunks
     }
 }
-```
 
-### 6.2 Token Counting
+/// Split text into sentences (period/question/exclamation + space + uppercase)
+fn split_sentences(text: &str) -> Vec<String> {
+    let mut sentences = Vec::new();
+    let mut current = String::new();
 
-Use a fast approximation (not full tokenizer) for chunking decisions:
-
-```rust
-/// Fast approximate token count (whitespace + punctuation splitting)
-/// Full tokenizer is only used during embedding inference
-pub fn count_tokens(text: &str) -> usize {
-    // Approximate: 1 token ~ 4 characters for English text
-    // More accurate than word count for legal text with long words
-    (text.len() + 3) / 4
+    for ch in text.chars() {
+        current.push(ch);
+        if (ch == '.' || ch == '?' || ch == '!') {
+            // Check if next char is space + uppercase (sentence boundary)
+            // Simplified: just split at sentence-ending punctuation
+            sentences.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        sentences.push(current);
+    }
+    sentences
 }
 ```
 
@@ -605,9 +738,9 @@ pub struct Chunk {
     pub id: Uuid,
     pub document_id: Uuid,
     pub text: String,
-    pub sequence: u32,
-    pub token_count: u32,
-    pub provenance: Provenance,
+    pub sequence: u32,        // Position within document
+    pub char_count: u32,      // Length in characters (target: 2000)
+    pub provenance: Provenance, // FULL source location (MANDATORY)
 }
 
 #[derive(Debug, Serialize)]

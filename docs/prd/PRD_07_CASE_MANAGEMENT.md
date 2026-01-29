@@ -327,30 +327,50 @@ impl CaseHandle {
 Every chunk tracks exactly where it came from:
 
 ```rust
+/// EVERY chunk stores full provenance. This is the core of CaseTrack.
+/// When the AI returns information, the user must know EXACTLY where it came from.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Provenance {
-    /// Source document
+    // === Source Document ===
+    /// UUID of the ingested document
     pub document_id: Uuid,
+    /// Original filename ("Contract.pdf")
     pub document_name: String,
+    /// Full filesystem path where the file was when ingested
+    /// ("/Users/sarah/Cases/Smith/Contract.pdf")
     pub document_path: Option<PathBuf>,
 
-    /// Location in document
+    // === Location in Document ===
+    /// Page number (1-indexed)
     pub page: u32,
+    /// First paragraph index included in this chunk (0-indexed within page)
     pub paragraph_start: u32,
+    /// Last paragraph index included in this chunk
     pub paragraph_end: u32,
+    /// First line number (1-indexed within page)
     pub line_start: u32,
+    /// Last line number
     pub line_end: u32,
 
-    /// Character offsets (for highlighting)
+    // === Character Offsets (for exact highlighting) ===
+    /// Character offset from start of page
     pub char_start: u64,
+    /// Character offset end
     pub char_end: u64,
 
-    /// Extraction metadata
+    // === Extraction Metadata ===
+    /// How the text was extracted from the original file
     pub extraction_method: ExtractionMethod,
+    /// OCR confidence score (0.0-1.0) if extracted via OCR
     pub ocr_confidence: Option<f32>,
 
-    /// Optional Bates number (for litigation)
+    // === Legal Metadata ===
+    /// Optional Bates stamp number (for litigation document production)
     pub bates_number: Option<String>,
+
+    // === Chunk Position ===
+    /// Sequential position of this chunk within the entire document (0-indexed)
+    pub chunk_index: u32,
 }
 
 impl Provenance {

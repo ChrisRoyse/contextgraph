@@ -6,6 +6,15 @@
 **Date**: 2026-01-28
 **Status**: Draft
 **Scope**: Fresh greenfield project build
+**Language**: Rust (entire project -- no exceptions)
+
+> **BUILD MANDATE**: CaseTrack is built entirely in Rust. The binary crate, core
+> library, MCP server, document processing, embedding engine, storage layer,
+> search engine, license validation, CLI, and all tooling are Rust. The only
+> non-Rust code is a Python helper script for one-time ONNX model conversion
+> (a build-time tool, not shipped to users). There is no JavaScript, TypeScript,
+> Python, Go, or C++ in the product. All dependencies are Rust crates. The
+> output is a single statically-linked Rust binary with zero runtime dependencies.
 
 ---
 
@@ -90,11 +99,14 @@ CaseTrack solves this with:
 
 1. **One-click install**: Single command or MCPB file -- embedders and database included
 2. **100% local storage**: All embeddings and vectors stored on YOUR device in RocksDB
-3. **7 specialized embedders**: Semantic search that understands legal language
-4. **Full provenance**: Every answer cites document, page, paragraph, line
-5. **Claude Code + Desktop integration**: Works with both Claude Code CLI and Claude Desktop app
-6. **Runs anywhere**: Works on an 8GB MacBook Air, no GPU needed
-7. **Affordable**: Free tier is genuinely useful; Pro is $29/month
+3. **Per-case isolation**: Every case has its own separate database -- embeddings from one case NEVER touch another
+4. **Per-customer isolation**: Each customer's installation is fully independent (no shared servers or data)
+5. **7 specialized embedders**: Semantic search that understands legal language
+6. **Full provenance**: Every answer cites the source file path, document name, page, paragraph, and line number
+7. **2000-character chunks**: Documents chunked into 2000-char segments with 10% overlap, each chunk stores its exact origin
+8. **Claude Code + Desktop integration**: Works with both Claude Code CLI and Claude Desktop app
+9. **Runs anywhere**: Works on an 8GB MacBook Air, no GPU needed
+10. **Affordable**: Free tier is genuinely useful; Pro is $29/month
 
 ---
 
@@ -242,13 +254,13 @@ DESIGN PRINCIPLES
 | Term | Definition |
 |------|------------|
 | **BM25** | Best Match 25 -- classical keyword ranking algorithm |
-| **Chunk** | A ~500 token segment of a document, the unit of search |
+| **Chunk** | A 2000-character segment of a document with 10% (200 char) overlap, the unit of search. Every chunk stores full provenance: source file path, document name, page number, paragraph, line number, and character offsets. |
 | **ColBERT** | Contextualized Late Interaction over BERT -- token-level reranking |
 | **Embedder** | A model that converts text to a numerical vector |
 | **MCP** | Model Context Protocol -- standard for AI tool integration |
 | **MCPB** | MCP Bundle -- a ZIP file format for distributing MCP servers |
 | **ONNX** | Open Neural Network Exchange -- cross-platform ML model format |
-| **Provenance** | The exact source location (document, page, paragraph, line) of text |
+| **Provenance** | The exact source location of text: file path, document name, page number, paragraph number, line number, and character offsets. Attached to every chunk and included in every search result and MCP tool response. |
 | **RocksDB** | Embedded key-value database by Meta, used for local storage |
 | **RRF** | Reciprocal Rank Fusion -- method to combine search rankings |
 | **rmcp** | Official Rust MCP SDK |
@@ -264,7 +276,7 @@ DESIGN PRINCIPLES
 
 # PRD 02: Target User & Hardware
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md)
+**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
 
 ---
 
@@ -534,7 +546,7 @@ DETECTION:
 
 # PRD 03: Distribution & Installation
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md)
+**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
 
 ---
 
@@ -1158,7 +1170,7 @@ rm -rf ~/Documents/CaseTrack/
 
 # PRD 04: Storage Architecture
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md)
+**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
 
 ---
 
@@ -1509,15 +1521,48 @@ pub fn check_and_migrate(registry_path: &Path) -> Result<()> {
 
 ---
 
-## 7. Case Isolation Guarantees
+## 7. Isolation Guarantees
 
-Each case is a **completely independent** RocksDB instance:
+### 7.1 Per-Customer Isolation
 
-- **No cross-case queries**: Search operates within a single case
-- **No shared state**: Cases cannot access each other's data
+Every CaseTrack installation is **fully isolated per customer**:
+
+- CaseTrack installs on each customer's machine independently
+- Each customer has their own `~/Documents/CaseTrack/` directory
+- No data is shared between customers -- there is no server, no cloud, no shared state
+- For Firm tier (5 seats), each seat is a separate installation on a separate machine with its own database
+- Customer A's embeddings, vectors, chunks, and provenance records **never touch** Customer B's data
+- There is no central database. Each customer IS their own database.
+
+```
+CUSTOMER ISOLATION
+=================================================================================
+
+Customer A (Sarah's MacBook)         Customer B (Mike's Windows PC)
+~/Documents/CaseTrack/               C:\Users\Mike\Documents\CaseTrack\
+|-- models/                          |-- models/
+|-- registry.db                      |-- registry.db
++-- cases/                           +-- cases/
+    |-- {sarah-case-1}/                  |-- {mike-case-1}/
+    +-- {sarah-case-2}/                  |-- {mike-case-2}/
+                                         +-- {mike-case-3}/
+
+ZERO shared state. ZERO shared databases. ZERO network communication.
+Each installation is a completely independent system.
+```
+
+### 7.2 Per-Case Isolation
+
+Within a single customer's installation, each case is a **completely independent RocksDB instance**:
+
+- **Separate database per case**: Each case is its own RocksDB instance on disk
+- **Separate embeddings per case**: Embeddings from Case A are in a different database file than Case B
+- **No cross-case queries**: Search operates within a single case only
+- **No shared vectors**: Case A's vectors cannot influence Case B's search results
+- **No embedding bleed**: There is no shared vector index -- each case has its own index files
 - **Independent lifecycle**: Deleting Case A has zero impact on Case B
 - **Portable**: A case directory can be copied to another machine
-- **Cleanly deletable**: `rm -rf cases/{uuid}/` fully removes a case
+- **Cleanly deletable**: `rm -rf cases/{uuid}/` fully removes a case and all its embeddings
 
 ```rust
 /// Opening a case creates or loads its isolated database
@@ -1593,7 +1638,7 @@ casetrack import ~/Desktop/smith-v-jones.ctcase
 |-----------|------------------|--------|---------------|
 | Case metadata | `registry.db` | bincode via RocksDB | ~500 bytes/case |
 | Document metadata | `cases/{id}/case.db` documents CF | bincode | ~200 bytes/doc |
-| Text chunks | `cases/{id}/case.db` chunks CF | bincode | ~2KB/chunk |
+| Text chunks (2000 chars) | `cases/{id}/case.db` chunks CF | bincode | ~2.5KB/chunk (text + provenance metadata) |
 | E1 embeddings (384D) | `cases/{id}/case.db` embeddings CF | f32 bytes | 1,536 bytes/chunk |
 | E6 sparse vectors | `cases/{id}/case.db` embeddings CF | bincode sparse | ~500 bytes/chunk |
 | E7 embeddings (384D) | `cases/{id}/case.db` embeddings CF | f32 bytes | 1,536 bytes/chunk |
@@ -1614,7 +1659,7 @@ casetrack import ~/Desktop/smith-v-jones.ctcase
 
 # PRD 05: 7-Embedder Legal Stack
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md)
+**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
 
 ---
 
@@ -2091,7 +2136,7 @@ A `scripts/convert_models.py` script should be included in the repository to aut
 
 # PRD 06: Document Ingestion
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md)
+**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
 
 ---
 
@@ -2139,11 +2184,12 @@ User: "Ingest ~/Downloads/Complaint.pdf"
                     v
 +-----------------------------------------------------------------------+
 | 3. CHUNK                                                               |
-|    - Split into ~500 token chunks                                     |
-|    - Respect paragraph and sentence boundaries                        |
-|    - Attach provenance (doc, page, para, line, char offset)          |
-|    - Add 50-token overlap between consecutive chunks                  |
-|    Output: Vec<Chunk> with Provenance                                 |
+|    - Split into 2000-character chunks                                  |
+|    - 10% overlap (200 chars from end of previous chunk)                |
+|    - Respect paragraph and sentence boundaries                         |
+|    - Attach FULL provenance to every chunk:                            |
+|      file path, doc name, page, paragraph, line, char offsets          |
+|    Output: Vec<Chunk> with Provenance                                  |
 +-----------------------------------------------------------------------+
                     |
                     v
@@ -2398,90 +2444,165 @@ impl OcrEngine {
 
 ## 6. Chunking Strategy
 
-### 6.1 Legal-Aware Chunking
+### 6.1 Chunking Rules (MANDATORY)
+
+```
+CHUNKING SPECIFICATION
+=================================================================================
+
+CHUNK SIZE:    2000 characters (hard target)
+OVERLAP:       10% = 200 characters (from end of previous chunk)
+MIN SIZE:      400 characters (don't emit tiny fragments)
+MAX SIZE:      2200 characters (allow small overrun to avoid mid-sentence splits)
+
+WHY 2000 CHARACTERS:
+  - Large enough to capture full legal paragraphs and clauses
+  - Small enough for focused embedding (semantic dilution above 2500 chars)
+  - Character-based (not token-based) for deterministic, reproducible chunking
+  - 10% overlap ensures context continuity across chunk boundaries
+
+BOUNDARY RULES:
+  1. Prefer splitting at paragraph boundaries
+  2. If no paragraph break, split at sentence boundary (period + space)
+  3. If no sentence break, split at word boundary (space)
+  4. NEVER split mid-word
+  5. Chunks do NOT cross page boundaries (each page starts a new chunk)
+```
+
+### 6.2 Provenance Per Chunk (MANDATORY)
+
+**Every chunk MUST store its complete provenance at creation time.** This is not optional.
+
+```
+PROVENANCE STORED WITH EVERY CHUNK
+=================================================================================
+
+Every chunk records:
+  - document_id:       UUID of the ingested document
+  - document_name:     Original filename ("Contract.pdf")
+  - document_path:     Full filesystem path ("/Users/sarah/Cases/Contract.pdf")
+  - page:              Page number in the original document
+  - paragraph_start:   First paragraph index included in this chunk
+  - paragraph_end:     Last paragraph index included in this chunk
+  - line_start:        First line number in the original page
+  - line_end:          Last line number in the original page
+  - char_start:        Character offset from start of page
+  - char_end:          Character offset from start of page
+  - extraction_method: How text was extracted (Native / OCR)
+  - ocr_confidence:    OCR confidence score (if applicable)
+  - bates_number:      Optional Bates stamp (for litigation)
+  - chunk_index:       Sequential position of this chunk within the document
+
+This provenance is:
+  1. STORED in RocksDB alongside the chunk text and embeddings
+  2. RETURNED in every search result
+  3. QUERYABLE via MCP tools (get_chunk_provenance, get_document_chunks)
+  4. IMMUTABLE once created (never modified after ingestion)
+```
+
+### 6.3 Chunking Implementation
 
 ```rust
+/// Chunker configuration: 2000 chars, 10% overlap
 pub struct LegalChunker {
-    target_tokens: usize,  // 500
-    max_tokens: usize,     // 1000
-    min_tokens: usize,     // 100
-    overlap_tokens: usize, // 50
+    target_chars: usize,   // 2000
+    max_chars: usize,      // 2200 (small overrun to avoid mid-sentence)
+    min_chars: usize,      // 400 (don't emit tiny fragments)
+    overlap_chars: usize,  // 200 (10% of target)
+}
+
+impl Default for LegalChunker {
+    fn default() -> Self {
+        Self {
+            target_chars: 2000,
+            max_chars: 2200,
+            min_chars: 400,
+            overlap_chars: 200,  // 10% overlap
+        }
+    }
 }
 
 impl LegalChunker {
     pub fn chunk(&self, doc: &ParsedDocument) -> Vec<Chunk> {
         let mut chunks = Vec::new();
-        let mut chunk_seq = 0;
+        let mut chunk_seq: u32 = 0;
 
         for page in &doc.pages {
             if page.content.trim().is_empty() {
                 continue;
             }
 
+            // Track character offset within the page
+            let mut page_char_offset: u64 = 0;
+
             let paragraphs = &page.paragraphs;
             let mut current_text = String::new();
-            let mut current_start_para = 0;
-            let mut current_start_line = 0;
-            let mut current_token_count = 0;
+            let mut current_start_para: u32 = 0;
+            let mut current_start_line: u32 = 0;
+            let mut current_char_start: u64 = 0;
 
             for (para_idx, paragraph) in paragraphs.iter().enumerate() {
-                let para_tokens = count_tokens(&paragraph.text);
+                let para_chars = paragraph.text.len();
 
-                // Single paragraph exceeds max? Split it
-                if para_tokens > self.max_tokens {
+                // Single paragraph exceeds max? Split by sentence
+                if para_chars > self.max_chars {
                     // Flush current chunk first
-                    if !current_text.is_empty() {
+                    if current_text.len() >= self.min_chars {
                         chunks.push(self.make_chunk(
                             doc, page, &current_text, chunk_seq,
-                            current_start_para, para_idx.saturating_sub(1),
+                            current_start_para, para_idx.saturating_sub(1) as u32,
                             current_start_line,
+                            current_char_start,
                         ));
                         chunk_seq += 1;
                     }
 
                     // Split long paragraph by sentences
                     let sub_chunks = self.split_long_paragraph(
-                        doc, page, paragraph, para_idx, &mut chunk_seq,
+                        doc, page, paragraph, para_idx as u32,
+                        page_char_offset, &mut chunk_seq,
                     );
                     chunks.extend(sub_chunks);
 
+                    page_char_offset += para_chars as u64;
                     current_text.clear();
-                    current_token_count = 0;
-                    current_start_para = para_idx + 1;
+                    current_start_para = (para_idx + 1) as u32;
+                    current_char_start = page_char_offset;
                     continue;
                 }
 
-                // Would adding this paragraph exceed target?
-                if current_token_count + para_tokens > self.target_tokens
-                    && !current_text.is_empty()
-                    && current_token_count >= self.min_tokens
+                // Would adding this paragraph exceed 2000 chars?
+                if current_text.len() + para_chars > self.target_chars
+                    && current_text.len() >= self.min_chars
                 {
                     // Emit current chunk
                     chunks.push(self.make_chunk(
                         doc, page, &current_text, chunk_seq,
-                        current_start_para, para_idx.saturating_sub(1),
+                        current_start_para, para_idx.saturating_sub(1) as u32,
                         current_start_line,
+                        current_char_start,
                     ));
                     chunk_seq += 1;
 
-                    // Start new chunk with overlap
+                    // Start new chunk with 200-char overlap from end of previous
                     let overlap = self.compute_overlap(&current_text);
                     current_text = overlap;
-                    current_token_count = count_tokens(&current_text);
-                    current_start_para = para_idx;
+                    current_start_para = para_idx as u32;
+                    current_char_start = page_char_offset.saturating_sub(self.overlap_chars as u64);
                 }
 
                 current_text.push_str(&paragraph.text);
                 current_text.push('\n');
-                current_token_count += para_tokens;
+                page_char_offset += para_chars as u64 + 1; // +1 for newline
             }
 
             // Emit remaining text for this page
-            if !current_text.is_empty() && count_tokens(&current_text) >= self.min_tokens {
+            if current_text.len() >= self.min_chars {
                 chunks.push(self.make_chunk(
                     doc, page, &current_text, chunk_seq,
-                    current_start_para, paragraphs.len().saturating_sub(1),
+                    current_start_para, paragraphs.len().saturating_sub(1) as u32,
                     current_start_line,
+                    current_char_start,
                 ));
                 chunk_seq += 1;
             }
@@ -2496,56 +2617,113 @@ impl LegalChunker {
         page: &Page,
         text: &str,
         sequence: u32,
-        para_start: usize,
-        para_end: usize,
-        line_start: usize,
+        para_start: u32,
+        para_end: u32,
+        line_start: u32,
+        char_start: u64,
     ) -> Chunk {
-        let line_end = line_start + text.lines().count();
+        let line_end = line_start + text.lines().count() as u32;
+        let char_end = char_start + text.len() as u64;
 
         Chunk {
             id: Uuid::new_v4(),
             document_id: doc.id,
             text: text.to_string(),
             sequence,
-            token_count: count_tokens(text) as u32,
+            char_count: text.len() as u32,
             provenance: Provenance {
                 document_id: doc.id,
                 document_name: doc.filename.clone(),
-                document_path: None,
+                document_path: doc.original_path.clone(),
                 page: page.number,
-                paragraph_start: para_start as u32,
-                paragraph_end: para_end as u32,
-                line_start: line_start as u32,
-                line_end: line_end as u32,
-                char_start: 0,   // Computed during storage
-                char_end: 0,
+                paragraph_start: para_start,
+                paragraph_end: para_end,
+                line_start,
+                line_end,
+                char_start,
+                char_end,
                 extraction_method: page.extraction_method,
                 ocr_confidence: page.ocr_confidence,
                 bates_number: None,
+                chunk_index: sequence,
             },
         }
     }
 
+    /// Take last 200 characters as overlap for next chunk
     fn compute_overlap(&self, text: &str) -> String {
-        // Take last N tokens as overlap
-        let words: Vec<&str> = text.split_whitespace().collect();
-        let overlap_words = words.len().min(self.overlap_tokens);
-        words[words.len() - overlap_words..].join(" ")
+        if text.len() <= self.overlap_chars {
+            return text.to_string();
+        }
+        let start = text.len() - self.overlap_chars;
+        // Find nearest word boundary after the cut point
+        let boundary = text[start..].find(' ').map(|i| start + i + 1).unwrap_or(start);
+        text[boundary..].to_string()
+    }
+
+    /// Split a paragraph longer than 2200 chars into sentence-bounded chunks
+    fn split_long_paragraph(
+        &self,
+        doc: &ParsedDocument,
+        page: &Page,
+        paragraph: &Paragraph,
+        para_idx: u32,
+        char_offset: u64,
+        chunk_seq: &mut u32,
+    ) -> Vec<Chunk> {
+        let mut chunks = Vec::new();
+        let sentences = split_sentences(&paragraph.text);
+        let mut current = String::new();
+        let mut local_offset = 0u64;
+
+        for sentence in &sentences {
+            if current.len() + sentence.len() > self.target_chars && current.len() >= self.min_chars {
+                chunks.push(self.make_chunk(
+                    doc, page, &current, *chunk_seq,
+                    para_idx, para_idx,
+                    0, // line tracking within paragraph
+                    char_offset + local_offset,
+                ));
+                *chunk_seq += 1;
+
+                let overlap = self.compute_overlap(&current);
+                local_offset += (current.len() - overlap.len()) as u64;
+                current = overlap;
+            }
+            current.push_str(sentence);
+        }
+
+        if current.len() >= self.min_chars {
+            chunks.push(self.make_chunk(
+                doc, page, &current, *chunk_seq,
+                para_idx, para_idx,
+                0,
+                char_offset + local_offset,
+            ));
+            *chunk_seq += 1;
+        }
+
+        chunks
     }
 }
-```
 
-### 6.2 Token Counting
+/// Split text into sentences (period/question/exclamation + space + uppercase)
+fn split_sentences(text: &str) -> Vec<String> {
+    let mut sentences = Vec::new();
+    let mut current = String::new();
 
-Use a fast approximation (not full tokenizer) for chunking decisions:
-
-```rust
-/// Fast approximate token count (whitespace + punctuation splitting)
-/// Full tokenizer is only used during embedding inference
-pub fn count_tokens(text: &str) -> usize {
-    // Approximate: 1 token ~ 4 characters for English text
-    // More accurate than word count for legal text with long words
-    (text.len() + 3) / 4
+    for ch in text.chars() {
+        current.push(ch);
+        if (ch == '.' || ch == '?' || ch == '!') {
+            // Check if next char is space + uppercase (sentence boundary)
+            // Simplified: just split at sentence-ending punctuation
+            sentences.push(std::mem::take(&mut current));
+        }
+    }
+    if !current.is_empty() {
+        sentences.push(current);
+    }
+    sentences
 }
 ```
 
@@ -2696,9 +2874,9 @@ pub struct Chunk {
     pub id: Uuid,
     pub document_id: Uuid,
     pub text: String,
-    pub sequence: u32,
-    pub token_count: u32,
-    pub provenance: Provenance,
+    pub sequence: u32,        // Position within document
+    pub char_count: u32,      // Length in characters (target: 2000)
+    pub provenance: Provenance, // FULL source location (MANDATORY)
 }
 
 #[derive(Debug, Serialize)]
@@ -2722,7 +2900,7 @@ pub struct IngestResult {
 
 # PRD 07: Case Management & Provenance
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md)
+**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
 
 ---
 
@@ -3049,30 +3227,50 @@ impl CaseHandle {
 Every chunk tracks exactly where it came from:
 
 ```rust
+/// EVERY chunk stores full provenance. This is the core of CaseTrack.
+/// When the AI returns information, the user must know EXACTLY where it came from.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Provenance {
-    /// Source document
+    // === Source Document ===
+    /// UUID of the ingested document
     pub document_id: Uuid,
+    /// Original filename ("Contract.pdf")
     pub document_name: String,
+    /// Full filesystem path where the file was when ingested
+    /// ("/Users/sarah/Cases/Smith/Contract.pdf")
     pub document_path: Option<PathBuf>,
 
-    /// Location in document
+    // === Location in Document ===
+    /// Page number (1-indexed)
     pub page: u32,
+    /// First paragraph index included in this chunk (0-indexed within page)
     pub paragraph_start: u32,
+    /// Last paragraph index included in this chunk
     pub paragraph_end: u32,
+    /// First line number (1-indexed within page)
     pub line_start: u32,
+    /// Last line number
     pub line_end: u32,
 
-    /// Character offsets (for highlighting)
+    // === Character Offsets (for exact highlighting) ===
+    /// Character offset from start of page
     pub char_start: u64,
+    /// Character offset end
     pub char_end: u64,
 
-    /// Extraction metadata
+    // === Extraction Metadata ===
+    /// How the text was extracted from the original file
     pub extraction_method: ExtractionMethod,
+    /// OCR confidence score (0.0-1.0) if extracted via OCR
     pub ocr_confidence: Option<f32>,
 
-    /// Optional Bates number (for litigation)
+    // === Legal Metadata ===
+    /// Optional Bates stamp number (for litigation document production)
     pub bates_number: Option<String>,
+
+    // === Chunk Position ===
+    /// Sequential position of this chunk within the entire document (0-indexed)
+    pub chunk_index: u32,
 }
 
 impl Provenance {
@@ -3240,7 +3438,7 @@ Notes:
 
 # PRD 08: Search & Retrieval
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md)
+**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
 
 ---
 
@@ -3708,11 +3906,17 @@ The MCP tool returns results in this structure:
       "citation_short": "Contract, p. 12",
       "source": {
         "document": "Contract.pdf",
+        "document_path": "/Users/sarah/Documents/CaseTrack/cases/smith-v-jones/originals/Contract.pdf",
         "document_id": "abc-123",
+        "chunk_id": "chunk-456",
+        "chunk_index": 14,
         "page": 12,
         "paragraph_start": 8,
         "paragraph_end": 8,
-        "lines": "1-4",
+        "line_start": 1,
+        "line_end": 4,
+        "char_start": 24580,
+        "char_end": 26580,
         "bates": null,
         "extraction_method": "Native",
         "ocr_confidence": null
@@ -3735,7 +3939,7 @@ The MCP tool returns results in this structure:
 
 # PRD 09: MCP Tools
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md)
+**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
 
 ---
 
@@ -3755,6 +3959,9 @@ The MCP tool returns results in this structure:
 | `delete_document` | Remove a document from a case | Free | Yes |
 | `search_case` | Search across all documents | Free (limited) | Yes |
 | `find_entity` | Find mentions of a legal entity | Pro | Yes |
+| `get_chunk` | Get a specific chunk with full provenance | Free | Yes |
+| `get_document_chunks` | List all chunks in a document with provenance | Free | Yes |
+| `get_source_context` | Get surrounding text for a chunk (context window) | Free | Yes |
 | `get_status` | Get server status and model info | Free | No |
 
 ---
@@ -4233,6 +4440,108 @@ The MCP tool returns results in this structure:
 }
 ```
 
+### 2.14 `get_chunk`
+
+```json
+{
+  "name": "get_chunk",
+  "description": "Get a specific chunk by ID with its full text, provenance (source file, page, paragraph, line, character offsets), and embedding status.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "chunk_id": {
+        "type": "string",
+        "description": "UUID of the chunk"
+      }
+    },
+    "required": ["chunk_id"]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "content": [{
+    "type": "text",
+    "text": "Chunk abc-123 (2000 chars)\n\nText:\n\"Either party may terminate this Agreement upon thirty (30) days written notice to the other party...\"\n\nProvenance:\n  Document:   Contract.pdf\n  File Path:  /Users/sarah/Cases/Smith/Contract.pdf\n  Page:       12\n  Paragraphs: 8-9\n  Lines:      1-14\n  Chars:      2401-4401 (within page)\n  Extraction: Native text\n  Chunk Index: 47 of 234\n\nEmbeddings: E1-Legal, E6-Legal, E7, E8-Legal, E11-Legal, E12"
+  }]
+}
+```
+
+---
+
+### 2.15 `get_document_chunks`
+
+```json
+{
+  "name": "get_document_chunks",
+  "description": "List all chunks in a document with their provenance. Shows where every piece of text came from: page, paragraph, line numbers, and character offsets. Use this to understand how a document was chunked and indexed.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "document_name": {
+        "type": "string",
+        "description": "Document name or ID"
+      },
+      "page_filter": {
+        "type": "integer",
+        "description": "Optional: only show chunks from this page number"
+      }
+    },
+    "required": ["document_name"]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "content": [{
+    "type": "text",
+    "text": "Document: Contract.pdf (28 pages, 156 chunks)\nFile Path: /Users/sarah/Cases/Smith/Contract.pdf\n\nChunk 0: p.1, paras 0-3, ll.1-12, chars 0-1987\n  \"AGREEMENT made this 15th day of January 2024 between...\"\n\nChunk 1: p.1, paras 3-6, ll.10-22, chars 1788-3790\n  \"...hereinafter referred to as 'Contractor'. WHEREAS the parties...\"\n  [200-char overlap from chunk 0]\n\nChunk 2: p.2, paras 0-2, ll.1-8, chars 0-1834\n  \"Section 2. SCOPE OF WORK. The Contractor shall provide...\"\n\n... (156 total chunks)"
+  }]
+}
+```
+
+---
+
+### 2.16 `get_source_context`
+
+```json
+{
+  "name": "get_source_context",
+  "description": "Get the surrounding context for a chunk -- the chunks immediately before and after it in the original document. Useful for understanding the full context around a search result.",
+  "inputSchema": {
+    "type": "object",
+    "properties": {
+      "chunk_id": {
+        "type": "string",
+        "description": "UUID of the chunk to get context for"
+      },
+      "window": {
+        "type": "integer",
+        "default": 1,
+        "minimum": 1,
+        "maximum": 5,
+        "description": "Number of chunks before and after to include"
+      }
+    },
+    "required": ["chunk_id"]
+  }
+}
+```
+
+**Response:**
+```json
+{
+  "content": [{
+    "type": "text",
+    "text": "Context for chunk abc-123 (Contract.pdf, p.12)\n\n--- BEFORE (chunk 46, p.12, paras 6-7) ---\n\"The parties agree that in the event of any dispute arising under this Agreement, they shall first attempt to resolve the dispute through good faith negotiation...\"\n\n--- TARGET (chunk 47, p.12, paras 8-9) ---\n\"Either party may terminate this Agreement upon thirty (30) days written notice to the other party. In the event of material breach, the non-breaching party may terminate immediately upon written notice specifying the breach...\"\n\n--- AFTER (chunk 48, p.13, paras 0-1) ---\n\"Upon termination, all confidential information shall be returned or destroyed within fourteen (14) days. The obligations under Sections 5, 7, and 9 shall survive termination...\""
+  }]
+}
+```
+
 ---
 
 ## 3. MCP Server Lifecycle
@@ -4433,7 +4742,17 @@ Claude: [calls search_case] -> searches Doe case (active)
 
 # PRD 10: Technical Build Guide
 
-**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md)
+**Version**: 4.0.0 | **Parent**: [PRD 01 Overview](PRD_01_OVERVIEW.md) | **Language**: Rust
+
+---
+
+> **LANGUAGE: RUST** -- This entire project is built in Rust. Every crate, every
+> module, every line of product code is Rust. Use `cargo` for building, testing,
+> and releasing. All dependencies are Rust crates from crates.io. The final
+> deliverable is a single statically-linked Rust binary per platform. No runtime
+> dependencies (no Node.js, no Python, no JVM, no .NET). The only non-Rust code
+> in the repository is `scripts/convert_models.py`, a one-time build tool for
+> converting PyTorch models to ONNX format (not shipped to users).
 
 ---
 
@@ -5148,15 +5467,24 @@ Every module has unit tests. Key areas:
 mod tests {
     use super::*;
 
-    // Chunking
+    // Chunking (2000-char target, 200-char overlap)
     #[test]
     fn test_chunk_respects_paragraph_boundaries() { ... }
 
     #[test]
-    fn test_chunk_overlap() { ... }
+    fn test_chunk_target_2000_chars() { ... }
 
     #[test]
-    fn test_chunk_min_size() { ... }
+    fn test_chunk_overlap_200_chars() { ... }
+
+    #[test]
+    fn test_chunk_min_400_chars() { ... }
+
+    #[test]
+    fn test_chunk_max_2200_chars() { ... }
+
+    #[test]
+    fn test_chunk_provenance_complete() { ... }  // Every chunk has file path, page, paragraph, line, char offsets
 
     // BM25
     #[test]
@@ -5165,12 +5493,21 @@ mod tests {
     #[test]
     fn test_bm25_term_frequency() { ... }
 
-    // Provenance
+    // Provenance (must include: file path, document name, page, paragraph, line, char offsets)
     #[test]
     fn test_citation_format() { ... }
 
     #[test]
     fn test_short_citation() { ... }
+
+    #[test]
+    fn test_provenance_includes_file_path() { ... }
+
+    #[test]
+    fn test_provenance_includes_char_offsets() { ... }
+
+    #[test]
+    fn test_provenance_round_trip() { ... }  // Store + retrieve preserves all fields
 
     // RRF
     #[test]
@@ -5274,6 +5611,38 @@ async fn test_search_returns_relevant_results() {
     assert!(results[0].score > 0.5);
     assert!(results[0].citation.contains("sample.pdf"));
     assert!(results[0].provenance.page > 0);
+
+    // Verify full provenance on every result
+    for result in &results {
+        assert!(!result.provenance.document_name.is_empty());
+        assert!(!result.provenance.document_path.is_empty());
+        assert!(result.provenance.page > 0);
+        assert!(result.provenance.char_start < result.provenance.char_end);
+    }
+}
+
+#[tokio::test]
+async fn test_case_isolation() {
+    // Verify chunks from one case never appear in another case's search
+    let dir = tempdir().unwrap();
+    let mut registry = CaseRegistry::open(dir.path()).unwrap();
+
+    let case_a = registry.create_case(CreateCaseParams {
+        name: "Case A".to_string(), ..Default::default()
+    }).unwrap();
+    let case_b = registry.create_case(CreateCaseParams {
+        name: "Case B".to_string(), ..Default::default()
+    }).unwrap();
+
+    // Ingest into Case A only
+    let handle_a = registry.switch_case(case_a.id).unwrap();
+    ingest_document(&handle_a, &engine, Path::new("tests/fixtures/sample.pdf"), None).await.unwrap();
+    drop(handle_a);
+
+    // Search Case B -- must return zero results
+    let handle_b = registry.switch_case(case_b.id).unwrap();
+    let results = search_engine.search(&handle_b, "termination clause", 10, None).unwrap();
+    assert!(results.is_empty(), "Case B must not contain Case A documents");
 }
 ```
 
@@ -5284,7 +5653,7 @@ The `tests/fixtures/` directory contains:
 - `sample.docx` -- Word document with headings, paragraphs, lists
 - `scanned.png` -- Image of typed text for OCR testing
 - `empty.pdf` -- Edge case: empty PDF
-- `large_paragraph.txt` -- Edge case: single paragraph >1000 tokens
+- `large_paragraph.txt` -- Edge case: single paragraph >2000 characters
 
 ### 9.4 Running Tests
 
@@ -5522,19 +5891,21 @@ DOCX PROCESSING
   [ ] Paragraph and heading extraction
   [ ] Section break handling
 
-CHUNKING
-  [ ] Implement LegalChunker (paragraph-aware, overlap)
-  [ ] Token counting (fast approximation)
-  [ ] Long paragraph splitting
-  [ ] Provenance attachment per chunk
+CHUNKING (2000-character chunks, 10% overlap -- see PRD 06)
+  [ ] Implement LegalChunker (2000-char target, 200-char overlap, paragraph-aware)
+  [ ] Character counting (not token-based)
+  [ ] Long paragraph splitting (>2200 chars)
+  [ ] Provenance attachment per chunk (file path, document name, page, paragraph, line, char offsets)
+  [ ] Chunk boundary validation (min 400 chars, max 2200 chars)
 
-STORAGE
-  [ ] Store chunks in RocksDB
+STORAGE (Per-case isolated databases -- see PRD 04)
+  [ ] Store chunks in RocksDB (one DB per case)
   [ ] Store document metadata
-  [ ] Store provenance records
+  [ ] Store provenance records (full path, page, paragraph, line, char offsets per chunk)
   [ ] Duplicate detection (SHA256)
   [ ] ingest_document MCP tool
   [ ] list_documents, get_document, delete_document tools
+  [ ] get_chunk, get_document_chunks, get_source_context provenance tools (see PRD 09)
 ```
 
 ### Phase 3: Embedding & Search
