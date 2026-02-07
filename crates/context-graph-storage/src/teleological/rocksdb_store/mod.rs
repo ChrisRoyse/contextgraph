@@ -53,6 +53,7 @@ mod helpers;
 mod index_ops;
 mod inverted_index;
 mod persistence;
+mod provenance_storage;
 mod search;
 mod source_metadata;
 mod store;

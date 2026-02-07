@@ -887,6 +887,53 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
         Ok(0)
     }
 
+    // ==================== Merge History (Phase 4 Stubs) ====================
+
+    async fn append_merge_record(&self, _record: &crate::types::audit::MergeRecord) -> CoreResult<()> {
+        // Test stub: no-op
+        Ok(())
+    }
+
+    async fn get_merge_history(
+        &self,
+        _merged_id: Uuid,
+        _limit: usize,
+    ) -> CoreResult<Vec<crate::types::audit::MergeRecord>> {
+        // Test stub: always returns empty
+        Ok(Vec::new())
+    }
+
+    // ==================== Importance History (Phase 4 Stubs) ====================
+
+    async fn append_importance_change(&self, _record: &crate::types::audit::ImportanceChangeRecord) -> CoreResult<()> {
+        // Test stub: no-op
+        Ok(())
+    }
+
+    async fn get_importance_history(
+        &self,
+        _memory_id: Uuid,
+        _limit: usize,
+    ) -> CoreResult<Vec<crate::types::audit::ImportanceChangeRecord>> {
+        // Test stub: always returns empty
+        Ok(Vec::new())
+    }
+
+    // ==================== Embedding Version Registry (Phase 6 Stubs) ====================
+
+    async fn store_embedding_version(&self, _record: &crate::types::audit::EmbeddingVersionRecord) -> CoreResult<()> {
+        // Test stub: no-op
+        Ok(())
+    }
+
+    async fn get_embedding_version(
+        &self,
+        _fingerprint_id: Uuid,
+    ) -> CoreResult<Option<crate::types::audit::EmbeddingVersionRecord>> {
+        // Test stub: always returns None
+        Ok(None)
+    }
+
     // ==================== Type Downcasting ====================
 
     fn as_any(&self) -> &dyn Any {

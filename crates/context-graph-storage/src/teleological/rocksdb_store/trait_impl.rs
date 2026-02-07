@@ -355,6 +355,47 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
         self.count_audit_records().map_err(Into::into)
     }
 
+    // ==================== Merge History (Phase 4) ====================
+
+    async fn append_merge_record(&self, record: &context_graph_core::types::audit::MergeRecord) -> CoreResult<()> {
+        self.append_merge_record(record).map_err(Into::into)
+    }
+
+    async fn get_merge_history(
+        &self,
+        merged_id: uuid::Uuid,
+        limit: usize,
+    ) -> CoreResult<Vec<context_graph_core::types::audit::MergeRecord>> {
+        self.get_merge_history(merged_id, limit).map_err(Into::into)
+    }
+
+    // ==================== Importance History (Phase 4) ====================
+
+    async fn append_importance_change(&self, record: &context_graph_core::types::audit::ImportanceChangeRecord) -> CoreResult<()> {
+        self.append_importance_change(record).map_err(Into::into)
+    }
+
+    async fn get_importance_history(
+        &self,
+        memory_id: uuid::Uuid,
+        limit: usize,
+    ) -> CoreResult<Vec<context_graph_core::types::audit::ImportanceChangeRecord>> {
+        self.get_importance_history(memory_id, limit).map_err(Into::into)
+    }
+
+    // ==================== Embedding Version Registry (Phase 6) ====================
+
+    async fn store_embedding_version(&self, record: &context_graph_core::types::audit::EmbeddingVersionRecord) -> CoreResult<()> {
+        self.store_embedding_version(record).map_err(Into::into)
+    }
+
+    async fn get_embedding_version(
+        &self,
+        fingerprint_id: uuid::Uuid,
+    ) -> CoreResult<Option<context_graph_core::types::audit::EmbeddingVersionRecord>> {
+        self.get_embedding_version(fingerprint_id).map_err(Into::into)
+    }
+
     // ==================== Type Downcasting ====================
 
     fn as_any(&self) -> &dyn Any {

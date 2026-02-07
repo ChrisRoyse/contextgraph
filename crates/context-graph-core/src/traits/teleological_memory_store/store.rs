@@ -778,6 +778,47 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     /// - `CoreError::StorageError` - Storage backend failure
     async fn count_audit_records(&self) -> CoreResult<usize>;
 
+    // ==================== Merge History (Phase 4, item 5.10) ====================
+
+    /// Append a merge record to the permanent merge history.
+    ///
+    /// Stored in CF_MERGE_HISTORY. PERMANENT -- never expires.
+    async fn append_merge_record(&self, record: &crate::types::audit::MergeRecord) -> CoreResult<()>;
+
+    /// Retrieve merge history for a specific merged fingerprint.
+    async fn get_merge_history(
+        &self,
+        merged_id: Uuid,
+        limit: usize,
+    ) -> CoreResult<Vec<crate::types::audit::MergeRecord>>;
+
+    // ==================== Importance History (Phase 4, item 5.11) ====================
+
+    /// Append an importance change record to the permanent history.
+    ///
+    /// Stored in CF_IMPORTANCE_HISTORY. PERMANENT -- never expires.
+    async fn append_importance_change(&self, record: &crate::types::audit::ImportanceChangeRecord) -> CoreResult<()>;
+
+    /// Retrieve importance change history for a specific memory.
+    async fn get_importance_history(
+        &self,
+        memory_id: Uuid,
+        limit: usize,
+    ) -> CoreResult<Vec<crate::types::audit::ImportanceChangeRecord>>;
+
+    // ==================== Embedding Version Registry (Phase 6, item 5.15) ====================
+
+    /// Store an embedding version record for a fingerprint.
+    ///
+    /// Stored in CF_EMBEDDING_REGISTRY. Overwrites existing record on re-embedding.
+    async fn store_embedding_version(&self, record: &crate::types::audit::EmbeddingVersionRecord) -> CoreResult<()>;
+
+    /// Retrieve the embedding version record for a fingerprint.
+    async fn get_embedding_version(
+        &self,
+        fingerprint_id: Uuid,
+    ) -> CoreResult<Option<crate::types::audit::EmbeddingVersionRecord>>;
+
     // ==================== Type Downcasting ====================
 
     /// Get a reference to self as Any for downcasting.

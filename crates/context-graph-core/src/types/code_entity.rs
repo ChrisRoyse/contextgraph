@@ -71,7 +71,7 @@ pub struct CodeEntity {
     pub attributes: Vec<String>,
 
     /// Git metadata for this entity (Phase 3b code git provenance).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub git_metadata: Option<CodeGitMetadata>,
 }
 

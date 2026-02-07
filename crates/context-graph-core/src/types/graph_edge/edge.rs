@@ -80,7 +80,7 @@ pub struct GraphEdge {
 
     /// LLM provenance metadata for how this edge was discovered (Phase 1.3).
     /// Populated by the graph discovery agent when it creates edges via LLM analysis.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub discovery_provenance: Option<LLMProvenance>,
 }
 

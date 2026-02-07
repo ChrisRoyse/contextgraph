@@ -52,8 +52,9 @@ impl RocksDbTeleologicalStore {
         let primary_key = record.primary_key();
         let target_key = record.target_index_key();
 
-        // Serialize the record using bincode
-        let bytes = bincode::serialize(record).map_err(|e| {
+        // Serialize the record using JSON (NOT bincode -- bincode cannot deserialize
+        // serde_json::Value which AuditRecord.parameters uses).
+        let bytes = serde_json::to_vec(record).map_err(|e| {
             error!(
                 "FAIL FAST: Failed to serialize audit record {}: {}",
                 record.id, e
@@ -154,7 +155,7 @@ impl RocksDbTeleologicalStore {
             match self.db.get_cf(cf_log, &*primary_key_bytes) {
                 Ok(Some(record_bytes)) => {
                     let record: AuditRecord =
-                        bincode::deserialize(&record_bytes).map_err(|e| {
+                        serde_json::from_slice(&record_bytes).map_err(|e| {
                             error!(
                                 "FAIL FAST: Failed to deserialize audit record from CF '{}': {}",
                                 CF_AUDIT_LOG, e
@@ -259,7 +260,7 @@ impl RocksDbTeleologicalStore {
                 }
             }
 
-            let record: AuditRecord = bincode::deserialize(&value).map_err(|e| {
+            let record: AuditRecord = serde_json::from_slice(&value).map_err(|e| {
                 error!(
                     "FAIL FAST: Failed to deserialize audit record from CF '{}': {}",
                     CF_AUDIT_LOG, e

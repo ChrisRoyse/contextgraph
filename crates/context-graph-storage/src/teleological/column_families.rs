@@ -1192,7 +1192,7 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 
 /// Get ALL teleological + quantized embedder column family descriptors.
 ///
-/// Returns 36 descriptors total: 23 teleological (21 active + 2 legacy) + 13 quantized embedder.
+/// Returns 36 descriptors total: 23 teleological + 13 quantized embedder.
 /// Use this when opening a database that needs both fingerprint and per-embedder storage.
 ///
 /// # Arguments

@@ -350,12 +350,32 @@ impl Handlers {
             None
         };
 
-        // Embedding version info placeholder
+        // Query CF_EMBEDDING_REGISTRY for actual embedding version info
         let embedding_version = if params.include_embedding_version {
-            Some(json!({
-                "status": "available",
-                "note": "Query CF_EMBEDDING_REGISTRY for detailed version info"
-            }))
+            match self.teleological_store.get_embedding_version(memory_uuid).await {
+                Ok(Some(record)) => {
+                    Some(json!({
+                        "fingerprint_id": record.fingerprint_id.to_string(),
+                        "computed_at": record.computed_at.to_rfc3339(),
+                        "embedder_versions": record.embedder_versions,
+                        "e7_model_version": record.e7_model_version,
+                        "computation_time_ms": record.computation_time_ms,
+                    }))
+                }
+                Ok(None) => {
+                    Some(json!({
+                        "status": "not_tracked",
+                        "note": "No embedding version record for this memory"
+                    }))
+                }
+                Err(e) => {
+                    error!(error = %e, "get_provenance_chain: Embedding version query failed");
+                    Some(json!({
+                        "status": "error",
+                        "error": format!("{}", e),
+                    }))
+                }
+            }
         } else {
             None
         };

@@ -83,32 +83,6 @@ pub struct MergedNodeInfo {
     pub total_access_count: u64,
 }
 
-/// Permanent merge history record (Phase 4, item 5.10).
-///
-/// Unlike ReversalRecord which expires after 30 days, MergeRecord is permanent.
-/// Stored in CF_MERGE_HISTORY for complete lineage tracking.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct MergeRecord {
-    /// Unique identifier for this merge record
-    pub id: Uuid,
-    /// UUID of the newly created merged fingerprint
-    pub merged_id: Uuid,
-    /// UUIDs of the source memories that were merged
-    pub source_ids: Vec<Uuid>,
-    /// The merge strategy used (e.g., "Union", "Intersection", "WeightedAverage")
-    pub strategy: String,
-    /// Why the merge was performed
-    pub rationale: String,
-    /// Who initiated the merge
-    pub operator_id: Option<String>,
-    /// When the merge occurred
-    pub timestamp: chrono::DateTime<chrono::Utc>,
-    /// SHA-256 reversal hash for linking to ReversalRecord
-    pub reversal_hash: String,
-    /// Serialized original fingerprints (for permanent audit trail)
-    pub original_fingerprints_json: Vec<String>,
-}
-
 /// Reversal record stored for 30-day undo capability
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ReversalRecord {
@@ -442,6 +416,36 @@ impl Handlers {
                     merged_id = %merged_id,
                     audit_id = %audit_record.id,
                     "merge_concepts: Audit record appended successfully"
+                );
+            }
+        }
+
+        // PHASE-4: Write permanent MergeRecord to CF_MERGE_HISTORY
+        {
+            use context_graph_core::types::audit::MergeRecord;
+            let merge_record = MergeRecord {
+                id: Uuid::new_v4(),
+                merged_id,
+                source_ids: input.source_ids.clone(),
+                strategy: format!("{:?}", input.merge_strategy),
+                rationale: input.rationale.clone(),
+                operator_id: input.operator_id.clone(),
+                timestamp: now,
+                reversal_hash: reversal_hash.clone(),
+                original_fingerprints_json: reversal_record.original_fingerprints_json.clone(),
+            };
+
+            if let Err(e) = self.teleological_store.append_merge_record(&merge_record).await {
+                warn!(
+                    merged_id = %merged_id,
+                    error = %e,
+                    "merge_concepts: Failed to write permanent merge history (merge completed successfully)"
+                );
+            } else {
+                debug!(
+                    merged_id = %merged_id,
+                    merge_record_id = %merge_record.id,
+                    "merge_concepts: Permanent merge history record written to CF_MERGE_HISTORY"
                 );
             }
         }

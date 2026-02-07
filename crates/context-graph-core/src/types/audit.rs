@@ -35,6 +35,80 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 // ============================================================================
+// Merge History (Phase 4, item 5.10)
+// ============================================================================
+
+/// Permanent merge history record (Phase 4, item 5.10).
+///
+/// Unlike ReversalRecord which expires after 30 days, MergeRecord is permanent.
+/// Stored in CF_MERGE_HISTORY for complete lineage tracking.
+///
+/// # Key Format (CF_MERGE_HISTORY)
+///
+/// `{merged_uuid_bytes}_{timestamp_nanos_be}` (16 + 8 = 24 bytes)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MergeRecord {
+    /// Unique identifier for this merge record
+    pub id: Uuid,
+    /// UUID of the newly created merged fingerprint
+    pub merged_id: Uuid,
+    /// UUIDs of the source memories that were merged
+    pub source_ids: Vec<Uuid>,
+    /// The merge strategy used (e.g., "Union", "Intersection", "WeightedAverage")
+    pub strategy: String,
+    /// Why the merge was performed
+    pub rationale: String,
+    /// Who initiated the merge
+    pub operator_id: Option<String>,
+    /// When the merge occurred
+    pub timestamp: DateTime<Utc>,
+    /// SHA-256 reversal hash for linking to ReversalRecord
+    pub reversal_hash: String,
+    /// Serialized original fingerprints (for permanent audit trail)
+    pub original_fingerprints_json: Vec<String>,
+}
+
+impl MergeRecord {
+    /// Generate the storage key for CF_MERGE_HISTORY.
+    ///
+    /// Format: `{merged_uuid_bytes}_{timestamp_nanos_be}` (24 bytes).
+    pub fn storage_key(&self) -> [u8; 24] {
+        let mut key = [0u8; 24];
+        key[..16].copy_from_slice(self.merged_id.as_bytes());
+        let nanos = self.timestamp.timestamp_nanos_opt().unwrap_or(0);
+        key[16..24].copy_from_slice(&nanos.to_be_bytes());
+        key
+    }
+
+    /// Generate a prefix key for scanning all merge records for a given merged_id.
+    pub fn prefix_key(merged_id: &Uuid) -> [u8; 16] {
+        let mut prefix = [0u8; 16];
+        prefix.copy_from_slice(merged_id.as_bytes());
+        prefix
+    }
+}
+
+impl ImportanceChangeRecord {
+    /// Generate the storage key for CF_IMPORTANCE_HISTORY.
+    ///
+    /// Format: `{memory_uuid_bytes}_{timestamp_nanos_be}` (24 bytes).
+    pub fn storage_key(&self) -> [u8; 24] {
+        let mut key = [0u8; 24];
+        key[..16].copy_from_slice(self.memory_id.as_bytes());
+        let nanos = self.timestamp.timestamp_nanos_opt().unwrap_or(0);
+        key[16..24].copy_from_slice(&nanos.to_be_bytes());
+        key
+    }
+
+    /// Generate a prefix key for scanning all changes for a given memory_id.
+    pub fn prefix_key(memory_id: &Uuid) -> [u8; 16] {
+        let mut prefix = [0u8; 16];
+        prefix.copy_from_slice(memory_id.as_bytes());
+        prefix
+    }
+}
+
+// ============================================================================
 // Importance Change History (Phase 4, item 5.11)
 // ============================================================================
 

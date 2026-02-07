@@ -285,6 +285,35 @@ impl Handlers {
                     }
                 }
 
+                // PHASE-4: Write permanent ImportanceChangeRecord to CF_IMPORTANCE_HISTORY
+                {
+                    use context_graph_core::types::audit::ImportanceChangeRecord;
+                    let change_record = ImportanceChangeRecord {
+                        memory_id: node_id,
+                        timestamp: Utc::now(),
+                        old_value: old_importance,
+                        new_value: new_importance,
+                        delta: request.delta,
+                        operator_id: request.operator_id.clone(),
+                        reason: None,
+                    };
+
+                    if let Err(e) = self.teleological_store.append_importance_change(&change_record).await {
+                        warn!(
+                            node_id = %node_id,
+                            error = %e,
+                            "boost_importance: Failed to write importance history (update completed successfully)"
+                        );
+                    } else {
+                        debug!(
+                            node_id = %node_id,
+                            old = old_importance,
+                            new = new_importance,
+                            "boost_importance: Importance history written to CF_IMPORTANCE_HISTORY"
+                        );
+                    }
+                }
+
                 // Build response using DTO factory method
                 let response = BoostImportanceResponse::new(node_id, old_importance, request.delta);
 

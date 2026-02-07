@@ -344,7 +344,7 @@ pub fn get_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamilyDes
 /// # Returns
 /// Vector of `ColumnFamilyDescriptor`s:
 /// - 11 base CFs (nodes, edges, embeddings, metadata, temporal, tags, sources, system, graph linking)
-/// - 17 Teleological CFs (fingerprints, synergy_matrix, audit_log, etc.)
+/// - 23 Teleological CFs (fingerprints, synergy_matrix, audit_log, provenance, etc.)
 /// - 13 quantized embedder CFs (emb_0 through emb_12)
 /// - 5 code CFs (code_entities, code_e7_embeddings, etc.)
 /// - 2 causal CFs (causal_relationships, causal_by_source)
@@ -367,11 +367,10 @@ pub fn get_all_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamil
 }
 
 /// Total number of column families in a fully configured Context Graph database.
-/// Base (11: 8 original + 3 graph linking) + Teleological (17: 15 active + 2 legacy) + Quantized Embedder (13) + Code (5) + Causal (2) = 48
-/// PRD v6: Autonomous module removed - topics emerge from clustering, not goal hierarchies
-/// TASK-GRAPHLINK-010: Added 3 graph linking CFs (embedder_edges, typed_edges, typed_edges_by_type)
-/// Phase 1.1 Provenance: Added 2 audit log CFs (audit_log, audit_by_target)
-pub const TOTAL_COLUMN_FAMILIES: usize = 48;
+/// Base (11: 8 original + 3 graph linking) + Teleological (23: 21 active + 2 legacy) + Quantized Embedder (13) + Code (5) + Causal (2) = 54
+/// Teleological 23 = 13 original + 2 audit log + 1 entity provenance + 2 merge/importance history
+///   + 1 tool call index + 1 consolidation recommendations + 1 embedding registry + 2 legacy
+pub const TOTAL_COLUMN_FAMILIES: usize = 54;
 
 #[cfg(test)]
 mod tests {
@@ -647,10 +646,9 @@ mod tests {
         // 11 base (8 original + 3 graph linking) + 17 teleological + 13 quantized + 5 code + 2 causal = 48
         // PRD v6: Autonomous module removed - topics emerge from clustering, not goal hierarchies
         // Teleological: 15 active + 2 legacy = 17 (includes 2 audit log CFs)
-        // TASK-GRAPHLINK-010: Added 3 graph linking CFs
         assert_eq!(
-            TOTAL_COLUMN_FAMILIES, 48,
-            "Total column families should be 48 (11 base + 17 teleological + 13 quantized + 5 code + 2 causal)"
+            TOTAL_COLUMN_FAMILIES, 54,
+            "Total column families should be 54 (11 base + 23 teleological + 13 quantized + 5 code + 2 causal)"
         );
     }
 

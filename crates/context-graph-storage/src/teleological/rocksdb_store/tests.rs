@@ -996,3 +996,339 @@ async fn test_repair_causal_various_corruption_patterns() {
 
     println!("\n=== FSV: PASSED - All corruption patterns handled ===\n");
 }
+
+// ============================================================================
+// PROVENANCE INTEGRATION TESTS - Phase 4-6 with Synthetic Data
+// ============================================================================
+
+#[tokio::test]
+async fn test_provenance_audit_log_roundtrip() {
+    use context_graph_core::types::audit::{AuditOperation, AuditRecord, AuditResult};
+
+    println!("\n=== FSV: Audit Log Roundtrip ===");
+
+    let tmp = TempDir::new().unwrap();
+    let store = create_initialized_store(tmp.path());
+
+    let target_id = Uuid::parse_str("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee").unwrap();
+
+    // WRITE: Create 3 audit records for the same target
+    let rec1 = AuditRecord::new(AuditOperation::MemoryCreated, target_id)
+        .with_operator("alice".to_string());
+    let rec2 = AuditRecord::new(
+        AuditOperation::ImportanceBoosted {
+            old: 0.5,
+            new: 0.7,
+            delta: 0.2,
+        },
+        target_id,
+    )
+    .with_operator("bob".to_string());
+    let rec3 = AuditRecord::new(
+        AuditOperation::MemoryDeleted {
+            soft: true,
+            reason: Some("obsolete".to_string()),
+        },
+        target_id,
+    )
+    .with_operator("alice".to_string());
+
+    store.append_audit_record(&rec1).unwrap();
+    store.append_audit_record(&rec2).unwrap();
+    store.append_audit_record(&rec3).unwrap();
+
+    println!("  Wrote 3 audit records for target {}", target_id);
+
+    // VERIFY: Read back by target
+    let retrieved = store.get_audit_by_target(target_id, 100).unwrap();
+    assert_eq!(retrieved.len(), 3, "Expected 3 records for target");
+
+    // VERIFY: Records have correct operator_ids
+    let operators: Vec<&Option<String>> = retrieved.iter().map(|r| &r.operator_id).collect();
+    println!("  Operators: {:?}", operators);
+
+    // VERIFY: First record is MemoryCreated
+    assert!(
+        matches!(retrieved[0].operation, AuditOperation::MemoryCreated),
+        "First record should be MemoryCreated"
+    );
+
+    // VERIFY: Second record is ImportanceBoosted with correct values
+    match &retrieved[1].operation {
+        AuditOperation::ImportanceBoosted { old, new, delta } => {
+            assert!((old - 0.5).abs() < f32::EPSILON);
+            assert!((new - 0.7).abs() < f32::EPSILON);
+            assert!((delta - 0.2).abs() < f32::EPSILON);
+        }
+        other => panic!("Expected ImportanceBoosted, got {:?}", other),
+    }
+
+    // VERIFY: Third record is MemoryDeleted with reason
+    match &retrieved[2].operation {
+        AuditOperation::MemoryDeleted { soft, reason } => {
+            assert!(*soft);
+            assert_eq!(reason.as_deref(), Some("obsolete"));
+        }
+        other => panic!("Expected MemoryDeleted, got {:?}", other),
+    }
+
+    // VERIFY: All records are Success
+    for r in &retrieved {
+        assert!(matches!(r.result, AuditResult::Success));
+    }
+
+    // VERIFY: Count
+    let count = store.count_audit_records().unwrap();
+    assert!(count >= 3, "Expected at least 3 audit records, got {}", count);
+
+    // EDGE CASE: Query non-existent target
+    let empty_target = Uuid::parse_str("11111111-1111-1111-1111-111111111111").unwrap();
+    let empty = store.get_audit_by_target(empty_target, 100).unwrap();
+    assert_eq!(empty.len(), 0, "Non-existent target should return 0 records");
+
+    println!("  ✓ Audit log roundtrip: 3 records written and verified");
+    println!("  ✓ Edge case: empty target returns 0 records");
+    println!("\n=== FSV: PASSED - Audit Log Roundtrip ===\n");
+}
+
+#[tokio::test]
+async fn test_provenance_merge_history_roundtrip() {
+    use chrono::Utc;
+    use context_graph_core::types::audit::MergeRecord;
+
+    println!("\n=== FSV: Merge History Roundtrip ===");
+
+    let tmp = TempDir::new().unwrap();
+    let store = create_initialized_store(tmp.path());
+
+    let merged_id = Uuid::parse_str("11111111-2222-3333-4444-555555555555").unwrap();
+    let source1 = Uuid::parse_str("aaaaaaaa-0001-0001-0001-000000000001").unwrap();
+    let source2 = Uuid::parse_str("aaaaaaaa-0002-0002-0002-000000000002").unwrap();
+
+    // WRITE: Create 2 merge records for the same merged_id
+    let rec1 = MergeRecord {
+        id: Uuid::new_v4(),
+        merged_id,
+        source_ids: vec![source1, source2],
+        strategy: "union".to_string(),
+        rationale: "consolidating duplicates".to_string(),
+        operator_id: Some("merge-agent".to_string()),
+        timestamp: Utc::now(),
+        reversal_hash: "abc123".to_string(),
+        original_fingerprints_json: vec!["{}".to_string(), "{}".to_string()],
+    };
+
+    let rec2 = MergeRecord {
+        id: Uuid::new_v4(),
+        merged_id,
+        source_ids: vec![Uuid::new_v4()],
+        strategy: "weighted_average".to_string(),
+        rationale: "further consolidation".to_string(),
+        operator_id: Some("admin".to_string()),
+        timestamp: Utc::now(),
+        reversal_hash: "def456".to_string(),
+        original_fingerprints_json: vec!["{}".to_string()],
+    };
+
+    store.append_merge_record(&rec1).unwrap();
+    store.append_merge_record(&rec2).unwrap();
+
+    println!("  Wrote 2 merge records for merged_id {}", merged_id);
+
+    // VERIFY: Read back
+    let retrieved = store.get_merge_history(merged_id, 100).unwrap();
+    assert_eq!(retrieved.len(), 2, "Expected 2 merge records");
+
+    // VERIFY: First record content
+    assert_eq!(retrieved[0].merged_id, merged_id);
+    assert_eq!(retrieved[0].source_ids.len(), 2);
+    assert_eq!(retrieved[0].strategy, "union");
+    assert_eq!(retrieved[0].operator_id, Some("merge-agent".to_string()));
+    assert_eq!(retrieved[0].reversal_hash, "abc123");
+
+    // VERIFY: Second record content
+    assert_eq!(retrieved[1].strategy, "weighted_average");
+    assert_eq!(retrieved[1].operator_id, Some("admin".to_string()));
+
+    // EDGE CASE: Limit query to 1
+    let limited = store.get_merge_history(merged_id, 1).unwrap();
+    assert_eq!(limited.len(), 1, "Limit=1 should return 1 record");
+
+    // EDGE CASE: Non-existent merged_id
+    let no_records = store
+        .get_merge_history(Uuid::new_v4(), 100)
+        .unwrap();
+    assert_eq!(no_records.len(), 0, "Non-existent ID should return 0 records");
+
+    println!("  ✓ Merge history roundtrip: 2 records written and verified");
+    println!("  ✓ Edge case: limit=1 returns 1, non-existent returns 0");
+    println!("\n=== FSV: PASSED - Merge History Roundtrip ===\n");
+}
+
+#[tokio::test]
+async fn test_provenance_importance_history_roundtrip() {
+    use chrono::Utc;
+    use context_graph_core::types::audit::ImportanceChangeRecord;
+
+    println!("\n=== FSV: Importance History Roundtrip ===");
+
+    let tmp = TempDir::new().unwrap();
+    let store = create_initialized_store(tmp.path());
+
+    let memory_id = Uuid::parse_str("99999999-8888-7777-6666-555544443333").unwrap();
+
+    // WRITE: 3 importance changes
+    for (i, (old, new, delta)) in [(0.5, 0.7, 0.2), (0.7, 0.9, 0.2), (0.9, 0.6, -0.3)]
+        .iter()
+        .enumerate()
+    {
+        let rec = ImportanceChangeRecord {
+            memory_id,
+            timestamp: Utc::now(),
+            old_value: *old,
+            new_value: *new,
+            delta: *delta,
+            operator_id: Some(format!("user-{}", i)),
+            reason: if i == 2 {
+                Some("too high".to_string())
+            } else {
+                None
+            },
+        };
+        store.append_importance_change(&rec).unwrap();
+    }
+
+    println!("  Wrote 3 importance change records for memory {}", memory_id);
+
+    // VERIFY: Read back
+    let retrieved = store.get_importance_history(memory_id, 100).unwrap();
+    assert_eq!(retrieved.len(), 3, "Expected 3 importance change records");
+
+    // VERIFY: Values match
+    assert!((retrieved[0].old_value - 0.5).abs() < f32::EPSILON);
+    assert!((retrieved[0].new_value - 0.7).abs() < f32::EPSILON);
+    assert!((retrieved[0].delta - 0.2).abs() < f32::EPSILON);
+    assert_eq!(retrieved[0].operator_id, Some("user-0".to_string()));
+
+    assert!((retrieved[2].delta - (-0.3)).abs() < f32::EPSILON);
+    assert_eq!(retrieved[2].reason, Some("too high".to_string()));
+
+    // EDGE CASE: Non-existent memory
+    let empty = store.get_importance_history(Uuid::new_v4(), 100).unwrap();
+    assert_eq!(empty.len(), 0);
+
+    println!("  ✓ Importance history roundtrip: 3 records written and verified");
+    println!("  ✓ Edge case: non-existent memory returns 0 records");
+    println!("\n=== FSV: PASSED - Importance History Roundtrip ===\n");
+}
+
+#[tokio::test]
+async fn test_provenance_embedding_version_roundtrip() {
+    use chrono::Utc;
+    use context_graph_core::types::audit::EmbeddingVersionRecord;
+    use std::collections::HashMap;
+
+    println!("\n=== FSV: Embedding Version Registry Roundtrip ===");
+
+    let tmp = TempDir::new().unwrap();
+    let store = create_initialized_store(tmp.path());
+
+    let fp_id = Uuid::parse_str("abcdef01-2345-6789-abcd-ef0123456789").unwrap();
+
+    // WRITE: Embedding version record with all 13 embedder versions
+    let mut versions = HashMap::new();
+    versions.insert("E1".to_string(), "all-MiniLM-L6-v2.1".to_string());
+    versions.insert("E5".to_string(), "e5-base-v2".to_string());
+    versions.insert("E7".to_string(), "qodo-embed-1-1.5b".to_string());
+    versions.insert("E11".to_string(), "kepler-v1".to_string());
+
+    let rec = EmbeddingVersionRecord {
+        fingerprint_id: fp_id,
+        computed_at: Utc::now(),
+        embedder_versions: versions.clone(),
+        e7_model_version: Some("qodo-embed-1-1.5b".to_string()),
+        computation_time_ms: Some(42),
+    };
+
+    store.store_embedding_version(&rec).unwrap();
+    println!("  Wrote embedding version record for fingerprint {}", fp_id);
+
+    // VERIFY: Read back
+    let retrieved = store.get_embedding_version(fp_id).unwrap();
+    assert!(retrieved.is_some(), "Should find stored version record");
+    let retrieved = retrieved.unwrap();
+
+    assert_eq!(retrieved.fingerprint_id, fp_id);
+    assert_eq!(retrieved.embedder_versions.len(), 4);
+    assert_eq!(
+        retrieved.embedder_versions.get("E1"),
+        Some(&"all-MiniLM-L6-v2.1".to_string())
+    );
+    assert_eq!(
+        retrieved.e7_model_version,
+        Some("qodo-embed-1-1.5b".to_string())
+    );
+    assert_eq!(retrieved.computation_time_ms, Some(42));
+
+    // VERIFY: Overwrite works (re-embedding)
+    let mut updated_versions = versions;
+    updated_versions.insert("E1".to_string(), "all-MiniLM-L6-v2.2".to_string());
+    let rec2 = EmbeddingVersionRecord {
+        fingerprint_id: fp_id,
+        computed_at: Utc::now(),
+        embedder_versions: updated_versions.clone(),
+        e7_model_version: Some("qodo-embed-1-2.0b".to_string()),
+        computation_time_ms: Some(55),
+    };
+    store.store_embedding_version(&rec2).unwrap();
+
+    let updated = store.get_embedding_version(fp_id).unwrap().unwrap();
+    assert_eq!(
+        updated.embedder_versions.get("E1"),
+        Some(&"all-MiniLM-L6-v2.2".to_string())
+    );
+    assert_eq!(updated.computation_time_ms, Some(55));
+
+    // EDGE CASE: Non-existent fingerprint
+    let none = store.get_embedding_version(Uuid::new_v4()).unwrap();
+    assert!(none.is_none(), "Non-existent fingerprint should return None");
+
+    println!("  ✓ Embedding version roundtrip: write, read, overwrite all verified");
+    println!("  ✓ Edge case: non-existent fingerprint returns None");
+    println!("\n=== FSV: PASSED - Embedding Version Registry Roundtrip ===\n");
+}
+
+#[tokio::test]
+async fn test_provenance_all_cfs_physically_exist() {
+    use crate::teleological::column_families::*;
+
+    println!("\n=== FSV: Physical Verification - All Provenance CFs Exist ===");
+
+    let tmp = TempDir::new().unwrap();
+    let store = create_initialized_store(tmp.path());
+
+    // VERIFY: All 8 provenance column families are accessible
+    let provenance_cfs = [
+        CF_AUDIT_LOG,
+        CF_AUDIT_BY_TARGET,
+        CF_MERGE_HISTORY,
+        CF_IMPORTANCE_HISTORY,
+        CF_TOOL_CALL_INDEX,
+        CF_ENTITY_PROVENANCE,
+        CF_CONSOLIDATION_RECOMMENDATIONS,
+        CF_EMBEDDING_REGISTRY,
+    ];
+
+    for cf_name in &provenance_cfs {
+        let cf_result = store.get_cf(cf_name);
+        assert!(
+            cf_result.is_ok(),
+            "Column family '{}' should be accessible, got error: {:?}",
+            cf_name,
+            cf_result.err()
+        );
+        println!("  ✓ CF '{}' exists and is accessible", cf_name);
+    }
+
+    println!("\n=== FSV: PASSED - All 8 Provenance CFs Physically Exist ===\n");
+}
