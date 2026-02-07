@@ -529,6 +529,110 @@ pub struct ListEmbedderIndexesResponse {
     pub total_vram_mb: Option<f32>,
 }
 
+// ============================================================================
+// get_memory_fingerprint DTOs
+// ============================================================================
+
+/// Request for get_memory_fingerprint tool.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetMemoryFingerprintRequest {
+    /// UUID of the memory to inspect.
+    pub memory_id: String,
+    /// Filter to specific embedders (default: all 13).
+    #[serde(default)]
+    pub embedders: Vec<String>,
+    /// Include L2 norms (default: true).
+    #[serde(default = "default_true")]
+    pub include_vector_norms: bool,
+    /// Include content text (default: false).
+    #[serde(default)]
+    pub include_content: bool,
+}
+
+impl GetMemoryFingerprintRequest {
+    /// Validate the request.
+    pub fn validate(&self) -> Result<(), String> {
+        if uuid::Uuid::parse_str(&self.memory_id).is_err() {
+            return Err(format!(
+                "Invalid memory_id '{}'. Must be a valid UUID.",
+                self.memory_id
+            ));
+        }
+        for e in &self.embedders {
+            if EmbedderId::from_str(e).is_none() {
+                return Err(format!(
+                    "Invalid embedder '{}'. Must be E1-E13.",
+                    e
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// Get the set of requested embedder IDs (empty = all 13).
+    pub fn embedder_filter(&self) -> Vec<EmbedderId> {
+        self.embedders
+            .iter()
+            .filter_map(|e| EmbedderId::from_str(e))
+            .collect()
+    }
+}
+
+/// Per-embedder introspection data.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EmbedderVectorInfo {
+    /// Embedder ID (e.g., "E1").
+    pub embedder: String,
+    /// Human-readable name.
+    pub name: String,
+    /// Vector dimension (or "sparse" for E6/E13).
+    pub dimension: String,
+    /// Whether the vector is present (non-empty).
+    pub present: bool,
+    /// Actual dimension of the stored vector.
+    pub actual_dimension: usize,
+    /// L2 norm of the vector (if includeVectorNorms=true and vector present).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l2_norm: Option<f32>,
+    /// For asymmetric embedders: directional variant info.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub variants: Option<Vec<AsymmetricVariant>>,
+}
+
+/// Asymmetric variant info (for E5, E8, E10).
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AsymmetricVariant {
+    /// Variant name (e.g., "cause", "effect", "source", "target", "intent", "context").
+    pub variant: String,
+    /// Whether this variant vector is present.
+    pub present: bool,
+    /// Dimension of this variant.
+    pub dimension: usize,
+    /// L2 norm if requested.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub l2_norm: Option<f32>,
+}
+
+/// Response for get_memory_fingerprint tool.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct GetMemoryFingerprintResponse {
+    /// Memory ID.
+    pub memory_id: Uuid,
+    /// Per-embedder vector info.
+    pub embedders: Vec<EmbedderVectorInfo>,
+    /// Total embedders with vectors present.
+    pub embedders_present: usize,
+    /// Content text (if includeContent=true).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<String>,
+    /// When the fingerprint was created.
+    pub created_at: String,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -829,13 +829,54 @@ impl Handlers {
         };
 
         // Step 2: Get weight profile for RRF fusion
-        let weights = match get_weight_profile(weight_profile) {
-            Ok(w) => w,
-            Err(e) => {
-                error!(error = %e, "get_unified_neighbors: Invalid weight profile");
-                return self.tool_error(id, &format!("Invalid weight profile: {}", e));
+        // GAP-1: custom_weights overrides weight_profile
+        let mut weights = if let Some(ref custom) = request.custom_weights {
+            let names = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"];
+            let mut w = [0.0f32; 13];
+            for (i, name) in names.iter().enumerate() {
+                if let Some(&val) = custom.get(*name) {
+                    w[i] = val as f32;
+                }
+            }
+            // Validate weights
+            if let Err(e) = context_graph_core::weights::validate_weights(&w) {
+                error!(error = %e, "get_unified_neighbors: Invalid custom weights");
+                return self.tool_error(id, &format!("Invalid custom weights: {}", e));
+            }
+            w
+        } else {
+            match get_weight_profile(weight_profile) {
+                Ok(w) => w,
+                Err(e) => {
+                    error!(error = %e, "get_unified_neighbors: Invalid weight profile");
+                    return self.tool_error(id, &format!("Invalid weight profile: {}", e));
+                }
             }
         };
+
+        // GAP-8: Apply embedder exclusions
+        if !request.exclude_embedders.is_empty() {
+            let name_to_idx = |s: &str| -> Option<usize> {
+                match s {
+                    "E1" => Some(0), "E2" => Some(1), "E3" => Some(2),
+                    "E4" => Some(3), "E5" => Some(4), "E6" => Some(5),
+                    "E7" => Some(6), "E8" => Some(7), "E9" => Some(8),
+                    "E10" => Some(9), "E11" => Some(10), "E12" => Some(11),
+                    "E13" => Some(12), _ => None,
+                }
+            };
+            for name in &request.exclude_embedders {
+                if let Some(idx) = name_to_idx(name) {
+                    weights[idx] = 0.0;
+                }
+            }
+            let sum: f32 = weights.iter().sum();
+            if sum > 0.0 {
+                for w in weights.iter_mut() { *w /= sum; }
+            } else {
+                return self.tool_error(id, "All embedders excluded - at least one must have weight > 0");
+            }
+        }
 
         // Step 3: Query K-NN graphs from each semantic embedder (excluding E2-E4 temporal)
         let mut all_candidates: HashMap<Uuid, CandidateInfo> = HashMap::new();

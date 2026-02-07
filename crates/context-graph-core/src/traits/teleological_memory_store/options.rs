@@ -1245,6 +1245,24 @@ pub struct TeleologicalSearchOptions {
     #[serde(default)]
     pub weight_profile: Option<String>,
 
+    /// Custom per-embedder weights `[f32; 13]` for multi-space search.
+    ///
+    /// When provided, overrides `weight_profile`. Must pass `validate_weights()`:
+    /// - Each weight in `[0.0, 1.0]`
+    /// - Sum must be ~1.0 (tolerance 0.01)
+    ///
+    /// Index mapping: `[E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E13]`
+    #[serde(default)]
+    pub custom_weights: Option<[f32; 13]>,
+
+    /// Embedder indices to exclude from multi-space fusion.
+    ///
+    /// When non-empty, the specified embedder weights are zeroed out and
+    /// the remaining weights are renormalized to sum to 1.0.
+    /// Index mapping: 0=E1, 1=E2, ..., 12=E13
+    #[serde(default)]
+    pub exclude_embedders: Vec<usize>,
+
     /// **DEPRECATED**: Use `temporal_options.temporal_weight` instead.
     ///
     /// Legacy recency boost factor [0.0, 1.0].
@@ -1470,6 +1488,8 @@ impl Default for TeleologicalSearchOptions {
             // Multi-space options (TASK-MULTISPACE)
             strategy: SearchStrategy::default(),
             weight_profile: None,
+            custom_weights: None,
+            exclude_embedders: Vec::new(),
             recency_boost: 0.0, // Deprecated: use temporal_options.temporal_weight
             enable_rerank: false,
             rerank_weight: Self::default_rerank_weight(),
@@ -1578,6 +1598,25 @@ impl TeleologicalSearchOptions {
     #[inline]
     pub fn with_weight_profile(mut self, profile: &str) -> Self {
         self.weight_profile = Some(profile.to_string());
+        self
+    }
+
+    /// Set custom per-embedder weights. Overrides `weight_profile` when set.
+    ///
+    /// The weights array maps `[E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E13]`.
+    /// Must pass `validate_weights()`: each in [0.0, 1.0] and sum ~1.0.
+    #[inline]
+    pub fn with_custom_weights(mut self, weights: [f32; 13]) -> Self {
+        self.custom_weights = Some(weights);
+        self
+    }
+
+    /// Exclude specific embedders from multi-space fusion.
+    ///
+    /// Excluded embedder weights are zeroed and remaining weights renormalized.
+    #[inline]
+    pub fn with_exclude_embedders(mut self, indices: Vec<usize>) -> Self {
+        self.exclude_embedders = indices;
         self
     }
 

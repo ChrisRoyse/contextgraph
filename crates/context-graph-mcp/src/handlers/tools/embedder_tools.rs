@@ -30,10 +30,11 @@ use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions};
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
 use super::embedder_dtos::{
-    AllEmbedderScores, CompareEmbedderViewsRequest, CompareEmbedderViewsResponse, EmbedderIndexInfo,
-    EmbedderRanking, EmbedderSearchResult, GetEmbedderClustersRequest,
-    ListEmbedderIndexesRequest, ListEmbedderIndexesResponse, RankedMemory,
-    SearchByEmbedderRequest, SearchByEmbedderResponse, UniqueFind,
+    AllEmbedderScores, AsymmetricVariant, CompareEmbedderViewsRequest,
+    CompareEmbedderViewsResponse, EmbedderIndexInfo, EmbedderRanking, EmbedderSearchResult,
+    EmbedderVectorInfo, GetEmbedderClustersRequest, GetMemoryFingerprintRequest,
+    GetMemoryFingerprintResponse, ListEmbedderIndexesRequest, ListEmbedderIndexesResponse,
+    RankedMemory, SearchByEmbedderRequest, SearchByEmbedderResponse, UniqueFind,
 };
 
 use super::super::Handlers;
@@ -614,6 +615,278 @@ impl Handlers {
             embedder_count = 13,
             elapsed_ms = elapsed_ms,
             "list_embedder_indexes: Listed all embedder indexes"
+        );
+
+        self.tool_result(
+            id,
+            serde_json::to_value(response).unwrap_or_else(|_| json!({})),
+        )
+    }
+
+    /// get_memory_fingerprint tool implementation.
+    ///
+    /// Retrieve per-embedder fingerprint vectors for a specific memory.
+    /// Shows dimension, L2 norm, presence, and asymmetric variants for each embedder.
+    pub(crate) async fn call_get_memory_fingerprint(
+        &self,
+        id: Option<JsonRpcId>,
+        args: serde_json::Value,
+    ) -> JsonRpcResponse {
+        let start = Instant::now();
+
+        let request: GetMemoryFingerprintRequest = match serde_json::from_value(args.clone()) {
+            Ok(req) => req,
+            Err(e) => {
+                error!(error = %e, "get_memory_fingerprint: Failed to parse request");
+                return self.tool_error(id, &format!("Invalid request: {}", e));
+            }
+        };
+
+        if let Err(e) = request.validate() {
+            error!(error = %e, "get_memory_fingerprint: Validation failed");
+            return self.tool_error(id, &e);
+        }
+
+        let memory_uuid = match Uuid::parse_str(&request.memory_id) {
+            Ok(u) => u,
+            Err(e) => {
+                error!(error = %e, memory_id = %request.memory_id, "get_memory_fingerprint: Invalid UUID");
+                return self.tool_error(id, &format!("Invalid UUID: {}", e));
+            }
+        };
+
+        info!(memory_id = %memory_uuid, "get_memory_fingerprint: Retrieving fingerprint");
+
+        // Retrieve the fingerprint from the store — FAIL FAST
+        let fingerprint = match self.teleological_store.retrieve(memory_uuid).await {
+            Ok(Some(fp)) => fp,
+            Ok(None) => {
+                warn!(memory_id = %memory_uuid, "get_memory_fingerprint: Memory not found");
+                return self.tool_error(
+                    id,
+                    &format!("Memory {} not found", memory_uuid),
+                );
+            }
+            Err(e) => {
+                error!(error = %e, memory_id = %memory_uuid, "get_memory_fingerprint: Retrieve FAILED");
+                return self.tool_error(
+                    id,
+                    &format!("Failed to retrieve memory {}: {}", memory_uuid, e),
+                );
+            }
+        };
+
+        let sem = &fingerprint.semantic;
+        let filter = request.embedder_filter();
+        let show_all = filter.is_empty();
+
+        // Helper: compute L2 norm of a dense vector
+        fn l2_norm(v: &[f32]) -> f32 {
+            v.iter().map(|x| x * x).sum::<f32>().sqrt()
+        }
+
+        use super::embedder_dtos::EmbedderId;
+
+        let all_embedders = [
+            EmbedderId::E1, EmbedderId::E2, EmbedderId::E3, EmbedderId::E4,
+            EmbedderId::E5, EmbedderId::E6, EmbedderId::E7, EmbedderId::E8,
+            EmbedderId::E9, EmbedderId::E10, EmbedderId::E11, EmbedderId::E12,
+            EmbedderId::E13,
+        ];
+
+        let mut embedder_infos: Vec<EmbedderVectorInfo> = Vec::new();
+        let mut present_count = 0usize;
+
+        for eid in &all_embedders {
+            if !show_all && !filter.contains(eid) {
+                continue;
+            }
+
+            let (present, actual_dim, norm_val, variants) = match eid {
+                EmbedderId::E1 => {
+                    let v = &sem.e1_semantic;
+                    (!v.is_empty(), v.len(), l2_norm(v), None)
+                }
+                EmbedderId::E2 => {
+                    let v = &sem.e2_temporal_recent;
+                    (!v.is_empty(), v.len(), l2_norm(v), None)
+                }
+                EmbedderId::E3 => {
+                    let v = &sem.e3_temporal_periodic;
+                    (!v.is_empty(), v.len(), l2_norm(v), None)
+                }
+                EmbedderId::E4 => {
+                    let v = &sem.e4_temporal_positional;
+                    (!v.is_empty(), v.len(), l2_norm(v), None)
+                }
+                EmbedderId::E5 => {
+                    // Asymmetric: cause + effect variants
+                    let cause = &sem.e5_causal_as_cause;
+                    let effect = &sem.e5_causal_as_effect;
+                    let active = sem.e5_active_vector();
+                    let p = !active.is_empty();
+                    let variants = Some(vec![
+                        AsymmetricVariant {
+                            variant: "cause".to_string(),
+                            present: !cause.is_empty(),
+                            dimension: cause.len(),
+                            l2_norm: if request.include_vector_norms && !cause.is_empty() {
+                                Some(l2_norm(cause))
+                            } else { None },
+                        },
+                        AsymmetricVariant {
+                            variant: "effect".to_string(),
+                            present: !effect.is_empty(),
+                            dimension: effect.len(),
+                            l2_norm: if request.include_vector_norms && !effect.is_empty() {
+                                Some(l2_norm(effect))
+                            } else { None },
+                        },
+                    ]);
+                    (p, active.len(), l2_norm(active), variants)
+                }
+                EmbedderId::E6 => {
+                    // Sparse
+                    let nnz = sem.e6_sparse.nnz();
+                    (nnz > 0, nnz, 0.0, None)
+                }
+                EmbedderId::E7 => {
+                    let v = &sem.e7_code;
+                    (!v.is_empty(), v.len(), l2_norm(v), None)
+                }
+                EmbedderId::E8 => {
+                    // Asymmetric: source + target variants
+                    let source = &sem.e8_graph_as_source;
+                    let target = &sem.e8_graph_as_target;
+                    let active = sem.e8_active_vector();
+                    let p = !active.is_empty();
+                    let variants = Some(vec![
+                        AsymmetricVariant {
+                            variant: "source".to_string(),
+                            present: !source.is_empty(),
+                            dimension: source.len(),
+                            l2_norm: if request.include_vector_norms && !source.is_empty() {
+                                Some(l2_norm(source))
+                            } else { None },
+                        },
+                        AsymmetricVariant {
+                            variant: "target".to_string(),
+                            present: !target.is_empty(),
+                            dimension: target.len(),
+                            l2_norm: if request.include_vector_norms && !target.is_empty() {
+                                Some(l2_norm(target))
+                            } else { None },
+                        },
+                    ]);
+                    (p, active.len(), l2_norm(active), variants)
+                }
+                EmbedderId::E9 => {
+                    let v = &sem.e9_hdc;
+                    (!v.is_empty(), v.len(), l2_norm(v), None)
+                }
+                EmbedderId::E10 => {
+                    // Asymmetric: intent + context variants
+                    let intent = &sem.e10_multimodal_as_intent;
+                    let context = &sem.e10_multimodal_as_context;
+                    let active = sem.e10_active_vector();
+                    let p = !active.is_empty();
+                    let variants = Some(vec![
+                        AsymmetricVariant {
+                            variant: "intent".to_string(),
+                            present: !intent.is_empty(),
+                            dimension: intent.len(),
+                            l2_norm: if request.include_vector_norms && !intent.is_empty() {
+                                Some(l2_norm(intent))
+                            } else { None },
+                        },
+                        AsymmetricVariant {
+                            variant: "context".to_string(),
+                            present: !context.is_empty(),
+                            dimension: context.len(),
+                            l2_norm: if request.include_vector_norms && !context.is_empty() {
+                                Some(l2_norm(context))
+                            } else { None },
+                        },
+                    ]);
+                    (p, active.len(), l2_norm(active), variants)
+                }
+                EmbedderId::E11 => {
+                    let v = &sem.e11_entity;
+                    (!v.is_empty(), v.len(), l2_norm(v), None)
+                }
+                EmbedderId::E12 => {
+                    // Late interaction: Vec<Vec<f32>> - each token has a 128D vector
+                    let p = !sem.e12_late_interaction.is_empty();
+                    let tokens = sem.e12_late_interaction.len();
+                    // L2 norm = norm of flattened matrix
+                    let norm = if p {
+                        sem.e12_late_interaction.iter()
+                            .flat_map(|v| v.iter())
+                            .map(|x| x * x)
+                            .sum::<f32>()
+                            .sqrt()
+                    } else { 0.0 };
+                    (p, tokens, norm, None)
+                }
+                EmbedderId::E13 => {
+                    // Sparse
+                    let nnz = sem.e13_splade.nnz();
+                    (nnz > 0, nnz, 0.0, None)
+                }
+            };
+
+            if present {
+                present_count += 1;
+            }
+
+            let norm_option = if request.include_vector_norms && present && !eid.is_sparse() {
+                Some(norm_val)
+            } else {
+                None
+            };
+
+            embedder_infos.push(EmbedderVectorInfo {
+                embedder: format!("{:?}", eid),
+                name: eid.name().to_string(),
+                dimension: eid.dimension().to_string(),
+                present,
+                actual_dimension: actual_dim,
+                l2_norm: norm_option,
+                variants,
+            });
+        }
+
+        // Optionally get content
+        let content = if request.include_content {
+            match self.teleological_store.get_content_batch(&[memory_uuid]).await {
+                Ok(contents) => contents.into_iter().next().flatten(),
+                Err(e) => {
+                    error!(error = %e, "get_memory_fingerprint: Content retrieval FAILED");
+                    return self.tool_error(
+                        id,
+                        &format!("Failed to retrieve content: {}", e),
+                    );
+                }
+            }
+        } else {
+            None
+        };
+
+        let elapsed_ms = start.elapsed().as_millis() as u64;
+
+        let response = GetMemoryFingerprintResponse {
+            memory_id: memory_uuid,
+            embedders: embedder_infos,
+            embedders_present: present_count,
+            content,
+            created_at: fingerprint.created_at.to_rfc3339(),
+        };
+
+        info!(
+            memory_id = %memory_uuid,
+            embedders_present = present_count,
+            elapsed_ms = elapsed_ms,
+            "get_memory_fingerprint: Completed fingerprint introspection"
         );
 
         self.tool_result(

@@ -200,17 +200,15 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                 "weight_profile": {
                     "type": "string",
                     "enum": [
-                        "semantic_search",
-                        "code_search",
-                        "causal_reasoning",
-                        "fact_checking",
-                        "intent_search",
-                        "intent_enhanced",
-                        "graph_reasoning",
-                        "category_weighted"
+                        "semantic_search", "causal_reasoning", "code_search", "fact_checking",
+                        "intent_search", "intent_enhanced", "graph_reasoning",
+                        "temporal_navigation", "sequence_navigation", "conversation_history",
+                        "category_weighted", "typo_tolerant",
+                        "pipeline_stage1_recall", "pipeline_stage2_scoring", "pipeline_full",
+                        "balanced"
                     ],
                     "default": "semantic_search",
-                    "description": "Weight profile for RRF fusion (default: semantic_search)"
+                    "description": "Weight profile for RRF fusion. All 16 profiles available (default: semantic_search)."
                 },
                 "top_k": {
                     "type": "integer",
@@ -235,6 +233,34 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                     "type": "boolean",
                     "default": true,
                     "description": "Include per-embedder scores and ranks in results (default: true)"
+                },
+                "custom_weights": {
+                    "type": "object",
+                    "description": "Custom per-embedder weights (overrides weight_profile). Each value 0-1, must sum to ~1.0.",
+                    "properties": {
+                        "E1":  { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E2":  { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E3":  { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E4":  { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E5":  { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E6":  { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E7":  { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E8":  { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E9":  { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E10": { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E11": { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E12": { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E13": { "type": "number", "minimum": 0, "maximum": 1 }
+                    },
+                    "additionalProperties": false
+                },
+                "exclude_embedders": {
+                    "type": "array",
+                    "description": "Embedders to exclude from fusion (their weight becomes 0, remaining renormalized).",
+                    "items": {
+                        "type": "string",
+                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"]
+                    }
                 }
             },
             "additionalProperties": false

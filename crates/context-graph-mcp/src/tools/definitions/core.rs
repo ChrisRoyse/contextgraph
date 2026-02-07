@@ -114,8 +114,48 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "weightProfile": {
                         "type": "string",
-                        "enum": ["semantic_search", "causal_reasoning", "code_search", "fact_checking", "temporal_navigation", "category_weighted", "sequence_navigation", "conversation_history", "intent_search", "intent_enhanced"],
-                        "description": "Weight profile for multi-space search. intent_search (E10=0.25) for intent-aware queries. intent_enhanced (E10=0.30) for stronger E10 weighting."
+                        "enum": [
+                            "semantic_search", "causal_reasoning", "code_search", "fact_checking",
+                            "intent_search", "intent_enhanced", "graph_reasoning",
+                            "temporal_navigation", "sequence_navigation", "conversation_history",
+                            "category_weighted", "typo_tolerant",
+                            "pipeline_stage1_recall", "pipeline_stage2_scoring", "pipeline_full",
+                            "balanced"
+                        ],
+                        "description": "Weight profile for multi-space search. All 16 profiles available. Pipeline profiles (pipeline_*) are for staged retrieval. balanced gives equal weight to all embedders."
+                    },
+                    "customWeights": {
+                        "type": "object",
+                        "description": "Custom per-embedder weights (overrides weightProfile). Each value 0-1, must sum to ~1.0. Omitted embedders default to 0.",
+                        "properties": {
+                            "E1":  { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E2":  { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E3":  { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E4":  { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E5":  { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E6":  { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E7":  { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E8":  { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E9":  { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E10": { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E11": { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E12": { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E13": { "type": "number", "minimum": 0, "maximum": 1 }
+                        },
+                        "additionalProperties": false
+                    },
+                    "excludeEmbedders": {
+                        "type": "array",
+                        "description": "Embedders to exclude from fusion (their weight becomes 0, remaining renormalized).",
+                        "items": {
+                            "type": "string",
+                            "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"]
+                        }
+                    },
+                    "includeEmbedderBreakdown": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include per-embedder scores and contribution breakdown in results. Shows which embedders contributed most to each result's ranking."
                     },
                     "enableRerank": {
                         "type": "boolean",

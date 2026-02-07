@@ -698,6 +698,47 @@ impl Handlers {
             .and_then(|v| v.as_str())
             .map(String::from);
 
+        // GAP-1: Parse custom weights (overrides weightProfile when provided)
+        let custom_weights: Option<[f32; 13]> = args
+            .get("customWeights")
+            .and_then(|v| v.as_object())
+            .map(|obj| {
+                let names = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"];
+                let mut weights = [0.0f32; 13];
+                for (i, name) in names.iter().enumerate() {
+                    if let Some(val) = obj.get(*name).and_then(|v| v.as_f64()) {
+                        weights[i] = val as f32;
+                    }
+                }
+                weights
+            });
+
+        // GAP-8: Parse exclude embedders
+        let exclude_embedders: Vec<usize> = args
+            .get("excludeEmbedders")
+            .and_then(|v| v.as_array())
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str())
+                    .filter_map(|s| {
+                        match s {
+                            "E1" => Some(0), "E2" => Some(1), "E3" => Some(2),
+                            "E4" => Some(3), "E5" => Some(4), "E6" => Some(5),
+                            "E7" => Some(6), "E8" => Some(7), "E9" => Some(8),
+                            "E10" => Some(9), "E11" => Some(10), "E12" => Some(11),
+                            "E13" => Some(12), _ => None,
+                        }
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        // GAP-6: Parse include embedder breakdown
+        let include_embedder_breakdown = args
+            .get("includeEmbedderBreakdown")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
         // TASK-MULTISPACE: Parse recency boost (default: 0.0 = no boost)
         // Per ARCH-14: Temporal is a POST-retrieval boost, not similarity
         let recency_boost = args
@@ -979,6 +1020,16 @@ impl Handlers {
 
         if let Some(ref profile) = effective_weight_profile {
             options = options.with_weight_profile(profile);
+        }
+
+        // GAP-1: Custom weights override weight profile
+        if let Some(weights) = custom_weights {
+            options = options.with_custom_weights(weights);
+        }
+
+        // GAP-8: Exclude embedders
+        if !exclude_embedders.is_empty() {
+            options = options.with_exclude_embedders(exclude_embedders);
         }
 
         // Apply temporal options - handle both new temporalWeight and legacy recencyBoost
@@ -1356,6 +1407,53 @@ impl Handlers {
                                     "positionLabel": position_label
                                 });
                             }
+                        }
+
+                        // =============================================================
+                        // GAP-6: Embedder breakdown when requested
+                        // =============================================================
+                        if include_embedder_breakdown {
+                            let mut max_rrf: f32 = 0.0;
+                            let mut dominant_idx: usize = 0;
+                            let active_count = r.embedder_scores.iter()
+                                .filter(|&&s| s > 0.0)
+                                .count();
+
+                            let breakdown: Vec<serde_json::Value> = r.embedder_scores.iter()
+                                .enumerate()
+                                .filter(|(_, &score)| score > 0.0)
+                                .map(|(idx, &score)| {
+                                    let name = embedder_names::name(idx);
+                                    let rank = r.embedder_scores.iter()
+                                        .filter(|&&s| s > score)
+                                        .count();
+                                    let weight = custom_weights
+                                        .map(|w| w[idx])
+                                        .or_else(|| effective_weight_profile.as_ref()
+                                            .and_then(|p| get_weight_profile(p))
+                                            .map(|w| w[idx]))
+                                        .unwrap_or(1.0 / 13.0);
+                                    let rrf_contribution = weight / (60.0 + rank as f32 + 1.0);
+                                    if rrf_contribution > max_rrf {
+                                        max_rrf = rrf_contribution;
+                                        dominant_idx = idx;
+                                    }
+                                    json!({
+                                        "embedder": name,
+                                        "score": score,
+                                        "rank": rank,
+                                        "weight": weight,
+                                        "rrfContribution": rrf_contribution
+                                    })
+                                })
+                                .collect();
+                            entry["embedderBreakdown"] = json!(breakdown);
+                            entry["dominantEmbedder"] = json!(embedder_names::name(dominant_idx));
+                            entry["agreementLevel"] = json!(match active_count {
+                                0..=2 => "low",
+                                3..=6 => "medium",
+                                _ => "high",
+                            });
                         }
 
                         // =============================================================

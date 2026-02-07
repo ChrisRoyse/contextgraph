@@ -69,7 +69,14 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "weightProfile": {
                         "type": "string",
                         "description": "Weight profile for retrieval. 'intent_search' (default for query), 'balanced' (default for context), or other profiles like 'code_search', 'causal_reasoning'.",
-                        "enum": ["intent_search", "intent_enhanced", "balanced", "semantic_search", "code_search", "causal_reasoning", "fact_checking", "temporal_navigation", "category_weighted", "sequence_navigation", "conversation_history"]
+                        "enum": [
+                            "semantic_search", "causal_reasoning", "code_search", "fact_checking",
+                            "intent_search", "intent_enhanced", "graph_reasoning",
+                            "temporal_navigation", "sequence_navigation", "conversation_history",
+                            "category_weighted", "typo_tolerant",
+                            "pipeline_stage1_recall", "pipeline_stage2_scoring", "pipeline_full",
+                            "balanced"
+                        ]
                     }
                 },
                 "additionalProperties": false

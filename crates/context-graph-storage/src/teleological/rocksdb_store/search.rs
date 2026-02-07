@@ -66,7 +66,7 @@ use super::types::TeleologicalStoreError;
 
 use context_graph_core::code::CodeQueryType;
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
-use context_graph_core::weights::get_weight_profile;
+use context_graph_core::weights::{get_weight_profile, validate_weights};
 
 // =============================================================================
 // HELPER FUNCTIONS
@@ -586,28 +586,80 @@ fn search_pipeline_sync(
 }
 
 /// Resolve weight profile (sync version).
+///
+/// Priority: custom_weights > weight_profile > default.
+/// After resolution, applies exclude_embedders (zero + renormalize).
 fn resolve_weights_sync(options: &TeleologicalSearchOptions) -> CoreResult<[f32; 13]> {
-    match &options.weight_profile {
-        Some(profile_name) => {
-            let weights = get_weight_profile(profile_name).map_err(|e| {
-                error!(
-                    profile = %profile_name,
-                    error = %e,
-                    "Failed to resolve weight profile - FAIL FAST"
-                );
-                CoreError::ValidationError {
-                    field: "weight_profile".to_string(),
-                    message: format!("Invalid weight profile: {}", e),
-                }
-            })?;
-            info!(profile = %profile_name, "Using weight profile");
-            Ok(weights)
+    // Step 1: Resolve base weights (custom_weights overrides weight_profile)
+    let mut weights = if let Some(custom) = &options.custom_weights {
+        // Validate custom weights - FAIL FAST on invalid input
+        validate_weights(custom).map_err(|e| {
+            error!(
+                error = %e,
+                "Custom weights validation failed - FAIL FAST"
+            );
+            CoreError::ValidationError {
+                field: "customWeights".to_string(),
+                message: format!("Invalid custom weights: {}", e),
+            }
+        })?;
+        info!("Using custom weight array");
+        *custom
+    } else {
+        match &options.weight_profile {
+            Some(profile_name) => {
+                let weights = get_weight_profile(profile_name).map_err(|e| {
+                    error!(
+                        profile = %profile_name,
+                        error = %e,
+                        "Failed to resolve weight profile - FAIL FAST"
+                    );
+                    CoreError::ValidationError {
+                        field: "weight_profile".to_string(),
+                        message: format!("Invalid weight profile: {}", e),
+                    }
+                })?;
+                info!(profile = %profile_name, "Using weight profile");
+                weights
+            }
+            None => {
+                debug!("No weight profile specified, using default semantic weights");
+                DEFAULT_SEMANTIC_WEIGHTS
+            }
         }
-        None => {
-            debug!("No weight profile specified, using default semantic weights");
-            Ok(DEFAULT_SEMANTIC_WEIGHTS)
+    };
+
+    // Step 2: Apply embedder exclusions (zero out + renormalize)
+    if !options.exclude_embedders.is_empty() {
+        for &idx in &options.exclude_embedders {
+            if idx < 13 {
+                weights[idx] = 0.0;
+            } else {
+                return Err(CoreError::ValidationError {
+                    field: "excludeEmbedders".to_string(),
+                    message: format!("Embedder index {} out of range (0-12)", idx),
+                });
+            }
         }
+        // Renormalize remaining weights to sum to 1.0
+        let sum: f32 = weights.iter().sum();
+        if sum > 0.0 {
+            for w in weights.iter_mut() {
+                *w /= sum;
+            }
+        } else {
+            return Err(CoreError::ValidationError {
+                field: "excludeEmbedders".to_string(),
+                message: "All embedders excluded - at least one must have weight > 0".to_string(),
+            });
+        }
+        info!(
+            excluded = ?options.exclude_embedders,
+            "Applied embedder exclusions and renormalized weights"
+        );
     }
+
+    Ok(weights)
 }
 
 /// Sparse search (sync version for spawn_blocking).

@@ -768,6 +768,14 @@ pub struct GetUnifiedNeighborsRequest {
     /// Whether to include per-embedder breakdown in results (default: true).
     #[serde(default = "default_include_embedder_breakdown")]
     pub include_embedder_breakdown: bool,
+
+    /// Custom per-embedder weights (overrides weight_profile). Each value 0-1, sum ~1.0.
+    #[serde(default)]
+    pub custom_weights: Option<std::collections::HashMap<String, f64>>,
+
+    /// Embedders to exclude from fusion (zeroed + renormalized).
+    #[serde(default)]
+    pub exclude_embedders: Vec<String>,
 }
 
 fn default_weight_profile() -> String {
@@ -787,6 +795,8 @@ impl Default for GetUnifiedNeighborsRequest {
             min_score: 0.0,
             include_content: false,
             include_embedder_breakdown: true,
+            custom_weights: None,
+            exclude_embedders: Vec::new(),
         }
     }
 }
@@ -1251,6 +1261,8 @@ mod tests {
             min_score: 0.1,
             include_content: true,
             include_embedder_breakdown: true,
+            custom_weights: None,
+            exclude_embedders: Vec::new(),
         };
 
         assert!(req.validate().is_ok());

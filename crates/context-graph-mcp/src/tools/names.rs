@@ -106,6 +106,7 @@ pub const SEARCH_BY_EMBEDDER: &str = "search_by_embedder";
 pub const GET_EMBEDDER_CLUSTERS: &str = "get_embedder_clusters";
 pub const COMPARE_EMBEDDER_VIEWS: &str = "compare_embedder_views";
 pub const LIST_EMBEDDER_INDEXES: &str = "list_embedder_indexes";
+pub const GET_MEMORY_FINGERPRINT: &str = "get_memory_fingerprint";
 
 // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========
 // Temporal search with E2/E3 boost applied POST-retrieval per ARCH-25.

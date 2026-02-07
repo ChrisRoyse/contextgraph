@@ -168,6 +168,9 @@ impl Handlers {
             tool_names::LIST_EMBEDDER_INDEXES => {
                 self.call_list_embedder_indexes(id, arguments).await
             }
+            tool_names::GET_MEMORY_FINGERPRINT => {
+                self.call_get_memory_fingerprint(id, arguments).await
+            }
 
             // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========
             tool_names::SEARCH_RECENT => self.call_search_recent(id, arguments).await,

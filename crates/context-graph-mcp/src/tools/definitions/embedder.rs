@@ -28,7 +28,7 @@
 use crate::tools::types::ToolDefinition;
 use serde_json::json;
 
-/// Returns embedder-first search tool definitions (4 tools).
+/// Returns embedder-first search tool definitions (5 tools).
 pub fn definitions() -> Vec<ToolDefinition> {
     vec![
         // search_by_embedder - Generic search using any embedder as primary
@@ -188,6 +188,45 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         ),
+        // get_memory_fingerprint - Introspect per-embedder vectors for a specific memory
+        ToolDefinition::new(
+            "get_memory_fingerprint",
+            "Retrieve the per-embedder fingerprint vectors for a specific memory. Returns dimension, \
+             vector norm (L2), and presence status for each of the 13 embedders. Asymmetric embedders \
+             (E5 causal, E8 graph, E10 intent) show both directional variants. Sparse embedders \
+             (E6, E13) show non-zero element count. Use to debug embedding quality, verify which \
+             embedders produced vectors, and understand how a memory is represented across all 13 spaces.",
+            json!({
+                "type": "object",
+                "required": ["memory_id"],
+                "properties": {
+                    "memory_id": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "UUID of the memory to inspect."
+                    },
+                    "embedders": {
+                        "type": "array",
+                        "description": "Filter to specific embedders (default: all 13). E.g., [\"E1\", \"E5\", \"E7\"].",
+                        "items": {
+                            "type": "string",
+                            "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"]
+                        }
+                    },
+                    "includeVectorNorms": {
+                        "type": "boolean",
+                        "default": true,
+                        "description": "Include L2 norm of each vector (default: true)."
+                    },
+                    "includeContent": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include the memory's content text (default: false)."
+                    }
+                },
+                "additionalProperties": false
+            }),
+        ),
     ]
 }
 
@@ -197,8 +236,8 @@ mod tests {
 
     #[test]
     fn test_embedder_tool_count() {
-        // 4 embedder-first search tools
-        assert_eq!(definitions().len(), 4);
+        // 5 embedder-first search tools
+        assert_eq!(definitions().len(), 5);
     }
 
     #[test]
