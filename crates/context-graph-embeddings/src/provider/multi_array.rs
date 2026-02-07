@@ -412,20 +412,25 @@ impl CausalDualEmbedderAdapter {
         content: &str,
         hint: Option<&CausalHint>,
     ) -> CoreResult<(Vec<f32>, Vec<f32>)> {
-        // Get base embeddings
-        let (mut cause_vec, mut effect_vec) = self.embed_dual(content).await?;
+        // Convert CausalHint to lightweight guidance for the embedder pipeline
+        let guidance = hint.and_then(|h| h.to_guidance());
 
-        // Apply direction bias if hint is useful
+        // Embed with LLM-guided marker detection
+        let (mut cause_vec, mut effect_vec) = self.model
+            .embed_dual_guided(content, guidance.as_ref())
+            .await
+            .map_err(|e| {
+                CoreError::Embedding(format!("E5 guided dual embedding failed: {}", e))
+            })?;
+
+        // KEEP the direction bias (complementary to marker guidance)
         if let Some(hint) = hint {
             if hint.is_useful() {
                 let (cause_bias, effect_bias) = hint.bias_factors();
 
-                // Apply bias to cause vector
                 for val in cause_vec.iter_mut() {
                     *val *= cause_bias;
                 }
-
-                // Apply bias to effect vector
                 for val in effect_vec.iter_mut() {
                     *val *= effect_bias;
                 }
@@ -435,7 +440,10 @@ impl CausalDualEmbedderAdapter {
                     cause_bias = cause_bias,
                     effect_bias = effect_bias,
                     confidence = hint.confidence,
-                    "E5: Applied LLM causal hint bias to embeddings"
+                    llm_cause_spans = hint.cause_spans.len(),
+                    llm_effect_spans = hint.effect_spans.len(),
+                    asymmetry = hint.asymmetry_strength,
+                    "E5: Applied LLM-guided marker injection + direction bias"
                 );
             }
         }
@@ -1049,6 +1057,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             total_latency,
             per_embedder_latency,
             model_ids: self.model_ids.clone(),
+            e5_hint_provenance: None,
         })
     }
 
@@ -1235,6 +1244,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             total_latency,
             per_embedder_latency,
             model_ids: self.model_ids.clone(),
+            e5_hint_provenance: None,
         })
     }
 
@@ -1414,6 +1424,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                         total_latency,
                         per_embedder_latency,
                         model_ids,
+                        e5_hint_provenance: None,
                     })
                 })
             })
@@ -1519,6 +1530,33 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             });
         }
         self.e11_entity.embed(content).await
+    }
+
+    /// Efficient E5 dual embedding without running all 13 embedders.
+    ///
+    /// Returns (as_cause, as_effect) E5 dual embeddings (768D each).
+    /// ~15ms vs ~200ms when running all 13 embedders.
+    async fn embed_e5_dual(&self, content: &str) -> CoreResult<(Vec<f32>, Vec<f32>)> {
+        if content.is_empty() {
+            return Err(CoreError::ValidationError {
+                field: "content".to_string(),
+                message: "Content cannot be empty".to_string(),
+            });
+        }
+        self.e5_causal.embed_dual(content).await
+    }
+
+    /// Efficient E1 semantic embedding without running all 13 embedders.
+    ///
+    /// Returns E1 semantic embedding (1024D).
+    async fn embed_e1_only(&self, content: &str) -> CoreResult<Vec<f32>> {
+        if content.is_empty() {
+            return Err(CoreError::ValidationError {
+                field: "content".to_string(),
+                message: "Content cannot be empty".to_string(),
+            });
+        }
+        self.e1_semantic.embed(content).await
     }
 }
 

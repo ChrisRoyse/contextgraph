@@ -479,18 +479,44 @@ impl McpServer {
 
         // MODEL-INJECTION: Get GraphModel from warm provider for E8 embeddings
         // This shares the already-loaded model (~1.3GB VRAM) with the embedding system
-        let graph_model = get_warm_graph_model().map_err(|e| {
-            error!(
-                "FATAL: Failed to get GraphModel from warm provider: {}. \
-                 Ensure embedding models are initialized before graph discovery.",
-                e
-            );
-            anyhow::anyhow!(
-                "Failed to get GraphModel: {}. \
-                 GraphDiscoveryService requires E8 model for relationship embeddings.",
-                e
-            )
-        })?;
+        //
+        // In --no-warm mode, the background task may still hold the write lock on
+        // GLOBAL_WARM_PROVIDER. We must wait for it to finish before calling
+        // get_warm_graph_model() which uses try_read().
+        let graph_model = {
+            let max_wait = Duration::from_secs(180);
+            let poll_interval = Duration::from_millis(500);
+            let start = std::time::Instant::now();
+
+            loop {
+                match get_warm_graph_model() {
+                    Ok(model) => break model,
+                    Err(e) => {
+                        let elapsed = start.elapsed();
+                        if elapsed >= max_wait {
+                            error!(
+                                "FATAL: Timed out waiting for GraphModel after {:.1}s: {}. \
+                                 Ensure embedding models are initialized before graph discovery.",
+                                elapsed.as_secs_f64(), e
+                            );
+                            return Err(anyhow::anyhow!(
+                                "Failed to get GraphModel after {:.1}s: {}. \
+                                 GraphDiscoveryService requires E8 model for relationship embeddings.",
+                                elapsed.as_secs_f64(), e
+                            ));
+                        }
+                        // Log first attempt and then every 10s
+                        if elapsed.as_millis() < 600 || elapsed.as_secs() % 10 == 0 {
+                            info!(
+                                "Waiting for warm provider to be ready ({:.1}s elapsed): {}",
+                                elapsed.as_secs_f64(), e
+                            );
+                        }
+                        tokio::time::sleep(poll_interval).await;
+                    }
+                }
+            }
+        };
         info!("GraphModel obtained from warm provider - E8 embeddings ready");
 
         let graph_discovery_config = GraphDiscoveryConfig::default();

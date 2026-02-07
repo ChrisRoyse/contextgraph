@@ -198,9 +198,9 @@ impl E5EmbedderActivator {
             }
         }
 
-        // Generate E5 embeddings with direction awareness
+        // Generate E5 embeddings with direction awareness and LLM guidance
         let embeddings = self
-            .generate_e5_embeddings(cause_content, effect_content, &analysis.direction)
+            .generate_e5_embeddings(cause_content, effect_content, &analysis.direction, analysis)
             .await?;
 
         // Count embeddings generated (2 for unidirectional, 4 for bidirectional)
@@ -246,11 +246,12 @@ impl E5EmbedderActivator {
         cause_content: &str,
         effect_content: &str,
         direction: &CausalLinkDirection,
+        analysis: &CausalAnalysisResult,
     ) -> CausalAgentResult<DirectionalEmbeddings> {
         match &self.causal_model {
             Some(causal_model) => {
-                // Use real CausalModel for production embeddings
-                self.generate_real_e5_embeddings(causal_model, cause_content, effect_content, direction)
+                // Use real CausalModel for production embeddings with LLM guidance
+                self.generate_real_e5_embeddings(causal_model, cause_content, effect_content, direction, analysis)
                     .await
             }
             None => {
@@ -274,28 +275,60 @@ impl E5EmbedderActivator {
         }
     }
 
-    /// Generate real E5 embeddings using CausalModel.
+    /// Generate real E5 embeddings using CausalModel with LLM-guided marker injection.
     ///
     /// Per ARCH-15: Uses asymmetric E5 with separate cause/effect encodings.
     /// Per AP-77: Direction modifiers are applied at search time, not embedding time.
+    ///
+    /// Constructs CausalHintGuidance from the CausalAnalysisResult so the embedder
+    /// catches domain-specific causation the static word lists miss.
     async fn generate_real_e5_embeddings(
         &self,
         causal_model: &Arc<CausalModel>,
         cause_content: &str,
         effect_content: &str,
         direction: &CausalLinkDirection,
+        analysis: &CausalAnalysisResult,
     ) -> CausalAgentResult<DirectionalEmbeddings> {
+        // Construct guidance from the analysis result
+        let asymmetry_strength = match direction {
+            CausalLinkDirection::ACausesB | CausalLinkDirection::BCausesA => {
+                analysis.confidence.clamp(0.5, 1.0)
+            }
+            CausalLinkDirection::Bidirectional => 0.2, // Low asymmetry for feedback
+            CausalLinkDirection::NoCausalLink => 0.0,
+        };
+
+        // Extract key causal phrases from the mechanism text
+        let key_phrases: Vec<String> = analysis.mechanism
+            .split_whitespace()
+            .filter(|w| w.len() > 4)
+            .take(5)
+            .map(|w| w.trim_matches(|c: char| !c.is_alphanumeric()).to_string())
+            .filter(|w| !w.is_empty())
+            .collect();
+
+        let guidance = context_graph_core::traits::CausalHintGuidance {
+            cause_spans: Vec::new(),  // No char-level spans available from pair analysis
+            effect_spans: Vec::new(),
+            key_phrases,
+            asymmetry_strength,
+            confidence: analysis.confidence,
+        };
+
+        let guidance_ref = if analysis.confidence >= 0.5 { Some(&guidance) } else { None };
+
         match direction {
             CausalLinkDirection::ACausesB => {
                 // A is cause, B is effect
-                let cause_vec = causal_model
-                    .embed_as_cause(cause_content)
+                let (cause_vec, _) = causal_model
+                    .embed_dual_guided(cause_content, guidance_ref)
                     .await
                     .map_err(|e| CausalAgentError::EmbeddingError {
                         message: format!("Failed to embed cause: {}", e),
                     })?;
-                let effect_vec = causal_model
-                    .embed_as_effect(effect_content)
+                let (_, effect_vec) = causal_model
+                    .embed_dual_guided(effect_content, guidance_ref)
                     .await
                     .map_err(|e| CausalAgentError::EmbeddingError {
                         message: format!("Failed to embed effect: {}", e),
@@ -303,20 +336,20 @@ impl E5EmbedderActivator {
                 info!(
                     cause_dim = cause_vec.len(),
                     effect_dim = effect_vec.len(),
-                    "Generated real E5 embeddings (A→B)"
+                    "Generated real E5 embeddings (A→B) with LLM guidance"
                 );
                 Ok(DirectionalEmbeddings::forward(cause_vec, effect_vec))
             }
             CausalLinkDirection::BCausesA => {
                 // B is cause, A is effect (swap roles)
-                let cause_vec = causal_model
-                    .embed_as_cause(effect_content)
+                let (cause_vec, _) = causal_model
+                    .embed_dual_guided(effect_content, guidance_ref)
                     .await
                     .map_err(|e| CausalAgentError::EmbeddingError {
                         message: format!("Failed to embed cause: {}", e),
                     })?;
-                let effect_vec = causal_model
-                    .embed_as_effect(cause_content)
+                let (_, effect_vec) = causal_model
+                    .embed_dual_guided(cause_content, guidance_ref)
                     .await
                     .map_err(|e| CausalAgentError::EmbeddingError {
                         message: format!("Failed to embed effect: {}", e),
@@ -324,20 +357,20 @@ impl E5EmbedderActivator {
                 info!(
                     cause_dim = cause_vec.len(),
                     effect_dim = effect_vec.len(),
-                    "Generated real E5 embeddings (B→A)"
+                    "Generated real E5 embeddings (B→A) with LLM guidance"
                 );
                 Ok(DirectionalEmbeddings::backward(cause_vec, effect_vec))
             }
             CausalLinkDirection::Bidirectional => {
                 // Both act as cause AND effect (feedback loop)
                 let (a_cause, a_effect) = causal_model
-                    .embed_dual(cause_content)
+                    .embed_dual_guided(cause_content, guidance_ref)
                     .await
                     .map_err(|e| CausalAgentError::EmbeddingError {
                         message: format!("Failed to embed A dual: {}", e),
                     })?;
                 let (b_cause, b_effect) = causal_model
-                    .embed_dual(effect_content)
+                    .embed_dual_guided(effect_content, guidance_ref)
                     .await
                     .map_err(|e| CausalAgentError::EmbeddingError {
                         message: format!("Failed to embed B dual: {}", e),
@@ -345,7 +378,7 @@ impl E5EmbedderActivator {
                 info!(
                     a_dim = a_cause.len(),
                     b_dim = b_cause.len(),
-                    "Generated real E5 bidirectional embeddings (A↔B)"
+                    "Generated real E5 bidirectional embeddings (A↔B) with LLM guidance"
                 );
                 Ok(DirectionalEmbeddings::bidirectional(
                     a_cause, a_effect, b_cause, b_effect,

@@ -24,9 +24,10 @@ pub use graph_index::GraphIndex;
 // CAUSAL-HINT: Added CausalHint and CausalDirectionHint for E5 enhancement
 // MULTI-REL: Added ExtractedCausalRelationship, MechanismType, MultiRelationshipResult
 pub use multi_array_embedding::{
-    CausalDirectionHint, CausalHint, EmbeddingMetadata, ExtractedCausalRelationship,
-    MechanismType, MultiArrayEmbeddingOutput, MultiArrayEmbeddingProvider,
-    MultiRelationshipResult, SingleEmbedder, SparseEmbedder, TokenEmbedder,
+    CausalDirectionHint, CausalHint, CausalHintGuidance, EmbeddingHintProvenance,
+    EmbeddingMetadata, ExtractedCausalRelationship, MechanismType, MultiArrayEmbeddingOutput,
+    MultiArrayEmbeddingProvider, MultiRelationshipResult, SingleEmbedder, SparseEmbedder,
+    TokenEmbedder,
 };
 
 // Teleological memory store trait - TASK-F008

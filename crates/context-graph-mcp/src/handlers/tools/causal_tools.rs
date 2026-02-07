@@ -79,93 +79,185 @@ impl Handlers {
         let top_k = request.top_k;
         let min_score = request.min_score;
 
+        let search_scope = &request.search_scope;
+
         info!(
             query_preview = %query.chars().take(50).collect::<String>(),
             top_k = top_k,
             min_score = min_score,
+            search_scope = %search_scope,
             "search_causes: Starting abductive search"
         );
 
-        // Step 1: Embed the effect query
-        let query_embedding = match self.multi_array_provider.embed_all(query).await {
-            Ok(output) => output.fingerprint,
-            Err(e) => {
-                error!(error = %e, "search_causes: Query embedding FAILED");
-                return self.tool_error(id, &format!("Query embedding failed: {}", e));
+        // Step 1: Embed the query
+        // For "relationships" scope, we only need E5 dual vectors (much faster).
+        // For "memories" or "all", we need full 13-embedder fingerprint.
+        let search_memories = search_scope == "memories" || search_scope == "all";
+        let search_relationships = search_scope == "relationships" || search_scope == "all";
+
+        let query_embedding = if search_memories {
+            match self.multi_array_provider.embed_all(query).await {
+                Ok(output) => Some(output.fingerprint),
+                Err(e) => {
+                    error!(error = %e, "search_causes: Query embedding FAILED");
+                    return self.tool_error(id, &format!("Query embedding failed: {}", e));
+                }
             }
+        } else {
+            None
         };
 
-        // Step 2: Search for candidates (5x over-fetch for abductive reranking)
-        let fetch_multiplier = 5;
-        let fetch_top_k = top_k * fetch_multiplier;
-
-        // Parse strategy from request - Pipeline enables E13 recall + E12 reranking
-        let strategy = request.parse_strategy();
-        let enable_rerank = matches!(strategy, SearchStrategy::Pipeline);
-
-        info!(
-            strategy = ?strategy,
-            enable_rerank = enable_rerank,
-            rerank_weight = request.rerank_weight,
-            "search_causes: Using search strategy"
-        );
-
-        let options = TeleologicalSearchOptions::quick(fetch_top_k)
-            .with_strategy(strategy)
-            .with_weight_profile("causal_reasoning")
-            .with_min_similarity(0.0) // Get all candidates, filter later
-            .with_causal_direction(CausalDirection::Cause) // Seeking causes
-            .with_rerank(enable_rerank) // Auto-enable E12 for pipeline
-            .with_rerank_weight(request.rerank_weight); // User-configurable E12 weight
-
-        let candidates = match self
-            .teleological_store
-            .search_semantic(&query_embedding, options)
-            .await
-        {
-            Ok(results) => results,
-            Err(e) => {
-                error!(error = %e, "search_causes: Candidate search FAILED");
-                return self.tool_error(id, &format!("Search failed: {}", e));
+        // Get E5 effect vector for relationship search
+        let e5_effect_vec = if search_relationships {
+            if let Some(ref fp) = query_embedding {
+                // Already have full fingerprint — extract E5 effect vector
+                Some(fp.e5_causal_as_effect.clone())
+            } else {
+                // Relationships-only: use efficient E5-only path
+                match self.multi_array_provider.embed_e5_dual(query).await {
+                    Ok((_cause_vec, effect_vec)) => Some(effect_vec),
+                    Err(e) => {
+                        error!(error = %e, "search_causes: E5 dual embedding FAILED");
+                        return self.tool_error(id, &format!("E5 embedding failed: {}", e));
+                    }
+                }
             }
+        } else {
+            None
         };
 
-        let candidates_evaluated = candidates.len();
-        debug!(
-            candidates_evaluated = candidates_evaluated,
-            "search_causes: Evaluating candidates for abductive scoring"
-        );
-
-        // Step 3: Apply abductive scoring using rank_causes_by_abduction
-        let candidate_pairs: Vec<(Uuid, SemanticFingerprint)> = candidates
-            .iter()
-            .map(|r| (r.fingerprint.id, r.fingerprint.semantic.clone()))
-            .collect();
-
-        let abduction_results = rank_causes_by_abduction(&query_embedding, &candidate_pairs);
-
-        // Step 4: Filter by minScore and prepare response
         let mut filtered_count = 0;
-        let causes: Vec<CauseSearchResult> = abduction_results
-            .into_iter()
-            .filter_map(|result| {
-                // The abduction score already has 0.8x dampening applied
-                let score = result.score;
+        let mut candidates_evaluated = 0usize;
+        let mut all_causes: Vec<CauseSearchResult> = Vec::new();
 
+        // ---- Path A: Search fingerprint HNSW (memories) ----
+        if search_memories {
+            let fp = query_embedding.as_ref().unwrap();
+
+            let fetch_multiplier = 5;
+            let fetch_top_k = top_k * fetch_multiplier;
+
+            let strategy = request.parse_strategy();
+            let enable_rerank = matches!(strategy, SearchStrategy::Pipeline);
+
+            info!(
+                strategy = ?strategy,
+                enable_rerank = enable_rerank,
+                rerank_weight = request.rerank_weight,
+                "search_causes: Using search strategy"
+            );
+
+            let options = TeleologicalSearchOptions::quick(fetch_top_k)
+                .with_strategy(strategy)
+                .with_weight_profile("causal_reasoning")
+                .with_min_similarity(0.0)
+                .with_causal_direction(CausalDirection::Cause)
+                .with_rerank(enable_rerank)
+                .with_rerank_weight(request.rerank_weight);
+
+            let candidates = match self
+                .teleological_store
+                .search_semantic(fp, options)
+                .await
+            {
+                Ok(results) => results,
+                Err(e) => {
+                    error!(error = %e, "search_causes: Candidate search FAILED");
+                    return self.tool_error(id, &format!("Search failed: {}", e));
+                }
+            };
+
+            candidates_evaluated += candidates.len();
+
+            let candidate_pairs: Vec<(Uuid, SemanticFingerprint)> = candidates
+                .iter()
+                .map(|r| (r.fingerprint.id, r.fingerprint.semantic.clone()))
+                .collect();
+
+            let abduction_results = rank_causes_by_abduction(fp, &candidate_pairs);
+
+            let memory_causes: Vec<CauseSearchResult> = abduction_results
+                .into_iter()
+                .filter_map(|result| {
+                    let score = result.score;
+                    if score < min_score {
+                        filtered_count += 1;
+                        return None;
+                    }
+                    Some(CauseSearchResult {
+                        cause_id: result.cause_id,
+                        score,
+                        raw_similarity: result.raw_similarity,
+                        causal_direction: None,
+                        content: None,
+                        source: None,
+                        result_source: if search_scope == "all" {
+                            Some("fingerprint".to_string())
+                        } else {
+                            None
+                        },
+                    })
+                })
+                .collect();
+
+            all_causes.extend(memory_causes);
+        }
+
+        // ---- Path B: Search CF_CAUSAL_RELATIONSHIPS (relationships) ----
+        if search_relationships {
+            let effect_vec = e5_effect_vec.as_ref().unwrap();
+            let rel_top_k = if search_memories { top_k * 2 } else { top_k * 5 };
+
+            let rel_results = match self
+                .teleological_store
+                .search_causal_e5(effect_vec, true, rel_top_k)
+                .await
+            {
+                Ok(results) => results,
+                Err(e) => {
+                    error!(error = %e, "search_causes: Relationship search FAILED");
+                    return self.tool_error(id, &format!("Relationship search failed: {}", e));
+                }
+            };
+
+            candidates_evaluated += rel_results.len();
+
+            // Fetch full CausalRelationships to get source_fingerprint_id
+            for (rel_id, similarity) in &rel_results {
+                let score = similarity * ABDUCTIVE_DAMPENING; // Apply same dampening
                 if score < min_score {
                     filtered_count += 1;
-                    return None;
+                    continue;
                 }
 
-                Some(CauseSearchResult {
-                    cause_id: result.cause_id,
-                    score,
-                    raw_similarity: result.raw_similarity,
-                    causal_direction: None, // Will be populated from source metadata
-                    content: None,
-                    source: None,
-                })
-            })
+                // Retrieve the relationship to get source_fingerprint_id
+                if let Ok(Some(rel)) = self.teleological_store.get_causal_relationship(*rel_id).await {
+                    all_causes.push(CauseSearchResult {
+                        cause_id: rel.source_fingerprint_id,
+                        score,
+                        raw_similarity: *similarity,
+                        causal_direction: Some(rel.mechanism_type.clone()),
+                        content: None,
+                        source: None,
+                        result_source: if search_scope == "all" {
+                            Some("causal_relationship".to_string())
+                        } else {
+                            None
+                        },
+                    });
+                }
+            }
+        }
+
+        // ---- Merge and deduplicate ----
+        // Sort by score descending
+        all_causes.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+        // Deduplicate by cause_id (keep highest scoring)
+        let mut seen_ids = HashSet::new();
+        let causes: Vec<CauseSearchResult> = all_causes
+            .into_iter()
+            .filter(|c| seen_ids.insert(c.cause_id))
             .take(top_k)
             .collect();
 
@@ -334,95 +426,179 @@ impl Handlers {
         let query = &request.query;
         let top_k = request.top_k;
         let min_score = request.min_score;
+        let search_scope = &request.search_scope;
+
+        let search_memories = search_scope == "memories" || search_scope == "all";
+        let search_relationships = search_scope == "relationships" || search_scope == "all";
 
         info!(
             query_preview = %query.chars().take(50).collect::<String>(),
             top_k = top_k,
             min_score = min_score,
+            search_scope = %search_scope,
             "search_effects: Starting predictive search"
         );
 
         // Step 1: Embed the cause query
-        let query_embedding = match self.multi_array_provider.embed_all(query).await {
-            Ok(output) => output.fingerprint,
-            Err(e) => {
-                error!(error = %e, "search_effects: Query embedding FAILED");
-                return self.tool_error(id, &format!("Query embedding failed: {}", e));
+        let query_embedding = if search_memories {
+            match self.multi_array_provider.embed_all(query).await {
+                Ok(output) => Some(output.fingerprint),
+                Err(e) => {
+                    error!(error = %e, "search_effects: Query embedding FAILED");
+                    return self.tool_error(id, &format!("Query embedding failed: {}", e));
+                }
             }
+        } else {
+            None
         };
 
-        // Step 2: Search for candidates (5x over-fetch for predictive reranking)
-        let fetch_multiplier = 5;
-        let fetch_top_k = top_k * fetch_multiplier;
-
-        let strategy = request.parse_strategy();
-        let enable_rerank = matches!(strategy, SearchStrategy::Pipeline);
-
-        info!(
-            strategy = ?strategy,
-            enable_rerank = enable_rerank,
-            "search_effects: Using search strategy"
-        );
-
-        let options = TeleologicalSearchOptions::quick(fetch_top_k)
-            .with_strategy(strategy)
-            .with_weight_profile("causal_reasoning")
-            .with_min_similarity(0.0)
-            .with_causal_direction(CausalDirection::Effect) // Seeking effects
-            .with_rerank(enable_rerank)
-            .with_rerank_weight(request.rerank_weight);
-
-        let candidates = match self
-            .teleological_store
-            .search_semantic(&query_embedding, options)
-            .await
-        {
-            Ok(results) => results,
-            Err(e) => {
-                error!(error = %e, "search_effects: Candidate search FAILED");
-                return self.tool_error(id, &format!("Search failed: {}", e));
+        // Get E5 cause vector for relationship search
+        let e5_cause_vec = if search_relationships {
+            if let Some(ref fp) = query_embedding {
+                Some(fp.e5_causal_as_cause.clone())
+            } else {
+                match self.multi_array_provider.embed_e5_dual(query).await {
+                    Ok((cause_vec, _effect_vec)) => Some(cause_vec),
+                    Err(e) => {
+                        error!(error = %e, "search_effects: E5 dual embedding FAILED");
+                        return self.tool_error(id, &format!("E5 embedding failed: {}", e));
+                    }
+                }
             }
+        } else {
+            None
         };
 
-        let candidates_evaluated = candidates.len();
-        debug!(
-            candidates_evaluated = candidates_evaluated,
-            "search_effects: Evaluating candidates for predictive scoring"
-        );
-
-        // Step 3: Apply predictive scoring using rank_effects_by_prediction
-        let candidate_pairs: Vec<(Uuid, SemanticFingerprint)> = candidates
-            .iter()
-            .map(|r| (r.fingerprint.id, r.fingerprint.semantic.clone()))
-            .collect();
-
-        let prediction_results = rank_effects_by_prediction(&query_embedding, &candidate_pairs);
-
-        // Step 4: Filter by minScore and prepare response
         let mut filtered_count = 0;
-        let effects: Vec<EffectSearchResult> = prediction_results
-            .into_iter()
-            .filter_map(|result| {
-                let score = result.score;
+        let mut candidates_evaluated = 0usize;
+        let mut all_effects: Vec<EffectSearchResult> = Vec::new();
 
+        // ---- Path A: Search fingerprint HNSW (memories) ----
+        if search_memories {
+            let fp = query_embedding.as_ref().unwrap();
+
+            let fetch_multiplier = 5;
+            let fetch_top_k = top_k * fetch_multiplier;
+
+            let strategy = request.parse_strategy();
+            let enable_rerank = matches!(strategy, SearchStrategy::Pipeline);
+
+            info!(
+                strategy = ?strategy,
+                enable_rerank = enable_rerank,
+                "search_effects: Using search strategy"
+            );
+
+            let options = TeleologicalSearchOptions::quick(fetch_top_k)
+                .with_strategy(strategy)
+                .with_weight_profile("causal_reasoning")
+                .with_min_similarity(0.0)
+                .with_causal_direction(CausalDirection::Effect)
+                .with_rerank(enable_rerank)
+                .with_rerank_weight(request.rerank_weight);
+
+            let candidates = match self
+                .teleological_store
+                .search_semantic(fp, options)
+                .await
+            {
+                Ok(results) => results,
+                Err(e) => {
+                    error!(error = %e, "search_effects: Candidate search FAILED");
+                    return self.tool_error(id, &format!("Search failed: {}", e));
+                }
+            };
+
+            candidates_evaluated += candidates.len();
+
+            let candidate_pairs: Vec<(Uuid, SemanticFingerprint)> = candidates
+                .iter()
+                .map(|r| (r.fingerprint.id, r.fingerprint.semantic.clone()))
+                .collect();
+
+            let prediction_results = rank_effects_by_prediction(fp, &candidate_pairs);
+
+            let memory_effects: Vec<EffectSearchResult> = prediction_results
+                .into_iter()
+                .filter_map(|result| {
+                    let score = result.score;
+                    if score < min_score {
+                        filtered_count += 1;
+                        return None;
+                    }
+                    Some(EffectSearchResult {
+                        effect_id: result.effect_id,
+                        score,
+                        raw_similarity: result.raw_similarity,
+                        causal_direction: None,
+                        content: None,
+                        source: None,
+                        result_source: if search_scope == "all" {
+                            Some("fingerprint".to_string())
+                        } else {
+                            None
+                        },
+                    })
+                })
+                .collect();
+
+            all_effects.extend(memory_effects);
+        }
+
+        // ---- Path B: Search CF_CAUSAL_RELATIONSHIPS (relationships) ----
+        if search_relationships {
+            let cause_vec = e5_cause_vec.as_ref().unwrap();
+            let rel_top_k = if search_memories { top_k * 2 } else { top_k * 5 };
+
+            let rel_results = match self
+                .teleological_store
+                .search_causal_e5(cause_vec, false, rel_top_k) // false = search effect vectors
+                .await
+            {
+                Ok(results) => results,
+                Err(e) => {
+                    error!(error = %e, "search_effects: Relationship search FAILED");
+                    return self.tool_error(id, &format!("Relationship search failed: {}", e));
+                }
+            };
+
+            candidates_evaluated += rel_results.len();
+
+            for (rel_id, similarity) in &rel_results {
+                let score = similarity * PREDICTIVE_BOOST; // Apply predictive boost
                 if score < min_score {
                     filtered_count += 1;
-                    return None;
+                    continue;
                 }
 
-                Some(EffectSearchResult {
-                    effect_id: result.effect_id,
-                    score,
-                    raw_similarity: result.raw_similarity,
-                    causal_direction: None,
-                    content: None,
-                    source: None,
-                })
-            })
+                if let Ok(Some(rel)) = self.teleological_store.get_causal_relationship(*rel_id).await {
+                    all_effects.push(EffectSearchResult {
+                        effect_id: rel.source_fingerprint_id,
+                        score,
+                        raw_similarity: *similarity,
+                        causal_direction: Some(rel.mechanism_type.clone()),
+                        content: None,
+                        source: None,
+                        result_source: if search_scope == "all" {
+                            Some("causal_relationship".to_string())
+                        } else {
+                            None
+                        },
+                    });
+                }
+            }
+        }
+
+        // ---- Merge and deduplicate ----
+        all_effects.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+
+        let mut seen_ids = HashSet::new();
+        let effects: Vec<EffectSearchResult> = all_effects
+            .into_iter()
+            .filter(|e| seen_ids.insert(e.effect_id))
             .take(top_k)
             .collect();
 
-        // Step 5: Optionally filter by causal direction and hydrate content
         let effect_ids: Vec<Uuid> = effects.iter().map(|e| e.effect_id).collect();
 
         // Get source metadata - FAIL FAST on error

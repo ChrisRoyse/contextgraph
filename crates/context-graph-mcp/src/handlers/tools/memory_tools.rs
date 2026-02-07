@@ -426,6 +426,7 @@ impl Handlers {
                     tool_use_id: None,
                     mcp_request_id: None,
                     hook_execution_timestamp_ms: None,
+                    embedding_hint_provenance: embedding_output.e5_hint_provenance.clone(),
                 };
 
                 if let Err(e) = self
@@ -467,6 +468,7 @@ impl Handlers {
                         "importance": importance,
                         "content_size": content.len(),
                         "causal_direction": causal_direction,
+                        "embedding_hint_provenance": embedding_output.e5_hint_provenance,
                     }));
 
                     if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {

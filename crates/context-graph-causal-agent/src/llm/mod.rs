@@ -254,15 +254,21 @@ ws ::= [ \t\n\r]*"#
     /// Includes description field for 1-3 paragraph causal relationship descriptions.
     /// Description enables apples-to-apples semantic search of causal content.
     const fn default_single_text_grammar() -> &'static str {
-        r#"root ::= "{" ws is-causal "," ws direction "," ws confidence "," ws key-phrases "," ws description ws "}"
+        r#"root ::= "{" ws is-causal "," ws direction "," ws confidence "," ws key-phrases "," ws description "," ws asymmetry "," ws cause-entities "," ws effect-entities ws "}"
 is-causal ::= "\"is_causal\"" ws ":" ws boolean
 direction ::= "\"direction\"" ws ":" ws direction-value
 confidence ::= "\"confidence\"" ws ":" ws number
 key-phrases ::= "\"key_phrases\"" ws ":" ws phrase-array
 description ::= "\"description\"" ws ":" ws string
+asymmetry ::= "\"asymmetry_strength\"" ws ":" ws number
+cause-entities ::= "\"cause_entities\"" ws ":" ws entity-array
+effect-entities ::= "\"effect_entities\"" ws ":" ws entity-array
+entity-array ::= "[" ws (entity-span (ws "," ws entity-span)*)? ws "]"
+entity-span ::= "{" ws "\"start\"" ws ":" ws integer "," ws "\"end\"" ws ":" ws integer "," ws "\"label\"" ws ":" ws string ws "}"
 direction-value ::= "\"cause\"" | "\"effect\"" | "\"neutral\""
 boolean ::= "true" | "false"
 number ::= "0" ("." [0-9] [0-9]?)? | "1" ("." "0" "0"?)?
+integer ::= [0-9]+
 phrase-array ::= "[" ws (string (ws "," ws string)*)? ws "]"
 string ::= "\"" ([^"\\] | "\\" .)* "\""
 ws ::= [ \t\n\r]*"#
@@ -504,6 +510,14 @@ ws ::= [ \t\n\r]*"#
         // Format: {"is_causal":true/false,"direction":"cause"/"effect"/"neutral","confidence":0.0-1.0,"key_phrases":[],"description":"..."}
 
         #[derive(Deserialize)]
+        struct EntitySpan {
+            start: usize,
+            end: usize,
+            #[allow(dead_code)]
+            label: String,
+        }
+
+        #[derive(Deserialize)]
         struct SingleTextResponse {
             is_causal: bool,
             direction: String,
@@ -511,6 +525,12 @@ ws ::= [ \t\n\r]*"#
             key_phrases: Vec<String>,
             #[serde(default)]
             description: Option<String>,
+            #[serde(default)]
+            asymmetry_strength: Option<f32>,
+            #[serde(default)]
+            cause_entities: Vec<EntitySpan>,
+            #[serde(default)]
+            effect_entities: Vec<EntitySpan>,
         }
 
         // Try JSON parsing first (should work due to grammar constraint)
@@ -525,6 +545,10 @@ ws ::= [ \t\n\r]*"#
                 );
                 // Set description if provided and non-empty
                 hint.description = parsed.description.filter(|d| !d.is_empty());
+                // Set LLM-identified entity spans
+                hint.cause_spans = parsed.cause_entities.iter().map(|e| (e.start, e.end)).collect();
+                hint.effect_spans = parsed.effect_entities.iter().map(|e| (e.start, e.end)).collect();
+                hint.asymmetry_strength = parsed.asymmetry_strength.unwrap_or(0.0).clamp(0.0, 1.0);
                 Ok(hint)
             }
             Err(e) => {

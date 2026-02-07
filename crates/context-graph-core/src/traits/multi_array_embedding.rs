@@ -118,6 +118,9 @@ pub struct MultiArrayEmbeddingOutput {
     /// Useful for tracking which models generated embeddings
     /// and ensuring version consistency.
     pub model_ids: [String; NUM_EMBEDDERS],
+
+    /// Provenance from LLM-guided E5 marker detection (if hint was applied).
+    pub e5_hint_provenance: Option<EmbeddingHintProvenance>,
 }
 
 impl MultiArrayEmbeddingOutput {
@@ -289,6 +292,23 @@ pub struct CausalHint {
     /// Used for embedding and searching causal relationships with provenance.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+
+    /// LLM-identified cause entity spans in the original text.
+    /// Each span is (start_char, end_char) pointing into the content string.
+    /// Tokens overlapping these spans get MARKER_BOOST in cause-weighted pooling.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cause_spans: Vec<(usize, usize)>,
+
+    /// LLM-identified effect entity spans in the original text.
+    /// Tokens overlapping these spans get MARKER_BOOST in effect-weighted pooling.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub effect_spans: Vec<(usize, usize)>,
+
+    /// Asymmetry strength [0.0-1.0]. How directional is the causal relationship?
+    /// 1.0 = strongly directional, 0.0 = bidirectional/symmetric.
+    /// Modulates the marker boost factor: effective_boost = MARKER_BOOST * (0.5 + 0.5 * asymmetry_strength)
+    #[serde(default)]
+    pub asymmetry_strength: f32,
 }
 
 impl CausalHint {
@@ -308,6 +328,9 @@ impl CausalHint {
             confidence: confidence.clamp(0.0, 1.0),
             key_phrases,
             description: None,
+            cause_spans: Vec::new(),
+            effect_spans: Vec::new(),
+            asymmetry_strength: 0.0,
         }
     }
 
@@ -325,6 +348,9 @@ impl CausalHint {
             confidence: confidence.clamp(0.0, 1.0),
             key_phrases,
             description,
+            cause_spans: Vec::new(),
+            effect_spans: Vec::new(),
+            asymmetry_strength: 0.0,
         }
     }
 
@@ -336,6 +362,9 @@ impl CausalHint {
             confidence: 1.0,
             key_phrases: Vec::new(),
             description: None,
+            cause_spans: Vec::new(),
+            effect_spans: Vec::new(),
+            asymmetry_strength: 0.0,
         }
     }
 
@@ -352,6 +381,69 @@ impl CausalHint {
             (1.0, 1.0)
         }
     }
+
+    /// Convert to lightweight guidance struct for the embedder pipeline.
+    /// Returns None if the hint is not useful for guiding embeddings.
+    pub fn to_guidance(&self) -> Option<CausalHintGuidance> {
+        if !self.is_useful() {
+            return None;
+        }
+        Some(CausalHintGuidance {
+            cause_spans: self.cause_spans.clone(),
+            effect_spans: self.effect_spans.clone(),
+            key_phrases: self.key_phrases.clone(),
+            asymmetry_strength: self.asymmetry_strength,
+            confidence: self.confidence,
+        })
+    }
+}
+
+/// LLM guidance for marker detection. Lightweight, no LLM text content.
+/// Passed from CausalHint down to the embedder's marker detection pipeline.
+#[derive(Debug, Clone, Default)]
+pub struct CausalHintGuidance {
+    /// Char offsets of cause entities in source text.
+    pub cause_spans: Vec<(usize, usize)>,
+    /// Char offsets of effect entities in source text.
+    pub effect_spans: Vec<(usize, usize)>,
+    /// Additional marker words/phrases from LLM analysis.
+    pub key_phrases: Vec<String>,
+    /// Asymmetry strength [0.0-1.0] from LLM.
+    pub asymmetry_strength: f32,
+    /// Overall confidence of the LLM hint.
+    pub confidence: f32,
+}
+
+/// Provenance record for LLM-guided embedding enhancement.
+/// Tracks what the LLM contributed and how it influenced the final vectors.
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct EmbeddingHintProvenance {
+    /// Was an LLM hint available and used?
+    pub hint_applied: bool,
+    /// LLM model that produced the hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub llm_model: Option<String>,
+    /// Number of static markers detected (from CAUSE_INDICATORS/EFFECT_INDICATORS).
+    pub static_cause_markers: usize,
+    pub static_effect_markers: usize,
+    /// Number of LLM-guided markers injected (from key_phrases + entity spans).
+    pub llm_cause_markers: usize,
+    pub llm_effect_markers: usize,
+    /// Direction hint applied.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    /// Confidence of the LLM hint.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint_confidence: Option<f32>,
+    /// Asymmetry strength from LLM.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub asymmetry_strength: Option<f32>,
+    /// Effective marker boost used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub effective_marker_boost: Option<f32>,
+    /// Timestamp of hint generation (epoch millis).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub hint_generated_at: Option<i64>,
 }
 
 // ============================================================================
@@ -1099,6 +1191,7 @@ mod tests {
             total_latency: Duration::from_millis(25), // Under 30ms
             per_embedder_latency: [Duration::from_millis(2); NUM_EMBEDDERS],
             model_ids: core::array::from_fn(|i| format!("model-e{}", i + 1)),
+            e5_hint_provenance: None,
         };
         assert!(output.is_within_latency_target());
     }
@@ -1111,6 +1204,7 @@ mod tests {
             total_latency: Duration::from_millis(50), // Over 30ms
             per_embedder_latency: [Duration::from_millis(4); NUM_EMBEDDERS],
             model_ids: core::array::from_fn(|i| format!("model-e{}", i + 1)),
+            e5_hint_provenance: None,
         };
         assert!(!output.is_within_latency_target());
     }
@@ -1123,6 +1217,7 @@ mod tests {
             total_latency: Duration::from_millis(30), // Exactly 30ms
             per_embedder_latency: [Duration::from_millis(2); NUM_EMBEDDERS],
             model_ids: core::array::from_fn(|_| String::new()),
+            e5_hint_provenance: None,
         };
         // 30ms is NOT within target (must be strictly less than 30ms)
         assert!(!output.is_within_latency_target());
@@ -1146,6 +1241,7 @@ mod tests {
             total_latency: Duration::ZERO,
             per_embedder_latency: [Duration::ZERO; NUM_EMBEDDERS],
             model_ids: core::array::from_fn(|_| String::new()),
+            e5_hint_provenance: None,
         };
 
         let truncated = output.e1_matryoshka_128();
@@ -1225,6 +1321,7 @@ mod tests {
             total_latency: Duration::from_millis(20),
             per_embedder_latency: latencies,
             model_ids: core::array::from_fn(|_| String::new()),
+            e5_hint_provenance: None,
         };
 
         let (idx, latency) = output.slowest_embedder();
@@ -1243,6 +1340,7 @@ mod tests {
             total_latency: Duration::from_millis(60),
             per_embedder_latency: latencies,
             model_ids: core::array::from_fn(|_| String::new()),
+            e5_hint_provenance: None,
         };
 
         let (idx, latency) = output.fastest_embedder();
@@ -1260,6 +1358,7 @@ mod tests {
             total_latency: Duration::from_millis(26),
             per_embedder_latency: latencies,
             model_ids: core::array::from_fn(|_| String::new()),
+            e5_hint_provenance: None,
         };
 
         let avg = output.average_embedder_latency();
@@ -1361,6 +1460,7 @@ mod tests {
                 "colbert-v2".to_string(),
                 "splade-v3".to_string(),
             ],
+            e5_hint_provenance: None,
         };
 
         assert_eq!(output.model_ids[0], "e5-large-v2");

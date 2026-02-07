@@ -104,11 +104,22 @@ pub struct SearchCausesRequest {
     /// Only used when strategy="pipeline" (which auto-enables E12 reranking).
     #[serde(rename = "rerankWeight", default = "default_rerank_weight")]
     pub rerank_weight: f32,
+
+    /// Search scope for result sources (default: "memories").
+    /// - "memories": Search only fingerprint HNSW (default, backward compatible)
+    /// - "relationships": Search only CF_CAUSAL_RELATIONSHIPS via E5 brute-force
+    /// - "all": Search both and merge results by score
+    #[serde(rename = "searchScope", default = "default_search_scope")]
+    pub search_scope: String,
 }
 
 /// Default E12 rerank weight (40% E12, 60% fusion).
 fn default_rerank_weight() -> f32 {
     0.4
+}
+
+fn default_search_scope() -> String {
+    "memories".to_string()
 }
 
 fn default_top_k() -> usize {
@@ -129,6 +140,7 @@ impl Default for SearchCausesRequest {
             filter_causal_direction: None,
             strategy: None,
             rerank_weight: default_rerank_weight(),
+            search_scope: default_search_scope(),
         }
     }
 }
@@ -212,6 +224,15 @@ impl SearchCausesRequest {
             ));
         }
 
+        // Validate searchScope
+        let valid_scopes = ["memories", "relationships", "all"];
+        if !valid_scopes.contains(&self.search_scope.as_str()) {
+            return Err(format!(
+                "searchScope must be one of {:?}, got '{}'",
+                valid_scopes, self.search_scope
+            ));
+        }
+
         Ok(())
     }
 }
@@ -257,6 +278,13 @@ pub struct SearchEffectsRequest {
     /// E12 rerank weight (0.0-1.0, default: 0.4).
     #[serde(rename = "rerankWeight", default = "default_rerank_weight")]
     pub rerank_weight: f32,
+
+    /// Search scope for result sources (default: "memories").
+    /// - "memories": Search only fingerprint HNSW (default, backward compatible)
+    /// - "relationships": Search only CF_CAUSAL_RELATIONSHIPS via E5 brute-force
+    /// - "all": Search both and merge results by score
+    #[serde(rename = "searchScope", default = "default_search_scope")]
+    pub search_scope: String,
 }
 
 impl Default for SearchEffectsRequest {
@@ -269,6 +297,7 @@ impl Default for SearchEffectsRequest {
             filter_causal_direction: None,
             strategy: None,
             rerank_weight: default_rerank_weight(),
+            search_scope: default_search_scope(),
         }
     }
 }
@@ -335,6 +364,15 @@ impl SearchEffectsRequest {
             return Err(format!(
                 "rerankWeight must be between 0.0 and 1.0, got {}",
                 self.rerank_weight
+            ));
+        }
+
+        // Validate searchScope
+        let valid_scopes = ["memories", "relationships", "all"];
+        if !valid_scopes.contains(&self.search_scope.as_str()) {
+            return Err(format!(
+                "searchScope must be one of {:?}, got '{}'",
+                valid_scopes, self.search_scope
             ));
         }
 
@@ -483,6 +521,11 @@ pub struct CauseSearchResult {
     /// Source metadata for provenance.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceInfo>,
+
+    /// Which store this result came from: "fingerprint" or "causal_relationship".
+    /// Only populated when searchScope is "all" or "relationships".
+    #[serde(rename = "resultSource", skip_serializing_if = "Option::is_none")]
+    pub result_source: Option<String>,
 }
 
 /// Source information for a search result.
@@ -664,6 +707,11 @@ pub struct EffectSearchResult {
     /// Source metadata for provenance.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<SourceInfo>,
+
+    /// Which store this result came from: "fingerprint" or "causal_relationship".
+    /// Only populated when searchScope is "all" or "relationships".
+    #[serde(rename = "resultSource", skip_serializing_if = "Option::is_none")]
+    pub result_source: Option<String>,
 }
 
 /// Response for search_effects tool.
@@ -866,6 +914,7 @@ mod tests {
             filter_causal_direction: Some("cause".to_string()),
             strategy: Some("pipeline".to_string()),
             rerank_weight: 0.6, // Custom E12 weight
+            search_scope: "memories".to_string(),
         };
 
         assert!(req.validate().is_ok());
@@ -970,6 +1019,64 @@ mod tests {
         };
         assert_eq!(req.parse_strategy(), SearchStrategy::Pipeline);
         println!("[PASS] parse_strategy respects user-specified pipeline");
+    }
+
+    // ===== searchScope Tests =====
+
+    #[test]
+    fn test_search_scope_default_is_memories() {
+        let json = r#"{"query": "test query"}"#;
+        let req: SearchCausesRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.search_scope, "memories");
+        assert!(req.validate().is_ok());
+        println!("[PASS] Default searchScope is 'memories'");
+    }
+
+    #[test]
+    fn test_search_scope_relationships() {
+        let json = r#"{"query": "test", "searchScope": "relationships"}"#;
+        let req: SearchCausesRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.search_scope, "relationships");
+        assert!(req.validate().is_ok());
+        println!("[PASS] searchScope='relationships' validates OK");
+    }
+
+    #[test]
+    fn test_search_scope_all() {
+        let json = r#"{"query": "test", "searchScope": "all"}"#;
+        let req: SearchCausesRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.search_scope, "all");
+        assert!(req.validate().is_ok());
+        println!("[PASS] searchScope='all' validates OK");
+    }
+
+    #[test]
+    fn test_search_scope_invalid() {
+        let json = r#"{"query": "test", "searchScope": "invalid"}"#;
+        let req: SearchCausesRequest = serde_json::from_str(json).unwrap();
+        let result = req.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("searchScope"));
+        println!("[PASS] searchScope='invalid' rejected");
+    }
+
+    #[test]
+    fn test_search_effects_scope_default() {
+        let json = r#"{"query": "test query"}"#;
+        let req: SearchEffectsRequest = serde_json::from_str(json).unwrap();
+        assert_eq!(req.search_scope, "memories");
+        assert!(req.validate().is_ok());
+        println!("[PASS] SearchEffectsRequest default searchScope is 'memories'");
+    }
+
+    #[test]
+    fn test_search_effects_scope_invalid() {
+        let json = r#"{"query": "test", "searchScope": "nowhere"}"#;
+        let req: SearchEffectsRequest = serde_json::from_str(json).unwrap();
+        let result = req.validate();
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("searchScope"));
+        println!("[PASS] SearchEffectsRequest invalid searchScope rejected");
     }
 
     // ===== GetCausalChainRequest Tests =====
@@ -1126,6 +1233,7 @@ mod tests {
                 causal_direction: Some("cause".to_string()),
                 content: None,
                 source: None,
+                result_source: None,
             }],
             count: 1,
             metadata: CauseSearchMetadata {

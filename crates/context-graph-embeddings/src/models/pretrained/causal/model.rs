@@ -350,6 +350,19 @@ impl CausalModel {
     /// # Returns
     /// Tuple of (cause_vector, effect_vector), each 768D
     pub async fn embed_dual(&self, content: &str) -> EmbeddingResult<(Vec<f32>, Vec<f32>)> {
+        self.embed_dual_guided(content, None).await
+    }
+
+    /// Embed text as BOTH cause and effect roles with optional LLM guidance.
+    ///
+    /// When guidance is provided, LLM-identified entity spans and key phrases
+    /// are injected into the marker detection pipeline, catching implicit/domain-specific
+    /// causation that static word lists miss.
+    pub async fn embed_dual_guided(
+        &self,
+        content: &str,
+        guidance: Option<&context_graph_core::traits::CausalHintGuidance>,
+    ) -> EmbeddingResult<(Vec<f32>, Vec<f32>)> {
         self.ensure_initialized()?;
 
         let state = self
@@ -366,7 +379,7 @@ impl CausalModel {
                 tokenizer,
             } => {
                 let (cause_vec, effect_vec) =
-                    gpu_forward_dual(content, weights, projection, tokenizer)?;
+                    gpu_forward_dual(content, weights, projection, tokenizer, guidance)?;
 
                 // Validate dimensions (fail fast on implementation error)
                 if cause_vec.len() != 768 || effect_vec.len() != 768 {

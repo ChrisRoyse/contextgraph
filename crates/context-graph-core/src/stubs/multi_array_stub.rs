@@ -328,6 +328,7 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
             total_latency,
             per_embedder_latency,
             model_ids: core::array::from_fn(|i| format!("stub-e{}", i + 1)),
+            e5_hint_provenance: None,
         })
     }
 

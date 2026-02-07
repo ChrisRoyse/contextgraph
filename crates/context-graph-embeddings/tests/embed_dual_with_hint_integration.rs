@@ -232,3 +232,160 @@ fn test_3_8_causal_hint_edge_cases() {
 
     println!("[PASS] Test 3.8: All edge cases handled correctly");
 }
+
+// ============================================================================
+// Phase 6 Tests: LLM-Guided Embedding Enhancement
+// ============================================================================
+
+/// Test CausalHint.to_guidance() converts correctly.
+#[test]
+fn test_6_1_causal_hint_to_guidance() {
+    println!("\n=== Test 6.1: CausalHint to_guidance() ===");
+
+    // Hint with spans and phrases → should produce guidance
+    let hint = CausalHint {
+        is_causal: true,
+        direction_hint: CausalDirectionHint::Cause,
+        confidence: 0.85,
+        key_phrases: vec!["cortisol".to_string(), "leads to".to_string()],
+        description: Some("Stress causes damage".to_string()),
+        cause_spans: vec![(0, 14)],
+        effect_spans: vec![(23, 44)],
+        asymmetry_strength: 0.9,
+    };
+
+    let guidance = hint.to_guidance();
+    assert!(guidance.is_some(), "Useful hint with spans should produce guidance");
+    let g = guidance.unwrap();
+    assert_eq!(g.cause_spans, vec![(0, 14)]);
+    assert_eq!(g.effect_spans, vec![(23, 44)]);
+    assert_eq!(g.key_phrases.len(), 2);
+    assert!((g.asymmetry_strength - 0.9).abs() < f32::EPSILON);
+    assert!((g.confidence - 0.85).abs() < f32::EPSILON);
+    println!("  Guidance with spans: OK");
+
+    // Non-causal hint → should return None
+    let non_causal = CausalHint::not_causal();
+    assert!(non_causal.to_guidance().is_none(), "Non-causal hint should produce no guidance");
+    println!("  Non-causal hint: None");
+
+    // Low confidence → should return None
+    let low_conf = CausalHint {
+        is_causal: true,
+        direction_hint: CausalDirectionHint::Cause,
+        confidence: 0.3,
+        key_phrases: vec!["test".to_string()],
+        description: None,
+        cause_spans: vec![(0, 5)],
+        effect_spans: vec![],
+        asymmetry_strength: 0.5,
+    };
+    assert!(low_conf.to_guidance().is_none(), "Low confidence hint should produce no guidance");
+    println!("  Low confidence hint: None");
+
+    println!("[PASS] Test 6.1: to_guidance() conversion verified");
+}
+
+/// Test EmbeddingHintProvenance struct serialization.
+#[test]
+fn test_6_2_embedding_hint_provenance_serde() {
+    use context_graph_core::traits::EmbeddingHintProvenance;
+
+    println!("\n=== Test 6.2: EmbeddingHintProvenance Serde ===");
+
+    let provenance = EmbeddingHintProvenance {
+        hint_applied: true,
+        llm_model: Some("Hermes-2-Pro".to_string()),
+        static_cause_markers: 3,
+        static_effect_markers: 2,
+        llm_cause_markers: 1,
+        llm_effect_markers: 2,
+        direction: Some("cause".to_string()),
+        hint_confidence: Some(0.85),
+        asymmetry_strength: Some(0.9),
+        effective_marker_boost: Some(2.375), // 2.5 * (0.5 + 0.5 * 0.9)
+        hint_generated_at: Some(1700000000),
+    };
+
+    // Serialize to JSON
+    let json = serde_json::to_string(&provenance).unwrap();
+    assert!(json.contains("\"hint_applied\":true"));
+    assert!(json.contains("\"llm_cause_markers\":1"));
+    assert!(json.contains("\"Hermes-2-Pro\""));
+    println!("  Serialized: {} bytes", json.len());
+
+    // Roundtrip
+    let deser: EmbeddingHintProvenance = serde_json::from_str(&json).unwrap();
+    assert_eq!(deser, provenance, "Roundtrip should preserve all fields");
+    println!("  Roundtrip: OK");
+
+    // Default
+    let default = EmbeddingHintProvenance::default();
+    assert!(!default.hint_applied);
+    assert_eq!(default.static_cause_markers, 0);
+    assert!(default.llm_model.is_none());
+    println!("  Default: OK");
+
+    println!("[PASS] Test 6.2: EmbeddingHintProvenance serde verified");
+}
+
+/// Test CausalHintGuidance construction and fields.
+#[test]
+fn test_6_3_causal_hint_guidance_struct() {
+    use context_graph_core::traits::CausalHintGuidance;
+
+    println!("\n=== Test 6.3: CausalHintGuidance Struct ===");
+
+    let guidance = CausalHintGuidance {
+        cause_spans: vec![(0, 14), (30, 45)],
+        effect_spans: vec![(50, 70)],
+        key_phrases: vec!["cortisol".to_string(), "hippocampal".to_string()],
+        asymmetry_strength: 0.85,
+        confidence: 0.9,
+    };
+
+    assert_eq!(guidance.cause_spans.len(), 2);
+    assert_eq!(guidance.effect_spans.len(), 1);
+    assert_eq!(guidance.key_phrases.len(), 2);
+    assert!((guidance.asymmetry_strength - 0.85).abs() < f32::EPSILON);
+
+    // Default
+    let default = CausalHintGuidance::default();
+    assert!(default.cause_spans.is_empty());
+    assert!(default.effect_spans.is_empty());
+    assert!(default.key_phrases.is_empty());
+    assert_eq!(default.asymmetry_strength, 0.0);
+    assert_eq!(default.confidence, 0.0);
+
+    println!("[PASS] Test 6.3: CausalHintGuidance struct verified");
+}
+
+/// Test new CausalHint fields (cause_spans, effect_spans, asymmetry_strength).
+#[test]
+fn test_6_4_causal_hint_new_fields() {
+    println!("\n=== Test 6.4: CausalHint New Fields ===");
+
+    // Constructor defaults
+    let hint = CausalHint::new(true, CausalDirectionHint::Cause, 0.9, vec!["test".to_string()]);
+    assert!(hint.cause_spans.is_empty(), "Default cause_spans should be empty");
+    assert!(hint.effect_spans.is_empty(), "Default effect_spans should be empty");
+    assert_eq!(hint.asymmetry_strength, 0.0, "Default asymmetry_strength should be 0.0");
+
+    // Manual construction with new fields
+    let hint_with_spans = CausalHint {
+        is_causal: true,
+        direction_hint: CausalDirectionHint::Cause,
+        confidence: 0.9,
+        key_phrases: vec!["cortisol".to_string()],
+        description: None,
+        cause_spans: vec![(0, 10)],
+        effect_spans: vec![(20, 30)],
+        asymmetry_strength: 0.8,
+    };
+
+    assert_eq!(hint_with_spans.cause_spans.len(), 1);
+    assert_eq!(hint_with_spans.effect_spans.len(), 1);
+    assert!((hint_with_spans.asymmetry_strength - 0.8).abs() < f32::EPSILON);
+
+    println!("[PASS] Test 6.4: CausalHint new fields verified");
+}

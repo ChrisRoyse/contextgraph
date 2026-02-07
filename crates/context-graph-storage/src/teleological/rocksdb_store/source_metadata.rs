@@ -22,14 +22,44 @@ use super::store::RocksDbTeleologicalStore;
 use super::types::TeleologicalStoreError;
 
 impl RocksDbTeleologicalStore {
+    /// Deserialize source metadata, trying JSON first then bincode for migration.
+    ///
+    /// JSON is the canonical format (bincode is incompatible with skip_serializing_if).
+    /// Bincode fallback handles data written before the JSON migration.
+    fn deserialize_source_metadata(bytes: &[u8], id: Uuid) -> CoreResult<SourceMetadata> {
+        // Try JSON first (canonical format)
+        if let Ok(metadata) = serde_json::from_slice::<SourceMetadata>(bytes) {
+            return Ok(metadata);
+        }
+
+        // Try bincode for pre-migration data
+        if let Ok(metadata) = bincode::deserialize::<SourceMetadata>(bytes) {
+            return Ok(metadata);
+        }
+
+        // Both failed - genuine corruption
+        error!(
+            "METADATA ERROR: Failed to deserialize source metadata for fingerprint {}. \
+             Bytes length: {}. Neither JSON nor bincode could parse. Data corrupted.",
+            id, bytes.len()
+        );
+        Err(CoreError::Internal(format!(
+            "Failed to deserialize source metadata for {}: data corruption ({}B, not valid JSON or bincode)",
+            id, bytes.len()
+        )))
+    }
+
     /// Store source metadata for a fingerprint (internal async wrapper).
+    ///
+    /// Uses JSON serialization (not bincode) because SourceMetadata uses
+    /// `skip_serializing_if` which is incompatible with bincode.
     pub(crate) async fn store_source_metadata_async(
         &self,
         id: Uuid,
         metadata: &SourceMetadata,
     ) -> CoreResult<()> {
-        // Serialize metadata using bincode
-        let bytes = bincode::serialize(metadata).map_err(|e| {
+        // Serialize metadata using JSON (NOT bincode - skip_serializing_if is incompatible)
+        let bytes = serde_json::to_vec(metadata).map_err(|e| {
             error!(
                 "METADATA ERROR: Failed to serialize source metadata for fingerprint {}: {}",
                 id, e
@@ -52,7 +82,7 @@ impl RocksDbTeleologicalStore {
         })?;
 
         info!(
-            "Stored source metadata for fingerprint {} ({} bytes, type: {:?})",
+            "Stored source metadata for fingerprint {} ({} bytes JSON, type: {:?})",
             id,
             bytes.len(),
             metadata.source_type
@@ -70,19 +100,7 @@ impl RocksDbTeleologicalStore {
 
         match self.db.get_cf(cf, key) {
             Ok(Some(bytes)) => {
-                let metadata: SourceMetadata = bincode::deserialize(&bytes).map_err(|e| {
-                    error!(
-                        "METADATA ERROR: Failed to deserialize source metadata for fingerprint {}. \
-                         Error: {}. Bytes length: {}. This indicates data corruption.",
-                        id,
-                        e,
-                        bytes.len()
-                    );
-                    CoreError::Internal(format!(
-                        "Failed to deserialize source metadata for {}: {}. Data corruption detected.",
-                        id, e
-                    ))
-                })?;
+                let metadata = Self::deserialize_source_metadata(&bytes, id)?;
                 debug!("Retrieved source metadata for fingerprint {}", id);
                 Ok(Some(metadata))
             }
@@ -137,18 +155,16 @@ impl RocksDbTeleologicalStore {
             for (i, result) in results.into_iter().enumerate() {
                 match result {
                     Ok(Some(bytes)) => {
-                        let metadata: SourceMetadata = bincode::deserialize(&bytes).map_err(|e| {
-                            error!(
-                                "METADATA ERROR: Failed to deserialize batch source metadata for fingerprint {}. \
-                                 Index: {}, Error: {}",
-                                ids[i], i, e
-                            );
-                            CoreError::Internal(format!(
-                                "Failed to deserialize source metadata for {}: {}. Data corruption detected.",
-                                ids[i], e
-                            ))
-                        })?;
-                        metadata_vec.push(Some(metadata));
+                        match Self::deserialize_source_metadata(&bytes, ids[i]) {
+                            Ok(metadata) => metadata_vec.push(Some(metadata)),
+                            Err(e) => {
+                                error!(
+                                    "METADATA CORRUPTION: Skipping unreadable source metadata for {} ({}B): {}",
+                                    ids[i], bytes.len(), e
+                                );
+                                metadata_vec.push(None);
+                            }
+                        }
                     }
                     Ok(None) => metadata_vec.push(None),
                     Err(e) => {
@@ -245,20 +261,23 @@ impl RocksDbTeleologicalStore {
             let mut matching_ids = Vec::new();
 
             // Iterate through all source metadata entries
+            // Keys are raw 16-byte UUIDs (from source_metadata_key())
             let iter = db.iterator_cf(cf, rocksdb::IteratorMode::Start);
             for item in iter {
                 match item {
                     Ok((key, value)) => {
-                        // Parse UUID from key (format: "source_metadata:{uuid}")
-                        let key_str = String::from_utf8_lossy(&key);
-                        if let Some(uuid_str) = key_str.strip_prefix("source_metadata:") {
-                            if let Ok(id) = Uuid::parse_str(uuid_str) {
-                                // Deserialize metadata and check file_path
-                                if let Ok(metadata) = bincode::deserialize::<SourceMetadata>(&value) {
-                                    if let Some(ref path) = metadata.file_path {
-                                        if path == &file_path_owned {
-                                            matching_ids.push(id);
-                                        }
+                        if key.len() != 16 {
+                            continue; // Skip malformed keys
+                        }
+                        if let Ok(id) = Uuid::from_slice(&key) {
+                            // Deserialize metadata (JSON canonical, bincode fallback)
+                            let parsed = serde_json::from_slice::<SourceMetadata>(&value)
+                                .ok()
+                                .or_else(|| bincode::deserialize::<SourceMetadata>(&value).ok());
+                            if let Some(metadata) = parsed {
+                                if let Some(ref path) = metadata.file_path {
+                                    if path == &file_path_owned {
+                                        matching_ids.push(id);
                                     }
                                 }
                             }

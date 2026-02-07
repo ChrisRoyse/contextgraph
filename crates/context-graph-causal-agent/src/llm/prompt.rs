@@ -184,7 +184,7 @@ IMPORTANT: Correlation, semantic similarity, or topical overlap are NOT causatio
 TASK: Determine if the text describes causes, effects, or is causal in nature.
 
 OUTPUT FORMAT (JSON):
-{"is_causal":true/false,"direction":"cause"/"effect"/"neutral","confidence":0.0-1.0,"key_phrases":[],"description":"..."}
+{"is_causal":true/false,"direction":"cause"/"effect"/"neutral","confidence":0.0-1.0,"key_phrases":[],"description":"...","asymmetry_strength":0.0-1.0,"cause_entities":[],"effect_entities":[]}
 
 DIRECTION CLASSIFICATION:
 - "cause": Text describes something that CAUSES other things
@@ -196,6 +196,21 @@ DIRECTION CLASSIFICATION:
 - "neutral": Either non-causal OR equally describes both cause and effect
 
 KEY_PHRASES: Extract 1-3 causal markers (e.g., "causes", "leads to", "results from")
+
+ASYMMETRY_STRENGTH: How directional is the relationship? [0.0-1.0]
+- 1.0: Strongly directional (A clearly causes B, not vice versa)
+- 0.5: Moderate asymmetry
+- 0.0: Bidirectional or symmetric
+
+CAUSE_ENTITIES: Array of cause entity spans with character offsets into the original text.
+Each entry: {"start": char_offset, "end": char_offset, "label": "entity name"}
+Identify the key cause entities/phrases. Offsets MUST point into the input text.
+
+EFFECT_ENTITIES: Array of effect entity spans with character offsets into the original text.
+Each entry: {"start": char_offset, "end": char_offset, "label": "entity name"}
+Identify the key effect entities/phrases. Offsets MUST point into the input text.
+
+If confidence < 0.5, set cause_entities and effect_entities to empty arrays.
 
 DESCRIPTION (CRITICAL - generate when confidence >= 0.5):
 Write 1-3 paragraphs explaining the causal relationship.
@@ -214,10 +229,10 @@ Use \n to separate paragraphs within the description string.
 If confidence < 0.5, set description to empty string "".
 
 EXAMPLE OUTPUT (causal):
-{"is_causal":true,"direction":"cause","confidence":0.9,"key_phrases":["causes","leads to"],"description":"High cortisol levels cause memory impairment by damaging hippocampal neurons.\n\nThe mechanism involves prolonged glucocorticoid exposure triggering oxidative stress and reducing synaptic plasticity in the hippocampus.\n\nThis relationship is particularly relevant in chronic stress conditions and aging."}
+{"is_causal":true,"direction":"cause","confidence":0.9,"key_phrases":["causes","leads to"],"description":"High cortisol levels cause memory impairment by damaging hippocampal neurons.\n\nThe mechanism involves prolonged glucocorticoid exposure triggering oxidative stress and reducing synaptic plasticity in the hippocampus.\n\nThis relationship is particularly relevant in chronic stress conditions and aging.","asymmetry_strength":0.9,"cause_entities":[{"start":0,"end":20,"label":"high cortisol levels"}],"effect_entities":[{"start":27,"end":44,"label":"memory impairment"}]}
 
 EXAMPLE OUTPUT (non-causal):
-{"is_causal":false,"direction":"neutral","confidence":0.1,"key_phrases":[],"description":""}
+{"is_causal":false,"direction":"neutral","confidence":0.1,"key_phrases":[],"description":"","asymmetry_strength":0.0,"cause_entities":[],"effect_entities":[]}
 
 CONFIDENCE:
 - 0.9-1.0: Clear causal language with explicit markers

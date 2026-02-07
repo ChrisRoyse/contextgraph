@@ -365,6 +365,7 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
             total_latency,
             per_embedder_latency,
             model_ids: self.collect_model_ids(),
+            e5_hint_provenance: None,
         })
     }
 

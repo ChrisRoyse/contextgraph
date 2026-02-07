@@ -678,6 +678,9 @@ impl Handlers {
                                 relationship.effect.clone(),
                             ],
                             description: Some(relationship.explanation.clone()),
+                            cause_spans: Vec::new(),
+                            effect_spans: Vec::new(),
+                            asymmetry_strength: 0.0,
                         });
 
                         match self

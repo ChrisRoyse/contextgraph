@@ -120,6 +120,11 @@ pub struct SourceMetadata {
     /// Hook execution timestamp in milliseconds (Phase 5, item 5.12).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hook_execution_timestamp_ms: Option<i64>,
+
+    /// Provenance of LLM guidance applied during E5 embedding.
+    /// Tracks static vs LLM-guided markers, asymmetry strength, and effective boost.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_hint_provenance: Option<crate::traits::EmbeddingHintProvenance>,
 }
 
 /// Type of memory source.
@@ -171,6 +176,7 @@ impl Default for SourceMetadata {
             tool_use_id: None,
             mcp_request_id: None,
             hook_execution_timestamp_ms: None,
+            embedding_hint_provenance: None,
         }
     }
 }

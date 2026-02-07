@@ -102,6 +102,10 @@ pub struct CausalEdge {
     /// Type of causal mechanism: "direct", "mediated", "feedback", "temporal".
     #[serde(skip_serializing_if = "Option::is_none")]
     pub mechanism_type: Option<String>,
+
+    /// Provenance of LLM guidance applied during E5 embedding generation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub embedding_hint_provenance: Option<crate::traits::EmbeddingHintProvenance>,
 }
 
 impl CausalEdge {
@@ -118,6 +122,7 @@ impl CausalEdge {
             reverse_embeddings: None,
             llm_confidence: 0.0,
             mechanism_type: None,
+            embedding_hint_provenance: None,
         }
     }
 
@@ -149,6 +154,7 @@ impl CausalEdge {
             reverse_embeddings: None,
             llm_confidence: 0.0,
             mechanism_type: None,
+            embedding_hint_provenance: None,
         }
     }
 
@@ -184,6 +190,7 @@ impl CausalEdge {
             reverse_embeddings: Some((b_cause, a_effect)),
             llm_confidence: 0.0,
             mechanism_type: Some("feedback".to_string()),
+            embedding_hint_provenance: None,
         }
     }
 

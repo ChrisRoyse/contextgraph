@@ -86,6 +86,12 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "string",
                         "enum": ["cause", "effect", "unknown"],
                         "description": "Filter results by persisted causal direction. Omit for no filtering."
+                    },
+                    "searchScope": {
+                        "type": "string",
+                        "enum": ["memories", "relationships", "all"],
+                        "description": "Search scope: 'memories' (fingerprint HNSW, default), 'relationships' (CF_CAUSAL_RELATIONSHIPS E5 brute-force), or 'all' (both merged by score).",
+                        "default": "memories"
                     }
                 },
                 "additionalProperties": false
@@ -128,6 +134,12 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "string",
                         "enum": ["cause", "effect", "unknown"],
                         "description": "Filter results by persisted causal direction. Omit for no filtering."
+                    },
+                    "searchScope": {
+                        "type": "string",
+                        "enum": ["memories", "relationships", "all"],
+                        "description": "Search scope: 'memories' (fingerprint HNSW, default), 'relationships' (CF_CAUSAL_RELATIONSHIPS E5 brute-force), or 'all' (both merged by score).",
+                        "default": "memories"
                     }
                 },
                 "additionalProperties": false
@@ -215,6 +227,7 @@ mod tests {
         assert!(props.contains_key("minScore"));
         assert!(props.contains_key("includeContent"));
         assert!(props.contains_key("filterCausalDirection"));
+        assert!(props.contains_key("searchScope"));
     }
 
     #[test]

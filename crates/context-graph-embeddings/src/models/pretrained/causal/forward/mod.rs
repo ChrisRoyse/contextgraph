@@ -38,7 +38,7 @@ use crate::error::{EmbeddingError, EmbeddingResult};
 use crate::types::ModelId;
 
 use super::config::{LongformerConfig, CAUSAL_MAX_TOKENS};
-use super::marker_detection::detect_causal_markers;
+use super::marker_detection::detect_causal_markers_with_hints;
 use super::weights::{CausalProjectionWeights, LongformerWeights};
 
 use encoder::run_encoder;
@@ -281,6 +281,7 @@ pub fn gpu_forward_dual(
     weights: &LongformerWeights,
     projection: &CausalProjectionWeights,
     tokenizer: &Tokenizer,
+    hint_guidance: Option<&context_graph_core::traits::CausalHintGuidance>,
 ) -> EmbeddingResult<(Vec<f32>, Vec<f32>)> {
     let device = weights.device;
     let config = &weights.config;
@@ -307,8 +308,8 @@ pub fn gpu_forward_dual(
     let attention_mask = &attention_mask[..seq_len];
 
     // === CAUSAL MARKER DETECTION ===
-    // Detect cause/effect indicator words in the text
-    let markers = detect_causal_markers(text, &encoding);
+    // Detect cause/effect indicator words, enhanced with LLM guidance if available
+    let markers = detect_causal_markers_with_hints(text, &encoding, hint_guidance);
 
     // Generate per-token weights for cause and effect embeddings
     let cause_weights = markers.cause_weights(seq_len);
@@ -317,10 +318,15 @@ pub fn gpu_forward_dual(
     // Log marker detection for debugging
     if markers.cause_marker_indices.len() + markers.effect_marker_indices.len() > 0 {
         tracing::debug!(
-            "E5 causal markers detected: {} cause, {} effect (strength: {:.2})",
+            "E5 causal markers detected: {} cause ({} static + {} LLM), {} effect ({} static + {} LLM), strength: {:.2}, boost: {:.2}",
             markers.cause_marker_indices.len(),
+            markers.static_cause_count,
+            markers.llm_cause_count,
             markers.effect_marker_indices.len(),
-            markers.causal_strength
+            markers.static_effect_count,
+            markers.llm_effect_count,
+            markers.causal_strength,
+            markers.effective_boost,
         );
     }
 
