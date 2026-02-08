@@ -452,7 +452,6 @@ Native Claude Code hooks via `.claude/settings.json`:
 | `search_graph` | Multi-space search | query, strategy, topK |
 | `search_causes` | Causal queries (E5) | query, causalDirection |
 | `search_connections` | Graph queries (E8) | query, direction |
-| `search_by_intent` | Intent queries (E10) | query, blendWithSemantic |
 | `store_memory` | Store with embeddings | content, importance, rationale |
 | `inject_context` | Retrieval + injection | query, max_tokens |
 

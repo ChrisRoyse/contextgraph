@@ -11,7 +11,7 @@
 //! - All 13 embeddings MUST be present (panic otherwise)
 //! - RRF formula: 1/(60 + rank) for each space
 //! - Cosine similarity in range [-1.0, 1.0]
-//! - Purpose alignment filters at 0.55 threshold
+//! - Score-based filters at 0.55 threshold
 //! - Storage size should be reasonable (<25KB per fingerprint)
 //!
 //! # Constitution Reference

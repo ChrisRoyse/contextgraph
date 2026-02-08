@@ -66,9 +66,9 @@ pub struct CrossSpaceSimilarity {
     /// Shows the actual weights applied to each space.
     pub space_weights: Option<[f32; NUM_EMBEDDERS]>,
 
-    /// Purpose alignment contribution (if purpose weighting enabled).
+    /// Topic weighting contribution (if topic weighting enabled).
     ///
-    /// Shows how much the purpose vector modulated the final score.
+    /// Shows how much the topic vector modulated the final score.
     pub purpose_contribution: Option<f32>,
 
     /// Confidence in the score [0.0, 1.0].

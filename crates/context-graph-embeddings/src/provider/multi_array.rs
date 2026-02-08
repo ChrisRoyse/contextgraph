@@ -528,19 +528,19 @@ unsafe impl Send for GraphDualEmbedderAdapter {}
 unsafe impl Sync for GraphDualEmbedderAdapter {}
 
 // ============================================================================
-// CONTEXTUAL (E10) DUAL EMBEDDER ADAPTER - Asymmetric Intent/Context
+// CONTEXTUAL (E10) DUAL EMBEDDER ADAPTER - Asymmetric Paraphrase/Context
 // ============================================================================
 
-/// Adapter for E10 ContextualModel that produces dual (intent, context) embeddings.
+/// Adapter for E10 ContextualModel that produces dual (paraphrase, context) embeddings.
 ///
 /// Following the E5 Causal and E8 Graph patterns (ARCH-15), this adapter enables
-/// asymmetric similarity for intent-context relationships where direction matters:
-/// - **Intent embedding**: "What is this text trying to accomplish?" (action-focused)
+/// asymmetric similarity for paraphrase-context relationships where direction matters:
+/// - **Paraphrase embedding**: "What is this text trying to accomplish?" (action-focused)
 /// - **Context embedding**: "What context does this establish?" (relation-focused)
 ///
 /// Direction modifiers (per plan):
-/// - intent→context: 1.2x (query intent finds relevant context)
-/// - context→intent: 0.8x (dampened reverse direction)
+/// - paraphrase→context: 1.2x (query paraphrase finds relevant context)
+/// - context→paraphrase: 0.8x (dampened reverse direction)
 struct ContextualDualEmbedderAdapter {
     /// Direct reference to ContextualModel (not wrapped in EmbeddingModel trait)
     model: Arc<ContextualModel>,

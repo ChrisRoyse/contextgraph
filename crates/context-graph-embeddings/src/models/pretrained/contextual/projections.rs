@@ -1,7 +1,7 @@
 // Allow deprecated items within this deprecated module
 #![allow(deprecated)]
 
-//! DEPRECATED: Context Projection Weights for Asymmetric Intent/Context Embeddings.
+//! DEPRECATED: Context Projection Weights for Asymmetric Paraphrase/Context Embeddings.
 //!
 //! # DEPRECATION NOTICE
 //!
@@ -10,7 +10,7 @@
 //! projection matrices.
 //!
 //! E5-base-v2 achieves asymmetry through learned prefixes:
-//! - "query: " prefix for intent embeddings
+//! - "query: " prefix for paraphrase embeddings
 //! - "passage: " prefix for context embeddings
 //!
 //! This creates genuinely learned asymmetric representations, unlike the
