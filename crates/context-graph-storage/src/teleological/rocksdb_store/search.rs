@@ -331,6 +331,36 @@ fn search_multi_space_sync(
         }
     }
 
+    // E8 Graph (connectivity/structure embeddings, 1024D HNSW)
+    if let Some(e8_index) = index_registry.get(EmbedderIndex::E8Graph) {
+        if let Ok(e8_candidates) = e8_index.search(query.e8_active_vector(), k, None) {
+            let e8_ranked: Vec<(Uuid, f32)> = e8_candidates
+                .into_iter()
+                .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
+                .collect();
+
+            if !e8_ranked.is_empty() && weights[7] > 0.0 {
+                embedder_rankings.push(EmbedderRanking::new("E8", weights[7], e8_ranked));
+            }
+        }
+    }
+
+    // E11 Entity (KEPLER entity embeddings, 768D HNSW)
+    if let Some(e11_index) = index_registry.get(EmbedderIndex::E11Entity) {
+        if let Ok(e11_candidates) = e11_index.search(&query.e11_entity, k, None) {
+            let e11_ranked: Vec<(Uuid, f32)> = e11_candidates
+                .into_iter()
+                .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
+                .collect();
+
+            if !e11_ranked.is_empty() && weights[10] > 0.0 {
+                embedder_rankings.push(EmbedderRanking::new("E11", weights[10], e11_ranked));
+            }
+        }
+    }
+
     debug!(
         "Multi-space search: {} embedder rankings collected, fusion_strategy={:?}",
         embedder_rankings.len(),
@@ -454,8 +484,26 @@ fn search_pipeline_sync(
         }
     }
 
+    // E8 Graph (connectivity/structure)
+    if let Some(e8_index) = index_registry.get(EmbedderIndex::E8Graph) {
+        if let Ok(e8_candidates) = e8_index.search(query.e8_active_vector(), recall_k / 2, None) {
+            let e8_count = e8_candidates.len();
+            candidate_ids.extend(e8_candidates.into_iter().map(|(id, _)| id));
+            debug!("Stage 1: E8 Graph returned {} additional candidates", e8_count);
+        }
+    }
+
+    // E11 Entity (KEPLER entity embeddings)
+    if let Some(e11_index) = index_registry.get(EmbedderIndex::E11Entity) {
+        if let Ok(e11_candidates) = e11_index.search(&query.e11_entity, recall_k / 2, None) {
+            let e11_count = e11_candidates.len();
+            candidate_ids.extend(e11_candidates.into_iter().map(|(id, _)| id));
+            debug!("Stage 1: E11 Entity returned {} additional candidates", e11_count);
+        }
+    }
+
     info!(
-        "Stage 1 complete: {} unique candidates from E13+E1+E5+E7",
+        "Stage 1 complete: {} unique candidates from E13+E1+E5+E7+E8+E11",
         candidate_ids.len()
     );
 
@@ -512,7 +560,9 @@ fn search_pipeline_sync(
                     (0, "E1", weights[0]),
                     (4, "E5", weights[4]),
                     (6, "E7", weights[6]),
+                    (7, "E8", weights[7]),
                     (9, "E10", weights[9]),
+                    (10, "E11", weights[10]),
                 ];
 
                 let mut embedder_rankings: Vec<EmbedderRanking> = Vec::new();

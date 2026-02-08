@@ -810,6 +810,16 @@ pub struct SearchCrossEmbedderAnomaliesResponse {
     pub total_searched: usize,
     /// Search time in milliseconds.
     pub search_time_ms: u64,
+    /// Scoring method used: "difference" (highScore - lowScore).
+    pub scoring_method: String,
+    /// The formula used to compute anomaly scores.
+    pub scoring_formula: String,
+    /// High score threshold used for filtering.
+    pub high_threshold: f32,
+    /// Low score threshold used for filtering.
+    pub low_threshold: f32,
+    /// Documents the over-fetch multiplier used when searching candidates.
+    pub search_multiplier: usize,
 }
 
 // ============================================================================

@@ -5,7 +5,7 @@
 //! Three search strategies are available:
 //!
 //! - **E1Only** (default): Uses only E1 Semantic HNSW index. Fastest, backward compatible.
-//! - **MultiSpace**: Weighted fusion of semantic embedders (E1, E5, E7, E10).
+//! - **MultiSpace**: Weighted fusion of semantic embedders (E1, E5, E7, E8, E10, E11).
 //!   Temporal embedders (E2-E4) are excluded from scoring per research findings.
 //! - **Pipeline**: Full 3-stage retrieval: Recall → Score → Re-rank.
 //!
@@ -65,7 +65,7 @@ pub enum SearchStrategy {
     #[default]
     E1Only,
 
-    /// Weighted fusion of semantic embedders (E1, E5, E7, E10).
+    /// Weighted fusion of semantic embedders (E1, E5, E7, E8, E10, E11).
     /// Temporal embedders (E2-E4) have weight 0.0 per AP-71.
     MultiSpace,
 

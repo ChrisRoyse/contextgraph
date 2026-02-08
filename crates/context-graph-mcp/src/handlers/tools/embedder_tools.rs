@@ -1098,6 +1098,11 @@ impl Handlers {
             anomalies,
             total_searched,
             search_time_ms: elapsed_ms,
+            scoring_method: "difference".to_string(),
+            scoring_formula: "anomaly_score = high_score - low_score".to_string(),
+            high_threshold: request.high_threshold,
+            low_threshold: request.low_threshold,
+            search_multiplier: 5,
         };
 
         info!(
@@ -1167,7 +1172,9 @@ impl Handlers {
         };
 
         // Step 4: Search with the selected profile's weights
+        // MUST use MultiSpace strategy so custom weights actually participate in RRF fusion
         let options = TeleologicalSearchOptions::quick(request.top_k)
+            .with_strategy(SearchStrategy::MultiSpace)
             .with_custom_weights(weights);
 
         let candidates = match self

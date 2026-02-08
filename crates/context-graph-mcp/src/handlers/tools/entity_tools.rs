@@ -868,6 +868,8 @@ impl Handlers {
                 canonical_id: head_entity.to_lowercase().replace(' ', "_"),
                 entity_type: "Unknown".to_string(),
                 confidence: Some(0.5),
+                extraction_method: Some("heuristic".to_string()),
+                confidence_explanation: Some("Fallback entity detection".to_string()),
             });
 
         let tail_dto = tail_entities
@@ -879,6 +881,8 @@ impl Handlers {
                 canonical_id: tail_entity.to_lowercase().replace(' ', "_"),
                 entity_type: "Unknown".to_string(),
                 confidence: Some(0.5),
+                extraction_method: Some("heuristic".to_string()),
+                confidence_explanation: Some("Fallback entity detection".to_string()),
             });
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
@@ -1125,6 +1129,8 @@ impl Handlers {
                 canonical_id: entity.to_lowercase().replace(' ', "_"),
                 entity_type: "Unknown".to_string(),
                 confidence: Some(0.5),
+                extraction_method: Some("heuristic".to_string()),
+                confidence_explanation: Some("Fallback entity detection".to_string()),
             });
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
@@ -1322,6 +1328,8 @@ impl Handlers {
                 canonical_id: subject.to_lowercase().replace(' ', "_"),
                 entity_type: "Unknown".to_string(),
                 confidence: Some(0.5),
+                extraction_method: Some("heuristic".to_string()),
+                confidence_explanation: Some("Fallback entity detection".to_string()),
             });
 
         let object_dto = object_entities
@@ -1333,6 +1341,8 @@ impl Handlers {
                 canonical_id: object.to_lowercase().replace(' ', "_"),
                 entity_type: "Unknown".to_string(),
                 confidence: Some(0.5),
+                extraction_method: Some("heuristic".to_string()),
+                confidence_explanation: Some("Fallback entity detection".to_string()),
             });
 
         let elapsed_ms = start.elapsed().as_millis() as u64;
@@ -1630,6 +1640,8 @@ impl Handlers {
                     canonical_id: center.to_lowercase().replace(' ', "_"),
                     entity_type: "Unknown".to_string(),
                     confidence: Some(0.5),
+                    extraction_method: Some("heuristic".to_string()),
+                    confidence_explanation: Some("Fallback entity detection".to_string()),
                 })
         });
 

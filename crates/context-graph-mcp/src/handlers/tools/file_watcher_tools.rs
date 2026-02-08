@@ -16,6 +16,9 @@ use glob::Pattern;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
+
+use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
@@ -383,6 +386,33 @@ impl Handlers {
             "delete_file_content: Operation complete"
         );
 
+        // Emit FileWatcherEvent audit record for this destructive operation
+        let audit_record = AuditRecord::new(
+            AuditOperation::FileWatcherEvent {
+                event_type: if request.soft_delete { "soft_delete".to_string() } else { "hard_delete".to_string() },
+                file_path: request.file_path.clone(),
+                memories_affected: deleted_count,
+            },
+            // Use nil UUID since this targets a file path, not a single memory
+            Uuid::nil(),
+        )
+        .with_operator("delete_file_content")
+        .with_rationale(format!(
+            "{} {} embeddings for '{}'",
+            if request.soft_delete { "Soft-deleted" } else { "Hard-deleted" },
+            deleted_count,
+            request.file_path
+        ))
+        .with_parameters(json!({
+            "file_path": request.file_path,
+            "soft_delete": request.soft_delete,
+            "deleted_count": deleted_count,
+        }));
+
+        if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+            warn!(error = %e, "delete_file_content: Failed to write audit record (non-fatal)");
+        }
+
         let response = DeleteFileContentResponse {
             file_path: request.file_path,
             deleted_count,
@@ -507,6 +537,34 @@ impl Handlers {
             dry_run = request.dry_run,
             "reconcile_files: Operation complete"
         );
+
+        // Emit FileWatcherEvent audit record for reconcile (only if not dry run and we deleted)
+        if !request.dry_run && deleted_count > 0 {
+            let audit_record = AuditRecord::new(
+                AuditOperation::FileWatcherEvent {
+                    event_type: "reconcile_delete".to_string(),
+                    file_path: request.base_path.clone().unwrap_or_default(),
+                    memories_affected: deleted_count,
+                },
+                Uuid::nil(),
+            )
+            .with_operator("reconcile_files")
+            .with_rationale(format!(
+                "Reconciled {} orphaned files (deleted embeddings for files no longer on disk)",
+                deleted_count
+            ))
+            .with_parameters(json!({
+                "orphan_count": orphans.len(),
+                "deleted_count": deleted_count,
+                "dry_run": false,
+                "base_path": request.base_path,
+                "orphaned_files": &orphans,
+            }));
+
+            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                warn!(error = %e, "reconcile_files: Failed to write audit record (non-fatal)");
+            }
+        }
 
         let response = ReconcileFilesResponse {
             orphan_count: orphans.len(),

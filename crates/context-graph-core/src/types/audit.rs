@@ -382,6 +382,38 @@ pub enum AuditOperation {
         /// Whether the hook succeeded
         success: bool,
     },
+
+    /// A search/query operation was performed (provenance for read-path).
+    SearchPerformed {
+        /// Name of the tool that performed the search.
+        tool_name: String,
+        /// Number of results returned to the caller.
+        results_returned: usize,
+        /// Weight profile used for the search.
+        weight_profile: Option<String>,
+        /// Search strategy used (e.g., "Semantic", "Pipeline").
+        strategy: Option<String>,
+    },
+
+    /// A causal relationship was repaired or deleted (provenance for destructive ops).
+    CausalRelationshipRepaired {
+        /// Number of corrupted entries deleted.
+        deleted_count: usize,
+        /// Number of valid entries retained.
+        retained_count: usize,
+        /// Reason for the repair operation.
+        reason: String,
+    },
+
+    /// A file watcher event triggered a memory operation.
+    FileWatcherEvent {
+        /// Type of file event (e.g., "delete", "reconcile").
+        event_type: String,
+        /// File path affected.
+        file_path: String,
+        /// Number of memories affected by this event.
+        memories_affected: usize,
+    },
 }
 
 // ============================================================================
@@ -548,6 +580,39 @@ impl std::fmt::Display for AuditOperation {
             AuditOperation::HookExecuted { hook_type, success } => {
                 write!(f, "HookExecuted({}, success={})", hook_type, success)
             }
+            AuditOperation::SearchPerformed {
+                tool_name,
+                results_returned,
+                ..
+            } => {
+                write!(
+                    f,
+                    "SearchPerformed({}, {} results)",
+                    tool_name, results_returned
+                )
+            }
+            AuditOperation::CausalRelationshipRepaired {
+                deleted_count,
+                retained_count,
+                ..
+            } => {
+                write!(
+                    f,
+                    "CausalRelationshipRepaired(deleted={}, retained={})",
+                    deleted_count, retained_count
+                )
+            }
+            AuditOperation::FileWatcherEvent {
+                event_type,
+                file_path,
+                memories_affected,
+            } => {
+                write!(
+                    f,
+                    "FileWatcherEvent({}, {}, {} memories)",
+                    event_type, file_path, memories_affected
+                )
+            }
         }
     }
 }
@@ -690,6 +755,22 @@ mod tests {
             AuditOperation::HookExecuted {
                 hook_type: "PostToolUse".to_string(),
                 success: true,
+            },
+            AuditOperation::SearchPerformed {
+                tool_name: "search_by_intent".to_string(),
+                results_returned: 5,
+                weight_profile: Some("intent_search".to_string()),
+                strategy: Some("Pipeline".to_string()),
+            },
+            AuditOperation::CausalRelationshipRepaired {
+                deleted_count: 3,
+                retained_count: 97,
+                reason: "deserialization failure".to_string(),
+            },
+            AuditOperation::FileWatcherEvent {
+                event_type: "delete".to_string(),
+                file_path: "/test/file.rs".to_string(),
+                memories_affected: 12,
             },
         ];
 

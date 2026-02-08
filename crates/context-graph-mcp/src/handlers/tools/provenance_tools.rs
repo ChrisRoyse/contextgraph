@@ -58,6 +58,13 @@ struct GetProvenanceChainParams {
     include_audit: bool,
     #[serde(default)]
     include_embedding_version: bool,
+    #[serde(default)]
+    include_importance_history: bool,
+    #[serde(default)]
+    include_merge_history: bool,
+    /// When true, includes ALL provenance data (audit, embedding, importance, merge).
+    #[serde(default)]
+    depth_full: bool,
 }
 
 impl Handlers {
@@ -328,8 +335,14 @@ impl Handlers {
             })
         };
 
-        // Optionally include audit trail
-        let audit_trail = if params.include_audit {
+        // Effective flags - depth_full overrides individual flags
+        let eff_audit = params.include_audit || params.depth_full;
+        let eff_embedding = params.include_embedding_version || params.depth_full;
+        let eff_importance = params.include_importance_history || params.depth_full;
+        let eff_merge = params.include_merge_history || params.depth_full;
+
+        // Optionally include audit trail (CF_AUDIT_LOG)
+        let audit_trail = if eff_audit {
             match self.teleological_store.get_audit_by_target(memory_uuid, 50).await {
                 Ok(records) => Some(
                     records
@@ -351,7 +364,7 @@ impl Handlers {
         };
 
         // Query CF_EMBEDDING_REGISTRY for actual embedding version info
-        let embedding_version = if params.include_embedding_version {
+        let embedding_version = if eff_embedding {
             match self.teleological_store.get_embedding_version(memory_uuid).await {
                 Ok(Some(record)) => {
                     Some(json!({
@@ -380,10 +393,69 @@ impl Handlers {
             None
         };
 
+        // Query CF_IMPORTANCE_HISTORY for importance change records
+        let importance_history = if eff_importance {
+            match self.teleological_store.get_importance_history(memory_uuid, 50).await {
+                Ok(records) => {
+                    if records.is_empty() {
+                        None
+                    } else {
+                        Some(records.iter().map(|r| {
+                            json!({
+                                "timestamp": r.timestamp.to_rfc3339(),
+                                "old_value": r.old_value,
+                                "new_value": r.new_value,
+                                "delta": r.delta,
+                                "operator_id": r.operator_id,
+                                "reason": r.reason,
+                            })
+                        }).collect::<Vec<_>>())
+                    }
+                }
+                Err(e) => {
+                    error!(error = %e, "get_provenance_chain: Importance history query failed");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
+        // Query CF_MERGE_HISTORY for merge records
+        let merge_history = if eff_merge {
+            match self.teleological_store.get_merge_history(memory_uuid, 50).await {
+                Ok(records) => {
+                    if records.is_empty() {
+                        None
+                    } else {
+                        Some(records.iter().map(|r| {
+                            json!({
+                                "id": r.id.to_string(),
+                                "merged_id": r.merged_id.to_string(),
+                                "source_ids": r.source_ids.iter().map(|id| id.to_string()).collect::<Vec<_>>(),
+                                "strategy": r.strategy,
+                                "rationale": r.rationale,
+                                "operator_id": r.operator_id,
+                                "timestamp": r.timestamp.to_rfc3339(),
+                            })
+                        }).collect::<Vec<_>>())
+                    }
+                }
+                Err(e) => {
+                    error!(error = %e, "get_provenance_chain: Merge history query failed");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         self.tool_result(id, json!({
             "provenance_chain": chain,
             "audit_trail": audit_trail,
             "embedding_version": embedding_version,
+            "importance_history": importance_history,
+            "merge_history": merge_history,
         }))
     }
 }

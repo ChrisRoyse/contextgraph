@@ -153,6 +153,15 @@ pub struct TemporalConfigSummary {
 
     /// Temporal scale used.
     pub temporal_scale: String,
+
+    /// The time horizon in seconds for the selected temporal scale.
+    pub horizon_seconds: i64,
+
+    /// Half-life in seconds (for exponential decay: horizon / 4).
+    pub half_life_seconds: f64,
+
+    /// The boost formula applied: "clamp(1 + w*(recency - 0.5), 0.8, 1.2)".
+    pub boost_formula: String,
 }
 
 // Default value functions

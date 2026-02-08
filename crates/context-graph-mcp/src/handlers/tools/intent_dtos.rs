@@ -365,6 +365,17 @@ pub struct SearchByIntentRequest {
     /// - Other profiles: semantic_search, code_search, causal_reasoning, etc.
     #[serde(rename = "weightProfile", default)]
     pub weight_profile: Option<String>,
+
+    /// Custom weights for 13 embedders (overrides weightProfile).
+    /// Map of embedder name (E1-E13) to weight value (0.0-1.0).
+    /// Weights must sum to ~1.0 (±0.01).
+    #[serde(rename = "customWeights", default)]
+    pub custom_weights: Option<std::collections::HashMap<String, f64>>,
+
+    /// Embedders to exclude from search (e.g., ["E7", "E8"]).
+    /// Excluded embedder weights are zeroed and remaining weights renormalized.
+    #[serde(rename = "excludeEmbedders", default)]
+    pub exclude_embedders: Vec<String>,
 }
 
 fn default_top_k() -> usize {
@@ -390,6 +401,8 @@ impl Default for SearchByIntentRequest {
             include_content: false,
             strategy: None,
             weight_profile: None,
+            custom_weights: None,
+            exclude_embedders: Vec::new(),
         }
     }
 }

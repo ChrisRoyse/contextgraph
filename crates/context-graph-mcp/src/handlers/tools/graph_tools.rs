@@ -21,13 +21,14 @@
 
 use serde_json::json;
 use std::collections::HashSet;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use context_graph_core::graph::asymmetric::{
     compute_e8_asymmetric_fingerprint_similarity, GraphDirection,
 };
 use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions};
+use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 use context_graph_core::types::fingerprint::SemanticFingerprint;
 
 // GRAPH-AGENT: LLM-based relationship discovery types
@@ -716,43 +717,47 @@ impl Handlers {
         };
 
         // Build response from results - get edges from graph storage
-        let graph = service.graph();
-        let graph_read = graph.read();
-        let all_edges = graph_read.all_edges();
+        // Scope the graph read guard so it's dropped before any .await calls
+        let (relationships, all_errors) = {
+            let graph = service.graph();
+            let graph_read = graph.read();
+            let all_edges = graph_read.all_edges();
 
-        // Filter edges by min_confidence and optionally by relationship types
-        let type_filter: Option<HashSet<RelationshipType>> = request
-            .relationship_types
-            .as_ref()
-            .map(|types| types.iter().map(|t| RelationshipType::from_str(t)).collect());
+            // Filter edges by min_confidence and optionally by relationship types
+            let type_filter: Option<HashSet<RelationshipType>> = request
+                .relationship_types
+                .as_ref()
+                .map(|types| types.iter().map(|t| RelationshipType::from_str(t)).collect());
 
-        let relationships: Vec<DiscoveredRelationship> = all_edges
-            .iter()
-            .filter(|e| e.confidence >= min_confidence)
-            .filter(|e| {
-                type_filter
-                    .as_ref()
-                    .map(|f| f.contains(&e.relationship_type))
-                    .unwrap_or(true)
-            })
-            .map(|e| {
-                // GraphEdge has source_id and target_id already ordered correctly
-                // by the activator based on the LLM analysis direction
-                DiscoveredRelationship {
-                    source_id: e.source_id,
-                    target_id: e.target_id,
-                    relationship_type: e.relationship_type.as_str().to_string(),
-                    category: Some(e.relationship_type.category().as_str().to_string()),
-                    domain: None, // Domain not stored in GraphEdge
-                    direction: "a_connects_b".to_string(), // Source → Target
-                    confidence: e.confidence,
-                    description: e.description.clone(),
-                }
-            })
-            .collect();
+            let rels: Vec<DiscoveredRelationship> = all_edges
+                .iter()
+                .filter(|e| e.confidence >= min_confidence)
+                .filter(|e| {
+                    type_filter
+                        .as_ref()
+                        .map(|f| f.contains(&e.relationship_type))
+                        .unwrap_or(true)
+                })
+                .map(|e| {
+                    // GraphEdge has source_id and target_id already ordered correctly
+                    // by the activator based on the LLM analysis direction
+                    DiscoveredRelationship {
+                        source_id: e.source_id,
+                        target_id: e.target_id,
+                        relationship_type: e.relationship_type.as_str().to_string(),
+                        category: Some(e.relationship_type.category().as_str().to_string()),
+                        domain: None, // Domain not stored in GraphEdge
+                        direction: "a_connects_b".to_string(), // Source → Target
+                        confidence: e.confidence,
+                        description: e.description.clone(),
+                    }
+                })
+                .collect();
 
-        // All fetch errors now fail fast, so we only have discovery errors
-        let all_errors = result.error_messages.clone();
+            // All fetch errors now fail fast, so we only have discovery errors
+            let errors = result.error_messages.clone();
+            (rels, errors)
+        }; // graph_read dropped here before any .await
 
         let response = DiscoverGraphRelationshipsResponse {
             relationships: relationships.clone(),
@@ -774,6 +779,29 @@ impl Handlers {
             rejected = result.relationships_rejected,
             "discover_graph_relationships: Discovery cycle complete"
         );
+
+        // Emit RelationshipDiscovered audit for each confirmed relationship
+        for rel in &relationships {
+            let source_uuid = Uuid::parse_str(&rel.source_id.to_string()).unwrap_or(Uuid::nil());
+            let audit_record = AuditRecord::new(
+                AuditOperation::RelationshipDiscovered {
+                    relationship_type: rel.relationship_type.clone(),
+                    confidence: rel.confidence,
+                },
+                source_uuid,
+            )
+            .with_operator("discover_graph_relationships")
+            .with_parameters(json!({
+                "source_id": rel.source_id.to_string(),
+                "target_id": rel.target_id.to_string(),
+                "relationship_type": rel.relationship_type,
+                "confidence": rel.confidence,
+            }));
+
+            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                warn!(error = %e, "discover_graph_relationships: Failed to write audit record (non-fatal)");
+            }
+        }
 
         self.tool_result(id, serde_json::to_value(response).unwrap_or_else(|_| json!({})))
     }
@@ -900,6 +928,28 @@ impl Handlers {
                         "validate_graph_link: Validation complete"
                     );
 
+                    // Emit audit for validated relationship
+                    if is_valid {
+                        let audit_record = AuditRecord::new(
+                            AuditOperation::RelationshipDiscovered {
+                                relationship_type: expected_type_str.clone(),
+                                confidence,
+                            },
+                            source_uuid,
+                        )
+                        .with_operator("validate_graph_link")
+                        .with_parameters(json!({
+                            "source_id": source_uuid.to_string(),
+                            "target_id": target_uuid.to_string(),
+                            "mode": "validation",
+                            "expected_type": expected_type_str,
+                        }));
+
+                        if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                            warn!(error = %e, "validate_graph_link: Failed to write audit record (non-fatal)");
+                        }
+                    }
+
                     self.tool_result(id, serde_json::to_value(response).unwrap_or_else(|_| json!({})))
                 }
                 Err(e) => {
@@ -948,6 +998,28 @@ impl Handlers {
                         relationship_type = analysis.relationship_type.as_str(),
                         "validate_graph_link: Analysis complete"
                     );
+
+                    // Emit audit for discovered relationship
+                    if is_valid {
+                        let audit_record = AuditRecord::new(
+                            AuditOperation::RelationshipDiscovered {
+                                relationship_type: analysis.relationship_type.as_str().to_string(),
+                                confidence: analysis.confidence,
+                            },
+                            source_uuid,
+                        )
+                        .with_operator("validate_graph_link")
+                        .with_parameters(json!({
+                            "source_id": source_uuid.to_string(),
+                            "target_id": target_uuid.to_string(),
+                            "mode": "analysis",
+                            "relationship_type": analysis.relationship_type.as_str(),
+                        }));
+
+                        if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                            warn!(error = %e, "validate_graph_link: Failed to write audit record (non-fatal)");
+                        }
+                    }
 
                     self.tool_result(id, serde_json::to_value(response).unwrap_or_else(|_| json!({})))
                 }

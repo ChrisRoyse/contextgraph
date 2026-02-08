@@ -101,6 +101,9 @@ impl Handlers {
                         temporal_weight,
                         decay_function: format!("{:?}", decay_function),
                         temporal_scale: format!("{:?}", params.temporal_scale),
+                        horizon_seconds: params.temporal_scale.horizon_seconds(),
+                        half_life_seconds: params.temporal_scale.horizon_seconds() as f64 / 4.0,
+                        boost_formula: "clamp(1 + weight * (recency - 0.5), 0.8, 1.2)".to_string(),
                     },
                 })
                 .unwrap(),
@@ -163,6 +166,9 @@ impl Handlers {
                 temporal_weight,
                 decay_function: format!("{:?}", decay_function),
                 temporal_scale: format!("{:?}", params.temporal_scale),
+                horizon_seconds: params.temporal_scale.horizon_seconds(),
+                half_life_seconds: params.temporal_scale.horizon_seconds() as f64 / 4.0,
+                boost_formula: "clamp(1 + weight * (recency - 0.5), 0.8, 1.2)".to_string(),
             },
         };
 

@@ -8,6 +8,7 @@ use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use context_graph_core::traits::TeleologicalSearchOptions;
+use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
@@ -359,6 +360,34 @@ impl Handlers {
 
         // Find consolidation candidates
         let candidates = consolidation_service.find_consolidation_candidates(&pairs);
+
+        // P0: Emit ConsolidationAnalyzed audit record (was dead code - now wired)
+        {
+            let audit_record = AuditRecord::new(
+                AuditOperation::ConsolidationAnalyzed {
+                    candidates_found: candidates.len(),
+                },
+                Uuid::new_v4(), // Consolidation affects the store as a whole
+            )
+            .with_rationale(format!(
+                "Consolidation analysis: {} pairs evaluated, {} candidates found (strategy: {})",
+                pairs.len(),
+                candidates.len(),
+                params.strategy,
+            ))
+            .with_parameters(json!({
+                "strategy": params.strategy,
+                "similarity_threshold": params.min_similarity,
+                "max_memories": params.max_memories,
+                "fingerprints_analyzed": memory_contents.len(),
+                "pairs_evaluated": pairs.len(),
+            }));
+
+            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                error!(error = %e, "trigger_consolidation: Failed to write ConsolidationAnalyzed audit record");
+                // Non-fatal - continue with response
+            }
+        }
 
         let statistics = json!({
             "pairs_evaluated": pairs.len(),

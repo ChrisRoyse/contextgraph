@@ -52,6 +52,7 @@ use uuid::Uuid;
 use context_graph_core::graph_linking::service::{GraphLinkService, GraphLinkServiceConfig};
 use context_graph_core::graph_linking::{EdgeBuilderConfig, NnDescentConfig, TypedEdge};
 use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore};
+use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 
 use super::{EdgeRepository, GraphEdgeStorageError, GraphEdgeStorageResult};
@@ -358,10 +359,40 @@ impl BackgroundGraphBuilder {
             "Batch processing complete"
         );
 
+        // Emit audit record for background graph building provenance
+        let typed_edges_count = typed_edges.len();
+        if processed_count > 0 {
+            let audit_record = AuditRecord::new(
+                AuditOperation::RelationshipDiscovered {
+                    relationship_type: "knn_graph_batch".to_string(),
+                    confidence: 1.0,
+                },
+                // Use first fingerprint ID as target, or nil if none
+                fingerprint_ids.first().copied().unwrap_or(Uuid::nil()),
+            )
+            .with_operator("background_graph_builder")
+            .with_rationale(format!(
+                "Built K-NN graph batch: {} fingerprints → {} K-NN edges + {} typed edges in {}ms",
+                processed_count, knn_edges_created, typed_edges_count, elapsed_ms
+            ))
+            .with_parameters(serde_json::json!({
+                "processed_count": processed_count,
+                "knn_edges_created": knn_edges_created,
+                "typed_edges_created": typed_edges_count,
+                "elapsed_ms": elapsed_ms,
+                "active_embedders": self.config.active_embedders,
+                "warning_count": warnings.len(),
+            }));
+
+            if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                warn!(error = %e, "BackgroundGraphBuilder: Failed to write audit record (non-fatal)");
+            }
+        }
+
         Ok(BatchBuildResult {
             processed_count,
             knn_edges_created,
-            typed_edges_created: typed_edges.len(),
+            typed_edges_created: typed_edges_count,
             elapsed_ms,
             warnings,
         })

@@ -76,6 +76,16 @@ pub fn definitions() -> Vec<ToolDefinition> {
                             "pipeline_stage1_recall", "pipeline_stage2_scoring", "pipeline_full",
                             "balanced"
                         ]
+                    },
+                    "customWeights": {
+                        "type": "object",
+                        "description": "Custom weights for 13 embedders (overrides weightProfile). Map of embedder name (E1-E13) to weight value (0.0-1.0). Weights must sum to ~1.0 (±0.01).",
+                        "additionalProperties": { "type": "number" }
+                    },
+                    "excludeEmbedders": {
+                        "type": "array",
+                        "items": { "type": "string", "enum": ["E1","E2","E3","E4","E5","E6","E7","E8","E9","E10","E11","E12","E13"] },
+                        "description": "Embedders to exclude from search. Excluded weights are zeroed and remaining renormalized."
                     }
                 },
                 "additionalProperties": false
@@ -122,6 +132,8 @@ mod tests {
         assert!(props.contains_key("blendWithSemantic"));
         assert!(props.contains_key("includeContent"));
         assert!(props.contains_key("weightProfile")); // New: explicit weight profile
+        assert!(props.contains_key("customWeights")); // GAP-2: custom weights support
+        assert!(props.contains_key("excludeEmbedders")); // GAP-2: embedder exclusion
     }
 
     #[test]

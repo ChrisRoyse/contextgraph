@@ -19,10 +19,11 @@
 //! - FAIL FAST: All errors propagate immediately with logging
 
 use serde_json::json;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions};
+use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 
 use crate::protocol::JsonRpcId;
 use crate::protocol::JsonRpcResponse;
@@ -120,12 +121,66 @@ impl Handlers {
         let fetch_multiplier = 3;
         let fetch_top_k = top_k * fetch_multiplier;
 
+        // Resolve custom weights if provided (overrides weight profile per constitution)
+        // AP-NAV-01: FAIL FAST on invalid embedder names
+        let custom_weight_array: Option<[f32; 13]> = if let Some(ref custom) = request.custom_weights {
+            const VALID_NAMES: [&str; 13] = ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"];
+            for key in custom.keys() {
+                if !VALID_NAMES.contains(&key.as_str()) {
+                    error!(invalid_key = %key, "search_by_intent: invalid embedder name in customWeights");
+                    return self.tool_error(id, &format!(
+                        "Invalid embedder name '{}' in customWeights. Valid names: E1-E13.", key
+                    ));
+                }
+            }
+            let mut w = [0.0f32; 13];
+            for (i, name) in VALID_NAMES.iter().enumerate() {
+                if let Some(&val) = custom.get(*name) {
+                    w[i] = val as f32;
+                }
+            }
+            if let Err(e) = context_graph_core::weights::validate_weights(&w) {
+                error!(error = %e, "search_by_intent: invalid custom weights");
+                return self.tool_error(id, &format!("Invalid custom weights: {}", e));
+            }
+            Some(w)
+        } else {
+            None
+        };
+
+        // Resolve exclude embedders
+        let mut exclude_indices: Vec<usize> = Vec::new();
+        for name in &request.exclude_embedders {
+            match name.as_str() {
+                "E1" => exclude_indices.push(0), "E2" => exclude_indices.push(1),
+                "E3" => exclude_indices.push(2), "E4" => exclude_indices.push(3),
+                "E5" => exclude_indices.push(4), "E6" => exclude_indices.push(5),
+                "E7" => exclude_indices.push(6), "E8" => exclude_indices.push(7),
+                "E9" => exclude_indices.push(8), "E10" => exclude_indices.push(9),
+                "E11" => exclude_indices.push(10), "E12" => exclude_indices.push(11),
+                "E13" => exclude_indices.push(12),
+                _ => {
+                    error!(invalid = %name, "search_by_intent: invalid embedder in excludeEmbedders");
+                    return self.tool_error(id, &format!(
+                        "Invalid embedder '{}' in excludeEmbedders. Valid names: E1-E13.", name
+                    ));
+                }
+            }
+        }
+
         // Use the appropriate weight profile based on query type
-        let options = TeleologicalSearchOptions::quick(fetch_top_k)
+        let mut options = TeleologicalSearchOptions::quick(fetch_top_k)
             .with_strategy(strategy)
             .with_weight_profile(weight_profile)
             .with_min_similarity(0.0) // Get all candidates, filter later
             .with_rerank(enable_rerank); // Auto-enable E12 for pipeline
+
+        if let Some(weights) = custom_weight_array {
+            options = options.with_custom_weights(weights);
+        }
+        if !exclude_indices.is_empty() {
+            options = options.with_exclude_embedders(exclude_indices);
+        }
 
         let candidates = match self
             .teleological_store
@@ -279,6 +334,32 @@ impl Handlers {
             is_context_based = is_context_based,
             "search_by_intent: Completed intent-aware search"
         );
+
+        // Emit SearchPerformed audit record for read-path provenance
+        let audit_record = AuditRecord::new(
+            AuditOperation::SearchPerformed {
+                tool_name: "search_by_intent".to_string(),
+                results_returned: response.count,
+                weight_profile: Some(weight_profile.to_string()),
+                strategy: Some(format!("{:?}", strategy)),
+            },
+            // Use first result ID as target, or nil if no results
+            result_ids.first().copied().unwrap_or(Uuid::nil()),
+        )
+        .with_operator("search_by_intent")
+        .with_parameters(json!({
+            "query_preview": query_text.chars().take(100).collect::<String>(),
+            "is_context_based": is_context_based,
+            "top_k": top_k,
+            "min_score": min_score,
+            "candidates_evaluated": candidates_evaluated,
+            "filtered_by_score": filtered_count,
+            "weight_profile": weight_profile,
+        }));
+
+        if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+            warn!(error = %e, "search_by_intent: Failed to write audit record (non-fatal)");
+        }
 
         self.tool_result(id, serde_json::to_value(response).unwrap_or_else(|_| json!({})))
     }

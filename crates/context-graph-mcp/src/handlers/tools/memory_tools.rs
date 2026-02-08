@@ -724,6 +724,7 @@ impl Handlers {
         };
 
         // GAP-8: Parse exclude embedders
+        let mut exclude_embedder_names: Vec<String> = Vec::new();
         let exclude_embedders: Vec<usize> = match args.get("excludeEmbedders").and_then(|v| v.as_array()) {
             Some(arr) => {
                 let mut indices = Vec::new();
@@ -744,6 +745,7 @@ impl Handlers {
                             return self.tool_error(id, &format!("Invalid embedder '{}' in excludeEmbedders. Must be E1-E13.", s));
                         }
                     };
+                    exclude_embedder_names.push(s.to_string());
                     indices.push(idx);
                 }
                 indices
@@ -776,17 +778,18 @@ impl Handlers {
             .unwrap_or(0.0);
 
         // Parse decayFunction (linear, exponential, step, none)
-        let decay_function = args
+        let decay_function_str = args
             .get("decayFunction")
             .and_then(|v| v.as_str())
-            .map(|s| match s.to_lowercase().as_str() {
-                "linear" => context_graph_core::traits::DecayFunction::Linear,
-                "exponential" => context_graph_core::traits::DecayFunction::Exponential,
-                "step" => context_graph_core::traits::DecayFunction::Step,
-                "none" | "no_decay" => context_graph_core::traits::DecayFunction::NoDecay,
-                _ => context_graph_core::traits::DecayFunction::Linear,
-            })
-            .unwrap_or(context_graph_core::traits::DecayFunction::Linear);
+            .unwrap_or("linear")
+            .to_string();
+        let decay_function = match decay_function_str.to_lowercase().as_str() {
+            "linear" => context_graph_core::traits::DecayFunction::Linear,
+            "exponential" => context_graph_core::traits::DecayFunction::Exponential,
+            "step" => context_graph_core::traits::DecayFunction::Step,
+            "none" | "no_decay" => context_graph_core::traits::DecayFunction::NoDecay,
+            _ => context_graph_core::traits::DecayFunction::Linear,
+        };
 
         // Parse decayHalfLifeSecs (for exponential decay)
         let decay_half_life = args
@@ -1535,6 +1538,71 @@ impl Handlers {
                     response["effectiveProfile"] = json!("custom");
                 } else if let Some(ref profile) = effective_weight_profile {
                     response["effectiveProfile"] = json!(profile);
+                }
+
+                // Echo back search parameters for transparency/debugging
+                let temporal_config = if temporal_weight > 0.0 {
+                    Some(json!({
+                        "temporalWeight": temporal_weight,
+                        "decayFunction": decay_function_str,
+                        "decayHalfLifeSecs": decay_half_life,
+                        "lastHours": last_hours,
+                        "lastDays": last_days,
+                    }))
+                } else {
+                    None
+                };
+                response["searchParameters"] = json!({
+                    "customWeightsValues": custom_weights.map(|w| w.to_vec()),
+                    "excludedEmbedders": exclude_embedder_names,
+                    "temporalConfig": temporal_config,
+                    "rrfConstant": 60.0,
+                    "intentReranking": intent_reranking_applied,
+                    "resolvedWeightProfile": effective_weight_profile,
+                });
+
+                // =========================================================================
+                // SEARCH TRANSPARENCY: Show which embedders actually participated
+                // =========================================================================
+                // Per GAP-1: Make it transparent which of the 13 embedders
+                // participated in RRF fusion vs. which weights were ignored.
+                {
+                    let default_profile = get_weight_profile("semantic_search")
+                        .unwrap_or([1.0 / 13.0; 13]);
+                    let resolved_weights = custom_weights
+                        .or_else(|| effective_weight_profile.as_ref()
+                            .and_then(|p| get_weight_profile(p)))
+                        .unwrap_or(default_profile);
+
+                    // Active embedders depend on search strategy
+                    let (active_indices, strategy_label) = match strategy {
+                        SearchStrategy::E1Only => (vec![0usize], "E1 HNSW only"),
+                        SearchStrategy::MultiSpace => (vec![0, 4, 6, 7, 9, 10], "E1+E5+E7+E8+E10+E11 RRF fusion"),
+                        SearchStrategy::Pipeline => (vec![0, 4, 6, 7, 9, 10], "E13+E1+E5+E7+E8+E11 recall → 6-embedder RRF scoring"),
+                    };
+
+                    let mut active_weights = serde_json::Map::new();
+                    let mut ignored_weights = serde_json::Map::new();
+                    let mut active_sum: f32 = 0.0;
+
+                    for (idx, &w) in resolved_weights.iter().enumerate() {
+                        let name = embedder_names::name(idx);
+                        if active_indices.contains(&idx) {
+                            active_weights.insert(name.to_string(), json!(w));
+                            active_sum += w;
+                        } else if w > 0.0 {
+                            ignored_weights.insert(name.to_string(), json!(w));
+                        }
+                    }
+
+                    response["searchTransparency"] = json!({
+                        "activeEmbedders": active_weights,
+                        "ignoredWeights": ignored_weights,
+                        "activeEmbedderCount": active_weights.len(),
+                        "totalEmbedderCount": 13,
+                        "weightUtilization": active_sum,
+                        "strategyDescription": strategy_label,
+                    });
                 }
 
                 self.tool_result(id, response)

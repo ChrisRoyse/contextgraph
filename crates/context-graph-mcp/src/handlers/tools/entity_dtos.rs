@@ -316,26 +316,60 @@ pub struct EntityLinkDto {
     /// Confidence score (1.0 for KB matches, lower for heuristic).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub confidence: Option<f32>,
+
+    /// How this entity was extracted: "knowledgeBase" or "heuristic".
+    #[serde(rename = "extractionMethod", skip_serializing_if = "Option::is_none")]
+    pub extraction_method: Option<String>,
+
+    /// Human-readable explanation of the confidence score.
+    #[serde(rename = "confidenceExplanation", skip_serializing_if = "Option::is_none")]
+    pub confidence_explanation: Option<String>,
 }
 
 impl From<EntityLink> for EntityLinkDto {
     fn from(link: EntityLink) -> Self {
+        let (method, explanation) = if link.entity_type != EntityType::Unknown {
+            (
+                "knowledgeBase".to_string(),
+                "Matched against built-in knowledge base".to_string(),
+            )
+        } else {
+            (
+                "heuristic".to_string(),
+                "Detected via capitalization/pattern heuristics".to_string(),
+            )
+        };
         Self {
             surface_form: link.surface_form,
             canonical_id: link.canonical_id,
             entity_type: entity_type_to_string(link.entity_type),
-            confidence: Some(link.confidence), // Phase 3a: Populate from EntityLink
+            confidence: Some(link.confidence),
+            extraction_method: Some(method),
+            confidence_explanation: Some(explanation),
         }
     }
 }
 
 impl From<&EntityLink> for EntityLinkDto {
     fn from(link: &EntityLink) -> Self {
+        let (method, explanation) = if link.entity_type != EntityType::Unknown {
+            (
+                "knowledgeBase".to_string(),
+                "Matched against built-in knowledge base".to_string(),
+            )
+        } else {
+            (
+                "heuristic".to_string(),
+                "Detected via capitalization/pattern heuristics".to_string(),
+            )
+        };
         Self {
             surface_form: link.surface_form.clone(),
             canonical_id: link.canonical_id.clone(),
             entity_type: entity_type_to_string(link.entity_type),
-            confidence: Some(link.confidence), // Phase 3a: Populate from EntityLink
+            confidence: Some(link.confidence),
+            extraction_method: Some(method),
+            confidence_explanation: Some(explanation),
         }
     }
 }

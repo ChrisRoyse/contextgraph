@@ -491,6 +491,8 @@ impl Handlers {
         let mut source_e5_fallback_count = 0;
         let mut e8_fallback_count = 0;
         let mut e11_fallback_count = 0;
+        // Per-relationship detail accumulator for response
+        let mut relationship_details: Vec<serde_json::Value> = Vec::new();
         let start_time = std::time::Instant::now();
 
         for memory_id in &memory_ids {
@@ -765,6 +767,17 @@ impl Handlers {
                         }
 
                         total_relationships += 1;
+
+                        // Accumulate per-relationship detail for response
+                        relationship_details.push(json!({
+                            "id": causal_id.to_string(),
+                            "sourceMemoryId": memory_id.to_string(),
+                            "cause": relationship.cause,
+                            "effect": relationship.effect,
+                            "mechanismType": relationship.mechanism_type.as_str(),
+                            "confidence": relationship.confidence,
+                            "llmGuided": true,
+                        }));
                     }
                     Err(e) => {
                         warn!(
@@ -819,6 +832,7 @@ impl Handlers {
                 "mode": "extract",
                 "memoriesAnalyzed": memories_analyzed,
                 "relationshipsFound": total_relationships,
+                "relationships": relationship_details,
                 "minConfidence": min_confidence,
                 "errorBreakdown": {
                     "contentFetch": content_fetch_errors,
