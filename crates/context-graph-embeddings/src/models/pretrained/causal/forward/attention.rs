@@ -328,6 +328,238 @@ pub fn self_attention_forward(
         })
 }
 
+/// Self-attention forward pass with LoRA adapters on Q, V projections.
+///
+/// Same as `self_attention_forward()` but adds low-rank updates to query and value:
+///   Q_final = Q_base + reshape(LoRA_Q(hidden_flat))
+///   V_final = V_base + reshape(LoRA_V(hidden_flat))
+///
+/// Used during training only — inference uses the base `self_attention_forward()`.
+pub fn self_attention_forward_with_lora(
+    hidden_states: &Tensor,
+    attention: &NomicAttentionWeights,
+    attention_mask: &Tensor,
+    config: &NomicConfig,
+    layer_idx: usize,
+    cos: &Tensor,
+    sin: &Tensor,
+    lora_layers: &crate::training::lora::LoraLayers,
+) -> EmbeddingResult<Tensor> {
+    let (batch_size, seq_len, hidden_size) =
+        hidden_states
+            .dims3()
+            .map_err(|e| EmbeddingError::GpuError {
+                message: format!("CausalModel layer {} get dims failed: {}", layer_idx, e),
+            })?;
+
+    let num_heads = config.num_attention_heads;
+    let head_dim = hidden_size / num_heads;
+
+    // Flatten for matmul: [batch*seq, hidden]
+    let hidden_flat = hidden_states
+        .reshape((batch_size * seq_len, hidden_size))
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("CausalModel layer {} flatten failed: {}", layer_idx, e),
+        })?;
+
+    // Fused QKV: [batch*seq, hidden] x [3*hidden, hidden]^T = [batch*seq, 3*hidden]
+    let qkv = hidden_flat
+        .matmul(
+            &attention
+                .wqkv_weight
+                .t()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!(
+                        "CausalModel layer {} Wqkv transpose failed: {}",
+                        layer_idx, e
+                    ),
+                })?,
+        )
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} Wqkv matmul failed: {}",
+                layer_idx, e
+            ),
+        })?;
+
+    // Reshape to [batch, seq, 3, heads, head_dim]
+    let qkv = qkv
+        .reshape((batch_size, seq_len, 3, num_heads, head_dim))
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} QKV reshape failed: {}",
+                layer_idx, e
+            ),
+        })?;
+
+    // Extract Q, K, V → [batch, heads, seq, head_dim]
+    let q = extract_qkv_component(&qkv, 0, layer_idx, "Q")?;
+    let k = extract_qkv_component(&qkv, 1, layer_idx, "K")?;
+    let v = extract_qkv_component(&qkv, 2, layer_idx, "V")?;
+
+    // Apply LoRA deltas to Q: [batch*seq, hidden] → [batch, heads, seq, head_dim]
+    let q_delta = lora_layers.apply_query(layer_idx, &hidden_flat)?;
+    let q_delta = q_delta
+        .reshape((batch_size, seq_len, num_heads, head_dim))
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("CausalModel layer {} LoRA Q reshape failed: {}", layer_idx, e),
+        })?
+        .transpose(1, 2)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("CausalModel layer {} LoRA Q transpose failed: {}", layer_idx, e),
+        })?
+        .contiguous()
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("CausalModel layer {} LoRA Q contiguous failed: {}", layer_idx, e),
+        })?;
+    let q = q.add(&q_delta).map_err(|e| EmbeddingError::GpuError {
+        message: format!("CausalModel layer {} LoRA Q add failed: {}", layer_idx, e),
+    })?;
+
+    // Apply LoRA deltas to V: [batch*seq, hidden] → [batch, heads, seq, head_dim]
+    let v_delta = lora_layers.apply_value(layer_idx, &hidden_flat)?;
+    let v_delta = v_delta
+        .reshape((batch_size, seq_len, num_heads, head_dim))
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("CausalModel layer {} LoRA V reshape failed: {}", layer_idx, e),
+        })?
+        .transpose(1, 2)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("CausalModel layer {} LoRA V transpose failed: {}", layer_idx, e),
+        })?
+        .contiguous()
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!("CausalModel layer {} LoRA V contiguous failed: {}", layer_idx, e),
+        })?;
+    let v = v.add(&v_delta).map_err(|e| EmbeddingError::GpuError {
+        message: format!("CausalModel layer {} LoRA V add failed: {}", layer_idx, e),
+    })?;
+
+    // Apply RoPE to Q and K
+    let q = apply_rotary_emb(&q, cos, sin)?;
+    let k = apply_rotary_emb(&k, cos, sin)?;
+
+    // Scaled dot-product attention: softmax(QK^T / sqrt(d)) V
+    let scale = (head_dim as f64).sqrt();
+
+    let k_t = k
+        .transpose(2, 3)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} K transpose 2,3 failed: {}",
+                layer_idx, e
+            ),
+        })?
+        .contiguous()
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} K^T contiguous failed: {}",
+                layer_idx, e
+            ),
+        })?;
+
+    let scores = q
+        .matmul(&k_t)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} QK matmul failed: {}",
+                layer_idx, e
+            ),
+        })?;
+
+    let scores = (scores / scale).map_err(|e| EmbeddingError::GpuError {
+        message: format!(
+            "CausalModel layer {} attention scale failed: {}",
+            layer_idx, e
+        ),
+    })?;
+
+    let scores = scores
+        .broadcast_add(attention_mask)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} attention mask failed: {}",
+                layer_idx, e
+            ),
+        })?;
+
+    let attn_probs =
+        candle_nn::ops::softmax(&scores, candle_core::D::Minus1).map_err(|e| {
+            EmbeddingError::GpuError {
+                message: format!("CausalModel layer {} softmax failed: {}", layer_idx, e),
+            }
+        })?;
+
+    let context = attn_probs
+        .matmul(&v)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} context matmul failed: {}",
+                layer_idx, e
+            ),
+        })?;
+
+    // Reshape back: [batch, heads, seq, head_dim] → [batch, seq, hidden]
+    let context = context
+        .transpose(1, 2)
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} context transpose failed: {}",
+                layer_idx, e
+            ),
+        })?
+        .contiguous()
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} context contiguous failed: {}",
+                layer_idx, e
+            ),
+        })?
+        .reshape((batch_size, seq_len, hidden_size))
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} context reshape failed: {}",
+                layer_idx, e
+            ),
+        })?;
+
+    // Output projection (no bias for NomicBERT)
+    let context_flat = context
+        .reshape((batch_size * seq_len, hidden_size))
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} output flatten failed: {}",
+                layer_idx, e
+            ),
+        })?;
+
+    context_flat
+        .matmul(
+            &attention
+                .out_proj_weight
+                .t()
+                .map_err(|e| EmbeddingError::GpuError {
+                    message: format!(
+                        "CausalModel layer {} output transpose failed: {}",
+                        layer_idx, e
+                    ),
+                })?,
+        )
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} output matmul failed: {}",
+                layer_idx, e
+            ),
+        })?
+        .reshape((batch_size, seq_len, hidden_size))
+        .map_err(|e| EmbeddingError::GpuError {
+            message: format!(
+                "CausalModel layer {} output reshape failed: {}",
+                layer_idx, e
+            ),
+        })
+}
+
 /// Extract Q, K, or V from the fused QKV tensor.
 ///
 /// qkv: [batch, seq, 3, heads, head_dim] → component: [batch, heads, seq, head_dim]

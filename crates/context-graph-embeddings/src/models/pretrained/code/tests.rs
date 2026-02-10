@@ -25,7 +25,7 @@ mod tests {
     }
 
     pub(crate) fn create_test_model() -> CodeModel {
-        let model_path = workspace_root().join("models/code");
+        let model_path = workspace_root().join("models/code-1536");
         CodeModel::new(&model_path, SingleModelConfig::default())
             .expect("Failed to create CodeModel")
     }

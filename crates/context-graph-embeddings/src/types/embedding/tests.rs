@@ -403,7 +403,7 @@ mod tests {
             (ModelId::Graph, 1024),             // E8: e5-large-v2 (upgraded from MiniLM 384D)
             (ModelId::Hdc, 10000),              // E9: Hyperdimensional (10K-bit)
             (ModelId::Multimodal, 768),         // E10: CLIP
-            (ModelId::Entity, 768),             // E11: KEPLER (upgraded from MiniLM 384D)
+            (ModelId::Entity, 384),             // E11: Legacy MiniLM-L6-v2 (production uses Kepler 768D)
             (ModelId::LateInteraction, 128),    // E12: ColBERT per-token
         ];
 

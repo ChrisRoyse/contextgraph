@@ -44,7 +44,7 @@ mod tests {
     }
 
     fn create_test_model() -> GraphModel {
-        let model_path = workspace_root().join("models/graph");
+        let model_path = workspace_root().join("models/semantic");
         GraphModel::new(&model_path, SingleModelConfig::default())
             .expect("Failed to create GraphModel")
     }
@@ -69,7 +69,7 @@ mod tests {
             max_batch_size: 0,
             ..Default::default()
         };
-        let model_path = workspace_root().join("models/graph");
+        let model_path = workspace_root().join("models/semantic");
         let result = GraphModel::new(&model_path, config);
         assert!(matches!(result, Err(EmbeddingError::ConfigError { .. })));
     }
@@ -458,7 +458,7 @@ mod tests {
         assert_eq!(GRAPH_LATENCY_BUDGET_MS, 5);
         assert_eq!(
             GRAPH_MODEL_NAME,
-            "sentence-transformers/paraphrase-MiniLM-L6-v2"
+            "intfloat/e5-large-v2"
         );
         assert_eq!(MAX_CONTEXT_NEIGHBORS, 5);
     }

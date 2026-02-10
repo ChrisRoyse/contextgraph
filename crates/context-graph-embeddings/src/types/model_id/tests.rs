@@ -51,7 +51,7 @@ fn test_model_path() {
 
 #[test]
 fn test_max_tokens() {
-    assert_eq!(ModelId::Causal.max_tokens(), 4096);
+    assert_eq!(ModelId::Causal.max_tokens(), 512);
     assert_eq!(ModelId::Multimodal.max_tokens(), 77);
     assert_eq!(ModelId::Semantic.max_tokens(), 512);
 }
@@ -133,10 +133,10 @@ fn test_tokenizer_families() {
         TokenizerFamily::BertWordpiece
     );
 
-    // RoBERTa family: Causal
+    // BERT family: Causal (nomic-embed uses BERT tokenizer)
     assert_eq!(
         ModelId::Causal.tokenizer_family(),
-        TokenizerFamily::RobertaBpe
+        TokenizerFamily::BertWordpiece
     );
 
     // BERT WordPiece family: Code (Qodo-Embed uses BERT tokenizer)

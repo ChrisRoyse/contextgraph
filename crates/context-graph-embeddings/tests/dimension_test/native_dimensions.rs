@@ -141,10 +141,10 @@ fn test_e10_multimodal_native_dimension() {
 fn test_e11_entity_native_dimension() {
     assert_eq!(
         ModelId::Entity.dimension(),
-        768,
-        "E11 Entity: expected native dimension 768 (KEPLER, upgraded from MiniLM 384D)"
+        384,
+        "E11 Entity: expected native dimension 384 (legacy MiniLM; production uses Kepler 768D)"
     );
-    assert_eq!(ENTITY_NATIVE, 768, "ENTITY_NATIVE constant mismatch");
+    assert_eq!(ENTITY_NATIVE, 384, "ENTITY_NATIVE constant mismatch");
 }
 
 /// Test E12 LateInteraction native dimension matches Constitution.

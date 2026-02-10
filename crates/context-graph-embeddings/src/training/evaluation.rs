@@ -22,10 +22,16 @@ pub struct EvaluationMetrics {
     pub cross_topic_rejection: f32,
     /// Number of evaluation pairs.
     pub num_pairs: usize,
+    /// Top-1 score minus rank-5 score (target: >0.10).
+    pub score_spread: f32,
+    /// Average pairwise cosine of random vector pairs (target: <0.30).
+    pub anisotropy: f32,
+    /// E5-only standalone retrieval top-1 accuracy (target: >=4/6 = 0.67).
+    pub standalone_accuracy: f32,
 }
 
 impl EvaluationMetrics {
-    /// Check if all targets are met.
+    /// Check if all targets are met (original + Option B criteria).
     pub fn meets_targets(&self) -> bool {
         self.directional_accuracy > 0.90
             && self.topical_mrr > 0.7
@@ -34,15 +40,25 @@ impl EvaluationMetrics {
             && self.cross_topic_rejection > 0.80
     }
 
+    /// Check Option B fine-tuning targets specifically.
+    pub fn meets_finetuning_targets(&self) -> bool {
+        self.score_spread > 0.10
+            && self.anisotropy < 0.30
+            && self.standalone_accuracy >= 0.67
+    }
+
     /// Format metrics as a summary string.
     pub fn summary(&self) -> String {
         format!(
-            "DirAcc={:.3} MRR={:.3} AUC={:.3} DirRatio={:.2} XTopicRej={:.3} (n={})",
+            "DirAcc={:.3} MRR={:.3} AUC={:.3} DirRatio={:.2} XTopicRej={:.3} Spread={:.3} Aniso={:.3} StandAcc={:.3} (n={})",
             self.directional_accuracy,
             self.topical_mrr,
             self.causal_auc,
             self.direction_ratio,
             self.cross_topic_rejection,
+            self.score_spread,
+            self.anisotropy,
+            self.standalone_accuracy,
             self.num_pairs,
         )
     }
@@ -219,7 +235,119 @@ impl Evaluator {
             direction_ratio,
             cross_topic_rejection: 0.0, // Requires cross-topic pairs — computed separately
             num_pairs: n,
+            score_spread: 0.0,  // Computed separately with candidate similarities
+            anisotropy: 0.0,    // Computed separately with all vectors
+            standalone_accuracy: 0.0, // Computed separately with retrieval setup
         })
+    }
+
+    /// Compute score spread: top-1 score minus rank-5 score.
+    ///
+    /// Measures how well the model discriminates between candidates.
+    /// Higher spread = better discrimination (target: >0.10).
+    pub fn score_spread(similarities: &[f32]) -> f32 {
+        if similarities.len() < 2 {
+            return 0.0;
+        }
+        let mut sorted = similarities.to_vec();
+        sorted.sort_by(|a, b| b.partial_cmp(a).unwrap_or(std::cmp::Ordering::Equal));
+
+        let top1 = sorted[0];
+        let rank5 = sorted.get(4).copied().unwrap_or(*sorted.last().unwrap());
+        top1 - rank5
+    }
+
+    /// Measure embedding space anisotropy via average pairwise cosine similarity.
+    ///
+    /// Low anisotropy means vectors are well-distributed in the space.
+    /// High anisotropy means vectors cluster in a narrow cone (bad).
+    /// Target: <0.30.
+    pub fn anisotropy_measure(vectors: &[Vec<f32>]) -> f32 {
+        if vectors.len() < 2 {
+            return 0.0;
+        }
+
+        let max_pairs = 100usize;
+        let mut total_sim = 0.0f64;
+        let mut count = 0usize;
+
+        let n = vectors.len();
+        let step = if n * (n - 1) / 2 > max_pairs {
+            n * (n - 1) / 2 / max_pairs
+        } else {
+            1
+        };
+
+        let mut pair_idx = 0usize;
+        'outer: for i in 0..n {
+            for j in (i + 1)..n {
+                if pair_idx % step == 0 {
+                    let dot: f32 = vectors[i]
+                        .iter()
+                        .zip(vectors[j].iter())
+                        .map(|(a, b)| a * b)
+                        .sum();
+                    let norm_a: f32 = vectors[i].iter().map(|x| x * x).sum::<f32>().sqrt();
+                    let norm_b: f32 = vectors[j].iter().map(|x| x * x).sum::<f32>().sqrt();
+                    let denom = norm_a * norm_b;
+                    if denom > 1e-8 {
+                        total_sim += (dot / denom) as f64;
+                        count += 1;
+                    }
+                    if count >= max_pairs {
+                        break 'outer;
+                    }
+                }
+                pair_idx += 1;
+            }
+        }
+
+        if count == 0 {
+            0.0
+        } else {
+            (total_sim / count as f64) as f32
+        }
+    }
+
+    /// Compute standalone top-1 accuracy for E5-only retrieval.
+    ///
+    /// For each query vector, finds the nearest candidate and checks if it matches
+    /// the expected index. Returns fraction of correct top-1 matches.
+    pub fn standalone_top1_accuracy(
+        query_vecs: &Tensor,
+        candidate_vecs: &Tensor,
+        expected_indices: &[usize],
+    ) -> EmbeddingResult<f32> {
+        let sim_matrix = query_vecs
+            .matmul(&candidate_vecs.t().map_err(map_candle)?)
+            .map_err(map_candle)?;
+
+        let n = expected_indices.len();
+        if n == 0 {
+            return Ok(0.0);
+        }
+
+        let mut correct = 0usize;
+
+        for i in 0..n {
+            let row: Vec<f32> = sim_matrix
+                .get(i)
+                .map_err(map_candle)?
+                .to_vec1()
+                .map_err(map_candle)?;
+
+            let (max_idx, _) = row
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .unwrap_or((0, &0.0));
+
+            if max_idx == expected_indices[i] {
+                correct += 1;
+            }
+        }
+
+        Ok(correct as f32 / n as f32)
     }
 }
 
@@ -276,8 +404,12 @@ mod tests {
             direction_ratio: 2.3,
             cross_topic_rejection: 0.85,
             num_pairs: 100,
+            score_spread: 0.15,
+            anisotropy: 0.20,
+            standalone_accuracy: 0.80,
         };
         assert!(m.meets_targets());
+        assert!(m.meets_finetuning_targets());
         let s = m.summary();
         assert!(s.contains("0.920"));
         assert!(s.contains("n=100"));

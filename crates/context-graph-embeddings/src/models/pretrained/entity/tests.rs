@@ -76,14 +76,14 @@ fn test_model_id() {
 #[test]
 fn test_native_dimension() {
     let model = create_test_model();
-    assert_eq!(model.dimension(), 768);
+    assert_eq!(model.dimension(), ENTITY_DIMENSION);
 }
 
 #[test]
 fn test_projected_dimension_equals_native() {
     let model = create_test_model();
     // Entity model has no projection - projected == native
-    assert_eq!(model.projected_dimension(), 768);
+    assert_eq!(model.projected_dimension(), ENTITY_DIMENSION);
 }
 
 #[test]
@@ -182,15 +182,15 @@ async fn test_embed_before_load_fails() {
 }
 
 #[tokio::test]
-async fn test_embed_text_returns_768d() {
+async fn test_embed_text_returns_384d() {
     let model = create_and_load_model().await;
     let input = ModelInput::text("[PERSON] Alice").expect("Input");
 
     let embedding = model.embed(&input).await.expect("Embed should succeed");
 
-    // Should return native 768D (KEPLER, no projection)
+    // Should return native 384D (legacy MiniLM, no projection)
     assert_eq!(embedding.vector.len(), ENTITY_DIMENSION);
-    assert_eq!(embedding.vector.len(), 768);
+    assert_eq!(embedding.vector.len(), 384);
 }
 
 #[tokio::test]
@@ -324,7 +324,7 @@ async fn test_embed_encoded_entity() {
 
     let embedding = model.embed(&input).await.expect("Embed");
 
-    assert_eq!(embedding.vector.len(), 768);
+    assert_eq!(embedding.vector.len(), ENTITY_DIMENSION);
     assert_eq!(embedding.model_id, ModelId::Entity);
 }
 
@@ -460,7 +460,7 @@ async fn test_embed_batch_multiple_inputs() {
 
     assert_eq!(embeddings.len(), 3);
     for emb in &embeddings {
-        assert_eq!(emb.vector.len(), 768);
+        assert_eq!(emb.vector.len(), ENTITY_DIMENSION);
         assert_eq!(emb.model_id, ModelId::Entity);
     }
 }
@@ -496,7 +496,7 @@ async fn test_concurrent_embed_calls() {
         let embedding = result
             .expect("Task should not panic")
             .expect("Embed should succeed");
-        assert_eq!(embedding.vector.len(), 768);
+        assert_eq!(embedding.vector.len(), ENTITY_DIMENSION);
     }
 }
 
@@ -504,7 +504,7 @@ async fn test_concurrent_embed_calls() {
 
 #[test]
 fn test_constants_are_correct() {
-    assert_eq!(ENTITY_DIMENSION, 768); // KEPLER (upgraded from MiniLM 384D)
+    assert_eq!(ENTITY_DIMENSION, 384); // Legacy MiniLM-L6-v2 (production E11 uses Kepler)
     assert_eq!(ENTITY_MAX_TOKENS, 512);
     assert_eq!(ENTITY_LATENCY_BUDGET_MS, 2);
     // Note: ENTITY_MODEL_NAME is deprecated - production uses ModelId::Kepler
@@ -566,7 +566,7 @@ async fn test_edge_case_2_long_entity_name() {
 
     println!("AFTER: result.is_ok() = {}", result.is_ok());
     assert!(result.is_ok());
-    assert_eq!(result.unwrap().vector.len(), 768);
+    assert_eq!(result.unwrap().vector.len(), ENTITY_DIMENSION);
 }
 
 #[tokio::test]
@@ -653,7 +653,7 @@ async fn test_source_of_truth_verification() {
 
     // VERIFY AGAINST SOURCE OF TRUTH (types/model_id.rs)
     assert_eq!(embedding.model_id, ModelId::Entity);
-    assert_eq!(embedding.vector.len(), 768); // ModelId::Entity.dimension()
+    assert_eq!(embedding.vector.len(), ENTITY_DIMENSION); // ModelId::Entity.dimension()
     assert!((norm - 1.0).abs() < 0.001, "Must be L2 normalized");
     assert!(!has_nan && !has_inf, "No NaN or Inf values");
 }
@@ -708,8 +708,8 @@ async fn test_evidence_of_success() {
 
     // 4. TransE operations
     println!("\n4. TRANSE OPERATIONS:");
-    let h: Vec<f32> = (0..768).map(|i| i as f32 / 768.0).collect();
-    let r: Vec<f32> = (0..768).map(|i| 0.1 * (i as f32 / 768.0)).collect();
+    let h: Vec<f32> = (0..ENTITY_DIMENSION).map(|i| i as f32 / ENTITY_DIMENSION as f32).collect();
+    let r: Vec<f32> = (0..ENTITY_DIMENSION).map(|i| 0.1 * (i as f32 / ENTITY_DIMENSION as f32)).collect();
     let t: Vec<f32> = h.iter().zip(&r).map(|(a, b)| a + b).collect();
 
     let score = EntityModel::transe_score(&h, &r, &t);
@@ -734,6 +734,6 @@ async fn test_evidence_of_success() {
     println!("========================================\n");
 
     // Final assertions
-    assert_eq!(embedding.vector.len(), 768);
+    assert_eq!(embedding.vector.len(), ENTITY_DIMENSION);
     assert!((norm - 1.0).abs() < 0.001);
 }

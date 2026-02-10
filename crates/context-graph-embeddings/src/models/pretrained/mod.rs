@@ -12,7 +12,7 @@
 //!
 //! Without the feature, models use stub implementations for testing.
 
-mod causal;
+pub(crate) mod causal;
 mod code;
 mod contextual;
 mod entity;
@@ -27,7 +27,10 @@ pub mod weight_projection;
 
 pub use causal::{
     CausalModel, TrainableProjection, CAUSAL_DIMENSION, CAUSAL_LATENCY_BUDGET_MS, CAUSAL_MAX_TOKENS,
+    CAUSE_INSTRUCTION, EFFECT_INSTRUCTION,
 };
+pub use causal::loader::load_nomic_weights;
+pub use causal::weights::NomicWeights;
 pub use contextual::{
     context_pooling_weights, detect_context_markers, intent_pooling_weights,
     ContextMarkerResult, ContextType, ContextualModel,

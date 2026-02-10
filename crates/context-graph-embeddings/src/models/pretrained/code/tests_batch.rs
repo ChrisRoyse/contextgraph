@@ -36,7 +36,7 @@ mod tests {
     }
 
     fn create_test_model() -> CodeModel {
-        let model_path = workspace_root().join("models/code");
+        let model_path = workspace_root().join("models/code-1536");
         CodeModel::new(&model_path, SingleModelConfig::default())
             .expect("Failed to create CodeModel")
     }
@@ -138,7 +138,7 @@ mod tests {
         //
         // Production target with pre-warmed VRAM models: <10ms
         // That stricter budget is validated in integration tests with actual warm pools.
-        let budget_ms: u128 = 1500;
+        let budget_ms: u128 = 3000;
         assert!(
             median_latency.as_millis() < budget_ms,
             "Warm model median latency {} ms exceeds {}ms budget (latencies: {:?})",

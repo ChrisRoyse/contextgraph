@@ -38,8 +38,9 @@ pub const HDC_NATIVE: usize = 10000;
 /// E10: Multimodal embedding native dimension (CLIP)
 pub const MULTIMODAL_NATIVE: usize = 768;
 
-/// E11: Entity embedding native dimension (KEPLER RoBERTa-base + TransE, upgraded from MiniLM 384D)
-pub const ENTITY_NATIVE: usize = 768;
+/// E11: Entity embedding native dimension (legacy MiniLM-L6-v2).
+/// Note: Production E11 uses ModelId::Kepler at 768D (RoBERTa + TransE).
+pub const ENTITY_NATIVE: usize = 384;
 
 /// E12: Late-interaction native dimension per token (ColBERT)
 pub const LATE_INTERACTION_NATIVE: usize = 128;
@@ -81,8 +82,9 @@ pub const HDC: usize = 1024;
 /// E10: Multimodal projected dimension (no projection needed)
 pub const MULTIMODAL: usize = 768;
 
-/// E11: Entity projected dimension (KEPLER, no projection needed)
-pub const ENTITY: usize = 768;
+/// E11: Entity projected dimension (legacy MiniLM, no projection needed).
+/// Note: Production E11 uses ModelId::Kepler at 768D.
+pub const ENTITY: usize = 384;
 
 /// E12: Late-interaction projected dimension (pooled to single vector)
 pub const LATE_INTERACTION: usize = 128;

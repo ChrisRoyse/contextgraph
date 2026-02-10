@@ -73,10 +73,10 @@ fn test_storage_version() {
 // DIMENSION BENCHMARK TESTS
 // =============================================================================
 
-/// Test: Total dimension is 11648 (updated after E7 Code 768→1536 for Qodo-Embed)
+/// Test: Total dimension is 11264 (E11 Entity at legacy 384D)
 #[test]
 fn test_total_dimension_benchmark() {
-    assert_eq!(TOTAL_DIMENSION, 11648);
+    assert_eq!(TOTAL_DIMENSION, 11264);
     eprintln!("[BENCHMARK] Total dimension: {}D", TOTAL_DIMENSION);
 }
 
@@ -638,8 +638,8 @@ fn test_constitution_constants_consistency() {
     // RRF_K from Constitution
     assert_eq!(RRF_K, 60.0);
 
-    // TOTAL_DIMENSION (updated after E7 Code 768→1536 for Qodo-Embed)
-    assert_eq!(TOTAL_DIMENSION, 11648);
+    // TOTAL_DIMENSION (E11 Entity at legacy 384D)
+    assert_eq!(TOTAL_DIMENSION, 11264);
 
     eprintln!("[BENCHMARK] Constitution constants verified:");
     eprintln!("  NUM_EMBEDDERS = MODEL_COUNT = {}", NUM_EMBEDDERS);

@@ -88,10 +88,10 @@ fn test_model_id_iteration_sum() {
 #[test]
 fn test_total_dimension_breakdown() {
     // Constitution: E1-E13 projected dimensions
-    // E8 upgraded 384→1024 (e5-large-v2), E11 upgraded 384→768 (KEPLER)
-    // E1:1024 + E2:512 + E3:512 + E4:512 + E5:768 + E6:1536 + E7:1536 + E8:1024 + E9:1024 + E10:768 + E11:768 + E12:128 + E13:1536 = 11648
+    // E8 upgraded 384→1024 (e5-large-v2); E11 remains legacy MiniLM 384D
+    // E1:1024 + E2:512 + E3:512 + E4:512 + E5:768 + E6:1536 + E7:1536 + E8:1024 + E9:1024 + E10:768 + E11:384 + E12:128 + E13:1536 = 11264
     let expected_breakdown =
-        1024 + 512 + 512 + 512 + 768 + 1536 + 1536 + 1024 + 1024 + 768 + 768 + 128 + 1536;
+        1024 + 512 + 512 + 512 + 768 + 1536 + 1536 + 1024 + 1024 + 768 + 384 + 128 + 1536;
     assert_eq!(
         expected_breakdown, EXPECTED_TOTAL_DIMENSION,
         "Documented breakdown sum {} != expected {}",

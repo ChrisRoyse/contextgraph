@@ -87,7 +87,7 @@ impl ModelId {
             Self::Graph => 1024,   // e5-large-v2 (upgraded from MiniLM 384D)
             Self::Hdc => 10000,    // 10K-bit vector
             Self::Multimodal => 768,
-            Self::Entity => 768,   // KEPLER (upgraded from MiniLM 384D)
+            Self::Entity => 384,   // Legacy MiniLM-L6-v2 (production E11 uses Kepler 768D)
             Self::LateInteraction => 128, // Per-token dimension
             Self::Splade => 30522,        // SPLADE v3 vocab size
             Self::Kepler => 768,          // KEPLER (RoBERTa-base)

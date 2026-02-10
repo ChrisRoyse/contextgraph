@@ -19,7 +19,7 @@ mod tests {
     async fn get_warm_model() -> &'static CodeModel {
         let cell = WARM_MODEL.get_or_init(|| Arc::new(AsyncOnceCell::new()));
         cell.get_or_init(|| async {
-            let model_path = workspace_root().join("models/code");
+            let model_path = workspace_root().join("models/code-1536");
             let model = CodeModel::new(&model_path, SingleModelConfig::default())
                 .expect("Failed to create CodeModel");
             model.load().await.expect("Failed to load warm model");
@@ -39,7 +39,7 @@ mod tests {
     }
 
     async fn create_and_load_model() -> CodeModel {
-        let model_path = workspace_root().join("models/code");
+        let model_path = workspace_root().join("models/code-1536");
         let model =
             CodeModel::new(&model_path, SingleModelConfig::default()).expect("Failed to create");
         model.load().await.expect("Failed to load model");

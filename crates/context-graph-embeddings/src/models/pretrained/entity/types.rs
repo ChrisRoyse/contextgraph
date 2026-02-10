@@ -7,9 +7,10 @@ use crate::gpu::BertWeights;
 use crate::traits::SingleModelConfig;
 use tokenizers::Tokenizer;
 
-/// Native dimension for KEPLER entity embeddings (RoBERTa-base + TransE).
-/// Upgraded from all-MiniLM 384D to KEPLER 768D.
-pub const ENTITY_DIMENSION: usize = 768;
+/// Native dimension for MiniLM entity embeddings (legacy).
+/// Note: Production E11 uses KEPLER (768D) via ModelId::Kepler.
+/// This legacy Entity model remains at 384D (all-MiniLM-L6-v2).
+pub const ENTITY_DIMENSION: usize = 384;
 
 /// Maximum tokens for KEPLER (standard BERT-family limit).
 pub const ENTITY_MAX_TOKENS: usize = 512;

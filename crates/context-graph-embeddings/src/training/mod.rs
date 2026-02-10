@@ -44,4 +44,5 @@ pub mod lora;
 pub mod loss;
 pub mod multitask;
 pub mod optimizer;
+pub mod pipeline;
 pub mod trainer;

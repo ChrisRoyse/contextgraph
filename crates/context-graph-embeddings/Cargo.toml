@@ -26,6 +26,7 @@ async-trait = { workspace = true }
 
 # Logging
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true, optional = true }
 
 # For stub implementations and Gaussian noise in gating network
 rand = "0.8"
@@ -89,10 +90,14 @@ serial_test = "3.0"
 # Enable test-utils for stubs access in tests (AP-007 compliant)
 context-graph-core = { path = "../context-graph-core", features = ["test-utils"] }
 
+[[bin]]
+name = "train-causal"
+path = "src/bin/train_causal.rs"
+
 [features]
 # GPU-first architecture: candle feature is MANDATORY for RTX 5090 acceleration
 # The compile_error! in lib.rs enforces this at compile time
 default = ["candle"]
-candle = ["dep:candle-core", "dep:candle-nn", "dep:tokenizers"]  # Candle ML framework with CUDA 13.x (REQUIRED)
+candle = ["dep:candle-core", "dep:candle-nn", "dep:tokenizers", "dep:tracing-subscriber"]  # Candle ML framework with CUDA 13.x (REQUIRED)
 cuda = ["candle"]   # Alias for candle - Full CUDA acceleration via Candle (RTX 5090)
 onnx = []           # Future: ONNX Runtime support

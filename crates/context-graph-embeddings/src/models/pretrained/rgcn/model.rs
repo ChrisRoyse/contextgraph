@@ -55,15 +55,23 @@ impl RGCNLayerWeights {
             // Weighted sum of basis matrices
             let mut result: Option<Tensor> = None;
             for b in 0..NUM_BASES {
-                let att_coef = att_r.i(b).map_err(|e| EmbeddingError::GpuError {
-                    message: format!("Failed to get attention coef: {}", e),
-                })?;
+                let att_coef: f64 = att_r
+                    .i(b)
+                    .map_err(|e| EmbeddingError::GpuError {
+                        message: format!("Failed to get attention coef: {}", e),
+                    })?
+                    .to_scalar::<f32>()
+                    .map_err(|e| EmbeddingError::GpuError {
+                        message: format!("Failed to extract scalar coef: {}", e),
+                    })? as f64;
                 let basis = self.weight.i(b).map_err(|e| EmbeddingError::GpuError {
                     message: format!("Failed to get basis {}: {}", b, e),
                 })?;
-                let scaled = (basis * att_coef).map_err(|e| EmbeddingError::GpuError {
-                    message: format!("Failed to scale basis: {}", e),
-                })?;
+                let scaled = basis
+                    .affine(att_coef, 0.0)
+                    .map_err(|e| EmbeddingError::GpuError {
+                        message: format!("Failed to scale basis: {}", e),
+                    })?;
 
                 result = Some(match result {
                     None => scaled,

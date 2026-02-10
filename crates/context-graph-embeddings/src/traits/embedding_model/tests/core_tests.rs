@@ -179,7 +179,7 @@ fn test_latency_budget_ms_delegates_to_model_id() {
 #[test]
 fn test_max_tokens_delegates_to_model_id() {
     let causal = TestModel::new(ModelId::Causal, vec![InputType::Text]);
-    assert_eq!(causal.max_tokens(), 4096);
+    assert_eq!(causal.max_tokens(), 512);
 
     let multimodal = TestModel::new(ModelId::Multimodal, vec![InputType::Text]);
     assert_eq!(multimodal.max_tokens(), 77);

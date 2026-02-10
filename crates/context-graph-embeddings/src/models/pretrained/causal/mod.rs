@@ -19,9 +19,9 @@
 //! - `forward`: Neural network forward pass (RoPE attention, SwiGLU FFN)
 //! - `model`: Main CausalModel struct and trait implementation
 
-mod config;
-mod forward;
-mod loader;
+pub(crate) mod config;
+pub(crate) mod forward;
+pub(crate) mod loader;
 mod model;
 pub(crate) mod weights;
 

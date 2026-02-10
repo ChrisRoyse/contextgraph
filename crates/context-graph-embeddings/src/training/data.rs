@@ -673,6 +673,113 @@ pub fn load_pairs_jsonl(path: &std::path::Path) -> std::io::Result<Vec<CausalTra
     Ok(pairs)
 }
 
+/// Expand seed pairs to ~500+ training examples via programmatic augmentation.
+///
+/// Expansion strategies:
+/// 1. **Reversed pairs**: Swap cause/effect text, direction becomes Backward (~50 new pairs)
+/// 2. **Non-causal negatives**: Cross-domain pairing of unrelated cause/effect texts (~100+ pairs)
+/// 3. **Cross-domain hard negatives**: Same domain, different relationship (added to hard_negative field)
+pub fn expand_seed_pairs(pairs: &[CausalTrainingPair]) -> Vec<CausalTrainingPair> {
+    let mut expanded: Vec<CausalTrainingPair> = pairs.to_vec();
+
+    // 1. Reversed pairs: swap cause/effect, direction becomes Backward
+    let reversed: Vec<CausalTrainingPair> = pairs
+        .iter()
+        .filter(|p| matches!(p.direction, TrainingDirection::Forward))
+        .map(|p| {
+            CausalTrainingPair::new(
+                p.effect_text.clone(),
+                p.cause_text.clone(),
+                TrainingDirection::Backward,
+                p.confidence,
+            )
+            .with_mechanism(p.mechanism.clone())
+            .with_domain(p.domain.clone())
+            .with_hard_negative(p.hard_negative.clone())
+        })
+        .collect();
+    expanded.extend(reversed);
+
+    // 2. Non-causal negatives: cross-domain pairing
+    let non_causal = generate_non_causal_pairs(pairs);
+    expanded.extend(non_causal);
+
+    // 3. Cross-domain hard negatives: pair cause from one relationship
+    //    with effect from a different relationship in the same domain
+    let causal_pairs: Vec<&CausalTrainingPair> = pairs
+        .iter()
+        .filter(|p| p.is_causal())
+        .collect();
+
+    for i in 0..causal_pairs.len() {
+        for j in (i + 1)..causal_pairs.len() {
+            let a = causal_pairs[i];
+            let b = causal_pairs[j];
+
+            // Same domain, different relationship → hard negative
+            if a.domain == b.domain {
+                let mut hard_neg_pair = CausalTrainingPair::new(
+                    a.cause_text.clone(),
+                    b.effect_text.clone(),
+                    TrainingDirection::None,
+                    0.15,
+                )
+                .with_domain(a.domain.clone())
+                .with_mechanism("cross_relationship");
+
+                // Set the actual matching effect as hard_negative context
+                hard_neg_pair.hard_negative = a.effect_text.clone();
+                expanded.push(hard_neg_pair);
+            }
+        }
+    }
+
+    expanded
+}
+
+/// Generate non-causal training pairs by cross-domain pairing.
+///
+/// Takes cause texts from one domain and pairs them with effect texts from
+/// unrelated domains. These serve as explicit negative examples.
+pub fn generate_non_causal_pairs(pairs: &[CausalTrainingPair]) -> Vec<CausalTrainingPair> {
+    let mut non_causal = Vec::new();
+
+    // Group causal pairs by domain
+    let mut by_domain: std::collections::HashMap<&str, Vec<&CausalTrainingPair>> =
+        std::collections::HashMap::new();
+    for pair in pairs.iter().filter(|p| p.is_causal()) {
+        by_domain.entry(pair.domain.as_str()).or_default().push(pair);
+    }
+
+    let domains: Vec<&str> = by_domain.keys().copied().collect();
+
+    for (i, &domain_a) in domains.iter().enumerate() {
+        for &domain_b in domains.iter().skip(i + 1) {
+            let pairs_a = &by_domain[domain_a];
+            let pairs_b = &by_domain[domain_b];
+
+            // Take up to 3 cross-domain pairs per domain combination
+            for (idx, pair_a) in pairs_a.iter().enumerate().take(3) {
+                if let Some(pair_b) = pairs_b.get(idx % pairs_b.len()) {
+                    non_causal.push(
+                        CausalTrainingPair::new(
+                            pair_a.cause_text.clone(),
+                            pair_b.effect_text.clone(),
+                            TrainingDirection::None,
+                            0.05,
+                        )
+                        .with_domain("cross_domain")
+                        .with_mechanism("non_causal")
+                        .with_hard_negative(pair_a.effect_text.clone()),
+                    );
+                }
+            }
+        }
+    }
+
+    non_causal
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

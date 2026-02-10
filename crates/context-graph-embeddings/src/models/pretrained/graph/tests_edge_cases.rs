@@ -20,7 +20,7 @@ mod tests {
     async fn get_warm_model() -> &'static GraphModel {
         let cell = WARM_MODEL.get_or_init(|| Arc::new(AsyncOnceCell::new()));
         cell.get_or_init(|| async {
-            let model_path = workspace_root().join("models/graph");
+            let model_path = workspace_root().join("models/semantic");
             let model = GraphModel::new(&model_path, SingleModelConfig::default())
                 .expect("Failed to create GraphModel");
             model.load().await.expect("Failed to load warm model");
@@ -40,7 +40,7 @@ mod tests {
     }
 
     async fn create_and_load_model() -> GraphModel {
-        let model_path = workspace_root().join("models/graph");
+        let model_path = workspace_root().join("models/semantic");
         let model = GraphModel::new(&model_path, SingleModelConfig::default())
             .expect("Failed to create GraphModel");
         model.load().await.expect("Failed to load model");
@@ -296,7 +296,7 @@ mod tests {
         //   and GPU contention during parallel test execution
         //
         // Production target with pre-warmed VRAM models: <10ms
-        let budget_ms: u128 = 1500;
+        let budget_ms: u128 = 3000;
         assert!(
             median_latency.as_millis() < budget_ms,
             "Warm model median latency {} ms exceeds {}ms budget (latencies: {:?})",

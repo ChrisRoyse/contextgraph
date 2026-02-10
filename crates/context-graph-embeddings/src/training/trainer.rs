@@ -374,6 +374,11 @@ impl CausalTrainer {
     pub fn device(&self) -> &Device {
         &self.device
     }
+
+    /// Get mutable access to the optimizer for registering additional parameters.
+    pub fn optimizer_mut(&mut self) -> &mut AdamW {
+        &mut self.optimizer
+    }
 }
 
 /// Map candle errors to EmbeddingError.

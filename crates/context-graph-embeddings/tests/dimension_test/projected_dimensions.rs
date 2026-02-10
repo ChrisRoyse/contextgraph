@@ -155,10 +155,10 @@ fn test_e10_multimodal_projected_dimension() {
 fn test_e11_entity_projected_dimension() {
     assert_eq!(
         ModelId::Entity.projected_dimension(),
-        768,
-        "E11 Entity: expected projected dimension 768 (KEPLER, upgraded from MiniLM 384D)"
+        384,
+        "E11 Entity: expected projected dimension 384 (legacy MiniLM; production uses Kepler 768D)"
     );
-    assert_eq!(ENTITY, 768, "ENTITY constant mismatch");
+    assert_eq!(ENTITY, 384, "ENTITY constant mismatch");
 }
 
 /// Test E12 LateInteraction projected dimension (pooled to single vector).
