@@ -228,16 +228,51 @@ impl Evaluator {
 
         let causal_auc = Self::causal_auc(&all_sims, &all_labels);
 
+        // Compute score spread from forward (causal) similarities
+        let score_spread = Self::score_spread(&forward_vals);
+
+        // Compute anisotropy from all embedding vectors (cause + effect)
+        let mut vector_array: Vec<Vec<f32>> = Vec::with_capacity(2 * n);
+        for i in 0..n {
+            let v: Vec<f32> = cause_vecs.get(i).map_err(map_candle)?.to_vec1().map_err(map_candle)?;
+            vector_array.push(v);
+        }
+        for i in 0..n {
+            let v: Vec<f32> = effect_vecs.get(i).map_err(map_candle)?.to_vec1().map_err(map_candle)?;
+            vector_array.push(v);
+        }
+        let anisotropy = Self::anisotropy_measure(&vector_array);
+
+        // Standalone accuracy: each cause should retrieve its matching effect as top-1
+        let expected_indices: Vec<usize> = (0..n).collect();
+        let standalone_accuracy = Self::standalone_top1_accuracy(cause_vecs, effect_vecs, &expected_indices)?;
+
+        // Topical MRR: same retrieval setup (cause→effect matching)
+        let topical_mrr = Self::topical_mrr(cause_vecs, effect_vecs, &expected_indices)?;
+
+        // Cross-topic rejection: fraction of non-causal sims below the causal mean
+        let causal_mean = if forward_vals.is_empty() {
+            0.0
+        } else {
+            forward_vals.iter().sum::<f32>() / forward_vals.len() as f32
+        };
+        let cross_topic_rejection = if non_causal_sims.is_empty() {
+            0.0
+        } else {
+            let rejected = non_causal_sims.iter().filter(|&&s| s < causal_mean).count();
+            rejected as f32 / non_causal_sims.len() as f32
+        };
+
         Ok(EvaluationMetrics {
             directional_accuracy,
-            topical_mrr: 0.0, // Requires retrieval setup — computed separately
+            topical_mrr,
             causal_auc,
             direction_ratio,
-            cross_topic_rejection: 0.0, // Requires cross-topic pairs — computed separately
+            cross_topic_rejection,
             num_pairs: n,
-            score_spread: 0.0,  // Computed separately with candidate similarities
-            anisotropy: 0.0,    // Computed separately with all vectors
-            standalone_accuracy: 0.0, // Computed separately with retrieval setup
+            score_spread,
+            anisotropy,
+            standalone_accuracy,
         })
     }
 

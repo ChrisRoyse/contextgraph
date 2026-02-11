@@ -52,16 +52,17 @@ pub mod direction_mod {
 
 /// Causal content gate thresholds.
 ///
-/// Post-training E5 score distribution: causal mean=0.635 [0.4-0.84], non-causal mean=0.333 [0.15-0.55].
-/// Thresholds calibrated for trained LoRA+projection model (nomic-embed-text-v1.5).
+/// Post-training E5 score distribution (GPU benchmark 2026-02-11, re-trained):
+///   causal mean=0.384, non-causal mean=0.140, gap=0.244
+/// Thresholds calibrated for 3-stage trained LoRA+projection model (nomic-embed-text-v1.5).
 /// Untrained model scores 0.93-0.98 (all above CAUSAL_THRESHOLD → gate boosts everything equally, no-op).
 pub mod causal_gate {
     /// Minimum E5 score to consider content "definitely causal"
-    /// Calibrated: causal mean=0.635, this captures ~75% of causal content
-    pub const CAUSAL_THRESHOLD: f32 = 0.55;
+    /// Calibrated: causal mean=0.384, this captures ~90% of causal content (TPR=0.93)
+    pub const CAUSAL_THRESHOLD: f32 = 0.30;
     /// Maximum E5 score to consider content "definitely non-causal"
-    /// Calibrated: non-causal mean=0.333, this catches ~80% of non-causal content
-    pub const NON_CAUSAL_THRESHOLD: f32 = 0.40;
+    /// Calibrated: non-causal mean=0.140, this catches ~85% of non-causal content
+    pub const NON_CAUSAL_THRESHOLD: f32 = 0.22;
     /// Boost applied to results that pass the causal gate (for causal queries)
     pub const CAUSAL_BOOST: f32 = 1.05;
     /// Demotion applied to results that fail the causal gate (for causal queries)
@@ -2020,24 +2021,25 @@ mod tests {
 
     #[test]
     fn test_causal_gate_thresholds_updated() {
-        // Verify thresholds calibrated for trained LoRA+projection model
-        assert_eq!(causal_gate::CAUSAL_THRESHOLD, 0.55);
-        assert_eq!(causal_gate::NON_CAUSAL_THRESHOLD, 0.40);
-        println!("[VERIFIED] Gate thresholds calibrated: CAUSAL=0.55, NON_CAUSAL=0.40");
+        // Verify thresholds calibrated for re-trained model (2026-02-11):
+        // causal mean=0.384, non-causal mean=0.140, gap=0.244
+        assert_eq!(causal_gate::CAUSAL_THRESHOLD, 0.30);
+        assert_eq!(causal_gate::NON_CAUSAL_THRESHOLD, 0.22);
+        println!("[VERIFIED] Gate thresholds calibrated: CAUSAL=0.30, NON_CAUSAL=0.22");
     }
 
     #[test]
     fn test_causal_gate_new_thresholds() {
-        // Score above 0.55 → boosted (trained model: causal content ~0.4-0.84)
-        let boosted = apply_causal_gate(0.5, 0.60, true);
+        // Score above 0.30 → boosted (trained model: causal content mean=0.384)
+        let boosted = apply_causal_gate(0.5, 0.35, true);
         assert!((boosted - 0.5 * causal_gate::CAUSAL_BOOST).abs() < 0.001);
 
-        // Score below 0.40 → demoted (trained model: non-causal content ~0.15-0.55)
-        let demoted = apply_causal_gate(0.5, 0.35, true);
+        // Score below 0.22 → demoted (trained model: non-causal content mean=0.140)
+        let demoted = apply_causal_gate(0.5, 0.15, true);
         assert!((demoted - 0.5 * causal_gate::NON_CAUSAL_DEMOTION).abs() < 0.001);
 
-        // Score in ambiguous zone (0.40-0.55) → unchanged
-        let unchanged = apply_causal_gate(0.5, 0.48, true);
+        // Score in ambiguous zone (0.22-0.30) → unchanged
+        let unchanged = apply_causal_gate(0.5, 0.26, true);
         assert_eq!(unchanged, 0.5);
 
         println!("[VERIFIED] Causal gate respects calibrated thresholds");

@@ -1,7 +1,7 @@
 //! 3-stage progressive training pipeline for causal embedder fine-tuning.
 //!
 //! Orchestrates LoRA + projection training with curriculum learning:
-//! - Stage 1 (warm-up): projection-only, easy pairs, 10 epochs
+//! - Stage 1 (warm-up): projection-only, easy pairs, 25 epochs
 //! - Stage 2 (LoRA activation): projection + LoRA, all pairs, 20 epochs
 //! - Stage 3 (direction): projection + LoRA, directional triplet loss weight increased, 20 epochs
 
@@ -60,7 +60,7 @@ impl Default for PipelineConfig {
     fn default() -> Self {
         Self {
             lora_config: LoraConfig::default(),
-            stage1_epochs: 10,
+            stage1_epochs: 25,
             stage2_epochs: 20,
             stage3_epochs: 20,
             stage1_max_difficulty: 0.2,
@@ -1096,7 +1096,7 @@ mod tests {
     #[test]
     fn test_pipeline_config_default() {
         let config = PipelineConfig::default();
-        assert_eq!(config.stage1_epochs, 10);
+        assert_eq!(config.stage1_epochs, 25);
         assert_eq!(config.stage2_epochs, 20);
         assert_eq!(config.stage3_epochs, 20);
         assert_eq!(config.batch_size, 16);

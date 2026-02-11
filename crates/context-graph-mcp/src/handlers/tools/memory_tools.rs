@@ -2212,7 +2212,7 @@ mod tests {
 
     #[test]
     fn test_causal_gate_boost_above_threshold() {
-        // E5 score above CAUSAL_THRESHOLD (0.55) → 1.05x boost on causal query
+        // E5 score above CAUSAL_THRESHOLD (0.30) → 1.05x boost on causal query
         let result = apply_causal_gate(0.80, 0.60, true);
         let expected = 0.80 * causal_gate::CAUSAL_BOOST;
         assert!((result - expected).abs() < 1e-6, "got {result}, expected {expected}");
@@ -2221,8 +2221,8 @@ mod tests {
 
     #[test]
     fn test_causal_gate_demotion_below_threshold() {
-        // E5 score below NON_CAUSAL_THRESHOLD (0.40) → 0.90x demotion on causal query
-        let result = apply_causal_gate(0.80, 0.35, true);
+        // E5 score below NON_CAUSAL_THRESHOLD (0.22) → 0.90x demotion on causal query
+        let result = apply_causal_gate(0.80, 0.20, true);
         let expected = 0.80 * causal_gate::NON_CAUSAL_DEMOTION;
         assert!((result - expected).abs() < 1e-6, "got {result}, expected {expected}");
         println!("[VERIFIED] causal gate demotion: 0.80 * 0.90 = {result}");
@@ -2238,8 +2238,8 @@ mod tests {
 
     #[test]
     fn test_causal_gate_dead_zone() {
-        // E5 score between thresholds (0.40-0.55) → no modification
-        let result = apply_causal_gate(0.80, 0.48, true);
+        // E5 score between thresholds (0.22-0.30) → no modification
+        let result = apply_causal_gate(0.80, 0.26, true);
         assert!((result - 0.80).abs() < 1e-6, "dead zone should pass through, got {result}");
         println!("[VERIFIED] causal gate dead zone: {result}");
     }

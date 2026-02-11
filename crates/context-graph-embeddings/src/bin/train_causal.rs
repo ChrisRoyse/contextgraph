@@ -54,7 +54,7 @@ impl Default for Args {
             data_path: None,
             output: PathBuf::from("models/causal/trained"),
             epochs: None,
-            batch_size: 2,
+            batch_size: 16,
             lora_rank: 16,
             eval_every: 5,
             seed: 42,
@@ -131,7 +131,7 @@ fn parse_args() -> Args {
                 println!("  -d, --data <PATH>        Additional JSONL training data");
                 println!("  -o, --output <PATH>      Output directory (default: models/causal/trained)");
                 println!("  -e, --epochs <N>         Total epochs (overrides per-stage defaults)");
-                println!("  -b, --batch-size <N>     Batch size (default: 2)");
+                println!("  -b, --batch-size <N>     Batch size (default: 16)");
                 println!("      --lora-rank <N>      LoRA rank (default: 16)");
                 println!("      --eval-every <N>     Evaluate every N epochs (default: 5)");
                 println!("      --seed <N>           Random seed (default: 42)");

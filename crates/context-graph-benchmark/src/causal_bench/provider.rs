@@ -36,6 +36,17 @@ pub trait EmbeddingProvider: Send + Sync {
     fn is_gpu(&self) -> bool {
         false
     }
+
+    /// E1 semantic similarity between query and passage text.
+    /// Returns cosine similarity in [0, 1].
+    fn e1_score(&self, _query: &str, _passage: &str) -> f32 {
+        0.0
+    }
+
+    /// Whether this provider has real E1 (semantic) embeddings.
+    fn has_e1(&self) -> bool {
+        false
+    }
 }
 
 /// Synthetic embedding provider using deterministic hash-based scores.
@@ -118,6 +129,7 @@ impl EmbeddingProvider for SyntheticProvider {
 #[cfg(feature = "real-embeddings")]
 pub struct GpuProvider {
     model: std::sync::Arc<context_graph_embeddings::models::pretrained::CausalModel>,
+    semantic_model: Option<context_graph_embeddings::models::pretrained::SemanticModel>,
     runtime: tokio::runtime::Runtime,
 }
 
@@ -128,7 +140,7 @@ impl GpuProvider {
     /// Automatically loads trained LoRA + projection weights from
     /// `{model_path}/trained/` if available. Falls back to base model.
     pub fn new(model_path: &std::path::Path) -> Result<Self, Box<dyn std::error::Error>> {
-        use context_graph_embeddings::models::pretrained::CausalModel;
+        use context_graph_embeddings::models::pretrained::{CausalModel, SemanticModel};
         use context_graph_embeddings::traits::SingleModelConfig;
 
         let runtime = tokio::runtime::Runtime::new()?;
@@ -143,8 +155,48 @@ impl GpuProvider {
             Err(e) => println!("GpuProvider: trained weight loading failed ({}), using base model", e),
         }
 
+        // Load E1 (SemanticModel / e5-large-v2) for real semantic similarity
+        let semantic_path = model_path
+            .parent()
+            .unwrap_or(std::path::Path::new("models"))
+            .join("semantic");
+        let semantic_model = if semantic_path.exists() {
+            match SemanticModel::new(&semantic_path, SingleModelConfig::default()) {
+                Ok(sm) => match runtime.block_on(sm.load()) {
+                    Ok(()) => {
+                        println!(
+                            "GpuProvider: loaded SemanticModel (e5-large-v2) from {}",
+                            semantic_path.display()
+                        );
+                        Some(sm)
+                    }
+                    Err(e) => {
+                        println!(
+                            "GpuProvider: SemanticModel load failed ({}), E1 unavailable",
+                            e
+                        );
+                        None
+                    }
+                },
+                Err(e) => {
+                    println!(
+                        "GpuProvider: SemanticModel init failed ({}), E1 unavailable",
+                        e
+                    );
+                    None
+                }
+            }
+        } else {
+            println!(
+                "GpuProvider: no semantic model at {}, E1 unavailable",
+                semantic_path.display()
+            );
+            None
+        };
+
         Ok(Self {
             model: std::sync::Arc::new(model),
+            semantic_model,
             runtime,
         })
     }
@@ -199,6 +251,39 @@ impl EmbeddingProvider for GpuProvider {
 
     fn is_gpu(&self) -> bool {
         true
+    }
+
+    fn e1_score(&self, query: &str, passage: &str) -> f32 {
+        let semantic = match &self.semantic_model {
+            Some(sm) => sm,
+            None => return 0.0,
+        };
+        use context_graph_embeddings::types::ModelInput;
+        let query_input = ModelInput::Text {
+            content: query.to_string(),
+            instruction: Some("query".to_string()),
+        };
+        let passage_input = ModelInput::Text {
+            content: passage.to_string(),
+            instruction: None,
+        };
+        let q_vec = match self.runtime.block_on(semantic.embed_batch(&[query_input])) {
+            Ok(mut results) => results.remove(0).vector,
+            Err(e) => {
+                panic!("E1 GPU query embedding failed -- cannot produce valid benchmark scores: {}", e);
+            }
+        };
+        let p_vec = match self.runtime.block_on(semantic.embed_batch(&[passage_input])) {
+            Ok(mut results) => results.remove(0).vector,
+            Err(e) => {
+                panic!("E1 GPU passage embedding failed -- cannot produce valid benchmark scores: {}", e);
+            }
+        };
+        cosine_similarity(&q_vec, &p_vec).max(0.0)
+    }
+
+    fn has_e1(&self) -> bool {
+        self.semantic_model.is_some()
     }
 }
 

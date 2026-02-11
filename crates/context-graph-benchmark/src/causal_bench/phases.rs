@@ -10,6 +10,7 @@
 //! 7. Cross-domain generalization
 //! 8. Performance profiling
 
+use std::cell::OnceCell;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -31,6 +32,79 @@ pub struct BenchConfig {
     pub e5_weight: f32,
     /// Embedding provider (GPU or synthetic).
     pub provider: Arc<dyn EmbeddingProvider>,
+    /// Pre-computed E5 scores keyed by pair ID. Populated lazily before Phase 4+.
+    /// Avoids redundant GPU calls: 250 pair scores computed once, reused across
+    /// 90,000+ simulate_search() invocations in Phases 4/6/7.
+    pub pair_score_cache: OnceCell<HashMap<String, f32>>,
+    /// Pre-computed E1 semantic scores keyed by "{query_id}_{pair_id}".
+    /// Populated lazily before Phases 4/6/7 when GPU provider has E1.
+    pub e1_score_cache: OnceCell<HashMap<String, f32>>,
+}
+
+impl BenchConfig {
+    /// Pre-compute E5 scores for all pairs and cache by pair ID.
+    ///
+    /// Call this once before Phases 4/6/7 to avoid O(queries * pairs) GPU calls.
+    /// Safe to call multiple times — only the first call computes scores.
+    pub fn precompute_pair_scores(&self, pairs: &[BenchmarkPair]) {
+        if self.pair_score_cache.get().is_some() {
+            return;
+        }
+        let mut cache = HashMap::with_capacity(pairs.len());
+        for (i, pair) in pairs.iter().enumerate() {
+            let score = self.provider.e5_score(&pair.cause_text, &pair.effect_text);
+            cache.insert(pair.id.clone(), score);
+            if (i + 1) % 50 == 0 || i + 1 == pairs.len() {
+                tracing::info!("  Pre-computed E5 scores: {}/{}", i + 1, pairs.len());
+            }
+        }
+        let _ = self.pair_score_cache.set(cache);
+    }
+
+    /// Get E5 score for a pair, using cache if available.
+    ///
+    /// Falls back to live provider call if cache miss (shouldn't happen
+    /// if precompute_pair_scores was called with all pairs).
+    fn get_pair_e5_score(&self, pair: &BenchmarkPair) -> f32 {
+        if let Some(cache) = self.pair_score_cache.get() {
+            if let Some(&score) = cache.get(&pair.id) {
+                return score;
+            }
+        }
+        self.provider.e5_score(&pair.cause_text, &pair.effect_text)
+    }
+
+    /// Pre-compute E1 semantic scores for all query x pair combinations.
+    ///
+    /// Call once before Phases 4/6/7 to avoid O(queries x pairs) GPU calls.
+    /// Only runs when provider has E1; safe to call multiple times.
+    pub fn precompute_e1_scores(&self, queries: &[BenchmarkQuery], pairs: &[BenchmarkPair]) {
+        if self.e1_score_cache.get().is_some() || !self.provider.has_e1() {
+            return;
+        }
+        let total = queries.len() * pairs.len();
+        tracing::info!("  Pre-computing E1 semantic scores: {} queries x {} pairs = {}", queries.len(), pairs.len(), total);
+        let mut cache = HashMap::with_capacity(total);
+        for (qi, query) in queries.iter().enumerate() {
+            for pair in pairs {
+                let passage = format!("{} {}", pair.cause_text, pair.effect_text);
+                let score = self.provider.e1_score(&query.query, &passage);
+                cache.insert(format!("{}_{}", query.id, pair.id), score);
+            }
+            if (qi + 1) % 20 == 0 || qi + 1 == queries.len() {
+                tracing::info!("    E1 scores: {}/{} queries done", qi + 1, queries.len());
+            }
+        }
+        let _ = self.e1_score_cache.set(cache);
+    }
+
+    /// Get E1 score for a query-pair combination from cache.
+    fn get_query_pair_e1_score(&self, query_id: &str, pair: &BenchmarkPair) -> Option<f32> {
+        self.e1_score_cache
+            .get()
+            .and_then(|cache| cache.get(&format!("{}_{}", query_id, pair.id)))
+            .copied()
+    }
 }
 
 impl Default for BenchConfig {
@@ -39,9 +113,11 @@ impl Default for BenchConfig {
             data_dir: std::path::PathBuf::from("data/causal_benchmark"),
             quick: false,
             verbose: false,
-            causal_gate_threshold: 0.50,
+            causal_gate_threshold: 0.30,
             e5_weight: 0.10,
             provider: Arc::new(super::provider::SyntheticProvider::new()),
+            pair_score_cache: OnceCell::new(),
+            e1_score_cache: OnceCell::new(),
         }
     }
 }
@@ -55,6 +131,8 @@ impl std::fmt::Debug for BenchConfig {
             .field("causal_gate_threshold", &self.causal_gate_threshold)
             .field("e5_weight", &self.e5_weight)
             .field("provider", &self.provider.name())
+            .field("cached_pairs", &self.pair_score_cache.get().map(|c| c.len()))
+            .field("cached_e1", &self.e1_score_cache.get().map(|c| c.len()))
             .finish()
     }
 }
@@ -550,21 +628,26 @@ fn simulate_search(
         let mut score = 0.0f32;
 
         if !e5_only {
-            // E1 semantic approximation: domain + keyword match
-            if pair.domain == query.expected_domain {
-                score += 0.4;
+            // E1 semantic similarity (real or keyword proxy fallback)
+            if let Some(e1) = config.get_query_pair_e1_score(&query.id, pair) {
+                score += e1 * 0.45;
+            } else {
+                // Fallback: keyword proxy for CI/synthetic mode
+                if pair.domain == query.expected_domain {
+                    score += 0.4;
+                }
+                let cause_words: Vec<&str> = pair.cause_text.split_whitespace().collect();
+                let overlap = cause_words
+                    .iter()
+                    .filter(|w| query_lower.contains(&w.to_lowercase()))
+                    .count();
+                score += overlap as f32 * 0.05;
             }
-            let cause_words: Vec<&str> = pair.cause_text.split_whitespace().collect();
-            let overlap = cause_words
-                .iter()
-                .filter(|w| query_lower.contains(&w.to_lowercase()))
-                .count();
-            score += overlap as f32 * 0.05;
         }
 
         if with_e5 || e5_only {
-            // E5 score from configured provider (GPU or synthetic)
-            let e5_score = config.provider.e5_score(&pair.cause_text, &pair.effect_text);
+            // E5 score from cache (pre-computed) or live provider call
+            let e5_score = config.get_pair_e5_score(pair);
             let e5_weight = if e5_only { 1.0 } else { config.e5_weight };
             score += e5_score * e5_weight;
         }
@@ -737,29 +820,34 @@ fn simulate_ranked_search(
         .map(|pair| {
             let mut score = 0.0f32;
 
-            // E1 semantic approximation: domain + keyword overlap
-            if pair.domain == query.expected_domain {
-                score += 0.35;
+            // E1 semantic similarity (real or keyword proxy fallback)
+            if let Some(e1) = config.get_query_pair_e1_score(&query.id, pair) {
+                score += e1 * 0.45;
+            } else {
+                // Fallback: keyword proxy for CI/synthetic mode
+                if pair.domain == query.expected_domain {
+                    score += 0.35;
+                }
+
+                // Word overlap with cause_text
+                let words: Vec<&str> = pair.cause_text.split_whitespace().collect();
+                let overlap = words
+                    .iter()
+                    .filter(|w| w.len() > 3 && query_lower.contains(&w.to_lowercase()))
+                    .count();
+                score += overlap as f32 * 0.08;
+
+                // Word overlap with effect_text
+                let words: Vec<&str> = pair.effect_text.split_whitespace().collect();
+                let overlap = words
+                    .iter()
+                    .filter(|w| w.len() > 3 && query_lower.contains(&w.to_lowercase()))
+                    .count();
+                score += overlap as f32 * 0.06;
             }
 
-            // Word overlap with cause_text
-            let words: Vec<&str> = pair.cause_text.split_whitespace().collect();
-            let overlap = words
-                .iter()
-                .filter(|w| w.len() > 3 && query_lower.contains(&w.to_lowercase()))
-                .count();
-            score += overlap as f32 * 0.08;
-
-            // Word overlap with effect_text
-            let words: Vec<&str> = pair.effect_text.split_whitespace().collect();
-            let overlap = words
-                .iter()
-                .filter(|w| w.len() > 3 && query_lower.contains(&w.to_lowercase()))
-                .count();
-            score += overlap as f32 * 0.06;
-
-            // E5 contribution from configured provider (GPU or synthetic)
-            let e5 = config.provider.e5_score(&pair.cause_text, &pair.effect_text);
+            // E5 contribution from cache (pre-computed) or live provider call
+            let e5 = config.get_pair_e5_score(pair);
             score += e5 * config.e5_weight;
 
             // Deterministic noise for variety
@@ -979,6 +1067,20 @@ pub fn run_all_phases(
     tracing::info!("=== Phase 3: Direction Modifiers ({} forward pairs) ===", forward_pairs.len());
     results.push(phase3_direction_modifiers(&forward_pairs, config.verbose));
 
+    // Pre-compute E5 scores for all pairs once. Phases 4/6/7 call simulate_search()
+    // per query×pair — without caching, GPU mode would require 90,000+ forward passes.
+    // With caching: 250 pair scores computed once, reused across all queries.
+    if config.provider.is_gpu() {
+        tracing::info!("=== Pre-computing E5 pair scores ({} pairs) ===", pairs.len());
+    }
+    config.precompute_pair_scores(pairs);
+
+    // Pre-compute E1 semantic scores for all query x pair combinations
+    if config.provider.has_e1() {
+        tracing::info!("=== Pre-computing E1 semantic scores ({} queries x {} pairs) ===", queries.len(), pairs.len());
+    }
+    config.precompute_e1_scores(queries, pairs);
+
     tracing::info!("=== Phase 4: Ablation Analysis ({} queries × {} pairs) ===", queries.len(), pairs.len());
     results.push(phase4_ablation(queries, pairs, config));
 
@@ -1012,6 +1114,12 @@ pub fn run_single_phase(
         pairs.iter().filter(|p| p.is_forward()).cloned().collect();
     let (train_pairs, held_out_pairs) =
         super::data_loader::split_by_domain(pairs, &["psychology", "history"]);
+
+    // Pre-compute pair scores for phases that use simulate_search
+    if matches!(phase, 4 | 6 | 7) {
+        config.precompute_pair_scores(pairs);
+        config.precompute_e1_scores(queries, pairs);
+    }
 
     match phase {
         1 => Some(phase1_query_intent(queries, config.verbose)),
