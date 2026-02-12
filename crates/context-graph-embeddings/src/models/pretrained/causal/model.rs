@@ -369,34 +369,61 @@ impl CausalModel {
     /// forward path so that `embed()`/`embed_dual()`/`embed_as_cause()`/
     /// `embed_as_effect()` all use the fine-tuned weights.
     ///
-    /// Falls back to base model if no checkpoint files exist.
+    /// # Errors
+    /// Returns `EmbeddingError` if:
+    /// - Checkpoint directory does not exist
+    /// - Either `lora_best.safetensors` or `projection_best.safetensors` is missing
+    /// - Weight loading fails
+    ///
+    /// FAIL FAST: no silent fallback to base model. Without trained weights,
+    /// E5 produces near-uniform scores (0.93-0.98) that make the causal gate
+    /// a no-op. Per constitution: "FAIL FAST — no silent degradation."
     ///
     /// # Arguments
     /// * `checkpoint_dir` - Directory containing trained weight files
-    ///
-    /// # Returns
-    /// `true` if trained weights were loaded, `false` if no checkpoints found.
-    pub fn load_trained_weights(&self, checkpoint_dir: &Path) -> EmbeddingResult<bool> {
+    pub fn load_trained_weights(&self, checkpoint_dir: &Path) -> EmbeddingResult<()> {
         self.ensure_initialized()?;
 
         let lora_path = checkpoint_dir.join("lora_best.safetensors");
         let projection_path = checkpoint_dir.join("projection_best.safetensors");
 
         if !lora_path.exists() && !projection_path.exists() {
-            tracing::info!(
-                "No trained weights found in {}, using base model",
-                checkpoint_dir.display()
+            tracing::error!(
+                checkpoint_dir = %checkpoint_dir.display(),
+                lora_path = %lora_path.display(),
+                projection_path = %projection_path.display(),
+                "E5 FATAL: No trained LoRA weights found. \
+                 Without trained weights, E5 produces near-uniform scores (0.93-0.98) \
+                 that make the causal gate a no-op. \
+                 Train E5 with: cargo run --release --bin train_causal -- --data-dir <path> \
+                 Then place lora_best.safetensors and projection_best.safetensors in the checkpoint dir."
             );
-            return Ok(false);
+            return Err(EmbeddingError::InternalError {
+                message: format!(
+                    "E5 trained weights not found in {}. Both lora_best.safetensors and \
+                     projection_best.safetensors are required. Without trained weights, \
+                     the causal gate is non-functional.",
+                    checkpoint_dir.display()
+                ),
+            });
         }
 
         if !lora_path.exists() || !projection_path.exists() {
-            tracing::warn!(
-                "Incomplete checkpoint: lora={}, projection={} — both required, using base model",
-                lora_path.exists(),
-                projection_path.exists()
+            tracing::error!(
+                lora_exists = lora_path.exists(),
+                projection_exists = projection_path.exists(),
+                checkpoint_dir = %checkpoint_dir.display(),
+                "E5 FATAL: Incomplete checkpoint — both lora_best.safetensors and \
+                 projection_best.safetensors are required"
             );
-            return Ok(false);
+            return Err(EmbeddingError::InternalError {
+                message: format!(
+                    "Incomplete E5 checkpoint in {}: lora={}, projection={}. Both required.",
+                    checkpoint_dir.display(),
+                    lora_path.exists(),
+                    projection_path.exists()
+                ),
+            });
         }
 
         // Get device from loaded weights
@@ -445,7 +472,7 @@ impl CausalModel {
             }
         }
 
-        Ok(true)
+        Ok(())
     }
 
     /// Check if trained weights are currently loaded.

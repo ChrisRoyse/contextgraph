@@ -68,6 +68,14 @@ impl Handlers {
                 "error".to_string()
             });
 
+        // E5 causal model health: report whether LoRA trained weights are loaded.
+        // Without trained weights, the causal gate is non-functional.
+        let e5_lora_loaded = self
+            .causal_model
+            .as_ref()
+            .map(|m| m.has_trained_weights())
+            .unwrap_or(false);
+
         self.tool_result(
             id,
             json!({
@@ -80,6 +88,10 @@ impl Handlers {
                     "memory": memory_status,
                     "action": action_status,
                     "meta": meta_status
+                },
+                "e5CausalModel": {
+                    "loraLoaded": e5_lora_loaded,
+                    "causalGateFunctional": e5_lora_loaded
                 }
             }),
         )

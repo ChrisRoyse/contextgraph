@@ -390,7 +390,10 @@ fn compute_embedder_scores_sync(
         compute_cosine_similarity(&query.e2_temporal_recent, &stored.e2_temporal_recent),
         compute_cosine_similarity(&query.e3_temporal_periodic, &stored.e3_temporal_periodic),
         compute_cosine_similarity(&query.e4_temporal_positional, &stored.e4_temporal_positional),
-        compute_cosine_similarity(query.e5_active_vector(), stored.e5_active_vector()),
+        // AP-77: E5 MUST NOT use symmetric cosine — causal is directional.
+        // Without an explicit direction, E5 cannot provide meaningful signal.
+        // Use compute_embedder_scores_with_direction_sync when direction is known.
+        0.0,
         query.e6_sparse.cosine_similarity(&stored.e6_sparse),
         e7_score,
         compute_cosine_similarity(query.e8_active_vector(), stored.e8_active_vector()),

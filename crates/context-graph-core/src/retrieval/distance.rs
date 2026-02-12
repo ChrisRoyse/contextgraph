@@ -246,8 +246,14 @@ pub fn compute_similarity_for_space_with_direction(
         compute_e5_asymmetric_fingerprint_similarity, direction_mod, CausalDirection,
     };
 
-    // Special handling for E5 Causal with known direction
-    if matches!(embedder, Embedder::Causal) && causal_direction != CausalDirection::Unknown {
+    // AP-77: E5 MUST NOT use symmetric cosine — causal is directional.
+    if matches!(embedder, Embedder::Causal) {
+        if causal_direction == CausalDirection::Unknown {
+            // No direction known → E5 cannot provide meaningful signal.
+            // Return 0.0 so E5 is effectively excluded from fusion.
+            return 0.0;
+        }
+
         let query_is_cause = matches!(causal_direction, CausalDirection::Cause);
 
         // Compute asymmetric similarity using dual E5 vectors
@@ -266,7 +272,7 @@ pub fn compute_similarity_for_space_with_direction(
         return (asym_sim * dir_mod).clamp(0.0, 1.0);
     }
 
-    // Default: symmetric computation for all other embedders or unknown direction
+    // Default: symmetric computation for all other embedders
     compute_similarity_for_space(embedder, query, memory)
 }
 
@@ -896,30 +902,37 @@ mod tests {
     // =========================================================================
 
     #[test]
-    fn test_direction_aware_unknown_matches_symmetric() {
-        // With Unknown direction, should behave identically to symmetric
+    fn test_direction_aware_unknown_returns_zero_for_e5() {
+        // AP-77: E5 MUST NOT use symmetric cosine — causal is directional.
+        // When direction is Unknown, E5 returns 0.0 (no signal is better than wrong signal).
         use crate::causal::asymmetric::CausalDirection;
 
         let mut query = SemanticFingerprint::zeroed();
         let mut memory = SemanticFingerprint::zeroed();
 
-        // Set identical E5 causal vectors
+        // Set identical E5 causal vectors — would produce sim=1.0 if symmetric were used
         query.e5_causal_as_cause = vec![1.0; 768];
         query.e5_causal_as_effect = vec![0.5; 768];
         memory.e5_causal_as_cause = vec![1.0; 768];
         memory.e5_causal_as_effect = vec![0.5; 768];
 
-        let sym = compute_similarity_for_space(Embedder::Causal, &query, &memory);
         let asym_unknown =
             compute_similarity_for_space_with_direction(Embedder::Causal, &query, &memory, CausalDirection::Unknown);
 
-        assert!(
-            (sym - asym_unknown).abs() < 1e-5,
-            "Unknown direction should match symmetric: sym={}, asym_unknown={}",
-            sym,
+        assert_eq!(
+            asym_unknown, 0.0,
+            "E5 with Unknown direction must return 0.0 per AP-77, got {}",
             asym_unknown
         );
-        println!("[PASS] Direction-aware with Unknown matches symmetric: {:.6}", sym);
+
+        // With known direction, E5 should produce a non-zero score
+        let asym_cause =
+            compute_similarity_for_space_with_direction(Embedder::Causal, &query, &memory, CausalDirection::Cause);
+        assert!(
+            asym_cause > 0.0,
+            "E5 with Cause direction should produce non-zero score, got {}",
+            asym_cause
+        );
     }
 
     #[test]

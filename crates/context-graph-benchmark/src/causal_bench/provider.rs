@@ -147,13 +147,13 @@ impl GpuProvider {
         let model = CausalModel::new(model_path, SingleModelConfig::default())?;
         runtime.block_on(model.load())?;
 
-        // Auto-load trained weights if available
+        // Load trained LoRA + projection weights (REQUIRED).
+        // FAIL FAST: no silent fallback to base model.
         let trained_dir = model_path.join("trained");
-        match model.load_trained_weights(&trained_dir) {
-            Ok(true) => println!("GpuProvider: loaded trained LoRA + projection weights"),
-            Ok(false) => println!("GpuProvider: using base model (no trained weights found)"),
-            Err(e) => println!("GpuProvider: trained weight loading failed ({}), using base model", e),
-        }
+        model.load_trained_weights(&trained_dir).map_err(|e| {
+            eprintln!("GpuProvider: E5 trained weights REQUIRED but failed to load: {}", e);
+            e
+        })?;
 
         // Load E1 (SemanticModel / e5-large-v2) for real semantic similarity
         let semantic_path = model_path

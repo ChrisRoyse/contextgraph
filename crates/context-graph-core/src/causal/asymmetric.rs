@@ -483,8 +483,11 @@ use crate::types::fingerprint::SemanticFingerprint;
 /// let query = SemanticFingerprint::zeroed();
 /// let doc = SemanticFingerprint::zeroed();
 ///
-/// // For "why did X happen?" queries, query is looking for causes (query_is_cause=true)
-/// let sim = compute_e5_asymmetric_fingerprint_similarity(&query, &doc, true);
+/// // For "why did X happen?" queries, the query IS the effect (query_is_cause=false)
+/// let sim = compute_e5_asymmetric_fingerprint_similarity(&query, &doc, false);
+///
+/// // For "what happens if X?" queries, the query IS the cause (query_is_cause=true)
+/// // let sim = compute_e5_asymmetric_fingerprint_similarity(&query, &doc, true);
 /// assert!(sim >= 0.0 && sim <= 1.0);
 /// # }
 /// ```
