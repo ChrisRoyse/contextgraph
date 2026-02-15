@@ -26,10 +26,10 @@
 //! All errors are explicit with detailed messages. No silent fallbacks.
 
 use std::collections::HashMap;
-use std::sync::RwLock;
 
+use parking_lot::RwLock;
 use thiserror::Error;
-use tracing::{debug, error};
+use tracing::debug;
 use uuid::Uuid;
 
 use crate::types::fingerprint::{SparseVector, SPARSE_VOCAB_SIZE};
@@ -238,7 +238,6 @@ impl SparseInvertedIndex {
     /// # FAIL FAST Errors
     /// * `EmptyVector` - Cannot index empty sparse vector
     /// * `AlreadyExists` - Memory already indexed (use update)
-    /// * `LockFailed` - Concurrent modification detected
     pub fn index(&self, memory_id: Uuid, sparse: &SparseVector) -> SparseIndexResult<()> {
         if sparse.is_empty() {
             return Err(SparseIndexError::EmptyVector { memory_id });
@@ -246,16 +245,16 @@ impl SparseInvertedIndex {
 
         // Check if already exists
         {
-            let terms_guard = self.memory_terms.read().map_err(|_| SparseIndexError::LockFailed)?;
+            let terms_guard = self.memory_terms.read();
             if terms_guard.contains_key(&memory_id) {
                 return Err(SparseIndexError::AlreadyExists { memory_id });
             }
         }
 
-        // Acquire write locks
-        let mut posting_guard = self.posting_lists.write().map_err(|_| SparseIndexError::LockFailed)?;
-        let mut terms_guard = self.memory_terms.write().map_err(|_| SparseIndexError::LockFailed)?;
-        let mut count_guard = self.doc_count.write().map_err(|_| SparseIndexError::LockFailed)?;
+        // Acquire write locks (parking_lot: non-poisoning, always succeeds)
+        let mut posting_guard = self.posting_lists.write();
+        let mut terms_guard = self.memory_terms.write();
+        let mut count_guard = self.doc_count.write();
 
         // Double-check after acquiring lock
         if terms_guard.contains_key(&memory_id) {
@@ -293,11 +292,10 @@ impl SparseInvertedIndex {
     ///
     /// # FAIL FAST Errors
     /// * `NotFound` - Memory not in index
-    /// * `LockFailed` - Concurrent modification detected
     pub fn remove(&self, memory_id: Uuid) -> SparseIndexResult<()> {
-        let mut posting_guard = self.posting_lists.write().map_err(|_| SparseIndexError::LockFailed)?;
-        let mut terms_guard = self.memory_terms.write().map_err(|_| SparseIndexError::LockFailed)?;
-        let mut count_guard = self.doc_count.write().map_err(|_| SparseIndexError::LockFailed)?;
+        let mut posting_guard = self.posting_lists.write();
+        let mut terms_guard = self.memory_terms.write();
+        let mut count_guard = self.doc_count.write();
 
         // Get terms for this memory
         let terms = terms_guard
@@ -335,8 +333,8 @@ impl SparseInvertedIndex {
             return Err(SparseIndexError::EmptyVector { memory_id });
         }
 
-        let mut posting_guard = self.posting_lists.write().map_err(|_| SparseIndexError::LockFailed)?;
-        let mut terms_guard = self.memory_terms.write().map_err(|_| SparseIndexError::LockFailed)?;
+        let mut posting_guard = self.posting_lists.write();
+        let mut terms_guard = self.memory_terms.write();
 
         // Remove old terms if exists
         if let Some(old_terms) = terms_guard.remove(&memory_id) {
@@ -394,18 +392,8 @@ impl SparseInvertedIndex {
             return (Vec::new(), RecallStats::default());
         }
 
-        let posting_guard = match self.posting_lists.read() {
-            Ok(g) => g,
-            Err(_) => {
-                error!("Failed to acquire read lock for recall");
-                return (Vec::new(), RecallStats::default());
-            }
-        };
-
-        let doc_count = match self.doc_count.read() {
-            Ok(g) => *g,
-            Err(_) => 0,
-        };
+        let posting_guard = self.posting_lists.read();
+        let doc_count = *self.doc_count.read();
 
         // Accumulate scores for each candidate
         let mut candidate_scores: HashMap<Uuid, (f32, u32)> = HashMap::new();
@@ -484,7 +472,7 @@ impl SparseInvertedIndex {
 
     /// Get the number of indexed memories.
     pub fn len(&self) -> usize {
-        self.doc_count.read().map(|g| *g).unwrap_or(0)
+        *self.doc_count.read()
     }
 
     /// Check if index is empty.
@@ -494,37 +482,31 @@ impl SparseInvertedIndex {
 
     /// Get the number of unique terms in the index.
     pub fn term_count(&self) -> usize {
-        self.posting_lists.read().map(|g| g.len()).unwrap_or(0)
+        self.posting_lists.read().len()
     }
 
     /// Check if a memory is indexed.
     pub fn contains(&self, memory_id: Uuid) -> bool {
-        self.memory_terms
-            .read()
-            .map(|g| g.contains_key(&memory_id))
-            .unwrap_or(false)
+        self.memory_terms.read().contains_key(&memory_id)
     }
 
     /// Get document frequency for a term.
     pub fn get_df(&self, term_id: u16) -> usize {
         self.posting_lists
             .read()
-            .ok()
-            .and_then(|g| g.get(&term_id).map(|pl| pl.len()))
+            .get(&term_id)
+            .map(|pl| pl.len())
             .unwrap_or(0)
     }
 
     /// Clear all indexed data.
     pub fn clear(&self) {
-        if let (Ok(mut pl), Ok(mut mt), Ok(mut dc)) = (
-            self.posting_lists.write(),
-            self.memory_terms.write(),
-            self.doc_count.write(),
-        ) {
-            pl.clear();
-            mt.clear();
-            *dc = 0;
-        }
+        let mut pl = self.posting_lists.write();
+        let mut mt = self.memory_terms.write();
+        let mut dc = self.doc_count.write();
+        pl.clear();
+        mt.clear();
+        *dc = 0;
     }
 }
 

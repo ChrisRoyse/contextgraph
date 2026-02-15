@@ -39,7 +39,7 @@ pub use teleological_memory_store::{
 
 // Temporal search options (ARCH-14)
 pub use teleological_memory_store::{
-    ChainRetrievalOptions, DecayFunction, MultiAnchorMode, PeriodicOptions, SequenceDirection,
-    SequenceOptions, TemporalScale, TemporalSearchOptions, TimeWindow,
+    DecayFunction, MultiAnchorMode, PeriodicOptions, SequenceDirection, SequenceOptions,
+    TemporalScale, TemporalSearchOptions, TimeWindow,
 };
 

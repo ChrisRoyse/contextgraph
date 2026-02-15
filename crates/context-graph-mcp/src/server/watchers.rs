@@ -193,7 +193,10 @@ impl McpServer {
         });
 
         // Store the thread handle for joining during shutdown
-        if let Ok(mut guard) = self.file_watcher_thread.lock() {
+        // ERR-12 FIX: Panic on poisoned lock — if another thread panicked, state is corrupt
+        {
+            let mut guard = self.file_watcher_thread.lock()
+                .expect("file_watcher_thread mutex poisoned: another thread panicked");
             *guard = Some(thread_handle);
         }
 
@@ -218,15 +221,25 @@ impl McpServer {
         info!("Stopping file watcher...");
         self.file_watcher_running.store(false, Ordering::SeqCst);
 
-        // Join the thread (with a timeout via try_lock to avoid blocking forever)
-        if let Ok(mut guard) = self.file_watcher_thread.lock() {
-            if let Some(handle) = guard.take() {
-                // The thread checks the flag every 500ms, so it should exit within ~1s.
-                // Use join() which blocks the current thread until the spawned thread finishes.
-                // This is acceptable in shutdown since we are tearing down.
-                match handle.join() {
-                    Ok(()) => info!("File watcher thread stopped"),
-                    Err(_) => error!("File watcher thread panicked"),
+        // Join the thread — log error on poisoned lock during shutdown
+        match self.file_watcher_thread.lock() {
+            Err(poisoned) => {
+                error!("file_watcher_thread mutex poisoned during shutdown — thread likely already panicked");
+                // Still try to recover the guard so we can attempt join
+                let mut guard = poisoned.into_inner();
+                if let Some(handle) = guard.take() {
+                    let _ = handle.join();
+                }
+            }
+            Ok(mut guard) => {
+                if let Some(handle) = guard.take() {
+                    // The thread checks the flag every 500ms, so it should exit within ~1s.
+                    // Use join() which blocks the current thread until the spawned thread finishes.
+                    // This is acceptable in shutdown since we are tearing down.
+                    match handle.join() {
+                        Ok(()) => info!("File watcher thread stopped"),
+                        Err(_) => error!("File watcher thread panicked"),
+                    }
                 }
             }
         }

@@ -146,7 +146,7 @@ pub fn deserialize_teleological_fingerprint(data: &[u8]) -> Result<TeleologicalF
         )));
     }
 
-    deserialize(&data[1..]).map_err(|e| {
+    let mut fp: TeleologicalFingerprint = deserialize(&data[1..]).map_err(|e| {
         CoreError::SerializationError(format!(
             "Failed to deserialize TeleologicalFingerprint. \
              Error: {}. Data length: {} bytes, version: {}. \
@@ -155,7 +155,15 @@ pub fn deserialize_teleological_fingerprint(data: &[u8]) -> Result<TeleologicalF
             data.len(),
             version
         ))
-    })
+    })?;
+
+    // DAT-3 fix: Migrate legacy single-vector E5/E8 to dual asymmetric format.
+    // Without this, asymmetric causal search returns identical results for
+    // cause vs effect on pre-migration data.
+    fp.semantic.migrate_legacy_e5();
+    fp.semantic.migrate_legacy_e8();
+
+    Ok(fp)
 }
 
 /// Serialize topic profile (13D × f32 = 52 bytes).

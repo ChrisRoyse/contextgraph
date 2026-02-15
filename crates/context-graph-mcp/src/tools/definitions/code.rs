@@ -56,6 +56,21 @@ fn search_code_definition() -> ToolDefinition {
                     "type": "boolean",
                     "default": false,
                     "description": "Include full content text in results (default: false)."
+                },
+                "searchMode": {
+                    "type": "string",
+                    "enum": ["e7Only", "pipeline", "semantic"],
+                    "default": "semantic",
+                    "description": "Code search strategy: 'semantic' (default, hybrid E1+E7 blend), 'e7Only' (pure E7 code search), 'pipeline' (full E13->E1->E7->E12 pipeline)."
+                },
+                "languageHint": {
+                    "type": "string",
+                    "description": "Optional programming language hint to boost language-specific results. Supports: rust, python, javascript, typescript, go, java, cpp, sql."
+                },
+                "includeAstContext": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Include AST context (scope chain, entity type) in results if available (default: false). Only affects chunks created by AST chunker."
                 }
             },
             "required": ["query"]

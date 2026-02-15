@@ -5,6 +5,7 @@
 #![allow(clippy::assertions_on_constants)]
 
 use super::*;
+use crate::error::CudaError;
 
 // ========== Configuration Tests ==========
 
@@ -23,7 +24,6 @@ fn test_config_with_curvature_valid() {
 
 #[test]
 fn test_config_with_curvature_invalid_positive() {
-    use crate::error::CudaError;
     let result = ConeCudaConfig::with_curvature(0.5);
     assert!(result.is_err());
     let err = result.unwrap_err();
@@ -33,13 +33,19 @@ fn test_config_with_curvature_invalid_positive() {
 #[test]
 fn test_config_with_curvature_invalid_zero() {
     let result = ConeCudaConfig::with_curvature(0.0);
-    assert!(result.is_err());
+    assert!(
+        matches!(result, Err(CudaError::InvalidConfig(ref msg)) if msg.contains("negative")),
+        "Expected InvalidConfig error for zero curvature, got: {:?}", result
+    );
 }
 
 #[test]
 fn test_config_with_curvature_invalid_nan() {
     let result = ConeCudaConfig::with_curvature(f32::NAN);
-    assert!(result.is_err());
+    assert!(
+        matches!(result, Err(CudaError::InvalidConfig(ref msg)) if msg.contains("NaN")),
+        "Expected InvalidConfig error for NaN curvature, got: {:?}", result
+    );
 }
 
 #[test]
@@ -63,14 +69,20 @@ fn test_cone_data_valid() {
 fn test_cone_data_invalid_apex_outside_ball() {
     let apex = [1.0f32; 64]; // norm = sqrt(64) >> 1
     let result = ConeData::new(apex, 0.5);
-    assert!(result.is_err());
+    assert!(
+        matches!(result, Err(CudaError::InvalidConfig(ref msg)) if msg.contains("Poincare ball")),
+        "Expected InvalidConfig error for apex outside ball, got: {:?}", result
+    );
 }
 
 #[test]
 fn test_cone_data_invalid_negative_aperture() {
     let apex = [0.1f32; 64];
     let result = ConeData::new(apex, -0.5);
-    assert!(result.is_err());
+    assert!(
+        matches!(result, Err(CudaError::InvalidConfig(ref msg)) if msg.contains("non-negative")),
+        "Expected InvalidConfig error for negative aperture, got: {:?}", result
+    );
 }
 
 #[test]

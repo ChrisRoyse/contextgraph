@@ -44,9 +44,60 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "boolean",
                         "description": "Include original source content in results (default: true). Set to false for smaller response.",
                         "default": true
+                    },
+                    "includeProvenance": {
+                        "type": "boolean",
+                        "description": "Include retrieval provenance metadata in results (default: false). Shows search mode, embedder weights, LLM provenance.",
+                        "default": false
+                    },
+                    "sourceWeight": {
+                        "type": "number",
+                        "description": "Weight for source-anchored embeddings in hybrid search (0-1, default: 0.6). Prevents LLM output clustering.",
+                        "default": 0.6,
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "explanationWeight": {
+                        "type": "number",
+                        "description": "Weight for explanation embeddings in hybrid search (0-1, default: 0.4).",
+                        "default": 0.4,
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "multiEmbedder": {
+                        "type": "boolean",
+                        "description": "Enable multi-embedder search for maximum accuracy (default: false). Uses E1+E5+E8+E11 with consensus scoring. Requires direction to be 'cause' or 'effect'.",
+                        "default": false
+                    },
+                    "e1Weight": {
+                        "type": "number",
+                        "description": "E1 semantic weight in multi-embedder mode (0-1, default: 0.30).",
+                        "default": 0.30,
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "e5Weight": {
+                        "type": "number",
+                        "description": "E5 causal weight in multi-embedder mode (0-1, default: 0.35).",
+                        "default": 0.35,
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "e8Weight": {
+                        "type": "number",
+                        "description": "E8 graph weight in multi-embedder mode (0-1, default: 0.15).",
+                        "default": 0.15,
+                        "minimum": 0,
+                        "maximum": 1
+                    },
+                    "e11Weight": {
+                        "type": "number",
+                        "description": "E11 entity weight in multi-embedder mode (0-1, default: 0.20).",
+                        "default": 0.20,
+                        "minimum": 0,
+                        "maximum": 1
                     }
-                },
-                "additionalProperties": false
+                }
             }),
         ),
         // search_causes - Abductive reasoning to find likely causes
@@ -92,6 +143,18 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "enum": ["memories", "relationships", "all"],
                         "description": "Search scope: 'memories' (fingerprint HNSW, default), 'relationships' (CF_CAUSAL_RELATIONSHIPS E5 brute-force), or 'all' (both merged by score).",
                         "default": "memories"
+                    },
+                    "strategy": {
+                        "type": "string",
+                        "enum": ["multi_space", "pipeline"],
+                        "description": "Search strategy: 'multi_space' (default, multi-embedder fusion) or 'pipeline' (E13 SPLADE recall -> E1 -> E12 ColBERT rerank)."
+                    },
+                    "rerankWeight": {
+                        "type": "number",
+                        "description": "E12 rerank weight for blending with fusion score (0-1, default: 0.4). Only used when strategy='pipeline'.",
+                        "default": 0.4,
+                        "minimum": 0,
+                        "maximum": 1
                     }
                 },
                 "additionalProperties": false
@@ -140,6 +203,18 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "enum": ["memories", "relationships", "all"],
                         "description": "Search scope: 'memories' (fingerprint HNSW, default), 'relationships' (CF_CAUSAL_RELATIONSHIPS E5 brute-force), or 'all' (both merged by score).",
                         "default": "memories"
+                    },
+                    "strategy": {
+                        "type": "string",
+                        "enum": ["multi_space", "pipeline"],
+                        "description": "Search strategy: 'multi_space' (default, multi-embedder fusion) or 'pipeline' (E13 SPLADE recall -> E1 -> E12 ColBERT rerank)."
+                    },
+                    "rerankWeight": {
+                        "type": "number",
+                        "description": "E12 rerank weight for blending with fusion score (0-1, default: 0.4). Only used when strategy='pipeline'.",
+                        "default": 0.4,
+                        "minimum": 0,
+                        "maximum": 1
                     }
                 },
                 "additionalProperties": false

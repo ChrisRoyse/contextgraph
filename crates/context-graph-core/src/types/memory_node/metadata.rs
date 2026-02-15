@@ -47,11 +47,9 @@ fn default_version() -> u32 {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NodeMetadata {
     /// Source identifier (e.g., file path, URL, session ID)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
 
     /// Natural language code (ISO 639-1, e.g., "en", "es")
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
 
     /// Content modality type
@@ -62,7 +60,6 @@ pub struct NodeMetadata {
     pub tags: Vec<String>,
 
     /// Cached UTL learning score [0.0, 1.0]
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub utl_score: Option<f32>,
 
     /// Whether this node has been consolidated
@@ -70,7 +67,6 @@ pub struct NodeMetadata {
     pub consolidated: bool,
 
     /// Timestamp when consolidation occurred
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub consolidated_at: Option<DateTime<Utc>>,
 
     /// Version counter (incremented on updates)
@@ -82,11 +78,9 @@ pub struct NodeMetadata {
     pub deleted: bool,
 
     /// Timestamp when soft deletion occurred
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub deleted_at: Option<DateTime<Utc>>,
 
     /// Parent node ID for hierarchical relationships
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub parent_id: Option<Uuid>,
 
     /// Child node IDs for hierarchical relationships
@@ -98,12 +92,11 @@ pub struct NodeMetadata {
     pub custom: HashMap<String, serde_json::Value>,
 
     /// Rationale for storing this memory (required per AP-010)
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub rationale: Option<String>,
 
     /// Enhanced deletion tracking metadata (Phase 4, item 5.9).
     /// Populated when a memory is soft-deleted via mark_deleted_with_metadata().
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
     pub deletion_metadata: Option<DeletionMetadata>,
 }
 

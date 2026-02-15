@@ -65,7 +65,7 @@ fn search_robust_definition() -> ToolDefinition {
                 },
                 "e9DiscoveryThreshold": {
                     "type": "number",
-                    "default": 0.7,
+                    "default": 0.15,
                     "minimum": 0,
                     "maximum": 1,
                     "description": "Minimum E9 score for a result to be marked as 'E9 discovery' \
@@ -90,6 +90,12 @@ fn search_robust_definition() -> ToolDefinition {
                     "default": true,
                     "description": "Include separate E9 and E1 scores in results (default: true). \
                                     Useful for understanding where E9 helped find matches E1 missed."
+                },
+                "strategy": {
+                    "type": "string",
+                    "enum": ["e1_only", "multi_space", "pipeline"],
+                    "default": "multi_space",
+                    "description": "Search strategy: 'e1_only' (E1 only), 'multi_space' (default, multi-embedder fusion), 'pipeline' (E13 recall -> E1 -> E12 rerank)."
                 }
             },
             "required": ["query"]
@@ -146,7 +152,7 @@ mod tests {
 
         // E9 discovery threshold
         let e9_threshold = &props["e9DiscoveryThreshold"];
-        assert_eq!(e9_threshold["default"], 0.7, "Default E9 discovery threshold should be 0.7");
+        assert_eq!(e9_threshold["default"], 0.15, "Default E9 discovery threshold should be 0.15");
         assert_eq!(e9_threshold["minimum"], 0.0);
         assert_eq!(e9_threshold["maximum"], 1.0);
 

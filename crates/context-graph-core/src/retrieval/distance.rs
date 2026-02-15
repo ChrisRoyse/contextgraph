@@ -196,6 +196,10 @@ pub fn compute_similarity_for_space(
     let query_ref = query.get(embedder);
     let memory_ref = memory.get(embedder);
 
+    // Capture discriminants before match moves the values
+    let query_disc = std::mem::discriminant(&query_ref);
+    let memory_disc = std::mem::discriminant(&memory_ref);
+
     match (query_ref, memory_ref) {
         (EmbeddingRef::Dense(q), EmbeddingRef::Dense(m)) => {
             // All dense embedders use cosine similarity
@@ -206,12 +210,14 @@ pub fn compute_similarity_for_space(
         (EmbeddingRef::Sparse(q), EmbeddingRef::Sparse(m)) => jaccard_similarity(q, m),
         (EmbeddingRef::TokenLevel(q), EmbeddingRef::TokenLevel(m)) => max_sim(q, m),
         _ => {
-            // Type mismatch - should never happen with valid fingerprints
-            tracing::error!(
-                embedder = %embedder.name(),
-                "Type mismatch in compute_similarity_for_space"
+            // Type mismatch is a programming bug — fail fast per constitution
+            panic!(
+                "BUG: Type mismatch in compute_similarity_for_space for embedder {}. \
+                 query={:?}, memory={:?}. This indicates a corrupted SemanticFingerprint.",
+                embedder.name(),
+                query_disc,
+                memory_disc,
             );
-            0.0
         }
     }
 }

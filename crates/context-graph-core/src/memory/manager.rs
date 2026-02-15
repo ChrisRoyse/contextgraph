@@ -432,8 +432,22 @@ impl SessionManager {
 
     /// Clear current_session file if session_id matches.
     fn clear_if_current(&self, session_id: &str) -> Result<(), SessionError> {
-        if let Ok(current_id) = fs::read_to_string(&self.session_file) {
-            if current_id.trim() == session_id {
+        match fs::read_to_string(&self.session_file) {
+            Ok(current_id) => {
+                if current_id.trim() == session_id {
+                    self.clear_current_session_file()?;
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                // No current session file — nothing to clear
+            }
+            Err(e) => {
+                // ERR-14: Unreadable session file — log and delete so a fresh one is created
+                error!(
+                    error = %e,
+                    session_file = %self.session_file.display(),
+                    "clear_if_current: Corrupted/unreadable session file, removing it"
+                );
                 self.clear_current_session_file()?;
             }
         }

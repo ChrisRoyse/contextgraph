@@ -167,15 +167,26 @@ impl Handlers {
 
         // Collect memory IDs from indexed files (up to max_memories * 2 to have enough pairs)
         let mut memory_ids: Vec<uuid::Uuid> = Vec::new();
+        let mut file_read_errors: Vec<String> = Vec::new();
         for file in scoped_files.iter().take(max_memories * 2) {
-            if let Ok(ids) = self
+            match self
                 .teleological_store
                 .get_fingerprints_for_file(&file.file_path)
                 .await
             {
-                memory_ids.extend(ids);
-                if memory_ids.len() >= max_memories * 2 {
-                    break;
+                Ok(ids) => {
+                    memory_ids.extend(ids);
+                    if memory_ids.len() >= max_memories * 2 {
+                        break;
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        file_path = %file.file_path,
+                        "trigger_causal_discovery: Failed to read fingerprints for file"
+                    );
+                    file_read_errors.push(format!("{}: {}", file.file_path, e));
                 }
             }
         }
@@ -188,13 +199,18 @@ impl Handlers {
         // If we don't have enough memories, return early
         if memory_ids.len() < 2 {
             info!("trigger_causal_discovery: Not enough memories for analysis (need at least 2)");
+            let mut msg = "Not enough memories for causal analysis (need at least 2)".to_string();
+            if !file_read_errors.is_empty() {
+                msg = format!("{}. {} file(s) could not be read: {}", msg, file_read_errors.len(), file_read_errors.join("; "));
+            }
             return self.tool_result(
                 id,
                 json!({
                     "status": "completed",
                     "pairsAnalyzed": 0,
                     "relationshipsFound": 0,
-                    "message": "Not enough memories for causal analysis (need at least 2)",
+                    "message": msg,
+                    "fileReadErrors": file_read_errors,
                     "sessionScope": session_scope,
                     "dryRun": dry_run
                 }),

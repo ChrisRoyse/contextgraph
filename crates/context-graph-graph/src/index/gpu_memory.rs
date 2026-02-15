@@ -398,69 +398,72 @@ impl GpuMemoryManager {
     }
 
     /// Get available memory in bytes.
+    ///
+    /// # Panics
+    /// Panics if the inner mutex is poisoned (another thread panicked while holding the lock).
     pub fn available(&self) -> usize {
-        self.inner
-            .lock()
-            .map(|inner| {
-                inner
-                    .config
-                    .total_budget
-                    .saturating_sub(inner.total_allocated)
-            })
-            .unwrap_or(0)
+        let inner = self.inner.lock()
+            .expect("GpuMemoryManager mutex poisoned: another thread panicked");
+        inner.config.total_budget.saturating_sub(inner.total_allocated)
     }
 
     /// Get used memory in bytes.
+    ///
+    /// # Panics
+    /// Panics if the inner mutex is poisoned.
     pub fn used(&self) -> usize {
-        self.inner
-            .lock()
-            .map(|inner| inner.total_allocated)
-            .unwrap_or(0)
+        let inner = self.inner.lock()
+            .expect("GpuMemoryManager mutex poisoned: another thread panicked");
+        inner.total_allocated
     }
 
     /// Get total budget in bytes.
+    ///
+    /// # Panics
+    /// Panics if the inner mutex is poisoned.
     pub fn budget(&self) -> usize {
-        self.inner
-            .lock()
-            .map(|inner| inner.config.total_budget)
-            .unwrap_or(0)
+        let inner = self.inner.lock()
+            .expect("GpuMemoryManager mutex poisoned: another thread panicked");
+        inner.config.total_budget
     }
 
     /// Get memory statistics.
+    ///
+    /// # Panics
+    /// Panics if the inner mutex is poisoned.
     pub fn stats(&self) -> MemoryStats {
-        self.inner
-            .lock()
-            .map(|inner| inner.stats())
-            .unwrap_or_default()
+        let inner = self.inner.lock()
+            .expect("GpuMemoryManager mutex poisoned: another thread panicked");
+        inner.stats()
     }
 
     /// Check if low memory condition (usage > threshold).
+    ///
+    /// # Panics
+    /// Panics if the inner mutex is poisoned.
     pub fn is_low_memory(&self) -> bool {
-        self.inner
-            .lock()
-            .map(|inner| {
-                let threshold = inner.config.low_memory_threshold;
-                let usage = inner.total_allocated as f32 / inner.config.total_budget as f32;
-                usage > threshold
-            })
-            .unwrap_or(false)
+        let inner = self.inner.lock()
+            .expect("GpuMemoryManager mutex poisoned: another thread panicked");
+        let threshold = inner.config.low_memory_threshold;
+        let usage = inner.total_allocated as f32 / inner.config.total_budget as f32;
+        usage > threshold
     }
 
     /// Get available memory in specific category.
+    ///
+    /// # Panics
+    /// Panics if the inner mutex is poisoned.
     pub fn category_available(&self, category: MemoryCategory) -> usize {
-        self.inner
-            .lock()
-            .map(|inner| {
-                let budget = inner
-                    .config
-                    .category_budgets
-                    .get(&category)
-                    .copied()
-                    .unwrap_or_else(|| category.default_budget());
-                let used = inner.category_usage.get(&category).copied().unwrap_or(0);
-                budget.saturating_sub(used)
-            })
-            .unwrap_or(0)
+        let inner = self.inner.lock()
+            .expect("GpuMemoryManager mutex poisoned: another thread panicked");
+        let budget = inner
+            .config
+            .category_budgets
+            .get(&category)
+            .copied()
+            .unwrap_or_else(|| category.default_budget());
+        let used = inner.category_usage.get(&category).copied().unwrap_or(0);
+        budget.saturating_sub(used)
     }
 
     /// Try to allocate, returning None if insufficient memory.

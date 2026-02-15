@@ -14,46 +14,19 @@ use uuid::Uuid;
 
 /// Test that GPU k-NN index creation works.
 #[test]
+#[ignore = "requires GPU"]
 fn test_gpu_knn_index_creation() {
-    // This test will fail if GPU is not available - expected per constitution
-    let result = GpuKnnIndex::new(128);
-
-    match result {
-        Ok(index) => {
-            assert_eq!(index.dimension(), 128);
-            assert_eq!(index.len(), 0);
-            assert!(index.is_empty());
-            println!("GPU k-NN index created successfully: dim={}", index.dimension());
-        }
-        Err(e) => {
-            // GPU not available - this is a constitution violation in production
-            // but acceptable in test environments without GPU
-            println!("GPU k-NN index creation failed (no GPU?): {}", e);
-            // If we can detect SKIP_GPU_TESTS, don't fail
-            if std::env::var("SKIP_GPU_TESTS").is_ok() {
-                println!("SKIP_GPU_TESTS set, skipping GPU test");
-                return;
-            }
-            panic!("GPU is required per constitution ARCH-GPU-05: {}", e);
-        }
-    }
+    let index = GpuKnnIndex::new(128).expect("GPU k-NN index creation failed");
+    assert_eq!(index.dimension(), 128);
+    assert_eq!(index.len(), 0);
+    assert!(index.is_empty());
 }
 
 /// Test adding vectors to GPU k-NN index.
 #[test]
+#[ignore = "requires GPU"]
 fn test_gpu_knn_add_vectors() {
-    if std::env::var("SKIP_GPU_TESTS").is_ok() {
-        println!("SKIP_GPU_TESTS set, skipping");
-        return;
-    }
-
-    let mut index = match GpuKnnIndex::new(128) {
-        Ok(i) => i,
-        Err(e) => {
-            println!("GPU not available: {}", e);
-            return;
-        }
-    };
+    let mut index = GpuKnnIndex::new(128).expect("GPU k-NN index creation failed");
 
     // Create 10 random-ish vectors
     let vectors: Vec<Vec<f32>> = (0..10)
@@ -73,19 +46,9 @@ fn test_gpu_knn_add_vectors() {
 
 /// Test core distance computation.
 #[test]
+#[ignore = "requires GPU"]
 fn test_gpu_core_distances() {
-    if std::env::var("SKIP_GPU_TESTS").is_ok() {
-        println!("SKIP_GPU_TESTS set, skipping");
-        return;
-    }
-
-    let mut index = match GpuKnnIndex::new(64) {
-        Ok(i) => i,
-        Err(e) => {
-            println!("GPU not available: {}", e);
-            return;
-        }
-    };
+    let mut index = GpuKnnIndex::new(64).expect("GPU k-NN index creation failed");
 
     // Create 20 vectors with known structure:
     // - First 10 vectors are similar to each other (cluster 1)
@@ -139,12 +102,8 @@ fn test_gpu_core_distances() {
 
 /// Test full HDBSCAN clustering.
 #[test]
+#[ignore = "requires GPU"]
 fn test_gpu_hdbscan_clustering() {
-    if std::env::var("SKIP_GPU_TESTS").is_ok() {
-        println!("SKIP_GPU_TESTS set, skipping");
-        return;
-    }
-
     let clusterer = GpuHdbscanClusterer::new();
 
     // Create two clear clusters
@@ -169,52 +128,28 @@ fn test_gpu_hdbscan_clustering() {
         memory_ids.push(Uuid::new_v4());
     }
 
-    let result = clusterer.fit(&embeddings, &memory_ids);
+    let memberships = clusterer.fit(&embeddings, &memory_ids)
+        .expect("HDBSCAN clustering failed");
 
-    match result {
-        Ok(memberships) => {
-            assert_eq!(memberships.len(), 10);
+    assert_eq!(memberships.len(), 10);
 
-            // Count clusters
-            let unique_clusters: std::collections::HashSet<i32> = memberships
-                .iter()
-                .map(|m| m.cluster_id)
-                .filter(|&c| c >= 0)
-                .collect();
+    // Count clusters
+    let unique_clusters: std::collections::HashSet<i32> = memberships
+        .iter()
+        .map(|m| m.cluster_id)
+        .filter(|&c| c >= 0)
+        .collect();
 
-            println!("Found {} clusters", unique_clusters.len());
-            for m in &memberships {
-                println!(
-                    "Memory {}: cluster={}, prob={:.2}, core={}",
-                    m.memory_id, m.cluster_id, m.membership_probability, m.is_core
-                );
-            }
-
-            // We expect 2 clusters (or possibly 1 if gap threshold is too high)
-            // At minimum, not all points should be noise
-            let non_noise = memberships.iter().filter(|m| m.cluster_id >= 0).count();
-            assert!(non_noise > 0, "All points marked as noise");
-
-            println!("Non-noise points: {}", non_noise);
-        }
-        Err(e) => {
-            if let GpuHdbscanError::GpuNotAvailable { .. } = e {
-                println!("GPU not available, skipping: {}", e);
-                return;
-            }
-            panic!("HDBSCAN clustering failed: {}", e);
-        }
-    }
+    // We expect 2 clusters (or possibly 1 if gap threshold is too high)
+    // At minimum, not all points should be noise
+    let non_noise = memberships.iter().filter(|m| m.cluster_id >= 0).count();
+    assert!(non_noise > 0, "All points marked as noise, found {} clusters", unique_clusters.len());
 }
 
 /// Test error handling for insufficient data.
 #[test]
+#[ignore = "requires GPU"]
 fn test_gpu_hdbscan_insufficient_data() {
-    if std::env::var("SKIP_GPU_TESTS").is_ok() {
-        println!("SKIP_GPU_TESTS set, skipping");
-        return;
-    }
-
     let clusterer = GpuHdbscanClusterer::new();
 
     // Only 2 points - less than min_cluster_size=3
@@ -225,29 +160,18 @@ fn test_gpu_hdbscan_insufficient_data() {
 
     match result {
         Err(GpuHdbscanError::InsufficientData { required, actual }) => {
-            println!(
-                "Correctly rejected insufficient data: need {}, got {}",
-                required, actual
-            );
             assert_eq!(required, 3);
             assert_eq!(actual, 2);
         }
-        Err(GpuHdbscanError::GpuNotAvailable { .. }) => {
-            println!("GPU not available, skipping");
-        }
-        Err(e) => panic!("Unexpected error: {}", e),
+        Err(e) => panic!("Expected InsufficientData error, got: {}", e),
         Ok(_) => panic!("Should have rejected insufficient data"),
     }
 }
 
 /// Test error handling for dimension mismatch.
 #[test]
+#[ignore = "requires GPU"]
 fn test_gpu_hdbscan_dimension_mismatch() {
-    if std::env::var("SKIP_GPU_TESTS").is_ok() {
-        println!("SKIP_GPU_TESTS set, skipping");
-        return;
-    }
-
     let clusterer = GpuHdbscanClusterer::new();
 
     // 5 embeddings but only 3 IDs
@@ -258,17 +182,10 @@ fn test_gpu_hdbscan_dimension_mismatch() {
 
     match result {
         Err(GpuHdbscanError::DimensionMismatch { embeddings: e, ids }) => {
-            println!(
-                "Correctly rejected dimension mismatch: {} embeddings, {} ids",
-                e, ids
-            );
             assert_eq!(e, 5);
             assert_eq!(ids, 3);
         }
-        Err(GpuHdbscanError::GpuNotAvailable { .. }) => {
-            println!("GPU not available, skipping");
-        }
-        Err(e) => panic!("Unexpected error: {}", e),
+        Err(e) => panic!("Expected DimensionMismatch error, got: {}", e),
         Ok(_) => panic!("Should have rejected dimension mismatch"),
     }
 }
@@ -298,12 +215,8 @@ fn test_silhouette_score() {
 
 /// Test with NaN values (should fail fast).
 #[test]
+#[ignore = "requires GPU"]
 fn test_gpu_hdbscan_rejects_nan() {
-    if std::env::var("SKIP_GPU_TESTS").is_ok() {
-        println!("SKIP_GPU_TESTS set, skipping");
-        return;
-    }
-
     let clusterer = GpuHdbscanClusterer::new();
 
     let embeddings = vec![
@@ -316,26 +229,18 @@ fn test_gpu_hdbscan_rejects_nan() {
     let result = clusterer.fit(&embeddings, &memory_ids);
 
     match result {
-        Err(GpuHdbscanError::NonFiniteValue { index, value_type }) => {
-            println!("Correctly rejected NaN at index {}: {}", index, value_type);
-            assert!(value_type.contains("NaN"));
+        Err(GpuHdbscanError::NonFiniteValue { index: _, value_type }) => {
+            assert!(value_type.contains("NaN"), "Expected NaN in value_type, got: {}", value_type);
         }
-        Err(GpuHdbscanError::GpuNotAvailable { .. }) => {
-            println!("GPU not available, skipping");
-        }
-        Err(e) => panic!("Unexpected error: {}", e),
+        Err(e) => panic!("Expected NonFiniteValue error, got: {}", e),
         Ok(_) => panic!("Should have rejected NaN values"),
     }
 }
 
 /// Test with Infinity values (should fail fast).
 #[test]
+#[ignore = "requires GPU"]
 fn test_gpu_hdbscan_rejects_infinity() {
-    if std::env::var("SKIP_GPU_TESTS").is_ok() {
-        println!("SKIP_GPU_TESTS set, skipping");
-        return;
-    }
-
     let clusterer = GpuHdbscanClusterer::new();
 
     let embeddings = vec![
@@ -348,14 +253,10 @@ fn test_gpu_hdbscan_rejects_infinity() {
     let result = clusterer.fit(&embeddings, &memory_ids);
 
     match result {
-        Err(GpuHdbscanError::NonFiniteValue { index, value_type }) => {
-            println!("Correctly rejected Infinity at index {}: {}", index, value_type);
-            assert!(value_type.contains("Infinity"));
+        Err(GpuHdbscanError::NonFiniteValue { index: _, value_type }) => {
+            assert!(value_type.contains("Infinity"), "Expected Infinity in value_type, got: {}", value_type);
         }
-        Err(GpuHdbscanError::GpuNotAvailable { .. }) => {
-            println!("GPU not available, skipping");
-        }
-        Err(e) => panic!("Unexpected error: {}", e),
+        Err(e) => panic!("Expected NonFiniteValue error, got: {}", e),
         Ok(_) => panic!("Should have rejected Infinity values"),
     }
 }

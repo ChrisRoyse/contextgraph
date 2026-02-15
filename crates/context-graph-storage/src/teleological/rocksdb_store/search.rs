@@ -285,15 +285,24 @@ fn search_filtered_multi_space_sync(
         };
 
         if let Some(index) = index_registry.get(embedder) {
-            if let Ok(candidates) = index.search(query_vec, k, None) {
-                let ranked: Vec<(Uuid, f32)> = candidates
-                    .into_iter()
-                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
-                    .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
-                    .collect();
+            match index.search(query_vec, k, None) {
+                Ok(candidates) => {
+                    let ranked: Vec<(Uuid, f32)> = candidates
+                        .into_iter()
+                        .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                        .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
+                        .collect();
 
-                if !ranked.is_empty() && weights[idx] > 0.0 {
-                    embedder_rankings.push(EmbedderRanking::new(embedder_names[idx], weights[idx], ranked));
+                    if !ranked.is_empty() && weights[idx] > 0.0 {
+                        embedder_rankings.push(EmbedderRanking::new(embedder_names[idx], weights[idx], ranked));
+                    }
+                }
+                Err(e) => {
+                    error!(
+                        embedder = embedder_names[idx],
+                        error = %e,
+                        "HNSW search failed for embedder in filtered multi-space — degraded results"
+                    );
                 }
             }
         } else if idx == 4 && !matches!(options.causal_direction, CausalDirection::Unknown) {
@@ -555,15 +564,24 @@ fn search_multi_space_sync(
         _ => (EmbedderIndex::E5Causal, query.e5_active_vector()),
     };
     if let Some(e5_index) = index_registry.get(e5_hnsw_idx) {
-        if let Ok(e5_candidates) = e5_index.search(e5_query_vec, k, None) {
-            let e5_ranked: Vec<(Uuid, f32)> = e5_candidates
-                .into_iter()
-                .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
-                .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
-                .collect();
+        match e5_index.search(e5_query_vec, k, None) {
+            Ok(e5_candidates) => {
+                let e5_ranked: Vec<(Uuid, f32)> = e5_candidates
+                    .into_iter()
+                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                    .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
+                    .collect();
 
-            if !e5_ranked.is_empty() && weights[4] > 0.0 {
-                embedder_rankings.push(EmbedderRanking::new("E5", weights[4], e5_ranked));
+                if !e5_ranked.is_empty() && weights[4] > 0.0 {
+                    embedder_rankings.push(EmbedderRanking::new("E5", weights[4], e5_ranked));
+                }
+            }
+            Err(e) => {
+                error!(
+                    index = ?e5_hnsw_idx,
+                    error = %e,
+                    "E5 HNSW search failed in multi-space — degraded results"
+                );
             }
         }
     } else if !matches!(options.causal_direction, CausalDirection::Unknown) {
@@ -576,60 +594,92 @@ fn search_multi_space_sync(
 
     // E7 Code
     if let Some(e7_index) = index_registry.get(EmbedderIndex::E7Code) {
-        if let Ok(e7_candidates) = e7_index.search(&query.e7_code, k, None) {
-            let e7_ranked: Vec<(Uuid, f32)> = e7_candidates
-                .into_iter()
-                .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
-                .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
-                .collect();
+        match e7_index.search(&query.e7_code, k, None) {
+            Ok(e7_candidates) => {
+                let e7_ranked: Vec<(Uuid, f32)> = e7_candidates
+                    .into_iter()
+                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                    .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
+                    .collect();
 
-            if !e7_ranked.is_empty() && weights[6] > 0.0 {
-                embedder_rankings.push(EmbedderRanking::new("E7", weights[6], e7_ranked));
+                if !e7_ranked.is_empty() && weights[6] > 0.0 {
+                    embedder_rankings.push(EmbedderRanking::new("E7", weights[6], e7_ranked));
+                }
+            }
+            Err(e) => {
+                error!(
+                    error = %e,
+                    "E7 HNSW search failed in multi-space — degraded results"
+                );
             }
         }
     }
 
     // E10 Multimodal
     if let Some(e10_index) = index_registry.get(EmbedderIndex::E10Multimodal) {
-        if let Ok(e10_candidates) = e10_index.search(query.e10_active_vector(), k, None) {
-            let e10_ranked: Vec<(Uuid, f32)> = e10_candidates
-                .into_iter()
-                .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
-                .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
-                .collect();
+        match e10_index.search(query.e10_active_vector(), k, None) {
+            Ok(e10_candidates) => {
+                let e10_ranked: Vec<(Uuid, f32)> = e10_candidates
+                    .into_iter()
+                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                    .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
+                    .collect();
 
-            if !e10_ranked.is_empty() && weights[9] > 0.0 {
-                embedder_rankings.push(EmbedderRanking::new("E10", weights[9], e10_ranked));
+                if !e10_ranked.is_empty() && weights[9] > 0.0 {
+                    embedder_rankings.push(EmbedderRanking::new("E10", weights[9], e10_ranked));
+                }
+            }
+            Err(e) => {
+                error!(
+                    error = %e,
+                    "E10 HNSW search failed in multi-space — degraded results"
+                );
             }
         }
     }
 
     // E8 Graph (connectivity/structure embeddings, 1024D HNSW)
     if let Some(e8_index) = index_registry.get(EmbedderIndex::E8Graph) {
-        if let Ok(e8_candidates) = e8_index.search(query.e8_active_vector(), k, None) {
-            let e8_ranked: Vec<(Uuid, f32)> = e8_candidates
-                .into_iter()
-                .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
-                .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
-                .collect();
+        match e8_index.search(query.e8_active_vector(), k, None) {
+            Ok(e8_candidates) => {
+                let e8_ranked: Vec<(Uuid, f32)> = e8_candidates
+                    .into_iter()
+                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                    .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
+                    .collect();
 
-            if !e8_ranked.is_empty() && weights[7] > 0.0 {
-                embedder_rankings.push(EmbedderRanking::new("E8", weights[7], e8_ranked));
+                if !e8_ranked.is_empty() && weights[7] > 0.0 {
+                    embedder_rankings.push(EmbedderRanking::new("E8", weights[7], e8_ranked));
+                }
+            }
+            Err(e) => {
+                error!(
+                    error = %e,
+                    "E8 HNSW search failed in multi-space — degraded results"
+                );
             }
         }
     }
 
     // E11 Entity (KEPLER entity embeddings, 768D HNSW)
     if let Some(e11_index) = index_registry.get(EmbedderIndex::E11Entity) {
-        if let Ok(e11_candidates) = e11_index.search(&query.e11_entity, k, None) {
-            let e11_ranked: Vec<(Uuid, f32)> = e11_candidates
-                .into_iter()
-                .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
-                .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
-                .collect();
+        match e11_index.search(&query.e11_entity, k, None) {
+            Ok(e11_candidates) => {
+                let e11_ranked: Vec<(Uuid, f32)> = e11_candidates
+                    .into_iter()
+                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                    .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
+                    .collect();
 
-            if !e11_ranked.is_empty() && weights[10] > 0.0 {
-                embedder_rankings.push(EmbedderRanking::new("E11", weights[10], e11_ranked));
+                if !e11_ranked.is_empty() && weights[10] > 0.0 {
+                    embedder_rankings.push(EmbedderRanking::new("E11", weights[10], e11_ranked));
+                }
+            }
+            Err(e) => {
+                error!(
+                    error = %e,
+                    "E11 HNSW search failed in multi-space — degraded results"
+                );
             }
         }
     }
@@ -1256,7 +1306,9 @@ fn suppress_degenerate_weights(
         if count < 3 {
             continue;
         }
-        let variance = m2 / count as f32;
+        // SRC-8: Bessel's correction for unbiased sample variance.
+        // Population variance (m2/count) underestimates true variance for small samples.
+        let variance = m2 / (count - 1).max(1) as f32;
         if variance < MIN_VARIANCE {
             tracing::debug!(
                 embedder_idx = idx,
@@ -1277,10 +1329,11 @@ fn compute_semantic_fusion(scores: &[f32; 13], weights: &[f32; 13]) -> f32 {
     let mut weight_total = 0.0f32;
 
     for (&score, &weight) in scores.iter().zip(weights.iter()) {
-        // F-8 fix: skip embedders with zero weight OR zero score.
-        // Including a zero-score embedder in the denominator inflates weight_total
-        // without contributing signal, deflating the fusion score by ~15%.
-        if weight > 0.0 && score > 0.0 {
+        // Only skip embedders with zero weight (not participating in this profile).
+        // Zero SCORE is valid signal ("no match for this embedder") and MUST count
+        // toward the denominator. Excluding zero scores inflated all fusion scores
+        // by 15-33% (SRC-2 audit finding).
+        if weight > 0.0 {
             weighted_sum += score * weight;
             weight_total += weight;
         }

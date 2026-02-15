@@ -10,7 +10,7 @@
 //! persistence.rs.
 
 use rocksdb::WriteBatch;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use context_graph_core::error::{CoreError, CoreResult};
@@ -18,11 +18,11 @@ use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 
 use crate::teleological::column_families::{
     CF_E12_LATE_INTERACTION, CF_E13_SPLADE_INVERTED, CF_E1_MATRYOSHKA_128, CF_FINGERPRINTS,
-    CF_TOPIC_PROFILES,
+    CF_SOURCE_METADATA, CF_TOPIC_PROFILES, QUANTIZED_EMBEDDER_CFS,
 };
 use crate::teleological::schema::{
     content_key, e12_late_interaction_key, e1_matryoshka_128_key, fingerprint_key,
-    topic_profile_key,
+    source_metadata_key, topic_profile_key,
 };
 use crate::teleological::serialization::deserialize_teleological_fingerprint;
 
@@ -52,8 +52,27 @@ impl RocksDbTeleologicalStore {
         self.store_fingerprint_internal(&fingerprint)?;
 
         // Add to per-embedder indexes for O(log n) search
-        self.add_to_indexes(&fingerprint)
-            .map_err(|e| CoreError::IndexError(e.to_string()))?;
+        // DAT-4 fix: If indexing fails, rollback the RocksDB write to prevent
+        // inconsistency where data exists in RocksDB but not in HNSW indexes.
+        if let Err(e) = self.add_to_indexes(&fingerprint) {
+            error!(
+                id = %id,
+                error = %e,
+                "HNSW index add failed after RocksDB store — rolling back RocksDB write"
+            );
+            // Rollback: remove from RocksDB to prevent divergence
+            let key = fingerprint_key(&id);
+            if let Some(cf) = self.db.cf_handle(CF_FINGERPRINTS) {
+                if let Err(rollback_err) = self.db.delete_cf(cf, &key) {
+                    error!(
+                        id = %id,
+                        error = %rollback_err,
+                        "CRITICAL: Rollback of RocksDB write also failed — manual cleanup required"
+                    );
+                }
+            }
+            return Err(CoreError::IndexError(e.to_string()));
+        }
 
         Ok(id)
     }
@@ -130,9 +149,24 @@ impl RocksDbTeleologicalStore {
         // Store updated fingerprint in RocksDB
         self.store_fingerprint_internal(&fingerprint)?;
 
-        // Add updated fingerprint to per-embedder indexes
-        self.add_to_indexes(&fingerprint)
-            .map_err(|e| CoreError::IndexError(e.to_string()))?;
+        // DAT-4 fix: If add_to_indexes fails after remove_from_indexes + store,
+        // the fingerprint is in RocksDB but invisible to dense search. Restore old
+        // fingerprint to maintain consistency.
+        if let Err(e) = self.add_to_indexes(&fingerprint) {
+            error!(
+                id = %id,
+                error = %e,
+                "HNSW index add failed during update — attempting rollback"
+            );
+            // Try to restore old fingerprint in RocksDB and re-add old indexes
+            if let Some(old_data) = self.get_fingerprint_raw(id).ok().flatten() {
+                if let Ok(old_fp) = deserialize_teleological_fingerprint(&old_data) {
+                    let _ = self.store_fingerprint_internal(&old_fp);
+                    let _ = self.add_to_indexes(&old_fp);
+                }
+            }
+            return Err(CoreError::IndexError(e.to_string()));
+        }
 
         Ok(true)
     }
@@ -226,6 +260,18 @@ impl RocksDbTeleologicalStore {
             // Remove E12 late interaction tokens (TASK-STORAGE-P2-001)
             let cf_e12 = self.get_cf(CF_E12_LATE_INTERACTION)?;
             batch.delete_cf(cf_e12, e12_late_interaction_key(&id));
+
+            // DAT-7: Remove source metadata (was missing from hard-delete)
+            let cf_sm = self.get_cf(CF_SOURCE_METADATA)?;
+            batch.delete_cf(cf_sm, source_metadata_key(&id));
+
+            // DAT-7: Remove quantized embedder data from all 13 emb_X CFs
+            let qkey = fingerprint_key(&id);
+            for &cf_name in QUANTIZED_EMBEDDER_CFS {
+                if let Ok(cf) = self.get_cf(cf_name) {
+                    batch.delete_cf(cf, qkey);
+                }
+            }
 
             // Remove from soft-deleted tracking (memory + persisted marker)
             // P5: DashMap - no write lock needed

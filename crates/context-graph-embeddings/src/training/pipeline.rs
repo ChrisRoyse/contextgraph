@@ -653,20 +653,35 @@ impl CausalTrainingPipeline {
 
                 // Append to trajectory file
                 let trajectory_path = self.config.output_dir.join("training_trajectory.jsonl");
-                if let Ok(mut file) = std::fs::OpenOptions::new()
+                match std::fs::OpenOptions::new()
                     .create(true)
                     .append(true)
                     .open(&trajectory_path)
                 {
-                    use std::io::Write;
-                    let _ = writeln!(file, "{}", snapshot);
-                    tracing::info!(
-                        "Benchmark snapshot (stage {}): spread={:.4}, dir_acc={:.4}, top1={:.4}",
-                        stage,
-                        metrics.score_spread,
-                        metrics.directional_accuracy,
-                        metrics.standalone_accuracy,
-                    );
+                    Ok(mut file) => {
+                        use std::io::Write;
+                        if let Err(e) = writeln!(file, "{}", snapshot) {
+                            tracing::error!(
+                                error = %e,
+                                path = %trajectory_path.display(),
+                                "Failed to write training trajectory snapshot"
+                            );
+                        }
+                        tracing::info!(
+                            "Benchmark snapshot (stage {}): spread={:.4}, dir_acc={:.4}, top1={:.4}",
+                            stage,
+                            metrics.score_spread,
+                            metrics.directional_accuracy,
+                            metrics.standalone_accuracy,
+                        );
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e,
+                            path = %trajectory_path.display(),
+                            "Failed to open training trajectory file"
+                        );
+                    }
                 }
             }
             Err(e) => {

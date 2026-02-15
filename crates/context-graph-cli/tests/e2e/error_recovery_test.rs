@@ -274,20 +274,15 @@ async fn test_e2e_missing_session_id_behavior() {
     println!("stdout: {}", result.stdout);
     println!("stderr: {}", result.stderr);
 
-    // Document the actual behavior:
-    // - If CLI auto-generates session_id, exit code will be 0
-    // - If CLI rejects missing session_id, exit code will be 4
+    // CLI must either auto-generate session_id (exit 0) or reject with INVALID_INPUT (exit 4)
     if result.exit_code == EXIT_SUCCESS {
-        println!("CLI auto-generated session_id (graceful handling)");
-
-        // Verify the response is still valid
+        // Verify the response is still valid JSON with success=true
         let output_json = result.parse_stdout().expect("Should return valid JSON");
         assert_eq!(output_json.get("success"), Some(&json!(true)));
-    } else if result.exit_code == EXIT_INVALID_INPUT {
-        println!("CLI rejected missing session_id (strict validation)");
     } else {
-        println!(
-            "Unexpected exit code: {} - documenting behavior",
+        assert_eq!(
+            result.exit_code, EXIT_INVALID_INPUT,
+            "Missing session_id should either succeed (auto-generate) or return INVALID_INPUT (4), got {}",
             result.exit_code
         );
     }
@@ -616,21 +611,17 @@ async fn test_e2e_database_error_handling() {
     println!("stdout: {}", result.stdout);
     println!("stderr: {}", result.stderr);
 
-    // The exit code depends on how the CLI handles invalid DB paths
-    // Could be EXIT_DB_ERROR (3) or EXIT_GENERAL_ERROR (1)
-    if result.exit_code == EXIT_DATABASE_ERROR {
-        println!("Correctly returned DB_ERROR (3)");
-    } else if result.exit_code == EXIT_GENERAL_ERROR {
-        println!("Returned general ERROR (1) - acceptable for DB issues");
-    } else if result.exit_code == EXIT_SUCCESS {
-        // Some implementations may create the directory or use fallback
-        println!("WARNING: Succeeded with invalid DB path - may be using fallback");
-    } else {
-        println!(
-            "Returned exit code {} - documenting behavior",
-            result.exit_code
-        );
-    }
+    // Invalid DB path must produce a non-zero exit code
+    assert_ne!(
+        result.exit_code, EXIT_SUCCESS,
+        "session_start.sh should fail with invalid DB path /nonexistent/path/..., but got exit code 0 (success)"
+    );
+    // Should be either EXIT_DATABASE_ERROR (3) or EXIT_GENERAL_ERROR (1)
+    assert!(
+        result.exit_code == EXIT_DATABASE_ERROR || result.exit_code == EXIT_GENERAL_ERROR,
+        "Expected EXIT_DATABASE_ERROR (3) or EXIT_GENERAL_ERROR (1) for invalid DB path, got {}",
+        result.exit_code
+    );
 
     log_test_evidence(
         "test_e2e_database_error_handling",

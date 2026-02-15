@@ -270,10 +270,10 @@ impl Handlers {
                     };
 
                     if let Err(e) = self.teleological_store.append_importance_change(&change_record).await {
-                        error!(
+                        warn!(
                             node_id = %node_id,
                             error = %e,
-                            "boost_importance: Failed to write importance history (update completed successfully)"
+                            "boost_importance: Failed to write importance history (non-fatal per ARCH-PROV-01)"
                         );
                     } else {
                         debug!(

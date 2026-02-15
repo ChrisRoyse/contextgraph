@@ -48,7 +48,7 @@ pub use store::TeleologicalMemoryStore;
 
 // Re-export temporal search types (ARCH-14)
 pub use options::{
-    ChainRetrievalOptions, DecayFunction, MultiAnchorMode, PeriodicOptions, SequenceDirection,
-    SequenceOptions, TemporalScale, TemporalSearchOptions, TimeWindow,
+    DecayFunction, MultiAnchorMode, PeriodicOptions, SequenceDirection, SequenceOptions,
+    TemporalScale, TemporalSearchOptions, TimeWindow,
 };
 

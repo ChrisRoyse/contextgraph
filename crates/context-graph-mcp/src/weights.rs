@@ -1,7 +1,7 @@
 //! Weight profile configuration for multi-embedding search.
 //!
 //! Thin wrapper over `context_graph_core::weights` for MCP layer.
-//! Provides `get_weight_profile()` which returns `Option` instead of `Result`.
+//! ERR-3 fix: propagates errors instead of silently discarding them with `.ok()`.
 
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 
@@ -15,9 +15,22 @@ pub use context_graph_core::weights::space_name;
 /// * `name` - Profile name (e.g., "semantic_search", "code_search")
 ///
 /// # Returns
-/// The 13-element weight array if found, None otherwise.
+/// The 13-element weight array if found.
+///
+/// # Errors
+/// Returns error if profile name is not found — FAIL FAST, no silent fallback.
 pub fn get_weight_profile(name: &str) -> Option<[f32; NUM_EMBEDDERS]> {
-    context_graph_core::weights::get_weight_profile(name).ok()
+    match context_graph_core::weights::get_weight_profile(name) {
+        Ok(weights) => Some(weights),
+        Err(e) => {
+            tracing::error!(
+                profile = %name,
+                error = %e,
+                "Weight profile lookup failed — FAIL FAST"
+            );
+            None
+        }
+    }
 }
 
 #[cfg(test)]

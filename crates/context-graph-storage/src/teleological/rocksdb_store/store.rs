@@ -266,8 +266,15 @@ impl RocksDbTeleologicalStore {
                     name: CF_FINGERPRINTS.to_string(),
                 }
             })?;
-            let count = db_arc.iterator_cf(cf_fp, rocksdb::IteratorMode::Start).count();
-            info!("P1: Initialized total_doc_count = {} from CF_FINGERPRINTS", count);
+            let raw_count = db_arc.iterator_cf(cf_fp, rocksdb::IteratorMode::Start).count();
+            // DAT-1: Subtract soft-deleted entries so total_doc_count reflects
+            // only live documents. IDF calculations use this count as denominator,
+            // and inflating it with soft-deleted entries biases term weights downward.
+            let count = raw_count.saturating_sub(soft_deleted.len());
+            info!(
+                "P1: Initialized total_doc_count = {} from CF_FINGERPRINTS (raw={}, soft_deleted={})",
+                count, raw_count, soft_deleted.len()
+            );
             Arc::new(AtomicUsize::new(count))
         };
 

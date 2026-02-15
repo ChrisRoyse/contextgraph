@@ -148,17 +148,13 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires GPU and pretrained model weights"]
     async fn test_unload_clears_initialized() {
-        // TASK-EMB-021: This test requires full model pipeline
-        // Skip if projection matrix or CUDA is unavailable
-        if let Some(model) = try_create_and_load_model().await {
-            assert!(model.is_initialized());
-            model.unload().await.expect("Unload should succeed");
-            assert!(!model.is_initialized());
-        } else {
-            // Test skipped - model load failed (expected in test env without full weights)
-            eprintln!("test_unload_clears_initialized: SKIPPED (model load unavailable)");
-        }
+        let model = try_create_and_load_model().await
+            .expect("Model load failed - this test requires full model pipeline");
+        assert!(model.is_initialized());
+        model.unload().await.expect("Unload should succeed");
+        assert!(!model.is_initialized());
     }
 
     #[tokio::test]
@@ -251,21 +247,17 @@ mod tests {
     }
 
     #[tokio::test]
+    #[ignore = "requires GPU and pretrained model weights"]
     async fn test_embed_unsupported_modality() {
-        // TASK-EMB-021: This test requires full model pipeline
-        // Skip if projection matrix or CUDA is unavailable
-        if let Some(model) = try_create_and_load_model().await {
-            let input = ModelInput::code("fn main() {}", "rust").expect("Input");
+        let model = try_create_and_load_model().await
+            .expect("Model load failed - this test requires full model pipeline");
+        let input = ModelInput::code("fn main() {}", "rust").expect("Input");
 
-            let result = model.embed(&input).await;
-            assert!(matches!(
-                result,
-                Err(EmbeddingError::UnsupportedModality { .. })
-            ));
-        } else {
-            // Test skipped - model load failed (expected in test env without full weights)
-            eprintln!("test_embed_unsupported_modality: SKIPPED (model load unavailable)");
-        }
+        let result = model.embed(&input).await;
+        assert!(matches!(
+            result,
+            Err(EmbeddingError::UnsupportedModality { .. })
+        ), "Expected UnsupportedModality error, got: {:?}", result);
     }
 
     // ==================== Sparse Vector Tests ====================

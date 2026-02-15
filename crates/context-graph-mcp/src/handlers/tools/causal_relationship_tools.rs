@@ -83,22 +83,33 @@ impl Handlers {
             None => return self.tool_error(id, "Missing 'query' parameter"),
         };
 
-        // Parse searchMode parameter (optional, default: "semantic")
-        let search_mode = args
-            .get("searchMode")
+        // Parse direction parameter (schema-aligned, replaces legacy searchMode)
+        // Schema enum: ["cause", "effect", "all"], default: "all"
+        let direction = args
+            .get("direction")
             .and_then(|v| v.as_str())
-            .unwrap_or("semantic");
+            .unwrap_or("all");
 
-        // Validate search mode
-        if !matches!(search_mode, "causes" | "effects" | "semantic") {
+        // Validate direction
+        if !matches!(direction, "cause" | "effect" | "all") {
             return self.tool_error(
                 id,
                 &format!(
-                    "Invalid searchMode '{}'. Must be 'causes', 'effects', or 'semantic'",
-                    search_mode
+                    "Invalid direction '{}'. Must be 'cause', 'effect', or 'all'",
+                    direction
                 ),
             );
         }
+
+        // Map schema direction to internal search mode for the search paths below
+        // "cause" → search for causes (query as effect, search cause vectors)
+        // "effect" → search for effects (query as cause, search effect vectors)
+        // "all" → semantic fallback (E1 search, no direction filtering)
+        let search_mode = match direction {
+            "cause" => "causes",
+            "effect" => "effects",
+            _ => "semantic",
+        };
 
         // Parse topK parameter (optional, default: 10, range: 1-100)
         let raw_top_k = args.get("topK").and_then(|v| v.as_u64());

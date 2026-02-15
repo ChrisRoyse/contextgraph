@@ -43,6 +43,7 @@ pub fn compute_cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     if denom < f32::EPSILON {
         0.0
     } else {
-        dot / denom
+        // Normalize from [-1, 1] to [0, 1] to match core crate's cosine_similarity()
+        (dot / denom + 1.0) / 2.0
     }
 }

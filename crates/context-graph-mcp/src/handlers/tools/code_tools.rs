@@ -21,7 +21,7 @@
 //! search_code can also search directly against code entities stored via
 //! the AST chunker. This provides more accurate results for code-specific queries.
 
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions};
@@ -264,7 +264,7 @@ impl Handlers {
             .collect();
 
         // E7-WIRING: Optionally search CodeStore for code entities
-        // MED-21 FIX: Log errors instead of silently swallowing with .ok()
+        // ERR-11 FIX: Propagate CodeStore errors to caller instead of swallowing
         let code_entities = if self.has_code_pipeline() {
             match self
                 .search_code_entities(query, top_k, min_score, request.include_content)
@@ -272,8 +272,8 @@ impl Handlers {
             {
                 Ok(entities) => Some(entities),
                 Err(e) => {
-                    warn!(error = %e, "search_code: CodeStore entity search failed");
-                    None
+                    error!(error = %e, "search_code: CodeStore entity search failed");
+                    return self.tool_error(id, &format!("CodeStore entity search failed: {}", e));
                 }
             }
         } else {

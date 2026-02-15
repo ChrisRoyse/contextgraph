@@ -367,15 +367,10 @@ async fn test_empty_database_scan() {
 // ============================================================================
 
 #[tokio::test]
+#[ignore = "requires LLM model weights"]
 async fn test_discovery_cycle_with_real_store() {
     let config = test_config();
-    if !model_exists(&config) {
-        eprintln!(
-            "SKIP: test_discovery_cycle_with_real_store - model not at {:?}",
-            config.llm_config.model_path
-        );
-        return;
-    }
+    assert!(model_exists(&config), "LLM model not found at {:?}", config.llm_config.model_path);
 
     let tmp = TempDir::new().unwrap();
     let store = open_test_store(tmp.path());
@@ -515,15 +510,10 @@ async fn test_discovery_cycle_with_real_store() {
 }
 
 #[tokio::test]
+#[ignore = "requires LLM model weights"]
 async fn test_non_causal_pair_no_relationship_stored() {
     let config = test_config();
-    if !model_exists(&config) {
-        eprintln!(
-            "SKIP: test_non_causal_pair_no_relationship_stored - model not at {:?}",
-            config.llm_config.model_path
-        );
-        return;
-    }
+    assert!(model_exists(&config), "LLM model not found at {:?}", config.llm_config.model_path);
 
     let tmp = TempDir::new().unwrap();
     let store = open_test_store(tmp.path());
@@ -578,12 +568,11 @@ async fn test_non_causal_pair_no_relationship_stored() {
     println!("  Rejected:  {}", result.relationships_rejected);
 
     // Non-causal pair should NOT produce confirmed relationships
-    // (model-dependent, so we log but don't hard-assert)
-    if result.relationships_confirmed == 0 {
-        println!("PASS: Non-causal pair correctly rejected, no relationships in store");
-    } else {
-        println!("WARN: LLM incorrectly confirmed a relationship for non-causal pair (model-dependent)");
-    }
+    assert_eq!(
+        result.relationships_confirmed, 0,
+        "Non-causal pair should not confirm relationships, but got {} confirmed",
+        result.relationships_confirmed
+    );
 }
 
 // ============================================================================
@@ -591,15 +580,10 @@ async fn test_non_causal_pair_no_relationship_stored() {
 // ============================================================================
 
 #[tokio::test]
+#[ignore = "requires LLM model weights"]
 async fn test_audit_record_after_discovery() {
     let config = test_config();
-    if !model_exists(&config) {
-        eprintln!(
-            "SKIP: test_audit_record_after_discovery - model not at {:?}",
-            config.llm_config.model_path
-        );
-        return;
-    }
+    assert!(model_exists(&config), "LLM model not found at {:?}", config.llm_config.model_path);
 
     let tmp = TempDir::new().unwrap();
     let store = open_test_store(tmp.path());

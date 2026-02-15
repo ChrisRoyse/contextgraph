@@ -390,18 +390,28 @@ impl MultiSpaceIndexManager for HnswMultiSpaceIndex {
                             embedder, e
                         );
                         if let Some(config) = Self::config_for_embedder(embedder) {
-                            if let Ok(index) = RealHnswIndex::new(config.clone()) {
-                                self.insert_hnsw_index(embedder, index);
-                                self.insert_config(embedder, config);
-                            }
+                            let index = RealHnswIndex::new(config.clone()).map_err(|e| {
+                                error!(
+                                    "FATAL: Failed to create fallback RealHnswIndex for {:?}: {}",
+                                    embedder, e
+                                );
+                                e
+                            })?;
+                            self.insert_hnsw_index(embedder, index);
+                            self.insert_config(embedder, config);
                         }
                     }
                 }
             } else if let Some(config) = Self::config_for_embedder(embedder) {
-                if let Ok(index) = RealHnswIndex::new(config.clone()) {
-                    self.insert_hnsw_index(embedder, index);
-                    self.insert_config(embedder, config);
-                }
+                let index = RealHnswIndex::new(config.clone()).map_err(|e| {
+                    error!(
+                        "FATAL: Failed to create RealHnswIndex for {:?}: {}",
+                        embedder, e
+                    );
+                    e
+                })?;
+                self.insert_hnsw_index(embedder, index);
+                self.insert_config(embedder, config);
             }
         }
 

@@ -103,24 +103,55 @@ impl RocksDbTeleologicalStore {
     }
 
     /// Retrieve content for a fingerprint (internal async wrapper).
+    ///
+    /// DAT-8: Verifies SHA-256 hash on retrieval to detect data corruption.
+    /// If the fingerprint exists and its stored content_hash does not match
+    /// the recomputed hash of the retrieved bytes, returns an error.
     pub(crate) async fn get_content_async(&self, id: Uuid) -> CoreResult<Option<String>> {
         let key = content_key(&id);
         let cf = self.cf_content();
 
         match self.db.get_cf(cf, key) {
-            Ok(Some(bytes)) => String::from_utf8(bytes).map(Some).map_err(|e| {
-                error!(
-                    "CONTENT ERROR: Invalid UTF-8 in stored content for fingerprint {}. \
-                         This indicates data corruption. Error: {}. Bytes length: {}",
-                    id,
-                    e,
-                    e.as_bytes().len()
-                );
-                CoreError::Internal(format!(
-                    "Invalid UTF-8 in content for {}: {}. Data corruption detected.",
-                    id, e
-                ))
-            }),
+            Ok(Some(bytes)) => {
+                // DAT-8: Recompute SHA-256 and verify against stored content_hash
+                if let Some(fp_data) = self.get_fingerprint_raw(id)? {
+                    if let Ok(fp) = deserialize_teleological_fingerprint(&fp_data) {
+                        let mut hasher = Sha256::new();
+                        hasher.update(&bytes);
+                        let computed: [u8; 32] = hasher.finalize().into();
+                        if computed != fp.content_hash {
+                            error!(
+                                "DAT-8: Content hash mismatch on retrieval for {}. \
+                                 Stored: {:02x?}, Computed: {:02x?}. \
+                                 Data corruption detected ({} bytes).",
+                                id,
+                                &fp.content_hash[..8],
+                                &computed[..8],
+                                bytes.len()
+                            );
+                            return Err(CoreError::Internal(format!(
+                                "Content integrity check failed for {}: SHA-256 mismatch. \
+                                 Stored content may be corrupted.",
+                                id
+                            )));
+                        }
+                    }
+                }
+
+                String::from_utf8(bytes).map(Some).map_err(|e| {
+                    error!(
+                        "CONTENT ERROR: Invalid UTF-8 in stored content for fingerprint {}. \
+                             This indicates data corruption. Error: {}. Bytes length: {}",
+                        id,
+                        e,
+                        e.as_bytes().len()
+                    );
+                    CoreError::Internal(format!(
+                        "Invalid UTF-8 in content for {}: {}. Data corruption detected.",
+                        id, e
+                    ))
+                })
+            }
             Ok(None) => {
                 debug!("No content found for fingerprint {}", id);
                 Ok(None)

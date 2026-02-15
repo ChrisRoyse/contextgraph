@@ -99,6 +99,9 @@ pub struct ReconcileFilesResponse {
     pub orphan_count: usize,
     pub deleted_count: usize,
     pub dry_run: bool,
+    /// ERR-13: Track which deletions failed instead of silently continuing
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub failed_deletions: Vec<String>,
 }
 
 // ============================================================================
@@ -467,6 +470,7 @@ impl Handlers {
 
         let mut orphans = Vec::new();
         let mut deleted_count = 0;
+        let mut failed_deletions: Vec<String> = Vec::new();
 
         for entry in entries {
             // Apply base_path filter if provided
@@ -506,6 +510,7 @@ impl Handlers {
                                 fingerprint_id = %fp_id,
                                 "reconcile_files: Failed to delete orphan fingerprint"
                             );
+                            failed_deletions.push(format!("{}:{}", entry.file_path, fp_id));
                         }
                     }
 
@@ -571,6 +576,7 @@ impl Handlers {
             orphaned_files: orphans,
             deleted_count,
             dry_run: request.dry_run,
+            failed_deletions,
         };
 
         match serde_json::to_value(response) {

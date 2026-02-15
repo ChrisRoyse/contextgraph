@@ -51,6 +51,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "sessionId": {
                         "type": "string",
                         "description": "Session ID for session-scoped storage. If omitted, uses CLAUDE_SESSION_ID env var."
+                    },
+                    "operatorId": {
+                        "type": "string",
+                        "description": "Operator/user ID for audit provenance tracking"
                     }
                 },
                 "required": ["content"]
@@ -95,11 +99,6 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "maximum": 1,
                         "default": 0.0,
                         "description": "Minimum similarity threshold [0.0, 1.0]"
-                    },
-                    "modality": {
-                        "type": "string",
-                        "enum": ["text", "code", "image", "audio", "structured", "mixed"],
-                        "description": "Filter results by modality"
                     },
                     "includeContent": {
                         "type": "boolean",
@@ -214,6 +213,55 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "enum": ["current", "all", "recent"],
                         "default": "all",
                         "description": "Session scope: current (this session only), all (any session), recent (last 24h across sessions)"
+                    },
+                    "decayHalfLifeSecs": {
+                        "type": "integer",
+                        "description": "Half-life in seconds for exponential temporal decay (default: 86400 = 1 day). Only used with decayFunction='exponential'."
+                    },
+                    "lastHours": {
+                        "type": "number",
+                        "description": "Filter results to the last N hours. Shortcut for temporal window filtering."
+                    },
+                    "lastDays": {
+                        "type": "number",
+                        "description": "Filter results to the last N days. Shortcut for temporal window filtering."
+                    },
+                    "sessionId": {
+                        "type": "string",
+                        "description": "Filter results to a specific session ID."
+                    },
+                    "periodicBoost": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1,
+                        "description": "Weight for E3 periodic matching boost (0-1). Boosts results matching the target time pattern."
+                    },
+                    "targetHour": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 23,
+                        "description": "Target hour of day (0-23) for periodic matching. Used with periodicBoost."
+                    },
+                    "targetDayOfWeek": {
+                        "type": "integer",
+                        "minimum": 0,
+                        "maximum": 6,
+                        "description": "Target day of week (0=Sun, 6=Sat) for periodic matching. Used with periodicBoost."
+                    },
+                    "sequenceAnchor": {
+                        "type": "string",
+                        "format": "uuid",
+                        "description": "UUID of anchor memory for E4 sequence-based retrieval. Finds memories near this point in the conversation."
+                    },
+                    "sequenceDirection": {
+                        "type": "string",
+                        "enum": ["before", "after", "around"],
+                        "description": "Direction for sequence-based retrieval relative to sequenceAnchor: 'before', 'after', or 'around' (both directions)."
+                    },
+                    "includeProvenance": {
+                        "type": "boolean",
+                        "default": false,
+                        "description": "Include retrieval provenance metadata in results (default: false). Shows strategy, weight profile, query classification, and per-embedder contributions."
                     }
                 },
                 "required": ["query"]

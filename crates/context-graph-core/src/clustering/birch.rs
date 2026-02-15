@@ -29,6 +29,7 @@
 //! - Threshold adaptation for target cluster count
 
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 use uuid::Uuid;
 
 use crate::teleological::Embedder;
@@ -1330,11 +1331,15 @@ impl BIRCHNode {
         let mut min_idx = 0;
 
         for (i, entry) in self.entries.iter().enumerate() {
-            // Safe to ignore error - dimension validated at tree level
-            if let Ok(dist) = entry.cf.distance(&point_cf) {
-                if dist < min_dist {
-                    min_dist = dist;
-                    min_idx = i;
+            match entry.cf.distance(&point_cf) {
+                Ok(dist) => {
+                    if dist < min_dist {
+                        min_dist = dist;
+                        min_idx = i;
+                    }
+                }
+                Err(e) => {
+                    warn!(entry_idx = i, error = %e, "BIRCH find_closest: distance error, skipping entry");
                 }
             }
         }
@@ -1604,10 +1609,15 @@ impl BIRCHTree {
         for (i, entry) in node.entries.iter().enumerate() {
             if entry.cf.would_fit(embedding, threshold) {
                 let point_cf = ClusteringFeature::from_point(embedding);
-                if let Ok(dist) = entry.cf.distance(&point_cf) {
-                    if dist < best_dist {
-                        best_dist = dist;
-                        best_idx = Some(i);
+                match entry.cf.distance(&point_cf) {
+                    Ok(dist) => {
+                        if dist < best_dist {
+                            best_dist = dist;
+                            best_idx = Some(i);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(entry_idx = i, error = %e, "BIRCH find_closest_fitting_entry: distance error, skipping entry");
                     }
                 }
             }
@@ -1638,10 +1648,15 @@ impl BIRCHTree {
         for (i, entry) in node.entries.iter().enumerate() {
             if entry.cf.would_fit(embedding, self.params.threshold) {
                 let point_cf = ClusteringFeature::from_point(embedding);
-                if let Ok(dist) = entry.cf.distance(&point_cf) {
-                    if dist < best_dist {
-                        best_dist = dist;
-                        best_idx = Some(i);
+                match entry.cf.distance(&point_cf) {
+                    Ok(dist) => {
+                        if dist < best_dist {
+                            best_dist = dist;
+                            best_idx = Some(i);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(entry_idx = i, error = %e, "BIRCH find_closest_in_tree: distance error, skipping entry");
                     }
                 }
             }
@@ -1784,10 +1799,15 @@ impl BIRCHTree {
 
         for i in 0..entries.len() {
             for j in (i + 1)..entries.len() {
-                if let Ok(dist) = entries[i].cf.distance(&entries[j].cf) {
-                    if dist > max_dist {
-                        max_dist = dist;
-                        pair = (i, j);
+                match entries[i].cf.distance(&entries[j].cf) {
+                    Ok(dist) => {
+                        if dist > max_dist {
+                            max_dist = dist;
+                            pair = (i, j);
+                        }
+                    }
+                    Err(e) => {
+                        warn!(i = i, j = j, error = %e, "BIRCH find_farthest_pair: distance error, skipping pair");
                     }
                 }
             }

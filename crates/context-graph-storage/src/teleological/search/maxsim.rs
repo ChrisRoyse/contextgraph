@@ -210,7 +210,11 @@ impl<T: TokenStorage> MaxSimScorer<T> {
             let mut max_sim = f32::NEG_INFINITY;
 
             for d_token in doc_tokens {
-                let sim = cosine_similarity_128d(q_token, d_token);
+                let raw = cosine_similarity_128d(q_token, d_token);
+                // SRC-3: Normalize raw cosine [-1,1] to [0,1] to match the [0,1]
+                // scale used by the core crate's distance::cosine_similarity and
+                // all other embedder scores in the fusion pipeline.
+                let sim = (raw + 1.0) / 2.0;
                 if sim > max_sim {
                     max_sim = sim;
                 }
@@ -321,7 +325,10 @@ pub fn compute_maxsim_direct(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>])
         let mut max_sim = f32::NEG_INFINITY;
 
         for d_token in doc_tokens {
-            let sim = cosine_similarity_128d(q_token, d_token);
+            let raw = cosine_similarity_128d(q_token, d_token);
+            // SRC-3: Normalize raw cosine [-1,1] to [0,1] — consistent with
+            // core::retrieval::distance::cosine_similarity and fusion pipeline.
+            let sim = (raw + 1.0) / 2.0;
             if sim > max_sim {
                 max_sim = sim;
             }

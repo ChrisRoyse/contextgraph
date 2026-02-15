@@ -139,15 +139,19 @@ impl EmbedderWeightsConfig {
     /// Priority:
     /// 1. Detailed config (if exists)
     /// 2. Weight map
-    /// 3. Default (1.0)
+    /// 3. Default: 0.0 (unknown embedders should NOT participate in scoring)
+    ///
+    /// ERR-6 fix: Previously defaulted to 1.0 which amplified unconfigured embedders
+    /// to maximum weight, corrupting fusion scores. Now returns 0.0 so unknown
+    /// embedders are excluded from scoring.
     pub fn get_weight(&self, embedder: Embedder) -> f32 {
         // Check detailed configs first
         if let Some(config) = self.configs.iter().find(|c| c.embedder == embedder) {
             return config.weight;
         }
 
-        // Check weight map
-        self.weights.get(&embedder).copied().unwrap_or(1.0)
+        // Check weight map — unknown embedders get 0.0 (excluded from scoring)
+        self.weights.get(&embedder).copied().unwrap_or(0.0)
     }
 
     /// Check if an embedder is enabled.
@@ -323,8 +327,9 @@ mod tests {
         config.weights.insert(Embedder::Emotional, 0.5);
 
         assert!((config.get_weight(Embedder::Emotional) - 0.5).abs() < f32::EPSILON);
-        assert!((config.get_weight(Embedder::Semantic) - 1.0).abs() < f32::EPSILON); // Default
-        println!("[PASS] get_weight returns configured and default values");
+        // ERR-6: Unknown embedders default to 0.0 (excluded from scoring), not 1.0
+        assert!((config.get_weight(Embedder::Semantic) - 0.0).abs() < f32::EPSILON);
+        println!("[PASS] get_weight returns configured weight and 0.0 for unconfigured");
     }
 
     #[test]

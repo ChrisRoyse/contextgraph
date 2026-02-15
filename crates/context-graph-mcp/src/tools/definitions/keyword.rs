@@ -61,6 +61,12 @@ fn search_by_keywords_definition() -> ToolDefinition {
                     "type": "boolean",
                     "default": false,
                     "description": "Include full content text in results (default: false)."
+                },
+                "strategy": {
+                    "type": "string",
+                    "enum": ["e1_only", "multi_space", "pipeline"],
+                    "default": "multi_space",
+                    "description": "Search strategy: 'e1_only' (E1 only), 'multi_space' (default, multi-embedder fusion), 'pipeline' (E13 recall -> E1 -> E12 rerank)."
                 }
             },
             "required": ["query"]

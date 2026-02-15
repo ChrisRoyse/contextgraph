@@ -213,6 +213,9 @@ mod tests {
         let a = vec![1.0, 2.0];
         let b = vec![1.0, 2.0, 3.0];
         let result = ops.cosine_similarity(&a, &b).await;
-        assert!(result.is_err());
+        assert!(
+            matches!(result, Err(CudaError::DimensionMismatch { expected: 2, actual: 3 })),
+            "Expected DimensionMismatch error, got: {:?}", result
+        );
     }
 }

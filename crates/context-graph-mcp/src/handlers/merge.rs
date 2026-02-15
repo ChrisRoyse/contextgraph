@@ -369,25 +369,34 @@ impl Handlers {
             .await
             .map_err(|e| format!("Failed to store merged fingerprint: {}", e))?;
 
-        // Also store the merged content
+        // Also store the merged content — critical for merge integrity
         if let Err(e) = self
             .teleological_store
             .store_content(merged_id, &merged_content)
             .await
         {
-            warn!("Failed to store merged content (continuing): {}", e);
-            // Non-fatal - content storage is optional per trait defaults
+            return Err(format!("Failed to store merged content for {}: {}", merged_id, e));
         }
 
         // Step 7: Mark source fingerprints as merged (soft delete per SEC-06)
+        // Critical: failing to soft-delete sources creates duplicates
+        let mut soft_delete_failures: Vec<String> = Vec::new();
         for source_id in &input.source_ids {
             if let Err(e) = self.teleological_store.delete(*source_id, true).await {
-                warn!(
-                    "Failed to soft-delete source fingerprint {}: {} (continuing)",
-                    source_id, e
+                error!(
+                    source_id = %source_id,
+                    error = %e,
+                    "merge_concepts: Failed to soft-delete source fingerprint"
                 );
-                // Non-fatal - main merge succeeded
+                soft_delete_failures.push(format!("{}: {}", source_id, e));
             }
+        }
+        if !soft_delete_failures.is_empty() {
+            return Err(format!(
+                "Merge stored but {} source(s) failed to soft-delete (data integrity risk): {}",
+                soft_delete_failures.len(),
+                soft_delete_failures.join("; ")
+            ));
         }
 
         // PHASE-1.2: Append audit record for merge operation

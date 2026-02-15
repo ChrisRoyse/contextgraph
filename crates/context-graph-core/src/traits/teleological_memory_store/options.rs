@@ -636,62 +636,6 @@ impl Default for SequenceOptions {
     }
 }
 
-/// Options for chain-aware retrieval mode.
-///
-/// Enables retrieval of all memories belonging to a specific conversation/task chain,
-/// with optional expansion to related chains.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ChainRetrievalOptions {
-    /// Chain ID to retrieve all members of.
-    pub chain_id: String,
-
-    /// Include memories from related chains (determined by shared topics or sequence).
-    #[serde(default)]
-    pub include_related: bool,
-
-    /// Maximum depth when traversing related chains.
-    /// Only used when include_related=true.
-    #[serde(default = "ChainRetrievalOptions::default_max_depth")]
-    pub max_related_depth: usize,
-}
-
-impl ChainRetrievalOptions {
-    fn default_max_depth() -> usize {
-        1 // Only immediate neighbors by default
-    }
-
-    /// Create options for a specific chain.
-    pub fn for_chain(chain_id: impl Into<String>) -> Self {
-        Self {
-            chain_id: chain_id.into(),
-            include_related: false,
-            max_related_depth: Self::default_max_depth(),
-        }
-    }
-
-    /// Include related chains in retrieval.
-    pub fn with_related(mut self) -> Self {
-        self.include_related = true;
-        self
-    }
-
-    /// Set the maximum depth for related chain traversal.
-    pub fn with_max_depth(mut self, depth: usize) -> Self {
-        self.max_related_depth = depth;
-        self
-    }
-}
-
-impl Default for ChainRetrievalOptions {
-    fn default() -> Self {
-        Self {
-            chain_id: String::new(),
-            include_related: false,
-            max_related_depth: Self::default_max_depth(),
-        }
-    }
-}
-
 /// Temporal scale for multi-scale temporal reasoning.
 ///
 /// Allows queries to target specific temporal granularities.
@@ -844,15 +788,6 @@ pub struct TemporalSearchOptions {
     /// When set, finds memories temporally related to an anchor.
     #[serde(default)]
     pub sequence_options: Option<SequenceOptions>,
-
-    // =========================================================================
-    // Chain-Aware Retrieval Options
-    // =========================================================================
-
-    /// Chain retrieval options.
-    /// When set, retrieves all memories in a specific conversation/task chain.
-    #[serde(default)]
-    pub chain_options: Option<ChainRetrievalOptions>,
 
     // =========================================================================
     // Multi-Scale Options
@@ -1034,34 +969,6 @@ impl TemporalSearchOptions {
         self
     }
 
-    /// Retrieve all memories in a specific chain.
-    ///
-    /// # Arguments
-    ///
-    /// * `chain_id` - The chain ID to retrieve
-    ///
-    /// # Example
-    ///
-    /// ```ignore
-    /// let options = TemporalSearchOptions::default()
-    ///     .with_chain("session-123")
-    ///     .with_temporal_weight(0.5);
-    /// ```
-    pub fn with_chain(mut self, chain_id: impl Into<String>) -> Self {
-        self.chain_options = Some(ChainRetrievalOptions::for_chain(chain_id));
-        self
-    }
-
-    /// Retrieve all memories in a chain and related chains.
-    ///
-    /// # Arguments
-    ///
-    /// * `chain_id` - The chain ID to retrieve
-    pub fn with_chain_and_related(mut self, chain_id: impl Into<String>) -> Self {
-        self.chain_options = Some(ChainRetrievalOptions::for_chain(chain_id).with_related());
-        self
-    }
-
     /// Set the temporal scale for multi-scale reasoning.
     pub fn with_temporal_scale(mut self, scale: TemporalScale) -> Self {
         self.temporal_scale = scale;
@@ -1128,7 +1035,6 @@ impl Default for TemporalSearchOptions {
             session_id: None,
             periodic_options: None,
             sequence_options: None,
-            chain_options: None,
             temporal_scale: TemporalScale::default(),
             temporal_weight: 0.0, // No temporal boost by default
         }

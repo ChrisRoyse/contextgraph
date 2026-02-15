@@ -169,9 +169,11 @@ impl Handlers {
         // E4-FIX: Get session sequence AFTER session ID resolution
         let session_sequence = self.get_next_sequence();
 
-        // PHASE-1.2: Extract operator_id for provenance tracking
+        // PHASE-1.2: Extract operatorId for provenance tracking
+        // Accepts both camelCase (schema) and snake_case (legacy) for backward compatibility
         let operator_id = args
-            .get("operator_id")
+            .get("operatorId")
+            .or_else(|| args.get("operator_id"))
             .and_then(|v| v.as_str())
             .map(String::from);
 
@@ -761,7 +763,7 @@ impl Handlers {
         let anchor_to_current_turn = conversation_context
             .and_then(|c| c.get("anchorToCurrentTurn"))
             .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+            .unwrap_or(true);
         let turns_back = conversation_context
             .and_then(|c| c.get("turnsBack"))
             .and_then(|v| v.as_u64())
@@ -1624,6 +1626,7 @@ fn apply_direction_aware_reranking(
             _ => 1.0,
         };
         result.similarity *= boost;
+        result.similarity = result.similarity.min(1.0);
     }
 
     results.sort_by(|a, b| {

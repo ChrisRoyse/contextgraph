@@ -268,7 +268,7 @@ impl CausalE11Index {
             if let Some(&id) = key_to_id.get(key) {
                 // Convert distance to similarity: similarity = 1 - distance
                 // usearch cosine returns distance in [0, 2]
-                let similarity = 1.0 - distance;
+                let similarity = 1.0 - distance.min(1.0);
                 output.push((id, similarity));
                 if output.len() >= k {
                     break;
