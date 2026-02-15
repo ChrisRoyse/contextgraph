@@ -48,8 +48,9 @@
 
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-// HIGH-17/MED-11 FIX: parking_lot::RwLock is non-poisonable.
-use parking_lot::RwLock;
+use std::sync::atomic::Ordering;
+// P5: DashMap for lock-free concurrent soft-delete checks
+use dashmap::DashMap;
 
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -104,11 +105,11 @@ fn get_fingerprint_raw_sync(db: &DB, id: Uuid) -> Result<Option<Vec<u8>>, Teleol
 }
 
 /// Check if an ID is soft-deleted (sync version for spawn_blocking).
-/// Takes Arc<RwLock<HashMap>> to avoid expensive HashMap cloning before spawn_blocking.
 ///
-/// MED-11 FIX: Uses parking_lot::RwLock (non-poisonable).
-fn is_soft_deleted_sync(soft_deleted: &Arc<RwLock<HashMap<Uuid, i64>>>, id: &Uuid) -> bool {
-    soft_deleted.read().contains_key(id)
+/// P5: Uses DashMap for lock-free concurrent reads. No global RwLock contention
+/// under concurrent search load.
+fn is_soft_deleted_sync(soft_deleted: &Arc<DashMap<Uuid, i64>>, id: &Uuid) -> bool {
+    soft_deleted.contains_key(id)
 }
 
 /// Get the query vector for a given embedder index (0-12).
@@ -143,7 +144,7 @@ fn get_query_vector_for_embedder<'a>(query: &'a SemanticFingerprint, embedder_id
 fn search_single_embedder_sync(
     db: &Arc<DB>,
     index_registry: &Arc<EmbedderIndexRegistry>,
-    soft_deleted: &Arc<RwLock<HashMap<Uuid, i64>>>,
+    soft_deleted: &Arc<DashMap<Uuid, i64>>,
     query: &SemanticFingerprint,
     options: &TeleologicalSearchOptions,
     embedder_idx: usize,
@@ -237,7 +238,7 @@ fn search_single_embedder_sync(
 fn search_filtered_multi_space_sync(
     db: &Arc<DB>,
     index_registry: &Arc<EmbedderIndexRegistry>,
-    soft_deleted: &Arc<RwLock<HashMap<Uuid, i64>>>,
+    soft_deleted: &Arc<DashMap<Uuid, i64>>,
     query: &SemanticFingerprint,
     options: &TeleologicalSearchOptions,
     embedder_indices: &[usize],
@@ -445,11 +446,11 @@ fn compute_embedder_scores_with_direction_sync(
 }
 
 /// E1-only search (sync version for spawn_blocking).
-/// Takes Arc<RwLock<HashMap>> to avoid expensive HashMap cloning before spawn_blocking.
+/// P5: Uses Arc<DashMap> for lock-free concurrent soft-delete checks.
 fn search_e1_only_sync(
     db: &Arc<DB>,
     index_registry: &Arc<EmbedderIndexRegistry>,
-    soft_deleted: &Arc<RwLock<HashMap<Uuid, i64>>>,
+    soft_deleted: &Arc<DashMap<Uuid, i64>>,
     query: &SemanticFingerprint,
     options: &TeleologicalSearchOptions,
 ) -> CoreResult<Vec<TeleologicalSearchResult>> {
@@ -507,11 +508,11 @@ fn search_e1_only_sync(
 }
 
 /// Multi-space search (sync version for spawn_blocking).
-/// Takes Arc<RwLock<HashMap>> to avoid expensive HashMap cloning before spawn_blocking.
+/// P5: Uses Arc<DashMap> for lock-free concurrent soft-delete checks.
 fn search_multi_space_sync(
     db: &Arc<DB>,
     index_registry: &Arc<EmbedderIndexRegistry>,
-    soft_deleted: &Arc<RwLock<HashMap<Uuid, i64>>>,
+    soft_deleted: &Arc<DashMap<Uuid, i64>>,
     query: &SemanticFingerprint,
     options: &TeleologicalSearchOptions,
 ) -> CoreResult<Vec<TeleologicalSearchResult>> {
@@ -702,13 +703,15 @@ fn search_multi_space_sync(
 ///
 /// Note: E12 MaxSim reranking (Stage 3) is NOT implemented. See AP-74.
 ///
-/// Takes Arc<RwLock<HashMap>> to avoid expensive HashMap cloning before spawn_blocking.
+/// P1: Takes total_doc_count for O(1) IDF in sparse search stage.
+/// P5: Uses DashMap for lock-free soft-delete checks.
 fn search_pipeline_sync(
     db: &Arc<DB>,
     index_registry: &Arc<EmbedderIndexRegistry>,
-    soft_deleted: &Arc<RwLock<HashMap<Uuid, i64>>>,
+    soft_deleted: &Arc<DashMap<Uuid, i64>>,
     query: &SemanticFingerprint,
     options: &TeleologicalSearchOptions,
+    total_doc_count: usize,
 ) -> CoreResult<Vec<TeleologicalSearchResult>> {
     let recall_k = options.top_k * STAGE1_RECALL_MULTIPLIER;
     let stage2_k = options.top_k * STAGE2_CANDIDATE_MULTIPLIER;
@@ -723,7 +726,7 @@ fn search_pipeline_sync(
 
     // E13 SPLADE sparse recall
     if !query.e13_splade.is_empty() {
-        match search_sparse_sync(&**db, &query.e13_splade, recall_k, soft_deleted) {
+        match search_sparse_sync(&**db, &query.e13_splade, recall_k, soft_deleted, total_doc_count) {
             Ok(sparse_results) => {
                 let sparse_count = sparse_results.len();
                 candidate_ids.extend(sparse_results.into_iter().map(|(id, _)| id));
@@ -1069,24 +1072,24 @@ fn resolve_weights_sync(options: &TeleologicalSearchOptions) -> CoreResult<[f32;
 }
 
 /// Sparse search (sync version for spawn_blocking).
-/// Takes Arc<RwLock<HashMap>> to avoid expensive HashMap cloning before spawn_blocking.
+///
+/// P1: Takes `total_doc_count` as parameter instead of doing O(n) full-iterator scan.
+/// P5: Uses DashMap for lock-free soft-delete checks.
 fn search_sparse_sync(
     db: &DB,
     sparse_query: &SparseVector,
     top_k: usize,
-    soft_deleted: &Arc<RwLock<HashMap<Uuid, i64>>>,
+    soft_deleted: &Arc<DashMap<Uuid, i64>>,
+    total_doc_count: usize,
 ) -> CoreResult<Vec<(Uuid, f32)>> {
+    // P1: total_doc_count is O(1) atomic read (was O(n) iterator scan)
+    let total_docs = total_doc_count.max(1) as f32;
     debug!(
-        "Searching sparse with {} active terms, top_k={} (BM25-IDF scoring)",
+        "Searching sparse with {} active terms, top_k={}, total_docs={} (BM25-IDF scoring)",
         sparse_query.nnz(),
-        top_k
+        top_k,
+        total_docs
     );
-
-    // Get total document count - approximate from fingerprints CF
-    let cf_fp = db.cf_handle(CF_FINGERPRINTS).ok_or_else(|| {
-        CoreError::Internal("CF_FINGERPRINTS not found".to_string())
-    })?;
-    let total_docs = db.iterator_cf(cf_fp, rocksdb::IteratorMode::Start).count() as f32;
 
     let cf = db.cf_handle(CF_E13_SPLADE_INVERTED).ok_or_else(|| {
         CoreError::Internal("CF_E13_SPLADE_INVERTED not found".to_string())
@@ -1228,17 +1231,22 @@ fn suppress_degenerate_weights(
             continue;
         }
 
-        let scores: Vec<f32> = all_scores.iter()
-            .map(|s| s[idx])
-            .filter(|s| *s > 0.0)
-            .collect();
-        if scores.len() < 3 {
+        // P2: Welford's online algorithm — single-pass mean & variance.
+        // Eliminates the second pass over all candidates for each embedder.
+        let mut count = 0u32;
+        let mut mean = 0.0f32;
+        let mut m2 = 0.0f32;
+        for s in all_scores.iter().map(|s| s[idx]).filter(|s| *s > 0.0) {
+            count += 1;
+            let delta = s - mean;
+            mean += delta / count as f32;
+            let delta2 = s - mean;
+            m2 += delta * delta2;
+        }
+        if count < 3 {
             continue;
         }
-        let mean = scores.iter().sum::<f32>() / scores.len() as f32;
-        let variance = scores.iter()
-            .map(|s| (s - mean).powi(2))
-            .sum::<f32>() / scores.len() as f32;
+        let variance = m2 / count as f32;
         if variance < MIN_VARIANCE {
             tracing::debug!(
                 embedder_idx = idx,
@@ -1314,16 +1322,19 @@ impl RocksDbTeleologicalStore {
         );
 
         // Clone Arc-wrapped fields for spawn_blocking closure
-        // CRITICAL: Use Arc::clone for soft_deleted instead of cloning the HashMap
-        // This avoids 5-478 KB of data cloning per search on the async runtime
+        // P5: Arc::clone for DashMap is 8 bytes (vs 5-478KB HashMap clone)
         let db = Arc::clone(&self.db);
         let index_registry = Arc::clone(&self.index_registry);
         let soft_deleted = Arc::clone(&self.soft_deleted);
-        let query_clone = query.clone();
+        // P3: Wrap query in Arc to avoid cloning ~63KB SemanticFingerprint
+        let query_arc = Arc::new(query.clone());
         let options_clone = options.clone();
+        // P1: Read total_doc_count atomically (O(1) vs O(n) iterator)
+        let total_docs = self.total_doc_count.load(Ordering::Relaxed);
 
         // Move synchronous search work to blocking thread pool
         let mut results = tokio::task::spawn_blocking(move || {
+            let query_clone = &*query_arc;
             // CRIT-06: When embedder_indices is set, route to specific HNSW index(es)
             // instead of always defaulting to E1 or the strategy-based dispatch.
             if !options_clone.embedder_indices.is_empty() {
@@ -1364,7 +1375,7 @@ impl RocksDbTeleologicalStore {
                         "Pipeline strategy uses 2-stage retrieval (E13 recall + multi-space scoring). \
                          E12 MaxSim reranking is not yet implemented."
                     );
-                    search_pipeline_sync(&db, &index_registry, &soft_deleted, &query_clone, &options_clone)
+                    search_pipeline_sync(&db, &index_registry, &soft_deleted, query_clone, &options_clone, total_docs)
                 }
             }
         })
@@ -1574,27 +1585,18 @@ impl RocksDbTeleologicalStore {
             top_k
         );
 
-        // Get total document count for IDF calculation FIRST (before any cf references)
-        // This is an O(n) scan but cached in typical usage patterns
-        let total_docs = self.count_async().await.unwrap_or(1) as f32;
+        // P1: O(1) atomic read instead of O(n) count_async
+        let total_doc_count = self.total_doc_count.load(Ordering::Relaxed);
 
         // Clone Arc-wrapped fields for spawn_blocking closure
-        // CRITICAL: Use Arc::clone for soft_deleted instead of cloning the HashMap
+        // P5: Arc::clone for DashMap is cheap (no HashMap clone)
         let db = Arc::clone(&self.db);
         let soft_deleted = Arc::clone(&self.soft_deleted);
         let sparse_query = sparse_query.clone();
 
         // Move synchronous RocksDB I/O to blocking thread pool
         tokio::task::spawn_blocking(move || {
-            search_sparse_sync(&*db, &sparse_query, top_k, &soft_deleted)
-                .map(|results| {
-                    debug!(
-                        "Sparse search (BM25-IDF) returned {} results, total_docs={}",
-                        results.len(),
-                        total_docs
-                    );
-                    results
-                })
+            search_sparse_sync(&*db, &sparse_query, top_k, &soft_deleted, total_doc_count)
         })
         .await
         .map_err(|e| CoreError::Internal(format!("spawn_blocking failed: {}", e)))?

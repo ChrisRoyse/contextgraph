@@ -262,7 +262,7 @@ impl GetTypedEdgesRequest {
     }
 
     /// Returns true if searching for incoming edges.
-    pub fn is_incoming(&self) -> bool {
+    pub fn _is_incoming(&self) -> bool {
         self.direction == "incoming" || self.direction == "both"
     }
 }
@@ -489,7 +489,7 @@ pub struct NeighborSearchMetadata {
 
 impl GetMemoryNeighborsResponse {
     /// Create an empty response (no neighbors found).
-    pub fn empty(memory_id: Uuid, embedder_id: usize, embedder_name: &str) -> Self {
+    pub fn _empty(memory_id: Uuid, embedder_id: usize, embedder_name: &str) -> Self {
         Self {
             memory_id,
             embedder_id,
@@ -568,7 +568,7 @@ pub struct TypedEdgeMetadata {
 
 impl GetTypedEdgesResponse {
     /// Create an empty response (no edges found).
-    pub fn empty(memory_id: Uuid, direction: &str, edge_type_filter: Option<String>) -> Self {
+    pub fn _empty(memory_id: Uuid, direction: &str, edge_type_filter: Option<String>) -> Self {
         Self {
             memory_id,
             direction: direction.to_string(),
@@ -677,7 +677,7 @@ pub struct TraversalMetadata {
 
 impl TraverseGraphResponse {
     /// Create an empty response (no traversal possible).
-    pub fn empty(
+    pub fn _empty(
         start_memory_id: Uuid,
         max_hops: usize,
         edge_type_filter: Option<String>,
@@ -753,7 +753,7 @@ pub const SEMANTIC_EMBEDDER_INDICES: [usize; 10] = [
 ];
 
 /// Temporal embedder indices (excluded from semantic fusion per AP-60).
-pub const TEMPORAL_EMBEDDER_INDICES: [usize; 3] = [
+pub const _TEMPORAL_EMBEDDER_INDICES: [usize; 3] = [
     1, // E2 - Freshness
     2, // E3 - Periodicity
     3, // E4 - Ordering
@@ -980,7 +980,7 @@ pub struct GetUnifiedNeighborsResponse {
 
 impl GetUnifiedNeighborsResponse {
     /// Create an empty response (no neighbors found).
-    pub fn empty(memory_id: Uuid, weight_profile: &str) -> Self {
+    pub fn _empty(memory_id: Uuid, weight_profile: &str) -> Self {
         Self {
             memory_id,
             weight_profile: weight_profile.to_string(),
@@ -1123,7 +1123,7 @@ mod tests {
             ..Default::default()
         };
         assert!(outgoing.is_outgoing());
-        assert!(!outgoing.is_incoming());
+        assert!(!outgoing._is_incoming());
 
         let incoming = GetTypedEdgesRequest {
             memory_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
@@ -1131,7 +1131,7 @@ mod tests {
             ..Default::default()
         };
         assert!(!incoming.is_outgoing());
-        assert!(incoming.is_incoming());
+        assert!(incoming._is_incoming());
 
         let both = GetTypedEdgesRequest {
             memory_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
@@ -1139,7 +1139,7 @@ mod tests {
             ..Default::default()
         };
         assert!(both.is_outgoing());
-        assert!(both.is_incoming());
+        assert!(both._is_incoming());
         println!("[PASS] Direction helpers work correctly");
     }
 
@@ -1215,7 +1215,7 @@ mod tests {
     #[test]
     fn test_empty_neighbors_response() {
         let response =
-            GetMemoryNeighborsResponse::empty(Uuid::nil(), 0, "E1 (V_meaning)");
+            GetMemoryNeighborsResponse::_empty(Uuid::nil(), 0, "E1 (V_meaning)");
 
         assert_eq!(response.count, 0);
         assert!(response.neighbors.is_empty());
@@ -1224,7 +1224,7 @@ mod tests {
 
     #[test]
     fn test_empty_edges_response() {
-        let response = GetTypedEdgesResponse::empty(Uuid::nil(), "outgoing", None);
+        let response = GetTypedEdgesResponse::_empty(Uuid::nil(), "outgoing", None);
 
         assert_eq!(response.count, 0);
         assert!(response.edges.is_empty());
@@ -1234,7 +1234,7 @@ mod tests {
     #[test]
     fn test_empty_traversal_response() {
         let response =
-            TraverseGraphResponse::empty(Uuid::nil(), 2, None, 0.3, 20);
+            TraverseGraphResponse::_empty(Uuid::nil(), 2, None, 0.3, 20);
 
         assert_eq!(response.unique_nodes_visited, 0);
         assert_eq!(response.path_count, 0);
@@ -1330,7 +1330,7 @@ mod tests {
 
     #[test]
     fn test_unified_neighbors_response_empty() {
-        let response = GetUnifiedNeighborsResponse::empty(Uuid::nil(), "semantic_search");
+        let response = GetUnifiedNeighborsResponse::_empty(Uuid::nil(), "semantic_search");
 
         assert_eq!(response.count, 0);
         assert!(response.neighbors.is_empty());
@@ -1357,11 +1357,11 @@ mod tests {
 
     #[test]
     fn test_temporal_embedder_indices() {
-        assert_eq!(TEMPORAL_EMBEDDER_INDICES.len(), 3);
-        assert!(TEMPORAL_EMBEDDER_INDICES.contains(&1)); // E2
-        assert!(TEMPORAL_EMBEDDER_INDICES.contains(&2)); // E3
-        assert!(TEMPORAL_EMBEDDER_INDICES.contains(&3)); // E4
-        println!("[PASS] TEMPORAL_EMBEDDER_INDICES correct");
+        assert_eq!(_TEMPORAL_EMBEDDER_INDICES.len(), 3);
+        assert!(_TEMPORAL_EMBEDDER_INDICES.contains(&1)); // E2
+        assert!(_TEMPORAL_EMBEDDER_INDICES.contains(&2)); // E3
+        assert!(_TEMPORAL_EMBEDDER_INDICES.contains(&3)); // E4
+        println!("[PASS] _TEMPORAL_EMBEDDER_INDICES correct");
     }
 
     #[test]

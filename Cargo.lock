@@ -910,6 +910,7 @@ dependencies = [
  "context-graph-core",
  "context-graph-embeddings",
  "context-graph-storage",
+ "context-graph-test-utils",
  "futures",
  "parking_lot",
  "rand 0.8.5",
@@ -970,7 +971,9 @@ dependencies = [
  "context-graph-core",
  "context-graph-cuda",
  "context-graph-embeddings",
+ "context-graph-test-utils",
  "criterion",
+ "dashmap",
  "futures",
  "libc",
  "parking_lot",
@@ -986,6 +989,17 @@ dependencies = [
  "tokio",
  "tracing",
  "usearch",
+ "uuid",
+]
+
+[[package]]
+name = "context-graph-test-utils"
+version = "0.1.0"
+dependencies = [
+ "context-graph-core",
+ "context-graph-storage",
+ "rand 0.8.5",
+ "tempfile",
  "uuid",
 ]
 

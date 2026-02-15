@@ -95,7 +95,7 @@ impl RocksDbTeleologicalStore {
             for id in ids_clone {
                 // Skip soft-deleted entries (read lock inside spawn_blocking)
                 // FAIL FAST: Panic if lock is poisoned (thread panic elsewhere)
-                let is_deleted = soft_deleted.read().contains_key(&id);
+                let is_deleted = soft_deleted.contains_key(&id);
                 if is_deleted {
                     results.push(None);
                     continue;
@@ -159,9 +159,8 @@ impl RocksDbTeleologicalStore {
                 })?;
                 let id = parse_fingerprint_key(&key);
 
-                // Check soft-deleted inside spawn_blocking
-                // FAIL FAST: Panic if lock is poisoned
-                let is_deleted = soft_deleted.read().contains_key(&id);
+                // P5: DashMap - lock-free contains_key check
+                let is_deleted = soft_deleted.contains_key(&id);
                 if !is_deleted {
                     count += 1;
                 }
@@ -326,7 +325,8 @@ impl RocksDbTeleologicalStore {
 
         // CRIT-04 FIX: Hard-delete soft-deleted entries from RocksDB first.
         // Collect IDs while holding the read lock, then release before mutation.
-        let soft_deleted_ids: Vec<Uuid> = self.soft_deleted.read().keys().copied().collect();
+        // P5: DashMap - iterate without global read lock
+        let soft_deleted_ids: Vec<Uuid> = self.soft_deleted.iter().map(|entry| *entry.key()).collect();
 
         if !soft_deleted_ids.is_empty() {
             info!(
@@ -374,7 +374,8 @@ impl RocksDbTeleologicalStore {
 
         // Drain remaining soft-deleted tracking (entries that were successfully hard-deleted
         // will already have been removed by delete_async)
-        let remaining = self.soft_deleted.read().len();
+        // P5: DashMap - no read/write lock needed
+        let remaining = self.soft_deleted.len();
         if remaining > 0 {
             warn!(
                 count = remaining,
@@ -382,7 +383,7 @@ impl RocksDbTeleologicalStore {
                 remaining
             );
         }
-        self.soft_deleted.write().drain();
+        self.soft_deleted.clear();
 
         info!("Compaction complete");
         Ok(())
@@ -584,7 +585,7 @@ impl RocksDbTeleologicalStore {
 
                 // Skip soft-deleted fingerprints (read lock inside spawn_blocking)
                 // FAIL FAST: Panic if lock is poisoned
-                let is_deleted = soft_deleted.read().contains_key(&id);
+                let is_deleted = soft_deleted.contains_key(&id);
                 if is_deleted {
                     continue;
                 }
@@ -657,7 +658,7 @@ impl RocksDbTeleologicalStore {
                 let id = parse_fingerprint_key(&key);
 
                 // Skip soft-deleted
-                let is_deleted = soft_deleted.read().contains_key(&id);
+                let is_deleted = soft_deleted.contains_key(&id);
                 if is_deleted {
                     continue;
                 }

@@ -1,9 +1,12 @@
 //! Tool dispatch logic for MCP tool calls.
 //!
-//! Per PRD v6 Section 10, only these MCP tools are exposed:
-//! - Core: store_memory, search_graph, get_memetic_status (inject_context merged into store_memory)
-//! - Consolidation: trigger_consolidation
-//! - Curation: merge_concepts
+//! Per PRD v6 Section 10, all 55 MCP tools are dispatched here.
+//! Uses `tool_dispatch!` macro to eliminate boilerplate match arms.
+//!
+//! ## Adding a new tool
+//! 1. Add the tool name constant to `tools/names.rs`
+//! 2. Add the handler method `call_X(id, args)` to the relevant `*_tools.rs`
+//! 3. Add one line to the `tool_dispatch!` invocation below
 
 use serde_json::json;
 use tracing::debug;
@@ -12,6 +15,26 @@ use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
 use crate::tools::{get_tool_definitions, tool_names};
 
 use super::super::Handlers;
+
+/// Dispatch tool calls to handler methods via generated match.
+///
+/// Supports handlers with or without arguments:
+///   `TOOL_NAME => handler(arguments)` — calls `self.handler(id, arguments).await`
+///   `TOOL_NAME => handler()`          — calls `self.handler(id).await`
+macro_rules! tool_dispatch {
+    ($self:expr, $id:expr, $name:expr,
+        $( $tool_name:path => $method:ident ( $($param:expr),* ) ),* $(,)?
+    ) => {
+        match $name {
+            $( $tool_name => $self.$method( $id $(, $param)* ).await, )*
+            _ => JsonRpcResponse::error(
+                $id,
+                error_codes::TOOL_NOT_FOUND,
+                format!("Unknown tool: {}", $name),
+            ),
+        }
+    }
+}
 
 impl Handlers {
     pub(crate) async fn handle_tools_list(&self, id: Option<JsonRpcId>) -> JsonRpcResponse {
@@ -61,149 +84,81 @@ impl Handlers {
             }
         );
 
-        match tool_name {
-            // ========== CORE TOOLS (PRD Section 10.1) ==========
-            // Note: inject_context was merged into store_memory. When rationale is provided,
-            // the same validation (1-1024 chars) and response format is used.
-            tool_names::STORE_MEMORY => self.call_store_memory(id, arguments).await,
-            tool_names::GET_MEMETIC_STATUS => self.call_get_memetic_status(id).await,
-            tool_names::SEARCH_GRAPH => self.call_search_graph(id, arguments).await,
-
-            // ========== CONSOLIDATION TOOLS (PRD Section 10.1) ==========
-            tool_names::TRIGGER_CONSOLIDATION => {
-                self.call_trigger_consolidation(id, arguments).await
-            }
-
-            // ========== TOPIC TOOLS (PRD Section 10.2) ==========
-            tool_names::GET_TOPIC_PORTFOLIO => self.call_get_topic_portfolio(id, arguments).await,
-            tool_names::GET_TOPIC_STABILITY => self.call_get_topic_stability(id, arguments).await,
-            tool_names::DETECT_TOPICS => self.call_detect_topics(id, arguments).await,
-            tool_names::GET_DIVERGENCE_ALERTS => {
-                self.call_get_divergence_alerts(id, arguments).await
-            }
-
-            // ========== CURATION TOOLS (PRD Section 10.3) ==========
-            tool_names::MERGE_CONCEPTS => self.call_merge_concepts(id, arguments).await,
-            tool_names::FORGET_CONCEPT => self.call_forget_concept(id, arguments).await,
-            tool_names::BOOST_IMPORTANCE => self.call_boost_importance(id, arguments).await,
-
-            // ========== FILE WATCHER TOOLS (File index management) ==========
-            tool_names::LIST_WATCHED_FILES => self.call_list_watched_files(id, arguments).await,
-            tool_names::GET_FILE_WATCHER_STATS => self.call_get_file_watcher_stats(id).await,
-            tool_names::DELETE_FILE_CONTENT => self.call_delete_file_content(id, arguments).await,
-            tool_names::RECONCILE_FILES => self.call_reconcile_files(id, arguments).await,
-
-            // ========== SEQUENCE TOOLS (E4 Integration - Phase 1) ==========
-            tool_names::GET_CONVERSATION_CONTEXT => {
-                self.call_get_conversation_context(id, arguments).await
-            }
-            tool_names::GET_SESSION_TIMELINE => {
-                self.call_get_session_timeline(id, arguments).await
-            }
-            tool_names::TRAVERSE_MEMORY_CHAIN => {
-                self.call_traverse_memory_chain(id, arguments).await
-            }
-            tool_names::COMPARE_SESSION_STATES => {
-                self.call_compare_session_states(id, arguments).await
-            }
-
-            // ========== CAUSAL TOOLS (E5 Priority 1 Enhancement) ==========
-            tool_names::SEARCH_CAUSES => self.call_search_causes(id, arguments).await,
-            tool_names::SEARCH_EFFECTS => self.call_search_effects(id, arguments).await,
-            tool_names::GET_CAUSAL_CHAIN => self.call_get_causal_chain(id, arguments).await,
-            tool_names::SEARCH_CAUSAL_RELATIONSHIPS => {
-                self.call_search_causal_relationships(id, arguments).await
-            }
-
-            // ========== CAUSAL DISCOVERY TOOLS (LLM-based causal analysis) ==========
-            tool_names::TRIGGER_CAUSAL_DISCOVERY => {
-                self.call_trigger_causal_discovery(id, arguments).await
-            }
-            tool_names::GET_CAUSAL_DISCOVERY_STATUS => {
-                self.call_get_causal_discovery_status(id, arguments).await
-            }
-
-            // ========== GRAPH TOOLS (E8 Upgrade - Phase 4) ==========
-            tool_names::SEARCH_CONNECTIONS => self.call_search_connections(id, arguments).await,
-            tool_names::GET_GRAPH_PATH => self.call_get_graph_path(id, arguments).await,
-
-            // ========== GRAPH DISCOVERY TOOLS (LLM-based relationship discovery) ==========
-            tool_names::DISCOVER_GRAPH_RELATIONSHIPS => {
-                self.call_discover_graph_relationships(id, arguments).await
-            }
-            tool_names::VALIDATE_GRAPH_LINK => self.call_validate_graph_link(id, arguments).await,
-
-            // ========== KEYWORD TOOLS (E6 Keyword Search Enhancement) ==========
-            tool_names::SEARCH_BY_KEYWORDS => self.call_search_by_keywords(id, arguments).await,
-
-            // ========== CODE TOOLS (E7 Code Search Enhancement) ==========
-            tool_names::SEARCH_CODE => self.call_search_code(id, arguments).await,
-
-            // ========== ROBUSTNESS TOOLS (E9 HDC Blind-Spot Detection) ==========
-            tool_names::SEARCH_ROBUST => self.call_search_robust(id, arguments).await,
-
-            // ========== ENTITY TOOLS (E11 Entity Integration) ==========
-            tool_names::EXTRACT_ENTITIES => self.call_extract_entities(id, arguments).await,
-            tool_names::SEARCH_BY_ENTITIES => self.call_search_by_entities(id, arguments).await,
-            tool_names::INFER_RELATIONSHIP => self.call_infer_relationship(id, arguments).await,
-            tool_names::FIND_RELATED_ENTITIES => {
-                self.call_find_related_entities(id, arguments).await
-            }
-            tool_names::VALIDATE_KNOWLEDGE => self.call_validate_knowledge(id, arguments).await,
-            tool_names::GET_ENTITY_GRAPH => self.call_get_entity_graph(id, arguments).await,
-
-            // ========== EMBEDDER-FIRST SEARCH TOOLS (Constitution v6.3) ==========
-            tool_names::SEARCH_BY_EMBEDDER => self.call_search_by_embedder(id, arguments).await,
-            tool_names::GET_EMBEDDER_CLUSTERS => {
-                self.call_get_embedder_clusters(id, arguments).await
-            }
-            tool_names::COMPARE_EMBEDDER_VIEWS => {
-                self.call_compare_embedder_views(id, arguments).await
-            }
-            tool_names::LIST_EMBEDDER_INDEXES => {
-                self.call_list_embedder_indexes(id, arguments).await
-            }
-            tool_names::GET_MEMORY_FINGERPRINT => {
-                self.call_get_memory_fingerprint(id, arguments).await
-            }
-            tool_names::CREATE_WEIGHT_PROFILE => {
-                self.call_create_weight_profile(id, arguments).await
-            }
-            tool_names::SEARCH_CROSS_EMBEDDER_ANOMALIES => {
-                self.call_search_cross_embedder_anomalies(id, arguments).await
-            }
-            // ========== TEMPORAL TOOLS (E2/E3 Integration) ==========
-            tool_names::SEARCH_RECENT => self.call_search_recent(id, arguments).await,
-            tool_names::SEARCH_PERIODIC => self.call_search_periodic(id, arguments).await,
-
-            // ========== GRAPH LINKING TOOLS (K-NN Navigation and Typed Edges) ==========
-            tool_names::GET_MEMORY_NEIGHBORS => {
-                self.call_get_memory_neighbors(id, arguments).await
-            }
-            tool_names::GET_TYPED_EDGES => self.call_get_typed_edges(id, arguments).await,
-            tool_names::TRAVERSE_GRAPH => self.call_traverse_graph(id, arguments).await,
-            tool_names::GET_UNIFIED_NEIGHBORS => {
-                self.call_get_unified_neighbors(id, arguments).await
-            }
-
-            // ========== MAINTENANCE TOOLS (Data repair and cleanup) ==========
-            tool_names::REPAIR_CAUSAL_RELATIONSHIPS => {
-                self.call_repair_causal_relationships(id).await
-            }
-
-            // ========== PROVENANCE TOOLS (Phase P3 - Provenance Queries) ==========
-            tool_names::GET_AUDIT_TRAIL => self.call_get_audit_trail(id, arguments).await,
-            tool_names::GET_MERGE_HISTORY => self.call_get_merge_history(id, arguments).await,
-            tool_names::GET_PROVENANCE_CHAIN => {
-                self.call_get_provenance_chain(id, arguments).await
-            }
-
-            // Unknown tool
-            _ => JsonRpcResponse::error(
-                id,
-                error_codes::TOOL_NOT_FOUND,
-                format!("Unknown tool: {}", tool_name),
-            ),
-        }
+        tool_dispatch!(self, id, tool_name,
+            // Core tools (PRD Section 10.1)
+            tool_names::STORE_MEMORY => call_store_memory(arguments),
+            tool_names::GET_MEMETIC_STATUS => call_get_memetic_status(),
+            tool_names::SEARCH_GRAPH => call_search_graph(arguments),
+            // Consolidation tools
+            tool_names::TRIGGER_CONSOLIDATION => call_trigger_consolidation(arguments),
+            // Topic tools (PRD Section 10.2)
+            tool_names::GET_TOPIC_PORTFOLIO => call_get_topic_portfolio(arguments),
+            tool_names::GET_TOPIC_STABILITY => call_get_topic_stability(arguments),
+            tool_names::DETECT_TOPICS => call_detect_topics(arguments),
+            tool_names::GET_DIVERGENCE_ALERTS => call_get_divergence_alerts(arguments),
+            // Curation tools (PRD Section 10.3)
+            tool_names::MERGE_CONCEPTS => call_merge_concepts(arguments),
+            tool_names::FORGET_CONCEPT => call_forget_concept(arguments),
+            tool_names::BOOST_IMPORTANCE => call_boost_importance(arguments),
+            // File watcher tools
+            tool_names::LIST_WATCHED_FILES => call_list_watched_files(arguments),
+            tool_names::GET_FILE_WATCHER_STATS => call_get_file_watcher_stats(),
+            tool_names::DELETE_FILE_CONTENT => call_delete_file_content(arguments),
+            tool_names::RECONCILE_FILES => call_reconcile_files(arguments),
+            // Sequence tools (E4)
+            tool_names::GET_CONVERSATION_CONTEXT => call_get_conversation_context(arguments),
+            tool_names::GET_SESSION_TIMELINE => call_get_session_timeline(arguments),
+            tool_names::TRAVERSE_MEMORY_CHAIN => call_traverse_memory_chain(arguments),
+            tool_names::COMPARE_SESSION_STATES => call_compare_session_states(arguments),
+            // Causal tools (E5)
+            tool_names::SEARCH_CAUSES => call_search_causes(arguments),
+            tool_names::SEARCH_EFFECTS => call_search_effects(arguments),
+            tool_names::GET_CAUSAL_CHAIN => call_get_causal_chain(arguments),
+            tool_names::SEARCH_CAUSAL_RELATIONSHIPS => call_search_causal_relationships(arguments),
+            // Causal discovery tools (LLM)
+            tool_names::TRIGGER_CAUSAL_DISCOVERY => call_trigger_causal_discovery(arguments),
+            tool_names::GET_CAUSAL_DISCOVERY_STATUS => call_get_causal_discovery_status(arguments),
+            // Graph tools (E8)
+            tool_names::SEARCH_CONNECTIONS => call_search_connections(arguments),
+            tool_names::GET_GRAPH_PATH => call_get_graph_path(arguments),
+            // Graph discovery tools (LLM)
+            tool_names::DISCOVER_GRAPH_RELATIONSHIPS => call_discover_graph_relationships(arguments),
+            tool_names::VALIDATE_GRAPH_LINK => call_validate_graph_link(arguments),
+            // Keyword tools (E6)
+            tool_names::SEARCH_BY_KEYWORDS => call_search_by_keywords(arguments),
+            // Code tools (E7)
+            tool_names::SEARCH_CODE => call_search_code(arguments),
+            // Robustness tools (E9)
+            tool_names::SEARCH_ROBUST => call_search_robust(arguments),
+            // Entity tools (E11)
+            tool_names::EXTRACT_ENTITIES => call_extract_entities(arguments),
+            tool_names::SEARCH_BY_ENTITIES => call_search_by_entities(arguments),
+            tool_names::INFER_RELATIONSHIP => call_infer_relationship(arguments),
+            tool_names::FIND_RELATED_ENTITIES => call_find_related_entities(arguments),
+            tool_names::VALIDATE_KNOWLEDGE => call_validate_knowledge(arguments),
+            tool_names::GET_ENTITY_GRAPH => call_get_entity_graph(arguments),
+            // Embedder-first search tools (Constitution v6.3)
+            tool_names::SEARCH_BY_EMBEDDER => call_search_by_embedder(arguments),
+            tool_names::GET_EMBEDDER_CLUSTERS => call_get_embedder_clusters(arguments),
+            tool_names::COMPARE_EMBEDDER_VIEWS => call_compare_embedder_views(arguments),
+            tool_names::LIST_EMBEDDER_INDEXES => call_list_embedder_indexes(arguments),
+            tool_names::GET_MEMORY_FINGERPRINT => call_get_memory_fingerprint(arguments),
+            tool_names::CREATE_WEIGHT_PROFILE => call_create_weight_profile(arguments),
+            tool_names::SEARCH_CROSS_EMBEDDER_ANOMALIES => call_search_cross_embedder_anomalies(arguments),
+            // Temporal tools (E2/E3)
+            tool_names::SEARCH_RECENT => call_search_recent(arguments),
+            tool_names::SEARCH_PERIODIC => call_search_periodic(arguments),
+            // Graph linking tools (K-NN)
+            tool_names::GET_MEMORY_NEIGHBORS => call_get_memory_neighbors(arguments),
+            tool_names::GET_TYPED_EDGES => call_get_typed_edges(arguments),
+            tool_names::TRAVERSE_GRAPH => call_traverse_graph(arguments),
+            tool_names::GET_UNIFIED_NEIGHBORS => call_get_unified_neighbors(arguments),
+            // Maintenance tools
+            tool_names::REPAIR_CAUSAL_RELATIONSHIPS => call_repair_causal_relationships(),
+            // Provenance tools (Phase P3)
+            tool_names::GET_AUDIT_TRAIL => call_get_audit_trail(arguments),
+            tool_names::GET_MERGE_HISTORY => call_get_merge_history(arguments),
+            tool_names::GET_PROVENANCE_CHAIN => call_get_provenance_chain(arguments),
+        )
     }
 }

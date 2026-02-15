@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! HuggingFace Multi-Dataset Benchmark Suite
 //!
 //! Comprehensive benchmark using 15,000-20,000 diverse documents from HuggingFace:

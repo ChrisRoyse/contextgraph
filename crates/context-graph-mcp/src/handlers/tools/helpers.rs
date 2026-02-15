@@ -3,10 +3,51 @@
 use serde::de::DeserializeOwned;
 use serde_json::json;
 
-use crate::protocol::{JsonRpcId, JsonRpcResponse};
+use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
 
 use super::super::Handlers;
 use super::validate::{Validate, ValidateInto};
+
+/// Typed error categories for consistent MCP tool error responses.
+///
+/// Maps tool-level error categories to JSON-RPC error codes from protocol.rs.
+/// Used by `Handlers::tool_error_typed` to produce MCP-compliant responses
+/// that include the error code for machine-parseable error handling.
+///
+/// ## MCP Protocol Note
+/// Tool errors are returned as JSON-RPC *success* responses with `isError: true`
+/// in the content (per MCP spec). Protocol errors (method_not_found, invalid_request)
+/// use `JsonRpcResponse::error()` — do NOT use ToolErrorKind for those.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[allow(dead_code)]
+pub(crate) enum ToolErrorKind {
+    /// Invalid request parameters (bad format, out of range, missing required fields)
+    Validation,
+    /// Storage layer failure (RocksDB read/write, serialization)
+    Storage,
+    /// Embedding operation failed (model not ready, OOM, dimension mismatch)
+    Embedding,
+    /// Requested resource not found (memory, fingerprint, session)
+    NotFound,
+    /// Feature or subsystem not available (disabled, not initialized)
+    Unavailable,
+    /// General execution failure (internal error, unexpected state)
+    Execution,
+}
+
+impl ToolErrorKind {
+    /// Returns the JSON-RPC error code and human-readable label for this error kind.
+    pub(crate) fn code_and_label(self) -> (i32, &'static str) {
+        match self {
+            Self::Validation => (error_codes::INVALID_PARAMS, "VALIDATION_ERROR"),
+            Self::Storage => (error_codes::STORAGE_ERROR, "STORAGE_ERROR"),
+            Self::Embedding => (error_codes::EMBEDDING_ERROR, "EMBEDDING_ERROR"),
+            Self::NotFound => (error_codes::NODE_NOT_FOUND, "NOT_FOUND"),
+            Self::Unavailable => (error_codes::FEATURE_DISABLED, "UNAVAILABLE"),
+            Self::Execution => (error_codes::INTERNAL_ERROR, "EXECUTION_ERROR"),
+        }
+    }
+}
 
 impl Handlers {
     /// MCP-compliant tool result helper.
@@ -35,15 +76,41 @@ impl Handlers {
         )
     }
 
-    /// MCP-compliant tool error helper.
+    /// MCP-compliant tool error with typed error category.
     ///
-    /// Returns an error response in MCP format:
+    /// Returns an MCP-compliant error response that includes the error code
+    /// for machine-parseable error handling. Format:
     /// ```json
     /// {
-    ///   "content": [{"type": "text", "text": "error message"}],
-    ///   "isError": true
+    ///   "content": [{"type": "text", "text": "[LABEL -CODE] message"}],
+    ///   "isError": true,
+    ///   "errorCode": -32xxx
     /// }
     /// ```
+    pub(crate) fn tool_error_typed(
+        &self,
+        id: Option<JsonRpcId>,
+        kind: ToolErrorKind,
+        message: &str,
+    ) -> JsonRpcResponse {
+        let (code, label) = kind.code_and_label();
+        JsonRpcResponse::success(
+            id,
+            json!({
+                "content": [{
+                    "type": "text",
+                    "text": format!("[{} {}] {}", label, code, message)
+                }],
+                "isError": true,
+                "errorCode": code
+            }),
+        )
+    }
+
+    /// MCP-compliant tool error helper (untyped convenience).
+    ///
+    /// For cases where the error category is obvious from context.
+    /// Prefer `tool_error_typed` for new code to include the error code.
     pub(crate) fn tool_error(&self, id: Option<JsonRpcId>, message: &str) -> JsonRpcResponse {
         JsonRpcResponse::success(
             id,

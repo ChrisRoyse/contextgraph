@@ -31,7 +31,7 @@ mod entity_tools;
 mod file_watcher_tools;
 mod graph_link_tools;
 mod graph_tools;
-mod helpers;
+pub(crate) mod helpers;
 mod keyword_tools;
 // Intentionally placed here (alphabetical within private modules is not required;
 // this sits next to helpers which consumes it).

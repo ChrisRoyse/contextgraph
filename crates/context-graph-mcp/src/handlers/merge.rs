@@ -30,7 +30,8 @@ use context_graph_core::types::fingerprint::{
     SemanticFingerprint, SparseVector, TeleologicalFingerprint,
 };
 
-use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
+use crate::protocol::{JsonRpcId, JsonRpcResponse};
+use crate::handlers::tools::helpers::ToolErrorKind;
 
 use super::Handlers;
 
@@ -132,10 +133,10 @@ impl Handlers {
             Ok(i) => i,
             Err(e) => {
                 error!("merge_concepts: Invalid input: {}", e);
-                return JsonRpcResponse::error(
+                return self.tool_error_typed(
                     id,
-                    error_codes::INVALID_PARAMS,
-                    format!("Invalid merge_concepts input: {}", e),
+                    ToolErrorKind::Validation,
+                    &format!("Invalid merge_concepts input: {}", e),
                 );
             }
         };
@@ -147,10 +148,10 @@ impl Handlers {
                 input.source_ids.len(),
                 MIN_SOURCE_IDS
             );
-            return JsonRpcResponse::error(
+            return self.tool_error_typed(
                 id,
-                error_codes::INVALID_PARAMS,
-                format!(
+                ToolErrorKind::Validation,
+                &format!(
                     "source_ids requires at least {} items, got {}",
                     MIN_SOURCE_IDS,
                     input.source_ids.len()
@@ -163,10 +164,10 @@ impl Handlers {
                 input.source_ids.len(),
                 MAX_SOURCE_IDS
             );
-            return JsonRpcResponse::error(
+            return self.tool_error_typed(
                 id,
-                error_codes::INVALID_PARAMS,
-                format!(
+                ToolErrorKind::Validation,
+                &format!(
                     "source_ids allows at most {} items, got {}",
                     MAX_SOURCE_IDS,
                     input.source_ids.len()
@@ -177,10 +178,10 @@ impl Handlers {
         // FAIL FAST: Validate target_name length (1-256 per schema)
         if input.target_name.len() < MIN_TARGET_NAME_LEN {
             error!("merge_concepts: Empty target_name");
-            return JsonRpcResponse::error(
+            return self.tool_error_typed(
                 id,
-                error_codes::INVALID_PARAMS,
-                format!("target_name must be at least {} char", MIN_TARGET_NAME_LEN),
+                ToolErrorKind::Validation,
+                &format!("target_name must be at least {} char", MIN_TARGET_NAME_LEN),
             );
         }
         if input.target_name.len() > MAX_TARGET_NAME_LEN {
@@ -189,10 +190,10 @@ impl Handlers {
                 input.target_name.len(),
                 MAX_TARGET_NAME_LEN
             );
-            return JsonRpcResponse::error(
+            return self.tool_error_typed(
                 id,
-                error_codes::INVALID_PARAMS,
-                format!(
+                ToolErrorKind::Validation,
+                &format!(
                     "target_name exceeds max length: {} > {}",
                     input.target_name.len(),
                     MAX_TARGET_NAME_LEN
@@ -203,10 +204,10 @@ impl Handlers {
         // FAIL FAST: Validate rationale length (1-1024 per schema, REQUIRED per PRD 0.3)
         if input.rationale.len() < MIN_RATIONALE_LEN {
             error!("merge_concepts: Empty rationale");
-            return JsonRpcResponse::error(
+            return self.tool_error_typed(
                 id,
-                error_codes::INVALID_PARAMS,
-                format!("rationale is REQUIRED (min {} char)", MIN_RATIONALE_LEN),
+                ToolErrorKind::Validation,
+                &format!("rationale is REQUIRED (min {} char)", MIN_RATIONALE_LEN),
             );
         }
         if input.rationale.len() > MAX_RATIONALE_LEN {
@@ -215,10 +216,10 @@ impl Handlers {
                 input.rationale.len(),
                 MAX_RATIONALE_LEN
             );
-            return JsonRpcResponse::error(
+            return self.tool_error_typed(
                 id,
-                error_codes::INVALID_PARAMS,
-                format!(
+                ToolErrorKind::Validation,
+                &format!(
                     "rationale exceeds max length: {} > {}",
                     input.rationale.len(),
                     MAX_RATIONALE_LEN
@@ -231,10 +232,10 @@ impl Handlers {
         for source_id in &input.source_ids {
             if !seen_ids.insert(*source_id) {
                 error!("merge_concepts: Duplicate source_id: {}", source_id);
-                return JsonRpcResponse::error(
+                return self.tool_error_typed(
                     id,
-                    error_codes::INVALID_PARAMS,
-                    format!("Duplicate source_id: {}", source_id),
+                    ToolErrorKind::Validation,
+                    &format!("Duplicate source_id: {}", source_id),
                 );
             }
         }
@@ -252,7 +253,7 @@ impl Handlers {
             }
             Err(e) => {
                 error!("merge_concepts FAILED: {}", e);
-                JsonRpcResponse::error(id, error_codes::STORAGE_ERROR, e)
+                self.tool_error_typed(id, ToolErrorKind::Storage, &e)
             }
         }
     }

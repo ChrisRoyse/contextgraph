@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! Unified Real Data Benchmark
 //!
 //! Comprehensive benchmark that evaluates all 13 embedders using the real

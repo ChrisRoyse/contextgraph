@@ -49,3 +49,4 @@ parking_lot = "0.12"
 tokio-test = "0.4"
 tempfile = "3"
 tracing-subscriber = "0.3"
+context-graph-test-utils = { path = "../context-graph-test-utils" }

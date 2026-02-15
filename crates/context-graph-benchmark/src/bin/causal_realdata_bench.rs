@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! E5 Causal Embedder Benchmark with Real HuggingFace Data
 //!
 //! Integrates causal benchmarks with the 10,000+ document HuggingFace dataset.

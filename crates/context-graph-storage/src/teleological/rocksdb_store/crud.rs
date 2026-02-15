@@ -148,12 +148,12 @@ impl RocksDbTeleologicalStore {
 
         if soft {
             // Soft delete: mark as deleted in memory AND persist to RocksDB
-            // MED-11 FIX: parking_lot::RwLock returns guard directly (non-poisonable)
+            // P5: DashMap - no write lock needed, lock-free insert
             let now_millis = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
                 .expect("system clock before UNIX epoch")
                 .as_millis() as i64;
-            self.soft_deleted.write().insert(id, now_millis);
+            self.soft_deleted.insert(id, now_millis);
 
             // SEC-06-FIX: Persist soft-delete marker to CF_SYSTEM so it survives restart
             // Value is i64 timestamp (8 bytes, big-endian) for GC retention checks
@@ -228,7 +228,8 @@ impl RocksDbTeleologicalStore {
             batch.delete_cf(cf_e12, e12_late_interaction_key(&id));
 
             // Remove from soft-deleted tracking (memory + persisted marker)
-            self.soft_deleted.write().remove(&id);
+            // P5: DashMap - no write lock needed
+            self.soft_deleted.remove(&id);
             let cf_system = self
                 .get_cf(crate::column_families::cf_names::SYSTEM)
                 .map_err(|e| CoreError::StorageError(format!("CF_SYSTEM not found: {e}")))?;
@@ -242,8 +243,9 @@ impl RocksDbTeleologicalStore {
             // STG-04: Release lock before HNSW operations
             drop(_index_guard);
 
-            // Invalidate count cache
+            // Invalidate count cache and decrement total doc count for IDF
             *self.fingerprint_count.write() = None;
+            self.total_doc_count.fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
 
             // Remove from per-embedder indexes
             self.remove_from_indexes(id)
@@ -277,13 +279,12 @@ impl RocksDbTeleologicalStore {
         let retention_millis = (retention_secs as i64) * 1000;
         let cutoff = now_millis - retention_millis;
 
-        // Snapshot expired IDs while holding the read lock briefly
+        // P5: Snapshot expired IDs from DashMap (no global read lock)
         let expired_ids: Vec<Uuid> = self
             .soft_deleted
-            .read()
             .iter()
-            .filter(|(_, &ts)| ts < cutoff)
-            .map(|(&id, _)| id)
+            .filter(|entry| *entry.value() < cutoff)
+            .map(|entry| *entry.key())
             .collect();
 
         if expired_ids.is_empty() {
@@ -309,7 +310,8 @@ impl RocksDbTeleologicalStore {
                         id = %id,
                         "GC: soft-deleted entry not found in RocksDB (already cleaned)"
                     );
-                    self.soft_deleted.write().remove(id);
+                    // P5: DashMap - no write lock needed
+                    self.soft_deleted.remove(id);
                     deleted += 1;
                 }
                 Err(e) => {

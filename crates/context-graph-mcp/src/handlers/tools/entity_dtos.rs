@@ -85,18 +85,18 @@ pub const UNCERTAIN_THRESHOLD: f32 = -10.0;
 /// ```rust,ignore
 /// use context_graph_mcp::handlers::tools::entity_dtos::EntityBoostConfig;
 ///
-/// let config = EntityBoostConfig::default();
+/// let config = _EntityBoostConfig::default();
 ///
 /// // Strong E1 match with good entity alignment
-/// let score = config.compute_enhanced_score(0.85, 0.7, Some(-3.0));
+/// let score = config._compute_enhanced_score(0.85, 0.7, Some(-3.0));
 /// assert!(score > 0.85); // Boosted slightly
 ///
 /// // Weak E1 match with strong entity signal
-/// let score = config.compute_enhanced_score(0.3, 0.9, Some(-2.0));
+/// let score = config._compute_enhanced_score(0.3, 0.9, Some(-2.0));
 /// assert!(score > 0.3); // Boosted more aggressively
 /// ```
 #[derive(Debug, Clone, Copy)]
-pub struct EntityBoostConfig {
+pub struct _EntityBoostConfig {
     /// Boost strength when E1 is strong (> 0.8). Default: 0.05.
     /// Light touch refinement for already-strong matches.
     pub strong_e1_boost: f32,
@@ -122,7 +122,7 @@ pub struct EntityBoostConfig {
     pub enabled: bool,
 }
 
-impl Default for EntityBoostConfig {
+impl Default for _EntityBoostConfig {
     fn default() -> Self {
         Self {
             strong_e1_boost: 0.05,
@@ -135,9 +135,9 @@ impl Default for EntityBoostConfig {
     }
 }
 
-impl EntityBoostConfig {
+impl _EntityBoostConfig {
     /// Create a new EntityBoostConfig with custom parameters.
-    pub fn new(
+    pub fn _new(
         strong_e1_boost: f32,
         medium_e1_boost: f32,
         weak_e1_boost: f32,
@@ -155,7 +155,7 @@ impl EntityBoostConfig {
     }
 
     /// Create a disabled config (returns raw E1 scores).
-    pub fn disabled() -> Self {
+    pub fn _disabled() -> Self {
         Self {
             enabled: false,
             ..Default::default()
@@ -186,7 +186,7 @@ impl EntityBoostConfig {
     /// - Score > -5.0 (valid): positive alignment contribution
     /// - Score in [-10.0, -5.0] (uncertain): neutral
     /// - Score < -10.0 (invalid): negative alignment contribution
-    pub fn compute_enhanced_score(
+    pub fn _compute_enhanced_score(
         &self,
         e1_sim: f32,
         entity_jaccard: f32,
@@ -423,7 +423,7 @@ pub fn entity_type_to_string(entity_type: EntityType) -> String {
 }
 
 /// Parse string to EntityType enum.
-pub fn string_to_entity_type(s: &str) -> EntityType {
+pub fn _string_to_entity_type(s: &str) -> EntityType {
     match s.to_lowercase().as_str() {
         "programminglanguage" | "programming_language" => EntityType::ProgrammingLanguage,
         "framework" => EntityType::Framework,
@@ -497,9 +497,9 @@ pub struct SearchByEntitiesRequest {
     /// Entity names to search for (required).
     pub entities: Vec<String>,
 
-    /// Filter by entity types (optional).
+    /// Filter by entity types (optional, reserved for future use).
     #[serde(rename = "entityTypes")]
-    pub entity_types: Option<Vec<String>>,
+    pub _entity_types: Option<Vec<String>>,
 
     /// Match mode: "any" or "all" (default: "any").
     #[serde(rename = "matchMode", default = "default_match_mode")]
@@ -1006,17 +1006,17 @@ pub struct GetEntityGraphRequest {
     #[serde(rename = "maxDepth", default = "default_max_depth")]
     pub max_depth: usize,
 
-    /// Filter node entity types.
+    /// Filter node entity types (reserved for future use).
     #[serde(rename = "entityTypes")]
-    pub entity_types: Option<Vec<String>>,
+    pub _entity_types: Option<Vec<String>>,
 
     /// Minimum edge score threshold (default: 0.3).
     #[serde(rename = "minRelationScore", default = "default_min_relation_score")]
     pub min_relation_score: f32,
 
-    /// Include memory counts per node (default: true).
+    /// Include memory counts per node (reserved for future use, default: true).
     #[serde(rename = "includeMemoryCounts", default = "default_true")]
-    pub include_memory_counts: bool,
+    pub _include_memory_counts: bool,
 }
 
 fn default_max_nodes() -> usize {
@@ -1137,7 +1137,7 @@ pub struct EntityEdge {
 /// vs. TransE inference vs. LLM extraction have different reliability.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
-pub enum RelationshipOrigin {
+pub enum _RelationshipOrigin {
     /// Discovered via entity co-occurrence in memories.
     CoOccurrence { count: usize },
     /// Inferred via TransE relationship prediction.
@@ -1229,7 +1229,7 @@ mod tests {
     fn test_search_by_entities_validation_success() {
         let req = SearchByEntitiesRequest {
             entities: vec!["PostgreSQL".to_string()],
-            entity_types: None,
+            _entity_types: None,
             match_mode: "any".to_string(),
             top_k: 10,
             min_score: 0.2,
@@ -1245,7 +1245,7 @@ mod tests {
     fn test_search_by_entities_empty_entities() {
         let req = SearchByEntitiesRequest {
             entities: vec![],
-            entity_types: None,
+            _entity_types: None,
             match_mode: "any".to_string(),
             top_k: 10,
             min_score: 0.2,
@@ -1260,7 +1260,7 @@ mod tests {
     fn test_search_by_entities_invalid_match_mode() {
         let req = SearchByEntitiesRequest {
             entities: vec!["PostgreSQL".to_string()],
-            entity_types: None,
+            _entity_types: None,
             match_mode: "some".to_string(),
             top_k: 10,
             min_score: 0.2,
@@ -1275,7 +1275,7 @@ mod tests {
     fn test_search_by_entities_parse_strategy_default() {
         let req = SearchByEntitiesRequest {
             entities: vec!["PostgreSQL".to_string()],
-            entity_types: None,
+            _entity_types: None,
             match_mode: "any".to_string(),
             top_k: 10,
             min_score: 0.2,
@@ -1363,9 +1363,9 @@ mod tests {
     #[test]
     fn test_entity_type_conversion() {
         assert_eq!(entity_type_to_string(EntityType::Database), "Database");
-        assert_eq!(string_to_entity_type("Database"), EntityType::Database);
-        assert_eq!(string_to_entity_type("programming_language"), EntityType::ProgrammingLanguage);
-        assert_eq!(string_to_entity_type("unknown_type"), EntityType::Unknown);
+        assert_eq!(_string_to_entity_type("Database"), EntityType::Database);
+        assert_eq!(_string_to_entity_type("programming_language"), EntityType::ProgrammingLanguage);
+        assert_eq!(_string_to_entity_type("unknown_type"), EntityType::Unknown);
     }
 
     // ==========================================================================
@@ -1374,7 +1374,7 @@ mod tests {
 
     #[test]
     fn test_entity_boost_config_default() {
-        let config = EntityBoostConfig::default();
+        let config = _EntityBoostConfig::default();
         assert!(config.enabled);
         assert!((config.strong_e1_boost - 0.05).abs() < 0.01);
         assert!((config.medium_e1_boost - 0.10).abs() < 0.01);
@@ -1385,90 +1385,90 @@ mod tests {
 
     #[test]
     fn test_entity_boost_config_disabled() {
-        let config = EntityBoostConfig::disabled();
+        let config = _EntityBoostConfig::_disabled();
         assert!(!config.enabled);
 
         // Disabled config should return raw E1 score
-        let score = config.compute_enhanced_score(0.5, 1.0, Some(-2.0));
+        let score = config._compute_enhanced_score(0.5, 1.0, Some(-2.0));
         assert!((score - 0.5).abs() < 0.01, "Disabled config should return raw E1 score");
     }
 
     #[test]
     fn test_entity_boost_strong_e1_light_boost() {
-        let config = EntityBoostConfig::default();
+        let config = _EntityBoostConfig::default();
 
         // Strong E1 match (>0.8) with good entity alignment should get light boost
-        let score = config.compute_enhanced_score(0.85, 0.8, None);
+        let score = config._compute_enhanced_score(0.85, 0.8, None);
         assert!(score > 0.85, "Strong E1 with good entity alignment should be boosted");
         assert!(score < 0.95, "Boost should be light for strong E1");
     }
 
     #[test]
     fn test_entity_boost_weak_e1_strong_boost() {
-        let config = EntityBoostConfig::default();
+        let config = _EntityBoostConfig::default();
 
         // Weak E1 match (<0.4) with strong entity alignment should get stronger boost
-        let score = config.compute_enhanced_score(0.3, 0.9, None);
+        let score = config._compute_enhanced_score(0.3, 0.9, None);
         assert!(score > 0.3, "Weak E1 with strong entity alignment should be boosted");
     }
 
     #[test]
     fn test_entity_boost_negative_for_low_entity_alignment() {
-        let config = EntityBoostConfig::default();
+        let config = _EntityBoostConfig::default();
 
         // E1 match with very low entity alignment should be reduced
-        let score = config.compute_enhanced_score(0.5, 0.0, None);
+        let score = config._compute_enhanced_score(0.5, 0.0, None);
         assert!(score < 0.5, "Low entity alignment should reduce score");
     }
 
     #[test]
     fn test_entity_boost_neutral_at_neutral_point() {
-        let config = EntityBoostConfig::default();
+        let config = _EntityBoostConfig::default();
 
         // At neutral point (0.3), boost should be minimal
-        let score = config.compute_enhanced_score(0.5, 0.3, None);
+        let score = config._compute_enhanced_score(0.5, 0.3, None);
         // Allow for some small deviation due to the formula
         assert!((score - 0.5).abs() < 0.1, "Score should be near neutral at neutral_point");
     }
 
     #[test]
     fn test_entity_boost_with_transe_score() {
-        let config = EntityBoostConfig::default();
+        let config = _EntityBoostConfig::default();
 
         // Good TransE score (-3.0 = valid) should contribute to positive boost
-        let score_good = config.compute_enhanced_score(0.5, 0.5, Some(-3.0));
+        let score_good = config._compute_enhanced_score(0.5, 0.5, Some(-3.0));
 
         // Poor TransE score (-12.0 = invalid) should contribute to negative boost
-        let score_poor = config.compute_enhanced_score(0.5, 0.5, Some(-12.0));
+        let score_poor = config._compute_enhanced_score(0.5, 0.5, Some(-12.0));
 
         assert!(score_good > score_poor, "Good TransE score should produce higher score than poor TransE");
     }
 
     #[test]
     fn test_entity_boost_clamped_to_bounds() {
-        let config = EntityBoostConfig::default();
+        let config = _EntityBoostConfig::default();
 
         // Even with extreme values, score should be clamped to [0, 1]
-        let high_score = config.compute_enhanced_score(0.99, 1.0, Some(0.0));
+        let high_score = config._compute_enhanced_score(0.99, 1.0, Some(0.0));
         assert!(high_score <= 1.0, "Score should be clamped to 1.0");
 
-        let low_score = config.compute_enhanced_score(0.1, 0.0, Some(-20.0));
+        let low_score = config._compute_enhanced_score(0.1, 0.0, Some(-20.0));
         assert!(low_score >= 0.0, "Score should be clamped to 0.0");
     }
 
     #[test]
     fn test_entity_boost_arch17_adaptive() {
-        let config = EntityBoostConfig::default();
+        let config = _EntityBoostConfig::default();
         let jaccard = 0.8; // Good entity alignment
 
         // Strong E1 (>0.8) gets light boost
-        let strong = config.compute_enhanced_score(0.85, jaccard, None);
+        let strong = config._compute_enhanced_score(0.85, jaccard, None);
 
         // Medium E1 (0.4-0.8) gets medium boost
-        let medium = config.compute_enhanced_score(0.6, jaccard, None);
+        let medium = config._compute_enhanced_score(0.6, jaccard, None);
 
         // Weak E1 (<0.4) gets strong boost
-        let weak = config.compute_enhanced_score(0.3, jaccard, None);
+        let weak = config._compute_enhanced_score(0.3, jaccard, None);
 
         // All should be boosted since jaccard > neutral_point
         assert!(strong > 0.85, "Strong E1 should be boosted");

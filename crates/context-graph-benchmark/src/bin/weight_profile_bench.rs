@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! Weight Profile Impact Benchmark
 //!
 //! Tests the impact of the weight_profile fix by measuring how different profiles

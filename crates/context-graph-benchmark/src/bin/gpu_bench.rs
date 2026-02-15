@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! GPU Benchmark: Multi-space (13 embedders) vs Single-embedder (E1 only)
 //!
 //! This benchmark uses real GPU embeddings to compare:

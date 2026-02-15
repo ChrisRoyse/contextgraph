@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! Real Graph Linking Benchmark - NO SIMULATIONS.
 //!
 //! This benchmark tests the REAL graph linking system end-to-end:

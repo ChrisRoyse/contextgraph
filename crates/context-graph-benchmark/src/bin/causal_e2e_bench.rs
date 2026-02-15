@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! Phase 6: End-to-End Causal Pipeline Benchmarks
 //!
 //! Tests the complete causal system pipeline:

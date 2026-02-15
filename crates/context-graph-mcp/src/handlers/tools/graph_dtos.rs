@@ -181,7 +181,7 @@ impl SearchConnectionsRequest {
     }
 
     /// Returns true if searching for targets (outgoing connections).
-    pub fn is_target(&self) -> bool {
+    pub fn _is_target(&self) -> bool {
         self.direction == "target" || self.direction == "both"
     }
 }
@@ -474,7 +474,7 @@ impl GraphPathHop {
     }
 
     /// Add content to this hop.
-    pub fn with_content(mut self, content: String) -> Self {
+    pub fn _with_content(mut self, content: String) -> Self {
         self.content = Some(content);
         self
     }
@@ -523,7 +523,7 @@ pub struct GraphPathMetadata {
 
 impl GetGraphPathResponse {
     /// Create an empty response (no path found).
-    pub fn empty(anchor_id: Uuid, direction: &str, max_hops: usize, min_similarity: f32) -> Self {
+    pub fn _empty(anchor_id: Uuid, direction: &str, max_hops: usize, min_similarity: f32) -> Self {
         Self {
             anchor_id,
             direction: direction.to_string(),
@@ -541,7 +541,7 @@ impl GetGraphPathResponse {
     }
 
     /// Compute total path score from hops.
-    pub fn compute_total_score(&self) -> f32 {
+    pub fn _compute_total_score(&self) -> f32 {
         if self.path.is_empty() {
             return 0.0;
         }
@@ -954,7 +954,7 @@ mod tests {
             ..Default::default()
         };
         assert!(source.is_source());
-        assert!(!source.is_target());
+        assert!(!source._is_target());
 
         let target = SearchConnectionsRequest {
             query: "test".to_string(),
@@ -962,7 +962,7 @@ mod tests {
             ..Default::default()
         };
         assert!(!target.is_source());
-        assert!(target.is_target());
+        assert!(target._is_target());
 
         let both = SearchConnectionsRequest {
             query: "test".to_string(),
@@ -970,7 +970,7 @@ mod tests {
             ..Default::default()
         };
         assert!(both.is_source());
-        assert!(both.is_target());
+        assert!(both._is_target());
 
         println!("[PASS] is_source and is_target work correctly");
     }
@@ -1097,7 +1097,7 @@ mod tests {
             GraphDirection::Unknown,
         );
 
-        let hop_with_content = hop.with_content("Test content".to_string());
+        let hop_with_content = hop._with_content("Test content".to_string());
         assert_eq!(hop_with_content.content, Some("Test content".to_string()));
         println!("[PASS] with_content() works");
     }
@@ -1134,11 +1134,11 @@ mod tests {
     #[test]
     fn test_get_graph_path_response_empty() {
         let anchor_id = Uuid::new_v4();
-        let response = GetGraphPathResponse::empty(anchor_id, "forward", 5, 0.3);
+        let response = GetGraphPathResponse::_empty(anchor_id, "forward", 5, 0.3);
 
         assert_eq!(response.hop_count, 0);
         assert!(!response.truncated);
-        assert_eq!(response.compute_total_score(), 0.0);
+        assert_eq!(response._compute_total_score(), 0.0);
         println!("[PASS] Empty path response correct");
     }
 

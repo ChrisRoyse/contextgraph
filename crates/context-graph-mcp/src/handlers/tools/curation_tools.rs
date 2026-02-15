@@ -12,9 +12,10 @@
 use chrono::Utc;
 use tracing::{debug, error, info, warn};
 
-use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
+use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
 use super::super::Handlers;
+use super::helpers::ToolErrorKind;
 use super::curation_dtos::{
     BoostImportanceRequest, BoostImportanceResponse, ForgetConceptRequest, ForgetConceptResponse,
 };
@@ -54,10 +55,10 @@ impl Handlers {
             }
             Ok(None) => {
                 warn!(node_id = %node_id, "forget_concept: Memory not found");
-                return JsonRpcResponse::error(
+                return self.tool_error_typed(
                     id,
-                    error_codes::FINGERPRINT_NOT_FOUND,
-                    format!("Memory {} not found", node_id),
+                    ToolErrorKind::NotFound,
+                    &format!("Memory {} not found", node_id),
                 );
             }
             Err(e) => {
@@ -121,10 +122,10 @@ impl Handlers {
             Ok(false) => {
                 // Store returned false - memory not found (race condition)
                 warn!(node_id = %node_id, "forget_concept: Delete returned false - memory may have been deleted concurrently");
-                JsonRpcResponse::error(
+                self.tool_error_typed(
                     id,
-                    error_codes::FINGERPRINT_NOT_FOUND,
-                    format!(
+                    ToolErrorKind::NotFound,
+                    &format!(
                         "Memory {} not found (may have been deleted concurrently)",
                         node_id
                     ),
@@ -173,10 +174,10 @@ impl Handlers {
             Ok(Some(fp)) => fp,
             Ok(None) => {
                 warn!(node_id = %node_id, "boost_importance: Memory not found");
-                return JsonRpcResponse::error(
+                return self.tool_error_typed(
                     id,
-                    error_codes::FINGERPRINT_NOT_FOUND,
-                    format!("Memory {} not found", node_id),
+                    ToolErrorKind::NotFound,
+                    &format!("Memory {} not found", node_id),
                 );
             }
             Err(e) => {
@@ -295,10 +296,10 @@ impl Handlers {
             Ok(false) => {
                 // Update returned false - memory not found (race condition)
                 warn!(node_id = %node_id, "boost_importance: Update returned false - memory may have been deleted concurrently");
-                JsonRpcResponse::error(
+                self.tool_error_typed(
                     id,
-                    error_codes::FINGERPRINT_NOT_FOUND,
-                    format!(
+                    ToolErrorKind::NotFound,
+                    &format!(
                         "Memory {} not found (may have been deleted concurrently)",
                         node_id
                     ),

@@ -25,6 +25,7 @@ tracing = "0.1"
 rayon = "1.10"
 # HIGH-17/MED-11 FIX: Non-poisonable RwLock to prevent cascading panics
 parking_lot = "0.12"
+dashmap = "5.5"
 sha2 = "0.10"
 # HNSW graph traversal - replaces brute force O(n) with O(log n)
 # TASK-STORAGE-P1-001
@@ -45,6 +46,8 @@ rand = { version = "0.8", features = ["std_rng"] }
 futures = "0.3"
 # Enable test-utils for stubs access in tests (AP-007 compliant)
 context-graph-core = { path = "../context-graph-core", features = ["test-utils"] }
+# Shared test utilities (C5: cross-crate deduplication)
+context-graph-test-utils = { path = "../context-graph-test-utils" }
 # TASK-STORAGE-P2-001: Benchmarking for MaxSim performance validation
 criterion = { version = "0.5", features = ["html_reports"] }
 

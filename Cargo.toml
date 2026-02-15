@@ -14,6 +14,7 @@ members = [
     "crates/context-graph-benchmark",
     "crates/context-graph-causal-agent",
     "crates/context-graph-graph-agent",
+    "crates/context-graph-test-utils",
 ]
 
 [workspace.package]

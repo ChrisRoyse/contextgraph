@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! Unified Real Data Benchmark Validation Suite
 //!
 //! Comprehensive validation that tests all components of the unified real data

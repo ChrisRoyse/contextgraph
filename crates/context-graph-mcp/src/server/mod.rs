@@ -5,18 +5,23 @@
 //! TASK-S004: Replaced stubs with REAL implementations (RocksDB storage).
 //! TASK-INTEG-018: Added TCP transport support with concurrent client handling.
 //!
+//! ## Module Structure (M4 Split)
+//! - `mod.rs` — McpServer struct, constructor, stdio transport, handle_request, path resolution
+//! - `transport.rs` — TCP transport (run_tcp, handle_tcp_client), SSE transport (run_sse), read_line_bounded
+//! - `watchers.rs` — File watcher, code watcher, graph builder background tasks
+//!
 //! NO BACKWARDS COMPATIBILITY with stubs. FAIL FAST with clear errors.
 
+mod transport;
+mod watchers;
+
 // NOTE: std::io removed - using tokio::io for async I/O (AP-08 compliance)
-use std::net::SocketAddr;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 
 use anyhow::Result;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::net::{TcpListener, TcpStream};
+use tokio::io::{AsyncWriteExt, BufReader};
 use tokio::sync::{RwLock, Semaphore};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, info, warn};
@@ -48,16 +53,7 @@ pub enum TransportMode {
 }
 
 use context_graph_core::config::Config;
-use context_graph_core::memory::watcher::GitFileWatcher;
-use context_graph_core::memory::{MemoryCaptureService, MultiArrayEmbeddingAdapter};
-use context_graph_core::memory::store::MemoryStore;
-use context_graph_core::memory::{CodeCaptureService, CodeFileWatcher};
 use context_graph_core::traits::{MultiArrayEmbeddingProvider, TeleologicalMemoryStore};
-
-// Code watcher dependencies
-use crate::adapters::CodeStoreAdapter;
-use context_graph_embeddings::adapters::E7CodeEmbeddingProvider;
-use context_graph_storage::code::CodeStore;
 
 use context_graph_embeddings::{
     get_warm_provider, initialize_global_warm_provider, is_warm_initialized, warm_status_message,
@@ -83,78 +79,9 @@ use context_graph_graph_agent::{GraphDiscoveryConfig, GraphDiscoveryService};
 
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
-// TASK-42: SSE transport types
-use crate::transport::{create_sse_router, SseAppState, SseConfig};
 
 // NOTE: LazyFailMultiArrayProvider was removed - now using ProductionMultiArrayProvider
 // from context-graph-embeddings crate (TASK-F007 COMPLETED)
-
-// ============================================================================
-// AGT-04 FIX: Bounded read_line to prevent OOM from unbounded input
-// ============================================================================
-
-/// Maximum line size in bytes (10 MB). Lines exceeding this are rejected.
-/// Prevents OOM from clients sending multi-gigabyte data without newlines.
-const MAX_LINE_BYTES: usize = 10 * 1024 * 1024;
-
-/// Read a line from an async buffered reader with a byte size limit.
-///
-/// AGT-04 FIX: `BufReader::read_line()` allocates unboundedly until it finds
-/// a newline. A malicious client can send gigabytes without a newline, causing
-/// OOM. This function reads in chunks via `fill_buf()` and enforces a limit.
-///
-/// Returns the number of bytes read, or an IO error if the limit is exceeded.
-async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
-    reader: &mut R,
-    buf: &mut String,
-    max_bytes: usize,
-) -> std::io::Result<usize> {
-    let mut total = 0usize;
-    let mut raw = Vec::new();
-
-    loop {
-        let available = reader.fill_buf().await?;
-        if available.is_empty() {
-            // EOF
-            break;
-        }
-
-        // Find newline in available data
-        let (end, found_newline) = match available.iter().position(|&b| b == b'\n') {
-            Some(pos) => (pos + 1, true),
-            None => (available.len(), false),
-        };
-
-        if total + end > max_bytes {
-            // Consume what we've seen so far to avoid leaving stale data in the buffer
-            reader.consume(end);
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::InvalidData,
-                format!(
-                    "Line exceeds {} byte limit ({} bytes read so far)",
-                    max_bytes,
-                    total + end
-                ),
-            ));
-        }
-
-        raw.extend_from_slice(&available[..end]);
-        total += end;
-        reader.consume(end);
-
-        if found_newline {
-            break;
-        }
-    }
-
-    // Convert to UTF-8
-    match String::from_utf8(raw) {
-        Ok(s) => buf.push_str(&s),
-        Err(e) => buf.push_str(&String::from_utf8_lossy(e.as_bytes())),
-    }
-
-    Ok(total)
-}
 
 // ============================================================================
 // MCP Server
@@ -167,39 +94,34 @@ async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
 /// LAZY-STARTUP: Models load in background to allow immediate MCP protocol response.
 #[allow(dead_code)]
 pub struct McpServer {
-    config: Config,
+    pub(in crate::server) config: Config,
     /// Teleological memory store - stores TeleologicalFingerprint with 13 embeddings.
-    teleological_store: Arc<dyn TeleologicalMemoryStore>,
+    pub(in crate::server) teleological_store: Arc<dyn TeleologicalMemoryStore>,
     /// Multi-array embedding provider - generates all 13 embeddings.
     /// Wrapped in RwLock<Option<...>> for lazy loading - None while models are loading.
-    multi_array_provider: Arc<RwLock<Option<Arc<dyn MultiArrayEmbeddingProvider>>>>,
+    pub(in crate::server) multi_array_provider: Arc<RwLock<Option<Arc<dyn MultiArrayEmbeddingProvider>>>>,
     /// Flag indicating whether models are currently loading.
-    models_loading: Arc<AtomicBool>,
+    pub(in crate::server) models_loading: Arc<AtomicBool>,
     /// Flag indicating whether model loading failed.
-    models_failed: Arc<RwLock<Option<String>>>,
+    pub(in crate::server) models_failed: Arc<RwLock<Option<String>>>,
     /// Arc-wrapped handlers for safe sharing across TCP client tasks.
-    /// TASK-INTEG-018: Handlers are now Arc-wrapped to allow concurrent TCP connections.
-    handlers: Arc<Handlers>,
-    initialized: Arc<RwLock<bool>>,
+    pub(in crate::server) handlers: Arc<Handlers>,
+    pub(in crate::server) initialized: Arc<RwLock<bool>>,
     /// Connection semaphore for limiting concurrent TCP connections.
-    /// TASK-INTEG-018: Initialized from config.mcp.max_connections.
-    connection_semaphore: Arc<Semaphore>,
+    pub(in crate::server) connection_semaphore: Arc<Semaphore>,
     /// Active connection counter for monitoring.
-    /// TASK-INTEG-018: Atomic counter for observability.
-    active_connections: Arc<AtomicUsize>,
+    pub(in crate::server) active_connections: Arc<AtomicUsize>,
     /// Code watcher background task handle.
-    /// E7-WIRING: Runs periodically to detect file changes and update embeddings.
-    code_watcher_task: Arc<RwLock<Option<JoinHandle<()>>>>,
+    pub(in crate::server) code_watcher_task: Arc<RwLock<Option<JoinHandle<()>>>>,
     /// Flag to signal code watcher shutdown.
-    code_watcher_running: Arc<AtomicBool>,
+    pub(in crate::server) code_watcher_running: Arc<AtomicBool>,
     /// CRIT-06 FIX: File watcher shutdown flag and thread handle.
-    file_watcher_running: Arc<AtomicBool>,
-    file_watcher_thread: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
+    pub(in crate::server) file_watcher_running: Arc<AtomicBool>,
+    pub(in crate::server) file_watcher_thread: Arc<std::sync::Mutex<Option<std::thread::JoinHandle<()>>>>,
     /// TASK-GRAPHLINK-PHASE1: Background graph builder for K-NN edge computation.
-    /// Builds typed edges from embedder agreement patterns.
-    graph_builder: Option<Arc<BackgroundGraphBuilder>>,
+    pub(in crate::server) graph_builder: Option<Arc<BackgroundGraphBuilder>>,
     /// TASK-GRAPHLINK-PHASE1: Background graph builder worker task handle.
-    graph_builder_task: Arc<RwLock<Option<JoinHandle<()>>>>,
+    pub(in crate::server) graph_builder_task: Arc<RwLock<Option<JoinHandle<()>>>>,
 }
 
 impl McpServer {
@@ -609,8 +531,8 @@ impl McpServer {
             // GLOBAL_WARM_PROVIDER. We must wait for it to finish before calling
             // get_warm_graph_model() which uses try_read().
             let graph_model = {
-                let max_wait = Duration::from_secs(180);
-                let poll_interval = Duration::from_millis(500);
+                let max_wait = std::time::Duration::from_secs(180);
+                let poll_interval = std::time::Duration::from_millis(500);
                 let start = std::time::Instant::now();
 
                 loop {
@@ -816,7 +738,7 @@ impl McpServer {
 
             // AGT-04 FIX: Use bounded read_line to prevent OOM from unbounded input.
             // read_line() allocates until newline; a malicious/broken client can OOM the process.
-            let bytes_read = read_line_bounded(&mut reader, &mut line, MAX_LINE_BYTES)
+            let bytes_read = transport::read_line_bounded(&mut reader, &mut line, transport::MAX_LINE_BYTES)
                 .await
                 .map_err(|e| {
                     error!("FATAL: Failed to read from stdin: {}", e);
@@ -889,505 +811,6 @@ impl McpServer {
         info!("Graceful shutdown complete");
     }
 
-    /// Stop the file watcher thread.
-    ///
-    /// CRIT-06 FIX: Signals the file watcher thread to stop via the atomic flag,
-    /// then joins the thread with a timeout to ensure clean shutdown.
-    fn stop_file_watcher(&self) {
-        if !self.file_watcher_running.load(Ordering::SeqCst) {
-            return;
-        }
-
-        info!("Stopping file watcher...");
-        self.file_watcher_running.store(false, Ordering::SeqCst);
-
-        // Join the thread (with a timeout via try_lock to avoid blocking forever)
-        if let Ok(mut guard) = self.file_watcher_thread.lock() {
-            if let Some(handle) = guard.take() {
-                // The thread checks the flag every 500ms, so it should exit within ~1s.
-                // Use join() which blocks the current thread until the spawned thread finishes.
-                // This is acceptable in shutdown since we are tearing down.
-                match handle.join() {
-                    Ok(()) => info!("File watcher thread stopped"),
-                    Err(_) => error!("File watcher thread panicked"),
-                }
-            }
-        }
-    }
-
-    /// Start the file watcher if enabled in configuration.
-    ///
-    /// The file watcher monitors ./docs/ directory (and subdirectories) for .md
-    /// file changes and automatically indexes them as memories with MDFileChunk
-    /// source metadata.
-    ///
-    /// # Configuration
-    ///
-    /// Set in config.toml:
-    /// ```toml
-    /// [watcher]
-    /// enabled = true
-    /// watch_paths = ["./docs"]
-    /// session_id = "docs-watcher"
-    /// ```
-    ///
-    /// # Returns
-    ///
-    /// `Ok(true)` if watcher started successfully, `Ok(false)` if disabled,
-    /// `Err` if startup failed.
-    pub async fn start_file_watcher(&self) -> Result<bool> {
-        if !self.config.watcher.enabled {
-            debug!("File watcher disabled in configuration");
-            return Ok(false);
-        }
-
-        // Wait for embedding models to be ready
-        if self.models_loading.load(Ordering::SeqCst) {
-            info!("Waiting for embedding models to load before starting file watcher...");
-            // Wait up to 60 seconds for models to load
-            for _ in 0..120 {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                if !self.models_loading.load(Ordering::SeqCst) {
-                    break;
-                }
-            }
-            if self.models_loading.load(Ordering::SeqCst) {
-                error!("Embedding models still loading after 60s - skipping file watcher");
-                return Ok(false);
-            }
-        }
-
-        // Check if model loading failed
-        {
-            let failed = self.models_failed.read().await;
-            if let Some(ref err) = *failed {
-                error!("Cannot start file watcher - embedding models failed: {}", err);
-                return Ok(false);
-            }
-        }
-
-        // Get embedding provider
-        let provider = {
-            let slot = self.multi_array_provider.read().await;
-            match slot.as_ref() {
-                Some(p) => Arc::clone(p),
-                None => {
-                    error!("Cannot start file watcher - no embedding provider available");
-                    return Ok(false);
-                }
-            }
-        };
-
-        // Create separate storage path for file watcher's MemoryStore
-        // Uses a subdirectory to avoid RocksDB column family conflicts with main teleological store
-        let base_db_path = Self::resolve_storage_path(&self.config);
-        let watcher_db_path = base_db_path.join("watcher_memory");
-        Self::ensure_directory_exists(&watcher_db_path);
-
-        // Create memory store in separate directory
-        let memory_store = Arc::new(MemoryStore::new(&watcher_db_path).map_err(|e| {
-            anyhow::anyhow!("Failed to create memory store for file watcher at {:?}: {}", watcher_db_path, e)
-        })?);
-
-        // Create embedding adapter
-        let embedder = Arc::new(MultiArrayEmbeddingAdapter::new(provider));
-
-        // Clone teleological store for file watcher integration
-        // This enables file watcher memories to be searchable via MCP tools
-        let teleological_store = Arc::clone(&self.teleological_store);
-
-        // Create capture service WITH teleological store for MCP search integration
-        let capture_service = Arc::new(MemoryCaptureService::with_teleological_store(
-            memory_store.clone(),
-            embedder,
-            teleological_store,
-        ));
-
-        // Convert watch paths to PathBufs
-        let watch_paths: Vec<PathBuf> = self
-            .config
-            .watcher
-            .watch_paths
-            .iter()
-            .map(PathBuf::from)
-            .collect();
-
-        let session_id = self.config.watcher.session_id.clone();
-
-        // CRIT-06 FIX: Set the running flag and pass a clone into the thread
-        // so the loop can be stopped from outside.
-        self.file_watcher_running.store(true, Ordering::SeqCst);
-        let running_flag = Arc::clone(&self.file_watcher_running);
-
-        // Spawn file watcher in a dedicated thread to handle the non-Send Receiver
-        // We use spawn_blocking + nested tokio runtime for this
-        let thread_handle = std::thread::spawn(move || {
-            // Create a new runtime for this thread
-            let rt = tokio::runtime::Builder::new_current_thread()
-                .enable_all()
-                .build()
-                .expect("Failed to create file watcher runtime");
-
-            rt.block_on(async move {
-                info!(
-                    paths = ?watch_paths,
-                    session_id = %session_id,
-                    "Starting file watcher..."
-                );
-
-                // Create file watcher
-                let mut watcher = match GitFileWatcher::new(watch_paths.clone(), capture_service, session_id.clone()) {
-                    Ok(w) => w,
-                    Err(e) => {
-                        error!(error = %e, "Failed to create file watcher");
-                        running_flag.store(false, Ordering::SeqCst);
-                        return;
-                    }
-                };
-
-                // Start watcher
-                if let Err(e) = watcher.start().await {
-                    error!(error = %e, "Failed to start file watcher");
-                    running_flag.store(false, Ordering::SeqCst);
-                    return;
-                }
-
-                info!(
-                    paths = ?watch_paths,
-                    "File watcher started - monitoring for .md file changes (recursive)"
-                );
-
-                // Process events in a loop
-                let mut interval = tokio::time::interval(std::time::Duration::from_millis(500));
-                loop {
-                    interval.tick().await;
-
-                    // CRIT-06 FIX: Check shutdown flag each iteration.
-                    if !running_flag.load(Ordering::SeqCst) {
-                        info!("File watcher received shutdown signal");
-                        break;
-                    }
-
-                    match watcher.process_events().await {
-                        Ok(count) => {
-                            if count > 0 {
-                                info!(files_processed = count, "File watcher processed changes");
-                            }
-                        }
-                        Err(e) => {
-                            error!(error = %e, "File watcher error processing events");
-                        }
-                    }
-                }
-            });
-        });
-
-        // Store the thread handle for joining during shutdown
-        if let Ok(mut guard) = self.file_watcher_thread.lock() {
-            *guard = Some(thread_handle);
-        }
-
-        info!(
-            paths = ?self.config.watcher.watch_paths,
-            session_id = %self.config.watcher.session_id,
-            "File watcher started as background task"
-        );
-
-        Ok(true)
-    }
-
-    // =========================================================================
-    // E7-WIRING: Code File Watcher
-    // =========================================================================
-
-    /// Start the code file watcher for AST-based code indexing.
-    ///
-    /// E7-WIRING: This method enables the code embedding pipeline which provides:
-    /// - Tree-sitter AST parsing for Rust source files
-    /// - E7 (Qodo-Embed-1-1.5B) embedding for code entities
-    /// - Separate CodeStore for code-specific search
-    ///
-    /// # Configuration
-    ///
-    /// Environment variables:
-    /// - `CODE_PIPELINE_ENABLED=true` - Enable the code pipeline
-    /// - `CODE_STORE_PATH` - Path to CodeStore (defaults to db_path/code_store)
-    /// - `CODE_WATCH_PATHS` - Comma-separated list of paths to watch (defaults to crate roots)
-    ///
-    /// # Returns
-    ///
-    /// `Ok(true)` if watcher started, `Ok(false)` if disabled, `Err` on failure.
-    ///
-    /// # Note
-    ///
-    /// The code pipeline is SEPARATE from the 13-embedder teleological system.
-    /// It stores E7-only embeddings for faster code-specific search.
-    #[allow(dead_code)]
-    pub async fn start_code_watcher(&self) -> Result<bool> {
-        // Check if code pipeline is enabled
-        let enabled = std::env::var("CODE_PIPELINE_ENABLED").map_or(false, |v| v == "true");
-        if !enabled {
-            debug!("Code pipeline disabled (set CODE_PIPELINE_ENABLED=true to enable)");
-            return Ok(false);
-        }
-
-        info!("E7-WIRING: Code pipeline enabled - starting code file watcher...");
-
-        // Wait for embedding models to be ready (E7 is part of the 13-embedder system)
-        if self.models_loading.load(Ordering::SeqCst) {
-            info!("Waiting for embedding models to load before starting code watcher...");
-            for _ in 0..120 {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                if !self.models_loading.load(Ordering::SeqCst) {
-                    break;
-                }
-            }
-            if self.models_loading.load(Ordering::SeqCst) {
-                error!("Embedding models still loading after 60s - skipping code watcher");
-                return Ok(false);
-            }
-        }
-
-        // Check if model loading failed
-        {
-            let failed = self.models_failed.read().await;
-            if let Some(ref err) = *failed {
-                error!("Cannot start code watcher - embedding models failed: {}", err);
-                return Ok(false);
-            }
-        }
-
-        // E7-WIRING: Full implementation
-        // 1. Resolve paths
-        let code_store_path = std::env::var("CODE_STORE_PATH").unwrap_or_else(|_| {
-            let base = Self::resolve_storage_path(&self.config);
-            base.join("code_store").to_string_lossy().to_string()
-        });
-
-        let watch_paths_str = std::env::var("CODE_WATCH_PATHS").unwrap_or_else(|_| ".".to_string());
-        let watch_paths: Vec<PathBuf> = watch_paths_str
-            .split(',')
-            .map(|s| PathBuf::from(s.trim()))
-            .collect();
-
-        // Poll interval (default: 5 seconds)
-        let poll_interval_secs: u64 = std::env::var("CODE_WATCH_INTERVAL")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(5);
-
-        info!(
-            code_store_path = %code_store_path,
-            watch_paths = ?watch_paths,
-            poll_interval_secs = poll_interval_secs,
-            "E7-WIRING: Starting code file watcher"
-        );
-
-        // 2. Open CodeStore and wrap in adapter
-        let raw_store = CodeStore::open(&code_store_path).map_err(|e| {
-            anyhow::anyhow!("Failed to open CodeStore at {}: {}", code_store_path, e)
-        })?;
-        let code_store = Arc::new(CodeStoreAdapter::new(Arc::new(raw_store)));
-        info!("Opened CodeStore at {}", code_store_path);
-
-        // 3. Get existing multi-array provider (all 13 embedders)
-        // E7CodeEmbeddingProvider now requires full MultiArrayEmbeddingProvider per ARCH-01/ARCH-05
-        let multi_array_provider = {
-            let slot = self.multi_array_provider.read().await;
-            match slot.as_ref() {
-                Some(p) => Arc::clone(p),
-                None => {
-                    error!("Multi-array provider not available - models not loaded");
-                    return Ok(false);
-                }
-            }
-        };
-        info!("Using existing multi-array provider for code embedding");
-
-        // 4. Create E7 embedding provider (uses all 13 embedders internally)
-        let e7_provider = Arc::new(E7CodeEmbeddingProvider::new(multi_array_provider));
-
-        // 5. Create CodeCaptureService
-        let session_id = std::env::var("CLAUDE_SESSION_ID").unwrap_or_else(|_| "default".to_string());
-        let capture_service: Arc<CodeCaptureService<E7CodeEmbeddingProvider, CodeStoreAdapter>> =
-            Arc::new(CodeCaptureService::new(
-                e7_provider.clone(),
-                code_store.clone(),
-                session_id.clone(),
-            ));
-
-        // 6. Create and start CodeFileWatcher
-        let mut watcher: CodeFileWatcher<E7CodeEmbeddingProvider, CodeStoreAdapter> =
-            CodeFileWatcher::new(
-                watch_paths.clone(),
-                capture_service,
-                session_id,
-            ).map_err(|e| anyhow::anyhow!("Failed to create CodeFileWatcher: {}", e))?;
-
-        watcher.start().await.map_err(|e| {
-            anyhow::anyhow!("Failed to start CodeFileWatcher: {}", e)
-        })?;
-
-        let stats = watcher.stats().await;
-        info!(
-            files_tracked = stats.files_tracked,
-            watch_paths = ?stats.watch_paths,
-            "CodeFileWatcher initial scan complete"
-        );
-
-        // 7. Spawn background polling task
-        self.code_watcher_running.store(true, Ordering::SeqCst);
-        let running_flag = self.code_watcher_running.clone();
-        let poll_interval = Duration::from_secs(poll_interval_secs);
-
-        let task = tokio::spawn(async move {
-            info!("Code watcher background task started (polling every {}s)", poll_interval_secs);
-
-            while running_flag.load(Ordering::SeqCst) {
-                tokio::time::sleep(poll_interval).await;
-
-                if !running_flag.load(Ordering::SeqCst) {
-                    break;
-                }
-
-                match watcher.process_events().await {
-                    Ok(files_processed) => {
-                        if files_processed > 0 {
-                            info!(files_processed, "Code watcher processed file changes");
-                        } else {
-                            debug!("Code watcher: no changes detected");
-                        }
-                    }
-                    Err(e) => {
-                        error!(error = %e, "Code watcher failed to process events");
-                    }
-                }
-            }
-
-            info!("Code watcher background task stopped");
-        });
-
-        // Store the task handle
-        {
-            let mut task_guard = self.code_watcher_task.write().await;
-            *task_guard = Some(task);
-        }
-
-        info!("E7-WIRING: Code file watcher started successfully");
-        Ok(true)
-    }
-
-    /// Stop the code file watcher.
-    ///
-    /// Signals the background task to stop and waits for it to complete.
-    #[allow(dead_code)]
-    pub async fn stop_code_watcher(&self) {
-        // Signal stop
-        self.code_watcher_running.store(false, Ordering::SeqCst);
-
-        // Wait for task to complete
-        let task = {
-            let mut guard = self.code_watcher_task.write().await;
-            guard.take()
-        };
-
-        if let Some(handle) = task {
-            if let Err(e) = handle.await {
-                error!(error = %e, "Code watcher task failed to join");
-            } else {
-                info!("Code watcher stopped");
-            }
-        }
-    }
-
-    // =========================================================================
-    // TASK-GRAPHLINK-PHASE1: Background Graph Builder
-    // =========================================================================
-
-    /// Start the background graph builder worker.
-    ///
-    /// TASK-GRAPHLINK-PHASE1: The graph builder processes fingerprints from the queue
-    /// and builds K-NN graphs every batch_interval_secs (default: 60s).
-    ///
-    /// # Returns
-    ///
-    /// `Ok(true)` if the worker started successfully, `Ok(false)` if no graph builder
-    /// is configured, `Err` on failure.
-    pub async fn start_graph_builder(&self) -> Result<bool> {
-        let graph_builder = match &self.graph_builder {
-            Some(builder) => Arc::clone(builder),
-            None => {
-                debug!("No graph builder configured - skipping worker start");
-                return Ok(false);
-            }
-        };
-
-        // Wait for embedding models to be ready (needed for graph building)
-        if self.models_loading.load(Ordering::SeqCst) {
-            info!("Waiting for embedding models to load before starting graph builder...");
-            for _ in 0..120 {
-                tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-                if !self.models_loading.load(Ordering::SeqCst) {
-                    break;
-                }
-            }
-            if self.models_loading.load(Ordering::SeqCst) {
-                error!("Embedding models still loading after 60s - skipping graph builder");
-                return Ok(false);
-            }
-        }
-
-        // Check if model loading failed
-        {
-            let failed = self.models_failed.read().await;
-            if let Some(ref err) = *failed {
-                error!("Cannot start graph builder - embedding models failed: {}", err);
-                return Ok(false);
-            }
-        }
-
-        info!(
-            "TASK-GRAPHLINK-PHASE1: Starting background graph builder worker (interval={}s)",
-            graph_builder.config().batch_interval_secs
-        );
-
-        // Start the worker
-        let task = graph_builder.start_worker();
-
-        // Store the task handle
-        {
-            let mut task_guard = self.graph_builder_task.write().await;
-            *task_guard = Some(task);
-        }
-
-        info!("TASK-GRAPHLINK-PHASE1: Background graph builder started successfully");
-        Ok(true)
-    }
-
-    /// Stop the background graph builder worker.
-    ///
-    /// Signals the worker to stop and waits for it to complete.
-    #[allow(dead_code)]
-    pub async fn stop_graph_builder(&self) {
-        if let Some(ref builder) = self.graph_builder {
-            builder.stop();
-        }
-
-        // Wait for task to complete
-        let task = {
-            let mut guard = self.graph_builder_task.write().await;
-            guard.take()
-        };
-
-        if let Some(handle) = task {
-            if let Err(e) = handle.await {
-                error!(error = %e, "Graph builder task failed to join");
-            } else {
-                info!("Graph builder stopped");
-            }
-        }
-    }
-
     /// Handle a single JSON-RPC request.
     async fn handle_request(&self, input: &str) -> JsonRpcResponse {
         // Parse request
@@ -1428,7 +851,7 @@ impl McpServer {
     /// unpredictable directories (e.g., `/` or their own installation path).
     ///
     /// Creates the directory if it doesn't exist.
-    fn resolve_storage_path(config: &Config) -> PathBuf {
+    pub(in crate::server) fn resolve_storage_path(config: &Config) -> PathBuf {
         // Check environment variable first
         if let Ok(env_path) = std::env::var("CONTEXT_GRAPH_STORAGE_PATH") {
             let path = PathBuf::from(env_path);
@@ -1510,7 +933,7 @@ impl McpServer {
     }
 
     /// Ensure a directory exists, creating it if necessary.
-    fn ensure_directory_exists(path: &PathBuf) {
+    pub(in crate::server) fn ensure_directory_exists(path: &PathBuf) {
         if !path.exists() {
             info!("Creating storage directory: {:?}", path);
             if let Err(e) = std::fs::create_dir_all(path) {
@@ -1521,352 +944,6 @@ impl McpServer {
                 );
             }
         }
-    }
-
-    // ========================================================================
-    // TASK-INTEG-018: TCP Transport Implementation
-    // ========================================================================
-
-    /// Run the server in TCP mode.
-    ///
-    /// TASK-INTEG-018: Accepts TCP connections on configured bind_address:tcp_port.
-    /// Spawns a tokio task per client, respecting max_connections semaphore.
-    ///
-    /// # Message Framing
-    ///
-    /// Uses newline-delimited JSON (NDJSON) - same as stdio transport.
-    /// Each JSON-RPC message is terminated by `\n`.
-    ///
-    /// # Connection Management
-    ///
-    /// - Uses Semaphore to limit concurrent connections to config.mcp.max_connections
-    /// - Each client runs in its own tokio task
-    /// - Clients are disconnected on first parse error (FAIL FAST per constitution)
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - TCP listener fails to bind (address in use, permissions)
-    /// - TCP listener returns fatal accept error
-    pub async fn run_tcp(&self) -> Result<()> {
-        let bind_addr: SocketAddr = format!(
-            "{}:{}",
-            self.config.mcp.bind_address, self.config.mcp.tcp_port
-        )
-        .parse()
-        .map_err(|e| {
-            error!(
-                "FATAL: Invalid bind address '{}:{}': {}",
-                self.config.mcp.bind_address, self.config.mcp.tcp_port, e
-            );
-            anyhow::anyhow!(
-                "Invalid TCP bind address '{}:{}': {}. \
-                 Check config.mcp.bind_address and config.mcp.tcp_port.",
-                self.config.mcp.bind_address,
-                self.config.mcp.tcp_port,
-                e
-            )
-        })?;
-
-        let listener = TcpListener::bind(bind_addr).await.map_err(|e| {
-            error!("FATAL: Failed to bind TCP listener to {}: {}", bind_addr, e);
-            anyhow::anyhow!(
-                "Failed to bind TCP listener to {}: {}. \
-                 Address may be in use or require elevated permissions.",
-                bind_addr,
-                e
-            )
-        })?;
-
-        info!(
-            "MCP Server listening on TCP {} (max_connections={})",
-            bind_addr, self.config.mcp.max_connections
-        );
-
-        // TASK-GRAPHLINK-PHASE1: Start background graph builder worker
-        // This processes fingerprints from the queue and builds K-NN edges
-        match self.start_graph_builder().await {
-            Ok(true) => info!("Background graph builder started"),
-            Ok(false) => debug!("Background graph builder not configured or failed to start"),
-            Err(e) => warn!("Failed to start background graph builder: {}", e),
-        }
-
-        loop {
-            // Accept new connections
-            let (stream, peer_addr) = match listener.accept().await {
-                Ok(conn) => conn,
-                Err(e) => {
-                    // Log but continue accepting - most accept errors are transient
-                    error!("Failed to accept TCP connection: {}", e);
-                    continue;
-                }
-            };
-
-            // Clone Arc references for the spawned task
-            let handlers = Arc::clone(&self.handlers);
-            let semaphore = Arc::clone(&self.connection_semaphore);
-            let active_connections = Arc::clone(&self.active_connections);
-            let request_timeout = self.config.mcp.request_timeout;
-
-            // Spawn client handler task
-            tokio::spawn(async move {
-                // Acquire semaphore permit (blocks if at max_connections)
-                let _permit = match semaphore.acquire().await {
-                    Ok(p) => p,
-                    Err(_) => {
-                        error!("Semaphore closed unexpectedly for client {}", peer_addr);
-                        return;
-                    }
-                };
-
-                // Track active connection count
-                let conn_count = active_connections.fetch_add(1, Ordering::SeqCst) + 1;
-                info!(
-                    "TCP client connected: {} (active_connections={})",
-                    peer_addr, conn_count
-                );
-
-                // Handle client - permit is held until this returns
-                if let Err(e) =
-                    Self::handle_tcp_client(stream, peer_addr, handlers, request_timeout).await
-                {
-                    // Log at different levels based on error type
-                    if e.to_string().contains("connection reset")
-                        || e.to_string().contains("broken pipe")
-                    {
-                        debug!("TCP client {} disconnected: {}", peer_addr, e);
-                    } else {
-                        warn!("TCP client {} error: {}", peer_addr, e);
-                    }
-                }
-
-                // Decrement active connection count
-                let conn_count = active_connections.fetch_sub(1, Ordering::SeqCst) - 1;
-                info!(
-                    "TCP client disconnected: {} (active_connections={})",
-                    peer_addr, conn_count
-                );
-            });
-        }
-    }
-
-    /// Handle a single TCP client connection.
-    ///
-    /// TASK-INTEG-018: Reads newline-delimited JSON requests, dispatches to handlers,
-    /// writes newline-delimited JSON responses.
-    ///
-    /// # FAIL FAST Behavior
-    ///
-    /// Per constitution AP-007, on first parse error the client is disconnected.
-    /// This prevents malformed clients from corrupting server state.
-    ///
-    /// # Arguments
-    ///
-    /// * `stream` - TCP stream for the client
-    /// * `peer_addr` - Client's socket address for logging
-    /// * `handlers` - Arc-wrapped handlers for request dispatch
-    /// * `request_timeout` - Request timeout in seconds (from config)
-    async fn handle_tcp_client(
-        stream: TcpStream,
-        peer_addr: SocketAddr,
-        handlers: Arc<Handlers>,
-        request_timeout: u64,
-    ) -> Result<()> {
-        let (reader, mut writer) = stream.into_split();
-        let mut reader = BufReader::new(reader);
-        let mut line = String::new();
-
-        loop {
-            line.clear();
-
-            // AGT-04 FIX: Use bounded read_line to prevent OOM from unbounded input.
-            // TCP is externally exploitable - a malicious client can send multi-GB data without newlines.
-            let bytes_read = read_line_bounded(&mut reader, &mut line, MAX_LINE_BYTES).await?;
-
-            // EOF - client closed connection
-            if bytes_read == 0 {
-                debug!("TCP client {} closed connection (EOF)", peer_addr);
-                break;
-            }
-
-            let trimmed = line.trim();
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            debug!("TCP {} received: {}", peer_addr, trimmed);
-
-            // Parse request
-            let request: JsonRpcRequest = match serde_json::from_str(trimmed) {
-                Ok(r) => r,
-                Err(e) => {
-                    // FAIL FAST: Send parse error and disconnect
-                    warn!(
-                        "TCP client {} sent invalid JSON, disconnecting: {}",
-                        peer_addr, e
-                    );
-                    let error_response = JsonRpcResponse::error(
-                        None,
-                        crate::protocol::error_codes::PARSE_ERROR,
-                        format!("Parse error: {}. Connection will be closed.", e),
-                    );
-                    let response_json = serde_json::to_string(&error_response)?;
-                    writer.write_all(response_json.as_bytes()).await?;
-                    writer.write_all(b"\n").await?;
-                    writer.flush().await?;
-                    // FAIL FAST: Disconnect client
-                    return Err(anyhow::anyhow!("Client sent invalid JSON-RPC: {}", e));
-                }
-            };
-
-            // Validate JSON-RPC version
-            if request.jsonrpc != "2.0" {
-                let error_response = JsonRpcResponse::error(
-                    request.id.clone(),
-                    crate::protocol::error_codes::INVALID_REQUEST,
-                    "Invalid JSON-RPC version. Expected '2.0'.",
-                );
-                let response_json = serde_json::to_string(&error_response)?;
-                writer.write_all(response_json.as_bytes()).await?;
-                writer.write_all(b"\n").await?;
-                writer.flush().await?;
-                continue;
-            }
-
-            // HIGH-15 FIX: Apply request timeout to prevent unbounded request processing.
-            let response = match tokio::time::timeout(
-                Duration::from_secs(request_timeout),
-                handlers.dispatch(request),
-            )
-            .await
-            {
-                Ok(result) => result,
-                Err(_) => {
-                    error!(
-                        "Request timed out after {}s for peer {}",
-                        request_timeout, peer_addr
-                    );
-                    JsonRpcResponse::error(
-                        None,
-                        crate::protocol::error_codes::TCP_CLIENT_TIMEOUT,
-                        format!(
-                            "Request timed out after {}s. Consider increasing request_timeout.",
-                            request_timeout
-                        ),
-                    )
-                }
-            };
-
-            // Handle notifications (no response needed)
-            if response.id.is_none() && response.result.is_none() && response.error.is_none() {
-                debug!("TCP {} notification handled, no response", peer_addr);
-                continue;
-            }
-
-            // Send response
-            let response_json = serde_json::to_string(&response)?;
-            debug!("TCP {} sending: {}", peer_addr, response_json);
-
-            writer.write_all(response_json.as_bytes()).await?;
-            writer.write_all(b"\n").await?;
-            writer.flush().await?;
-        }
-
-        Ok(())
-    }
-
-    /// Run the MCP server with SSE transport.
-    ///
-    /// TASK-42: Starts an HTTP server with SSE endpoint for real-time streaming.
-    /// Uses axum web framework with the SSE transport module.
-    ///
-    /// # Endpoint
-    ///
-    /// - `GET /events` - SSE endpoint for receiving MCP events
-    ///
-    /// # Configuration
-    ///
-    /// - `config.mcp.bind_address` - HTTP server bind address
-    /// - `config.mcp.sse_port` - HTTP server port (default: 3101)
-    /// - `config.mcp.max_connections` - Maximum concurrent SSE connections
-    ///
-    /// # Errors
-    ///
-    /// Returns error if:
-    /// - HTTP server fails to bind (address in use, permissions)
-    /// - Server encounters fatal error during operation
-    pub async fn run_sse(&self) -> Result<()> {
-        // Parse bind address
-        let bind_addr: SocketAddr = format!(
-            "{}:{}",
-            self.config.mcp.bind_address, self.config.mcp.sse_port
-        )
-        .parse()
-        .map_err(|e| {
-            error!(
-                "FATAL: Invalid SSE bind address '{}:{}': {}",
-                self.config.mcp.bind_address, self.config.mcp.sse_port, e
-            );
-            anyhow::anyhow!(
-                "Invalid SSE bind address '{}:{}': {}. \
-                 Check config.mcp.bind_address and config.mcp.sse_port.",
-                self.config.mcp.bind_address,
-                self.config.mcp.sse_port,
-                e
-            )
-        })?;
-
-        // Create SSE configuration
-        let sse_config = SseConfig::default();
-        sse_config.validate().map_err(|e| {
-            error!("FATAL: Invalid SSE configuration: {}", e);
-            anyhow::anyhow!("Invalid SSE configuration: {}", e)
-        })?;
-
-        // Create SSE application state
-        let sse_state = SseAppState::new(sse_config).map_err(|e| {
-            error!("FATAL: Failed to create SSE application state: {}", e);
-            anyhow::anyhow!("Failed to create SSE application state: {}", e)
-        })?;
-
-        // Create SSE router
-        let router = create_sse_router(sse_state);
-
-        // Bind TCP listener
-        let listener = tokio::net::TcpListener::bind(bind_addr)
-            .await
-            .map_err(|e| {
-                error!("FATAL: Failed to bind SSE listener to {}: {}", bind_addr, e);
-                anyhow::anyhow!(
-                    "Failed to bind SSE listener to {}: {}. \
-                 Address may be in use or require elevated permissions.",
-                    bind_addr,
-                    e
-                )
-            })?;
-
-        info!(
-            "MCP Server listening on SSE http://{}/events (max_connections={})",
-            bind_addr, self.config.mcp.max_connections
-        );
-
-        // TASK-GRAPHLINK-PHASE1: Start background graph builder worker
-        // This processes fingerprints from the queue and builds K-NN edges
-        match self.start_graph_builder().await {
-            Ok(true) => info!("Background graph builder started"),
-            Ok(false) => debug!("Background graph builder not configured or failed to start"),
-            Err(e) => warn!("Failed to start background graph builder: {}", e),
-        }
-
-        // Run axum server with explicit type annotation
-        axum::serve(listener, router.into_make_service())
-            .await
-            .map_err(|e| {
-                error!("SSE server error: {}", e);
-                anyhow::anyhow!("SSE server error: {}", e)
-            })?;
-
-        Ok(())
     }
 }
 

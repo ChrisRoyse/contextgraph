@@ -5,11 +5,16 @@
 //! - `index_ops.rs` - HNSW index operations
 //! - `inverted_index.rs` - SPLADE inverted index operations
 
-use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+// P5: DashMap replaces RwLock<HashMap> for lock-free concurrent soft-delete checks.
+// Eliminates RwLock contention on the read-heavy search path (5,000+ lock acquisitions
+// under concurrent search load). DashMap uses sharded locks internally for O(1)
+// concurrent reads without global lock acquisition.
+use dashmap::DashMap;
 // MED-11 FIX: parking_lot::RwLock is non-poisonable. One panic no longer
 // permanently breaks all subsequent operations via poison cascade.
 use parking_lot::RwLock;
@@ -79,11 +84,15 @@ pub struct RocksDbTeleologicalStore {
     pub(crate) path: PathBuf,
     /// In-memory count of fingerprints (cached for performance).
     pub(crate) fingerprint_count: RwLock<Option<usize>>,
-    /// Soft-deleted IDs with deletion timestamps (Unix epoch milliseconds).
-    /// Wrapped in Arc to allow cheap cloning for spawn_blocking closures.
-    /// Values are the timestamp when the soft-delete occurred, used by GC
-    /// to determine if retention period has expired.
-    pub(crate) soft_deleted: Arc<RwLock<HashMap<Uuid, i64>>>,
+    /// P1: Total document count for IDF calculations (O(1) instead of O(n) iterator scan).
+    /// Initialized at startup, incremented on store, decremented on hard delete.
+    /// Used by sparse search (E6/E13) BM25-IDF scoring. Approximate is fine for IDF.
+    pub(crate) total_doc_count: Arc<AtomicUsize>,
+    /// P5: Soft-deleted IDs with deletion timestamps (Unix epoch milliseconds).
+    /// Uses DashMap for lock-free concurrent reads (eliminates RwLock contention
+    /// under 100+ concurrent searches x 50+ results = 5,000+ lookups).
+    /// Wrapped in Arc for cheap cloning into spawn_blocking closures.
+    pub(crate) soft_deleted: Arc<DashMap<Uuid, i64>>,
     /// Per-embedder index registry with 12 HNSW indexes for O(log n) ANN search.
     /// E6, E12, E13 use different index types (inverted/MaxSim).
     /// NO FALLBACKS - FAIL FAST on invalid operations.
@@ -206,7 +215,8 @@ impl RocksDbTeleologicalStore {
         let soft_deleted = {
             use super::crud::SOFT_DELETE_PREFIX;
 
-            let mut map: HashMap<Uuid, i64> = HashMap::new();
+            // P5: Use DashMap for lock-free concurrent reads on the search hotpath
+            let map: DashMap<Uuid, i64> = DashMap::new();
             if let Some(cf_system) = db_arc.cf_handle(crate::column_families::cf_names::SYSTEM) {
                 let iter = db_arc.prefix_iterator_cf(cf_system, SOFT_DELETE_PREFIX.as_bytes());
                 for item in iter {
@@ -245,7 +255,20 @@ impl RocksDbTeleologicalStore {
             if !map.is_empty() {
                 info!("Loaded {} persisted soft-delete markers from CF_SYSTEM", map.len());
             }
-            Arc::new(RwLock::new(map))
+            Arc::new(map)
+        };
+
+        // P1: Count total documents for O(1) IDF lookups in sparse search.
+        // This replaces the O(n) full-iterator scan that was the #1 scaling bottleneck.
+        let total_doc_count = {
+            let cf_fp = db_arc.cf_handle(CF_FINGERPRINTS).ok_or_else(|| {
+                TeleologicalStoreError::ColumnFamilyNotFound {
+                    name: CF_FINGERPRINTS.to_string(),
+                }
+            })?;
+            let count = db_arc.iterator_cf(cf_fp, rocksdb::IteratorMode::Start).count();
+            info!("P1: Initialized total_doc_count = {} from CF_FINGERPRINTS", count);
+            Arc::new(AtomicUsize::new(count))
         };
 
         let store = Self {
@@ -253,6 +276,7 @@ impl RocksDbTeleologicalStore {
             cache,
             path: path_buf,
             fingerprint_count: RwLock::new(None),
+            total_doc_count,
             soft_deleted,
             index_registry,
             causal_e11_index,
@@ -939,8 +963,9 @@ impl RocksDbTeleologicalStore {
 
         // Lock released here via drop(_index_guard)
 
-        // Invalidate count cache
+        // Invalidate count cache and increment total doc count for IDF
         *self.fingerprint_count.write() = None;
+        self.total_doc_count.fetch_add(1, Ordering::Relaxed);
 
         debug!("Stored fingerprint {} ({} bytes)", id, serialized.len());
         Ok(())
@@ -958,9 +983,9 @@ impl RocksDbTeleologicalStore {
 
     /// Check if an ID is soft-deleted.
     ///
-    /// MED-11 FIX: Uses parking_lot::RwLock which is non-poisonable.
+    /// P5: Uses DashMap for lock-free concurrent reads (no global RwLock contention).
     pub(crate) fn is_soft_deleted(&self, id: &Uuid) -> bool {
-        self.soft_deleted.read().contains_key(id)
+        self.soft_deleted.contains_key(id)
     }
 }
 

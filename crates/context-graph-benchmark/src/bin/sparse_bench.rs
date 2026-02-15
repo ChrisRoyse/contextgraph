@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! E6 Sparse Embedder Benchmark CLI
 //!
 //! Runs comprehensive benchmarks for E6 (V_selectivity) sparse embedder using

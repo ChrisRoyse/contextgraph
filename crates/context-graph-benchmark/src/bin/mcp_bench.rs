@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! TRUE MCP Benchmark: Uses actual inject_context and search_graph MCP tools
 //!
 //! This benchmark ACTUALLY uses the MCP layer:

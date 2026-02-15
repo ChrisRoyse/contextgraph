@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! End-to-End Causal Provenance Benchmark
 //!
 //! Comprehensive benchmark that tests the full provenance tracking pipeline:

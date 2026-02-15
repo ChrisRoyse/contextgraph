@@ -5,9 +5,10 @@ use tracing::error;
 
 use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 
-use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
+use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
 use super::super::Handlers;
+use super::helpers::ToolErrorKind;
 
 impl Handlers {
     /// get_memetic_status tool implementation.
@@ -22,10 +23,10 @@ impl Handlers {
             Ok(count) => count,
             Err(e) => {
                 error!(error = %e, "get_memetic_status: TeleologicalStore.count() FAILED");
-                return JsonRpcResponse::error(
+                return self.tool_error_typed(
                     id,
-                    error_codes::STORAGE_ERROR,
-                    format!("Failed to get fingerprint count: {}", e),
+                    ToolErrorKind::Storage,
+                    &format!("Failed to get fingerprint count: {}", e),
                 );
             }
         };

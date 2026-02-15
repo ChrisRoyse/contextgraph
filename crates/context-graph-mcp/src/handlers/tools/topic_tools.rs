@@ -23,7 +23,8 @@ use context_graph_core::retrieval::divergence::DIVERGENCE_SPACES;
 use context_graph_core::teleological::Embedder;
 use context_graph_core::traits::{TeleologicalSearchOptions, TeleologicalSearchResult};
 
-use crate::protocol::{error_codes, JsonRpcId, JsonRpcResponse};
+use crate::protocol::{JsonRpcId, JsonRpcResponse};
+use super::helpers::ToolErrorKind;
 
 use super::super::Handlers;
 use super::topic_dtos::{
@@ -390,10 +391,10 @@ impl Handlers {
                 min_required = MIN_MEMORIES_FOR_CLUSTERING,
                 "detect_topics: Insufficient memories for clustering"
             );
-            return JsonRpcResponse::error(
+            return self.tool_error_typed(
                 id,
-                error_codes::INSUFFICIENT_MEMORIES,
-                format!(
+                ToolErrorKind::Validation,
+                &format!(
                     "Need >= {} memories for topic detection (have {})",
                     MIN_MEMORIES_FOR_CLUSTERING, memory_count
                 ),
@@ -737,6 +738,7 @@ impl Handlers {
 mod tests {
     use super::super::topic_dtos::{DivergenceAlert, MAX_WEIGHTED_AGREEMENT, TOPIC_THRESHOLD};
     use super::*;
+    use crate::protocol::error_codes;
 
     #[test]
     fn test_constants_match_constitution() {

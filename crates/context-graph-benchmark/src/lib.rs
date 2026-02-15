@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! # Context Graph Benchmark Suite
 //!
 //! Comprehensive benchmarking system comparing the 13-embedder multi-space fingerprinting

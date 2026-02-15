@@ -1,3 +1,4 @@
+#![allow(dead_code, unused_variables, unreachable_code, unused_assignments)]
 //! E4 Temporal Sequence Embedder Benchmark with Real HuggingFace Data
 //!
 //! Integrates temporal sequence benchmarks with the 58,000+ document HuggingFace dataset.
