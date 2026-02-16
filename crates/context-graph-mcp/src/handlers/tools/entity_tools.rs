@@ -190,7 +190,7 @@ fn classify_entity(canonical: &str) -> (EntityType, f32) {
 ///
 /// KEPLER embeddings handle deeper entity relationship discovery.
 /// This function identifies candidate mentions with type annotations for API responses.
-fn extract_entity_mentions(text: &str) -> EntityMetadata {
+pub(crate) fn extract_entity_mentions(text: &str) -> EntityMetadata {
     let mut entities = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
@@ -202,17 +202,26 @@ fn extract_entity_mentions(text: &str) -> EntityMetadata {
             continue;
         }
 
-        // Check if it looks like an entity (capitalized or technical term)
+        let canonical = clean.to_lowercase();
+
+        // Skip common English words
+        if is_common_word(clean) {
+            continue;
+        }
+
+        // Check if it looks like an entity via heuristics OR knowledge base lookup.
+        // The KB check catches lowercase mentions like "postgres" or "tokio" that
+        // the capitalization heuristic would miss, fixing Jaccard overlap = 0.0.
         let first_char = clean.chars().next().unwrap_or('a');
         let is_capitalized = first_char.is_uppercase();
         let is_all_caps = clean.len() > 1 && clean.chars().all(|c| c.is_uppercase() || c.is_numeric());
         let has_special = clean.contains('_') || clean.contains('-');
+        let (entity_type, confidence) = classify_entity(&canonical);
+        let is_known_entity = entity_type != EntityType::Unknown;
 
-        if (is_capitalized || is_all_caps || has_special) && !is_common_word(clean) {
-            let canonical = clean.to_lowercase();
+        if is_capitalized || is_all_caps || has_special || is_known_entity {
             if !seen.contains(&canonical) {
                 seen.insert(canonical.clone());
-                let (entity_type, confidence) = classify_entity(&canonical);
                 entities.push(EntityLink {
                     surface_form: clean.to_string(),
                     canonical_id: canonical,
@@ -407,16 +416,7 @@ impl Handlers {
         // Step 3: Convert to DTOs
         let entity_dtos: Vec<EntityLinkDto> = filtered_entities
             .iter()
-            .map(|e| {
-                let mut dto = EntityLinkDto::from(*e);
-                // KB matches get high confidence, Unknown entities get lower
-                dto.confidence = Some(if e.entity_type != EntityType::Unknown {
-                    1.0
-                } else {
-                    0.5
-                });
-                dto
-            })
+            .map(|e| EntityLinkDto::from(*e))
             .collect();
 
         // Step 4: Group by type if requested
@@ -671,7 +671,7 @@ impl Handlers {
         // Step 6: Get all unique candidate IDs
         let candidate_ids: Vec<Uuid> = candidate_map.keys().copied().collect();
 
-        // Get content for entity extraction
+        // Get content for entity extraction and source_metadata for persisted entity names
         let contents = match self.teleological_store.get_content_batch(&candidate_ids).await {
             Ok(c) => c,
             Err(e) => {
@@ -680,11 +680,26 @@ impl Handlers {
             }
         };
 
-        // Build content map
+        // Load persisted entity names from source_metadata (populated at store_memory time)
+        let source_metas = match self.teleological_store.get_source_metadata_batch(&candidate_ids).await {
+            Ok(m) => m,
+            Err(e) => {
+                debug!(error = %e, "search_by_entities: source_metadata batch load failed, falling back to content extraction");
+                vec![None; candidate_ids.len()]
+            }
+        };
+
+        // Build content and metadata maps
         let content_map: std::collections::HashMap<Uuid, Option<String>> = candidate_ids
             .iter()
             .zip(contents.iter())
             .map(|(id, content)| (*id, content.clone()))
+            .collect();
+
+        let metadata_map: std::collections::HashMap<Uuid, Option<Vec<String>>> = candidate_ids
+            .iter()
+            .zip(source_metas.iter())
+            .map(|(id, meta)| (*id, meta.as_ref().and_then(|m| m.entity_names.clone())))
             .collect();
 
         // Step 7: Score each candidate using combined insights
@@ -694,9 +709,14 @@ impl Handlers {
 
         for (cand_id, (e1_sim, e11_sim)) in candidate_map.iter() {
             let content = content_map.get(cand_id).and_then(|c| c.clone());
+            let persisted_entities = metadata_map.get(cand_id).and_then(|e| e.clone());
 
-            // Extract entities from candidate content
-            let cand_entities = if let Some(ref text) = content {
+            // Prefer persisted entity names from store_memory time;
+            // fall back to extracting from content at search time
+            let cand_entities = if let Some(ref names) = persisted_entities {
+                let forms: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+                EntityMetadata::from_surface_forms(&forms)
+            } else if let Some(ref text) = content {
                 extract_entity_mentions(text)
             } else {
                 EntityMetadata::empty()

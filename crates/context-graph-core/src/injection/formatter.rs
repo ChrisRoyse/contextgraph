@@ -763,7 +763,7 @@ mod tests {
         let alerts = vec![
             make_alert("First alert content", Embedder::Semantic, 0.10),
             make_alert("Second alert content", Embedder::Code, 0.05),
-            make_alert("Third alert content", Embedder::Causal, 0.15),
+            make_alert("Third alert content", Embedder::Sparse, 0.15),
         ];
 
         println!("  Before: {} alerts", alerts.len());

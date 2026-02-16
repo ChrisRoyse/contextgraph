@@ -125,6 +125,12 @@ pub struct SourceMetadata {
     /// Tracks static vs LLM-guided markers, asymmetry strength, and effective boost.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub embedding_hint_provenance: Option<crate::traits::EmbeddingHintProvenance>,
+
+    /// Canonical entity names extracted at store_memory time.
+    /// Enables entity Jaccard overlap scoring in search_by_entities
+    /// without re-extracting from content at search time.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub entity_names: Option<Vec<String>>,
 }
 
 /// Type of memory source.
@@ -177,6 +183,7 @@ impl Default for SourceMetadata {
             mcp_request_id: None,
             hook_execution_timestamp_ms: None,
             embedding_hint_provenance: None,
+            entity_names: None,
         }
     }
 }

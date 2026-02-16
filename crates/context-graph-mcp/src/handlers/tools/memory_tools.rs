@@ -337,6 +337,24 @@ impl Handlers {
                     );
                 }
 
+                // ENTITY-LINK: Extract entities at store time for Jaccard overlap in search_by_entities.
+                // Without this, entity Jaccard is always 0.0 because entities aren't linked to stored memories.
+                let entity_names = {
+                    let entity_meta = super::entity_tools::extract_entity_mentions(&content);
+                    let ids: Vec<String> = entity_meta.canonical_ids().into_iter().map(String::from).collect();
+                    if !ids.is_empty() {
+                        debug!(
+                            fingerprint_id = %fingerprint_id,
+                            entity_count = ids.len(),
+                            entities = ?ids,
+                            "store_memory: Extracted entities for Jaccard scoring"
+                        );
+                        Some(ids)
+                    } else {
+                        None
+                    }
+                };
+
                 // E4-FIX Phase 1: Persist session metadata for E4 sequence retrieval
                 // This enables proper before/after queries by storing session_sequence
                 // PHASE-1.2: Add operator attribution fields for provenance tracking
@@ -344,28 +362,12 @@ impl Handlers {
                     source_type: SourceType::Manual,
                     session_id: session_id.clone(),
                     session_sequence: Some(session_sequence),
-                    file_path: None,
-                    chunk_index: None,
-                    total_chunks: None,
-                    start_line: None,
-                    end_line: None,
-                    hook_type: None,
-                    tool_name: None,
                     causal_direction: Some(causal_direction.clone()),
-                    source_fingerprint_id: None,
-                    causal_relationship_id: None,
-                    mechanism_type: None,
-                    confidence: None,
                     created_by: operator_id.clone(),
                     created_at: Some(chrono::Utc::now()),
-                    file_content_hash: None,
-                    file_modified_at: None,
-                    derived_from: None,
-                    derivation_method: None,
-                    tool_use_id: None,
-                    mcp_request_id: None,
-                    hook_execution_timestamp_ms: None,
                     embedding_hint_provenance: embedding_output.e5_hint_provenance.clone(),
+                    entity_names,
+                    ..SourceMetadata::default()
                 };
 
                 if let Err(e) = self

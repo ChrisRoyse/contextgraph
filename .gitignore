@@ -129,6 +129,7 @@ data/
 contextgraph_data_incompatible_*/
 contextgraph_data_backup_*/
 contextgraph_data_corrupted_*/
+contextgraph_data.bak.*/
 
 # Large benchmark artifacts (regeneratable)
 benchmark_results/*.json

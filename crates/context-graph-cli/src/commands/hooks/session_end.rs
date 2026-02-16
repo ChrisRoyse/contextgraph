@@ -20,6 +20,7 @@ use std::time::Instant;
 
 use tracing::{debug, error, info, warn};
 
+use super::memory_cache::clear_session_cache;
 use super::session_state::{store_in_cache, SessionCache, SessionSnapshot};
 
 use super::args::SessionEndArgs;
@@ -74,7 +75,10 @@ pub async fn execute(args: SessionEndArgs) -> HookResult<HookOutput> {
     let (topic_stability, coherence_state) =
         persist_to_cache(&session_id, cache_snapshot, duration_ms);
 
-    // 4. Build output structures
+    // 4. Clean up filesystem memory cache for this session
+    clear_session_cache(&session_id);
+
+    // 5. Build output structures
     let execution_time_ms = start.elapsed().as_millis() as u64;
 
     info!(
