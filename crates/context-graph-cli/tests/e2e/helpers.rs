@@ -245,8 +245,10 @@ pub fn execute_hook_script(
     let execution_time_ms = start.elapsed().as_millis() as u64;
 
     // Check if we exceeded timeout
-    if execution_time_ms > timeout_ms + 1000 {
-        // Add 1s grace for shell overhead
+    // Grace: 5s for E2E shell overhead (bash startup, jq/df subprocesses, CLI binary load,
+    // disk-space check with du when disk >= 85%). The shell script's own `timeout` command
+    // enforces the real CLI deadline; this is just a sanity backstop.
+    if execution_time_ms > timeout_ms + 5000 {
         return Err(E2EError::Timeout(execution_time_ms));
     }
 

@@ -1,7 +1,7 @@
 //! Provenance query tool handlers (Phase P3).
 
 use chrono::DateTime;
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer};
 use serde_json::json;
 use tracing::{debug, error};
 use uuid::Uuid;
@@ -33,12 +33,27 @@ struct GetAuditTrailParams {
     target_id: Option<String>,
     start_time: Option<String>,
     end_time: Option<String>,
-    #[serde(default = "default_audit_limit")]
+    #[serde(default = "default_audit_limit", deserialize_with = "deserialize_usize_lenient")]
     limit: usize,
 }
 
 fn default_audit_limit() -> usize {
     50
+}
+
+/// MCP clients may send integers as JSON strings — accept both.
+fn deserialize_usize_lenient<'de, D: Deserializer<'de>>(d: D) -> Result<usize, D::Error> {
+    let v = serde_json::Value::deserialize(d)?;
+    match &v {
+        serde_json::Value::Number(n) => n
+            .as_u64()
+            .map(|n| n as usize)
+            .ok_or_else(|| serde::de::Error::custom("limit must be a non-negative integer")),
+        serde_json::Value::String(s) => s
+            .parse::<usize>()
+            .map_err(serde::de::Error::custom),
+        _ => Err(serde::de::Error::custom("limit must be an integer or string")),
+    }
 }
 
 // ========== get_merge_history ==========
