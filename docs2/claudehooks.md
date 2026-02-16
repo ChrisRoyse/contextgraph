@@ -243,80 +243,58 @@ Docs: https://code.claude.com/docs/en/hooks
 
 ## Context Graph Native Hook Configuration
 
-The Context Graph project uses native Claude Code hooks configured via `.claude/settings.json`:
+The Context Graph project uses native Claude Code hooks configured via `.claude/settings.json`.
 
-```json
-{
-  "hooks": {
-    "SessionStart": [{
-      "type": "command",
-      "command": "./hooks/session-start.sh"
-    }],
-    "PreToolUse": [{
-      "matcher": "mcp__context-graph__*|Read|Edit|Write|Bash",
-      "hooks": [{
-        "type": "command",
-        "command": "./hooks/pre-tool-use.sh",
-        "timeout": 100
-      }]
-    }],
-    "PostToolUse": [{
-      "matcher": "mcp__context-graph__*|Edit|Write",
-      "hooks": [{
-        "type": "command",
-        "command": "./hooks/post-tool-use.sh",
-        "timeout": 3000
-      }]
-    }],
-    "UserPromptSubmit": [{
-      "hooks": [{
-        "type": "command",
-        "command": "./hooks/user-prompt-submit.sh",
-        "timeout": 2000
-      }]
-    }],
-    "SessionEnd": [{
-      "hooks": [{
-        "type": "command",
-        "command": "./hooks/session-end.sh",
-        "timeout": 30000
-      }]
-    }]
-  }
-}
+### Architecture
+
+```
+Claude Code Hook Event
+  → .claude/hooks/<event_name>.sh  (bash script, reads JSON from stdin)
+    → context-graph-cli <subcommand>  (compiled Rust binary)
+      → TCP JSON-RPC to MCP server on :3100  (via mcp_client.rs)
+        → MCP tool handler  (55 registered tools)
+          → RocksDB + GPU embedders (13 embedder spaces)
 ```
 
-### Shell Script Executors
+### Existing Hook Scripts (`.claude/hooks/`)
 
-**hooks/session-start.sh** - Load topic portfolio and warm caches:
-```bash
-#!/bin/bash
-context-graph-cli hooks session-start
+| Script | CLI Command | Hook Event |
+|--------|-------------|------------|
+| `session_start.sh` | `context-graph-cli hooks session-start --stdin --format json` | SessionStart |
+| `user_prompt_submit.sh` | `context-graph-cli hooks prompt-submit --session-id ... --stdin true --format json` | UserPromptSubmit |
+| `pre_tool_use.sh` | `context-graph-cli hooks pre-tool --session-id ... --tool-name ... --fast-path true --format json` | PreToolUse |
+| `post_tool_use.sh` | `context-graph-cli hooks post-tool --session-id ... --tool-name ... --format json` | PostToolUse |
+| `session_end.sh` | `context-graph-cli hooks session-end --session-id ... --duration-ms ... --format json` | SessionEnd |
+| `stop.sh` | `context-graph-cli memory capture-response --content ... --session-id ... --response-type stop_response` | Stop |
+
+All scripts follow the same pattern:
+1. `set -euo pipefail`
+2. Read JSON from stdin
+3. Validate JSON with `jq empty`
+4. Find CLI binary (`$CONTEXT_GRAPH_CLI` env, then `./target/release/`, then `./target/debug/`, then `$HOME/.cargo/bin/`)
+5. Call CLI with `timeout`
+6. Handle timeout (exit 124→exit 2)
+7. Exit codes pass through: 0=success, 1=error, 2=timeout, 3=db_error, 4=invalid_input
+
+### CLI Subcommands for Hooks
+
+```
+context-graph-cli hooks session-start    # SessionStart (5s timeout)
+context-graph-cli hooks pre-tool         # PreToolUse (500ms, no DB)
+context-graph-cli hooks post-tool        # PostToolUse (3s timeout)
+context-graph-cli hooks prompt-submit    # UserPromptSubmit (2s timeout)
+context-graph-cli hooks session-end      # SessionEnd (30s timeout)
+context-graph-cli memory inject-context  # Full context injection
+context-graph-cli memory inject-brief    # Brief context (<200 tokens)
+context-graph-cli memory capture-memory  # Store hook descriptions
+context-graph-cli memory capture-response # Store Claude responses
 ```
 
-**hooks/pre-tool-use.sh** - Inject brief relevant context (~50 tokens, <500ms):
-```bash
-#!/bin/bash
-context-graph-cli memory inject-brief
-```
+### Prerequisites
 
-**hooks/post-tool-use.sh** - Capture tool description and update clustering:
-```bash
-#!/bin/bash
-context-graph-cli capture-memory --source hook "$TOOL_DESCRIPTION"
-```
-
-**hooks/user-prompt-submit.sh** - Inject relevant memory context:
-```bash
-#!/bin/bash
-context-graph-cli memory inject-context "$PROMPT"
-```
-
-**hooks/session-end.sh** - Persist state and run consolidation:
-```bash
-#!/bin/bash
-context-graph-cli hooks session-end
-```
+1. MCP server must be running on TCP port 3100: `./target/release/context-graph-mcp --transport tcp --port 3100`
+2. CLI binary must be built: `cargo build --release -p context-graph-cli`
+3. MCP server registered with Claude Code: `claude mcp add context-graph -- ./target/release/context-graph-mcp`
 
 ### Why Native Hooks?
 
@@ -324,6 +302,5 @@ context-graph-cli hooks session-end
 |----------|--------|------------|-------------|
 | Native Claude Code Hooks | ~25h | Low | Claude team maintains hook system |
 | Custom Built-In Hooks | ~80h | High | We maintain hook infrastructure |
-| Universal LLM Adapter | +60h | Very High | Cross-provider compatibility issues |
 
 **Decision**: Native hooks provide 71% effort reduction with better long-term maintainability.

@@ -19,9 +19,12 @@ use crate::teleological::Embedder;
 ///
 /// Per ARCH-10, only SEMANTIC category embedders are checked for divergence.
 /// Temporal (E2-E4), Relational (E8, E11), and Structural (E9) are excluded.
-pub const DIVERGENCE_SPACES: [Embedder; 7] = [
+///
+/// NOTE: E5 (Causal) is semantic but EXCLUDED because AP-77 requires
+/// CausalDirection for meaningful scores. Without direction, E5 returns 0.0
+/// from compute_embedder_scores_sync(), causing false-positive alerts.
+pub const DIVERGENCE_SPACES: [Embedder; 6] = [
     Embedder::Semantic,        // E1
-    Embedder::Causal,          // E5
     Embedder::Sparse,          // E6
     Embedder::Code,            // E7
     Embedder::Multimodal,      // E10
@@ -78,7 +81,8 @@ impl std::fmt::Display for DivergenceSeverity {
 /// Alert indicating divergence from recent work in a semantic embedding space.
 ///
 /// Created when similarity score falls BELOW the low threshold for a semantic space.
-/// Only SEMANTIC embedders (E1, E5, E6, E7, E10, E12, E13) can generate alerts.
+/// Only SEMANTIC embedders (E1, E6, E7, E10, E12, E13) can generate alerts.
+/// E5 excluded per AP-77 (requires CausalDirection).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DivergenceAlert {
     /// ID of the recent memory showing divergence.
@@ -310,8 +314,8 @@ mod tests {
 
     #[test]
     fn test_divergence_spaces_count() {
-        assert_eq!(DIVERGENCE_SPACES.len(), 7);
-        println!("[PASS] DIVERGENCE_SPACES has exactly 7 semantic embedders");
+        assert_eq!(DIVERGENCE_SPACES.len(), 6);
+        println!("[PASS] DIVERGENCE_SPACES has exactly 6 semantic embedders (E5 excluded per AP-77)");
     }
 
     #[test]
@@ -349,11 +353,11 @@ mod tests {
     }
 
     #[test]
-    fn test_divergence_spaces_contains_all_semantic() {
-        // Verify all 7 semantic embedders are present
+    fn test_divergence_spaces_contains_expected_semantic() {
+        // Verify all 6 divergence-eligible semantic embedders are present
+        // E5 (Causal) excluded per AP-77: requires CausalDirection for meaningful scores
         let expected = [
             Embedder::Semantic,
-            Embedder::Causal,
             Embedder::Sparse,
             Embedder::Code,
             Embedder::Multimodal,
@@ -367,7 +371,12 @@ mod tests {
                 e
             );
         }
-        println!("[PASS] DIVERGENCE_SPACES contains all 7 semantic embedders");
+        // E5 must NOT be in DIVERGENCE_SPACES
+        assert!(
+            !DIVERGENCE_SPACES.contains(&Embedder::Causal),
+            "E5 (Causal) must not be in DIVERGENCE_SPACES per AP-77"
+        );
+        println!("[PASS] DIVERGENCE_SPACES contains 6 semantic embedders (E5 excluded per AP-77)");
     }
 
     // =========================================================================
@@ -547,7 +556,7 @@ mod tests {
 
         report.add(DivergenceAlert::new(id1, Embedder::Semantic, 0.25, "low"));
         report.add(DivergenceAlert::new(id2, Embedder::Code, 0.05, "high"));  // Most severe
-        report.add(DivergenceAlert::new(id3, Embedder::Causal, 0.15, "medium"));
+        report.add(DivergenceAlert::new(id3, Embedder::Sparse, 0.15, "medium"));
 
         let most_severe = report.most_severe().unwrap();
         assert_eq!(most_severe.similarity_score, 0.05);
@@ -561,7 +570,7 @@ mod tests {
 
         report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Semantic, 0.25, "a"));
         report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Code, 0.05, "b"));
-        report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Causal, 0.15, "c"));
+        report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Sparse, 0.15, "c"));
 
         report.sort_by_severity();
 
@@ -596,7 +605,7 @@ mod tests {
         report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Code, 0.08, "h2"));
 
         // 1 medium (0.10 <= score < 0.20)
-        report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Causal, 0.15, "m1"));
+        report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Multimodal, 0.15, "m1"));
 
         // 2 low (score >= 0.20)
         report.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Sparse, 0.22, "l1"));
@@ -709,8 +718,18 @@ mod tests {
     #[test]
     fn test_arch_10_divergence_semantic_only() {
         // ARCH-10: Divergence detection uses SEMANTIC embedders only
+        // Exception: E5 (Causal) is Semantic but excluded per AP-77 because
+        // compute_embedder_scores_sync returns 0.0 without CausalDirection
         for embedder in Embedder::all() {
             let cat = category_for(embedder);
+            if embedder == Embedder::Causal {
+                // AP-77 exception: E5 is semantic but not usable for divergence
+                assert!(
+                    !DIVERGENCE_SPACES.contains(&embedder),
+                    "E5 (Causal) must NOT be in DIVERGENCE_SPACES per AP-77"
+                );
+                continue;
+            }
             if cat.used_for_divergence_detection() {
                 assert!(
                     DIVERGENCE_SPACES.contains(&embedder),
@@ -725,7 +744,7 @@ mod tests {
                 );
             }
         }
-        println!("[PASS] ARCH-10 compliance verified: DIVERGENCE_SPACES matches category.used_for_divergence_detection()");
+        println!("[PASS] ARCH-10 compliance verified (with AP-77 E5 exclusion)");
     }
 
     #[test]

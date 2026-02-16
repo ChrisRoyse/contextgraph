@@ -136,9 +136,12 @@ impl EmbedderCategory {
         (7, 3, 2, 1) // Total = 13
     }
 
-    /// Returns whether embedders in this category are used for divergence detection.
+    /// Returns whether embedders in this category are eligible for divergence detection.
     ///
     /// Per ARCH-10, only SEMANTIC embedders are used for divergence detection.
+    /// Note: E5 (Causal) is Semantic but excluded from DIVERGENCE_SPACES per
+    /// AP-77 (requires CausalDirection for meaningful scores). Use
+    /// `used_for_divergence` on `Embedder` for the precise check.
     #[inline]
     pub const fn used_for_divergence_detection(&self) -> bool {
         matches!(self, EmbedderCategory::Semantic)

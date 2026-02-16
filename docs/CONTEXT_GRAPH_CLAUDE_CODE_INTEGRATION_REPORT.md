@@ -1,1214 +1,287 @@
-# Context Graph x Claude Code Integration Report
+# Context Graph x Claude Code Integration Task
 
-## Unlocking 55 MCP Tools via Hooks & Skills
+## IMPLEMENTATION TASK for AI Agent with Fresh Context Window
 
-**Date**: 2026-02-15
-**System**: Context Graph MCP Server (13-embedder, 55-tool memory system)
-**Target**: Claude Code CLI Hook System + Skills Framework
-
----
-
-## Table of Contents
-
-1. [Executive Summary](#1-executive-summary)
-2. [Memory System Capabilities Overview](#2-memory-system-capabilities-overview)
-3. [Hook Integration Architecture](#3-hook-integration-architecture)
-4. [Hook Designs by Lifecycle Event](#4-hook-designs-by-lifecycle-event)
-5. [Skill Designs for Domain Specialization](#5-skill-designs-for-domain-specialization)
-6. [High-Value Automation Workflows](#6-high-value-automation-workflows)
-7. [Advanced Patterns](#7-advanced-patterns)
-8. [Configuration Reference](#8-configuration-reference)
-9. [Implementation Priorities](#9-implementation-priorities)
+**Date**: 2026-02-16 | **Branch**: `ccintegration` | **Status**: HOOKS + SKILLS + SETTINGS NEED REWRITE
+**Project Root**: `/home/cabdru/contextgraph`
 
 ---
 
-## 1. Executive Summary
+## 0. WHAT THIS DOCUMENT IS
 
-The Context Graph MCP server exposes **55 tools** across **17 categories** backed by a **13-embedder memory system** that captures semantic, temporal, causal, structural, and lexical dimensions of every piece of information stored. When connected to Claude Code's hook system (10 lifecycle events) and skills framework (auto-triggered domain expertise), this creates an **ambient intelligence layer** that:
+This is a **self-contained task document** for an AI agent that knows nothing about this project. It describes:
+1. What the Context Graph system IS (section 1)
+2. What CURRENTLY EXISTS in the codebase (section 2)
+3. What is WRONG with the current integration (section 3)
+4. Exactly WHAT to build (section 4)
+5. Verification requirements (section 5)
 
-- **Remembers everything** across sessions, projects, and conversations
-- **Understands causality** — why changes were made, what broke what
-- **Detects blind spots** — finds what semantic search alone misses
-- **Tracks entities** — knows which technologies, frameworks, and concepts are related
-- **Discovers topics** — automatically clusters work into emergent themes
-- **Provides provenance** — full audit trail from memory to source
-- **Reasons about code** — dedicated code embeddings understand patterns beyond text
-
-**Key insight**: Hooks provide the **when** (lifecycle automation), skills provide the **what** (domain expertise), and the 55 MCP tools provide the **how** (13-dimensional memory operations). Together they create a system where Claude Code accumulates and leverages institutional knowledge automatically.
+**Rule**: ASSUME EVERYTHING IN THIS DOCUMENT COULD BE WRONG. Verify file paths, parameter names, and tool names against the actual source code before writing any code. The source of truth is always the Rust source in `crates/`.
 
 ---
 
-## 2. Memory System Capabilities Overview
+## 1. SYSTEM OVERVIEW
 
-### 2.1 The 13-Embedder Stack
+### 1.1 What Context Graph IS
 
-Each memory is embedded across 13 independent spaces — NO fusion. This preserves 100% of information (vs. 33% with fusion) and enables per-space reasoning.
+A Rust MCP server that stores memories in RocksDB with embeddings across 13 independent spaces. Each memory gets embedded by ALL 13 embedders simultaneously. Search can use any combination of embedder spaces.
 
-| ID | Name | Dim | What It Captures | Automation Value |
-|----|------|-----|------------------|------------------|
-| E1 | Semantic | 1024D | General meaning (e5-large-v2) | Foundation for all search |
-| E2 | Freshness | 512D | Recency (exponential decay) | "What did I just work on?" |
-| E3 | Periodic | 512D | Cyclical patterns (Fourier) | "What do I do on Fridays?" |
-| E4 | Positional | 512D | Conversation order (sinusoidal PE) | Session context retrieval |
-| E5 | Causal | 768D | Cause→effect direction (asymmetric) | "Why did this break?" |
-| E6 | Keyword | 30K sparse | Exact term matching (SPLADE) | Precise identifier lookup |
-| E7 | Code | 1536D | Source code patterns (Qodo) | Function/pattern similarity |
-| E8 | Graph | 384D | Structural connectivity (asymmetric) | Dependency chain traversal |
-| E9 | HDC | 1024D | Noise-robust (hyperdimensional) | Typo-tolerant, blind spot detection |
-| E10 | Paraphrase | 768D | Semantic equivalence (asymmetric) | Deduplication, rephrasing |
-| E11 | Entity | 768D | Entity relationships (KEPLER/TransE) | Technology stack reasoning |
-| E12 | ColBERT | 128D/tok | Token-level precision (MaxSim) | Fine-grained reranking |
-| E13 | SPLADE | 30K sparse | Keyword expansion | Fast recall stage |
+**Key binaries** (from `Cargo.toml` `[[bin]]` entries):
+- `context-graph-mcp` — MCP JSON-RPC server (stdio or TCP transport) — crate: `crates/context-graph-mcp`
+- `context-graph-cli` — CLI for hooks, memory commands, topics — crate: `crates/context-graph-cli`
 
-### 2.2 Search Strategies
+### 1.2 Workspace Crates (11 total)
 
-| Strategy | Speed | Precision | Best For |
-|----------|-------|-----------|----------|
-| e1_only | <10ms | Good | Quick semantic lookup |
-| multi_space | <60ms | Excellent | General queries (default) |
-| pipeline | <60ms | Best | Complex queries needing precision |
-| embedder_first | <20ms | Targeted | Single-perspective exploration |
+```
+crates/
+├── context-graph-mcp/          # MCP server, 55 tools, TCP/stdio
+├── context-graph-cli/          # CLI binary, hooks, memory commands
+├── context-graph-core/         # Domain types, traits, HNSW
+├── context-graph-storage/      # RocksDB backend, 50+ CFs
+├── context-graph-embeddings/   # 13 embedder models, ONNX/Candle
+├── context-graph-cuda/         # CUDA ops, HDBSCAN, Poincare
+├── context-graph-graph/        # Graph structures, traversal
+├── context-graph-benchmark/    # Performance benchmarks
+├── context-graph-causal-agent/ # LLM causal discovery
+├── context-graph-graph-agent/  # LLM graph discovery
+└── context-graph-test-utils/   # Shared test helpers
+```
 
-### 2.3 Weight Profiles (14 Built-in + Custom)
+### 1.3 The 13 Embedders
 
-Profiles control how embedders are blended during multi_space search:
+| ID | Name | Dim | What It Captures | Asymmetric |
+|----|------|-----|------------------|------------|
+| E1 | Semantic | 1024D | General meaning (e5-large-v2) | No |
+| E2 | Freshness | 512D | Recency (exponential decay) | No |
+| E3 | Periodic | 512D | Cyclical patterns (Fourier) | No |
+| E4 | Positional | 512D | Conversation order | No |
+| E5 | Causal | 768D | Cause→effect direction | **Yes** (cause→effect 1.2x, effect→cause 0.8x) |
+| E6 | Keyword | 30K sparse | Exact term matching (SPLADE) | No |
+| E7 | Code | 1536D | Source code patterns (Qodo) | No |
+| E8 | Graph | 1024D | Structural connectivity | **Yes** (source→target 1.2x) |
+| E9 | HDC | 1024D | Noise-robust (hyperdimensional) | No |
+| E10 | Paraphrase | 768D | Semantic equivalence | **Yes** (doc→query asymmetric) |
+| E11 | Entity | 768D | Entity relationships (KEPLER/TransE) | No |
+| E12 | ColBERT | 128D/tok | Token-level precision (MaxSim) | No |
+| E13 | SPLADE | 30K sparse | Keyword expansion | No |
 
-| Profile | Primary Embedders | Use Case |
-|---------|-------------------|----------|
-| semantic_search | E1 (0.33) | General purpose (default) |
-| causal_reasoning | E1 (0.40), E5 (0.10) | "Why" questions |
-| code_search | E7 (0.40), E1 (0.20) | Code patterns |
-| fact_checking | E11 (0.40), E6 | Entity verification |
-| graph_reasoning | E8 (0.40) | Dependency analysis |
-| temporal_navigation | E2-E4 (0.22 each) | Time-based queries |
-| sequence_navigation | E4 (0.55) | Conversation order |
-| conversation_history | E4 (0.35), E1 (0.30) | Session recall |
-| typo_tolerant | E9 (0.15), E1 | Fuzzy matching |
-| balanced | Equal weights | Exploratory search |
+### 1.4 MCP Tools (55 total)
 
-### 2.4 Tool Categories (55 Total)
+**Source of truth**: `crates/context-graph-mcp/src/tools/names.rs`
 
-| Category | Tools | Key Capabilities |
-|----------|-------|------------------|
-| Core | 4 | store, search, status, consolidate |
-| Topic Detection | 4 | portfolio, stability, detection, divergence |
-| Memory Curation | 3 | merge, forget, boost importance |
-| File Watcher | 4 | list, stats, delete, reconcile |
-| Session/Conversation | 4 | context, timeline, traversal, comparison |
-| Causal Reasoning | 4 | search causes, effects, chains, relationships |
-| Causal Discovery | 2 | LLM-powered analysis, status |
-| Keyword Search | 1 | E6 sparse + E13 expansion |
-| Code Search | 1 | E7 code patterns |
-| Graph Reasoning | 4 | connections, paths, discovery, validation |
-| Blind Spot Detection | 1 | E9 noise-robust discovery |
-| Entity Tools | 6 | extract, search, infer, find, validate, graph |
-| Embedder-First Search | 7 | per-embedder, clusters, compare, fingerprint |
-| Temporal Search | 2 | recency boost, periodic patterns |
-| Graph Linking | 4 | neighbors, typed edges, traversal, unified |
-| Provenance | 3 | audit trail, merge history, provenance chain |
-| Maintenance | 1 | repair causal relationships |
+All tool names as constants (these are the EXACT names the MCP server exposes):
+
+| Category | Tools |
+|----------|-------|
+| Core (4) | `store_memory`, `get_memetic_status`, `search_graph`, `trigger_consolidation` |
+| Topic (4) | `get_topic_portfolio`, `get_topic_stability`, `detect_topics`, `get_divergence_alerts` |
+| Curation (3) | `merge_concepts`, `forget_concept`, `boost_importance` |
+| File Watcher (4) | `list_watched_files`, `get_file_watcher_stats`, `delete_file_content`, `reconcile_files` |
+| Sequence (4) | `get_conversation_context`, `get_session_timeline`, `traverse_memory_chain`, `compare_session_states` |
+| Causal (4) | `search_causes`, `search_effects`, `get_causal_chain`, `search_causal_relationships` |
+| Causal Discovery (2) | `trigger_causal_discovery`, `get_causal_discovery_status` |
+| Maintenance (1) | `repair_causal_relationships` |
+| Graph (2) | `search_connections`, `get_graph_path` |
+| Graph Discovery (2) | `discover_graph_relationships`, `validate_graph_link` |
+| Keyword (1) | `search_by_keywords` |
+| Code (1) | `search_code` |
+| Robustness (1) | `search_robust` |
+| Entity (6) | `extract_entities`, `search_by_entities`, `infer_relationship`, `find_related_entities`, `validate_knowledge`, `get_entity_graph` |
+| Embedder Search (7) | `search_by_embedder`, `get_embedder_clusters`, `compare_embedder_views`, `list_embedder_indexes`, `get_memory_fingerprint`, `create_weight_profile`, `search_cross_embedder_anomalies` |
+| Temporal (2) | `search_recent`, `search_periodic` |
+| Graph Linking (4) | `get_memory_neighbors`, `get_typed_edges`, `traverse_graph`, `get_unified_neighbors` |
+| Provenance (3) | `get_audit_trail`, `get_merge_history`, `get_provenance_chain` |
+
+### 1.5 Key `search_graph` Parameters
+
+**Source of truth**: `crates/context-graph-mcp/src/tools/definitions/core.rs`
+
+```
+Required: query (string)
+Optional:
+  topK: integer (1-100, default 10)
+  minSimilarity: number (0-1, default 0.0)
+  includeContent: boolean (default false)
+  strategy: "e1_only" | "multi_space" | "pipeline" (default "multi_space")
+  weightProfile: one of 14 profiles (see below)
+  customWeights: object {E1: 0.4, E5: 0.3, ...} must sum to ~1.0
+  excludeEmbedders: array ["E2", "E3", "E4"]
+  includeEmbedderBreakdown: boolean (default false)
+  includeProvenance: boolean (default false)
+  enableRerank: boolean (default false) — E12 ColBERT
+  enableAsymmetricE5: boolean (default true)
+  causalDirection: "auto" | "cause" | "effect" | "none"
+  temporalWeight: number (0-1, default 0.0)
+  sessionScope: "current" | "all" | "recent"
+  sessionId: string (filter to specific session)
+  lastHours / lastDays: number
+  temporalScale: "micro" | "meso" | "macro" | "long" | "archival"
+  decayFunction: "linear" | "exponential" | "step" | "none" | "no_decay"
+```
+
+**14 Weight Profiles**: `semantic_search`, `causal_reasoning`, `code_search`, `fact_checking`, `graph_reasoning`, `temporal_navigation`, `sequence_navigation`, `conversation_history`, `category_weighted`, `typo_tolerant`, `pipeline_stage1_recall`, `pipeline_stage2_scoring`, `pipeline_full`, `balanced`
+
+### 1.6 Key `store_memory` Parameters
+
+**Source of truth**: `crates/context-graph-mcp/src/tools/definitions/core.rs`
+
+```
+Required: content (string)
+Optional:
+  rationale: string (1-1024 chars)
+  importance: number (0-1, default 0.5)
+  sessionId: string
+  operatorId: string
+```
+
+**NOTE**: `store_memory` does NOT have `sourceType`, `sourceRef`, `toolUseId`, or `filePath` parameters. Those were fictional in the old report. Source metadata is set internally by the MCP server, not by callers.
+
+### 1.7 MCP Server Transport
+
+**Source of truth**: `crates/context-graph-mcp/src/main.rs`
+
+- Default: **stdio** (standard MCP transport for Claude Code)
+- Optional: **TCP** on port 3100 (for CLI client connections)
+- Optional: **SSE** on port 3101 (Server-Sent Events)
+- **Daemon mode**: `--daemon` flag, port 3199 (shared server across terminals)
+- **Warmup**: Default `--warm-first` (blocks until models loaded), `--no-warm` for fast startup
+- CLI connects to MCP server via TCP (`crates/context-graph-cli/src/mcp_client.rs`, default `127.0.0.1:3100`)
+
+### 1.8 Search Strategies
+
+| Strategy | Embedders Used | Best For |
+|----------|---------------|----------|
+| `e1_only` | E1 only | Fast semantic lookup |
+| `multi_space` | E1+E5+E7+E8+E10+E11 via Weighted RRF | General queries (default) |
+| `pipeline` | E13 recall → E1 dense → E12 rerank | Max precision |
 
 ---
 
-## 3. Hook Integration Architecture
+## 2. WHAT CURRENTLY EXISTS
 
-### 3.1 Hook-to-Tool Mapping
+### 2.1 Current `.claude/settings.json`
 
-Claude Code hooks fire at specific lifecycle points. Each hook can call context-graph MCP tools to create an ambient memory layer.
+**Path**: `/home/cabdru/contextgraph/.claude/settings.json`
+
+The current settings.json uses `npx @claude-flow/cli@latest` for ALL hooks. This is **WRONG** — Context Graph has its own CLI (`context-graph-cli`) and should NOT depend on the claude-flow npm package for hook execution. The claude-flow hooks are for a completely different project.
+
+**Current hooks reference**:
+- `npx @claude-flow/cli@latest hooks pre-edit` ← WRONG, should use context-graph-cli
+- `npx @claude-flow/cli@latest hooks post-edit` ← WRONG
+- `npx @claude-flow/cli@latest hooks route` ← WRONG
+- `npx @claude-flow/cli@latest daemon start` ← WRONG
+- `npx @claude-flow/cli@latest hooks session-restore` ← WRONG
+
+### 2.2 Current Hook Scripts in `.claude/hooks/`
+
+6 bash scripts exist at `/home/cabdru/contextgraph/.claude/hooks/`:
+
+| Script | Calls | Status |
+|--------|-------|--------|
+| `session_start.sh` | `context-graph-cli hooks session-start --stdin --format json` | **CORRECT** — uses real CLI |
+| `user_prompt_submit.sh` | `context-graph-cli hooks prompt-submit --session-id ... --stdin true --format json` | **CORRECT** |
+| `pre_tool_use.sh` | `context-graph-cli hooks pre-tool --session-id ... --tool-name ... --fast-path true --format json` | **CORRECT** |
+| `post_tool_use.sh` | `context-graph-cli hooks post-tool --session-id ... --tool-name ... --success ... --format json` | **CORRECT** |
+| `session_end.sh` | `context-graph-cli hooks session-end --session-id ... --duration-ms ... --format json` | **CORRECT** |
+| `stop.sh` | `context-graph-cli memory capture-response --content ... --session-id ... --response-type stop_response` | **CORRECT** |
+
+**KEY FINDING**: The 6 shell scripts are CORRECT and use the real `context-graph-cli`. But the `.claude/settings.json` does NOT reference them — it references `npx @claude-flow/cli@latest` instead. **The settings.json must be rewritten to point to these existing scripts.**
+
+### 2.3 CLI Subcommands (Actual)
+
+**Source of truth**: `crates/context-graph-cli/src/main.rs` and `crates/context-graph-cli/src/commands/`
 
 ```
-SessionStart ──→ warm caches, load topic portfolio, inject session context
-    │
-UserPromptSubmit ──→ search memories for prompt context, inject relevant knowledge
-    │
-PreToolUse ──→ inject code context before edits, check entity relationships
-    │
-[Claude executes tool]
-    │
-PostToolUse ──→ capture tool results as memories, track file changes, extract entities
-    │
-Stop ──→ force continuation if important context unsaved
-    │
-SubagentStop ──→ capture subagent discoveries as shared memories
-    │
-PreCompact ──→ save critical context before context window compression
-    │
-SessionEnd ──→ consolidate memories, run dream phase, persist state
+context-graph-cli
+├── session
+│   ├── restore-identity
+│   └── persist-identity
+├── hooks
+│   ├── session-start    # SessionStart hook handler
+│   ├── pre-tool         # PreToolUse hook handler (fast path, no DB)
+│   ├── post-tool        # PostToolUse hook handler
+│   ├── prompt-submit    # UserPromptSubmit hook handler
+│   └── session-end      # SessionEnd hook handler
+├── memory
+│   ├── inject-context   # Full context injection (UserPromptSubmit, SessionStart)
+│   ├── inject-brief     # Brief context (PreToolUse, <200 tokens)
+│   ├── capture-memory   # Store hook description as memory (PostToolUse)
+│   └── capture-response # Store Claude response as memory (Stop)
+├── topic
+│   ├── portfolio        # Get topic portfolio
+│   └── stability        # Get stability metrics
+├── divergence
+│   └── check            # Check divergence from recent patterns
+├── setup                # Initialize hooks in .claude/
+├── warmup               # Pre-load embedding models into VRAM
+└── watch                # Watch directory for markdown changes
 ```
 
-### 3.2 Data Flow
+### 2.4 CLI→MCP Communication
 
-```
-User Prompt → [UserPromptSubmit hook]
-                ├── search_graph(query=prompt, strategy=multi_space)
-                ├── search_causes(query=prompt)  # if "why/because/broke" detected
-                ├── search_code(query=prompt)     # if code-related
-                └── Returns: systemMessage with relevant context
+The CLI connects to the MCP server via **TCP on port 3100**. The MCP client is in `crates/context-graph-cli/src/mcp_client.rs`. It sends JSON-RPC 2.0 requests.
 
-Claude Response → [PostToolUse hook on Write/Edit]
-                    ├── store_memory(content=description, importance=0.7)
-                    ├── extract_entities(text=file_content)
-                    └── detect_topics(force=false)
+**CRITICAL**: The CLI does NOT have `context-graph-cli mcp call <tool_name>` as a generic command. Instead, it has specific subcommands (hooks, memory, topic, divergence) that internally call MCP tools via TCP. The old report's references to `context-graph-cli mcp call store_memory` are **FICTIONAL**.
 
-Session End → [SessionEnd hook]
-               ├── trigger_consolidation(strategy=similarity, min_similarity=0.85)
-               ├── detect_topics(force=true)
-               └── reconcile_files(dry_run=false)
-```
+### 2.5 Existing Skills in `.claude/skills/`
+
+35 skill directories exist, but they are ALL for the `claude-flow` npm package, NOT for Context Graph. They include skills like `agentdb-advanced`, `swarm-orchestration`, `v3-core-implementation`, etc. **None of these are Context Graph memory skills.**
+
+### 2.6 What Needs to Be Built
+
+The integration between Context Graph and Claude Code requires:
+
+1. **Rewrite `.claude/settings.json`** — Point hooks to the existing `.claude/hooks/*.sh` scripts instead of `npx @claude-flow/cli@latest`
+2. **Add missing hook scripts** — SubagentStart, SubagentStop, PostToolUseFailure, PreCompact, TaskCompleted, Notification
+3. **Create Context Graph skills** — 11 skills for domain-specific memory operations
+4. **Add `format-provenance.sh` library** — Shared provenance formatting for all hooks
+5. **Verify the complete integration end-to-end** with real data
 
 ---
 
-## 4. Hook Designs by Lifecycle Event
+## 3. DISCREPANCIES FOUND (Old Report vs Reality)
 
-### 4.1 SessionStart — Context Warm-Up
+### 3.1 CRITICAL Discrepancies
 
-**Purpose**: Load relevant context at session start so Claude has project awareness immediately.
+| # | Old Report Says | Reality | Fix |
+|---|-----------------|---------|-----|
+| D1 | Hooks call `context-graph-cli mcp call store_memory --content ... --sourceType ... --sourceRef ...` | CLI has NO `mcp call` subcommand. `store_memory` MCP tool has NO `sourceType`/`sourceRef`/`toolUseId` params. | Use existing CLI subcommands: `hooks session-start`, `hooks post-tool`, `memory capture-memory`, `memory inject-context` |
+| D2 | `settings.json` hooks point to `.claude/hooks/session-start.sh` (hyphenated) | Actual files use underscores: `session_start.sh`, `user_prompt_submit.sh`, etc. | Use actual filenames with underscores |
+| D3 | Old report shows hooks calling `search_recent`, `search_causes`, `search_effects` via CLI | CLI doesn't expose these as direct commands. They are MCP tools accessed via `memory inject-context` internally. | Don't call MCP tools directly from hooks — use CLI subcommands |
+| D4 | `settings.json` currently uses `npx @claude-flow/cli@latest` | Context Graph uses `context-graph-cli` binary, not an npm package | Rewrite settings.json to use `.claude/hooks/*.sh` scripts |
+| D5 | Old report shows `store_memory` with `--sourceType`, `--sourceRef`, `--toolUseId`, `--filePath` params | `store_memory` only accepts: `content` (required), `rationale`, `importance`, `sessionId`, `operatorId` | Remove fictional parameters from all hook designs |
+| D6 | Old report references `$CLAUDE_PROJECT_DIR/.claude/hooks/` | Hooks are at `$CLAUDE_PROJECT_DIR/.claude/hooks/` — this is correct, but scripts use underscores not hyphens | Use correct filenames |
+| D7 | Old report designs hooks that do `context-graph-cli mcp call get_topic_portfolio`, `context-graph-cli mcp call search_graph` | No generic `mcp call` command exists | Use CLI subcommands or add `mcp call` as a new CLI feature |
+| D8 | Constitution says 50 CFs | Code has evolved to 51+ | Not critical, but note discrepancy |
 
-**Script**: `hooks/session-start.sh`
-```bash
-#!/bin/bash
-# Read session source from stdin
-INPUT=$(cat)
-SOURCE=$(echo "$INPUT" | jq -r '.source // "startup"')
+### 3.2 Architecture Decision: Hook Scripts vs Direct MCP Calls
 
-# Get system status
-STATUS=$(context-graph-cli mcp call get_memetic_status 2>/dev/null)
-MEMORY_COUNT=$(echo "$STATUS" | jq -r '.fingerprint_count // 0')
+The old report designed hooks that make direct MCP tool calls via a non-existent `context-graph-cli mcp call` command. The ACTUAL architecture is:
 
-# Get topic portfolio for project awareness
-TOPICS=$(context-graph-cli mcp call get_topic_portfolio \
-  --format brief 2>/dev/null | jq -r '.topics[:5] | map(.name) | join(", ")')
-
-# Get recent memories (last session context)
-RECENT=$(context-graph-cli mcp call search_recent \
-  --query "session summary" \
-  --topK 3 \
-  --temporalScale micro \
-  --includeContent true 2>/dev/null | jq -r '.results[:3] | map(.content[:100]) | join("\n")')
-
-# Inject as system context
-cat <<EOF
-{
-  "systemMessage": "## Memory System Active\n- ${MEMORY_COUNT} memories indexed across 13 embedder spaces\n- Active topics: ${TOPICS}\n- Recent context:\n${RECENT}\n\nUse mcp__context-graph__* tools for memory operations."
-}
-EOF
+```
+Claude Code Hook Event
+  → .claude/hooks/[event]_[name].sh  (bash script)
+    → context-graph-cli [subcommand]  (compiled Rust binary)
+      → TCP JSON-RPC to MCP server on :3100  (via mcp_client.rs)
+        → MCP tool handler  (55 registered tools)
+          → RocksDB + GPU embedders
 ```
 
-**What this enables**:
-- Claude starts every session knowing the project's memory landscape
-- Active topics surface immediately (no "what were we working on?" questions)
-- Recent context from the last session carries over automatically
-- System health is verified at startup
+The CLI subcommands (`hooks session-start`, `hooks prompt-submit`, `memory inject-context`, etc.) already encapsulate the right MCP tool calls internally. The hook scripts should call these CLI subcommands, NOT attempt to call MCP tools directly.
 
 ---
 
-### 4.2 UserPromptSubmit — Intelligent Context Injection
+## 4. IMPLEMENTATION PLAN
 
-**Purpose**: Before Claude processes any prompt, search the memory system for relevant prior knowledge and inject it as system context.
+### Phase 1: Fix `.claude/settings.json` (P0 — Immediate)
 
-**Script**: `hooks/user-prompt-submit.sh`
-```bash
-#!/bin/bash
-INPUT=$(cat)
-PROMPT=$(echo "$INPUT" | jq -r '.prompt // ""')
+**Goal**: Make the existing hook scripts actually get called by Claude Code.
 
-# Skip empty or very short prompts
-if [ ${#PROMPT} -lt 10 ]; then
-  echo '{}'
-  exit 0
-fi
+**File**: `/home/cabdru/contextgraph/.claude/settings.json`
 
-# Detect query intent for profile selection
-PROFILE="semantic_search"
-if echo "$PROMPT" | grep -qiE "why|because|caused|broke|regression"; then
-  PROFILE="causal_reasoning"
-elif echo "$PROMPT" | grep -qiE "function|class|impl|def |fn |const |let |var "; then
-  PROFILE="code_search"
-elif echo "$PROMPT" | grep -qiE "when|recent|yesterday|last week|today"; then
-  PROFILE="temporal_navigation"
-elif echo "$PROMPT" | grep -qiE "connect|depend|import|require|graph"; then
-  PROFILE="graph_reasoning"
-fi
+Replace the entire `"hooks"` section. Keep the non-hooks config (`statusLine`, `permissions`, `attribution`, `claudeFlow`) as-is for now.
 
-# Search with detected profile
-RESULTS=$(context-graph-cli mcp call search_graph \
-  --query "$PROMPT" \
-  --topK 5 \
-  --strategy multi_space \
-  --weightProfile "$PROFILE" \
-  --minSimilarity 0.3 \
-  --includeContent true 2>/dev/null)
-
-MEMORIES=$(echo "$RESULTS" | jq -r '
-  .results[:5] | map(
-    "- [\(.similarity | tostring[:4])] \(.content[:150])"
-  ) | join("\n")')
-
-# Only inject if we found relevant results
-if [ -n "$MEMORIES" ] && [ "$MEMORIES" != "null" ]; then
-  cat <<EOF
-{
-  "systemMessage": "## Relevant Memories (profile: ${PROFILE})\n${MEMORIES}"
-}
-EOF
-else
-  echo '{}'
-fi
-```
-
-**What this enables**:
-- Every prompt is enriched with relevant prior knowledge
-- Profile auto-detection routes causal questions through E5, code through E7, etc.
-- Claude never "forgets" past decisions, bugs, or patterns
-- Similarity threshold prevents noise injection
-
----
-
-### 4.3 PostToolUse — Automatic Memory Capture
-
-**Purpose**: After Claude uses tools, automatically capture the work as memories for future recall.
-
-**Script**: `hooks/post-tool-use.sh`
-```bash
-#!/bin/bash
-INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
-TOOL_INPUT=$(echo "$INPUT" | jq -r '.tool_input // {}')
-TOOL_RESPONSE=$(echo "$INPUT" | jq -r '.tool_response // {}')
-
-case "$TOOL_NAME" in
-  Write|Edit)
-    # Capture file modifications as memories
-    FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // ""')
-    if [ -n "$FILE_PATH" ]; then
-      # Extract description of the change
-      if [ "$TOOL_NAME" = "Edit" ]; then
-        OLD=$(echo "$TOOL_INPUT" | jq -r '.old_string // ""' | head -c 200)
-        NEW=$(echo "$TOOL_INPUT" | jq -r '.new_string // ""' | head -c 200)
-        CONTENT="Edited ${FILE_PATH}: replaced '${OLD}' with '${NEW}'"
-      else
-        CONTENT="Wrote file: ${FILE_PATH}"
-      fi
-
-      # Store the change as a memory
-      context-graph-cli mcp call store_memory \
-        --content "$CONTENT" \
-        --importance 0.6 \
-        --rationale "Automatic capture of file modification via PostToolUse hook" \
-        2>/dev/null &
-    fi
-    ;;
-
-  Bash)
-    # Capture significant bash commands
-    CMD=$(echo "$TOOL_INPUT" | jq -r '.command // ""')
-    DESC=$(echo "$TOOL_INPUT" | jq -r '.description // ""')
-    if echo "$CMD" | grep -qE "cargo build|cargo test|npm|git commit|make"; then
-      CONTENT="Executed: ${DESC:-$CMD}"
-      context-graph-cli mcp call store_memory \
-        --content "$CONTENT" \
-        --importance 0.4 \
-        --rationale "Automatic capture of build/test command via PostToolUse hook" \
-        2>/dev/null &
-    fi
-    ;;
-
-  Task)
-    # Capture subagent task descriptions
-    TASK_DESC=$(echo "$TOOL_INPUT" | jq -r '.description // ""')
-    TASK_PROMPT=$(echo "$TOOL_INPUT" | jq -r '.prompt // ""' | head -c 500)
-    CONTENT="Spawned agent: ${TASK_DESC}. Prompt: ${TASK_PROMPT}"
-    context-graph-cli mcp call store_memory \
-      --content "$CONTENT" \
-      --importance 0.5 \
-      --rationale "Automatic capture of subagent task via PostToolUse hook" \
-      2>/dev/null &
-    ;;
-esac
-
-# Return empty (non-blocking)
-echo '{}'
-```
-
-**What this enables**:
-- Every file edit, build command, and subagent task is automatically recorded
-- Future sessions can recall "what changes were made to file X?"
-- Build/test history is searchable ("when did tests last fail?")
-- Zero manual effort — memories accumulate passively
-
----
-
-### 4.4 PreToolUse — Context-Aware Tool Augmentation
-
-**Purpose**: Before Claude edits files, inject relevant context about that file from memory.
-
-**Script**: `hooks/pre-tool-use.sh`
-```bash
-#!/bin/bash
-INPUT=$(cat)
-TOOL_NAME=$(echo "$INPUT" | jq -r '.tool_name // ""')
-TOOL_INPUT=$(echo "$INPUT" | jq -r '.tool_input // {}')
-
-case "$TOOL_NAME" in
-  Edit|Write)
-    FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // ""')
-    if [ -n "$FILE_PATH" ]; then
-      # Search for prior knowledge about this file
-      HISTORY=$(context-graph-cli mcp call search_code \
-        --query "changes to ${FILE_PATH}" \
-        --topK 3 \
-        --minScore 0.2 \
-        --includeContent true 2>/dev/null | jq -r '
-        .results[:3] | map(.content[:100]) | join("; ")')
-
-      if [ -n "$HISTORY" ] && [ "$HISTORY" != "null" ]; then
-        echo "{\"systemMessage\": \"Prior changes to ${FILE_PATH}: ${HISTORY}\"}"
-        exit 0
-      fi
-    fi
-    ;;
-esac
-
-echo '{}'
-```
-
-**What this enables**:
-- Before editing any file, Claude sees prior modifications and decisions
-- Prevents contradicting past architectural choices
-- Surfaces known issues or patterns for the target file
-
----
-
-### 4.5 Stop — Continuation for Unsaved Context
-
-**Purpose**: When Claude finishes responding, check if important context was discussed but not stored.
-
-**Script**: `hooks/stop-check.sh`
-```bash
-#!/bin/bash
-INPUT=$(cat)
-STOP_ACTIVE=$(echo "$INPUT" | jq -r '.stop_hook_active // false')
-
-# Only check on natural stops, not forced ones
-if [ "$STOP_ACTIVE" = "true" ]; then
-  echo '{"decision": "approve"}'
-  exit 0
-fi
-
-# Check if there are unstored insights from the conversation
-# This is a lightweight check — just verify recent memory capture happened
-RECENT_COUNT=$(context-graph-cli mcp call search_recent \
-  --query "session activity" \
-  --topK 1 \
-  --temporalScale micro 2>/dev/null | jq -r '.results | length')
-
-if [ "$RECENT_COUNT" = "0" ]; then
-  # No memories captured this micro-period — might want to continue
-  echo '{"decision": "block", "reason": "No memories captured this turn. Consider storing key decisions before ending.", "continue": false}'
-else
-  echo '{"decision": "approve"}'
-fi
-```
-
----
-
-### 4.6 SubagentStop — Cross-Agent Memory Sharing
-
-**Purpose**: When subagents finish, capture their findings as shared memories accessible to all future agents.
-
-**Script**: `hooks/subagent-stop.sh`
-```bash
-#!/bin/bash
-INPUT=$(cat)
-
-# Subagent results are in the transcript — we can capture a summary
-# The key value is that subagent discoveries persist across sessions
-context-graph-cli mcp call store_memory \
-  --content "Subagent completed task. Results available in transcript." \
-  --importance 0.5 \
-  --rationale "Subagent completion capture for cross-session persistence" \
-  2>/dev/null &
-
-echo '{"decision": "approve"}'
-```
-
----
-
-### 4.7 PreCompact — Save Critical Context Before Compression
-
-**Purpose**: Before Claude's context window is compressed, extract and store critical information.
-
-**Script**: `hooks/pre-compact.sh`
-```bash
-#!/bin/bash
-INPUT=$(cat)
-TRIGGER=$(echo "$INPUT" | jq -r '.trigger // "auto"')
-
-# Get current session timeline to understand what might be lost
-TIMELINE=$(context-graph-cli mcp call get_session_timeline \
-  --limit 10 \
-  --includeContent false 2>/dev/null | jq -r '.memories | length')
-
-# Store a compaction marker for session continuity
-context-graph-cli mcp call store_memory \
-  --content "Context compaction triggered (${TRIGGER}). ${TIMELINE} memories in current session timeline." \
-  --importance 0.7 \
-  --rationale "Pre-compaction marker for session continuity tracking" \
-  2>/dev/null &
-
-echo '{}'
-```
-
-**What this enables**:
-- Critical context is persisted before the context window is compressed
-- Session continuity markers help future queries find pre-compaction state
-- No loss of institutional knowledge during long sessions
-
----
-
-### 4.8 SessionEnd — Consolidation & Dream Phase
-
-**Purpose**: When a session ends, consolidate memories, detect topics, and prepare for future sessions.
-
-**Script**: `hooks/session-end.sh`
-```bash
-#!/bin/bash
-INPUT=$(cat)
-REASON=$(echo "$INPUT" | jq -r '.reason // "exit"')
-
-# 1. Run memory consolidation (merge similar memories)
-context-graph-cli mcp call trigger_consolidation \
-  --strategy similarity \
-  --max_memories 100 \
-  --min_similarity 0.85 2>/dev/null &
-
-# 2. Force topic detection to update portfolio
-context-graph-cli mcp call detect_topics \
-  --force true 2>/dev/null &
-
-# 3. Reconcile watched files (clean up orphans)
-context-graph-cli mcp call reconcile_files \
-  --dry_run false 2>/dev/null &
-
-# 4. Check for divergence (drift from recent focus)
-context-graph-cli mcp call get_divergence_alerts \
-  --lookback_hours 2 2>/dev/null > /dev/null &
-
-# 5. Store session summary
-context-graph-cli mcp call store_memory \
-  --content "Session ended (reason: ${REASON}). Consolidation and topic detection triggered." \
-  --importance 0.6 \
-  --rationale "Session boundary marker for continuity" \
-  2>/dev/null &
-
-wait
-echo '{}'
-```
-
-**What this enables**:
-- Redundant memories are merged automatically (saves storage, improves search)
-- Topic portfolio is updated with latest work themes
-- Orphaned file embeddings are cleaned up
-- Next session starts with a clean, consolidated memory state
-
----
-
-## 5. Skill Designs for Domain Specialization
-
-Skills provide on-demand domain expertise that Claude auto-triggers based on context. Each skill below leverages specific MCP tools.
-
-### 5.1 Memory Search Skill
-
-**File**: `.claude/skills/memory-search/SKILL.md`
-
-```yaml
----
-name: memory-search
-description: |
-  Semantic memory search across 13 embedding spaces with weight profiles.
-  Use for finding prior decisions, code patterns, causal chains, and entity
-  relationships. Keywords: remember, recall, previous, history, find, search,
-  memory, context, prior, past.
-allowed-tools: Read,Glob,Grep,Bash
-model: inherit
-user-invocable: true
----
-# Memory Search
-
-## Overview
-Search the context graph memory system using 13 embedder spaces with automatic
-profile selection. Finds semantic matches, causal relationships, code patterns,
-entity connections, and temporal sequences.
-
-## Instructions
-
-1. Analyze the user's query to determine search intent:
-   - Causal ("why", "because", "caused") → `causal_reasoning` profile
-   - Code ("function", "class", "impl") → `code_search` profile
-   - Temporal ("when", "recent", "yesterday") → `temporal_navigation` profile
-   - Entity ("uses", "depends on", "framework") → `fact_checking` profile
-   - General → `semantic_search` profile
-
-2. Execute the appropriate search tool:
-   - General: `mcp__context-graph__search_graph`
-   - Causal: `mcp__context-graph__search_causes` or `search_effects`
-   - Code: `mcp__context-graph__search_code`
-   - Entity: `mcp__context-graph__search_by_entities`
-   - Keyword: `mcp__context-graph__search_by_keywords`
-
-3. If initial results are insufficient, try:
-   - `mcp__context-graph__search_robust` for typo-tolerant search (E9)
-   - `mcp__context-graph__search_cross_embedder_anomalies` for blind spots
-   - `mcp__context-graph__compare_embedder_views` to see different perspectives
-
-4. Present results with similarity scores and source attribution.
-
-## Examples
-- "What did we decide about authentication?" → semantic_search profile
-- "Why did the tests break after the refactor?" → search_causes
-- "Find code similar to the parser function" → search_code with code_search profile
-- "What technologies does this project use?" → search_by_entities
-```
-
-### 5.2 Causal Reasoning Skill
-
-**File**: `.claude/skills/causal-reasoning/SKILL.md`
-
-```yaml
----
-name: causal-reasoning
-description: |
-  Causal chain analysis using asymmetric E5 embeddings. Finds causes of
-  observed effects, predicts consequences, and traces multi-hop causal chains.
-  Keywords: why, because, caused, broke, regression, root cause, effect,
-  consequence, chain, impact.
-allowed-tools: Read,Glob,Grep,Bash
-model: inherit
----
-# Causal Reasoning
-
-## Overview
-Leverages E5 asymmetric causal embeddings to perform abductive reasoning
-(find causes), predictive reasoning (find effects), and transitive chain
-analysis (trace multi-hop causality).
-
-## Instructions
-
-1. **Find causes** (abductive reasoning):
-   - Use `mcp__context-graph__search_causes` with the observed effect as query
-   - E5 applies 0.8x dampening for effect→cause direction (AP-77)
-   - Algorithm: 80% E1 semantic + 20% E5 causal scoring
-
-2. **Find effects** (predictive reasoning):
-   - Use `mcp__context-graph__search_effects` with the cause as query
-   - E5 applies 1.2x boost for cause→effect direction
-   - Useful for impact analysis before changes
-
-3. **Trace causal chains** (transitive reasoning):
-   - Use `mcp__context-graph__get_causal_chain` from an anchor memory
-   - Chains apply 0.9^hop attenuation (5 hops max)
-   - Follow forward for consequences, backward for root causes
-
-4. **Search causal relationships**:
-   - Use `mcp__context-graph__search_causal_relationships` for LLM-generated
-     causal descriptions with multi-embedder consensus (E1+E5+E8+E11)
-
-5. **Trigger discovery**:
-   - Use `mcp__context-graph__trigger_causal_discovery` to find new relationships
-   - Requires LLM feature (Hermes-2-Pro-Mistral-7B)
-
-## Examples
-- "Why did deployment fail?" → search_causes(query="deployment failure")
-- "What will break if I change the auth module?" → search_effects(query="auth module change")
-- "Trace the root cause chain from this error" → get_causal_chain(direction="backward")
-```
-
-### 5.3 Entity Intelligence Skill
-
-**File**: `.claude/skills/entity-intelligence/SKILL.md`
-
-```yaml
----
-name: entity-intelligence
-description: |
-  Entity extraction, relationship inference, and knowledge graph navigation
-  using TransE embeddings (E11 KEPLER). Tracks technologies, frameworks,
-  databases, and their relationships. Keywords: entity, technology, framework,
-  database, uses, depends, relationship, stack, architecture.
-allowed-tools: Read,Glob,Grep,Bash
-model: inherit
----
-# Entity Intelligence
-
-## Overview
-Uses E11 KEPLER embeddings trained on Wikidata5M to extract entities,
-infer relationships via TransE, and navigate the entity knowledge graph.
-
-## Instructions
-
-1. **Extract entities from text**:
-   - Use `mcp__context-graph__extract_entities` to find technologies,
-     frameworks, databases, companies, and technical terms
-   - Canonicalizes variations (postgres → postgresql, k8s → kubernetes)
-
-2. **Search by entities**:
-   - Use `mcp__context-graph__search_by_entities` with entity names
-   - Combines E1 semantic + E11 entity scores + Jaccard similarity
-   - Use matchMode "all" for intersection, "any" for union
-
-3. **Infer relationships**:
-   - Use `mcp__context-graph__infer_relationship` between two entities
-   - TransE predicts: r̂ = tail - head, matches known relations
-   - Returns ranked relation candidates with confidence scores
-
-4. **Find related entities**:
-   - Use `mcp__context-graph__find_related_entities` with a relation
-   - Outgoing: entity + relation → ? (what does X depend on?)
-   - Incoming: ? + relation → entity (what depends on X?)
-
-5. **Validate knowledge triples**:
-   - Use `mcp__context-graph__validate_knowledge` to score (subject, predicate, object)
-   - Score > -5.0 = Valid, -5.0 to -10.0 = Uncertain, < -10.0 = Invalid
-
-6. **Visualize entity graph**:
-   - Use `mcp__context-graph__get_entity_graph` centered on an entity
-   - Shows relationship edges weighted by evidence strength
-
-## Examples
-- "What technologies does this project use?" → extract_entities + search_by_entities
-- "What depends on RocksDB?" → find_related_entities(entity="rocksdb", relation="depends_on", direction="incoming")
-- "Is it true that Rust uses LLVM?" → validate_knowledge(subject="Rust", predicate="uses", object="LLVM")
-```
-
-### 5.4 Code Pattern Search Skill
-
-**File**: `.claude/skills/code-search/SKILL.md`
-
-```yaml
----
-name: code-search
-description: |
-  Code-aware search using E7 Qodo embeddings (1536D). Finds similar
-  functions, patterns, and implementations across the codebase. Supports
-  language hints and AST context. Keywords: code, function, implementation,
-  pattern, similar code, search code, find function.
-allowed-tools: Read,Glob,Grep,Bash
-model: inherit
----
-# Code Pattern Search
-
-## Overview
-Uses E7 code embeddings (1536D Qodo) to find code patterns that
-go beyond text matching. Understands code semantics independent of
-variable names or formatting.
-
-## Instructions
-
-1. **Search code patterns**:
-   - Use `mcp__context-graph__search_code` with a natural language
-     description or code snippet as query
-   - Set `languageHint` if known (rust, python, javascript, etc.)
-   - `blendWithSemantic` controls E7 vs E1 weight (default 0.4)
-
-2. **Search modes**:
-   - `semantic`: Blends E7 code + E1 semantic understanding
-   - `e7Only`: Pure code pattern matching
-   - `pipeline`: Full 5-stage precision pipeline
-
-3. **For cross-embedder code discovery**:
-   - Use `mcp__context-graph__search_cross_embedder_anomalies`
-     with highEmbedder=E7, lowEmbedder=E1
-   - Finds code patterns that semantic search misses
-
-4. **For code entity relationships**:
-   - Combine with `extract_entities` to find technology references
-   - Use `search_connections` with graph_reasoning profile for dependencies
-
-## Examples
-- "Find error handling patterns" → search_code(query="error handling pattern", languageHint="rust")
-- "Code similar to the authentication middleware" → search_code(query="authentication middleware", searchMode="semantic")
-```
-
-### 5.5 Topic Explorer Skill
-
-**File**: `.claude/skills/topic-explorer/SKILL.md`
-
-```yaml
----
-name: topic-explorer
-description: |
-  Explore emergent topic clusters, stability metrics, and divergence alerts.
-  Uses HDBSCAN clustering across semantic embedding spaces. Keywords: topics,
-  themes, clusters, portfolio, stability, divergence, drift, focus, churn.
-allowed-tools: Read,Glob,Grep,Bash
-model: inherit
----
-# Topic Explorer
-
-## Overview
-Discovers and tracks emergent topics in memory via HDBSCAN clustering.
-Monitors topic stability, phase transitions, and divergence from focus areas.
-
-## Instructions
-
-1. **View topic portfolio**:
-   - Use `mcp__context-graph__get_topic_portfolio` (brief/standard/verbose)
-   - Topics require weighted_agreement >= 2.5 across embedding spaces
-   - Phases: Emerging → Stable → Declining → Merging
-
-2. **Check stability**:
-   - Use `mcp__context-graph__get_topic_stability` with lookback hours
-   - Monitors churn rate, entropy, phase distribution
-   - High churn = rapid topic shifting; high entropy = diverse focus
-
-3. **Force topic recalculation**:
-   - Use `mcp__context-graph__detect_topics` with force=true
-   - Useful after bulk memory operations or session changes
-
-4. **Check for divergence**:
-   - Use `mcp__context-graph__get_divergence_alerts`
-   - Detects when recent work diverges from established patterns
-   - Uses SEMANTIC embedders only (E1, E5, E6, E7, E10, E12, E13)
-
-## Examples
-- "What are the main themes of this project?" → get_topic_portfolio(format="standard")
-- "Has my focus shifted recently?" → get_divergence_alerts(lookback_hours=4)
-- "How stable is the project's topic distribution?" → get_topic_stability(hours=24)
-```
-
-### 5.6 Blind Spot Detective Skill
-
-**File**: `.claude/skills/blind-spot-detective/SKILL.md`
-
-```yaml
----
-name: blind-spot-detective
-description: |
-  Finds what standard semantic search misses using E9 hyperdimensional
-  computing and cross-embedder anomaly detection. Handles typos, code
-  identifiers, and character variations. Keywords: blind spot, missing,
-  typo, fuzzy, noise, robust, overlooked, hidden.
-allowed-tools: Read,Glob,Grep,Bash
-model: inherit
----
-# Blind Spot Detective
-
-## Overview
-Uses E9 HDC embeddings for noise-robust search and cross-embedder anomaly
-detection to find memories that standard E1 semantic search misses.
-
-## Instructions
-
-1. **Noise-tolerant search**:
-   - Use `mcp__context-graph__search_robust` — typos are OK in the query
-   - Finds: authentication when you type "authetication"
-   - Finds: parse_config when you search "parseConfig"
-   - Uses E9 discovery threshold + E1 weakness threshold
-
-2. **Cross-embedder anomaly detection**:
-   - Use `mcp__context-graph__search_cross_embedder_anomalies`
-   - highEmbedder=E7, lowEmbedder=E1: Code patterns E1 misses
-   - highEmbedder=E11, lowEmbedder=E1: Entity facts E1 misses
-   - highEmbedder=E5, lowEmbedder=E1: Causal structures E1 misses
-
-3. **Compare perspectives**:
-   - Use `mcp__context-graph__compare_embedder_views` with 2-5 embedders
-   - See where embedders agree (strong signal) vs. disagree (blind spots)
-
-## Examples
-- "Find anything about authentcation" → search_robust (handles typo)
-- "What does E7 see that E1 misses?" → search_cross_embedder_anomalies
-- "Compare how different embedders see 'database optimization'" → compare_embedder_views
-```
-
-### 5.7 Session Navigator Skill
-
-**File**: `.claude/skills/session-navigator/SKILL.md`
-
-```yaml
----
-name: session-navigator
-description: |
-  Navigate conversation history, session timelines, and memory chains using
-  E4 positional embeddings. Compare session states and traverse memory
-  sequences. Keywords: session, conversation, timeline, history, previous,
-  before, after, context, turn, sequence.
-allowed-tools: Read,Glob,Grep,Bash
-model: inherit
----
-# Session Navigator
-
-## Overview
-Uses E4 positional embeddings for sequence-based memory retrieval.
-Navigate conversation timelines, compare session states, and traverse
-memory chains across turns.
-
-## Instructions
-
-1. **Get conversation context**:
-   - Use `mcp__context-graph__get_conversation_context`
-   - direction: "before" (prior turns), "after" (later), "both" (surrounding)
-   - Supports semantic filtering with query parameter
-
-2. **View session timeline**:
-   - Use `mcp__context-graph__get_session_timeline`
-   - Filter by sourceTypes: HookDescription, ClaudeResponse, Manual, MDFileChunk
-   - Ordered by session_sequence position
-
-3. **Traverse memory chains**:
-   - Use `mcp__context-graph__traverse_memory_chain`
-   - Multi-hop traversal from anchor memory
-   - Traces conversation evolution across turns
-
-4. **Compare session states**:
-   - Use `mcp__context-graph__compare_session_states`
-   - Compare memory state at different sequence points
-   - Shows topic changes and memory count differences
-
-## Examples
-- "What was discussed before the refactor?" → get_conversation_context(direction="before")
-- "Show me the session timeline" → get_session_timeline(limit=20, includeContent=true)
-- "How has the topic shifted since the start?" → compare_session_states(beforeSequence="start", afterSequence="current")
-```
-
-### 5.8 Provenance Auditor Skill
-
-**File**: `.claude/skills/provenance-auditor/SKILL.md`
-
-```yaml
----
-name: provenance-auditor
-description: |
-  Full audit trail, merge lineage, and provenance chain tracking. Traces
-  any memory back to its source with operator attribution, embedding
-  versions, and importance history. Keywords: audit, provenance, history,
-  who, when, trace, lineage, source, origin, attribution.
-allowed-tools: Read,Glob,Grep,Bash
-model: inherit
----
-# Provenance Auditor
-
-## Overview
-Provides complete provenance tracking from memory to source, including
-audit logs, merge history, operator attribution, and embedding versions.
-
-## Instructions
-
-1. **Query audit trail**:
-   - Use `mcp__context-graph__get_audit_trail` with target_id or time range
-   - Shows: operation, operator, session, rationale, result, timestamp
-   - Chronological operation history
-
-2. **View merge history**:
-   - Use `mcp__context-graph__get_merge_history` for merge lineage
-   - Shows: source_ids, strategy, operator, timestamp
-   - Tracks which memories were combined and why
-
-3. **Full provenance chain**:
-   - Use `mcp__context-graph__get_provenance_chain` for complete lineage
-   - Includes: source_type, file_path, chunk_info, operator_attribution
-   - Optional: audit trail, embedding versions, importance history
-
-## Examples
-- "Who created this memory and when?" → get_provenance_chain(memory_id=..., include_audit=true)
-- "What operations were performed on this memory?" → get_audit_trail(target_id=...)
-- "What memories were merged to create this one?" → get_merge_history(memory_id=...)
-```
-
-### 5.9 Memory Curator Skill
-
-**File**: `.claude/skills/memory-curator/SKILL.md`
-
-```yaml
----
-name: memory-curator
-description: |
-  Curate memory graph: merge duplicates, adjust importance, soft-delete
-  irrelevant memories, consolidate clusters, and create custom weight
-  profiles. Keywords: merge, delete, boost, importance, consolidate,
-  clean, curate, deduplicate, weight, profile.
-allowed-tools: Read,Glob,Grep,Bash
-model: inherit
----
-# Memory Curator
-
-## Overview
-Curate the memory graph by merging similar concepts, adjusting importance
-scores, soft-deleting irrelevant memories, and creating custom search profiles.
-
-## Instructions
-
-1. **Merge similar memories**:
-   - Use `mcp__context-graph__merge_concepts` with 2-10 source_ids
-   - Strategies: union (combine all), intersection (shared only), weighted_average
-   - 30-day reversal window via reversal_hash
-
-2. **Adjust importance**:
-   - Use `mcp__context-graph__boost_importance` with delta (-1.0 to 1.0)
-   - Final value clamped to [0.0, 1.0]
-   - Higher importance = stronger influence in search results
-
-3. **Soft-delete memories**:
-   - Use `mcp__context-graph__forget_concept` with soft_delete=true
-   - 30-day recovery window per SEC-06
-   - Persists to RocksDB (survives restarts)
-
-4. **Trigger consolidation**:
-   - Use `mcp__context-graph__trigger_consolidation`
-   - Strategies: similarity, temporal, semantic
-   - Default min_similarity: 0.85 (merge only very similar memories)
-
-5. **Create custom weight profiles**:
-   - Use `mcp__context-graph__create_weight_profile`
-   - Define per-embedder weights (E1-E13, sum ~1.0)
-   - Session-scoped, reusable in search_graph calls
-
-## Examples
-- "Merge these duplicate bug reports" → merge_concepts(source_ids=[...], strategy="union")
-- "This memory is important, boost it" → boost_importance(node_id=..., delta=0.3)
-- "Delete this irrelevant memory" → forget_concept(node_id=..., soft_delete=true)
-- "Create a profile focused on code and entities" → create_weight_profile(...)
-```
-
-### 5.10 Graph Navigator Skill
-
-**File**: `.claude/skills/graph-navigator/SKILL.md`
-
-```yaml
----
-name: graph-navigator
-description: |
-  Navigate the knowledge graph via K-NN neighbors, typed edges, multi-hop
-  traversal, and unified multi-embedder consensus. Explore how memories
-  connect across semantic, causal, code, and entity dimensions.
-  Keywords: graph, neighbors, edges, traverse, connections, path, linked,
-  related, dependency, network.
-allowed-tools: Read,Glob,Grep,Bash
-model: inherit
----
-# Graph Navigator
-
-## Overview
-Navigate the knowledge graph using K-NN neighbors, typed edges, and
-multi-hop traversal across all 13 embedder spaces.
-
-## Instructions
-
-1. **Find neighbors in specific space**:
-   - Use `mcp__context-graph__get_memory_neighbors` with embedder_id (0-12)
-   - 0=E1 semantic, 6=E7 code, 10=E11 entity, etc.
-
-2. **Get typed edges**:
-   - Use `mcp__context-graph__get_typed_edges`
-   - Types: semantic_similar, code_related, entity_shared, causal_chain,
-     graph_connected, paraphrase_aligned, keyword_overlap, multi_agreement
-
-3. **Multi-hop traversal**:
-   - Use `mcp__context-graph__traverse_graph` following typed edges
-   - Max 5 hops, filtered by edge weight threshold
-
-4. **Unified multi-embedder neighbors**:
-   - Use `mcp__context-graph__get_unified_neighbors` for consensus ranking
-   - Uses Weighted RRF across all 13 embedders
-   - Supports weight profiles and custom weights
-
-5. **Find connections**:
-   - Use `mcp__context-graph__search_connections` with asymmetric E8
-   - Direction: source (what points TO), target (what points FROM), both
-
-6. **Build graph paths**:
-   - Use `mcp__context-graph__get_graph_path` for multi-hop exploration
-   - Hop attenuation: 0.9^hop for distance scoring
-
-## Examples
-- "What's related to this memory in code space?" → get_memory_neighbors(embedder_id=6)
-- "Show causal edges from this memory" → get_typed_edges(edge_type="causal_chain")
-- "Traverse 3 hops following entity connections" → traverse_graph(max_hops=3, edge_type="entity_shared")
-```
-
----
-
-## 6. High-Value Automation Workflows
-
-### 6.1 Regression Root-Cause Analysis
-
-**Trigger**: User reports "tests broke after the refactor"
-
-```
-UserPromptSubmit hook detects "broke"/"regression" keywords
-  → search_causes(query="tests broke after refactor", topK=10)
-  → get_causal_chain(anchorId=most_relevant_result, direction="backward", maxHops=5)
-  → search_code(query="recent refactor changes", languageHint="rust")
-  → Injects: causal chain + recent changes + prior test states
-```
-
-**Value**: Claude immediately knows the likely root cause before even looking at code.
-
-### 6.2 Architecture Decision Memory
-
-**Trigger**: Every Edit/Write to architecture-related files
-
-```
-PostToolUse hook captures file changes
-  → store_memory(content="Changed auth from session to JWT", importance=0.8)
-  → extract_entities(text=file_content)
-  → validate_knowledge(subject="project", predicate="uses", object="JWT")
-
-Future session: "Why did we switch to JWT?"
-  → search_causes(query="switched to JWT") returns the original decision memory
-```
-
-**Value**: Architecture decisions are permanently recorded with causal context.
-
-### 6.3 Continuous Learning Loop
-
-```
-SessionStart → get_topic_portfolio() → inject active themes
-  → Claude knows what the project is about
-
-During session → PostToolUse captures every change
-  → Memories accumulate with temporal ordering
-
-UserPromptSubmit → search_graph() enriches every prompt
-  → Claude has full prior context
-
-SessionEnd → trigger_consolidation() + detect_topics()
-  → Memories merged, topics updated, ready for next session
-```
-
-**Value**: Each session builds on all previous sessions. Knowledge compounds.
-
-### 6.4 Code Review with Institutional Memory
-
-**Trigger**: Claude reviews a PR or code change
-
-```
-PreToolUse (Read on file) → search_code(query=file_path)
-  → Prior changes, known issues, patterns for this file
-
-search_causes(query="bugs in this module")
-  → Known failure modes for the area being changed
-
-search_by_entities(entities=["affected_framework"])
-  → Framework-specific best practices from memory
-
-compare_embedder_views(query="code change", embedders=["E1","E7","E11"])
-  → Multi-perspective analysis (semantic + code + entity)
-```
-
-**Value**: Code reviews incorporate institutional knowledge, not just current diff.
-
-### 6.5 Blind Spot Discovery Workflow
-
-**Trigger**: Periodic (every N sessions) or on-demand
-
-```
-search_robust(query="edge cases") → typo-tolerant discovery
-search_cross_embedder_anomalies(highEmbedder=E7, lowEmbedder=E1)
-  → Code patterns semantic search misses
-search_cross_embedder_anomalies(highEmbedder=E5, lowEmbedder=E1)
-  → Causal structures not captured semantically
-get_divergence_alerts(lookback_hours=24)
-  → Drift from established patterns
-```
-
-**Value**: Systematic discovery of what you don't know you don't know.
-
-### 6.6 Technology Stack Intelligence
-
-**Trigger**: Questions about project dependencies or architecture
-
-```
-extract_entities(text=query) → identify referenced technologies
-find_related_entities(entity="rust", relation="uses")
-  → What the project uses Rust for
-get_entity_graph(centerEntity="rocksdb", maxDepth=2)
-  → Full dependency graph around RocksDB
-validate_knowledge(subject="project", predicate="depends_on", object="tokio")
-  → Verify dependency claims
-```
-
-**Value**: Instant technology stack intelligence without grepping code.
-
----
-
-## 7. Advanced Patterns
-
-### 7.1 Multi-Profile Search Cascade
-
-For critical queries, search with multiple profiles and merge results:
-
-```bash
-# In a skill or hook script
-SEMANTIC=$(context-graph-cli mcp call search_graph --query "$Q" --weightProfile semantic_search --topK 5)
-CAUSAL=$(context-graph-cli mcp call search_graph --query "$Q" --weightProfile causal_reasoning --topK 5)
-CODE=$(context-graph-cli mcp call search_graph --query "$Q" --weightProfile code_search --topK 5)
-# Merge and deduplicate results, present diverse perspectives
-```
-
-### 7.2 Dream Phase Automation
-
-Triggered when topic entropy exceeds threshold (e.g., end of sprint):
-
-```bash
-# NREM: Consolidate high-importance patterns
-context-graph-cli mcp call trigger_consolidation --strategy similarity --min_similarity 0.80
-
-# REM: Discover blind spots via random walk
-context-graph-cli mcp call search_robust --query "unresolved issues" --topK 20
-context-graph-cli mcp call get_divergence_alerts --lookback_hours 48
-
-# Update portfolio
-context-graph-cli mcp call detect_topics --force true
-```
-
-### 7.3 Temporal Pattern Mining
-
-Use E2/E3 temporal embeddings to discover work patterns:
-
-```bash
-# What do I work on Monday mornings?
-context-graph-cli mcp call search_periodic \
-  --query "coding tasks" --targetDayOfWeek 1 --targetHour 9
-
-# What was the focus last week?
-context-graph-cli mcp call search_recent \
-  --query "main focus" --temporalScale macro --temporalWeight 0.7
-```
-
-### 7.4 Embedder Fingerprint Analysis
-
-Compare how a specific memory looks across all 13 spaces:
-
-```bash
-# Get full fingerprint
-context-graph-cli mcp call get_memory_fingerprint --memoryId $ID --includeVectorNorms true
-
-# Compare with another memory's fingerprint to understand relationship
-context-graph-cli mcp call get_memory_neighbors --memory_id $ID --embedder_id 4  # E5 causal
-context-graph-cli mcp call get_memory_neighbors --memory_id $ID --embedder_id 6  # E7 code
-context-graph-cli mcp call get_memory_neighbors --memory_id $ID --embedder_id 10 # E11 entity
-```
-
-### 7.5 Custom Weight Profile for Domain
-
-Create specialized profiles for specific project domains:
-
-```bash
-# Security-focused profile
-context-graph-cli mcp call create_weight_profile \
-  --name "security_audit" \
-  --weights '{"E1":0.20,"E5":0.15,"E6":0.15,"E7":0.20,"E8":0.10,"E9":0.05,"E11":0.15}' \
-  --description "Security audit: code patterns + entity relationships + keyword precision"
-```
-
----
-
-## 8. Configuration Reference
-
-### 8.1 Complete Hook Configuration
-
-**File**: `.claude/settings.json`
+**New hooks configuration**:
 
 ```json
 {
@@ -1218,7 +291,7 @@ context-graph-cli mcp call create_weight_profile \
         "hooks": [
           {
             "type": "command",
-            "command": "./hooks/session-start.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session_start.sh",
             "timeout": 5000
           }
         ]
@@ -1229,7 +302,7 @@ context-graph-cli mcp call create_weight_profile \
         "hooks": [
           {
             "type": "command",
-            "command": "./hooks/user-prompt-submit.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/user_prompt_submit.sh",
             "timeout": 3000
           }
         ]
@@ -1237,12 +310,12 @@ context-graph-cli mcp call create_weight_profile \
     ],
     "PreToolUse": [
       {
-        "matcher": "Edit|Write",
+        "matcher": "Edit|Write|Read|Bash|Task",
         "hooks": [
           {
             "type": "command",
-            "command": "./hooks/pre-tool-use.sh",
-            "timeout": 2000
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre_tool_use.sh",
+            "timeout": 1000
           }
         ]
       }
@@ -1253,19 +326,33 @@ context-graph-cli mcp call create_weight_profile \
         "hooks": [
           {
             "type": "command",
-            "command": "./hooks/post-tool-use.sh",
-            "timeout": 3000
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post_tool_use.sh",
+            "timeout": 5000,
+            "async": true
           }
         ]
       }
     ],
-    "Stop": [
+    "PostToolUseFailure": [
+      {
+        "matcher": "Write|Edit|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/post_tool_use_failure.sh",
+            "timeout": 5000,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "SubagentStart": [
       {
         "hooks": [
           {
             "type": "command",
-            "command": "./hooks/stop-check.sh",
-            "timeout": 2000
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/subagent_start.sh",
+            "timeout": 3000
           }
         ]
       }
@@ -1275,7 +362,19 @@ context-graph-cli mcp call create_weight_profile \
         "hooks": [
           {
             "type": "command",
-            "command": "./hooks/subagent-stop.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/subagent_stop.sh",
+            "timeout": 5000,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/stop.sh",
             "timeout": 3000
           }
         ]
@@ -1283,11 +382,10 @@ context-graph-cli mcp call create_weight_profile \
     ],
     "PreCompact": [
       {
-        "matcher": "auto",
         "hooks": [
           {
             "type": "command",
-            "command": "./hooks/pre-compact.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/pre_compact.sh",
             "timeout": 5000
           }
         ]
@@ -1298,8 +396,32 @@ context-graph-cli mcp call create_weight_profile \
         "hooks": [
           {
             "type": "command",
-            "command": "./hooks/session-end.sh",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/session_end.sh",
             "timeout": 30000
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/notification.sh",
+            "timeout": 3000,
+            "async": true
+          }
+        ]
+      }
+    ],
+    "TaskCompleted": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/task_completed.sh",
+            "timeout": 5000,
+            "async": true
           }
         ]
       }
@@ -1308,117 +430,421 @@ context-graph-cli mcp call create_weight_profile \
 }
 ```
 
-### 8.2 Skills Directory Structure
+### Phase 2: Create Missing Hook Scripts (P0)
 
-```
-.claude/skills/
-├── memory-search/
-│   └── SKILL.md
-├── causal-reasoning/
-│   └── SKILL.md
-├── entity-intelligence/
-│   └── SKILL.md
-├── code-search/
-│   └── SKILL.md
-├── topic-explorer/
-│   └── SKILL.md
-├── blind-spot-detective/
-│   └── SKILL.md
-├── session-navigator/
-│   └── SKILL.md
-├── provenance-auditor/
-│   └── SKILL.md
-├── memory-curator/
-│   └── SKILL.md
-└── graph-navigator/
-│   └── SKILL.md
+**Location**: `/home/cabdru/contextgraph/.claude/hooks/`
+
+6 scripts already exist (`session_start.sh`, `user_prompt_submit.sh`, `pre_tool_use.sh`, `post_tool_use.sh`, `session_end.sh`, `stop.sh`). Create 6 new ones:
+
+#### 2a. `post_tool_use_failure.sh`
+
+Captures failure patterns. Calls `context-graph-cli memory capture-memory` with failure context.
+
+**Input from Claude Code** (JSON on stdin):
+```json
+{"session_id":"...", "tool_name":"...", "tool_input":{...}, "error":"...", "is_interrupt":false, "tool_use_id":"..."}
 ```
 
-### 8.3 Hook Scripts Directory
+**Logic**:
+1. Skip if `is_interrupt` is true
+2. Extract tool_name, error message
+3. Call `context-graph-cli memory capture-memory --content "FAILURE: <tool_name> - <error>" --hook-type post_tool_use_failure --tool-name <tool_name>`
+4. Exit 0 (async, non-blocking)
 
+#### 2b. `subagent_start.sh`
+
+Injects relevant context into subagent. Calls `context-graph-cli memory inject-brief` with agent context.
+
+**Input**: `{"session_id":"...", "agent_id":"...", "agent_type":"..."}`
+
+**Logic**:
+1. Extract agent_type
+2. Call `context-graph-cli memory inject-brief "subagent context for <agent_type>"`
+3. Output JSON with `additionalContext` field
+
+#### 2c. `subagent_stop.sh`
+
+Captures subagent findings. Calls `context-graph-cli memory capture-memory`.
+
+**Input**: `{"session_id":"...", "agent_id":"...", "agent_type":"...", "agent_transcript_path":"...", "stop_hook_active":false}`
+
+**Logic**:
+1. Skip if `stop_hook_active` is true
+2. Call `context-graph-cli memory capture-memory --content "Subagent <agent_type> completed" --hook-type subagent_stop`
+3. Exit 0
+
+#### 2d. `pre_compact.sh`
+
+Saves critical context before compression. Calls `context-graph-cli memory capture-memory`.
+
+**Input**: `{"session_id":"...", "trigger":"auto|manual", "custom_instructions":"..."}`
+
+**Logic**:
+1. Call `context-graph-cli memory capture-memory --content "Pre-compaction marker (trigger: <trigger>)" --hook-type pre_compact`
+2. Exit 0
+
+#### 2e. `notification.sh`
+
+Logs notification patterns. Calls `context-graph-cli memory capture-memory`.
+
+**Input**: `{"session_id":"...", "message":"...", "notification_type":"..."}`
+
+**Logic**:
+1. Only process `permission_prompt` and `idle_prompt` types
+2. Call `context-graph-cli memory capture-memory --content "Notification (<type>): <message>" --hook-type notification`
+3. Exit 0
+
+#### 2f. `task_completed.sh`
+
+Records task completion. Calls `context-graph-cli memory capture-memory`.
+
+**Input**: `{"session_id":"...", "task_id":"...", "task_subject":"..."}`
+
+**Logic**:
+1. Call `context-graph-cli memory capture-memory --content "Task completed: <task_subject>" --hook-type task_completed`
+2. Exit 0
+
+**All new scripts MUST follow the same pattern as existing scripts**:
+- `set -euo pipefail`
+- Read JSON from stdin
+- Validate JSON with `jq empty`
+- Find CLI binary (check `$CONTEXT_GRAPH_CLI`, then `./target/release/`, then `./target/debug/`, then `$HOME/.cargo/bin/`)
+- Call CLI with `timeout`
+- Handle timeout exit code 124
+- Fail fast with error JSON on stderr
+
+### Phase 3: Create `format-provenance.sh` Library (P1)
+
+**Path**: `/home/cabdru/contextgraph/.claude/hooks/lib/format-provenance.sh`
+
+This script formats MCP search results into provenance-annotated text. It takes JSON search results on stdin and outputs formatted markdown.
+
+**Input**: JSON from MCP search response
+**Output**: Formatted text with provenance per memory:
 ```
-hooks/
-├── session-start.sh        # Context warm-up, topic loading
-├── user-prompt-submit.sh   # Intelligent context injection
-├── pre-tool-use.sh         # File history injection before edits
-├── post-tool-use.sh        # Automatic memory capture
-├── stop-check.sh           # Unsaved context detection
-├── subagent-stop.sh        # Cross-agent memory sharing
-├── pre-compact.sh          # Save context before compression
-└── session-end.sh          # Consolidation & dream phase
+[MEMORY] <content summary, max 200 chars>
+  Similarity: <score> | Profile: <profile>
+  Source: <source_type> | Created: <timestamp>
+```
+
+### Phase 4: Create Context Graph Skills (P1)
+
+**Location**: `/home/cabdru/contextgraph/.claude/skills/`
+
+Create 11 NEW skill directories. Each skill has a `SKILL.md` file with YAML frontmatter.
+
+**IMPORTANT**: Skills do NOT call CLI commands directly. Skills provide instructions that Claude follows using MCP tools (`mcp__context-graph__<tool_name>`). The MCP server must be registered with Claude Code as `context-graph`.
+
+#### Skills to Create:
+
+| Skill | Directory | Key MCP Tools Used |
+|-------|-----------|-------------------|
+| context-inject | `context-inject/` | `search_graph`, `search_causes`, `search_effects` |
+| memory-search | `memory-search/` | `search_graph`, `search_code`, `search_by_keywords` |
+| causal-reasoning | `causal-reasoning/` | `search_causes`, `search_effects`, `get_causal_chain` |
+| entity-intelligence | `entity-intelligence/` | `extract_entities`, `search_by_entities`, `find_related_entities` |
+| code-search | `code-search/` | `search_code`, `search_cross_embedder_anomalies` |
+| blind-spot-detective | `blind-spot-detective/` | `search_robust`, `compare_embedder_views` |
+| topic-explorer | `topic-explorer/` | `get_topic_portfolio`, `get_topic_stability`, `detect_topics` |
+| session-navigator | `session-navigator/` | `get_conversation_context`, `get_session_timeline` |
+| provenance-auditor | `provenance-auditor/` | `get_audit_trail`, `get_merge_history`, `get_provenance_chain` |
+| memory-curator | `memory-curator/` | `merge_concepts`, `forget_concept`, `boost_importance` |
+| graph-navigator | `graph-navigator/` | `get_memory_neighbors`, `traverse_graph`, `get_unified_neighbors` |
+
+**Skill YAML frontmatter format** (from Claude Code docs):
+```yaml
+---
+name: skill-name
+description: |
+  What it does. When to use it. Keywords for discovery.
+allowed-tools: Read,Glob,Grep,Bash
+model: inherit
+user-invocable: true
+---
+```
+
+**Each skill MUST**:
+1. Use exact MCP tool names from section 1.4 (prefixed with `mcp__context-graph__`)
+2. Include exact parameter names from the tool definitions
+3. NOT reference fictional parameters
+4. NOT call CLI commands — skills instruct Claude to use MCP tools directly
+
+### Phase 5: Register MCP Server with Claude Code (P0)
+
+The MCP server must be registered so Claude Code can use the 55 tools.
+
+```bash
+# Register as stdio MCP server
+claude mcp add context-graph -- /home/cabdru/contextgraph/target/release/context-graph-mcp
+
+# OR for TCP transport (requires server already running):
+claude mcp add context-graph -- /home/cabdru/contextgraph/target/release/context-graph-mcp --transport tcp --port 3100
+```
+
+**Verify registration**: After adding, Claude Code should see tools prefixed `mcp__context-graph__` (e.g., `mcp__context-graph__store_memory`).
+
+### Phase 6: Verify CLI `hooks` and `memory` Subcommands Actually Work (P0)
+
+Before wiring hooks, verify the CLI commands work:
+
+```bash
+# Build release binary
+cargo build --release -p context-graph-cli
+
+# Test hooks subcommands
+echo '{"hook_type":"session_start","session_id":"test-1","timestamp_ms":1234567890,"payload":{"type":"session_start","data":{"cwd":"/tmp","source":"cli"}}}' | ./target/release/context-graph-cli hooks session-start --stdin --format json
+
+# Test memory subcommands
+./target/release/context-graph-cli memory inject-context "test query"
+./target/release/context-graph-cli memory inject-brief "test brief"
+./target/release/context-graph-cli memory capture-memory --content "test capture" --hook-type post_tool_use --tool-name Edit
+
+# Test topic subcommands
+./target/release/context-graph-cli topic portfolio
+./target/release/context-graph-cli topic stability
+
+# Test divergence
+./target/release/context-graph-cli divergence check --hours 2
+```
+
+**IMPORTANT**: These CLI commands connect to the MCP server via TCP on port 3100. The MCP server MUST be running first:
+```bash
+./target/release/context-graph-mcp --transport tcp --port 3100
+```
+
+If the MCP server is not running, the CLI commands will fail with a connection error. This is CORRECT behavior — fail fast, no fallbacks.
+
+---
+
+## 5. FULL STATE VERIFICATION REQUIREMENTS
+
+After completing ANY implementation, you MUST perform these verification steps. Do NOT rely on return values alone.
+
+### 5.1 Define Source of Truth
+
+For each operation, identify where the result is stored:
+
+| Operation | Source of Truth | How to Verify |
+|-----------|----------------|---------------|
+| `store_memory` | RocksDB `fingerprints` CF | `search_graph` with content as query, verify returned |
+| Hook script execution | Claude Code hook output (stdout/stderr) | Run script manually with test JSON on stdin |
+| Skill loading | Claude Code skill discovery | Ask Claude "What skills are available?" |
+| Settings.json | Claude Code hook firing | Use `claude --debug` to see hook matching |
+| MCP server registration | Claude Code MCP tool list | Check `mcp__context-graph__*` tools available |
+
+### 5.2 Execute & Inspect Protocol
+
+For EVERY change:
+1. Run the logic (e.g., execute a hook script)
+2. Perform a SEPARATE read operation on the source of truth
+3. Compare expected output vs actual output
+4. If they don't match, STOP and investigate root cause
+
+### 5.3 Boundary & Edge Case Audit
+
+For each hook script, manually simulate 3 edge cases:
+
+| Edge Case | Input | Expected Behavior |
+|-----------|-------|-------------------|
+| Empty stdin | `echo "" \| ./hook.sh` | Exit with error JSON on stderr, exit code 4 |
+| Invalid JSON | `echo "not json" \| ./hook.sh` | Exit with error JSON on stderr, exit code 4 |
+| CLI not found | Rename binary, run hook | Exit with error JSON on stderr, exit code 1 |
+| MCP server not running | Run CLI command without server | Connection error, exit code != 0 |
+| Very long content | 100KB+ content string | Truncation or error, NOT hang |
+
+**For each edge case**: Print system state BEFORE and AFTER the action to prove the outcome.
+
+### 5.4 Evidence of Success
+
+Provide a log showing:
+1. Hook script executed with test input
+2. CLI command received the input and processed it
+3. MCP tool was called (visible in MCP server logs with `RUST_LOG=debug`)
+4. Data was persisted to RocksDB (verified by subsequent search returning the stored data)
+5. The hook output JSON was valid and contained expected fields
+
+### 5.5 Manual Verification Checklist
+
+For EACH hook:
+- [ ] Script is executable (`chmod +x`)
+- [ ] Script runs with valid JSON input and produces valid JSON output
+- [ ] Script fails fast with invalid input
+- [ ] Script finds CLI binary correctly
+- [ ] CLI command connects to MCP server
+- [ ] MCP tool processes the request
+- [ ] Data appears in RocksDB (verified by search)
+- [ ] settings.json references the correct script path
+- [ ] Claude Code actually fires the hook (verified with `claude --debug`)
+
+### 5.6 Synthetic Test Data
+
+Use these synthetic inputs for testing. You KNOW the expected outputs, so verify them.
+
+**store_memory test**:
+```json
+{"content": "SYNTHETIC_TEST_2026: JWT was chosen over sessions for stateless auth", "importance": 0.8, "rationale": "Architecture decision test"}
+```
+Expected: Memory stored. Searching for "JWT stateless auth" should return this memory with similarity > 0.5.
+
+**search_graph test**:
+```json
+{"query": "SYNTHETIC_TEST_2026", "topK": 5, "includeContent": true, "strategy": "multi_space"}
+```
+Expected: Returns the memory stored above.
+
+**Hook test**:
+```bash
+echo '{"session_id":"test-session","prompt":"SYNTHETIC_TEST_2026: How does authentication work?"}' | ./.claude/hooks/user_prompt_submit.sh
+```
+Expected: Hook calls CLI, CLI connects to MCP, searches for relevant memories, returns JSON with `additionalContext` or empty `{}`.
+
+### 5.7 Trigger→Process→Outcome Verification
+
+For every trigger event:
+1. **Identify the trigger**: What causes the hook to fire? (e.g., user submits prompt)
+2. **Identify the process**: What does the hook do? (e.g., search memory, inject context)
+3. **Identify the outcome**: Where does the result appear? (e.g., `additionalContext` in Claude's context)
+4. **Verify the outcome EXISTS**: Check that the additionalContext was actually injected, that the memory was actually stored, that the topic was actually detected.
+
+If something is saved to a database, you MUST query that database to verify it was saved. If a hook produces output, you MUST capture and inspect that output. NEVER assume success — VERIFY IT.
+
+---
+
+## 6. ERROR HANDLING REQUIREMENTS
+
+### ABSOLUTELY NO BACKWARDS COMPATIBILITY
+
+- If a hook fails, it MUST exit with a non-zero code and error JSON on stderr
+- If the CLI binary is not found, error immediately — no fallback to npm packages
+- If the MCP server is not running, connection error — no mock data
+- If a parameter is invalid, reject it — no silent defaults
+- Every error MUST include: what failed, where it failed, how to fix it
+
+### Error JSON Format (all hooks)
+
+```json
+{"success": false, "error": "<human-readable error message>", "exit_code": <int>}
+```
+
+### Exit Codes
+
+| Code | Meaning |
+|------|---------|
+| 0 | Success |
+| 1 | CLI binary not found or general error |
+| 2 | Timeout |
+| 3 | Database error |
+| 4 | Invalid input (empty stdin, bad JSON) |
+
+---
+
+## 7. CONSTITUTION COMPLIANCE
+
+The constitution is at `/home/cabdru/contextgraph/docs2/constitution.yaml` (v7.0.0).
+
+Key rules that affect this integration:
+
+| Rule | Requirement |
+|------|-------------|
+| ARCH-06 | All memory ops through MCP tools only — hooks call CLI, CLI calls MCP |
+| ARCH-GPU-01 | GPU mandatory for production — no CPU fallback for embeddings |
+| ARCH-GPU-02 | All 13 embedders warm-loaded into VRAM at startup |
+| ARCH-SIGNAL-01 | All 13 embedders provide signal, never noise |
+| ARCH-SER-01 | JSON for provenance/metadata. Bincode for dense vectors only |
+| ARCH-PROV-01 | Audit writes non-fatal — warn on failure, never block main operation |
+| SEC-01 | Validate all MCP tool params at handler boundary |
+| Testing golden rule | ALL MCP tests use real RocksDB + real GPU. NO STUBS. |
+
+---
+
+## 8. FILE REFERENCE
+
+### Files to CREATE:
+```
+.claude/hooks/post_tool_use_failure.sh    # NEW
+.claude/hooks/subagent_start.sh           # NEW
+.claude/hooks/subagent_stop.sh            # NEW
+.claude/hooks/pre_compact.sh              # NEW
+.claude/hooks/notification.sh             # NEW
+.claude/hooks/task_completed.sh           # NEW
+.claude/hooks/lib/format-provenance.sh    # NEW
+.claude/skills/context-inject/SKILL.md    # NEW (Context Graph specific)
+.claude/skills/cg-memory-search/SKILL.md  # NEW
+.claude/skills/cg-causal/SKILL.md         # NEW
+.claude/skills/cg-entity/SKILL.md         # NEW
+.claude/skills/cg-code-search/SKILL.md    # NEW
+.claude/skills/cg-blind-spot/SKILL.md     # NEW
+.claude/skills/cg-topics/SKILL.md         # NEW
+.claude/skills/cg-session/SKILL.md        # NEW
+.claude/skills/cg-provenance/SKILL.md     # NEW
+.claude/skills/cg-curator/SKILL.md        # NEW
+.claude/skills/cg-graph/SKILL.md          # NEW
+```
+
+### Files to MODIFY:
+```
+.claude/settings.json                     # Rewrite hooks section
+```
+
+### Files that ALREADY EXIST and should NOT be changed:
+```
+.claude/hooks/session_start.sh            # CORRECT - uses context-graph-cli
+.claude/hooks/user_prompt_submit.sh       # CORRECT
+.claude/hooks/pre_tool_use.sh             # CORRECT
+.claude/hooks/post_tool_use.sh            # CORRECT
+.claude/hooks/session_end.sh              # CORRECT
+.claude/hooks/stop.sh                     # CORRECT
+```
+
+### Source of truth files (READ ONLY for verification):
+```
+crates/context-graph-mcp/src/tools/names.rs             # All 55 tool names
+crates/context-graph-mcp/src/tools/definitions/core.rs   # store_memory, search_graph params
+crates/context-graph-mcp/src/tools/definitions/*.rs       # All tool definitions
+crates/context-graph-cli/src/main.rs                      # CLI subcommands
+crates/context-graph-cli/src/commands/hooks/args.rs       # Hook command args
+crates/context-graph-cli/src/commands/memory/mod.rs       # Memory command args
+crates/context-graph-cli/src/mcp_client.rs                # TCP client to MCP server
+docs2/constitution.yaml                                    # System constitution
 ```
 
 ---
 
-## 9. Implementation Priorities
+## 9. RECOMMENDED IMPROVEMENTS (Analyze Before Implementing)
 
-### Phase 1: Foundation (Immediate Value)
+### Option A: Add `context-graph-cli mcp call <tool>` Generic Command
+**Pros**: Hooks could call any of the 55 MCP tools directly. Maximum flexibility.
+**Cons**: Adds CLI complexity. Every tool's params need CLI arg parsing.
+**Effort**: Medium (generic JSON passthrough)
+**Recommendation**: Implement as `context-graph-cli mcp call --tool <name> --params '<json>'`
 
-| Priority | Hook/Skill | Value | Effort |
-|----------|-----------|-------|--------|
-| P0 | SessionStart hook | Project awareness at startup | Low |
-| P0 | UserPromptSubmit hook | Context injection per prompt | Medium |
-| P0 | PostToolUse hook (Edit/Write) | Automatic memory capture | Medium |
-| P0 | SessionEnd hook | Consolidation & cleanup | Low |
-| P1 | memory-search skill | On-demand multi-space search | Low |
+### Option B: Keep CLI Subcommands Only
+**Pros**: Type-safe, validated at compile time. Already works.
+**Cons**: Limited to the ~15 commands already implemented. Can't call all 55 tools from hooks.
+**Effort**: None (already done)
+**Recommendation**: Good enough for Phase 1. Expand later if needed.
 
-### Phase 2: Intelligence Layer
+### Option C: Hook Scripts Call MCP Server Directly via TCP
+**Pros**: No CLI dependency for hooks. Direct JSON-RPC over TCP.
+**Cons**: Requires `nc` or `curl` in hooks. Less error handling. Fragile.
+**Effort**: Low per-hook, but maintenance burden
+**Recommendation**: NOT recommended. CLI provides proper error handling.
 
-| Priority | Hook/Skill | Value | Effort |
-|----------|-----------|-------|--------|
-| P1 | causal-reasoning skill | Root cause analysis | Low |
-| P1 | code-search skill | Code pattern discovery | Low |
-| P1 | PreToolUse hook (Edit/Write) | File history before edits | Medium |
-| P2 | entity-intelligence skill | Tech stack reasoning | Low |
-| P2 | topic-explorer skill | Theme awareness | Low |
-
-### Phase 3: Advanced Patterns
-
-| Priority | Hook/Skill | Value | Effort |
-|----------|-----------|-------|--------|
-| P2 | blind-spot-detective skill | Discovery of unknowns | Low |
-| P2 | session-navigator skill | Conversation threading | Low |
-| P2 | PreCompact hook | Context preservation | Medium |
-| P3 | provenance-auditor skill | Full audit capability | Low |
-| P3 | graph-navigator skill | Knowledge graph exploration | Low |
-| P3 | memory-curator skill | Memory hygiene | Low |
-| P3 | Stop hook | Continuation for unsaved context | Low |
-| P3 | SubagentStop hook | Cross-agent knowledge | Medium |
-
-### Expected Outcomes
-
-- **Session continuity**: Zero context loss between sessions
-- **Automatic learning**: Every code change, decision, and discovery is captured
-- **Causal reasoning**: "Why did X break?" answered from memory, not investigation
-- **Blind spot detection**: Systematic discovery of overlooked patterns
-- **Entity intelligence**: Technology relationships inferred, not manually tracked
-- **Topic awareness**: Emergent themes detected and surfaced automatically
-- **Provenance**: Full audit trail for every piece of knowledge
-- **Compounding knowledge**: Each session is smarter than the last
+**Suggested approach**: Option B for immediate implementation, Option A as Phase 2 enhancement.
 
 ---
 
-## Summary: What You Can Do
+## 10. EXECUTION ORDER
 
-| Capability | Tools Used | Hook/Skill Trigger |
-|-----------|------------|-------------------|
-| **Remember everything across sessions** | store_memory, search_graph | PostToolUse + SessionEnd hooks |
-| **Answer "why did X happen?"** | search_causes, get_causal_chain | causal-reasoning skill |
-| **Find code patterns** | search_code, search_cross_embedder_anomalies | code-search skill |
-| **Track technology stack** | extract_entities, find_related_entities, get_entity_graph | entity-intelligence skill |
-| **Detect topic drift** | get_topic_portfolio, get_divergence_alerts | topic-explorer skill |
-| **Find what you're missing** | search_robust, compare_embedder_views | blind-spot-detective skill |
-| **Navigate conversation history** | get_conversation_context, get_session_timeline | session-navigator skill |
-| **Audit any memory's origin** | get_audit_trail, get_provenance_chain | provenance-auditor skill |
-| **Curate and merge memories** | merge_concepts, boost_importance, forget_concept | memory-curator skill |
-| **Explore the knowledge graph** | get_memory_neighbors, traverse_graph, get_unified_neighbors | graph-navigator skill |
-| **Inject context per prompt** | search_graph with auto-profile detection | UserPromptSubmit hook |
-| **Capture changes automatically** | store_memory, extract_entities | PostToolUse hook |
-| **Warm up session context** | get_memetic_status, get_topic_portfolio, search_recent | SessionStart hook |
-| **Consolidate at session end** | trigger_consolidation, detect_topics, reconcile_files | SessionEnd hook |
-| **Preserve pre-compaction state** | store_memory, get_session_timeline | PreCompact hook |
-| **Share across subagents** | store_memory, search_graph | SubagentStop hook |
-| **File history before edits** | search_code with file path | PreToolUse hook |
-| **Discover temporal patterns** | search_recent, search_periodic | Temporal search tools |
-| **Custom search perspectives** | create_weight_profile, search_by_embedder | memory-curator skill |
-| **Multi-hop graph exploration** | traverse_graph, get_graph_path, get_causal_chain | graph-navigator skill |
+1. **Build**: `cargo build --release` (both `context-graph-mcp` and `context-graph-cli`)
+2. **Start MCP server**: `./target/release/context-graph-mcp --transport tcp --port 3100`
+3. **Verify CLI**: Run test commands from section 4, Phase 6
+4. **Fix settings.json**: Rewrite hooks section per Phase 1
+5. **Create missing hook scripts**: Phase 2 (6 new scripts)
+6. **Test each hook**: Run manually with synthetic input, verify output
+7. **Register MCP server**: `claude mcp add context-graph -- ./target/release/context-graph-mcp`
+8. **Create skills**: Phase 4 (11 new skills)
+9. **Full integration test**: Start Claude Code session, verify hooks fire, verify memory storage
+10. **Edge case testing**: Empty inputs, timeouts, server down, invalid JSON
+
+**After EVERY step**: Verify the source of truth. Don't proceed to the next step until the current step is verified working.

@@ -24,13 +24,13 @@ fn main() {
     println!("{}", "-".repeat(60));
     
     // Source of Truth: DIVERGENCE_SPACES constant
-    assert_eq!(DIVERGENCE_SPACES.len(), 7, "DIVERGENCE_SPACES must have exactly 7 embedders");
-    println!("  Count: {} (expected: 7) [PASS]", DIVERGENCE_SPACES.len());
-    
+    // AP-77: E5 (Causal) excluded — requires CausalDirection for meaningful scores
+    assert_eq!(DIVERGENCE_SPACES.len(), 6, "DIVERGENCE_SPACES must have exactly 6 embedders (E5 excluded per AP-77)");
+    println!("  Count: {} (expected: 6, E5 excluded per AP-77) [PASS]", DIVERGENCE_SPACES.len());
+
     // Verify each embedder
     let expected = [
         (Embedder::Semantic, "E1"),
-        (Embedder::Causal, "E5"),
         (Embedder::Sparse, "E6"),
         (Embedder::Code, "E7"),
         (Embedder::Multimodal, "E10"),
@@ -47,6 +47,7 @@ fn main() {
     
     // Verify exclusions
     let excluded = [
+        (Embedder::Causal, "E5", "AP-77: requires CausalDirection"),
         (Embedder::TemporalRecent, "E2", "temporal"),
         (Embedder::TemporalPeriodic, "E3", "temporal"),
         (Embedder::TemporalPositional, "E4", "temporal"),
@@ -324,7 +325,7 @@ fn main() {
     println!("  - File exists: crates/context-graph-core/src/retrieval/divergence.rs");
     println!("  - Module exported: pub mod divergence in mod.rs");
     println!("  - Re-exports present: DivergenceAlert, DivergenceReport, etc.");
-    println!("  - DIVERGENCE_SPACES: 7 semantic embedders (E1, E5, E6, E7, E10, E12, E13)");
+    println!("  - DIVERGENCE_SPACES: 6 semantic embedders (E1, E6, E7, E10, E12, E13; E5 excluded per AP-77)");
     println!();
     println!("All tests passed successfully!");
 }

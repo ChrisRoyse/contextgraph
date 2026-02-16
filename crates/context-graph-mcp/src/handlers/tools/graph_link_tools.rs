@@ -266,17 +266,20 @@ impl Handlers {
                 "diagnostic": {
                     "edge_repository_empty": repo_empty,
                     "total_fingerprints_in_store": fp_count,
+                    "suggestion": "Use get_unified_neighbors instead — it works for recently stored \
+                                   memories without waiting for the background K-NN graph build.",
                     "explanation": if repo_empty {
                         format!(
                             "Edge repository has NO K-NN edges. {} fingerprints exist in store. \
-                             The startup rebuild_all() either failed or produced 0 edges. \
-                             Set RUST_LOG=info to see detailed rebuild diagnostics.",
+                             K-NN edges are built in the background (60s batches, minimum 10 items). \
+                             Recently stored memories won't have edges until the next batch completes.",
                             fp_count
                         )
                     } else {
                         format!(
                             "Edge repository has data but no edges for memory {} in embedder {}. \
-                             This memory may not have been included in the K-NN graph build.",
+                             This memory was likely stored recently and hasn't been included in the \
+                             K-NN graph build yet. Use get_unified_neighbors for immediate results.",
                             memory_uuid, embedder_id
                         )
                     },

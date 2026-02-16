@@ -233,9 +233,9 @@ mod tests {
 
     #[test]
     fn test_divergence_spaces_count() {
-        // DIVERGENCE_SPACES should contain exactly 7 semantic embedders
-        assert_eq!(DIVERGENCE_SPACES.len(), 7);
-        println!("[PASS] DIVERGENCE_SPACES has exactly 7 semantic embedders");
+        // DIVERGENCE_SPACES contains 6 semantic embedders (E5 excluded per AP-77)
+        assert_eq!(DIVERGENCE_SPACES.len(), 6);
+        println!("[PASS] DIVERGENCE_SPACES has exactly 6 semantic embedders (E5 excluded per AP-77)");
     }
 
     #[test]

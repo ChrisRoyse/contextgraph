@@ -23,6 +23,7 @@
 use clap::Args;
 use tracing::{debug, info};
 
+use crate::commands::hooks::memory_cache::get_cached_memories;
 use crate::error::CliExitCode;
 use crate::mcp_client::McpClient;
 use crate::mcp_helpers::{mcp_error_to_exit_code, require_mcp_server, resolve_session_id};
@@ -281,8 +282,48 @@ pub async fn handle_inject_brief(args: InjectBriefArgs) -> i32 {
         query_len = query.len(),
         session_id = %session_id,
         top_k = args.top_k,
-        "Generating brief context via MCP"
+        "Generating brief context"
     );
+
+    // Check memory cache first (populated by user_prompt_submit hook).
+    // This gives subagents instant access to context without MCP round-trip.
+    let cached = get_cached_memories(&session_id);
+    if !cached.is_empty() {
+        let max_chars = (BRIEF_BUDGET * CHARS_PER_TOKEN) as usize;
+        let mut output = String::from("## Relevant Context\n\n");
+        let mut count = 0usize;
+
+        for (i, mem) in cached.iter().enumerate() {
+            if mem.content.is_empty() {
+                continue;
+            }
+            let entry = format!(
+                "### Memory {} (similarity: {:.2})\n{}\n\n---\n\n",
+                i + 1,
+                mem.similarity,
+                mem.content
+            );
+            if output.len() + entry.len() > max_chars {
+                break;
+            }
+            output.push_str(&entry);
+            count += 1;
+        }
+
+        if count > 0 {
+            let tokens_used = output.len() / (CHARS_PER_TOKEN as usize);
+            info!(
+                memories = count,
+                tokens = tokens_used,
+                "Brief context from cache (no MCP round-trip)"
+            );
+            print!("{}", output);
+            return CliExitCode::Success as i32;
+        }
+    }
+
+    // Cache empty — fall back to MCP search
+    debug!("Cache miss, falling back to MCP search");
 
     let client = McpClient::new();
     if let Err(exit_code) = require_mcp_server(&client).await {

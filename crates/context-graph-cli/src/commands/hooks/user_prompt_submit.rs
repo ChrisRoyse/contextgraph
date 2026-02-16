@@ -46,6 +46,10 @@ const MEMORY_CONTEXT_BUDGET_CHARS: usize = 2000;
 /// Minimum query length to trigger memory search (avoid noise from very short prompts)
 const MIN_QUERY_LENGTH_FOR_SEARCH: usize = 10;
 
+/// Minimum similarity score for memories to be included in context injection.
+/// Filters out low-relevance matches (e.g., pre-compaction markers, generic hook logs).
+const MIN_MEMORY_SIMILARITY: f32 = 0.3;
+
 // ============================================================================
 // Identity Marker Types
 // ============================================================================
@@ -665,8 +669,9 @@ async fn search_memories_for_prompt_with_client(
 
     // Search with includeContent=true to get memory text
     // Using fast path (800ms timeout) to stay within 2s hook budget
+    // minSimilarity filters out low-relevance noise (pre-compaction markers, generic logs)
     let memories = client
-        .search_graph_fast(prompt, Some(MAX_MEMORIES_TO_RETRIEVE), true)
+        .search_graph_fast(prompt, Some(MAX_MEMORIES_TO_RETRIEVE), true, Some(MIN_MEMORY_SIMILARITY))
         .await
         .map(|result| parse_search_results(&result))
         .unwrap_or_else(|e| {

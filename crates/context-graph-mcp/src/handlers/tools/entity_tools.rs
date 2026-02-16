@@ -319,20 +319,20 @@ fn combine_multi_embedder_scores(e1_sim: f32, e11_sim: f32, entity_jaccard: f32)
     // Weighted sum of all signals
     let base_score = E1_WEIGHT * e1_sim + E11_WEIGHT * e11_sim + JACCARD_WEIGHT * entity_jaccard;
 
-    // Agreement bonus: if multiple embedders agree, boost the score
-    // This rewards memories that both E1 and E11 found relevant
-    let agreement_count = [e1_sim > 0.3, e11_sim > 0.3, entity_jaccard > 0.1]
+    // Agreement bonus: multiplicative boost when multiple embedders agree.
+    // Using higher thresholds (0.5/0.5/0.2) to avoid triggering on weak matches.
+    let agreement_count = [e1_sim > 0.5, e11_sim > 0.5, entity_jaccard > 0.2]
         .iter()
         .filter(|&&x| x)
         .count();
 
-    let agreement_bonus = match agreement_count {
-        3 => 0.10, // All three signals agree - strong confidence
-        2 => 0.05, // Two signals agree - moderate confidence
-        _ => 0.0,  // Single signal - no bonus, but still valuable
+    let agreement_multiplier = match agreement_count {
+        3 => 1.10, // All three signals agree - 10% boost
+        2 => 1.05, // Two signals agree - 5% boost
+        _ => 1.0,  // Single signal - no boost, but still valuable
     };
 
-    (base_score + agreement_bonus).clamp(0.0, 1.0)
+    (base_score * agreement_multiplier).clamp(0.0, 1.0)
 }
 
 impl Handlers {

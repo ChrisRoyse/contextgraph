@@ -935,21 +935,18 @@ mod tests {
 
     #[test]
     fn test_divergence_spaces_match_ap62() {
-        // AP-62: Only SEMANTIC embedders (E1, E5, E6, E7, E10, E12, E13) trigger alerts
+        // AP-62: Only SEMANTIC embedders trigger alerts
+        // AP-77: E5 (Causal) excluded — requires CausalDirection for meaningful scores
         assert_eq!(
             DIVERGENCE_SPACES.len(),
-            7,
-            "Should have 7 DIVERGENCE_SPACES"
+            6,
+            "Should have 6 DIVERGENCE_SPACES (E5 excluded per AP-77)"
         );
 
         // Verify each expected embedder is present
         assert!(
             DIVERGENCE_SPACES.contains(&Embedder::Semantic),
             "Must include E1"
-        );
-        assert!(
-            DIVERGENCE_SPACES.contains(&Embedder::Causal),
-            "Must include E5"
         );
         assert!(
             DIVERGENCE_SPACES.contains(&Embedder::Sparse),
@@ -970,6 +967,12 @@ mod tests {
         assert!(
             DIVERGENCE_SPACES.contains(&Embedder::KeywordSplade),
             "Must include E13"
+        );
+
+        // AP-77: E5 (Causal) must NOT be included — always returns 0.0 without direction
+        assert!(
+            !DIVERGENCE_SPACES.contains(&Embedder::Causal),
+            "Must NOT include E5 (AP-77)"
         );
 
         // AP-63: Temporal embedders must NOT be included

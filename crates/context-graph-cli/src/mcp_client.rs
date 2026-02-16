@@ -372,20 +372,28 @@ impl McpClient {
         query: &str,
         top_k: Option<u32>,
         include_content: bool,
+        min_similarity: Option<f32>,
     ) -> Result<serde_json::Value, McpClientError> {
+        let mut arguments = json!({
+            "query": query,
+            "topK": top_k.unwrap_or(10),
+            "includeContent": include_content
+        });
+
+        if let Some(min_sim) = min_similarity {
+            arguments["minSimilarity"] = json!(min_sim);
+        }
+
         let params = json!({
             "name": "search_graph",
-            "arguments": {
-                "query": query,
-                "topK": top_k.unwrap_or(10),
-                "includeContent": include_content
-            }
+            "arguments": arguments
         });
 
         debug!(
             query_len = query.len(),
             top_k,
             include_content,
+            min_similarity,
             "Calling MCP search_graph (fast path)"
         );
 
@@ -900,7 +908,7 @@ impl McpClient {
                 "topK": top_k,
                 "minScore": 0.2,
                 "includeContent": include_content,
-                "boostExactMatch": 1.3
+                "boostExactMatch": 1.15
             }
         });
 

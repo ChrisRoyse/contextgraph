@@ -44,7 +44,7 @@ pub const MAX_ENTITY_SEARCH_TOP_K: usize = 50;
 pub const DEFAULT_MIN_ENTITY_SCORE: f32 = 0.2;
 
 /// Default boost for exact entity matches.
-pub const DEFAULT_EXACT_MATCH_BOOST: f32 = 1.3;
+pub const DEFAULT_EXACT_MATCH_BOOST: f32 = 1.15;
 
 /// TransE score threshold for "valid" triples (KEPLER calibrated).
 /// KEPLER valid triples: typically score > -5.0
@@ -517,7 +517,7 @@ pub struct SearchByEntitiesRequest {
     #[serde(rename = "includeContent", default)]
     pub include_content: bool,
 
-    /// Boost for exact entity matches (default: 1.3).
+    /// Boost for exact entity matches (default: 1.15).
     #[serde(rename = "boostExactMatch", default = "default_exact_match_boost")]
     pub boost_exact_match: f32,
 
@@ -1234,7 +1234,7 @@ mod tests {
             top_k: 10,
             min_score: 0.2,
             include_content: false,
-            boost_exact_match: 1.3,
+            boost_exact_match: 1.15,
             strategy: Some("pipeline".to_string()),
         };
         assert!(req.validate().is_ok());
@@ -1250,7 +1250,7 @@ mod tests {
             top_k: 10,
             min_score: 0.2,
             include_content: false,
-            boost_exact_match: 1.3,
+            boost_exact_match: 1.15,
             strategy: None,
         };
         assert!(req.validate().is_err());
@@ -1265,7 +1265,7 @@ mod tests {
             top_k: 10,
             min_score: 0.2,
             include_content: false,
-            boost_exact_match: 1.3,
+            boost_exact_match: 1.15,
             strategy: None,
         };
         assert!(req.validate().is_err());
@@ -1280,7 +1280,7 @@ mod tests {
             top_k: 10,
             min_score: 0.2,
             include_content: false,
-            boost_exact_match: 1.3,
+            boost_exact_match: 1.15,
             strategy: None,
         };
         // Default is E1Only for entity search

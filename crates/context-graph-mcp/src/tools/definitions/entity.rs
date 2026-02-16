@@ -100,8 +100,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "boostExactMatch": {
                         "type": "number",
-                        "description": "Boost multiplier for exact entity matches (1.0-3.0, default: 1.3).",
-                        "default": 1.3,
+                        "description": "Boost multiplier for exact entity matches (1.0-3.0, default: 1.15).",
+                        "default": 1.15,
                         "minimum": 1.0,
                         "maximum": 3.0
                     }

@@ -22,9 +22,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
 fn get_memory_neighbors_definition() -> ToolDefinition {
     ToolDefinition::new(
         "get_memory_neighbors",
-        "Get K nearest neighbors of a memory in a specific embedder space. Returns neighbors \
-         sorted by similarity. Use to find related memories according to different perspectives: \
-         E1 (semantic), E5 (causal), E7 (code), E8 (graph), E10 (paraphrase), E11 (entity).",
+        "Get K nearest neighbors of a memory in a specific embedder space using pre-computed \
+         K-NN edges. Returns neighbors sorted by similarity. NOTE: Recently stored memories \
+         may return 0 neighbors until the background K-NN graph build runs (~60s). \
+         Use get_unified_neighbors for immediate results on recent memories.",
         json!({
             "type": "object",
             "required": ["memory_id"],

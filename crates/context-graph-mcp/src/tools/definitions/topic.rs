@@ -72,8 +72,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ToolDefinition::new(
             "get_divergence_alerts",
             "Check for divergence from recent activity using SEMANTIC embedders only \
-             (E1, E5, E6, E7, E10, E12, E13 per AP-62). Temporal embedders (E2-E4) are \
-             excluded from divergence detection per AP-63.",
+             (E1, E6, E7, E10, E12, E13 per AP-62). E5 (Causal) is excluded per AP-77 \
+             (returns 0.0 without CausalDirection). Temporal embedders (E2-E4) excluded per AP-63.",
             json!({
                 "type": "object",
                 "properties": {
