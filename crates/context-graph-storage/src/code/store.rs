@@ -27,7 +27,7 @@ use crate::teleological::column_families::{
 };
 use context_graph_core::types::fingerprint::SemanticFingerprint;
 use context_graph_core::types::{CodeEntity, CodeFileIndexEntry, CodeLanguage, CodeStats};
-use rocksdb::{ColumnFamily, IteratorMode, DB};
+use rocksdb::{ColumnFamily, IteratorMode, WriteBatch, DB};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::path::Path;
@@ -198,21 +198,25 @@ impl CodeStore {
         let fingerprint_bytes = bincode::serialize(fingerprint)
             .map_err(|e| CodeStorageError::serialization(e.to_string()))?;
 
-        // Store entity
-        self.db
-            .put_cf(&self.cf_entities()?, id_bytes, &entity_bytes)?;
+        // DATA-4 FIX: Atomically store entity + fingerprint via WriteBatch.
+        // Previously these were 2 independent put_cf calls; a crash between them
+        // would leave an entity without its embedding or vice versa.
+        let cf_ent = self.cf_entities()?;
+        let cf_emb = self.cf_embeddings()?;
 
-        // Store fingerprint (in the "embeddings" CF, now stores full fingerprint)
-        self.db
-            .put_cf(&self.cf_embeddings()?, id_bytes, &fingerprint_bytes)?;
+        let mut batch = WriteBatch::default();
+        batch.put_cf(cf_ent, id_bytes, &entity_bytes);
+        batch.put_cf(cf_emb, id_bytes, &fingerprint_bytes);
 
-        // Update file index
+        self.db.write(batch)?;
+
+        // Update secondary indexes (read-modify-write, cannot be in WriteBatch)
+        // If any index update fails, the entity+embedding are already stored but
+        // will be findable via direct ID lookup; index updates are best-effort.
         self.update_file_index(&entity.file_path, entity.id, &entity.language)?;
 
-        // Update name index
         self.update_name_index(&entity.name, entity.id)?;
 
-        // Update signature index if present
         if let Some(ref sig) = entity.signature {
             self.update_signature_index(sig, entity.id)?;
         }
@@ -223,7 +227,7 @@ impl CodeStore {
             entity_type = %entity.entity_type,
             file = %entity.file_path,
             fingerprint_size_bytes = fingerprint_bytes.len(),
-            "Stored code entity with full 13-embedding fingerprint"
+            "Stored code entity with full 13-embedding fingerprint (atomic WriteBatch)"
         );
 
         Ok(())

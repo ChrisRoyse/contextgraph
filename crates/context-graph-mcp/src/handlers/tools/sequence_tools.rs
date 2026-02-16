@@ -376,10 +376,16 @@ impl Handlers {
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
+        // MCP-7 FIX: Parse sourceTypes filter parameter
+        let source_types: Option<Vec<String>> = args
+            .get("sourceTypes")
+            .and_then(|v| serde_json::from_value(v.clone()).ok());
+
         debug!(
             session_id = %session_id,
             limit = limit,
             offset = offset,
+            source_types = ?source_types,
             "get_session_timeline: Fetching session timeline"
         );
 
@@ -425,10 +431,12 @@ impl Handlers {
             .collect();
 
         // Convert to TeleologicalSearchResult for compatibility with downstream code
+        // MCP-6 FIX: Do NOT paginate here — pagination must happen AFTER sorting
+        // by session_sequence below. Pre-sorting pagination produces wrong results
+        // when offset > 0 because the second skip/take on sorted data operates on
+        // an already-truncated set.
         let results: Vec<TeleologicalSearchResult> = session_fingerprints
             .into_iter()
-            .skip(offset)
-            .take(limit)
             .map(|fp| TeleologicalSearchResult {
                 fingerprint: fp.clone(),
                 similarity: 1.0, // No semantic bias
@@ -499,6 +507,16 @@ impl Handlers {
 
         // Sort by sequence ascending
         results_with_seq.sort_by_key(|(seq, _)| *seq);
+
+        // MCP-7 FIX: Apply sourceTypes filter before pagination
+        if let Some(ref types) = source_types {
+            results_with_seq.retain(|(_, entry)| {
+                entry
+                    .get("sourceType")
+                    .and_then(|v| v.as_str())
+                    .map_or(false, |st| types.iter().any(|t| t == st))
+            });
+        }
 
         // Apply pagination
         let paginated: Vec<serde_json::Value> = results_with_seq

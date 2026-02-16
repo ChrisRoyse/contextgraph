@@ -54,20 +54,32 @@ impl RocksDbTeleologicalStore {
         // Add to per-embedder indexes for O(log n) search
         // DAT-4 fix: If indexing fails, rollback the RocksDB write to prevent
         // inconsistency where data exists in RocksDB but not in HNSW indexes.
+        //
+        // DATA-3 FIX: store_fingerprint_internal writes to multiple CFs via WriteBatch
+        // (CF_FINGERPRINTS, CF_E1_MATRYOSHKA_128, CF_E13_SPLADE_INVERTED, CF_E6_SPARSE_INVERTED,
+        // CF_E12_LATE_INTERACTION, CF_TOPIC_PROFILES, CF_SOURCE_METADATA, plus quantized CFs).
+        // Previously, rollback only deleted from CF_FINGERPRINTS, leaving orphaned data
+        // in all other CFs. Now we use delete_async(id, false) for a proper hard-delete
+        // that cleans all CFs consistently.
         if let Err(e) = self.add_to_indexes(&fingerprint) {
             error!(
                 id = %id,
                 error = %e,
-                "HNSW index add failed after RocksDB store — rolling back RocksDB write"
+                "HNSW index add failed after RocksDB store — rolling back all CFs via hard-delete"
             );
-            // Rollback: remove from RocksDB to prevent divergence
-            let key = fingerprint_key(&id);
-            if let Some(cf) = self.db.cf_handle(CF_FINGERPRINTS) {
-                if let Err(rollback_err) = self.db.delete_cf(cf, &key) {
+            // Rollback: hard-delete from ALL column families (not just CF_FINGERPRINTS)
+            match self.delete_async(id, false).await {
+                Ok(_) => {
+                    debug!(
+                        id = %id,
+                        "Rollback successful: hard-deleted fingerprint from all CFs"
+                    );
+                }
+                Err(rollback_err) => {
                     error!(
                         id = %id,
                         error = %rollback_err,
-                        "CRITICAL: Rollback of RocksDB write also failed — manual cleanup required"
+                        "CRITICAL: Rollback hard-delete also failed — manual cleanup required"
                     );
                 }
             }
@@ -161,8 +173,22 @@ impl RocksDbTeleologicalStore {
             // Try to restore old fingerprint in RocksDB and re-add old indexes
             if let Some(old_data) = self.get_fingerprint_raw(id).ok().flatten() {
                 if let Ok(old_fp) = deserialize_teleological_fingerprint(&old_data) {
-                    let _ = self.store_fingerprint_internal(&old_fp);
-                    let _ = self.add_to_indexes(&old_fp);
+                    if let Err(re) = self.store_fingerprint_internal(&old_fp) {
+                        error!(
+                            id = %id,
+                            error = %re,
+                            "CRITICAL: Rollback store_fingerprint_internal failed — manual cleanup required for fingerprint {}",
+                            id
+                        );
+                    }
+                    if let Err(re) = self.add_to_indexes(&old_fp) {
+                        error!(
+                            id = %id,
+                            error = %re,
+                            "CRITICAL: Rollback add_to_indexes failed — fingerprint {} in RocksDB but missing from HNSW",
+                            id
+                        );
+                    }
                 }
             }
             return Err(CoreError::IndexError(e.to_string()));

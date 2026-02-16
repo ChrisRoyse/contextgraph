@@ -902,10 +902,11 @@ async fn test_e2e_all_11_tools_callable() {
 /// constant matches the expected number of registered tools.
 #[test]
 fn evidence_of_e2e_test_coverage() {
-    // TST-01: Instead of println-only "evidence", assert something concrete:
-    // verify the expected tool count. The real E2E tests above are gated
-    // behind #[cfg(feature = "cuda")] and exercise actual tool behavior.
-    let expected_tool_names = [
+    // TEST-2 FIX: Actually verify tools are registered instead of counting a hardcoded array.
+    let all_defs = crate::tools::definitions::get_tool_definitions();
+    let registered_names: Vec<&str> = all_defs.iter().map(|d| d.name.as_str()).collect();
+
+    let expected_core_tools = [
         "store_memory",
         "get_memetic_status",
         "search_graph",
@@ -918,9 +919,13 @@ fn evidence_of_e2e_test_coverage() {
         "forget_concept",
         "boost_importance",
     ];
-    assert_eq!(
-        expected_tool_names.len(),
-        11,
-        "Expected exactly 11 core MCP tools"
-    );
+
+    for tool_name in &expected_core_tools {
+        assert!(
+            registered_names.contains(tool_name),
+            "Core tool '{}' not found in registered definitions. Registered: {:?}",
+            tool_name,
+            registered_names
+        );
+    }
 }

@@ -1,479 +1,448 @@
 # Hidden Brokenness Audit Report
 
-**Date**: 2026-02-15
-**Branch**: casetrack
-**Scope**: Full codebase forensic investigation — 6 parallel audits
-**Auditors**: Automated forensic agents (phantom tests, silent errors, dead code, data integrity, search correctness, schema mismatches)
+**Date:** 2026-02-15
+**Branch:** casetrack
+**Scope:** Full codebase forensic investigation across 5 dimensions
+**Method:** 5 parallel Sherlock Holmes forensic agents, each examining a different subsystem
+
+---
 
 ## Executive Summary
 
-This audit identified **84 distinct findings** across 6 investigation domains where the system **appears to work correctly but is actually broken, degraded, or misleading**. The findings break down as:
+Despite 5,416 passing tests and zero compiler warnings, this audit uncovered **52 distinct findings** where code appears to work correctly but is actually broken, degraded, or deceptive. The findings break down as:
 
 | Severity | Count | Description |
 |----------|-------|-------------|
-| **CRITICAL** | 7 | Data corruption, completely wrong results returned as correct |
-| **HIGH** | 30 | Silently degraded behavior, features that don't work as advertised |
-| **MEDIUM** | 37 | Partial failures, hidden features, resource leaks |
-| **LOW** | 10 | Maintenance hazards, theoretical issues, minor inconsistencies |
+| CRITICAL | 1 | Zero MCP E2E test coverage without CUDA feature |
+| HIGH | 14 | Data corruption, silent failures, misleading results |
+| MEDIUM | 25 | Degraded behavior, masked errors, inconsistent handling |
+| LOW | 12 | Edge cases, maintenance hazards, minor inconsistencies |
 
 ### Top 5 Most Dangerous Findings
 
-1. **[SCH-1] `search_causal_relationships` parameter name mismatch** — Schema says `direction`, handler reads `searchMode` with different enum values. Causal direction filtering is completely broken for all schema-compliant clients.
-2. **[SRC-2] Score inflation in `compute_semantic_fusion`** — Skip-zero logic inflates ALL multi-space search scores by 15-33%. Every `min_similarity` threshold comparison is unreliable.
-3. **[ERR-1/ERR-2] HNSW index creation + search failures are silent** — An entire embedder dimension can silently disappear from all searches with no error to the user.
-4. **[DAT-3] NodeMetadata uses `skip_serializing_if` with bincode** — The graph crate serializes MemoryNodes with bincode, but NodeMetadata has 8 `skip_serializing_if` fields. This produces corrupt or wrong data on deserialization.
-5. **[DAT-4] Legacy E5/E8 fingerprints never migrated** — Asymmetric causal search (cause vs effect) returns identical results for all pre-migration data, silently defeating the feature.
+1. **Double pagination bug** in `get_session_timeline` -- any non-zero offset returns wrong/empty results (MCP-6)
+2. **Sparse cosine normalization mismatch** -- E6/E13 scores in [-1,1] while all other embedders use [0,1], causing systematic under-weighting (SEARCH-1)
+3. **MemoryStore session index race condition** -- concurrent writes to same session can silently lose index entries (DATA-6)
+4. **Consolidation on empty content** -- batch fetch failure substitutes empty strings, merging unrelated memories (ERR-3)
+5. **All MCP E2E tests gated behind `#[cfg(feature = "cuda")]`** -- zero handler coverage in standard CI (TEST-7)
 
 ---
 
-## Domain 1: MCP Schema vs Handler Mismatches (SCH)
+## Section 1: Data Integrity Issues (6 findings)
 
-*Things users think they can do via the API but actually can't, or behavior that differs from what the schema promises.*
+### DATA-1: Non-Atomic MemoryStore Write [MEDIUM]
+**Files:** `crates/context-graph-core/src/memory/store.rs:209-306`
 
-### SCH-1: `search_causal_relationships` — Parameter Name AND Enum Mismatch [CRITICAL]
+The `store()` method performs 3 separate RocksDB writes without WriteBatch:
+1. `put_cf(cf_memories, ...)` -- writes the memory
+2. `put_cf(cf_session_index, ...)` -- updates session index
+3. `put_cf(cf_file_index, ...)` -- updates file index
 
-- **Schema**: `crates/context-graph-mcp/src/tools/definitions/causal.rs:31-34` — parameter `direction` with enum `["cause", "effect", "all"]`, default `"all"`
-- **Handler**: `crates/context-graph-mcp/src/handlers/tools/causal_relationship_tools.rs:86-101` — reads `searchMode` with enum `["causes", "effects", "semantic"]`, default `"semantic"`
-- **Impact**: Client sends `{"direction": "cause"}` per schema. Handler never reads `direction`. Defaults to semantic search. **Causal direction filtering is completely non-functional** for any schema-compliant client.
+A crash between writes creates **orphan memories** -- stored but invisible to session/file queries. The code acknowledges this as "Phase 1" debt (lines 199-203). The `delete()` method (lines 514-578) has the reverse problem: deleting memory before updating session index can leave **dangling index references**.
 
-### SCH-2: `search_graph` — `modality` Parameter Exposed But Ignored [HIGH]
+**Mitigation in place:** Read path skips orphaned references silently (line 474).
 
-- **Schema**: `tools/definitions/core.rs:99-103` — `modality` enum `["text", "code", "image", "audio", "structured", "mixed"]`
-- **Handler**: `handlers/tools/memory_tools.rs` — zero references to `modality`
-- **Impact**: `{"modality": "code"}` is silently ignored. No filtering occurs. Users believe they're filtering by modality.
+### DATA-2: Non-Atomic delete_causal_relationship [MEDIUM]
+**Files:** `crates/context-graph-storage/src/teleological/rocksdb_store/causal_relationships.rs:992-1029`
 
-### SCH-3: `search_robust` — `e9DiscoveryThreshold` Default Mismatch [HIGH]
+Three independent operations without WriteBatch:
+1. `self.db.delete_cf(cf, key)` -- deletes from primary CF
+2. `self.remove_from_causal_by_source_index(...)` -- updates secondary index
+3. `self.causal_e11_index.remove(id)` -- removes from HNSW
 
-- **Schema**: `tools/definitions/robustness.rs:66-73` — `"default": 0.7`
-- **Handler**: `handlers/tools/robustness_dtos.rs:131-133` — `E9_DISCOVERY_THRESHOLD = 0.15`
-- **Impact**: If a client explicitly sets 0.7 per schema documentation, virtually no E9 blind-spot discoveries are returned. Feature appears broken. Only works correctly when parameter is omitted (handler default 0.15 is correct).
+Contrast: `store_causal_relationship()` (lines 150-166) correctly uses WriteBatch. The asymmetry means the store path is atomic but the delete path is not.
 
-### SCH-4: `search_graph` — `conversationContext.anchorToCurrentTurn` Default Mismatch [HIGH]
+### DATA-3: Incomplete Rollback in store_async [MEDIUM]
+**Files:** `crates/context-graph-storage/src/teleological/rocksdb_store/crud.rs:44-78`
 
-- **Schema**: `tools/definitions/core.rs:191-194` — `"default": true`
-- **Handler**: `handlers/tools/memory_tools.rs:761-764` — `unwrap_or(false)`
-- **Impact**: Client sends `{"conversationContext": {}}` expecting anchoring (schema says default true). Handler defaults false. Conversation anchoring never activates unless explicitly enabled.
+On HNSW insertion failure, rollback only deletes from `CF_FINGERPRINTS`. But `store_fingerprint_internal()` writes to **5 column families** via WriteBatch (CF_FINGERPRINTS, CF_E1_MATRYOSHKA_128, CF_E13_SPLADE_INVERTED, CF_E6_SPARSE_INVERTED, CF_E12_LATE_INTERACTION). Rollback leaves orphaned data in 4 CFs.
 
-### SCH-5: `search_causal_relationships` — 8 Undiscoverable Power Features [HIGH]
+### DATA-4: CodeStore Non-Atomic Multi-CF Writes [MEDIUM]
+**Files:** `crates/context-graph-storage/src/code/store.rs:170-229`
 
-- **Handler**: `handlers/tools/causal_relationship_tools.rs:121-178`
-- **Missing from schema**: `includeProvenance`, `sourceWeight`, `explanationWeight`, `multiEmbedder`, `e1Weight`, `e5Weight`, `e8Weight`, `e11Weight`
-- **Impact**: Multi-embedder causal fusion mode (4-embedder weighted search for maximum accuracy) is never activated. All clients get single-embedder semantic fallback.
+5 separate `put_cf` calls (entity, fingerprint, file index, name index, signature index) without WriteBatch. A crash mid-store can leave entities without fingerprints (unsearchable) or present but invisible to queries.
 
-### SCH-6: `search_causes`/`search_effects` — 3 Undiscoverable Features [HIGH]
+### DATA-5: HNSW Compaction Race Condition [LOW]
+**Files:** `crates/context-graph-storage/src/teleological/rocksdb_store/store.rs:819-845`
 
-- **Handler DTOs**: `handlers/tools/causal_dtos.rs:90-113, 274-287`
-- **Missing from schema**: `strategy` (pipeline mode), `rerankWeight` (ColBERT blend), `searchScope` ("relationships" accesses CF_CAUSAL_RELATIONSHIPS)
-- **Impact**: The `searchScope: "relationships"` option accesses LLM-generated causal descriptions — a fundamentally different search path. Always defaults to `"memories"`.
+`compact_hnsw_if_needed()` calls `rebuild_indexes_from_store()` which iterates all fingerprints and re-inserts into HNSW. Concurrent `store_async()` during rebuild creates duplicate usearch entries. Already documented in MEMORY.md.
 
-### SCH-7: `search_code` — 3 Undiscoverable Features [HIGH]
+### DATA-6: MemoryStore Session Index Race Condition [HIGH]
+**Files:** `crates/context-graph-core/src/memory/store.rs:247-298`
 
-- **Handler DTO**: `handlers/tools/code_dtos.rs:117-159`
-- **Missing from schema**: `searchMode` (e7Only/pipeline), `languageHint` (language boost), `includeAstContext`
-- **Impact**: Pure E7 code search (ideal for function signatures) and language-specific boosting are completely hidden.
+Read-modify-write cycle on session index with NO locking:
+1. Read existing session_ids from cf_session_index
+2. Push new memory ID
+3. Write updated list back
 
-### SCH-8: `store_memory` — `operator_id` Not in Schema [MEDIUM]
+Two concurrent stores to the same session both read the same initial list, both append, both write back -- second writer **overwrites** first writer's addition. Classic lost-update problem. The TeleologicalStore has `secondary_index_lock` (parking_lot::Mutex) for this exact reason -- MemoryStore has no equivalent.
 
-- **Handler**: `handlers/tools/memory_tools.rs:172-176`
-- **Impact**: All audit records have `created_by: None`. Provenance audit trail has no operator attribution.
-
-### SCH-9: `search_graph` — 10 Undiscoverable Temporal Parameters [MEDIUM]
-
-- **Handler**: `handlers/tools/memory_tools.rs:660-753`
-- **Missing**: `decayHalfLifeSecs`, `lastHours`, `lastDays`, `sessionId`, `periodicBoost`, `targetHour`, `targetDayOfWeek`, `sequenceAnchor`, `sequenceDirection`, `includeProvenance`
-- **Impact**: Useful temporal shortcuts (`lastHours: 24`, sequence-based retrieval) are hidden. Provenance metadata is never included.
-
-### SCH-10: `search_by_keywords`/`search_robust` — `strategy` Not in Schema [MEDIUM]
-
-- **Handler DTOs**: `keyword_dtos.rs:91`, `robustness_dtos.rs:116`
-- **Impact**: Pipeline search strategy unavailable for keyword and robustness tools. Always defaults to multi_space.
+Same race exists in `update_file_index()` (lines 327-369) and `delete()` (lines 544-574).
 
 ---
 
-## Domain 2: Search & Scoring Correctness (SRC)
+## Section 2: Search & Embedding Pipeline Issues (7 findings)
 
-*Searches that return results but the results are wrong, inflated, or incomplete.*
+### SEARCH-1: SparseVector cosine_similarity Returns [-1,1] While Dense Returns [0,1] [HIGH]
+**Files:** `crates/context-graph-core/src/types/fingerprint/sparse.rs:234-244`
 
-### SRC-1: Two Incompatible Cosine Similarity Ranges Mixed in Scoring [CRITICAL]
+`SparseVector::cosine_similarity()` returns raw cosine in [-1, 1]:
+```rust
+dot / (norm_self * norm_other)  // Returns [-1, 1], NOT [0, 1]
+```
 
-- **Raw [-1,1]**: `storage/.../helpers.rs:18-48` — `compute_cosine_similarity()`
-- **Normalized [0,1]**: `core/.../distance.rs:35-55` — `cosine_similarity()` uses `(raw+1)/2`
-- **Collision point**: `compute_embedder_scores_sync()` uses raw [-1,1], but `compute_semantic_fusion()` at `search.rs:1283` filters `score > 0.0`, silently excluding negative cosines. Embedders with slight negative similarity (anti-correlated vectors) are dropped from fusion instead of contributing negative signal.
+Called directly in `compute_embedder_scores_sync` (search.rs:403, 410) for E6 and E13. All other embedder scores in the same array are normalized to [0, 1] via `(raw + 1.0) / 2.0`. This means E6/E13 contribute LESS to fusion than their weights suggest -- a cosine of 0.8 stays at 0.8 for E6/E13 but becomes 0.9 for E1-E5, E7-E11.
 
-### SRC-2: `compute_semantic_fusion` Skip-Zero Logic Inflates ALL Scores [CRITICAL]
+In practice, SPLADE terms are non-negative so raw cosine stays in [0, 1], but orthogonal items score 0.0 (raw) instead of 0.5 (normalized), making E6/E13 appear less discriminating.
 
-- **File**: `storage/.../search.rs:1275-1295`
-- **Bug**: The function excludes zero-score embedders from the denominator, producing a weighted average over only responding embedders instead of the full profile.
-- **Numeric example**: With E5=0.0 (always for non-causal) and E6/E11=0.0 (common), denominator shrinks from 1.0 to 0.75. A true 0.345 match scores **0.460** (33% inflation). Every `min_similarity` threshold comparison is affected.
+### SEARCH-2: E9 (HDC) Has HNSW Index But Is Never Queried for Candidates [MEDIUM]
+**Files:** `crates/context-graph-storage/src/teleological/rocksdb_store/search.rs:521+`
 
-### SRC-3: E12 MaxSim Uses Different Scale in Two Paths [HIGH]
+`search_multi_space_sync` explicitly searches E1, E5, E7, E8, E10, E11 -- but NOT E9. E9 has `uses_hnsw() = true` and non-zero weights in `typo_tolerant` (0.15) and `semantic_search` (0.02) profiles. E9 scores are computed after candidate retrieval, so it can modify scores but never discover new candidates.
 
-- **Storage crate** (`search/maxsim.rs:70-84`): raw cosine [-1,1]
-- **Core crate** (`retrieval/distance.rs:101-120`): normalized [0,1]
-- **Impact**: E12 provenance breakdowns show [-1,1] values while pipeline reranking uses [0,1]. Custom profiles giving E12 non-zero weight mix scales in fusion.
+### SEARCH-3: DEFAULT_SEMANTIC_WEIGHTS Differs from semantic_search Profile [LOW]
+**Files:** `search.rs:1212-1226` vs `weights/mod.rs:122-137`
 
-### SRC-4: Sparse Search (E6/E13) Uses IDF-Only, Not BM25 [MEDIUM]
+Two "default" weight configs disagree:
+- E1: 0.35 (default constant) vs 0.33 (named profile)
+- E9: 0.0 (default constant) vs 0.02 (named profile)
 
-- **File**: `storage/.../search.rs:1080-1152`
-- **Bug**: Inverted index stores only document IDs per term, not per-document term frequencies. Scoring is `Sum(query_weight * IDF)` — no TF saturation, no document length normalization.
-- **Impact**: A 10-word document with one term match scores identically to a 10,000-word document with one match. Pipeline Stage 1 recall quality is degraded.
+MCP handler uses the constant (no profile specified), not the named profile.
 
-### SRC-5: E9 (HDC) Excluded from HNSW Candidate Retrieval [MEDIUM]
+### SEARCH-4: HNSW Failures Silently Degrade Results [MEDIUM]
+**Files:** `crates/context-graph-storage/src/teleological/rocksdb_store/search.rs:609-614`
 
-- **Files**: `search.rs` multi_space (lines 510-697) and pipeline (lines 708-997)
-- **Bug**: E9 is never searched for HNSW candidates, but E9 scores ARE computed and E9 weights ARE applied in fusion.
-- **Impact**: With custom weights `{"E9": 0.30}`, E9 only re-ranks candidates found by other embedders. Documents nearest in E9 space but not in E1/E5/E7/E8/E10/E11 space are never found. User sees E9 in provenance and believes it's working fully.
+When HNSW search fails for E7, E10, E8, or E11, the error is logged but search continues with fewer embedders. The response contains no signal that results are degraded. No `degraded_embedders` field exists.
 
-### SRC-6: Direction-Aware Reranking Produces Scores > 1.0 [MEDIUM]
+### SEARCH-5: Pipeline RRF Hardcodes 6 Embedders, Excludes E6/E13 [LOW]
+**Files:** `search.rs:934-941`
 
-- **File**: `handlers/tools/memory_tools.rs` lines 1594-1627
-- **Bug**: Causal gate (1.10x) + direction match (1.08x) = 1.188x multiplicative boost. No clamp to [0,1].
-- **Impact**: A pre-boost 0.90 becomes 1.069. Users receive nonsensical similarity scores. Threshold comparisons unreliable.
+Pipeline stage 2 WeightedRRF/ScoreWeightedRRF only uses E1, E5, E7, E8, E10, E11. E6 and E13 are excluded even when `pipeline_full` profile gives them non-zero weights (E6=0.10, E13=0.07). They DO contribute in WeightedSum mode but not RRF mode.
 
-### SRC-7: Causal HNSW Distance-to-Similarity Not Clamped [MEDIUM]
+### SEARCH-6: Pipeline Re-reads Fingerprints From RocksDB Instead of Carrying Forward [MEDIUM]
+**Files:** `search.rs:1036-1046`
 
-- **Main search** (`search.rs:192`): `1.0 - distance.min(1.0)` — clamped to [0,1]
-- **Causal HNSW** (`causal_hnsw_index.rs:271`): `1.0 - distance` — can produce **negative** similarity
-- **Impact**: Anti-correlated causal vectors produce negative similarities entering downstream processing.
+Final results construction discards the `SemanticFingerprint` from scoring (`_semantic`) and re-reads the full `TeleologicalFingerprint` from RocksDB. Performance: 2x reads per result. Integrity: potential TOCTOU if concurrent writes occur.
 
-### SRC-8: `suppress_degenerate_weights` Uses Biased Estimator [LOW]
+### SEARCH-7: E8/E10 Asymmetric Vectors Not Direction-Aware in Search [LOW]
+**Files:** `search.rs:620, 643`
 
-- **File**: `search.rs:1259` — population variance `m2/count` instead of sample variance `m2/(count-1)`
-- **Impact**: With small result sets (top_k <= 5), embedders with true variance slightly above threshold are prematurely suppressed (weight reduced by 75%).
-
-### SRC-9: Pipeline RRF Double-Penalizes Suppressed Embedders [LOW]
-
-- **File**: `search.rs:869-930`
-- **Impact**: Suppressed weight is applied both in RRF weighting and indirectly through scores. Marginal embedders are more aggressively demoted than intended.
+E5 has full direction-aware routing (Cause -> search Effect index). E8 always searches as "source" (never "target"), E10 always uses paraphrase (never context). The dual vectors exist in the data model but multi-space search ignores direction.
 
 ---
 
-## Domain 3: Silent Error Swallowing (ERR)
+## Section 3: MCP Tool Handler Issues (8 findings)
 
-*Operations that fail but return success, degrading behavior invisibly.*
+### MCP-1: store_memory -- modality and tags Silently Ignored [HIGH]
+**Files:**
+- Schema: `tools/definitions/core.rs:42-50`
+- Handler: `handlers/tools/memory_tools.rs` (zero matches for "modality" or "tags")
 
-### ERR-1: HNSW Search Silently Drops Index Errors (6 Embedders) [CRITICAL]
+Schema advertises `modality` (enum: text/code/image/audio/structured/mixed) and `tags` (string array). Handler never reads, validates, or stores either parameter. User sends tags/modality, gets no error, data silently vanishes.
 
-- **File**: `storage/.../search.rs:288, 558, 579, 594, 609, 624`
-- **Pattern**: `if let Ok(candidates) = index.search(...)` — error branch does nothing
-- **Impact**: If an HNSW index is corrupted or OOM, that entire embedder dimension is silently excluded. RRF renormalizes remaining embedders' contributions. User receives confidently-scored results built on incomplete evidence.
+### MCP-2: store_memory -- importance Silently Clamped [MEDIUM]
+**Files:** `handlers/tools/memory_tools.rs:154-158`
 
-### ERR-2: HNSW Index Creation Fails Silently — Embedder Permanently Missing [CRITICAL]
+Schema says `minimum: 0, maximum: 1`. Handler clamps `importance: 5.0` to `1.0` silently instead of rejecting. User believes importance was set to 5.0 but it was stored as 1.0.
 
-- **File**: `core/.../multi_space_trait.rs:393, 401`
-- **Pattern**: `if let Ok(index) = RealHnswIndex::new(config)` — failure creates no index, no config, no error, no log
-- **Impact**: On memory-constrained deployments, the system silently degrades from 6-embedder to 4-embedder or 1-embedder search. Compounds with ERR-1 — index never created, every search silently skips it.
+### MCP-3: search_graph -- minSimilarity Not Validated [MEDIUM]
+**Files:** `handlers/tools/memory_tools.rs:541-544`
 
-### ERR-3: Weight Profile Lookup `.ok()` Discards Error Details [HIGH]
+Schema declares `minimum: 0, maximum: 1`. Handler does no bounds check. `minSimilarity: 5.0` filters out all results. `minSimilarity: -999.0` does nothing. Contrast: `topK` IS explicitly validated (lines 514-536).
 
-- **File**: `mcp/.../weights.rs:20`
-- **Pattern**: `get_weight_profile(name).ok()` — discards "profile not found" and "weights invalid"
-- **Impact**: User sends `{"weightProfile": "my_custom_profile"}`, handler silently falls back to default weights. Search runs with entirely different weights than requested.
+### MCP-4: search_graph -- decayFunction/temporalScale Undocumented [MEDIUM]
+**Files:** `handlers/tools/memory_tools.rs:669-681, 737-749`
 
-### ERR-4: Distance Computation Returns 0.0 on Type Mismatch [HIGH]
+Handler parses and validates `decayFunction` (linear/exponential/step/none/no_decay) and `temporalScale` (micro/meso/macro/long/archival). Neither appears in the JSON schema. MCP clients can never discover these parameters from `tools/list`.
 
-- **File**: `core/.../distance.rs:208-215`
-- **Pattern**: Type mismatch (dense/sparse/token-level) returns 0.0 instead of error
-- **Impact**: Data corruption or schema migration bugs produce 0.0 scores instead of errors. Perfect-match memories get penalized. Logged to tracing but never propagated.
+### MCP-5: get_topic_portfolio -- format Parameter Never Used [HIGH]
+**Files:**
+- Schema: `tools/definitions/topic.rs:28-33`
+- Handler: `handlers/tools/topic_tools.rs:193-269`
 
-### ERR-5: Sparse Index Returns Defaults on Lock Poisoning [HIGH]
+Schema offers `format: brief|standard|verbose`. DTO validates. Handler builds identical response regardless of format value. Brief, standard, and verbose all return the same data.
 
-- **File**: `core/.../sparse_index.rs:487-528`
-- **Pattern**: `.unwrap_or(0)` on poisoned `std::sync::RwLock`
-- **Impact**: After any thread panic holding a write lock, the sparse index reports 0 documents and 0 terms. E6 keyword and E13 SPLADE search silently return empty results. Two entire search modalities disabled permanently with no error.
+### MCP-6: get_session_timeline -- Double Pagination Bug [HIGH]
+**Files:** `handlers/tools/sequence_tools.rs:428-431, 503-508`
 
-### ERR-6: Embedder Config Falls Back to Weight 1.0 on Missing Config [HIGH]
+`skip(offset).take(limit)` applied TWICE:
+1. Lines 428-431: on session_fingerprints when converting to results
+2. Lines 503-508: on results_with_seq after sorting
 
-- **File**: `core/.../embedder_config.rs:150`
-- **Pattern**: `.unwrap_or(1.0)` when embedder not in weight map
-- **Impact**: Unconfigured embedder gets maximum weight (1.0), amplifying its contribution 3-10x over properly-configured embedders. Config error becomes invisible search quality degradation.
+With `offset: 10, limit: 5`: first pagination skips 10 and takes 5, second tries to skip 10 more from those 5 results -- yields **zero results**. Only works correctly when offset is 0.
 
-### ERR-7: Training Pipeline Silently Drops Trajectory File Writes [HIGH]
+### MCP-7: get_session_timeline -- sourceTypes Silently Ignored [MEDIUM]
+**Files:**
+- Schema: `tools/definitions/sequence.rs:96-101`
+- Handler: `handlers/tools/sequence_tools.rs` (zero matches for "sourceTypes")
 
-- **File**: `embeddings/.../pipeline.rs:656, 662`
-- **Pattern**: `if let Ok(mut file) = ...` + `let _ = writeln!`
-- **Impact**: Training trajectory data permanently lost. Post-hoc analysis impossible. Operators see empty/truncated trajectory files.
+Schema declares `sourceTypes` filter (HookDescription/ClaudeResponse/Manual/MDFileChunk). Handler never reads the parameter.
 
-### ERR-8: Causal Discovery Silently Drops Database Read Failures [HIGH]
+### MCP-8: trigger_consolidation -- Bounds Not Validated [MEDIUM]
+**Files:** `handlers/tools/consolidation.rs:172-249`
 
-- **File**: `handlers/tools/causal_discovery_tools.rs:171-181`
-- **Pattern**: `if let Ok(ids) = store.get_fingerprints_for_file(...)` — error branch skipped
-- **Impact**: Database I/O errors cause files' fingerprints to be silently excluded. Tool may report "not enough memories" when data exists but can't be read.
-
-### ERR-9: Merge Operation Logs But Continues Past 4 Distinct Write Failures [MEDIUM]
-
-- **File**: `handlers/merge.rs:373-447`
-- **Pattern**: 4 sequential `if let Err` blocks: content storage, soft-delete, audit record, merge history
-- **Impact**: `merge_concepts` returns `{"success": true}` even when: content is lost, sources not deleted (duplicates in search), audit trail missing, merge history lost (unmerge broken).
-
-### ERR-10: Audit Record Writes Fail Silently Across 15+ Handlers [MEDIUM]
-
-- **Files**: 15+ handler files — memory_tools.rs, embedder_tools.rs, graph_tools.rs, topic_tools.rs, curation_tools.rs, etc.
-- **Pattern**: `if let Err(e) = store.append_audit_record(...) { error!(...); }`
-- **Impact**: A single CF_AUDIT_LOG corruption silently disables ALL audit logging. `get_memory_provenance` shows incomplete history with no indication of gaps.
-
-### ERR-11: Code Search Entity Lookup Returns None on Error [MEDIUM]
-
-- **File**: `handlers/tools/code_tools.rs:267-278`
-- **Impact**: CodeStore errors are indistinguishable from "no matching entities." AI model concludes no relevant code exists when the search infrastructure failed.
-
-### ERR-12: File Watcher Thread Handle Not Stored on Lock Poisoning [MEDIUM]
-
-- **File**: `mcp/.../watchers.rs:196`
-- **Impact**: On shutdown, watcher thread is never joined. Continues running after server believes it stopped, potentially writing to freed resources.
-
-### ERR-13: Reconcile Files Continues Past Delete Failures [MEDIUM]
-
-- **File**: `handlers/tools/file_watcher_tools.rs:503-509`
-- **Impact**: Orphan fingerprints that fail to delete remain searchable. Tool claims reconciliation completed but some orphans persist, returning results pointing to deleted files.
-
-### ERR-14: Session Manager Ignores Unreadable Session File [MEDIUM]
-
-- **File**: `core/.../manager.rs:434-441`
-- **Impact**: Stale session file persists. On restart, new memories tagged with dead session ID.
-
-### ERR-15: BIRCH Clustering Silently Skips Entries With Distance Errors [MEDIUM]
-
-- **File**: `core/.../birch.rs:1334, 1607, 1641, 1787`
-- **Impact**: Points with NaN centroids assigned to wrong clusters. Errors in 4 nearest-neighbor computation paths silently skipped.
-
-### ERR-16: Embedding Version Storage Failure Silently Ignored [MEDIUM]
-
-- **File**: `handlers/tools/memory_tools.rs:453-458`
-- **Impact**: Embedding version records lost. Cannot detect when memory was computed with outdated model. Re-embedding quality assurance broken.
-
-### ERR-17: Importance Change History Write Failure Silently Ignored [MEDIUM]
-
-- **File**: `handlers/tools/curation_tools.rs:272-277`
-- **Impact**: Importance timeline has gaps. Cannot trace how memory's importance changed over time.
-
-### ERR-18: GPU Memory Manager Lies About State on Lock Poisoning [MEDIUM]
-
-- **File**: `graph/.../gpu_memory.rs:434, 446, 463`
-- **Impact**: `is_low_memory()` returns false when lock is poisoned. System continues allocating beyond budget.
+Schema declares `max_memories: min=1 max=10000` and `min_similarity: min=0 max=1`. Handler parses via serde_json with no validation step. `max_memories: 0` fetches nothing, `max_memories: 999999999` risks OOM.
 
 ---
 
-## Domain 4: Data Integrity (DAT)
+## Section 4: Error Handling Issues (15 findings)
 
-*Data that appears correctly stored/retrieved but is actually corrupted or inconsistent.*
+### ERR-1: HNSW Rollback Silently Discards Failures [HIGH]
+**Files:** `crates/context-graph-storage/src/teleological/rocksdb_store/crud.rs:162-166`
 
-### DAT-1: `total_doc_count` Includes Soft-Deleted Entries [MEDIUM]
+```rust
+let _ = self.store_fingerprint_internal(&old_fp);
+let _ = self.add_to_indexes(&old_fp);
+```
 
-- **File**: `storage/.../store.rs:263-271` (init), `search.rs:1343,1599` (read for IDF)
-- **Bug**: Startup counts ALL CF_FINGERPRINTS entries including soft-deleted. Inflates IDF denominator.
-- **Impact**: BM25 IDF scores in sparse search (E6/E13) subtly degraded. Rare terms appear less discriminative than they should. Worsens proportionally to soft-deleted fraction.
+During fingerprint update, if HNSW index add fails, rollback attempts to restore old data. Both `let _ =` discard Results. If rollback also fails, system is left with new fingerprint in RocksDB but no HNSW entry -- search silently misses entries.
 
-### DAT-2: NodeMetadata Uses `skip_serializing_if` With Bincode [HIGH]
+### ERR-2: Daemon Server Fire-and-Forget [HIGH]
+**Files:** `crates/context-graph-mcp/src/main.rs:653-657`
 
-- **File**: `core/.../metadata.rs:50-107` — 8 fields with `skip_serializing_if`
-- **Serialization**: `graph/.../iteration.rs:67` — `bincode::deserialize`
-- **Bug**: Bincode is positional. When `skip_serializing_if` omits a None field, bytes shift. Deserialization reads wrong bytes for subsequent fields.
-- **Impact**: Any MemoryNode stored via graph crate where a `skip_serializing_if` field is None either fails to deserialize (detected) or deserializes with wrong field values (silent corruption). Highest risk for `source`, `language`, `utl_score` which are frequently None.
+```rust
+tokio::spawn(async move {
+    if let Err(e) = server.run_tcp().await {
+        error!("Daemon server error: {}", e);
+    }
+});
+```
 
-### DAT-3: Legacy E5/E8 Fingerprints Never Migrated on Deserialization [HIGH]
+JoinHandle never stored or awaited. If TCP server crashes after initial health check, stdio proxy forwards to dead socket indefinitely. No recovery path.
 
-- **Files**: `core/.../fingerprint.rs:170-176, 294-332, 723-731`, `storage/.../serialization.rs:126-159`
-- **Bug**: Migration methods `migrate_legacy_e5()` and `migrate_legacy_e8()` exist but are never called during deserialization.
-- **Impact**: For legacy data, both cause and effect HNSW indexes receive IDENTICAL vectors. Asymmetric E5 causal search ("What caused X?" vs "What are effects of X?") returns identical results for all pre-migration fingerprints. Same for E8 graph source/target.
+### ERR-3: Consolidation Degrades to Empty Content [HIGH]
+**Files:** `crates/context-graph-mcp/src/handlers/tools/consolidation.rs:280-286`
 
-### DAT-4: HNSW Index and RocksDB Diverge After Failed Store or Update [HIGH]
+When `get_content_batch()` fails, substitutes `vec![None; fp_ids.len()]`. Consolidation then compares empty strings against each other, finding them identical, potentially merging unrelated memories. User sees "consolidation complete" with no indication it operated on phantom data.
 
-- **File**: `storage/.../crud.rs:44-59` (store), `crud.rs:85-138` (update)
-- **Bug — store**: If `add_to_indexes` fails after `store_fingerprint_internal` succeeds, data is in RocksDB + inverted indexes but NOT in HNSW. No rollback.
-- **Bug — update (WORSE)**: Step 2 removes old HNSW entries, Step 3 stores new data, Step 4 adds new HNSW entries. If Step 4 fails, old entries are gone and new entries never added. Fingerprint becomes findable via sparse search but unfindable via dense search.
-- **Impact**: Inconsistent search results persist until server restart triggers full index rebuild.
+### ERR-4: Causal Discovery Silently Discards Fetch Errors [HIGH]
+**Files:** `crates/context-graph-mcp/src/handlers/tools/causal_discovery_tools.rs:237-256`
 
-### DAT-5: Negative Cosine Handling in Fusion [MEDIUM]
+`Err(_)` discards error details entirely -- not even logged. `Ok(None) | Err(_)` conflates "content never stored" with "storage layer broke". If 8/10 memories fail to fetch, LLM runs causal analysis on 20% of data with no indication.
 
-- **File**: `search.rs:1226-1295`
-- **Bug**: `suppress_degenerate_weights` checks `all_zero` (exact 0.0 equality), keeping active any embedder with small negative scores. But `compute_semantic_fusion` excludes `score <= 0.0` from fusion. Result: active weight with zero contribution, silently reducing effective embedder count.
+### ERR-5: .unwrap() on Early-Return Serde Paths [MEDIUM]
+**Files:** `crates/context-graph-mcp/src/handlers/tools/temporal_tools.rs:93-107, 284-297`
 
-### DAT-6: `compact_async` / GC Soft-Delete Tracking Race [MEDIUM]
+Main response path correctly uses `match serde_json::to_value()`. Early-return "empty results" paths use `.unwrap()`. Can panic if struct ever gains a field producing NaN/Infinity.
 
-- **File**: `storage/.../persistence.rs`, `crud.rs:274-330`
-- **Bug**: The DashMap is shared across threads. Any code path clearing it unconditionally (crash during GC, future refactor) causes previously soft-deleted memories to become temporarily visible as "zombie" data.
+### ERR-6: HNSW Restore Failure Silently Falls Back to Rebuild [MEDIUM]
+**Files:** `crates/context-graph-storage/src/teleological/rocksdb_store/store.rs:295-303`
 
-### DAT-7: Missing Source Metadata + Quantized CF Cleanup on Delete [MEDIUM]
+`Ok(false) | Err(_)` triggers full O(n) rebuild. The `Err(_)` discards the specific error from `try_load_hnsw_indexes()`. Persistent HNSW corruption causes O(n) rebuild on every startup with no operator visibility.
 
-- **File**: `storage/.../crud.rs:175-253`
-- **Bug**: Hard-delete cleans 7 column families but NOT CF_SOURCE_METADATA (orphaned, pollutes file-path scans) and NOT 13 QUANTIZED_EMBEDDER_CFS (up to ~26KB wasted per deleted fingerprint, grows unboundedly).
+### ERR-7: File Watcher Errors Return Ok(false) Instead of Err [MEDIUM]
+**Files:** `crates/context-graph-mcp/src/server/watchers.rs:64-87`
 
-### DAT-8: Content Hash Not Verified on Retrieval [MEDIUM]
+`Ok(false)` returned for: 60-second timeout, model loading failure, AND missing provider. Caller cannot distinguish "disabled by config" from "system is broken."
 
-- **File**: `storage/.../content.rs:106-139`
-- **Bug**: SHA-256 verified on store but never recomputed on retrieval. Corrupted content served silently.
+### ERR-8: Batch Comparator .ok() Drops Errors [MEDIUM]
+**Files:** `crates/context-graph-core/src/teleological/comparator/batch.rs:127-137`
 
-### DAT-9: SparseVector u16 Index vs Vocabulary Size — No Compile-Time Guard [LOW]
+`.ok()` makes failed comparisons indistinguishable from below-threshold comparisons. During consolidation, this could prevent highly-similar memories from being detected as duplicates.
 
-- **File**: `core/.../sparse.rs:23, 52`
-- **Bug**: `SPARSE_VOCAB_SIZE = 30,522` fits in u16 today. No `const_assert!` prevents future vocabulary increase beyond 65,535 from causing silent index collisions.
+### ERR-9: JoinHandle Panic Discarded [MEDIUM]
+**Files:** `crates/context-graph-mcp/src/main.rs:631`
 
----
+`let _ = stdout_task.await;` -- if spawned task panicked, JoinError is discarded. `stdio_proxy_run` returns `Ok(())` even though proxy is broken. MCP clients hang indefinitely.
 
-## Domain 5: Phantom Tests (TST)
+### ERR-10: Unknown CLI Arguments Silently Ignored [MEDIUM]
+**Files:** `crates/context-graph-mcp/src/main.rs:183`
 
-*Tests that always pass but don't actually verify correctness.*
+`_ => {}` ignores unknown arguments. Typos like `--deamon` or `--daemon_port` silently fall through to defaults.
 
-### TST-1: 15+ Tests With Silent Early Return (GPU/Model Checks) [CRITICAL]
+### ERR-11: Epoch Fallback on Clock Error [LOW]
+**Files:** `crates/context-graph-core/src/teleological/services/profile_manager/manager.rs:368`
 
-- **Files**: `context-graph-cuda/src/hdbscan/tests.rs` (7 tests), `context-graph-embeddings/tests/e9_vector_differentiation_test.rs` (2), `context-graph-embeddings/src/provider/diagnostic_test.rs` (2), `context-graph-embeddings/src/models/pretrained/sparse/tests.rs` (2), `context-graph-causal-agent/tests/background_loop_integration.rs` (3)
-- **Pattern**: `if env_var("SKIP_GPU_TESTS").is_ok() { return; }` or `if !model_exists { return; }`
-- **Impact**: In CI without GPU/models, these tests show GREEN but execute zero assertions. No `#[ignore]` annotation, no skip-count in test output.
+`unwrap_or_default()` on SystemTime gives timestamp 0 (1970). Corrupts usage tracking silently.
 
-### TST-2: Non-Causal Pair Test Explicitly Refuses to Assert [CRITICAL]
+### ERR-12: Pipeline Builder Creates Zero-Vectors for Missing Queries [MEDIUM]
+**Files:** `crates/context-graph-storage/src/teleological/search/pipeline/builder.rs:73-76`
 
-- **File**: `context-graph-causal-agent/tests/background_loop_integration.rs:581-587`
-- **Pattern**: `if relationships_confirmed != 0 { println!("WARN: ..."); }` — no `assert!`
-- **Impact**: The test's entire purpose is verifying non-causal rejection. It always passes regardless of LLM output.
+Missing `query_semantic` defaults to `vec![0.0; 1024]`. Cosine similarity against zero vector is mathematically undefined. Can produce NaN, 0.0, or panic depending on implementation.
 
-### TST-3: ~20 Tests With Blind Error Assertions [HIGH]
+### ERR-13: Poisoned Mutex Returns None Silently [LOW]
+**Files:** `crates/context-graph-cli/src/commands/hooks/session_state.rs:81-83`
 
-- **Files**: cuda/cone/tests.rs, cuda/stub.rs, core/retrieval/query.rs, graph-agent/llm/mod.rs, mcp/middleware/validation.rs, storage/serialization/tests/
-- **Pattern**: `assert!(result.is_err())` without checking error type/message
-- **Impact**: If function fails for a DIFFERENT reason than intended, test still passes. Wrong error goes undetected.
+`SESSION_CACHE.lock().ok()?.clone()` -- poisoned mutex (from prior panic) returns None, indistinguishable from "no session."
 
-### TST-4: CLI Tests That Cannot Fail [HIGH]
+### ERR-14: Unknown Weight Categories Silently Dropped [LOW]
+**Files:** `crates/context-graph-mcp/src/handlers/tools/memory_tools.rs:2108`
 
-- **File**: `context-graph-cli/tests/e2e/error_recovery_test.rs:280-293, 621-633`
-- **Pattern**: Accepts ANY exit code. `test_e2e_database_error_handling` accepts success with invalid DB path.
-- **Impact**: Structurally impossible for these tests to fail. Any regression passes silently.
+Match on category names drops unknowns via `_ => {}`. New embedder categories silently omitted from weight breakdown response.
 
-### TST-5: GPU Tests Feature-Gated Out [MEDIUM]
+### ERR-15: Code Watcher Background Loop Has No Circuit Breaker [MEDIUM]
+**Files:** `crates/context-graph-mcp/src/server/watchers.rs:402-413`
 
-- **File**: `context-graph-mcp/src/handlers/tests/gpu_embedding_verification.rs:20` — `#![cfg(feature = "cuda")]`
-- **Impact**: 877 lines of thorough GPU verification tests don't exist in the binary without `--features cuda`. Functionally equivalent to `#[ignore]`.
-
-### TST-6: GraphDiscoveryService Has Only Default Config Test [MEDIUM]
-
-- **File**: `context-graph-graph-agent/src/service/mod.rs:474-488`
-- **Impact**: `run_discovery_cycle`, `start_background`, `stop` are completely untested. Single test only checks constants.
-
-### TST-7: InMemoryTeleologicalStore Tests Don't Verify Production (RocksDB) Behavior [MEDIUM]
-
-- **File**: `core/src/traits/teleological_memory_store_tests.rs`
-- **Impact**: All tests use HashMap-based stub. Checkpoint/restore, semantic search, and other features verified only against the stub, not the actual RocksDB implementation.
+Failed `process_events()` logs error every 5 seconds forever. No backoff, no max error count, no self-shutdown. Disk-full scenario generates ~17,280 error entries/day while accomplishing nothing.
 
 ---
 
-## Domain 6: Dead / Unreachable Code (DEAD)
+## Section 5: Test Suite Integrity Issues (14 findings)
 
-*Code that exists and compiles but is never executed in production.*
+### TEST-1: Tautological Constant Tests [MEDIUM]
+**Files:** `fusion.rs:236`, `multi_array.rs:1584`, 5x `definitions/*.rs`
 
-### DEAD-1: 3 Column Families Opened But Never Written or Read [MEDIUM]
+Tests like `assert_eq!(RRF_K, 60.0)` and `assert_eq!(definitions().len(), 1)` test that constants equal themselves. Provide zero behavioral verification.
 
-- `CF_ENTITY_PROVENANCE` (`column_families.rs:160`) — marked DEPRECATED, trait methods not wired
-- `CF_TOOL_CALL_INDEX` (`column_families.rs:252`) — marked DEPRECATED, trait methods not wired
-- `CF_CONSOLIDATION_RECOMMENDATIONS` (`column_families.rs:270`) — marked DEPRECATED, trait methods not wired
-- **Impact**: Each CF consumes RocksDB metadata overhead on every startup. Cannot be removed without deleting database (RocksDB requires all on-disk CFs to be opened).
+### TEST-2: Assertion-Free "Evidence" Test [HIGH]
+**Files:** `mcp_protocol_e2e_test.rs:903-926`
 
-### DEAD-2: `ChainRetrievalOptions` — Fully Implemented, Never Consumed [MEDIUM]
+`evidence_of_e2e_test_coverage()` only asserts a hardcoded array has 11 elements (`assert_eq!(11, 11)` in disguise). Does NOT verify tools are registered. This is the ONLY non-CUDA e2e test.
 
-- **File**: `core/.../options.rs:639-693`
-- **Impact**: Builder methods `with_chain()`, `with_chain_and_related()` exist. No search implementation reads `chain_options`. Setting it has zero runtime effect. ~80 lines of dead code.
+### TEST-3: Tests With No Assertions on Result [HIGH]
+**Files:** `teleological_memory_store_tests.rs:283-301`, `pipeline/tests.rs:91-118`
 
-### DEAD-3: 5 of 7 Matrix `SearchStrategy` Variants Unreachable from MCP [MEDIUM]
+`test_min_similarity_filter` calls search with `min_similarity=0.999` but never checks the filter worked. `println!("[VERIFIED]")` but nothing was verified. `test_timing_breakdown` prints timing data but never asserts any field is non-zero.
 
-- **File**: `core/.../matrix_search/types.rs:14-30`
-- **Dead variants**: `SynergyWeighted`, `GroupHierarchical`, `CrossCorrelationDominant`, `TuckerCompressed`, `Adaptive`
-- **Impact**: Full implementations exist (~400 lines) including group categorization and Tucker decomposition. No MCP tool instantiates them. Additionally, there are TWO `SearchStrategy` enums with the same name (3-variant MCP version and 7-variant matrix version), creating confusion.
+### TEST-4: is_err() Without Error Type Verification [MEDIUM]
+**Files:** 8+ locations across `retrieval/tests.rs`, `query.rs`, `config_tests.rs`
 
-### DEAD-4: `faiss-working` Feature Never Enabled [MEDIUM]
+Tests assert `result.is_err()` but never verify WHAT error was returned. Any error (including wrong errors) passes the test.
 
-- **Files**: `context-graph-cuda/Cargo.toml:49`, `cuda/src/ffi/mod.rs:45-111`, `graph/src/index/faiss_ffi/mod.rs:78-346`
-- **Impact**: Hundreds of lines of FAISS GPU FFI bindings compile to stubs returning error messages. No default feature enables it.
+### TEST-5: Overly Permissive Upper-Bound Assertions [HIGH]
+**Files:** `retrieval/tests.rs:231,251,527`, `teleological_store_stub/tests.rs:93`
 
-### DEAD-5: `ComprehensiveComparison` Computed But Never Returned [LOW]
+`assert!(result.results.len() <= 5)` is true when 0 results returned. A broken search returning nothing passes as "working."
 
-- **File**: `core/.../matrix_search/types.rs:89-119`
-- **Impact**: Rich per-group, per-embedder correlation, Tucker compressed comparison data never reaches MCP clients. ~100 lines exercised only by unit tests.
+### TEST-6: Stub-Only Tests Masquerading as Integration Tests [HIGH]
+**Files:** `crates/context-graph-core/src/retrieval/tests.rs` (entire file)
 
-### DEAD-6: `NormalizationStrategyOption` ZScore/Convex Unreachable [LOW]
+`StubMultiArrayProvider` generates hash-based embeddings. Tests verify pipeline machinery doesn't crash but verify NOTHING about search quality, ranking, or semantic relevance.
 
-- **File**: `core/.../options.rs:82-98`
-- **Impact**: No MCP tool exposes normalization parameter. ZScore and Convex variants defined but unreachable.
+### TEST-7: Feature-Gated Tests That Never Run in CI [CRITICAL]
+**Files:** `mcp_protocol_e2e_test.rs` (6 tests), `search_periodic_test.rs`
 
-### DEAD-7: `ComparisonScope` 7 Variants All Internal-Only [LOW]
+ALL 6 MCP E2E tests gated behind `#[cfg(feature = "cuda")]`. Without GPU hardware, zero MCP handler E2E coverage.
 
-- **File**: `core/.../matrix_search/types.rs:34-50`
-- **Impact**: Full, TopicProfileOnly, CrossCorrelationsOnly, etc. — no MCP tool exposes comparison scope.
+### TEST-8: Tests That Test Setup, Not Code [LOW]
+**Files:** `pipeline/tests.rs:121-133`
+
+Constructs `PipelineHealth { is_healthy: true }` then asserts `is_healthy` is true. Tests struct initialization, not actual health checking.
+
+### TEST-9: Display Trait Tautologies [LOW]
+**Files:** `executor.rs:216`, `pressure.rs:213`, `profile/tests.rs:111`
+
+Tests that `format!("{}", IndexType::Hnsw) == "HNSW"`. Cosmetic concern, zero safety benefit.
+
+### TEST-10: Send/Sync Compile-Time Tests [LOW]
+**Files:** `memex_impl.rs:452-461`
+
+Compile-time check disguised as runtime test. Either compiles and passes, or doesn't compile at all. Can never fail at runtime.
+
+### TEST-11: Latency Test With No Assertion [HIGH]
+**Files:** `search/single/tests/search.rs:345-360`
+
+Prints latency value and says "RESULT: PASS" but has zero assertions. Latency could be 0, garbage, or anything.
+
+### TEST-12: Conditional Assertions That Skip Verification [HIGH]
+**Files:** `search_periodic_test.rs:389, 449`
+
+```rust
+if !results.is_empty() { /* assertions */ } else { println!("No results (may be expected)"); }
+```
+
+With stub embeddings (the common case), results are empty and ALL assertions skipped.
+
+### TEST-13: Unnecessary Async Tests [LOW]
+**Files:** 10+ tests across `retrieval/tests.rs`
+
+Tests marked `#[tokio::test]` that never `.await` anything meaningful. Creates false impression of async behavior testing.
+
+### TEST-14: "Evidence of Success" Printf Pattern [MEDIUM]
+**Files:** 8 files across `context-graph-embeddings/src/models/`
+
+Tests with ~10:1 ratio of `println!` to `assert!`. Some print `"ALL CHECKS PASSED"` BEFORE assertions run. Misleading if test panics on a later assertion.
 
 ---
 
 ## Remediation Priority Matrix
 
-### P0 — Fix Immediately (Data Corruption / Completely Wrong Results)
+### P0 -- Fix Immediately (data corruption / zero coverage)
 
-| ID | Finding | Fix |
-|----|---------|-----|
-| SCH-1 | `direction` vs `searchMode` param mismatch | Rename handler param to `direction`, align enum values to schema |
-| SRC-2 | Score inflation from skip-zero fusion | Include zero-score embedders in denominator (or document the semantic: average over responding embedders) |
-| DAT-2 | NodeMetadata bincode + skip_serializing_if | Switch graph crate to MessagePack OR remove skip_serializing_if from NodeMetadata |
-| DAT-3 | Legacy E5/E8 never migrated | Call `migrate_legacy_e5()`/`migrate_legacy_e8()` in `deserialize_teleological_fingerprint()` |
+| ID | Finding | Effort |
+|----|---------|--------|
+| MCP-6 | Double pagination bug in get_session_timeline | Small -- remove second skip/take |
+| SEARCH-1 | SparseVector cosine normalization mismatch | Small -- add `(raw+1)/2` normalization |
+| DATA-6 | MemoryStore session index race condition | Medium -- add Mutex like TeleologicalStore |
+| ERR-3 | Consolidation on empty content | Small -- return error instead of empty strings |
+| TEST-7 | All MCP E2E tests CUDA-gated | Medium -- create non-CUDA E2E test suite |
 
-### P1 — Fix Soon (Silent Degradation / Invisible Failures)
+### P1 -- Fix Soon (silent failures / misleading results)
 
-| ID | Finding | Fix |
-|----|---------|-----|
-| ERR-1/ERR-2 | HNSW index creation + search silent failures | Add warning metadata to MCP response: `"degraded_embedders": ["E1"]`. Log at ERROR level. |
-| DAT-4 | HNSW/RocksDB divergence on failed store/update | Add compensating rollback: if `add_to_indexes` fails, remove from RocksDB |
-| ERR-3 | Weight profile .ok() discards errors | Return error to user: "weight profile 'X' not found" |
-| ERR-5 | Sparse index lock poisoning returns defaults | Use parking_lot::RwLock (non-poisoning) or propagate error |
-| ERR-6 | Embedder config unwrap_or(1.0) | Return error or use 0.0 default for unknown embedders |
-| SCH-2 | modality parameter ignored | Implement filtering or remove from schema |
-| SCH-3 | e9DiscoveryThreshold schema default wrong | Update schema default to 0.15 |
-| SCH-4 | anchorToCurrentTurn default mismatch | Align handler default to true (matching schema) |
-| SRC-6 | Scores exceeding 1.0 | Add `result.similarity = result.similarity.min(1.0)` clamp |
-| TST-1 | Silent early return phantom tests | Replace `return` with `#[ignore]` annotation |
-| TST-2 | Non-causal pair test refuses to assert | Add `assert_eq!(result.relationships_confirmed, 0)` |
+| ID | Finding | Effort |
+|----|---------|--------|
+| ERR-1 | HNSW rollback discards failures | Small -- log + propagate |
+| ERR-2 | Daemon server fire-and-forget | Medium -- store JoinHandle, detect crash |
+| ERR-4 | Causal discovery discards fetch errors | Small -- log errors, add warning to response |
+| MCP-1 | store_memory modality/tags ignored | Medium -- implement storage or remove from schema |
+| MCP-5 | get_topic_portfolio format never used | Small -- implement or remove parameter |
+| DATA-3 | Incomplete rollback in store_async | Medium -- rollback all 5 CFs |
+| SEARCH-4 | HNSW failures silently degrade results | Medium -- add degraded_embedders to response |
+| TEST-3 | Tests with no assertions on result | Small -- add actual assertions |
+| TEST-5 | Overly permissive upper-bound assertions | Small -- change `<=` to range check |
 
-### P2 — Fix When Convenient (Hidden Features / Resource Waste)
+### P2 -- Fix When Convenient (edge cases / maintenance hazards)
 
-| ID | Finding | Fix |
-|----|---------|-----|
-| SCH-5-10 | 30+ undiscoverable parameters | Update MCP tool schemas to include handler-supported params |
-| DAT-1 | total_doc_count includes soft-deleted | Subtract `self.soft_deleted.len()` at startup |
-| DAT-7 | Source metadata + quantized CFs not cleaned on delete | Add to WriteBatch in hard-delete path |
-| DEAD-1 | 3 empty CFs consuming overhead | Document migration plan |
-| DEAD-2 | ChainRetrievalOptions dead code | Remove or implement |
-| TST-3 | Blind error assertions | Add `assert!(matches!(result, Err(SpecificError { .. })))` |
-| TST-4 | CLI tests that cannot fail | Assert on acceptable exit code set |
+| ID | Finding | Effort |
+|----|---------|--------|
+| DATA-1 | Non-atomic MemoryStore write | Medium -- convert to WriteBatch |
+| DATA-2 | Non-atomic delete_causal_relationship | Medium -- convert to WriteBatch |
+| DATA-4 | CodeStore non-atomic multi-CF writes | Medium -- convert to WriteBatch |
+| ERR-6 | HNSW restore error swallowed | Small -- add warn! log |
+| ERR-7 | Watcher errors return Ok(false) | Small -- return Err for failures |
+| ERR-10 | Unknown CLI args silently ignored | Small -- add warn! for unknown args |
+| ERR-15 | Code watcher no circuit breaker | Medium -- add backoff + max retries |
+| MCP-2 | importance silently clamped | Small -- reject out-of-range |
+| MCP-3 | minSimilarity not validated | Small -- add bounds check |
+| MCP-4 | decayFunction/temporalScale undocumented | Small -- add to schema |
+| MCP-7 | sourceTypes silently ignored | Medium -- implement or remove |
+| MCP-8 | consolidation bounds unvalidated | Small -- add range checks |
+| SEARCH-2 | E9 HNSW never queried for candidates | Medium -- add E9 to multi-space when weight > 0 |
+| SEARCH-3 | DEFAULT_SEMANTIC_WEIGHTS vs named profile | Small -- unify |
+| SEARCH-5 | Pipeline RRF hardcodes 6 embedders | Medium -- make dynamic |
+| SEARCH-6 | Pipeline re-reads fingerprints | Medium -- carry forward from stage 2 |
+
+### P3 -- Low Priority (cosmetic / unlikely edge cases)
+
+| ID | Finding | Effort |
+|----|---------|--------|
+| DATA-5 | HNSW compaction race (acknowledged) | Large -- snapshot iterator |
+| ERR-5 | .unwrap() on serde early-return | Small |
+| ERR-8 | Batch comparator .ok() drops errors | Small |
+| ERR-9 | JoinHandle panic discarded | Small |
+| ERR-11 | Epoch fallback timestamp | Small |
+| ERR-12 | Zero-vector defaults in pipeline builder | Medium |
+| ERR-13 | Poisoned mutex returns None | Small |
+| ERR-14 | Unknown weight categories dropped | Small |
+| SEARCH-7 | E8/E10 direction not used in search | Medium |
+| TEST-1 | Tautological constant tests | Small |
+| TEST-2 | Assertion-free evidence test | Small |
+| TEST-4 | is_err() without type check | Small |
+| TEST-6 | Stub-only integration tests | Large |
+| TEST-8 | Tests that test setup | Small |
+| TEST-9 | Display trait tautologies | Small |
+| TEST-10 | Send/Sync compile-time tests | None (informational) |
+| TEST-11 | Latency test no assertion | Small |
+| TEST-12 | Conditional assertions skip verification | Medium |
+| TEST-13 | Unnecessary async tests | Small |
+| TEST-14 | Evidence-of-success printf pattern | Small |
 
 ---
 
-## Systemic Root Causes
+## Methodology
 
-### 1. Schema Drift
-Handler implementations evolved with new features (PHASE-2-PROVENANCE, INLINE-CAUSAL, E7-WIRING) but schema files in `tools/definitions/` were not updated. **30+ parameters** exist in handlers without schema entries.
+Five forensic investigation agents ran in parallel, each examining a different dimension:
 
-### 2. Resilience-Over-Correctness Philosophy
-The codebase prefers partial results over total failure (reasonable for a memory system). However, **degradation is invisible to callers** — MCP tool responses include no `warnings` or `degraded_embedders` array. Silent 0.0 returns are indistinguishable from "not similar."
+1. **Test Suite Integrity** -- Examined 30+ test files for tautological tests, missing assertions, and deceptive coverage
+2. **Error Handling Paths** -- Searched all .rs files for `unwrap_or`, `let _ =`, `.ok()`, `_ => {}` patterns
+3. **Data Integrity** -- Examined RocksDB operations, atomicity, serialization, concurrency, and cache coherence
+4. **MCP Tool Handlers** -- Cross-referenced all 55 tool schemas against handler implementations
+5. **Search & Embedding Pipeline** -- Audited scoring, fusion, normalization, and candidate retrieval across 13 embedders
 
-### 3. Error + Default Compounding
-ERR-2 (index creation fails) feeds into ERR-1 (search skips missing index), amplified by ERR-3 (wrong weights applied). Three independent silent failures compound into arbitrarily wrong results.
-
-### 4. Dual-Path Duplication
-Multiple implementations of the same operation (3 cosine similarity functions, 2 MaxSim functions, 2 SearchStrategy enums) create inconsistency surfaces where paths produce different results for identical inputs.
+Each agent performed line-by-line code inspection with specific file:line citations. Findings rated INNOCENT were excluded from this report.
 
 ---
 
-## Estimated Impact by Feature Area
+## Conclusion
 
-| Feature | Status | Key Issues |
-|---------|--------|------------|
-| **Basic search (search_graph)** | Works, scores inflated 15-33% | SRC-2, SRC-1 |
-| **Causal search (search_causes/effects)** | Works at reduced accuracy | SCH-1, SCH-5, SCH-6 |
-| **Causal direction filtering** | **Completely broken** for schema clients | SCH-1 |
-| **Modality filtering** | **Non-functional** | SCH-2 |
-| **Asymmetric E5/E8 search** | Broken for legacy data | DAT-3 |
-| **Weight profiles** | Silent fallback to default on error | ERR-3 |
-| **HNSW search** | Can silently degrade to partial embedder set | ERR-1, ERR-2 |
-| **Sparse search (E6/E13)** | IDF-only (no BM25 TF), can silently die on lock poison | SRC-4, ERR-5 |
-| **Merge operations** | Returns success despite 4 possible silent failures | ERR-9 |
-| **Audit trail** | Gaps develop silently across 15+ handlers | ERR-10 |
-| **Graph storage** | NodeMetadata potentially corrupted by bincode + skip_serializing | DAT-2 |
-| **Code search** | Works, but best modes (e7Only, language hint) are hidden | SCH-7 |
-| **Conversation anchoring** | Silently disabled (default mismatch) | SCH-4 |
-| **Temporal parameters** | Work if you know the param names. All 10 hidden from schema | SCH-9 |
-| **Provenance** | Works if you send undocumented `includeProvenance: true` | SCH-9 |
-| **E9 blind-spot detection** | Schema default (0.7) makes feature appear broken | SCH-3 |
+The codebase has strong engineering in its core paths -- the TeleologicalStore uses WriteBatch and secondary_index_lock correctly, E5 asymmetric search is properly implemented, MaxSim normalization is consistent, and bincode/JSON serialization boundaries are well-maintained. However, the MemoryStore, CodeStore, and several MCP handlers appear to be from earlier development phases that never received the same hardening treatment. The test suite inflates coverage numbers through tautological tests and CUDA-gated tests that never run in standard CI. The 5 P0 items represent real bugs that produce incorrect results in normal operation.

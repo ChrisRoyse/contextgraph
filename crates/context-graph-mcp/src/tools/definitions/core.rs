@@ -37,17 +37,6 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "default": 0.5,
                         "description": "Importance score for the memory [0.0, 1.0]"
                     },
-                    "modality": {
-                        "type": "string",
-                        "enum": ["text", "code", "image", "audio", "structured", "mixed"],
-                        "default": "text",
-                        "description": "The type/modality of the content"
-                    },
-                    "tags": {
-                        "type": "array",
-                        "items": { "type": "string" },
-                        "description": "Optional tags for categorization"
-                    },
                     "sessionId": {
                         "type": "string",
                         "description": "Session ID for session-scoped storage. If omitted, uses CLAUDE_SESSION_ID env var."
@@ -262,6 +251,18 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "boolean",
                         "default": false,
                         "description": "Include retrieval provenance metadata in results (default: false). Shows strategy, weight profile, query classification, and per-embedder contributions."
+                    },
+                    "decayFunction": {
+                        "type": "string",
+                        "enum": ["linear", "exponential", "step", "none", "no_decay"],
+                        "default": "linear",
+                        "description": "Temporal decay function: linear, exponential, step, none, no_decay"
+                    },
+                    "temporalScale": {
+                        "type": "string",
+                        "enum": ["micro", "meso", "macro", "long", "archival"],
+                        "default": "meso",
+                        "description": "Temporal scale for decay: micro, meso, macro, long, archival"
                     }
                 },
                 "required": ["query"]

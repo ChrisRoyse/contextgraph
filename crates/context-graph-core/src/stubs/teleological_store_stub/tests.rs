@@ -89,7 +89,7 @@ async fn test_search_semantic() {
     let query = SemanticFingerprint::zeroed();
     let options = TeleologicalSearchOptions::quick(10);
     let results = store.search_semantic(&query, options).await.unwrap();
-    assert!(!results.is_empty());
+    assert!(!results.is_empty(), "Search after storing 5 items should return results");
     assert!(results.len() <= 5);
 }
 

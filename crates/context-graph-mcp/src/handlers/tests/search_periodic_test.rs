@@ -386,35 +386,31 @@ async fn test_search_periodic_result_fields() {
         Ok(json) => {
             let results = json.get("results").unwrap().as_array().unwrap();
 
-            if !results.is_empty() {
-                let first = &results[0];
+            // TEST-12 FIX: The test stores a memory then searches for it — results must not be empty.
+            assert!(!results.is_empty(), "Search should return results after storing a matching memory");
+            let first = &results[0];
 
-                // Verify all expected fields are present
-                assert!(first.get("id").is_some(), "Result should have 'id'");
-                assert!(first.get("semanticScore").is_some(), "Result should have 'semanticScore'");
-                assert!(first.get("periodicScore").is_some(), "Result should have 'periodicScore'");
-                assert!(first.get("finalScore").is_some(), "Result should have 'finalScore'");
-                assert!(first.get("memoryHour").is_some(), "Result should have 'memoryHour'");
-                assert!(first.get("memoryDayOfWeek").is_some(), "Result should have 'memoryDayOfWeek'");
-                assert!(first.get("dayName").is_some(), "Result should have 'dayName'");
-                assert!(first.get("createdAt").is_some(), "Result should have 'createdAt'");
+            // Verify all expected fields are present
+            assert!(first.get("id").is_some(), "Result should have 'id'");
+            assert!(first.get("semanticScore").is_some(), "Result should have 'semanticScore'");
+            assert!(first.get("periodicScore").is_some(), "Result should have 'periodicScore'");
+            assert!(first.get("finalScore").is_some(), "Result should have 'finalScore'");
+            assert!(first.get("memoryHour").is_some(), "Result should have 'memoryHour'");
+            assert!(first.get("memoryDayOfWeek").is_some(), "Result should have 'memoryDayOfWeek'");
+            assert!(first.get("dayName").is_some(), "Result should have 'dayName'");
+            assert!(first.get("createdAt").is_some(), "Result should have 'createdAt'");
 
-                let semantic_score = first.get("semanticScore").unwrap().as_f64().unwrap();
-                let periodic_score = first.get("periodicScore").unwrap().as_f64().unwrap();
-                let final_score = first.get("finalScore").unwrap().as_f64().unwrap();
+            let semantic_score = first.get("semanticScore").unwrap().as_f64().unwrap();
+            let periodic_score = first.get("periodicScore").unwrap().as_f64().unwrap();
+            let final_score = first.get("finalScore").unwrap().as_f64().unwrap();
 
-                info!("Result scores - semantic: {}, periodic: {}, final: {}",
-                      semantic_score, periodic_score, final_score);
+            info!("Result scores - semantic: {}, periodic: {}, final: {}",
+                  semantic_score, periodic_score, final_score);
 
-                // Verify scores are in valid ranges
-                assert!(semantic_score >= 0.0 && semantic_score <= 1.0, "Semantic score out of range");
-                assert!(periodic_score >= 0.0 && periodic_score <= 1.0, "Periodic score out of range");
-                assert!(final_score >= 0.0, "Final score should be non-negative");
-
-                println!("✓ All result fields present with valid values");
-            } else {
-                println!("⚠ No results returned (may be expected with stub embeddings)");
-            }
+            // Verify scores are in valid ranges
+            assert!(semantic_score >= 0.0 && semantic_score <= 1.0, "Semantic score out of range");
+            assert!(periodic_score >= 0.0 && periodic_score <= 1.0, "Periodic score out of range");
+            assert!(final_score >= 0.0, "Final score should be non-negative");
         }
         Err(e) => {
             panic!("search_periodic failed: {}", e);
@@ -446,30 +442,27 @@ async fn test_search_periodic_day_names() {
         Ok(json) => {
             let results = json.get("results").unwrap().as_array().unwrap();
 
-            if !results.is_empty() {
-                let first = &results[0];
-                let day_name = first.get("dayName").unwrap().as_str().unwrap();
-                let dow = first.get("memoryDayOfWeek").unwrap().as_u64().unwrap();
+            // TEST-12 FIX: The test stores a memory then searches for it — results must not be empty.
+            assert!(!results.is_empty(), "Search should return results after storing a matching memory");
+            let first = &results[0];
+            let day_name = first.get("dayName").unwrap().as_str().unwrap();
+            let dow = first.get("memoryDayOfWeek").unwrap().as_u64().unwrap();
 
-                // Verify day_name matches day of week
-                let expected_name = match dow {
-                    0 => "Sunday",
-                    1 => "Monday",
-                    2 => "Tuesday",
-                    3 => "Wednesday",
-                    4 => "Thursday",
-                    5 => "Friday",
-                    6 => "Saturday",
-                    _ => "Unknown",
-                };
+            // Verify day_name matches day of week
+            let expected_name = match dow {
+                0 => "Sunday",
+                1 => "Monday",
+                2 => "Tuesday",
+                3 => "Wednesday",
+                4 => "Thursday",
+                5 => "Friday",
+                6 => "Saturday",
+                _ => "Unknown",
+            };
 
-                assert_eq!(day_name, expected_name,
-                    "Day name '{}' should match dow {} (expected '{}')", day_name, dow, expected_name);
-                info!("Day name verification passed: dow={} -> {}", dow, day_name);
-                println!("✓ Day name correctly matches day of week");
-            } else {
-                println!("⚠ No results returned (may be expected with stub embeddings)");
-            }
+            assert_eq!(day_name, expected_name,
+                "Day name '{}' should match dow {} (expected '{}')", day_name, dow, expected_name);
+            info!("Day name verification passed: dow={} -> {}", dow, day_name);
         }
         Err(e) => {
             panic!("search_periodic failed: {}", e);

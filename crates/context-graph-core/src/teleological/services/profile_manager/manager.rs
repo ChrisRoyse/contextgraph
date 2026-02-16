@@ -5,6 +5,8 @@
 
 use std::collections::HashMap;
 
+use tracing::warn;
+
 use crate::teleological::{GroupType, ProfileId, TeleologicalProfile, NUM_EMBEDDERS};
 
 use super::builtin;
@@ -365,7 +367,10 @@ impl ProfileManager {
 
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
+            .unwrap_or_else(|e| {
+                warn!("System clock before UNIX epoch: {} — using 0 timestamp for usage recording", e);
+                std::time::Duration::ZERO
+            })
             .as_millis() as u64;
 
         let stats = self.stats.entry(id.clone()).or_default();

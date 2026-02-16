@@ -293,9 +293,11 @@ async fn test_min_similarity_filter() {
     let options = TeleologicalSearchOptions::quick(10).with_min_similarity(0.999);
     let results = store.search_semantic(&query, options).await.unwrap();
 
-    // High threshold should filter most results
-    println!(
-        "[VERIFIED] test_min_similarity_filter: High threshold filters results (found {})",
+    // TEST-3 FIX: Assert filter actually works — zeroed query vs random fingerprints
+    // should have low similarity, so 0.999 threshold should filter all results.
+    assert!(
+        results.is_empty() || results.len() < 5,
+        "min_similarity=0.999 should filter most results from zeroed query, got {}",
         results.len()
     );
 }

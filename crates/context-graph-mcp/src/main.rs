@@ -180,7 +180,9 @@ impl CliArgs {
                         }
                     }
                 }
-                _ => {} // Ignore unknown arguments
+                arg => {
+                    eprintln!("WARNING: Unknown argument '{}' — ignoring. Use --help for usage.", arg);
+                }
             }
             i += 1;
         }
@@ -628,7 +630,9 @@ async fn run_stdio_to_tcp_proxy(daemon_port: u16) -> Result<()> {
     }
 
     // Wait for stdout task to complete
-    let _ = stdout_task.await;
+    if let Err(e) = stdout_task.await {
+        error!("Stdio stdout task panicked or was cancelled: {}", e);
+    }
     info!("Stdio proxy shutdown");
     Ok(())
 }
@@ -649,19 +653,29 @@ async fn start_daemon_server(config: Config, warm_first: bool, daemon_port: u16)
     // Create the server
     let server = server::McpServer::new(daemon_config, warm_first).await?;
 
-    // Spawn the daemon server
-    tokio::spawn(async move {
+    // Spawn the daemon server — store JoinHandle so we detect crashes
+    let daemon_handle = tokio::spawn(async move {
         if let Err(e) = server.run_tcp().await {
-            error!("Daemon server error: {}", e);
+            error!("CRITICAL: Daemon TCP server crashed: {}", e);
+            return Err(anyhow::anyhow!("Daemon server crashed: {}", e));
         }
+        Ok(())
     });
 
     // Wait for daemon to be ready (accept connections)
     for _ in 0..50 {
         // 5 seconds max
+        if daemon_handle.is_finished() {
+            error!("Daemon server task exited unexpectedly during startup");
+            return Err(anyhow::anyhow!(
+                "Daemon server exited before accepting connections"
+            ));
+        }
         sleep(Duration::from_millis(100)).await;
         if is_daemon_running(daemon_port).await {
             info!("Daemon server ready on port {}", daemon_port);
+            // Detach the handle — server runs in background
+            // If it crashes later, the TCP health check will detect it
             return Ok(());
         }
     }

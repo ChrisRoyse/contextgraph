@@ -287,10 +287,6 @@ mod tests {
         let ctx = GraphModel::encode_context("Alice", &neighbors);
         println!("   encode_context(Alice, [...]) = \"{}\"", ctx);
 
-        println!("\n========================================");
-        println!("ALL CHECKS PASSED");
-        println!("========================================\n");
-
         // Test environment budget (relaxed for cold-start scenarios and GPU contention):
         // - 1500ms covers model load from disk, kernel compilation, memory transfer,
         //   and GPU contention during parallel test execution
@@ -308,5 +304,9 @@ mod tests {
         assert!((norm - 1.0).abs() < 0.001);
         assert!(is_deterministic, "Same input must be deterministic");
         assert!(vectors_differ, "Different inputs must differ");
+
+        println!("\n========================================");
+        println!("ALL CHECKS PASSED");
+        println!("========================================\n");
     }
 }

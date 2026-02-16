@@ -2,6 +2,8 @@
 //!
 //! Provides a fluent API for building and executing pipeline queries.
 
+use tracing::error;
+
 use super::execution::RetrievalPipeline;
 use super::types::{PipelineError, PipelineResult, PipelineStage};
 
@@ -72,7 +74,12 @@ impl PipelineBuilder {
     pub fn execute(self, pipeline: &RetrievalPipeline) -> Result<PipelineResult, PipelineError> {
         let query_splade = self.query_splade.unwrap_or_default();
         let query_matryoshka = self.query_matryoshka.unwrap_or_else(|| vec![0.0; 128]);
-        let query_semantic = self.query_semantic.unwrap_or_else(|| vec![0.0; 1024]);
+        let query_semantic = self.query_semantic.ok_or_else(|| {
+            error!("Pipeline build failed: query_semantic (E1) is required but not set");
+            PipelineError::MissingQuery {
+                stage: PipelineStage::RrfRerank,
+            }
+        })?;
         let query_tokens = self.query_tokens.unwrap_or_default();
 
         let stages = self.stages.unwrap_or_else(|| PipelineStage::all().to_vec());

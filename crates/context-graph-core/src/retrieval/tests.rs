@@ -228,7 +228,8 @@ async fn test_execute_with_data() {
     assert!(result.is_ok());
 
     let result = result.unwrap();
-    assert!(result.results.len() <= 5);
+    assert!(!result.results.is_empty(), "Search with data should return results");
+    assert!(result.results.len() <= 5, "Should respect final_limit");
     assert!(result.spaces_searched >= 1);
 
     println!(
@@ -248,7 +249,8 @@ async fn test_execute_respects_final_limit() {
     };
 
     let result = executor.execute(query).await.unwrap();
-    assert!(result.results.len() <= 5);
+    assert!(!result.results.is_empty(), "Search with 20 items should return results");
+    assert!(result.results.len() <= 5, "Should respect final_limit");
 
     println!("[VERIFIED] Execute respects final_limit");
 }
@@ -524,7 +526,8 @@ async fn test_full_query_flow_with_stub_data() {
     let result = executor.execute(query).await.unwrap();
 
     // Verify result structure
-    assert!(result.results.len() <= 10);
+    assert!(!result.results.is_empty(), "Search across all spaces should return results");
+    assert!(result.results.len() <= 10, "Should respect final_limit");
     assert!(result.space_breakdown.is_some());
     assert!(result.spaces_searched > 0);
     assert_eq!(result.spaces_failed, 0);

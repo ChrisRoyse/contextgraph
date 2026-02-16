@@ -999,105 +999,91 @@ impl RocksDbTeleologicalStore {
             }
         };
 
-        // Delete from primary CF
-        let cf = self.cf_causal_relationships();
-        let key = causal_relationship_key(&id);
+        // DATA-2 FIX: Atomically delete primary record + update secondary index via WriteBatch.
+        // Previously these were 2 independent operations; a crash between them would leave
+        // an orphaned secondary index entry pointing to a deleted primary record.
+        //
+        // STG-03 FIX: Hold secondary_index_lock for the entire read-modify-write cycle.
+        let _index_guard = self.secondary_index_lock.lock();
 
-        self.db.delete_cf(cf, key).map_err(|e| {
+        let cf_rel = self.cf_causal_relationships();
+        let cf_idx = self.cf_causal_by_source();
+        let rel_key = causal_relationship_key(&id);
+        let idx_key = causal_by_source_key(&relationship.source_fingerprint_id);
+
+        let mut batch = rocksdb::WriteBatch::default();
+
+        // 1. Delete from primary CF
+        batch.delete_cf(cf_rel, &rel_key);
+
+        // 2. Read-modify-write secondary index into the same batch
+        match self.db.get_cf(cf_idx, &idx_key) {
+            Ok(Some(bytes)) => {
+                let mut causal_ids: Vec<Uuid> = serde_json::from_slice(&bytes).map_err(|e| {
+                    error!(
+                        source_id = %relationship.source_fingerprint_id,
+                        error = %e,
+                        "FAIL FAST: Corrupted causal_by_source index entry. \
+                         Cannot safely delete causal relationship with corrupted index."
+                    );
+                    TeleologicalStoreError::Internal(format!(
+                        "Corrupted causal_by_source index for {}: {}", relationship.source_fingerprint_id, e
+                    ))
+                })?;
+
+                causal_ids.retain(|cid| *cid != id);
+
+                if causal_ids.is_empty() {
+                    batch.delete_cf(cf_idx, &idx_key);
+                } else {
+                    let serialized = serde_json::to_vec(&causal_ids).map_err(|e| {
+                        CoreError::Internal(format!("Failed to serialize causal_by_source list: {}", e))
+                    })?;
+                    batch.put_cf(cf_idx, &idx_key, &serialized);
+                }
+            }
+            Ok(None) => {
+                // No secondary index entry — nothing to update
+            }
+            Err(e) => {
+                warn!(
+                    "CAUSAL WARNING: Failed to read causal_by_source for {} during delete: {}",
+                    relationship.source_fingerprint_id, e
+                );
+                // Continue with primary delete even if secondary read fails
+            }
+        }
+
+        // 3. Execute atomic batch write
+        self.db.write(batch).map_err(|e| {
             error!(
-                "ROCKSDB ERROR: Failed to delete causal relationship {}: {}",
+                "ROCKSDB ERROR: Failed to atomically delete causal relationship {}: {}",
                 id, e
             );
-            TeleologicalStoreError::rocksdb_op("delete", CF_CAUSAL_RELATIONSHIPS, Some(id), e)
+            TeleologicalStoreError::rocksdb_op(
+                "delete_batch",
+                CF_CAUSAL_RELATIONSHIPS,
+                Some(id),
+                e,
+            )
         })?;
 
-        // Update secondary index
-        self.remove_from_causal_by_source_index(relationship.source_fingerprint_id, id)
-            .await?;
+        // Release lock before HNSW operations (which don't need it)
+        drop(_index_guard);
 
-        // Remove from E11 HNSW index
+        // 4. Remove from E11 HNSW index (non-RocksDB, cannot be in WriteBatch)
         let removed_from_hnsw = self.causal_e11_index.remove(id);
 
         info!(
             causal_id = %id,
             source_id = %relationship.source_fingerprint_id,
             removed_from_hnsw = removed_from_hnsw,
-            "Deleted causal relationship"
+            "Deleted causal relationship (atomic WriteBatch)"
         );
 
         Ok(true)
     }
 
-    /// Remove a causal_id from the causal_by_source index.
-    async fn remove_from_causal_by_source_index(
-        &self,
-        source_id: Uuid,
-        causal_id: Uuid,
-    ) -> CoreResult<()> {
-        // STG-03 FIX: Hold lock during read-modify-write of secondary index
-        let _index_guard = self.secondary_index_lock.lock();
-
-        let cf = self.cf_causal_by_source();
-        let key = causal_by_source_key(&source_id);
-
-        // Read existing list
-        let mut causal_ids: Vec<Uuid> = match self.db.get_cf(cf, key) {
-            Ok(Some(bytes)) => serde_json::from_slice(&bytes).map_err(|e| {
-                error!(
-                    source_id = %source_id,
-                    error = %e,
-                    "FAIL FAST: Corrupted causal_by_source index entry. \
-                     Cannot safely delete causal relationship with corrupted index."
-                );
-                TeleologicalStoreError::Internal(format!(
-                    "Corrupted causal_by_source index for {}: {}", source_id, e
-                ))
-            })?,
-            Ok(None) => return Ok(()), // Nothing to remove
-            Err(e) => {
-                warn!(
-                    "CAUSAL WARNING: Failed to read causal_by_source for {} during delete: {}",
-                    source_id, e
-                );
-                return Ok(());
-            }
-        };
-
-        // Remove the causal_id
-        causal_ids.retain(|id| *id != causal_id);
-
-        if causal_ids.is_empty() {
-            // Delete the index entry entirely
-            self.db.delete_cf(cf, key).map_err(|e| {
-                error!(
-                    "ROCKSDB ERROR: Failed to delete empty causal_by_source for {}: {}",
-                    source_id, e
-                );
-                CoreError::StorageError(format!(
-                    "Failed to delete causal_by_source for {}: {}",
-                    source_id, e
-                ))
-            })?;
-        } else {
-            // Update with remaining IDs
-            let serialized = serde_json::to_vec(&causal_ids).map_err(|e| {
-                CoreError::Internal(format!("Failed to serialize causal_by_source list: {}", e))
-            })?;
-
-            self.db.put_cf(cf, key, &serialized).map_err(|e| {
-                error!(
-                    "ROCKSDB ERROR: Failed to update causal_by_source for {}: {}",
-                    source_id, e
-                );
-                CoreError::StorageError(format!(
-                    "Failed to update causal_by_source for {}: {}",
-                    source_id, e
-                ))
-            })?;
-        }
-
-        Ok(())
-    }
 }
 
 // ============================================================================

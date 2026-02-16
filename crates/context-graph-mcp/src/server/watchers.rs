@@ -12,7 +12,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Result;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 use context_graph_core::memory::watcher::GitFileWatcher;
 use context_graph_core::memory::{CodeCaptureService, CodeFileWatcher, MemoryCaptureService, MultiArrayEmbeddingAdapter};
@@ -62,8 +62,8 @@ impl McpServer {
                 }
             }
             if self.models_loading.load(Ordering::SeqCst) {
-                error!("Embedding models still loading after 60s - skipping file watcher");
-                return Ok(false);
+                error!("Embedding models still loading after 60s — file watcher cannot start");
+                return Err(anyhow::anyhow!("Embedding models timed out after 60s — file watcher cannot start"));
             }
         }
 
@@ -71,8 +71,8 @@ impl McpServer {
         {
             let failed = self.models_failed.read().await;
             if let Some(ref err) = *failed {
-                error!("Cannot start file watcher - embedding models failed: {}", err);
-                return Ok(false);
+                error!("Cannot start file watcher — embedding models failed: {}", err);
+                return Err(anyhow::anyhow!("Embedding models failed: {} — file watcher cannot start", err));
             }
         }
 
@@ -82,8 +82,8 @@ impl McpServer {
             match slot.as_ref() {
                 Some(p) => Arc::clone(p),
                 None => {
-                    error!("Cannot start file watcher - no embedding provider available");
-                    return Ok(false);
+                    error!("Cannot start file watcher — no embedding provider available");
+                    return Err(anyhow::anyhow!("No embedding provider available — file watcher cannot start"));
                 }
             }
         };
@@ -391,6 +391,8 @@ impl McpServer {
 
         let task = tokio::spawn(async move {
             info!("Code watcher background task started (polling every {}s)", poll_interval_secs);
+            let mut consecutive_errors: u32 = 0;
+            const MAX_CONSECUTIVE_ERRORS: u32 = 20; // ~100s at base interval before shutdown
 
             while running_flag.load(Ordering::SeqCst) {
                 tokio::time::sleep(poll_interval).await;
@@ -401,6 +403,7 @@ impl McpServer {
 
                 match watcher.process_events().await {
                     Ok(files_processed) => {
+                        consecutive_errors = 0; // Reset on success
                         if files_processed > 0 {
                             info!(files_processed, "Code watcher processed file changes");
                         } else {
@@ -408,7 +411,29 @@ impl McpServer {
                         }
                     }
                     Err(e) => {
-                        error!(error = %e, "Code watcher failed to process events");
+                        consecutive_errors += 1;
+                        error!(
+                            error = %e,
+                            consecutive_errors,
+                            "Code watcher failed to process events ({}/{})",
+                            consecutive_errors,
+                            MAX_CONSECUTIVE_ERRORS
+                        );
+                        if consecutive_errors >= MAX_CONSECUTIVE_ERRORS {
+                            error!(
+                                consecutive_errors,
+                                "Code watcher exceeded {} consecutive errors — shutting down watcher loop",
+                                MAX_CONSECUTIVE_ERRORS
+                            );
+                            break;
+                        }
+                        // Exponential backoff: 5s, 10s, 20s, 40s, 80s, 160s (capped)
+                        let backoff_secs = std::cmp::min(
+                            poll_interval_secs * (1u64 << consecutive_errors.min(5)),
+                            160,
+                        );
+                        warn!(backoff_secs, "Code watcher backing off before retry");
+                        tokio::time::sleep(std::time::Duration::from_secs(backoff_secs)).await;
                     }
                 }
             }

@@ -4,6 +4,7 @@
 //! many fingerprints need to be compared simultaneously.
 
 use rayon::prelude::*;
+use tracing::warn;
 
 use crate::teleological::{ComparisonValidationResult, MatrixSearchConfig};
 use crate::types::SemanticFingerprint;
@@ -128,11 +129,14 @@ impl BatchComparator {
             .par_iter()
             .enumerate()
             .filter_map(|(idx, target)| {
-                self.comparator
-                    .compare(reference, target)
-                    .ok()
-                    .filter(|r| r.overall >= min_similarity)
-                    .map(|r| (idx, r.overall))
+                match self.comparator.compare(reference, target) {
+                    Ok(r) if r.overall >= min_similarity => Some((idx, r.overall)),
+                    Ok(_) => None, // Below threshold
+                    Err(e) => {
+                        warn!(index = idx, error = %e, "Batch comparison failed — skipping pair");
+                        None
+                    }
+                }
             })
             .collect()
     }

@@ -237,10 +237,12 @@ impl Handlers {
             let fingerprint = match self.teleological_store.retrieve(*uuid).await {
                 Ok(Some(fp)) => fp,
                 Ok(None) => {
+                    debug!(uuid = %uuid, "causal_discovery: Fingerprint not found (deleted or expired)");
                     fetch_errors += 1;
                     continue;
                 }
-                Err(_) => {
+                Err(e) => {
+                    error!(uuid = %uuid, error = %e, "causal_discovery: Failed to retrieve fingerprint");
                     fetch_errors += 1;
                     continue;
                 }
@@ -249,7 +251,13 @@ impl Handlers {
             // Get content
             let content = match self.teleological_store.get_content(*uuid).await {
                 Ok(Some(c)) => c,
-                Ok(None) | Err(_) => {
+                Ok(None) => {
+                    debug!(uuid = %uuid, "causal_discovery: Content not found for fingerprint");
+                    fetch_errors += 1;
+                    continue;
+                }
+                Err(e) => {
+                    error!(uuid = %uuid, error = %e, "causal_discovery: Failed to get content");
                     fetch_errors += 1;
                     continue;
                 }
@@ -294,6 +302,23 @@ impl Handlers {
             if memories_for_analysis.len() >= max_memories * 2 {
                 break;
             }
+        }
+
+        // ERR-4: If >50% of fetches failed, the storage layer is likely broken
+        let total_attempted = memory_ids.len();
+        if total_attempted > 0 && fetch_errors > total_attempted / 2 {
+            error!(
+                fetch_errors,
+                total_attempted,
+                "causal_discovery: >50% of memory fetches failed — aborting due to likely storage issue"
+            );
+            return self.tool_error(
+                id,
+                &format!(
+                    "Causal discovery aborted: {} of {} memory fetches failed (>50%%). Storage may be corrupted or unavailable.",
+                    fetch_errors, total_attempted
+                ),
+            );
         }
 
         if memories_for_analysis.len() < 2 {

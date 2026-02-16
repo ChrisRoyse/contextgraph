@@ -729,11 +729,11 @@ async fn test_evidence_of_success() {
         embedding.vector == emb2.vector
     );
 
-    println!("\n========================================");
-    println!("ALL CHECKS PASSED");
-    println!("========================================\n");
-
     // Final assertions
     assert_eq!(embedding.vector.len(), ENTITY_DIMENSION);
     assert!((norm - 1.0).abs() < 0.001);
+
+    println!("\n========================================");
+    println!("ALL CHECKS PASSED");
+    println!("========================================\n");
 }

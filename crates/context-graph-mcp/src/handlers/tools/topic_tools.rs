@@ -247,26 +247,97 @@ impl Handlers {
         // Get stability metrics from cluster_manager's internal stability tracker
         let churn_rate = cluster_manager.current_churn();
 
-        let response = TopicPortfolioResponse {
-            topics,
-            stability: StabilityMetricsSummary::new(churn_rate, None),
-            total_topics,
-            tier,
+        // MCP-5 FIX: Build response based on format parameter.
+        // - "brief": topic names, sizes, and top contributing space only
+        // - "standard": current behavior (topic details + stability)
+        // - "verbose": standard + per-topic embedder breakdown
+        let format = request.format.as_str();
+
+        let topics_json: Vec<serde_json::Value> = match format {
+            "brief" => {
+                topics.iter().map(|t| {
+                    serde_json::json!({
+                        "id": t.id.to_string(),
+                        "name": t.name,
+                        "member_count": t.member_count,
+                        "top_space": t.contributing_spaces.first()
+                    })
+                }).collect()
+            }
+            "verbose" => {
+                // Verbose: standard fields + full embedder strengths from topic profile
+                topics.iter().map(|t| {
+                    let topic_core = topics_map.values().find(|core_t| core_t.id == t.id);
+                    let mut entry = serde_json::json!({
+                        "id": t.id.to_string(),
+                        "name": t.name,
+                        "confidence": t.confidence,
+                        "weighted_agreement": t.weighted_agreement,
+                        "member_count": t.member_count,
+                        "contributing_spaces": t.contributing_spaces,
+                        "phase": t.phase
+                    });
+                    if let Some(core_t) = topic_core {
+                        let strengths = core_t.profile.strengths;
+                        let embedder_breakdown: serde_json::Value = serde_json::json!({
+                            "E1_Semantic": strengths[0],
+                            "E2_TemporalRecent": strengths[1],
+                            "E3_TemporalPeriodic": strengths[2],
+                            "E4_TemporalPositional": strengths[3],
+                            "E5_Causal": strengths[4],
+                            "E6_Sparse": strengths[5],
+                            "E7_Code": strengths[6],
+                            "E8_Graph": strengths[7],
+                            "E9_HDC": strengths[8],
+                            "E10_Multimodal": strengths[9],
+                            "E11_Entity": strengths[10],
+                            "E12_LateInteraction": strengths[11],
+                            "E13_SPLADE": strengths[12]
+                        });
+                        entry["embedder_strengths"] = embedder_breakdown;
+                    }
+                    entry
+                }).collect()
+            }
+            _ => {
+                // "standard" (default): full TopicSummary serialization
+                topics.iter().map(|t| {
+                    serde_json::json!({
+                        "id": t.id.to_string(),
+                        "name": t.name,
+                        "confidence": t.confidence,
+                        "weighted_agreement": t.weighted_agreement,
+                        "member_count": t.member_count,
+                        "contributing_spaces": t.contributing_spaces,
+                        "phase": t.phase
+                    })
+                }).collect()
+            }
         };
+
+        let stability = StabilityMetricsSummary::new(churn_rate, None);
 
         info!(
             tier = tier,
-            total_topics = response.total_topics,
+            total_topics = total_topics,
             churn_rate = churn_rate,
-            is_stable = response.stability.is_stable,
+            is_stable = stability.is_stable,
+            format = format,
             "get_topic_portfolio: Returning portfolio with {} topics",
             total_topics
         );
 
-        match serde_json::to_value(response) {
-            Ok(v) => self.tool_result(id, v),
-            Err(e) => self.tool_error(id, &format!("Response serialization failed: {}", e)),
-        }
+        let response_json = serde_json::json!({
+            "topics": topics_json,
+            "stability": {
+                "churn_rate": stability.churn_rate,
+                "is_stable": stability.is_stable
+            },
+            "total_topics": total_topics,
+            "tier": tier
+        });
+
+        self.tool_result(id, response_json)
     }
 
     /// Handle get_topic_stability tool call.

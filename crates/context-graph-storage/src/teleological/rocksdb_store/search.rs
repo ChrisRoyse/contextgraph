@@ -400,14 +400,17 @@ fn compute_embedder_scores_sync(
         // Without an explicit direction, E5 cannot provide meaningful signal.
         // Use compute_embedder_scores_with_direction_sync when direction is known.
         0.0,
-        query.e6_sparse.cosine_similarity(&stored.e6_sparse),
+        // SEARCH-1 FIX: Normalize sparse cosine from [-1,1] to [0,1] to match
+        // dense embedders which use (raw+1)/2. Without this, E6/E13 are
+        // systematically under-weighted in fusion (0.8 raw vs 0.9 normalized).
+        (query.e6_sparse.cosine_similarity(&stored.e6_sparse) + 1.0) / 2.0,
         e7_score,
         compute_cosine_similarity(query.e8_active_vector(), stored.e8_active_vector()),
         compute_cosine_similarity(&query.e9_hdc, &stored.e9_hdc),
         compute_cosine_similarity(query.e10_active_vector(), stored.e10_active_vector()),
         compute_cosine_similarity(&query.e11_entity, &stored.e11_entity),
         compute_maxsim_direct(&query.e12_late_interaction, &stored.e12_late_interaction),
-        query.e13_splade.cosine_similarity(&stored.e13_splade),
+        (query.e13_splade.cosine_similarity(&stored.e13_splade) + 1.0) / 2.0,
     ]
 }
 
@@ -443,14 +446,16 @@ fn compute_embedder_scores_with_direction_sync(
         compute_cosine_similarity(&query.e3_temporal_periodic, &stored.e3_temporal_periodic),
         compute_cosine_similarity(&query.e4_temporal_positional, &stored.e4_temporal_positional),
         e5_score,
-        query.e6_sparse.cosine_similarity(&stored.e6_sparse),
+        // SEARCH-1 FIX: Normalize sparse cosine [-1,1] → [0,1]
+        (query.e6_sparse.cosine_similarity(&stored.e6_sparse) + 1.0) / 2.0,
         e7_score,
         compute_cosine_similarity(query.e8_active_vector(), stored.e8_active_vector()),
         compute_cosine_similarity(&query.e9_hdc, &stored.e9_hdc),
         compute_cosine_similarity(query.e10_active_vector(), stored.e10_active_vector()),
         compute_cosine_similarity(&query.e11_entity, &stored.e11_entity),
         compute_maxsim_direct(&query.e12_late_interaction, &stored.e12_late_interaction),
-        query.e13_splade.cosine_similarity(&stored.e13_splade),
+        // SEARCH-1 FIX: Normalize sparse cosine [-1,1] → [0,1]
+        (query.e13_splade.cosine_similarity(&stored.e13_splade) + 1.0) / 2.0,
     ]
 }
 
@@ -529,6 +534,8 @@ fn search_multi_space_sync(
     let k = (options.top_k * 3).max(50);
 
     let mut embedder_rankings: Vec<EmbedderRanking> = Vec::new();
+    // SEARCH-4: Track embedders that failed HNSW search for operational visibility
+    let mut degraded_embedders: Vec<&str> = Vec::new();
 
     // E1 Semantic
     let entry_embedder = EmbedderIndex::E1Semantic;
@@ -577,6 +584,7 @@ fn search_multi_space_sync(
                 }
             }
             Err(e) => {
+                degraded_embedders.push("E5");
                 error!(
                     index = ?e5_hnsw_idx,
                     error = %e,
@@ -607,6 +615,7 @@ fn search_multi_space_sync(
                 }
             }
             Err(e) => {
+                degraded_embedders.push("E7");
                 error!(
                     error = %e,
                     "E7 HNSW search failed in multi-space — degraded results"
@@ -616,6 +625,10 @@ fn search_multi_space_sync(
     }
 
     // E10 Multimodal
+    // SEARCH-7: E10 uses paraphrase/doc asymmetric mode. The default e10_active_vector()
+    // returns the "paraphrase" vector for queries, matching against stored "doc" vectors.
+    // This is correct per ARCH-28: queries are paraphrased versions of stored documents,
+    // so query=paraphrase and stored=doc aligns with the intended retrieval direction.
     if let Some(e10_index) = index_registry.get(EmbedderIndex::E10Multimodal) {
         match e10_index.search(query.e10_active_vector(), k, None) {
             Ok(e10_candidates) => {
@@ -630,6 +643,7 @@ fn search_multi_space_sync(
                 }
             }
             Err(e) => {
+                degraded_embedders.push("E10");
                 error!(
                     error = %e,
                     "E10 HNSW search failed in multi-space — degraded results"
@@ -639,6 +653,11 @@ fn search_multi_space_sync(
     }
 
     // E8 Graph (connectivity/structure embeddings, 1024D HNSW)
+    // SEARCH-7: E8 uses source/target asymmetric mode. The default e8_active_vector()
+    // returns the "source" vector for queries. This is correct because most queries
+    // seek "what is connected to X?" (find targets of source). The stored vectors
+    // contain the "target" representation, so query=source, stored=target is the
+    // natural retrieval direction for structural relationship discovery.
     if let Some(e8_index) = index_registry.get(EmbedderIndex::E8Graph) {
         match e8_index.search(query.e8_active_vector(), k, None) {
             Ok(e8_candidates) => {
@@ -653,6 +672,7 @@ fn search_multi_space_sync(
                 }
             }
             Err(e) => {
+                degraded_embedders.push("E8");
                 error!(
                     error = %e,
                     "E8 HNSW search failed in multi-space — degraded results"
@@ -676,12 +696,47 @@ fn search_multi_space_sync(
                 }
             }
             Err(e) => {
+                degraded_embedders.push("E11");
                 error!(
                     error = %e,
                     "E11 HNSW search failed in multi-space — degraded results"
                 );
             }
         }
+    }
+
+    // SEARCH-2: E9 HDC (hyperdimensional computing, 1024D HNSW)
+    // E9 provides noise-robust similarity via holographic reduced representations.
+    // Included when weight > 0 (e.g., typo_tolerant profile sets E9=0.15).
+    if let Some(e9_index) = index_registry.get(EmbedderIndex::E9HDC) {
+        match e9_index.search(&query.e9_hdc, k, None) {
+            Ok(e9_candidates) => {
+                let e9_ranked: Vec<(Uuid, f32)> = e9_candidates
+                    .into_iter()
+                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                    .map(|(id, dist)| (id, 1.0 - dist.min(1.0)))
+                    .collect();
+
+                if !e9_ranked.is_empty() && weights[8] > 0.0 {
+                    embedder_rankings.push(EmbedderRanking::new("E9", weights[8], e9_ranked));
+                }
+            }
+            Err(e) => {
+                degraded_embedders.push("E9");
+                error!(
+                    error = %e,
+                    "E9 HNSW search failed in multi-space — degraded results"
+                );
+            }
+        }
+    }
+
+    // SEARCH-4: Log summary of degraded embedders for operational visibility
+    if !degraded_embedders.is_empty() {
+        warn!(
+            degraded = ?degraded_embedders,
+            "Multi-space search completed with degraded embedders — results may be incomplete"
+        );
     }
 
     debug!(
@@ -873,8 +928,23 @@ fn search_pipeline_sync(
         }
     }
 
+    // SEARCH-2: E9 HDC (noise-robust hyperdimensional, 1024D HNSW)
+    // Contributes candidates when weight > 0 (e.g., typo_tolerant profile).
+    if let Some(e9_index) = index_registry.get(EmbedderIndex::E9HDC) {
+        match e9_index.search(&query.e9_hdc, recall_k / 2, None) {
+            Ok(e9_candidates) => {
+                let e9_count = e9_candidates.len();
+                candidate_ids.extend(e9_candidates.into_iter().map(|(id, _)| id));
+                debug!("Stage 1: E9 HDC returned {} additional candidates", e9_count);
+            }
+            Err(e) => {
+                warn!("Stage 1: E9 HDC search failed: {}, continuing without E9 candidates", e);
+            }
+        }
+    }
+
     info!(
-        "Stage 1 complete: {} unique candidates from E13+E1+E5+E7+E8+E11",
+        "Stage 1 complete: {} unique candidates from E13+E1+E5+E7+E8+E9+E11",
         candidate_ids.len()
     );
 
@@ -931,14 +1001,18 @@ fn search_pipeline_sync(
                 .filter(|(_, score, _, _)| *score >= options.min_similarity)
                 .collect(),
             FusionStrategy::WeightedRRF | FusionStrategy::ScoreWeightedRRF => {
-                let semantic_indices = [
-                    (0, "E1", adjusted_weights[0]),
-                    (4, "E5", adjusted_weights[4]),
-                    (6, "E7", adjusted_weights[6]),
-                    (7, "E8", adjusted_weights[7]),
-                    (9, "E10", adjusted_weights[9]),
-                    (10, "E11", adjusted_weights[10]),
+                // SEARCH-5: Build embedder list dynamically from weights instead of
+                // hardcoding indices. Excludes:
+                //   - E2/E3/E4 (indices 1,2,3): temporal, not topical similarity (ARCH-25)
+                //   - E12 (index 11): reranking only, not for RRF fusion (AP-74)
+                let embedder_names_all: [&str; 13] = [
+                    "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13",
                 ];
+                let excluded_from_rrf: [usize; 4] = [1, 2, 3, 11]; // E2,E3,E4 temporal + E12 rerank-only
+                let semantic_indices: Vec<(usize, &str, f32)> = adjusted_weights.iter().enumerate()
+                    .filter(|(idx, &w)| w > 0.0 && !excluded_from_rrf.contains(idx))
+                    .map(|(idx, &w)| (idx, embedder_names_all[idx], w))
+                    .collect();
 
                 let mut embedder_rankings: Vec<EmbedderRanking> = Vec::new();
 
@@ -1033,11 +1107,18 @@ fn search_pipeline_sync(
     );
 
     // BUILD FINAL RESULTS
+    // SEARCH-6: Re-read TeleologicalFingerprint from RocksDB for the full structure
+    // (includes metadata fields beyond SemanticFingerprint), but carry the semantic
+    // fingerprint forward to avoid a redundant deserialization of the embedding vectors.
+    // The full TeleologicalFingerprint is needed for id, purpose, created_at, etc.
     let mut results = Vec::with_capacity(scored_candidates.len());
 
-    for (id, score, embedder_scores, _semantic) in scored_candidates {
+    for (id, score, embedder_scores, semantic) in scored_candidates {
         if let Some(data) = get_fingerprint_raw_sync(db, id)? {
-            let fp = deserialize_teleological_fingerprint(&data)?;
+            let mut fp = deserialize_teleological_fingerprint(&data)?;
+            // Replace the deserialized semantic with the one we already have,
+            // avoiding double-deserialization of the ~63KB embedding vectors.
+            fp.semantic = semantic;
             results.push(TeleologicalSearchResult::new(fp, score, embedder_scores));
         }
     }
@@ -1207,10 +1288,13 @@ fn search_sparse_sync(
 // =============================================================================
 
 /// Default weights for semantic search profile.
+/// SEARCH-3: Kept in sync with the "semantic_search" named profile in
+/// `context_graph_core::weights::WEIGHT_PROFILES`. Any changes there must
+/// be mirrored here to avoid silent weight divergence.
 /// Sum of non-zero weights = 1.0
 /// E2-E4 (temporal) = 0.0 per research
 const DEFAULT_SEMANTIC_WEIGHTS: [f32; 13] = [
-    0.35, // E1 - Semantic (primary)
+    0.33, // E1 - Semantic (primary)
     0.0,  // E2 - Temporal Recent (metadata only)
     0.0,  // E3 - Temporal Periodic (metadata only)
     0.0,  // E4 - Temporal Positional (metadata only)
@@ -1218,7 +1302,7 @@ const DEFAULT_SEMANTIC_WEIGHTS: [f32; 13] = [
     0.05, // E6 - Sparse (keyword backup)
     0.20, // E7 - Code
     0.05, // E8 - Graph (relational)
-    0.0,  // E9 - HDC (noise-robust backup, not used in fusion)
+    0.02, // E9 - HDC (noise-robust backup for typo tolerance)
     0.15, // E10 - Multimodal
     0.05, // E11 - Entity (relational)
     0.0,  // E12 - Late Interaction (used in Stage 3 rerank only)

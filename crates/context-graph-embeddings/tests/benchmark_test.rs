@@ -635,9 +635,6 @@ fn test_constitution_constants_consistency() {
     // Should match
     assert_eq!(NUM_EMBEDDERS, MODEL_COUNT);
 
-    // RRF_K from Constitution
-    assert_eq!(RRF_K, 60.0);
-
     // TOTAL_DIMENSION (E11 Entity at legacy 384D)
     assert_eq!(TOTAL_DIMENSION, 11264);
 

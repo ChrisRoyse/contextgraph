@@ -88,23 +88,26 @@ impl Handlers {
         };
 
         if results.is_empty() {
-            return self.tool_result(
-                id,
-                serde_json::to_value(SearchRecentResponse {
-                    query: params.query,
-                    results: vec![],
-                    count: 0,
-                    temporal_config: TemporalConfigSummary {
-                        temporal_weight,
-                        decay_function: format!("{:?}", decay_function),
-                        temporal_scale: format!("{:?}", params.temporal_scale),
-                        horizon_seconds: params.temporal_scale.horizon_seconds(),
-                        half_life_seconds: params.temporal_scale.horizon_seconds() as f64 / 4.0,
-                        boost_formula: "clamp(1 + weight * (recency - 0.5), 0.8, 1.2)".to_string(),
-                    },
-                })
-                .unwrap(),
-            );
+            let response = SearchRecentResponse {
+                query: params.query,
+                results: vec![],
+                count: 0,
+                temporal_config: TemporalConfigSummary {
+                    temporal_weight,
+                    decay_function: format!("{:?}", decay_function),
+                    temporal_scale: format!("{:?}", params.temporal_scale),
+                    horizon_seconds: params.temporal_scale.horizon_seconds(),
+                    half_life_seconds: params.temporal_scale.horizon_seconds() as f64 / 4.0,
+                    boost_formula: "clamp(1 + weight * (recency - 0.5), 0.8, 1.2)".to_string(),
+                },
+            };
+            return match serde_json::to_value(&response) {
+                Ok(v) => self.tool_result(id, v),
+                Err(e) => {
+                    error!(error = %e, "search_recent: Failed to serialize empty response");
+                    self.tool_error(id, &format!("Serialization error: {}", e))
+                }
+            };
         }
 
         // Apply temporal boost POST-RETRIEVAL
@@ -281,21 +284,24 @@ impl Handlers {
         };
 
         if results.is_empty() {
-            return self.tool_result(
-                id,
-                serde_json::to_value(SearchPeriodicResponse {
-                    query: params.query,
-                    results: vec![],
-                    count: 0,
-                    periodic_config: PeriodicConfigSummary {
-                        target_hour: effective_hour,
-                        target_day_of_week: effective_dow,
-                        periodic_weight,
-                        auto_detected: params.auto_detect,
-                    },
-                })
-                .unwrap(),
-            );
+            let response = SearchPeriodicResponse {
+                query: params.query,
+                results: vec![],
+                count: 0,
+                periodic_config: PeriodicConfigSummary {
+                    target_hour: effective_hour,
+                    target_day_of_week: effective_dow,
+                    periodic_weight,
+                    auto_detected: params.auto_detect,
+                },
+            };
+            return match serde_json::to_value(&response) {
+                Ok(v) => self.tool_result(id, v),
+                Err(e) => {
+                    error!(error = %e, "search_periodic: Failed to serialize empty response");
+                    self.tool_error(id, &format!("Serialization error: {}", e))
+                }
+            };
         }
 
         // Apply E3 periodic boost POST-RETRIEVAL

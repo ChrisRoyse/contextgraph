@@ -197,11 +197,11 @@ async fn test_evidence_of_success() {
         hour_sim
     );
 
-    println!("\n========================================");
-    println!("ALL CHECKS PASSED");
-    println!("========================================\n");
-
     assert!(elapsed.as_millis() < 2, "Latency exceeded 2ms budget");
     assert_eq!(embedding.vector.len(), 512);
     assert!((norm - 1.0).abs() < 0.001);
+
+    println!("\n========================================");
+    println!("ALL CHECKS PASSED");
+    println!("========================================\n");
 }

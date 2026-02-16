@@ -273,10 +273,6 @@ mod tests {
             text_emb.vector.len() == CODE_PROJECTED_DIMENSION
         );
 
-        println!("\n========================================");
-        println!("ALL CHECKS PASSED");
-        println!("========================================\n");
-
         // Test environment budget (relaxed for cold-start scenarios and GPU contention):
         // - 3000ms covers model load from disk, kernel compilation, memory transfer,
         //   and GPU contention during parallel test execution with many other tests
@@ -294,5 +290,9 @@ mod tests {
         assert!((norm - 1.0).abs() < 0.001);
         assert!(is_deterministic, "Same input must be deterministic");
         assert!(vectors_differ, "Different inputs must differ");
+
+        println!("\n========================================");
+        println!("ALL CHECKS PASSED");
+        println!("========================================\n");
     }
 }

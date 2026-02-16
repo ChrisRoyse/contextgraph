@@ -79,20 +79,38 @@ pub struct SessionCache;
 impl SessionCache {
     /// Get the cached session snapshot (if any).
     pub fn get() -> Option<SessionSnapshot> {
-        SESSION_CACHE.lock().ok()?.clone()
+        let guard = match SESSION_CACHE.lock() {
+            Ok(g) => g,
+            Err(e) => {
+                eprintln!("ERROR: Session cache mutex poisoned: {} — session state unavailable", e);
+                return None;
+            }
+        };
+        guard.clone()
     }
 
     /// Check if cache has a snapshot.
     #[allow(dead_code)] // Used in tests across the crate
     pub fn is_warm() -> bool {
-        SESSION_CACHE.lock().ok().map(|g| g.is_some()).unwrap_or(false)
+        match SESSION_CACHE.lock() {
+            Ok(g) => g.is_some(),
+            Err(e) => {
+                eprintln!("ERROR: Session cache mutex poisoned: {} — cannot check warmth", e);
+                false
+            }
+        }
     }
 }
 
 /// Store a snapshot in the global cache.
 pub fn store_in_cache(snapshot: &SessionSnapshot) {
-    if let Ok(mut guard) = SESSION_CACHE.lock() {
-        *guard = Some(snapshot.clone());
+    match SESSION_CACHE.lock() {
+        Ok(mut guard) => {
+            *guard = Some(snapshot.clone());
+        }
+        Err(e) => {
+            eprintln!("ERROR: Session cache mutex poisoned: {} — cannot store snapshot", e);
+        }
     }
 }
 

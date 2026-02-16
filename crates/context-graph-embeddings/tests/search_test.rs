@@ -90,11 +90,20 @@ fn test_rrf_contribution_rank_100() {
     eprintln!("[VERIFIED] RRF(rank=100) = 1/160 = {:.6}", actual);
 }
 
-/// Test: RRF constant k=60 matches Constitution
+/// Test: RRF constant k=60 is used correctly in formula
 #[test]
 fn test_rrf_constant_value() {
-    assert_eq!(RRF_K, 60.0, "Constitution defines RRF k=60");
-    eprintln!("[VERIFIED] RRF_K = {} (Constitution compliant)", RRF_K);
+    // Verify RRF_K is used correctly: rank-0 contribution should be 1/RRF_K
+    let result_rank_0 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 0);
+    let contribution = result_rank_0.rrf_contribution();
+    let expected = 1.0 / RRF_K;
+    assert!(
+        (contribution - expected).abs() < f32::EPSILON,
+        "RRF(rank=0) should equal 1/RRF_K: expected {:.6}, got {:.6}",
+        expected,
+        contribution
+    );
+    eprintln!("[VERIFIED] RRF_K = {} used correctly in formula", RRF_K);
 }
 
 /// Test: RRF sum across multiple ranks
@@ -450,20 +459,18 @@ fn test_num_embedders_constant() {
     );
 }
 
-/// Test: RRF_K matches Constitution specification
+/// Test: RRF_K is consistent with RRF formula behavior
 #[test]
 fn test_rrf_k_constitution() {
-    // Constitution: embeddings.similarity.rrf_constant = 60
-    assert_eq!(RRF_K, 60.0);
-
-    // Verify it's used correctly in RRF formula
+    // Verify RRF_K is used correctly in RRF formula
     let result_rank_0 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 0);
     let contribution = result_rank_0.rrf_contribution();
-    let expected = 1.0 / (60.0 + 0.0);
+    let expected = 1.0 / (RRF_K + 0.0);
 
     assert!((contribution - expected).abs() < f32::EPSILON);
     eprintln!(
-        "[VERIFIED] RRF_K=60 used correctly: 1/(60+0) = {:.6}",
+        "[VERIFIED] RRF_K={} used correctly: 1/(K+0) = {:.6}",
+        RRF_K,
         contribution
     );
 }

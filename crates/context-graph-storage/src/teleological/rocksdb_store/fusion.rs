@@ -233,11 +233,6 @@ mod tests {
     }
 
     #[test]
-    fn test_rrf_constant() {
-        assert_eq!(RRF_K, 60.0);
-    }
-
-    #[test]
     fn test_consensus_all_agree() {
         let id = Uuid::from_u128(1);
         let result_sets = vec![

@@ -296,8 +296,12 @@ impl RocksDbTeleologicalStore {
             Ok(true) => {
                 debug!("HNSW indexes loaded from persisted CF_HNSW_GRAPHS");
             }
-            Ok(false) | Err(_) => {
-                // No persisted data or restore error — full rebuild
+            Ok(false) => {
+                // No persisted HNSW data — full rebuild from fingerprints
+                store.rebuild_indexes_from_store()?;
+            }
+            Err(e) => {
+                warn!(error = %e, "HNSW restore from disk failed — falling back to O(n) rebuild. If this persists, investigate HNSW data corruption.");
                 store.rebuild_indexes_from_store()?;
             }
         }
@@ -817,6 +821,15 @@ impl RocksDbTeleologicalStore {
     /// (removed from UUID maps but still consuming memory in usearch graph).
     /// This rebuilds ALL indexes from CF_FINGERPRINTS, eliminating all orphans.
     pub fn compact_hnsw_if_needed(&self) -> TeleologicalStoreResult<()> {
+        // DATA-5: RACE CONDITION WARNING
+        // HNSW compaction rebuilds indexes from CF_FINGERPRINTS while concurrent
+        // store/delete operations may be modifying the same indexes. This can cause:
+        // 1. Duplicate usearch entries if an insert happens during rebuild
+        // 2. Missing entries if an insert completes after rebuild reads CF_FINGERPRINTS
+        //    but before rebuild finishes writing the new index
+        // This is an acknowledged design concern — a full fix would require a
+        // read-write lock around all HNSW operations during compaction. For now,
+        // operators should schedule compaction during low-traffic periods.
         let mut any_needs_compaction = false;
         for (embedder, index) in self.index_registry.iter() {
             if index.needs_compaction() {
@@ -832,6 +845,11 @@ impl RocksDbTeleologicalStore {
         }
 
         if any_needs_compaction {
+            // DATA-5: Warn about race condition only when compaction actually runs
+            warn!(
+                "DATA-5: HNSW compaction starting — concurrent inserts/deletes may race \
+                 with index rebuild. Schedule compaction during low-traffic periods."
+            );
             info!("H1 FIX: Rebuilding all HNSW indexes from CF_FINGERPRINTS to eliminate orphaned vectors");
             self.rebuild_indexes_from_store()?;
             // Reset all removed counts after successful rebuild

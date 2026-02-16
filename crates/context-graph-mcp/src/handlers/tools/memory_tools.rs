@@ -151,11 +151,16 @@ impl Handlers {
             }
         }
 
-        let importance = args
-            .get("importance")
-            .and_then(|v| v.as_f64())
-            .map(|v| (v as f32).clamp(0.0, 1.0))
-            .unwrap_or(TeleologicalFingerprint::DEFAULT_IMPORTANCE);
+        let importance = match args.get("importance").and_then(|v| v.as_f64()) {
+            Some(v) if v < 0.0 || v > 1.0 => {
+                return self.tool_error(
+                    id,
+                    &format!("importance must be between 0.0 and 1.0, got {}", v),
+                );
+            }
+            Some(v) => v as f32,
+            None => TeleologicalFingerprint::DEFAULT_IMPORTANCE,
+        };
 
         // SESSION-ID-FIX: Priority: tool argument > env var > stored session_id > auto-generate
         // MUST resolve session ID BEFORE get_next_sequence() because auto-generation
@@ -542,6 +547,16 @@ impl Handlers {
             .get("minSimilarity")
             .and_then(|v| v.as_f64())
             .unwrap_or(0.0) as f32;
+
+        if min_similarity < 0.0 || min_similarity > 1.0 {
+            return self.tool_error(
+                id,
+                &format!(
+                    "minSimilarity must be between 0.0 and 1.0, got {}",
+                    min_similarity
+                ),
+            );
+        }
 
         // TASK-CONTENT-002: Parse includeContent parameter (default: false for backward compatibility)
         let include_content = args
@@ -2105,7 +2120,9 @@ fn build_embedder_scores_json(embedder_scores: &[f32; 13]) -> serde_json::Value 
             "TEMPORAL" => {
                 temporal.insert(name.to_string(), serde_json::Value::Number(entry));
             }
-            _ => {}
+            unknown => {
+                warn!(category = %unknown, "Unknown weight category '{}' — not included in breakdown", unknown);
+            }
         }
     }
 

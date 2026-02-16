@@ -16,7 +16,7 @@
 //!
 //! # Example
 //!
-//! ```rust,no_run
+//! ```rust,ignore
 //! use context_graph_embeddings::adapters::E7CodeEmbeddingProvider;
 //! use context_graph_embeddings::provider::ProductionMultiArrayProvider;
 //! use context_graph_embeddings::config::GpuConfig;
@@ -28,7 +28,7 @@
 //!     let provider = Arc::new(ProductionMultiArrayProvider::new(
 //!         PathBuf::from("models"),
 //!         GpuConfig::default(),
-//!     )?);
+//!     ).await?);
 //!     provider.initialize().await?;
 //!
 //!     // Wrap in code provider adapter

@@ -38,7 +38,8 @@
 use std::path::Path;
 use std::sync::Arc;
 
-use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, DB};
+use parking_lot::Mutex;
+use rocksdb::{ColumnFamilyDescriptor, IteratorMode, Options, WriteBatch, DB};
 use thiserror::Error;
 use tracing::error;
 use uuid::Uuid;
@@ -118,10 +119,26 @@ pub enum StorageError {
 /// # Not Async
 ///
 /// All methods are synchronous. For async contexts, wrap calls in `spawn_blocking`.
-#[derive(Debug)]
+/// RocksDB-backed storage for Memory structs.
+///
+/// Provides CRUD operations with session-based indexing. Thread-safe via Arc<DB>
+/// and Mutex-protected secondary index updates.
 pub struct MemoryStore {
     /// RocksDB database instance wrapped in Arc for thread-safe sharing.
     db: Arc<DB>,
+    /// DATA-6 FIX: Mutex to protect read-modify-write cycles on secondary indexes
+    /// (session_index, file_index). Without this, concurrent writes to the same
+    /// session can lose index entries via the classic lost-update pattern.
+    /// Uses parking_lot::Mutex (non-poisoning) per constitution ARCH-CONC-01.
+    index_lock: Mutex<()>,
+}
+
+impl std::fmt::Debug for MemoryStore {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("MemoryStore")
+            .field("db", &"Arc<DB>")
+            .finish()
+    }
 }
 
 impl MemoryStore {
@@ -179,7 +196,10 @@ impl MemoryStore {
             StorageError::InitFailed(format!("path={}: {}", path_str, e))
         })?;
 
-        Ok(Self { db: Arc::new(db) })
+        Ok(Self {
+            db: Arc::new(db),
+            index_lock: Mutex::new(()),
+        })
     }
 
     /// Store a Memory and update session index.
@@ -228,22 +248,17 @@ impl MemoryStore {
             StorageError::SerializationFailed(format!("memory_id={}: {}", memory.id, e))
         })?;
 
-        // Write to memories CF
-        self.db
-            .put_cf(cf_memories, memory.id.as_bytes(), &memory_bytes)
-            .map_err(|e| {
-                error!(
-                    memory_id = %memory.id,
-                    error = %e,
-                    "Failed to write Memory to DB"
-                );
-                StorageError::WriteFailed(format!("memory_id={}: {}", memory.id, e))
-            })?;
+        // DATA-1 + DATA-6 FIX: Use WriteBatch for atomicity and hold index_lock
+        // to prevent lost-update race on secondary indexes.
+        let _guard = self.index_lock.lock();
 
-        // Update session index
+        let mut batch = WriteBatch::default();
+
+        // Write memory to primary CF
+        batch.put_cf(cf_memories, memory.id.as_bytes(), &memory_bytes);
+
+        // Update session index (read-modify-write under lock)
         let session_key = memory.session_id.as_bytes();
-
-        // Read existing index or create empty
         let mut session_ids: Vec<Uuid> = match self.db.get_cf(cf_session_index, session_key) {
             Ok(Some(bytes)) => bincode::deserialize(&bytes).map_err(|e| {
                 error!(
@@ -270,52 +285,43 @@ impl MemoryStore {
             }
         };
 
-        // Add memory ID if not already present (idempotency)
         if !session_ids.contains(&memory.id) {
             session_ids.push(memory.id);
-
-            // Serialize and write updated index
             let index_bytes = bincode::serialize(&session_ids).map_err(|e| {
                 StorageError::SerializationFailed(format!(
                     "session_index for '{}': {}",
                     memory.session_id, e
                 ))
             })?;
-
-            self.db
-                .put_cf(cf_session_index, session_key, &index_bytes)
-                .map_err(|e| {
-                    error!(
-                        session_id = %memory.session_id,
-                        error = %e,
-                        "Failed to write session index"
-                    );
-                    StorageError::WriteFailed(format!(
-                        "session_index for '{}': {}",
-                        memory.session_id, e
-                    ))
-                })?;
+            batch.put_cf(cf_session_index, session_key, &index_bytes);
         }
 
-        // Update file index for MDFileChunk sources
+        // Update file index for MDFileChunk sources (also in same batch + lock)
         if let MemorySource::MDFileChunk { ref file_path, .. } = memory.source {
-            self.update_file_index(file_path, memory.id)?;
+            self.add_to_file_index_batch(&mut batch, file_path, memory.id)?;
         }
+
+        // Atomic commit — all-or-nothing
+        self.db.write(batch).map_err(|e| {
+            error!(
+                memory_id = %memory.id,
+                error = %e,
+                "Failed to write atomic batch for Memory store"
+            );
+            StorageError::WriteFailed(format!("atomic_store memory_id={}: {}", memory.id, e))
+        })?;
 
         Ok(())
     }
 
-    /// Update the file index to include a memory ID for a file path.
-    ///
-    /// # Arguments
-    ///
-    /// * `file_path` - The file path to index
-    /// * `memory_id` - The memory ID to add to the index
-    ///
-    /// # Errors
-    ///
-    /// Returns `StorageError` if index update fails.
-    fn update_file_index(&self, file_path: &str, memory_id: Uuid) -> Result<(), StorageError> {
+    /// Add a memory ID to the file index within a WriteBatch (for atomic store).
+    /// Caller must hold index_lock.
+    fn add_to_file_index_batch(
+        &self,
+        batch: &mut WriteBatch,
+        file_path: &str,
+        memory_id: Uuid,
+    ) -> Result<(), StorageError> {
         let cf_file_index = self
             .db
             .cf_handle(CF_FILE_INDEX)
@@ -323,7 +329,6 @@ impl MemoryStore {
 
         let file_key = file_path.as_bytes();
 
-        // Read existing index or create empty
         let mut file_ids: Vec<Uuid> = match self.db.get_cf(cf_file_index, file_key) {
             Ok(Some(bytes)) => bincode::deserialize(&bytes).map_err(|e| {
                 error!(
@@ -347,25 +352,12 @@ impl MemoryStore {
             }
         };
 
-        // Add memory ID if not already present (idempotency)
         if !file_ids.contains(&memory_id) {
             file_ids.push(memory_id);
-
-            // Serialize and write updated index
             let index_bytes = bincode::serialize(&file_ids).map_err(|e| {
                 StorageError::SerializationFailed(format!("file_index for '{}': {}", file_path, e))
             })?;
-
-            self.db
-                .put_cf(cf_file_index, file_key, &index_bytes)
-                .map_err(|e| {
-                    error!(
-                        file_path = %file_path,
-                        error = %e,
-                        "Failed to write file index"
-                    );
-                    StorageError::WriteFailed(format!("file_index for '{}': {}", file_path, e))
-                })?;
+            batch.put_cf(cf_file_index, file_key, &index_bytes);
         }
 
         Ok(())
@@ -528,19 +520,15 @@ impl MemoryStore {
             None => return Ok(false),
         };
 
+        // DATA-1 + DATA-6 FIX: Atomic delete with index_lock protection
+        let _guard = self.index_lock.lock();
+        let mut batch = WriteBatch::default();
+
         // Delete from memories CF
-        self.db.delete_cf(cf_memories, id.as_bytes()).map_err(|e| {
-            error!(
-                memory_id = %id,
-                error = %e,
-                "Failed to delete Memory from DB"
-            );
-            StorageError::WriteFailed(format!("delete memory_id={}: {}", id, e))
-        })?;
+        batch.delete_cf(cf_memories, id.as_bytes());
 
-        // Update session index
+        // Update session index atomically
         let session_key = memory.session_id.as_bytes();
-
         if let Some(bytes) = self
             .db
             .get_cf(cf_session_index, session_key)
@@ -553,10 +541,8 @@ impl MemoryStore {
                 ))
             })?;
 
-            // Remove the deleted memory's ID
             session_ids.retain(|&stored_id| stored_id != id);
 
-            // Write updated index
             let index_bytes = bincode::serialize(&session_ids).map_err(|e| {
                 StorageError::SerializationFailed(format!(
                     "session_index for '{}': {}",
@@ -564,15 +550,18 @@ impl MemoryStore {
                 ))
             })?;
 
-            self.db
-                .put_cf(cf_session_index, session_key, &index_bytes)
-                .map_err(|e| {
-                    StorageError::WriteFailed(format!(
-                        "session_index for '{}': {}",
-                        memory.session_id, e
-                    ))
-                })?;
+            batch.put_cf(cf_session_index, session_key, &index_bytes);
         }
+
+        // Atomic commit
+        self.db.write(batch).map_err(|e| {
+            error!(
+                memory_id = %id,
+                error = %e,
+                "Failed to write atomic batch for Memory delete"
+            );
+            StorageError::WriteFailed(format!("atomic_delete memory_id={}: {}", id, e))
+        })?;
 
         Ok(true)
     }

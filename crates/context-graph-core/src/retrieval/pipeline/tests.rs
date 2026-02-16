@@ -7,7 +7,7 @@ use crate::retrieval::InMemoryMultiEmbeddingExecutor;
 use crate::stubs::{InMemoryTeleologicalStore, StubMultiArrayProvider};
 
 use super::super::teleological_query::TeleologicalQuery;
-use super::{DefaultTeleologicalPipeline, PipelineHealth, TeleologicalRetrievalPipeline};
+use super::{DefaultTeleologicalPipeline, TeleologicalRetrievalPipeline};
 use crate::error::CoreError;
 
 async fn create_test_pipeline(
@@ -94,40 +94,7 @@ async fn test_timing_breakdown() {
     let query = TeleologicalQuery::from_text("timing test");
     let result = pipeline.execute(&query).await.unwrap();
 
-    println!("Timing: {}", result.timing_summary());
-    println!("  Stage 1 (SPLADE): {:?}", result.timing.stage1_splade);
-    println!(
-        "  Stage 2 (Matryoshka): {:?}",
-        result.timing.stage2_matryoshka
-    );
-    println!(
-        "  Stage 3 (Full HNSW): {:?}",
-        result.timing.stage3_full_hnsw
-    );
-    println!(
-        "  Stage 4 (Teleological): {:?}",
-        result.timing.stage4_teleological
-    );
-    println!(
-        "  Stage 5 (Late Interaction): {:?}",
-        result.timing.stage5_late_interaction
-    );
-    println!("  Total: {:?}", result.total_time);
-
-    println!("[VERIFIED] All pipeline stages have timing measurements");
+    // TEST-3 FIX: Assert timing fields are actually populated
+    assert!(result.total_time > Duration::ZERO, "Total time should be > 0");
 }
 
-
-#[test]
-fn test_pipeline_health_defaults() {
-    let health = PipelineHealth {
-        is_healthy: true,
-        spaces_available: 13,
-        index_size: 1_000_000,
-        last_query_time: Some(Duration::from_millis(45)),
-    };
-
-    assert!(health.is_healthy);
-    assert_eq!(health.spaces_available, 13);
-    println!("[VERIFIED] PipelineHealth struct works correctly");
-}

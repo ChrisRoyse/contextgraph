@@ -4,7 +4,7 @@
 
 use serde::Deserialize;
 use serde_json::json;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use context_graph_core::causal::asymmetric::{
@@ -226,6 +226,26 @@ impl Handlers {
             }
         };
 
+        // Validate bounds for max_memories and min_similarity
+        if params.max_memories == 0 || params.max_memories > 10000 {
+            return self.tool_error(
+                id,
+                &format!(
+                    "max_memories must be between 1 and 10000, got {}",
+                    params.max_memories
+                ),
+            );
+        }
+        if params.min_similarity < 0.0 || params.min_similarity > 1.0 {
+            return self.tool_error(
+                id,
+                &format!(
+                    "min_similarity must be between 0.0 and 1.0, got {}",
+                    params.min_similarity
+                ),
+            );
+        }
+
         // Validate strategy
         let valid_strategies = ["similarity", "temporal", "semantic"];
         if !valid_strategies.contains(&params.strategy.as_str()) {
@@ -277,11 +297,20 @@ impl Handlers {
 
         // Batch-fetch content text for consolidation analysis (MED-04 fix)
         let fp_ids: Vec<Uuid> = unbiased_fingerprints.iter().map(|fp| fp.id).collect();
+        // ERR-3 FIX: FAIL FAST on content fetch failure instead of substituting empty
+        // strings. Consolidation on empty content silently merges unrelated memories.
         let content_texts = match self.teleological_store.get_content_batch(&fp_ids).await {
             Ok(texts) => texts,
             Err(e) => {
-                warn!(error = %e, "trigger_consolidation: Failed to fetch content texts, using empty strings");
-                vec![None; fp_ids.len()]
+                error!(
+                    error = %e,
+                    fingerprint_count = fp_ids.len(),
+                    "trigger_consolidation: Content batch fetch FAILED — aborting consolidation"
+                );
+                return self.tool_error(
+                    id,
+                    &format!("Content fetch failed — cannot consolidate without content: {}", e),
+                );
             }
         };
 
