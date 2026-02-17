@@ -7,7 +7,7 @@
 //!
 //! # Architecture
 //!
-//! The graph agent shares the Qwen2.5-3B LLM with the causal agent via `Arc`,
+//! The graph agent shares the Hermes-2-Pro-Mistral-7B LLM with the causal agent via `Arc`,
 //! avoiding duplicate VRAM usage. It uses the same ChatML prompt format with
 //! different system prompts for graph relationship detection.
 //!
@@ -42,7 +42,7 @@
 //! ```text
 //! Memories -> Scanner -> Candidates -> LLM Analysis -> Activator -> Graph Edges
 //!               |            |              |              |
-//!           Heuristics   E1 Similarity   Qwen2.5-3B    E8 1024D
+//!           Heuristics   E1 Similarity  Hermes-2-Pro   E8 1024D
 //! ```
 //!
 //! # Usage

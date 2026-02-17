@@ -44,8 +44,10 @@ pub const DEFAULT_CODE_BLEND: f32 = 0.4;
 ///
 /// Per ARCH-12: E1 is the semantic foundation, E7 enhances with code understanding.
 /// All modes produce scores in [0, 1] range.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+///
+/// MED-17: The former `Pipeline` variant was removed because it was identical to
+/// `Hybrid`. Input `"pipeline"` is deserialized as `Hybrid` for backward compatibility.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize)]
 pub enum CodeSearchMode {
     /// Blend E1 semantic and E7 code scores.
     /// Score = (1-blend)*E1 + blend*E7
@@ -60,10 +62,31 @@ pub enum CodeSearchMode {
     /// E1 primary (90%) with E7 tiebreaker (10%).
     /// Best for: natural language queries about code functionality.
     E1WithE7Rerank,
+}
 
-    /// Currently equivalent to Hybrid.
-    /// Reserved for future full pipeline: E13 sparse -> E1 dense -> E7 code -> E12 rerank.
-    Pipeline,
+/// MED-17: Custom deserializer that maps "pipeline" to Hybrid for backward compatibility.
+impl<'de> serde::Deserialize<'de> for CodeSearchMode {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        match s.as_str() {
+            "hybrid" | "Hybrid" => Ok(CodeSearchMode::Hybrid),
+            "e7Only" | "E7Only" | "e7_only" => Ok(CodeSearchMode::E7Only),
+            "e1WithE7Rerank" | "E1WithE7Rerank" | "e1_with_e7_rerank" => Ok(CodeSearchMode::E1WithE7Rerank),
+            "pipeline" | "Pipeline" => {
+                tracing::debug!(
+                    "CodeSearchMode 'pipeline' mapped to 'hybrid' (MED-17: Pipeline was identical to Hybrid)"
+                );
+                Ok(CodeSearchMode::Hybrid)
+            }
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["hybrid", "e7Only", "e1WithE7Rerank"],
+            )),
+        }
+    }
 }
 
 impl fmt::Display for CodeSearchMode {
@@ -72,7 +95,6 @@ impl fmt::Display for CodeSearchMode {
             CodeSearchMode::Hybrid => write!(f, "hybrid"),
             CodeSearchMode::E7Only => write!(f, "e7_only"),
             CodeSearchMode::E1WithE7Rerank => write!(f, "e1_with_e7_rerank"),
-            CodeSearchMode::Pipeline => write!(f, "pipeline"),
         }
     }
 }
@@ -193,12 +215,8 @@ impl SearchCodeRequest {
     /// 1. User-specified Pipeline mode takes precedence
     /// 2. Default to MultiSpace for E7 enhancement (ARCH-21)
     pub fn parse_strategy(&self) -> SearchStrategy {
-        // User-specified Pipeline mode takes precedence
-        if self.search_mode == CodeSearchMode::Pipeline {
-            return SearchStrategy::Pipeline;
-        }
-
-        // Default to MultiSpace for code search with E7 enhancement
+        // MED-17: Pipeline variant removed (was identical to Hybrid).
+        // Code search always uses MultiSpace for E7 enhancement per ARCH-21.
         SearchStrategy::MultiSpace
     }
 

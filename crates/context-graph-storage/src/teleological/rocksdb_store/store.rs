@@ -955,9 +955,13 @@ impl RocksDbTeleologicalStore {
     /// 3. `e1_matryoshka_128` - Truncated E1 embedding for Stage 2
     /// 4. `e13_splade_inverted` - Updates inverted index for Stage 1
     /// 5. `e12_late_interaction` - ColBERT token embeddings for Stage 5
+    /// HIGH-6 FIX: `count_as_new` controls whether total_doc_count is incremented.
+    /// - `true` for new inserts (store_async, store_batch_async)
+    /// - `false` for updates and rollbacks (update_async rollback)
     pub(crate) fn store_fingerprint_internal(
         &self,
         fp: &TeleologicalFingerprint,
+        count_as_new: bool,
     ) -> TeleologicalStoreResult<()> {
         let id = fp.id;
         let key = fingerprint_key(&id);
@@ -975,7 +979,11 @@ impl RocksDbTeleologicalStore {
         let serialized = serialize_teleological_fingerprint(fp);
         batch.put_cf(cf_fingerprints, key, &serialized);
 
-        // 2. Topic profile storage is done via CF_TOPIC_PROFILES when topic_profile is set on fingerprint
+        // 2. Topic profiles are NOT computed at store time. They are computed asynchronously
+        // by the topic detection/clustering system (detect_topics, get_topic_portfolio) and
+        // stored separately. CF_TOPIC_PROFILES is written by the clustering pipeline, not here.
+        // The hard-delete path in crud.rs still deletes from CF_TOPIC_PROFILES defensively
+        // to clean up any profiles that were computed for a fingerprint being deleted.
 
         // 3. Store E1 Matryoshka 128D truncated vector
         let cf_matryoshka = self.get_cf(CF_E1_MATRYOSHKA_128)?;
@@ -1032,9 +1040,11 @@ impl RocksDbTeleologicalStore {
 
         // Lock released here via drop(_index_guard)
 
-        // Invalidate count cache and increment total doc count for IDF
+        // Invalidate count cache; only increment doc count for genuinely new documents
         *self.fingerprint_count.write() = None;
-        self.total_doc_count.fetch_add(1, Ordering::Relaxed);
+        if count_as_new {
+            self.total_doc_count.fetch_add(1, Ordering::Relaxed);
+        }
 
         debug!("Stored fingerprint {} ({} bytes)", id, serialized.len());
         Ok(())

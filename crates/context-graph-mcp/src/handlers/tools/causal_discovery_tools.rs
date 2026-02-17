@@ -610,11 +610,33 @@ impl Handlers {
 
         for memory_id in &memory_ids {
             // Get content for this memory
+            // MED-7 FIX: Distinguish Ok(None) (content missing) from Err(e) (storage error).
+            // Storage errors are fatal — fail fast per constitution.
             let content = match self.teleological_store.get_content(*memory_id).await {
                 Ok(Some(c)) => c,
-                _ => {
+                Ok(None) => {
+                    // Content missing — count but continue (non-fatal)
+                    debug!(
+                        memory_id = %memory_id,
+                        "trigger_causal_discovery_extract: No content for memory (deleted or empty)"
+                    );
                     content_fetch_errors += 1;
                     continue;
+                }
+                Err(e) => {
+                    // Storage error — fail fast
+                    error!(
+                        error = %e,
+                        memory_id = %memory_id,
+                        "trigger_causal_discovery_extract: Content fetch FAILED — storage error"
+                    );
+                    return self.tool_error(
+                        id,
+                        &format!(
+                            "Content fetch failed for memory {}: {}. NO FALLBACKS.",
+                            memory_id, e
+                        ),
+                    );
                 }
             };
 

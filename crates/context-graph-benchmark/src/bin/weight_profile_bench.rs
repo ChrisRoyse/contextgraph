@@ -393,18 +393,27 @@ fn run_comparison_benchmark() {
             );
         }
 
-        // Check if expected best profile is actually best
-        if !results.is_empty() {
-            let actual_best = &results[0].profile_name;
-            let expected_best = content_type.expected_best_profile();
-            if actual_best == expected_best {
-                println!("\n  [PASS] Expected profile '{}' performed best!", expected_best);
-            } else {
-                println!(
-                    "\n  [INFO] Profile '{}' performed best (expected '{}')",
-                    actual_best, expected_best
-                );
-            }
+        // LOW-1 FIX: Assert results are non-empty before checking winner.
+        // Previously this silently passed with zero assertions if results were empty.
+        assert!(
+            !results.is_empty(),
+            "Expected non-empty benchmark results for {:?}",
+            content_type
+        );
+
+        // MED-22 FIX: Assert expected best profile wins. If the wrong profile wins,
+        // this is a regression that must be caught — not silently logged as [INFO].
+        let actual_best = &results[0].profile_name;
+        let expected_best = content_type.expected_best_profile();
+        if actual_best == expected_best {
+            println!("\n  [PASS] Expected profile '{}' performed best!", expected_best);
+        } else {
+            panic!(
+                "\n  [FAIL] Weight profile regression: expected '{}' to perform best for {:?}, \
+                 but '{}' won (MRR={:.3}). This indicates a regression in weight profile \
+                 calibration. Investigate before merging.",
+                expected_best, content_type, actual_best, results[0].mrr
+            );
         }
     }
 }

@@ -127,8 +127,8 @@ mod tests {
             0, // rank 0
         );
 
-        // RRF contribution at rank 0: 1/(60+0) = 1/60
-        let expected = 1.0 / 60.0;
+        // RRF contribution at rank 0: 1/(60+0+1) = 1/61 (1-indexed)
+        let expected = 1.0 / 61.0;
         assert!((result.rrf_contribution() - expected).abs() < f32::EPSILON);
     }
 
@@ -222,12 +222,12 @@ mod tests {
         let result_rank_0 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 0);
         let result_rank_1000 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 1000);
 
-        let rrf_0 = result_rank_0.rrf_contribution(); // 1/60 = 0.0167
-        let rrf_1000 = result_rank_1000.rrf_contribution(); // 1/1060 = 0.00094
+        let rrf_0 = result_rank_0.rrf_contribution(); // 1/61 = 0.0164
+        let rrf_1000 = result_rank_1000.rrf_contribution(); // 1/1061 = 0.00094
 
-        // Verify actual values
-        let expected_rrf_0 = 1.0 / 60.0;
-        let expected_rrf_1000 = 1.0 / 1060.0;
+        // Verify actual values (1-indexed)
+        let expected_rrf_0 = 1.0 / 61.0;
+        let expected_rrf_1000 = 1.0 / 1061.0;
 
         assert!(
             (rrf_0 - expected_rrf_0).abs() < f32::EPSILON,

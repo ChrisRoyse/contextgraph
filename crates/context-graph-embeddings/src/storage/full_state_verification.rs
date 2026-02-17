@@ -109,12 +109,12 @@ mod tests {
         eprintln!("      - id_rank2: {} (similarity=0.65, rank=2)", id_rank2);
         eprintln!("    RRF_K constant: {}", RRF_K);
         eprintln!("    Expected RRF scores:");
-        let expected_rrf_0 = 1.0 / (RRF_K + 0.0);
-        let expected_rrf_1 = 1.0 / (RRF_K + 1.0);
-        let expected_rrf_2 = 1.0 / (RRF_K + 2.0);
-        eprintln!("      - rank 0: 1/(60+0) = {:.10}", expected_rrf_0);
-        eprintln!("      - rank 1: 1/(60+1) = {:.10}", expected_rrf_1);
-        eprintln!("      - rank 2: 1/(60+2) = {:.10}", expected_rrf_2);
+        let expected_rrf_0 = 1.0 / (RRF_K + 0.0 + 1.0);
+        let expected_rrf_1 = 1.0 / (RRF_K + 1.0 + 1.0);
+        let expected_rrf_2 = 1.0 / (RRF_K + 2.0 + 1.0);
+        eprintln!("      - rank 0: 1/(60+0+1) = {:.10}", expected_rrf_0);
+        eprintln!("      - rank 1: 1/(60+1+1) = {:.10}", expected_rrf_1);
+        eprintln!("      - rank 2: 1/(60+2+1) = {:.10}", expected_rrf_2);
 
         // Setup
         let storage = Arc::new(VerificationStorage::new());
@@ -148,7 +148,7 @@ mod tests {
             );
 
             // Verify against expected
-            let expected = 1.0 / (RRF_K + i as f32);
+            let expected = 1.0 / (RRF_K + i as f32 + 1.0);
             let diff = (result.rrf_score - expected).abs();
             eprintln!("      - Expected RRF: {:.10}", expected);
             eprintln!("      - Difference: {:.15}", diff);
@@ -264,8 +264,8 @@ mod tests {
         eprintln!("      - rrf_score: {:.10}", full.rrf_score);
 
         // Expected RRF calculations
-        let partial_expected_rrf = 1.0 / (RRF_K + 0.0); // rank 0 in E1 only
-        let full_expected_rrf = 1.0 / (RRF_K + 1.0) + 1.0 / (RRF_K + 0.0); // rank 1 in E1, rank 0 in E2
+        let partial_expected_rrf = 1.0 / (RRF_K + 0.0 + 1.0); // rank 0 in E1 only (1-indexed)
+        let full_expected_rrf = 1.0 / (RRF_K + 1.0 + 1.0) + 1.0 / (RRF_K + 0.0 + 1.0); // rank 1 in E1, rank 0 in E2 (1-indexed)
 
         eprintln!("\n>>> VERIFICATION:");
         eprintln!(
@@ -429,15 +429,15 @@ mod tests {
         eprintln!("      - All weights = 1.0 (default)");
         eprintln!();
         eprintln!("    Manual calculation:");
-        let contrib_e1 = 1.0 / (60.0 + 0.0);
-        let contrib_e2 = 1.0 / (60.0 + 2.0);
+        let contrib_e1 = 1.0 / (60.0 + 0.0 + 1.0);
+        let contrib_e2 = 1.0 / (60.0 + 2.0 + 1.0);
         let expected_total = contrib_e1 + contrib_e2;
         eprintln!(
-            "      - E1 contribution: 1.0 / (60 + 0) = {:.15}",
+            "      - E1 contribution: 1.0 / (60 + 0 + 1) = {:.15}",
             contrib_e1
         );
         eprintln!(
-            "      - E2 contribution: 1.0 / (60 + 2) = {:.15}",
+            "      - E2 contribution: 1.0 / (60 + 2 + 1) = {:.15}",
             contrib_e2
         );
         eprintln!("      - Expected total RRF: {:.15}", expected_total);
@@ -498,7 +498,7 @@ mod tests {
 
         eprintln!("\n>>> RRF FORMULA: VERIFIED");
         eprintln!(
-            "    1/(60+0) + 1/(60+2) = {:.15} matches computed {:.15}",
+            "    1/(60+0+1) + 1/(60+2+1) = {:.15} matches computed {:.15}",
             expected_total, target_result.rrf_score
         );
         eprintln!(

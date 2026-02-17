@@ -20,10 +20,11 @@
 //! - E11 def: V_factuality 768D per constitution.yaml
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 // HIGH-17 FIX: parking_lot::RwLock is non-poisonable.
 use parking_lot::RwLock;
 
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use usearch::{Index, IndexOptions, MetricKind, ScalarKind};
 use uuid::Uuid;
 
@@ -80,6 +81,9 @@ pub struct CausalE11Index {
     key_to_id: RwLock<HashMap<u64, Uuid>>,
     /// Next available key for usearch (monotonically increasing)
     next_key: RwLock<u64>,
+    /// HIGH-2 FIX: Count of removed vectors still orphaned in usearch index.
+    /// When removed_count / total_count > COMPACTION_RATIO, compaction is needed.
+    removed_count: AtomicUsize,
 }
 
 impl CausalE11Index {
@@ -134,6 +138,7 @@ impl CausalE11Index {
             id_to_key: RwLock::new(HashMap::new()),
             key_to_id: RwLock::new(HashMap::new()),
             next_key: RwLock::new(0),
+            removed_count: AtomicUsize::new(0),
         }
     }
 
@@ -178,8 +183,9 @@ impl CausalE11Index {
         if let Some(&old_key) = id_to_key.get(&id) {
             key_to_id.remove(&old_key);
             // Note: usearch doesn't support deletion, so the old vector remains
-            // but won't be returned because key_to_id doesn't map it back
-            debug!(id = %id, old_key = old_key, "Replacing existing E11 embedding");
+            // orphaned in the index. Track for compaction threshold (HIGH-2).
+            self.removed_count.fetch_add(1, Ordering::Relaxed);
+            debug!(id = %id, old_key = old_key, "Replacing existing E11 embedding (old vector orphaned)");
         }
 
         // Ensure capacity - grow if needed
@@ -290,12 +296,17 @@ impl CausalE11Index {
     /// # Note
     /// The vector remains in the usearch index (usearch doesn't support deletion)
     /// but won't be returned in search results.
+    /// HIGH-2 FIX: Tracks removal count for compaction threshold monitoring.
     pub fn remove(&self, id: Uuid) -> bool {
         let mut id_to_key = self.id_to_key.write();
         let mut key_to_id = self.key_to_id.write();
 
         if let Some(key) = id_to_key.remove(&id) {
+            // Remove from key_to_id so search won't return this ID.
+            // HIGH-2 FIX: Vector remains orphaned in usearch (no deletion support).
+            // Track removal count for compaction threshold monitoring.
             key_to_id.remove(&key);
+            self.removed_count.fetch_add(1, Ordering::Relaxed);
             debug!(id = %id, "Removed from CausalE11Index");
             true
         } else {
@@ -319,6 +330,134 @@ impl CausalE11Index {
     /// Check if a causal relationship ID exists in the index.
     pub fn contains(&self, id: Uuid) -> bool {
         self.id_to_key.read().contains_key(&id)
+    }
+
+    // =========================================================================
+    // HIGH-2 FIX: COMPACTION TRACKING (mirrors HnswEmbedderIndex pattern)
+    // =========================================================================
+
+    /// HIGH-2 FIX: Number of orphaned vectors in usearch index (removed from maps but still in graph).
+    pub fn removed_count(&self) -> usize {
+        self.removed_count.load(Ordering::Relaxed)
+    }
+
+    /// HIGH-2 FIX: Total vectors in usearch index (including orphaned).
+    pub fn usearch_size(&self) -> usize {
+        self.index.read().size()
+    }
+
+    /// HIGH-2 FIX: Check if compaction is needed (removed/total > 25%).
+    /// Compaction rebuilds the index, eliminating orphaned vectors.
+    pub fn needs_compaction(&self) -> bool {
+        let total = self.usearch_size();
+        if total == 0 {
+            return false;
+        }
+        let removed = self.removed_count();
+        // Compact when >25% of vectors are orphaned
+        removed * 4 > total
+    }
+
+    /// HIGH-2 FIX: Rebuild the index from the currently active vectors.
+    ///
+    /// Creates a new usearch index containing only the active (non-removed) vectors.
+    /// This eliminates orphaned vectors that accumulate from soft-delete operations.
+    ///
+    /// # Arguments
+    /// * `vectors` - Iterator of (id, embedding) pairs for all active entries.
+    ///   The caller must provide vectors from the authoritative store (e.g., RocksDB).
+    ///
+    /// # Returns
+    /// Number of vectors in the rebuilt index.
+    ///
+    /// # Errors
+    /// Returns error if usearch operations fail during rebuild.
+    pub fn rebuild(&self, vectors: &[(Uuid, Vec<f32>)]) -> CoreResult<usize> {
+        let old_removed = self.removed_count();
+        let old_total = self.usearch_size();
+
+        info!(
+            old_total = old_total,
+            old_removed = old_removed,
+            active = vectors.len(),
+            "Rebuilding CausalE11Index to eliminate orphaned vectors"
+        );
+
+        // Create new index with same configuration
+        let options = IndexOptions {
+            dimensions: E11_DIM,
+            metric: MetricKind::Cos,
+            quantization: ScalarKind::F32,
+            connectivity: HNSW_M,
+            expansion_add: HNSW_EF_CONSTRUCTION,
+            expansion_search: HNSW_EF_SEARCH,
+            ..Default::default()
+        };
+
+        let new_index = Index::new(&options).map_err(|e| {
+            error!("Failed to create new usearch index during CausalE11Index rebuild: {}", e);
+            CoreError::Internal(format!("usearch rebuild failed: {}", e))
+        })?;
+
+        let capacity = vectors.len().max(INITIAL_CAPACITY);
+        new_index.reserve(capacity).map_err(|e| {
+            error!("Failed to reserve capacity during CausalE11Index rebuild: {}", e);
+            CoreError::Internal(format!("usearch reserve failed during rebuild: {}", e))
+        })?;
+
+        // Build new mappings and insert all active vectors
+        let mut new_id_to_key = HashMap::with_capacity(vectors.len());
+        let mut new_key_to_id = HashMap::with_capacity(vectors.len());
+        let mut next_key: u64 = 0;
+
+        for (id, embedding) in vectors {
+            if embedding.len() != E11_DIM {
+                warn!(
+                    id = %id,
+                    dim = embedding.len(),
+                    "Skipping vector with wrong dimension during CausalE11Index rebuild"
+                );
+                continue;
+            }
+
+            new_id_to_key.insert(*id, next_key);
+            new_key_to_id.insert(next_key, *id);
+
+            new_index.add(next_key, embedding).map_err(|e| {
+                error!(id = %id, key = next_key, "Failed to add vector during CausalE11Index rebuild: {}", e);
+                CoreError::Internal(format!("usearch add failed during rebuild: {}", e))
+            })?;
+
+            next_key += 1;
+        }
+
+        // Swap in the new index atomically (lock order: id_to_key -> key_to_id -> index -> next_key)
+        let mut id_to_key = self.id_to_key.write();
+        let mut key_to_id = self.key_to_id.write();
+        let mut index = self.index.write();
+        let mut next_key_lock = self.next_key.write();
+
+        *index = new_index;
+        *id_to_key = new_id_to_key;
+        *key_to_id = new_key_to_id;
+        *next_key_lock = next_key;
+
+        // Reset removed count after successful rebuild
+        self.removed_count.store(0, Ordering::Relaxed);
+
+        let rebuilt_count = next_key as usize;
+        info!(
+            rebuilt_count = rebuilt_count,
+            eliminated = old_total.saturating_sub(rebuilt_count),
+            "CausalE11Index rebuild complete"
+        );
+
+        Ok(rebuilt_count)
+    }
+
+    /// HIGH-2 FIX: Reset removed count (e.g., after external compaction).
+    pub fn reset_removed_count(&self) {
+        self.removed_count.store(0, Ordering::Relaxed);
     }
 
     /// Get memory usage in bytes.
@@ -369,6 +508,9 @@ impl CausalE11Index {
         id_to_key.clear();
         key_to_id.clear();
         *next_key = 0;
+
+        // HIGH-2 FIX: Reset removed count on clear
+        self.removed_count.store(0, Ordering::Relaxed);
 
         info!("Cleared CausalE11Index");
     }
@@ -574,6 +716,73 @@ mod tests {
 
         let results = index.search(&query, 10).expect("Search failed");
         assert!(results.is_empty());
+    }
+
+    #[test]
+    fn test_compaction_tracking() {
+        let index = CausalE11Index::new();
+
+        // Insert 10 embeddings
+        let mut ids = Vec::new();
+        for i in 0..10 {
+            let id = Uuid::new_v4();
+            let embedding = generate_random_embedding(i);
+            index.insert(id, &embedding).expect("Insert failed");
+            ids.push(id);
+        }
+
+        assert_eq!(index.len(), 10);
+        assert_eq!(index.removed_count(), 0);
+        assert!(!index.needs_compaction());
+
+        // Remove 3 entries (30% > 25% threshold)
+        for id in &ids[..3] {
+            assert!(index.remove(*id));
+        }
+
+        assert_eq!(index.len(), 7);
+        assert_eq!(index.removed_count(), 3);
+        // usearch_size() should still be 10 (orphaned vectors remain)
+        assert_eq!(index.usearch_size(), 10);
+        // 3/10 = 30% > 25% => needs compaction
+        assert!(index.needs_compaction());
+    }
+
+    #[test]
+    fn test_compaction_rebuild() {
+        let index = CausalE11Index::new();
+
+        // Insert 10 embeddings
+        let mut all_entries = Vec::new();
+        for i in 0..10 {
+            let id = Uuid::new_v4();
+            let embedding = generate_random_embedding(i);
+            index.insert(id, &embedding).expect("Insert failed");
+            all_entries.push((id, embedding));
+        }
+
+        // Remove 5 entries
+        for (id, _) in &all_entries[..5] {
+            index.remove(*id);
+        }
+
+        assert_eq!(index.removed_count(), 5);
+        assert!(index.needs_compaction());
+
+        // Rebuild with only the active vectors
+        let active: Vec<(Uuid, Vec<f32>)> = all_entries[5..].to_vec();
+        let rebuilt_count = index.rebuild(&active).expect("Rebuild failed");
+
+        assert_eq!(rebuilt_count, 5);
+        assert_eq!(index.len(), 5);
+        assert_eq!(index.removed_count(), 0);
+        assert_eq!(index.usearch_size(), 5);
+        assert!(!index.needs_compaction());
+
+        // Verify search still works after rebuild
+        let (_, ref embedding) = all_entries[5];
+        let results = index.search(embedding, 1).expect("Search failed");
+        assert!(!results.is_empty());
     }
 
     #[test]

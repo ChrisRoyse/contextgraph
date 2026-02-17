@@ -19,7 +19,7 @@ use super::tokenizer::TokenizerFamily;
 /// | Code | Qodo-Embed-1-1.5B | 1536 | Pretrained |
 /// | Graph | e5-large-v2 | 1024 | Pretrained |
 /// | Hdc | Hyperdimensional | 10K-bit | Custom |
-/// | Multimodal | CLIP | 768 | Pretrained |
+/// | Multimodal | e5-base-v2 (ContextualModel) | 768 | Pretrained |
 /// | Entity | KEPLER | 768 | Pretrained (DEPRECATED - use Kepler) |
 /// | Kepler | KEPLER (RoBERTa + TransE) | 768 | Pretrained |
 /// | LateInteraction | ColBERT | 128/token | Pretrained |
@@ -55,7 +55,9 @@ pub enum ModelId {
     Graph = 7,
     /// E9: Hyperdimensional computing (10K-bit -> 1024D projected, custom)
     Hdc = 8,
-    /// E10: Multimodal using openai/clip-vit-large-patch14 (768D)
+    /// E10: Contextual paraphrase using intfloat/e5-base-v2 (768D).
+    /// Historical name "Multimodal" retained for backward compatibility (originally CLIP).
+    /// Production model is ContextualModel with asymmetric paraphrase/context vectors.
     Multimodal = 9,
     /// E11: Entity using KEPLER (768D, upgraded from MiniLM 384D).
     /// Prefer `ModelId::Kepler` for new code — `Entity` exists for backward-compatible matching.

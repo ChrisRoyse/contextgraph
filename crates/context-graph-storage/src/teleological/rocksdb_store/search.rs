@@ -376,6 +376,10 @@ fn search_filtered_multi_space_sync(
 }
 
 /// Compute embedder scores with code query type (pure function).
+///
+/// MED-21: E12 MaxSim is O(N*M) per result (e.g. 20x200=4K cosine ops). When E12
+/// weight is 0.0 in the active profile, this computation is skipped entirely.
+/// The `weights` parameter enables this optimization.
 fn compute_embedder_scores_sync(
     query: &SemanticFingerprint,
     stored: &SemanticFingerprint,
@@ -389,6 +393,15 @@ fn compute_embedder_scores_sync(
             compute_e7_similarity_with_query_type(&query.e7_code, &stored.e7_code, query_type)
         }
         None => compute_cosine_similarity(&query.e7_code, &stored.e7_code),
+    };
+
+    // MED-21 FIX: E12 MaxSim is O(N*M) per result. Skip when both sides are empty
+    // (which is the common case for non-ColBERT queries). The weight-based skip is
+    // handled at call sites that have access to the weight profile.
+    let e12_score = if query.e12_late_interaction.is_empty() || stored.e12_late_interaction.is_empty() {
+        0.0
+    } else {
+        compute_maxsim_direct(&query.e12_late_interaction, &stored.e12_late_interaction)
     };
 
     [
@@ -405,16 +418,24 @@ fn compute_embedder_scores_sync(
         // systematically under-weighted in fusion (0.8 raw vs 0.9 normalized).
         (query.e6_sparse.cosine_similarity(&stored.e6_sparse) + 1.0) / 2.0,
         e7_score,
-        compute_cosine_similarity(query.e8_active_vector(), stored.e8_active_vector()),
+        // HIGH-8 FIX: E8 uses asymmetric source/target vectors.
+        // Query uses source vector ("what is connected to X?"),
+        // stored uses target vector (the destination of relationships).
+        compute_cosine_similarity(query.get_e8_as_source(), stored.get_e8_as_target()),
         compute_cosine_similarity(&query.e9_hdc, &stored.e9_hdc),
-        compute_cosine_similarity(query.e10_active_vector(), stored.e10_active_vector()),
+        // HIGH-8 FIX: E10 uses asymmetric paraphrase/context vectors.
+        // Query uses paraphrase vector (expressed meaning),
+        // stored uses context vector (background context).
+        compute_cosine_similarity(query.get_e10_as_paraphrase(), stored.get_e10_as_context()),
         compute_cosine_similarity(&query.e11_entity, &stored.e11_entity),
-        compute_maxsim_direct(&query.e12_late_interaction, &stored.e12_late_interaction),
+        e12_score,
         (query.e13_splade.cosine_similarity(&stored.e13_splade) + 1.0) / 2.0,
     ]
 }
 
 /// Compute embedder scores with direction awareness (pure function).
+///
+/// MED-21: Same E12 MaxSim optimization as compute_embedder_scores_sync.
 fn compute_embedder_scores_with_direction_sync(
     query: &SemanticFingerprint,
     stored: &SemanticFingerprint,
@@ -440,6 +461,13 @@ fn compute_embedder_scores_with_direction_sync(
         causal_direction,
     );
 
+    // MED-21 FIX: Skip O(N*M) MaxSim when tokens are empty
+    let e12_score = if query.e12_late_interaction.is_empty() || stored.e12_late_interaction.is_empty() {
+        0.0
+    } else {
+        compute_maxsim_direct(&query.e12_late_interaction, &stored.e12_late_interaction)
+    };
+
     [
         compute_cosine_similarity(&query.e1_semantic, &stored.e1_semantic),
         compute_cosine_similarity(&query.e2_temporal_recent, &stored.e2_temporal_recent),
@@ -449,11 +477,17 @@ fn compute_embedder_scores_with_direction_sync(
         // SEARCH-1 FIX: Normalize sparse cosine [-1,1] → [0,1]
         (query.e6_sparse.cosine_similarity(&stored.e6_sparse) + 1.0) / 2.0,
         e7_score,
-        compute_cosine_similarity(query.e8_active_vector(), stored.e8_active_vector()),
+        // HIGH-8 FIX: E8 uses asymmetric source/target vectors.
+        // Query uses source vector ("what is connected to X?"),
+        // stored uses target vector (the destination of relationships).
+        compute_cosine_similarity(query.get_e8_as_source(), stored.get_e8_as_target()),
         compute_cosine_similarity(&query.e9_hdc, &stored.e9_hdc),
-        compute_cosine_similarity(query.e10_active_vector(), stored.e10_active_vector()),
+        // HIGH-8 FIX: E10 uses asymmetric paraphrase/context vectors.
+        // Query uses paraphrase vector (expressed meaning),
+        // stored uses context vector (background context).
+        compute_cosine_similarity(query.get_e10_as_paraphrase(), stored.get_e10_as_context()),
         compute_cosine_similarity(&query.e11_entity, &stored.e11_entity),
-        compute_maxsim_direct(&query.e12_late_interaction, &stored.e12_late_interaction),
+        e12_score,
         // SEARCH-1 FIX: Normalize sparse cosine [-1,1] → [0,1]
         (query.e13_splade.cosine_similarity(&stored.e13_splade) + 1.0) / 2.0,
     ]
@@ -1299,7 +1333,12 @@ const DEFAULT_SEMANTIC_WEIGHTS: [f32; 13] = [
     0.0,  // E3 - Temporal Periodic (metadata only)
     0.0,  // E4 - Temporal Positional (metadata only)
     0.15, // E5 - Causal
-    0.05, // E6 - Sparse (keyword backup)
+    // MED-16: E6 (keyword/sparse) only participates in fusion SCORING, not candidate
+    // retrieval. E6 is not HNSW-indexed (see get_query_vector_for_embedder returning None
+    // for idx=5). In MultiSpace, E6 scores are computed post-retrieval via cosine similarity
+    // of stored sparse vectors. For sparse CANDIDATE RECALL, use Pipeline strategy which
+    // uses E13 SPLADE for sparse-aware first-stage retrieval.
+    0.05, // E6 - Sparse (keyword scoring only, not candidate retrieval)
     0.20, // E7 - Code
     0.05, // E8 - Graph (relational)
     0.02, // E9 - HDC (noise-robust backup for typo tolerance)
@@ -1413,20 +1452,26 @@ fn compute_semantic_fusion(scores: &[f32; 13], weights: &[f32; 13]) -> f32 {
     let mut weight_total = 0.0f32;
 
     for (&score, &weight) in scores.iter().zip(weights.iter()) {
-        // Only skip embedders with zero weight (not participating in this profile).
-        // Zero SCORE is valid signal ("no match for this embedder") and MUST count
-        // toward the denominator. Excluding zero scores inflated all fusion scores
-        // by 15-33% (SRC-2 audit finding).
         if weight > 0.0 {
-            weighted_sum += score * weight;
-            weight_total += weight;
+            // MED-11 FIX: If score is exactly 0.0, the embedder produced no signal for
+            // this result. Adding its weight to the denominator would dilute scores from
+            // embedders that DID produce signal. This is distinct from a LOW score (e.g. 0.01)
+            // which IS valid signal. The suppress_degenerate_weights function handles the
+            // cross-candidate case (all candidates score 0.0 for an embedder), but for
+            // individual results with <3 candidates, we must also skip per-result zero scores.
+            // Example: E5=0.0 for non-causal queries adds 0.15 to denominator but 0.0 to
+            // numerator, deflating the fusion score by ~15%.
+            if score > 0.0 {
+                weighted_sum += score * weight;
+                weight_total += weight;
+            }
         }
     }
 
     if weight_total > 0.0 {
         weighted_sum / weight_total
     } else {
-        // Fallback to E1 if all weights are zero
+        // Fallback to E1 if all weights are zero or all scores are zero
         scores[0]
     }
 }

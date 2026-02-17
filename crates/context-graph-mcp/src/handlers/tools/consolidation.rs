@@ -4,7 +4,7 @@
 
 use serde::Deserialize;
 use serde_json::json;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use context_graph_core::causal::asymmetric::{
@@ -13,6 +13,7 @@ use context_graph_core::causal::asymmetric::{
 use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 
 use crate::handlers::Handlers;
+use crate::handlers::tools::helpers::cosine_similarity;
 use crate::protocol::{JsonRpcId, JsonRpcResponse};
 
 // ============================================================================
@@ -137,32 +138,7 @@ impl ConsolidationService {
     }
 }
 
-/// Compute cosine similarity between two embedding vectors.
-///
-/// Returns dot(a, b) / (||a|| * ||b||), or 0.0 if either vector has zero norm.
-/// MCP-05 FIX: Replaces raw dot product which can exceed 1.0 for non-normalized embeddings.
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-
-    let mut dot = 0.0f32;
-    let mut norm_a = 0.0f32;
-    let mut norm_b = 0.0f32;
-
-    for (x, y) in a.iter().zip(b.iter()) {
-        dot += x * y;
-        norm_a += x * x;
-        norm_b += y * y;
-    }
-
-    let denom = norm_a.sqrt() * norm_b.sqrt();
-    if denom < f32::EPSILON {
-        return 0.0;
-    }
-
-    dot / denom
-}
+// LOW-15: cosine_similarity moved to crate::handlers::tools::helpers (shared across 4 tool modules).
 
 // ============================================================================
 // HANDLER IMPLEMENTATION
@@ -319,10 +295,23 @@ impl Handlers {
         let mut fingerprints: Vec<(Uuid, chrono::DateTime<chrono::Utc>)> = Vec::new();
 
         for (idx, fp) in unbiased_fingerprints.iter().enumerate() {
+            // MED-9 FIX: Skip memories with missing content instead of using empty string.
+            // Cosine similarity between an empty-string embedding and real content is meaningless
+            // and would produce false consolidation candidates.
+            let text = match content_texts.get(idx).and_then(|c| c.clone()) {
+                Some(t) if !t.is_empty() => t,
+                _ => {
+                    warn!(
+                        memory_id = %fp.id,
+                        "trigger_consolidation: Skipping memory with missing/empty content — \
+                         cannot compute meaningful similarity"
+                    );
+                    continue;
+                }
+            };
+
             // Use E1 (semantic 1024D) embedding for comparison
             let embedding = fp.semantic.e1_semantic.clone();
-
-            let text = content_texts.get(idx).and_then(|c| c.clone()).unwrap_or_default();
 
             // Gap 5: Infer E5 causal direction for consolidation direction-check
             let direction = infer_direction_from_fingerprint(&fp.semantic);

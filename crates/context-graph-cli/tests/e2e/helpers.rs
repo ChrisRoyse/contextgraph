@@ -416,7 +416,11 @@ pub fn generate_e2e_session_id(prefix: &str) -> String {
 // Script Verification
 // =============================================================================
 
-/// Verify all hook scripts exist and are executable
+/// Verify all hook scripts exist and are executable.
+///
+/// CRIT-1 FIX: If scripts don't exist, generate them by calling `context-graph-cli setup`
+/// with `--force --target-dir <workspace_root>`. This ensures E2E tests work on
+/// fresh checkouts where .claude/hooks/ is gitignored.
 pub fn verify_all_scripts_exist() -> Result<(), E2EError> {
     let scripts = [
         "session_start.sh",
@@ -426,17 +430,46 @@ pub fn verify_all_scripts_exist() -> Result<(), E2EError> {
         "user_prompt_submit.sh",
     ];
 
+    // Check if all scripts exist
+    let all_exist = scripts.iter().all(|s| hook_script_path(s).exists());
+
+    if !all_exist {
+        // Generate scripts by running setup command
+        let cli = cli_binary_path()?;
+        let root = workspace_root();
+        let output = Command::new(&cli)
+            .args(["setup", "--force", "--target-dir"])
+            .arg(&root)
+            .output()
+            .map_err(|e| E2EError::IoError(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                format!(
+                    "Failed to run `{} setup --force --target-dir {}`: {}. \
+                     Build the CLI first: cargo build -p context-graph-cli",
+                    cli.display(), root.display(), e
+                ),
+            )))?;
+
+        if !output.status.success() {
+            return Err(E2EError::ScriptNotFound(format!(
+                "Setup command failed (exit {}): {}",
+                output.status.code().unwrap_or(-1),
+                String::from_utf8_lossy(&output.stderr),
+            )));
+        }
+    }
+
+    // Verify all scripts exist and are executable
     for script in scripts {
         let path = hook_script_path(script);
         if !path.exists() {
             return Err(E2EError::ScriptNotFound(format!(
-                "{} not found at {}",
+                "{} not found at {} (even after setup)",
                 script,
                 path.display()
             )));
         }
 
-        // Check if executable (on Unix)
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

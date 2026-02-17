@@ -1611,7 +1611,6 @@ mod tests {
 
         // Execute
         let args = PromptSubmitArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             prompt: Some("Help me understand this code".to_string()),
             stdin: false,
@@ -1652,7 +1651,6 @@ mod tests {
 
         // Execute with a unique session ID
         let args = PromptSubmitArgs {
-            db_path: None,
             session_id: "new-session-12345".to_string(),
             prompt: Some("Test prompt".to_string()),
             stdin: false,
@@ -1739,7 +1737,6 @@ mod tests {
         create_test_session_in_cache(session_id, 0.90);
 
         let args = PromptSubmitArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             prompt: Some("Who are you and what can you do?".to_string()),
             stdin: false,
@@ -1792,7 +1789,6 @@ mod tests {
 
         // Execute with empty context (no stdin, just prompt arg)
         let args = PromptSubmitArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             prompt: Some("Simple question".to_string()),
             stdin: false,
@@ -1828,7 +1824,6 @@ mod tests {
         create_test_session_in_cache(session_id, 0.90);
 
         let args = PromptSubmitArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             prompt: Some("Test timing".to_string()),
             stdin: false,
@@ -1972,7 +1967,6 @@ mod tests {
         create_test_session_in_cache(session_id, 0.90);
 
         let args = PromptSubmitArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             prompt: None, // Missing!
             stdin: false, // Not using stdin

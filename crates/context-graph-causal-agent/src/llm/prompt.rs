@@ -113,12 +113,14 @@ For each pair, determine if there's a causal relationship.
         )
     }
 
-    /// Truncate content to maximum length.
+    /// Truncate content to maximum length (UTF-8 safe).
     fn truncate_content(&self, content: &str) -> String {
         if content.len() <= self.max_content_length {
             content.to_string()
         } else {
-            let truncated = &content[..self.max_content_length];
+            // HIGH-4 FIX: Use floor_char_boundary to avoid panic on multi-byte UTF-8
+            let safe_end = content.floor_char_boundary(self.max_content_length);
+            let truncated = &content[..safe_end];
             // Find last complete word
             if let Some(last_space) = truncated.rfind(' ') {
                 format!("{}...", &truncated[..last_space])

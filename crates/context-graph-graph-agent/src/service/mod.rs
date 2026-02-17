@@ -175,7 +175,13 @@ impl GraphDiscoveryService {
         }
     }
 
-    /// Check if the service is running.
+    /// Check if the background loop has been started.
+    ///
+    /// LOW-4 Note: The background loop is a stub — it sleeps and logs
+    /// "NOT IMPLEMENTED." No discovery cycles actually execute. This method
+    /// returns `true` when the loop task has been spawned (for lifecycle
+    /// management by `start()`/`stop()`), NOT when real discovery is happening.
+    /// Use `discover_graph_relationships` MCP tool for on-demand analysis.
     pub fn is_running(&self) -> bool {
         self.running.load(Ordering::SeqCst)
     }

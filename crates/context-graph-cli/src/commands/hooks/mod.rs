@@ -94,7 +94,11 @@ pub async fn handle_hooks_command(cmd: HooksCommands) -> i32 {
             emit_hook_result(task_completed::execute(args).await)
         }
         HooksCommands::GenerateConfig(_args) => {
-            error!("GenerateConfig not yet implemented");
+            error!(
+                "GenerateConfig is not implemented. Hook scripts are generated \
+                 automatically by the `setup` command. Run: \
+                 context-graph-cli setup --generate-hooks"
+            );
             1
         }
     }

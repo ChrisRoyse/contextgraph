@@ -762,13 +762,23 @@ impl Handlers {
                     "Structural"
                 };
 
+                // MED-5 FIX: Differentiate vector_count by embedder type.
+                // - Dense HNSW embedders (E1-E5, E7-E11): 1 vector per memory → total_memories
+                // - Sparse inverted (E6, E13): term postings, not vectors → None
+                // - ColBERT MaxSim (E12): multiple token vectors per memory → None
+                let vector_count = if e.is_sparse() || matches!(e, EmbedderId::E12) {
+                    None
+                } else {
+                    Some(total_memories)
+                };
+
                 EmbedderIndexInfo {
                     embedder: format!("{:?}", e),
                     name: e.name().to_string(),
                     finds: e.finds().to_string(),
                     dimension: e.dimension().to_string(),
                     index_type: index_type.to_string(),
-                    vector_count: total_memories,
+                    vector_count,
                     // Size not available: would require querying actual HNSW/FAISS index stats
                     size_mb: None,
                     // GPU residency cannot be verified at runtime without querying CUDA allocator

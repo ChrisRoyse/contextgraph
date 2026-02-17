@@ -34,7 +34,7 @@ use llama_cpp_2::sampling::LlamaSampler;
 use llama_cpp_2::token::LlamaToken;
 use parking_lot::RwLock;
 use serde::Deserialize;
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 
 use crate::error::{CausalAgentError, CausalAgentResult};
 use crate::types::{
@@ -129,9 +129,12 @@ enum LlmState {
     },
 }
 
-// Implement Send and Sync for LlmState
-// Safety: LlamaBackend and LlamaModel are thread-safe when used properly
-// We protect access with RwLock in CausalDiscoveryLLM
+// SAFETY: LlmState is Send + Sync because:
+// - LlamaBackend and LlamaModel from llama_cpp_2 are internally thread-safe
+//   (the C++ llama.cpp library uses mutexes for model state).
+// - All access to LlmState is mediated through a RwLock<LlmState> in
+//   CausalDiscoveryLLM, preventing concurrent mutation.
+// - The Unloaded variant holds no resources.
 unsafe impl Send for LlmState {}
 unsafe impl Sync for LlmState {}
 
@@ -424,10 +427,21 @@ ws ::= [ \t\n\r]*"#
     }
 
     /// Batch analyze multiple memory pairs.
+    ///
+    /// HIGH-5 FIX: Returns `Vec<Result<CausalAnalysisResult, CausalAgentError>>` instead
+    /// of silently replacing failures with `CausalAnalysisResult::default()`. Each element
+    /// tells the caller whether analysis succeeded or failed, enabling fail-fast behavior
+    /// and distinguishing "LLM determined no causality" from "LLM failed to analyze."
+    ///
+    /// # Returns
+    ///
+    /// A vector of results, one per pair. Each element is either:
+    /// - `Ok(CausalAnalysisResult)` - analysis succeeded (may or may not have found causality)
+    /// - `Err(CausalAgentError)` - analysis failed for this pair (LLM error, timeout, etc.)
     pub async fn analyze_batch(
         &self,
         pairs: &[(String, String)],
-    ) -> CausalAgentResult<Vec<CausalAnalysisResult>> {
+    ) -> CausalAgentResult<Vec<Result<CausalAnalysisResult, CausalAgentError>>> {
         let mut results = Vec::with_capacity(pairs.len());
 
         for (i, (a, b)) in pairs.iter().enumerate() {
@@ -438,14 +452,14 @@ ws ::= [ \t\n\r]*"#
             );
 
             match self.analyze_causal_relationship(a, b).await {
-                Ok(result) => results.push(result),
+                Ok(result) => results.push(Ok(result)),
                 Err(e) => {
-                    warn!(
+                    error!(
                         pair_index = i,
                         error = %e,
-                        "Failed to analyze pair, using default"
+                        "Failed to analyze pair — propagating error to caller"
                     );
-                    results.push(CausalAnalysisResult::default());
+                    results.push(Err(e));
                 }
             }
         }
@@ -1056,22 +1070,43 @@ ws ::= [ \t\n\r]*"#
         let has_causal_link = json
             .get("causal_link")
             .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+            .ok_or_else(|| CausalAgentError::LlmResponseParseError {
+                message: format!(
+                    "Missing or invalid 'causal_link' boolean in LLM response: {}",
+                    response
+                ),
+            })?;
 
         let direction_str = json
             .get("direction")
             .and_then(|v| v.as_str())
-            .unwrap_or("none");
+            .ok_or_else(|| CausalAgentError::LlmResponseParseError {
+                message: format!(
+                    "Missing or invalid 'direction' string in LLM response: {}",
+                    response
+                ),
+            })?;
 
         let confidence = json
             .get("confidence")
             .and_then(|v| v.as_f64())
-            .unwrap_or(0.0) as f32;
+            .map(|v| v as f32)
+            .ok_or_else(|| CausalAgentError::LlmResponseParseError {
+                message: format!(
+                    "Missing or invalid 'confidence' number in LLM response: {}",
+                    response
+                ),
+            })?;
 
         let mechanism = json
             .get("mechanism")
             .and_then(|v| v.as_str())
-            .unwrap_or("")
+            .ok_or_else(|| CausalAgentError::LlmResponseParseError {
+                message: format!(
+                    "Missing or invalid 'mechanism' string in LLM response: {}",
+                    response
+                ),
+            })?
             .to_string();
 
         let mechanism_type = json
@@ -1208,7 +1243,12 @@ impl std::fmt::Debug for CausalDiscoveryLLM {
     }
 }
 
-// Thread safety
+// SAFETY: CausalDiscoveryLLM is Send + Sync because:
+// - `state: RwLock<LlmState>` provides synchronized access to the LLM model.
+// - `loaded: AtomicBool` is inherently thread-safe.
+// - `config`, `prompt_builder`, `causal_grammar`, `graph_grammar` are immutable
+//   after construction (no interior mutability).
+// - All inference calls acquire the RwLock before touching LlamaModel/LlamaBackend.
 unsafe impl Send for CausalDiscoveryLLM {}
 unsafe impl Sync for CausalDiscoveryLLM {}
 

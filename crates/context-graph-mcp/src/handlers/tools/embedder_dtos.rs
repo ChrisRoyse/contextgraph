@@ -586,8 +586,11 @@ pub struct EmbedderIndexInfo {
     pub dimension: String,
     /// Index type (HNSW, Inverted, MaxSim).
     pub index_type: String,
-    /// Number of vectors indexed.
-    pub vector_count: usize,
+    /// Number of vectors indexed (for dense HNSW embedders).
+    /// None for sparse inverted (E6/E13) and per-token (E12) embedders
+    /// where "vector count" is not a meaningful metric.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub vector_count: Option<usize>,
     /// Approximate size in MB.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub size_mb: Option<f32>,

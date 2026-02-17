@@ -1209,9 +1209,10 @@ impl Handlers {
                         .and_then(|p| get_weight_profile(p)))
                     .unwrap_or([1.0 / 13.0; 13]);
 
-                // PHASE-2-PROVENANCE: Query classification is not yet implemented.
-                // Set to None until real classification (causal, code, entity, etc.) is wired.
-                let query_analysis: Option<context_graph_core::retrieval::QueryClassification> = None;
+                // LOW-16: Removed dead `query_analysis: Option<QueryClassification> = None`.
+                // The field was always None and the schema advertised a perpetually null
+                // `queryClassification`. When query classification is implemented, add it
+                // back with actual values.
 
                 let results_json: Vec<_> = results
                     .iter()
@@ -1383,7 +1384,7 @@ impl Handlers {
                                 })
                                 .collect();
 
-                            let mut provenance = json!({
+                            let provenance = json!({
                                 "strategy": strategy_name,
                                 "weightProfile": effective_weight_profile.as_deref().unwrap_or("default"),
                                 "embedderContributions": contributions,
@@ -1392,15 +1393,7 @@ impl Handlers {
                                 "isBlindSpotDiscovery": !blind_spots.is_empty() && agreement_count <= 1
                             });
 
-                            // Include query classification only if actually populated
-                            if let Some(ref analysis) = query_analysis {
-                                if !analysis.detected_type.is_empty() {
-                                    provenance["queryClassification"] = json!({
-                                        "detectedType": analysis.detected_type,
-                                        "detectionPatterns": analysis.detection_patterns,
-                                    });
-                                }
-                            }
+                            // LOW-16: Removed dead queryClassification block (was always None).
 
                             entry["provenance"] = provenance;
                         }

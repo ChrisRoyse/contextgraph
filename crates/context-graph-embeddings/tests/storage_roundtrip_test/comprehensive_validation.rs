@@ -52,8 +52,8 @@ fn test_comprehensive_storage_roundtrip_validation() {
 
     // 5. Verify RRF formula
     let rrf_0 = EmbedderQueryResult::from_similarity(id, 0, 0.9, 0).rrf_contribution();
-    assert!((rrf_0 - 1.0 / 60.0).abs() < f32::EPSILON);
-    println!("[5/7] RRF formula 1/(60+rank) verified");
+    assert!((rrf_0 - 1.0 / 61.0).abs() < f32::EPSILON);
+    println!("[5/7] RRF formula 1/(60+rank+1) verified (1-indexed)");
 
     // 6. Verify MultiSpaceQueryResult aggregation
     let results = vec![
@@ -62,7 +62,7 @@ fn test_comprehensive_storage_roundtrip_validation() {
     ];
     let multi = MultiSpaceQueryResult::from_embedder_results(id, &results);
     assert_eq!(multi.embedder_count, 2);
-    let expected_rrf = 1.0 / 60.0 + 1.0 / 61.0;
+    let expected_rrf = 1.0 / 61.0 + 1.0 / 62.0;
     assert!((multi.rrf_score - expected_rrf).abs() < 1e-6);
     println!("[6/6] MultiSpaceQueryResult RRF aggregation verified");
 
@@ -71,7 +71,7 @@ fn test_comprehensive_storage_roundtrip_validation() {
     println!("  - JSON roundtrip: {} bytes", json.len());
     println!("  - Bincode roundtrip: {} bytes", bincode_bytes.len());
     println!("  - IndexEntry norm/cosine similarity verified");
-    println!("  - RRF formula 1/(60+rank) verified");
+    println!("  - RRF formula 1/(60+rank+1) verified (1-indexed)");
     println!("  - MultiSpaceQueryResult aggregation verified");
     println!("  - Topic alignment filter at 0.55 verified");
 }

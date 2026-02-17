@@ -157,7 +157,11 @@ impl SingleEmbedder for DenseEmbedderAdapter {
     }
 }
 
-// Safety: DenseEmbedderAdapter is Send + Sync because it wraps Arc<RwLock<...>>
+// SAFETY: DenseEmbedderAdapter is Send + Sync because its only mutable field is
+// `model: Arc<RwLock<Box<dyn EmbeddingModel>>>`. Arc provides shared ownership,
+// and RwLock (from parking_lot) provides synchronized interior mutability.
+// The underlying EmbeddingModel trait objects may not be Send/Sync themselves
+// (e.g., ort::Session), but all access is mediated through the RwLock.
 unsafe impl Send for DenseEmbedderAdapter {}
 unsafe impl Sync for DenseEmbedderAdapter {}
 
@@ -225,6 +229,9 @@ impl SparseEmbedder for SparseEmbedderAdapter {
     }
 }
 
+// SAFETY: SparseEmbedderAdapter is Send + Sync because its only mutable field is
+// `model: Arc<RwLock<Box<dyn EmbeddingModel>>>`. All access to the underlying
+// model is synchronized through the RwLock.
 unsafe impl Send for SparseEmbedderAdapter {}
 unsafe impl Sync for SparseEmbedderAdapter {}
 
@@ -315,6 +322,9 @@ impl TokenEmbedder for TokenEmbedderAdapter {
     }
 }
 
+// SAFETY: TokenEmbedderAdapter is Send + Sync because its only mutable field is
+// `model: Arc<RwLock<Box<dyn EmbeddingModel>>>`. All access to the underlying
+// ColBERT model is synchronized through the RwLock.
 unsafe impl Send for TokenEmbedderAdapter {}
 unsafe impl Sync for TokenEmbedderAdapter {}
 
@@ -452,6 +462,9 @@ impl CausalDualEmbedderAdapter {
     }
 }
 
+// SAFETY: CausalDualEmbedderAdapter is Send + Sync because its only field is
+// `model: Arc<CausalModel>`. CausalModel internally uses RwLock-protected state
+// for the ort::Session. All access is synchronized through Arc + internal locks.
 unsafe impl Send for CausalDualEmbedderAdapter {}
 unsafe impl Sync for CausalDualEmbedderAdapter {}
 
@@ -524,6 +537,9 @@ impl GraphDualEmbedderAdapter {
     }
 }
 
+// SAFETY: GraphDualEmbedderAdapter is Send + Sync because its only field is
+// `model: Arc<GraphModel>`. GraphModel internally uses RwLock-protected state
+// for the ort::Session. All access is synchronized through Arc + internal locks.
 unsafe impl Send for GraphDualEmbedderAdapter {}
 unsafe impl Sync for GraphDualEmbedderAdapter {}
 
@@ -590,6 +606,9 @@ impl ContextualDualEmbedderAdapter {
     }
 }
 
+// SAFETY: ContextualDualEmbedderAdapter is Send + Sync because its only field is
+// `model: Arc<ContextualModel>`. ContextualModel internally uses RwLock-protected
+// state for the ort::Session. All access is synchronized through Arc + internal locks.
 unsafe impl Send for ContextualDualEmbedderAdapter {}
 unsafe impl Sync for ContextualDualEmbedderAdapter {}
 
@@ -809,7 +828,9 @@ impl ProductionMultiArrayProvider {
             ModelId::Code.as_str().to_string(),
             ModelId::Graph.as_str().to_string(),
             ModelId::Hdc.as_str().to_string(),
-            ModelId::Multimodal.as_str().to_string(),
+            // MED-18 FIX: E10 production model is ContextualModel (intfloat/e5-base-v2),
+            // not CLIP as ModelId::Multimodal suggests. Report the actual model identity.
+            "contextual".to_string(),
             ModelId::Kepler.as_str().to_string(), // E11: KEPLER (was Entity/MiniLM)
             ModelId::LateInteraction.as_str().to_string(),
             ModelId::Splade.as_str().to_string(),
@@ -1562,7 +1583,10 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
     }
 }
 
-// Safety: ProductionMultiArrayProvider is Send + Sync because all fields are Arc<dyn Trait + Send + Sync>
+// SAFETY: ProductionMultiArrayProvider is Send + Sync because all fields are
+// `Arc<dyn Trait>` or `Arc<ConcreteType>`. Each underlying model uses internal
+// synchronization (RwLock or equivalent). No raw pointers or unsynchronized
+// mutable state is exposed.
 unsafe impl Send for ProductionMultiArrayProvider {}
 unsafe impl Sync for ProductionMultiArrayProvider {}
 

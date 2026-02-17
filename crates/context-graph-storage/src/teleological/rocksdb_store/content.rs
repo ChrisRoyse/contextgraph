@@ -10,7 +10,7 @@
 
 use std::sync::Arc;
 use sha2::{Digest, Sha256};
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use context_graph_core::error::{CoreError, CoreResult};
@@ -115,25 +115,35 @@ impl RocksDbTeleologicalStore {
             Ok(Some(bytes)) => {
                 // DAT-8: Recompute SHA-256 and verify against stored content_hash
                 if let Some(fp_data) = self.get_fingerprint_raw(id)? {
-                    if let Ok(fp) = deserialize_teleological_fingerprint(&fp_data) {
-                        let mut hasher = Sha256::new();
-                        hasher.update(&bytes);
-                        let computed: [u8; 32] = hasher.finalize().into();
-                        if computed != fp.content_hash {
-                            error!(
-                                "DAT-8: Content hash mismatch on retrieval for {}. \
-                                 Stored: {:02x?}, Computed: {:02x?}. \
-                                 Data corruption detected ({} bytes).",
-                                id,
-                                &fp.content_hash[..8],
-                                &computed[..8],
-                                bytes.len()
+                    match deserialize_teleological_fingerprint(&fp_data) {
+                        Ok(fp) => {
+                            let mut hasher = Sha256::new();
+                            hasher.update(&bytes);
+                            let computed: [u8; 32] = hasher.finalize().into();
+                            if computed != fp.content_hash {
+                                error!(
+                                    "DAT-8: Content hash mismatch on retrieval for {}. \
+                                     Stored: {:02x?}, Computed: {:02x?}. \
+                                     Data corruption detected ({} bytes).",
+                                    id,
+                                    &fp.content_hash[..8],
+                                    &computed[..8],
+                                    bytes.len()
+                                );
+                                return Err(CoreError::Internal(format!(
+                                    "Content integrity check failed for {}: SHA-256 mismatch. \
+                                     Stored content may be corrupted.",
+                                    id
+                                )));
+                            }
+                        }
+                        Err(e) => {
+                            warn!(
+                                "DAT-8: Cannot verify content hash for {} — \
+                                 fingerprint deserialization failed: {}. \
+                                 Returning content without integrity verification.",
+                                id, e
                             );
-                            return Err(CoreError::Internal(format!(
-                                "Content integrity check failed for {}: SHA-256 mismatch. \
-                                 Stored content may be corrupted.",
-                                id
-                            )));
                         }
                     }
                 }
@@ -170,6 +180,9 @@ impl RocksDbTeleologicalStore {
     }
 
     /// Batch retrieve content (internal async wrapper).
+    ///
+    /// HIGH-1 FIX: Performs DAT-8 SHA-256 verification on every retrieved content,
+    /// same as the single-retrieval path. Corrupted content returns an error.
     pub(crate) async fn get_content_batch_async(
         &self,
         ids: &[Uuid],
@@ -185,21 +198,87 @@ impl RocksDbTeleologicalStore {
         let ids = ids.to_vec();
 
         let contents = tokio::task::spawn_blocking(move || -> CoreResult<Vec<Option<String>>> {
-            let cf = db
+            use crate::teleological::column_families::CF_FINGERPRINTS;
+            use crate::teleological::schema::fingerprint_key;
+
+            let cf_content = db
                 .cf_handle(CF_CONTENT)
                 .ok_or_else(|| CoreError::Internal("CF_CONTENT not found".to_string()))?;
+            let cf_fp = db
+                .cf_handle(CF_FINGERPRINTS)
+                .ok_or_else(|| CoreError::Internal("CF_FINGERPRINTS not found".to_string()))?;
 
-            let keys: Vec<_> = ids
+            // Batch-read both content and fingerprints for hash verification
+            let content_keys: Vec<_> = ids
                 .iter()
-                .map(|id| (cf, content_key(id).to_vec()))
+                .map(|id| (cf_content, content_key(id).to_vec()))
+                .collect();
+            let fp_keys: Vec<_> = ids
+                .iter()
+                .map(|id| (cf_fp, fingerprint_key(id).to_vec()))
                 .collect();
 
-            let results = db.multi_get_cf(keys);
+            let content_results = db.multi_get_cf(content_keys);
+            let fp_results = db.multi_get_cf(fp_keys);
 
             let mut contents = Vec::with_capacity(ids.len());
-            for (i, result) in results.into_iter().enumerate() {
-                match result {
+            for (i, (content_result, fp_result)) in content_results
+                .into_iter()
+                .zip(fp_results.into_iter())
+                .enumerate()
+            {
+                match content_result {
                     Ok(Some(bytes)) => {
+                        // DAT-8: SHA-256 verification (same as single-retrieval path)
+                        match &fp_result {
+                            Ok(Some(fp_data)) => {
+                                match deserialize_teleological_fingerprint(fp_data) {
+                                    Ok(fp) => {
+                                        let mut hasher = Sha256::new();
+                                        hasher.update(&bytes);
+                                        let computed: [u8; 32] = hasher.finalize().into();
+                                        if computed != fp.content_hash {
+                                            error!(
+                                                "DAT-8: Content hash mismatch on batch retrieval for {}. \
+                                                 Stored: {:02x?}, Computed: {:02x?}. \
+                                                 Data corruption detected ({} bytes).",
+                                                ids[i],
+                                                &fp.content_hash[..8],
+                                                &computed[..8],
+                                                bytes.len()
+                                            );
+                                            return Err(CoreError::Internal(format!(
+                                                "Content integrity check failed for {}: SHA-256 mismatch. \
+                                                 Stored content may be corrupted.",
+                                                ids[i]
+                                            )));
+                                        }
+                                    }
+                                    Err(e) => {
+                                        warn!(
+                                            "DAT-8: Could not deserialize fingerprint for {} — \
+                                             SHA-256 verification skipped: {}",
+                                            ids[i], e
+                                        );
+                                    }
+                                }
+                            }
+                            Ok(None) => {
+                                warn!(
+                                    "DAT-8: No fingerprint found for {} — \
+                                     SHA-256 verification skipped (content exists but fingerprint missing)",
+                                    ids[i]
+                                );
+                            }
+                            Err(e) => {
+                                warn!(
+                                    "DAT-8: Fingerprint read error for {} — \
+                                     SHA-256 verification skipped: {}",
+                                    ids[i], e
+                                );
+                            }
+                        }
+
                         let content = String::from_utf8(bytes).map_err(|e| {
                             error!(
                                 "CONTENT ERROR: Invalid UTF-8 in batch content for fingerprint {}. \

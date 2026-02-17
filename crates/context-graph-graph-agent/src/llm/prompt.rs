@@ -245,8 +245,9 @@ Content B:
             return content;
         }
 
-        // Find last space before max length
-        let truncated = &content[..self.max_content_length];
+        // HIGH-4 FIX: Use floor_char_boundary to avoid panic on multi-byte UTF-8
+        let safe_end = content.floor_char_boundary(self.max_content_length);
+        let truncated = &content[..safe_end];
         if let Some(last_space) = truncated.rfind(' ') {
             format!("{}...", &content[..last_space])
         } else {

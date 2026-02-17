@@ -82,6 +82,9 @@ pub async fn execute(args: TaskCompletedArgs) -> HookResult<HookOutput> {
         }
     };
 
+    // MED-10 FIX: Return HookOutput::error when MCP operations fail.
+    // Reporting success when the MCP server is down or storage fails is misleading —
+    // the hook's purpose (storing task learnings) was NOT accomplished.
     if mcp_available {
         let rationale = format!(
             "R6: Task completion learning (task: {}, id: {})",
@@ -101,38 +104,42 @@ pub async fn execute(args: TaskCompletedArgs) -> HookResult<HookOutput> {
                     .get("fingerprintId")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
+                let execution_time_ms = start.elapsed().as_millis() as u64;
                 info!(
                     fingerprint_id,
                     task_id = %task_id,
                     summary_len = summary.len(),
+                    execution_time_ms,
                     "TASK_COMPLETED: R6 task learning stored successfully"
                 );
+                Ok(HookOutput::success(execution_time_ms))
             }
             Err(e) => {
+                let execution_time_ms = start.elapsed().as_millis() as u64;
                 error!(
                     error = %e,
                     task_id = %task_id,
+                    execution_time_ms,
                     "TASK_COMPLETED: R6 FAILED to store task learning."
                 );
+                Ok(HookOutput::error(
+                    format!("Failed to store task learning: {}", e),
+                    execution_time_ms,
+                ))
             }
         }
     } else {
+        let execution_time_ms = start.elapsed().as_millis() as u64;
         error!(
+            execution_time_ms,
             "TASK_COMPLETED: R6 MCP server not available. \
              Cannot store task learning."
         );
+        Ok(HookOutput::error(
+            "MCP server not available — task learning could not be stored".to_string(),
+            execution_time_ms,
+        ))
     }
-
-    let execution_time_ms = start.elapsed().as_millis() as u64;
-
-    info!(
-        session_id = %args.session_id,
-        task_id = %task_id,
-        execution_time_ms,
-        "TASK_COMPLETED: R6 execute complete"
-    );
-
-    Ok(HookOutput::success(execution_time_ms))
 }
 
 // ============================================================================

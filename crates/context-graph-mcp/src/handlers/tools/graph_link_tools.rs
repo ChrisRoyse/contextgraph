@@ -478,16 +478,20 @@ impl Handlers {
                 // Build contributing embedders list from agreeing embedders bitfield
                 let contributing_embedders = get_contributing_embedders(edge.agreeing_embedders());
 
+                // Determine actual direction relative to the queried memory_id.
+                // If the edge's source matches memory_uuid, it's outgoing; otherwise incoming.
+                let actual_direction = if edge.source() == memory_uuid {
+                    "outgoing".to_string()
+                } else {
+                    "incoming".to_string()
+                };
+
                 Some(TypedEdgeResult {
                     target_id: edge.target(),
                     edge_type: edge_type_to_string(edge.edge_type()),
                     weight: edge.weight(),
                     weighted_agreement: compute_weighted_agreement(edge.embedder_scores()),
-                    direction: if request.is_outgoing() {
-                        "outgoing".to_string()
-                    } else {
-                        "incoming".to_string()
-                    },
+                    direction: actual_direction,
                     contributing_embedders,
                     content: None,
                 })

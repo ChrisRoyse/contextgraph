@@ -681,11 +681,16 @@ impl Handlers {
         };
 
         // Load persisted entity names from source_metadata (populated at store_memory time)
+        // MED-6 FIX: Propagate storage errors instead of silently returning vec![None].
+        // A storage failure is distinct from "no metadata exists" and must not be hidden.
         let source_metas = match self.teleological_store.get_source_metadata_batch(&candidate_ids).await {
             Ok(m) => m,
             Err(e) => {
-                debug!(error = %e, "search_by_entities: source_metadata batch load failed, falling back to content extraction");
-                vec![None; candidate_ids.len()]
+                error!(error = %e, "search_by_entities: source_metadata batch load FAILED — storage error");
+                return self.tool_error(
+                    id,
+                    &format!("Source metadata batch load failed: {}. NO FALLBACKS.", e),
+                );
             }
         };
 
@@ -1148,12 +1153,14 @@ impl Handlers {
                             }
                         }
 
-                        // Compute TransE score for this entity
-                        let transe_score = KeplerModel::transe_score(
-                            entity_e11,
-                            relation_e11,
-                            cand_e11,
-                        );
+                        // Compute TransE score for this entity.
+                        // For outgoing (h→t): score = -||h + r - t|| where h=entity, t=candidate
+                        // For incoming (t←h): score = -||h + r - t|| where h=candidate, t=entity
+                        let transe_score = if direction == "incoming" {
+                            KeplerModel::transe_score(cand_e11, relation_e11, entity_e11)
+                        } else {
+                            KeplerModel::transe_score(entity_e11, relation_e11, cand_e11)
+                        };
 
                         // Apply minimum score filter
                         if let Some(min) = min_score {

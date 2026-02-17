@@ -41,6 +41,12 @@ pub(crate) fn soft_delete_key(id: &Uuid) -> String {
 
 impl RocksDbTeleologicalStore {
     /// Store a fingerprint (internal async wrapper).
+    ///
+    /// # Errors
+    ///
+    /// Returns `CoreError::ValidationError` if the ID is soft-deleted (MED-13).
+    /// Storing data for a soft-deleted ID would write invisible data that
+    /// occupies storage but is never returned by queries.
     pub(crate) async fn store_async(
         &self,
         fingerprint: TeleologicalFingerprint,
@@ -48,8 +54,26 @@ impl RocksDbTeleologicalStore {
         let id = fingerprint.id;
         debug!("Storing fingerprint {}", id);
 
-        // Store in RocksDB (primary storage)
-        self.store_fingerprint_internal(&fingerprint)?;
+        // MED-13 FIX: Reject stores for soft-deleted IDs. Writing data for a
+        // soft-deleted ID creates invisible records that waste storage. The caller
+        // must either hard-delete first or use a new ID.
+        if self.is_soft_deleted(&id) {
+            error!(
+                id = %id,
+                "Attempted to store fingerprint with soft-deleted ID — FAIL FAST"
+            );
+            return Err(CoreError::ValidationError {
+                field: "id".to_string(),
+                message: format!(
+                    "Cannot store fingerprint {}: ID is soft-deleted. \
+                     Hard-delete first or use a new ID.",
+                    id
+                ),
+            });
+        }
+
+        // Store in RocksDB (primary storage) — new insert, count for IDF
+        self.store_fingerprint_internal(&fingerprint, true)?;
 
         // Add to per-embedder indexes for O(log n) search
         // DAT-4 fix: If indexing fails, rollback the RocksDB write to prevent
@@ -120,17 +144,17 @@ impl RocksDbTeleologicalStore {
         let id = fingerprint.id;
         debug!("Updating fingerprint {}", id);
 
-        // Check if exists
-        let existing = self.get_fingerprint_raw(id)?;
-        if existing.is_none() {
-            return Ok(false);
-        }
+        // Check if exists and capture old raw bytes for rollback
+        let old_raw_data = match self.get_fingerprint_raw(id)? {
+            Some(data) => data,
+            None => return Ok(false),
+        };
+        let old_fp = deserialize_teleological_fingerprint(&old_raw_data)?;
 
-        // If updating, we need to remove old terms from inverted indexes first
+        // Remove old terms from inverted indexes first
         // STG-04 FIX: Hold secondary_index_lock for the remove batch to prevent
         // concurrent store_fingerprint_internal from reading stale posting lists.
-        if let Some(old_data) = existing {
-            let old_fp = deserialize_teleological_fingerprint(&old_data)?;
+        {
             let _index_guard = self.secondary_index_lock.lock();
             let mut batch = WriteBatch::default();
 
@@ -158,38 +182,34 @@ impl RocksDbTeleologicalStore {
         self.remove_from_indexes(id)
             .map_err(|e| CoreError::IndexError(e.to_string()))?;
 
-        // Store updated fingerprint in RocksDB
-        self.store_fingerprint_internal(&fingerprint)?;
+        // Store updated fingerprint in RocksDB — update, NOT a new doc
+        self.store_fingerprint_internal(&fingerprint, false)?;
 
-        // DAT-4 fix: If add_to_indexes fails after remove_from_indexes + store,
-        // the fingerprint is in RocksDB but invisible to dense search. Restore old
-        // fingerprint to maintain consistency.
+        // CRIT-3 FIX: If add_to_indexes fails after store, rollback uses the
+        // captured old_raw_data (from BEFORE the write), not a re-read from
+        // RocksDB which would return the NEW data.
         if let Err(e) = self.add_to_indexes(&fingerprint) {
             error!(
                 id = %id,
                 error = %e,
-                "HNSW index add failed during update — attempting rollback"
+                "HNSW index add failed during update — rolling back to old fingerprint"
             );
-            // Try to restore old fingerprint in RocksDB and re-add old indexes
-            if let Some(old_data) = self.get_fingerprint_raw(id).ok().flatten() {
-                if let Ok(old_fp) = deserialize_teleological_fingerprint(&old_data) {
-                    if let Err(re) = self.store_fingerprint_internal(&old_fp) {
-                        error!(
-                            id = %id,
-                            error = %re,
-                            "CRITICAL: Rollback store_fingerprint_internal failed — manual cleanup required for fingerprint {}",
-                            id
-                        );
-                    }
-                    if let Err(re) = self.add_to_indexes(&old_fp) {
-                        error!(
-                            id = %id,
-                            error = %re,
-                            "CRITICAL: Rollback add_to_indexes failed — fingerprint {} in RocksDB but missing from HNSW",
-                            id
-                        );
-                    }
-                }
+            // Restore old fingerprint from captured bytes (NOT from RocksDB) — rollback, not new
+            if let Err(re) = self.store_fingerprint_internal(&old_fp, false) {
+                error!(
+                    id = %id,
+                    error = %re,
+                    "CRITICAL: Rollback store_fingerprint_internal failed — fingerprint {} corrupted, manual cleanup required",
+                    id
+                );
+            }
+            if let Err(re) = self.add_to_indexes(&old_fp) {
+                error!(
+                    id = %id,
+                    error = %re,
+                    "CRITICAL: Rollback add_to_indexes failed — fingerprint {} in RocksDB but missing from HNSW",
+                    id
+                );
             }
             return Err(CoreError::IndexError(e.to_string()));
         }

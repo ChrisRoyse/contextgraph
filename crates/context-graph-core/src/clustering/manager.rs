@@ -2592,15 +2592,18 @@ mod tests {
         assert!(!fdmc_result.is_empty());
         assert_eq!(fdmc_result.memory_count(), 5);
 
-        // All should be in same cluster (or few noise)
+        // LOW-1 FIX: Assert non_noise is non-empty before checking cluster consistency.
+        // Previously this silently passed with zero assertions if all points were noise.
         let cluster_ids: Vec<i32> = fdmc_result.memberships.iter().map(|m| m.cluster_id).collect();
         let non_noise: Vec<i32> = cluster_ids.iter().filter(|&&c| c >= 0).cloned().collect();
-        if !non_noise.is_empty() {
-            assert!(
-                non_noise.iter().all(|&c| c == non_noise[0]),
-                "All non-noise should be in same cluster"
-            );
-        }
+        assert!(
+            !non_noise.is_empty(),
+            "Expected at least one non-noise cluster assignment from 5 identical fingerprints"
+        );
+        assert!(
+            non_noise.iter().all(|&c| c == non_noise[0]),
+            "All non-noise should be in same cluster"
+        );
 
         println!(
             "[PASS] test_fdmc_single_cluster - clusters={}, noise={}",

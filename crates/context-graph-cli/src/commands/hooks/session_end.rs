@@ -172,7 +172,12 @@ fn persist_to_cache(
     duration_ms: Option<u64>,
 ) -> (f32, CoherenceState) {
     // Determine values from cache or use defaults
-    // Per PRD v6, we use topic_stability (default 1.0 = fresh/stable state)
+    // LOW-14 Note: topic_stability is always 1.0 in both warm and cold paths.
+    // Per PRD v6 Section 14, session-end uses the in-memory SessionCache, which
+    // does not track topic drift. The actual topic stability metric is computed
+    // by the MCP server's topic system (get_topic_stability tool). Here, 1.0
+    // means "session ended in a healthy/stable state" — it is a sentinel, not a
+    // computed value.
     let (topic_stability, integration, reflection, differentiation, final_session_id) =
         match cache_snapshot {
             Some(snapshot) => {
@@ -269,7 +274,6 @@ mod tests {
         );
 
         let args = SessionEndArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             duration_ms: Some(3600000),
             stdin: false,
@@ -325,7 +329,6 @@ mod tests {
             .as_nanos());
 
         let args = SessionEndArgs {
-            db_path: None,
             session_id: cold_session_id.to_string(),
             duration_ms: None,
             stdin: false,
@@ -436,7 +439,6 @@ mod tests {
         store_in_cache(&snapshot);
 
         let args = SessionEndArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             duration_ms: Some(1800000),
             stdin: false,
@@ -505,7 +507,6 @@ mod tests {
         store_in_cache(&snapshot);
 
         let args = SessionEndArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             duration_ms: None,
             stdin: false,
@@ -563,7 +564,6 @@ mod tests {
         store_in_cache(&snapshot);
 
         let args = SessionEndArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             duration_ms: Some(7200000),
             stdin: false,

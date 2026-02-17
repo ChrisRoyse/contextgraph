@@ -41,10 +41,10 @@ use uuid::Uuid;
 
 /// RRF constant K (per constitution.yaml).
 ///
-/// This determines how quickly rank importance decays:
-/// - Rank 0: 1/(60+0) = 0.0167
-/// - Rank 1: 1/(60+1) = 0.0164
-/// - Rank 10: 1/(60+10) = 0.0143
+/// This determines how quickly rank importance decays (1-indexed):
+/// - Rank 1: 1/(60+1) = 0.01639
+/// - Rank 2: 1/(60+2) = 0.01613
+/// - Rank 10: 1/(60+10) = 0.01429
 /// - Rank 100: 1/(60+100) = 0.00625
 pub const RRF_K: f32 = 60.0;
 

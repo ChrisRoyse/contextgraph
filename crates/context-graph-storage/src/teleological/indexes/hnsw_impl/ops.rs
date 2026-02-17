@@ -71,6 +71,12 @@ impl EmbedderIndexOps for HnswEmbedderIndex {
         Ok(())
     }
 
+    /// LOW-17 Note: `HashMap::remove` does not shrink the map's capacity, so
+    /// memory usage grows monotonically between compactions. This is expected:
+    /// calling `shrink_to_fit()` on every remove would be worse for performance
+    /// (repeated reallocation). When the H1 compaction threshold is reached,
+    /// the entire index (including its HashMaps) is rebuilt from scratch,
+    /// reclaiming all orphaned capacity.
     fn remove(&self, id: Uuid) -> IndexResult<bool> {
         let mut id_to_key = self.id_to_key.write();
         let mut key_to_id = self.key_to_id.write();

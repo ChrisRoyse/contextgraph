@@ -74,6 +74,23 @@ impl SessionSnapshot {
 }
 
 /// In-memory session cache for hook state management.
+///
+/// # Process-Scoped Limitation (MED-24, PRD v6 Section 14)
+///
+/// **This cache is process-scoped and does NOT persist across separate CLI invocations.**
+///
+/// Each Claude Code hook invocation (session_start.sh, pre_tool_use.sh, etc.) spawns a
+/// new CLI process. The `SESSION_CACHE` static is initialized fresh in each process, so
+/// state stored by one hook invocation is NOT visible to the next.
+///
+/// This means:
+/// - `SessionCache::get()` returns `None` in most hook invocations (cold start)
+/// - The cache is only useful within a SINGLE long-running process (e.g., the MCP server)
+/// - For cross-process session state, use RocksDB persistence (CF_SYSTEM) or file-based IPC
+///
+/// The MCP server process IS long-running, so the cache works correctly there.
+/// Hook scripts that need session state should read from RocksDB via the CLI's
+/// `--stdin` flag, not rely on this in-memory cache.
 pub struct SessionCache;
 
 impl SessionCache {

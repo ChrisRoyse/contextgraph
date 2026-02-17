@@ -8,6 +8,13 @@
 //! - AP-35: No stub data when real data available
 //! - MCP 2024-11-05 protocol specification compliance
 //!
+//! ## LOW-2 Note: `assert!(result.is_ok())` Pattern
+//!
+//! Many tests in this module (and across the crate) use `assert!(result.is_ok())`
+//! to verify operation completion without inspecting returned values. This is
+//! intentional for integration tests that verify the MCP protocol flow succeeds
+//! end-to-end. Value inspection is handled by unit tests in the respective modules.
+//!
 //! ## Test Coverage
 //!
 //! 1. Initialize handshake (MCP lifecycle)
@@ -17,8 +24,12 @@
 //!
 //! ## Feature Gate
 //!
-//! This test requires the `cuda` feature and real GPU hardware.
-//! Run with: `cargo test -p context-graph-mcp mcp_protocol_e2e --features cuda`
+//! MED-23 FIX: Changed from `cuda` to `llm` feature gate. The `llm` feature provides
+//! the embedding provider needed for these tests. They run in default `cargo test`
+//! (which enables default features including `llm`), and gracefully skip when the
+//! embedding models are not available.
+//!
+//! Run explicitly with: `cargo test -p context-graph-mcp mcp_protocol_e2e --features llm`
 
 use serde_json::json;
 use std::collections::HashSet;
@@ -27,7 +38,7 @@ use crate::protocol::JsonRpcId;
 
 use super::{extract_mcp_tool_data, make_request};
 
-#[cfg(feature = "cuda")]
+#[cfg(feature = "llm")]
 use super::create_test_handlers_with_real_embeddings_store_access;
 
 // =============================================================================
@@ -41,7 +52,7 @@ use super::create_test_handlers_with_real_embeddings_store_access;
 /// 2. Server responds with capabilities
 /// 3. Client sends initialized notification
 #[tokio::test]
-#[cfg(feature = "cuda")]
+#[cfg(feature = "llm")]
 async fn test_e2e_mcp_handshake_with_gpu() {
     println!("\n=== E2E TEST: MCP Handshake with GPU ===");
 
@@ -96,7 +107,7 @@ async fn test_e2e_mcp_handshake_with_gpu() {
 
 /// Verify all 12 MCP tools are listed.
 #[tokio::test]
-#[cfg(feature = "cuda")]
+#[cfg(feature = "llm")]
 async fn test_e2e_tools_list_all_12_tools() {
     println!("\n=== E2E TEST: Verify All 12 Tools Listed ===");
 
@@ -167,7 +178,7 @@ async fn test_e2e_tools_list_all_12_tools() {
 
 /// Full E2E workflow: store memories, search, get status.
 #[tokio::test]
-#[cfg(feature = "cuda")]
+#[cfg(feature = "llm")]
 async fn test_e2e_core_tools_workflow() {
     println!("\n=== E2E TEST: Core Tools Workflow with GPU ===");
 
@@ -331,17 +342,20 @@ async fn test_e2e_core_tools_workflow() {
         );
     }
 
-    // With GPU embeddings, we should get real similarity scores
-    if !results.is_empty() {
-        let top_similarity = results[0]
-            .get("similarity")
-            .and_then(|v| v.as_f64())
-            .unwrap_or(0.0);
-        assert!(
-            top_similarity > 0.0,
-            "Top result should have positive similarity with real GPU embeddings"
-        );
-    }
+    // LOW-1 FIX: Remove conditional guard — assert results are non-empty first,
+    // then verify similarity. Previously this silently passed with zero assertions.
+    assert!(
+        !results.is_empty(),
+        "Expected non-empty search results from GPU embeddings"
+    );
+    let top_similarity = results[0]
+        .get("similarity")
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.0);
+    assert!(
+        top_similarity > 0.0,
+        "Top result should have positive similarity with real GPU embeddings"
+    );
 
     // STEP 5: FSV - Verify data in store
     println!("\n--- STEP 5: Full State Verification ---");
@@ -358,7 +372,7 @@ async fn test_e2e_core_tools_workflow() {
 
 /// E2E Topic tools workflow.
 #[tokio::test]
-#[cfg(feature = "cuda")]
+#[cfg(feature = "llm")]
 async fn test_e2e_topic_tools_workflow() {
     println!("\n=== E2E TEST: Topic Tools Workflow with GPU ===");
 
@@ -492,7 +506,7 @@ async fn test_e2e_topic_tools_workflow() {
 
 /// E2E Curation tools workflow.
 #[tokio::test]
-#[cfg(feature = "cuda")]
+#[cfg(feature = "llm")]
 async fn test_e2e_curation_tools_workflow() {
     println!("\n=== E2E TEST: Curation Tools Workflow with GPU ===");
 
@@ -653,7 +667,7 @@ async fn test_e2e_curation_tools_workflow() {
 /// Complete E2E test covering all tools.
 /// Note: 11 tools now (inject_context merged into store_memory)
 #[tokio::test]
-#[cfg(feature = "cuda")]
+#[cfg(feature = "llm")]
 async fn test_e2e_all_11_tools_callable() {
     println!("\n=== E2E TEST: All 11 Tools Callable with GPU ===");
 

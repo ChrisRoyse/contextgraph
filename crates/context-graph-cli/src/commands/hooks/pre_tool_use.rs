@@ -144,8 +144,10 @@ fn build_context_injection(
             let mut memory_section = String::from("## Relevant Context\n");
             for (i, mem) in relevant_memories.iter().enumerate() {
                 // Truncate long content for fast path
+                // HIGH-4 FIX: Use floor_char_boundary to avoid panic on multi-byte UTF-8
                 let content = if mem.content.len() > 200 {
-                    format!("{}...", &mem.content[..200])
+                    let safe_end = mem.content.floor_char_boundary(200);
+                    format!("{}...", &mem.content[..safe_end])
                 } else {
                     mem.content.clone()
                 };

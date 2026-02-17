@@ -675,10 +675,25 @@ impl CausalDiscoveryService {
                 _ => Utc::now(),
             };
 
+            // LOW-7 FIX: Validate embeddings[0] exists and has correct E1 dimension (1024D).
+            // Previously assumed index 0 was E1 without bounds check — empty vec would panic.
+            if embeddings.is_empty() {
+                warn!(id = %id, "Fingerprint has no embeddings, skipping");
+                continue;
+            }
+            if embeddings[0].len() != 1024 {
+                warn!(
+                    id = %id,
+                    dim = embeddings[0].len(),
+                    "Fingerprint E1 embedding has wrong dimension (expected 1024), skipping"
+                );
+                continue;
+            }
+
             memories.push(MemoryForAnalysis {
                 id,
                 content,
-                e1_embedding: embeddings[0].clone(), // E1 is index 0
+                e1_embedding: embeddings[0].clone(), // E1 is index 0 (1024D)
                 created_at,
                 session_id: None,
             });

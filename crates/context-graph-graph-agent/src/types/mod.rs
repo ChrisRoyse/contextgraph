@@ -731,7 +731,14 @@ impl DomainMarkers {
             .filter(|m| lower.contains(&m.to_lowercase()))
             .count();
 
-        // Require minimum threshold and pick highest score
+        // Require minimum threshold and pick highest score.
+        //
+        // LOW-5 Note: Code requires strictly beating BOTH Legal and Academic scores,
+        // while Legal/Academic only need to beat Code. This is intentional: Code is
+        // the default fallback domain, so it requires stronger evidence to classify
+        // content as Code (preventing over-classification of general technical text).
+        // Legal and Academic domains are more specialized and less likely to appear
+        // incidentally, so a lower bar is appropriate.
         let threshold = 2;
 
         if code_score >= threshold && code_score > legal_score && code_score > academic_score {

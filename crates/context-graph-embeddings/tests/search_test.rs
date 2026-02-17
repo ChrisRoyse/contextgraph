@@ -3,7 +3,7 @@
 //! Tests the multi-space search engine with RRF (Reciprocal Rank Fusion).
 //!
 //! # Key Verifications
-//! - RRF formula: 1/(k + rank) where k=60 (Constitution requirement)
+//! - RRF formula: 1/(k + rank + 1) where k=60 (1-indexed, consistent with core fusion)
 //! - 13 embedder spaces (E1-E13)
 //! - Purpose vector weighting
 //! - FAIL FAST on invalid inputs
@@ -21,7 +21,7 @@ use uuid::Uuid;
 // RRF FORMULA TESTS (Constitution: embeddings.similarity.rrf_constant = 60)
 // =============================================================================
 
-/// Test: RRF contribution at rank 0 equals 1/60
+/// Test: RRF contribution at rank 0 equals 1/61 (1-indexed: 1/(60+0+1))
 #[test]
 fn test_rrf_contribution_rank_0() {
     let result = EmbedderQueryResult::from_similarity(
@@ -31,7 +31,7 @@ fn test_rrf_contribution_rank_0() {
         0,    // rank 0
     );
 
-    let expected = 1.0 / 60.0;
+    let expected = 1.0 / 61.0;
     let actual = result.rrf_contribution();
 
     assert!(
@@ -41,10 +41,10 @@ fn test_rrf_contribution_rank_0() {
         actual
     );
 
-    eprintln!("[VERIFIED] RRF(rank=0) = 1/60 = {:.6}", actual);
+    eprintln!("[VERIFIED] RRF(rank=0) = 1/61 = {:.6}", actual);
 }
 
-/// Test: RRF contribution at rank 10 equals 1/70
+/// Test: RRF contribution at rank 10 equals 1/71 (1-indexed: 1/(60+10+1))
 #[test]
 fn test_rrf_contribution_rank_10() {
     let result = EmbedderQueryResult::from_similarity(
@@ -54,7 +54,7 @@ fn test_rrf_contribution_rank_10() {
         10, // rank 10
     );
 
-    let expected = 1.0 / 70.0;
+    let expected = 1.0 / 71.0;
     let actual = result.rrf_contribution();
 
     assert!(
@@ -64,10 +64,10 @@ fn test_rrf_contribution_rank_10() {
         actual
     );
 
-    eprintln!("[VERIFIED] RRF(rank=10) = 1/70 = {:.6}", actual);
+    eprintln!("[VERIFIED] RRF(rank=10) = 1/71 = {:.6}", actual);
 }
 
-/// Test: RRF contribution at rank 100 equals 1/160
+/// Test: RRF contribution at rank 100 equals 1/161 (1-indexed: 1/(60+100+1))
 #[test]
 fn test_rrf_contribution_rank_100() {
     let result = EmbedderQueryResult::from_similarity(
@@ -77,7 +77,7 @@ fn test_rrf_contribution_rank_100() {
         100, // rank 100
     );
 
-    let expected = 1.0 / 160.0;
+    let expected = 1.0 / 161.0;
     let actual = result.rrf_contribution();
 
     assert!(
@@ -87,23 +87,23 @@ fn test_rrf_contribution_rank_100() {
         actual
     );
 
-    eprintln!("[VERIFIED] RRF(rank=100) = 1/160 = {:.6}", actual);
+    eprintln!("[VERIFIED] RRF(rank=100) = 1/161 = {:.6}", actual);
 }
 
 /// Test: RRF constant k=60 is used correctly in formula
 #[test]
 fn test_rrf_constant_value() {
-    // Verify RRF_K is used correctly: rank-0 contribution should be 1/RRF_K
+    // Verify RRF_K is used correctly: rank-0 contribution should be 1/(RRF_K+1)
     let result_rank_0 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 0);
     let contribution = result_rank_0.rrf_contribution();
-    let expected = 1.0 / RRF_K;
+    let expected = 1.0 / (RRF_K + 1.0);
     assert!(
         (contribution - expected).abs() < f32::EPSILON,
-        "RRF(rank=0) should equal 1/RRF_K: expected {:.6}, got {:.6}",
+        "RRF(rank=0) should equal 1/(RRF_K+1): expected {:.6}, got {:.6}",
         expected,
         contribution
     );
-    eprintln!("[VERIFIED] RRF_K = {} used correctly in formula", RRF_K);
+    eprintln!("[VERIFIED] RRF_K = {} used correctly in formula (1-indexed)", RRF_K);
 }
 
 /// Test: RRF sum across multiple ranks
@@ -117,7 +117,7 @@ fn test_rrf_sum_multiple_ranks() {
     ];
 
     let total_rrf: f32 = results.iter().map(|r| r.rrf_contribution()).sum();
-    let expected = 1.0 / 60.0 + 1.0 / 65.0 + 1.0 / 75.0;
+    let expected = 1.0 / 61.0 + 1.0 / 66.0 + 1.0 / 76.0;
 
     assert!(
         (total_rrf - expected).abs() < 1e-6,
@@ -216,8 +216,8 @@ fn test_multi_space_result_aggregation() {
     assert!(multi.embedder_similarities[1].is_nan()); // E2
     assert!(multi.embedder_similarities[12].is_nan()); // E13
 
-    // Verify RRF score
-    let expected_rrf = 1.0 / 60.0 + 1.0 / 62.0 + 1.0 / 65.0;
+    // Verify RRF score (1-indexed: rank 0 -> 1/61, rank 2 -> 1/63, rank 5 -> 1/66)
+    let expected_rrf = 1.0 / 61.0 + 1.0 / 63.0 + 1.0 / 66.0;
     assert!(
         (multi.rrf_score - expected_rrf).abs() < 1e-6,
         "RRF score: expected {:.6}, got {:.6}",
@@ -252,8 +252,8 @@ fn test_multi_space_all_13_embedders() {
         );
     }
 
-    // RRF score should be sum of 1/(60+i) for i=0..12
-    let expected_rrf: f32 = (0..13).map(|i| 1.0 / (60.0 + i as f32)).sum();
+    // RRF score should be sum of 1/(61+i) for i=0..12 (1-indexed)
+    let expected_rrf: f32 = (0..13).map(|i| 1.0 / (61.0 + i as f32)).sum();
     assert!(
         (multi.rrf_score - expected_rrf).abs() < 1e-5,
         "RRF with all 13: expected {:.6}, got {:.6}",
@@ -308,7 +308,7 @@ fn test_rrf_ranking_order() {
     let id2 = Uuid::new_v4();
     let id3 = Uuid::new_v4();
 
-    // doc1 appears at rank 0 in 3 embedders: RRF = 3 × 1/60 = 0.05
+    // doc1 appears at rank 0 in 3 embedders: RRF = 3 × 1/61 = 0.0492
     let results1 = vec![
         EmbedderQueryResult::from_similarity(id1, 0, 0.95, 0),
         EmbedderQueryResult::from_similarity(id1, 1, 0.90, 0),
@@ -316,7 +316,7 @@ fn test_rrf_ranking_order() {
     ];
     let multi1 = MultiSpaceQueryResult::from_embedder_results(id1, &results1);
 
-    // doc2 appears at rank 10 in 3 embedders: RRF = 3 × 1/70 = 0.0429
+    // doc2 appears at rank 10 in 3 embedders: RRF = 3 × 1/71 = 0.0423
     let results2 = vec![
         EmbedderQueryResult::from_similarity(id2, 0, 0.70, 10),
         EmbedderQueryResult::from_similarity(id2, 1, 0.65, 10),
@@ -324,13 +324,13 @@ fn test_rrf_ranking_order() {
     ];
     let multi2 = MultiSpaceQueryResult::from_embedder_results(id2, &results2);
 
-    // doc3 appears at rank 0 in only 1 embedder: RRF = 1 × 1/60 = 0.0167
+    // doc3 appears at rank 0 in only 1 embedder: RRF = 1 × 1/61 = 0.0164
     let results3 = vec![EmbedderQueryResult::from_similarity(id3, 0, 0.99, 0)];
     let multi3 = MultiSpaceQueryResult::from_embedder_results(id3, &results3);
 
-    // doc1 should have highest RRF: 3/60 = 0.05
-    // doc2 should be second: 3/70 = 0.0429
-    // doc3 should have lowest RRF: 1/60 = 0.0167
+    // doc1 should have highest RRF: 3/61 = 0.0492
+    // doc2 should be second: 3/71 = 0.0423
+    // doc3 should have lowest RRF: 1/61 = 0.0164
     // The breadth (appearing in 3 embedders) beats single embedder even at lower rank
     assert!(
         multi1.rrf_score > multi2.rrf_score,
@@ -375,9 +375,9 @@ fn test_rrf_breadth_preference() {
     // Broad coverage should win
     assert!(multi_broad.rrf_score > multi_narrow.rrf_score);
 
-    // Verify the math: 5 × 1/60 = 0.0833, 1 × 1/60 = 0.0167
-    let expected_narrow = 1.0 / 60.0;
-    let expected_broad = 5.0 / 60.0;
+    // Verify the math: 5 × 1/61 = 0.0820, 1 × 1/61 = 0.0164
+    let expected_narrow = 1.0 / 61.0;
+    let expected_broad = 5.0 / 61.0;
 
     assert!((multi_narrow.rrf_score - expected_narrow).abs() < 1e-6);
     assert!((multi_broad.rrf_score - expected_broad).abs() < 1e-6);
@@ -462,14 +462,14 @@ fn test_num_embedders_constant() {
 /// Test: RRF_K is consistent with RRF formula behavior
 #[test]
 fn test_rrf_k_constitution() {
-    // Verify RRF_K is used correctly in RRF formula
+    // Verify RRF_K is used correctly in RRF formula (1-indexed)
     let result_rank_0 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 0);
     let contribution = result_rank_0.rrf_contribution();
-    let expected = 1.0 / (RRF_K + 0.0);
+    let expected = 1.0 / (RRF_K + 0.0 + 1.0);
 
     assert!((contribution - expected).abs() < f32::EPSILON);
     eprintln!(
-        "[VERIFIED] RRF_K={} used correctly: 1/(K+0) = {:.6}",
+        "[VERIFIED] RRF_K={} used correctly: 1/(K+0+1) = {:.6}",
         RRF_K,
         contribution
     );
@@ -490,7 +490,7 @@ fn test_edge_case_single_result_aggregation() {
     // Should work with single result
     assert_eq!(multi.embedder_count, 1);
     assert!((multi.embedder_similarities[7] - 0.88).abs() < f32::EPSILON);
-    assert!((multi.rrf_score - 1.0 / 65.0).abs() < f32::EPSILON);
+    assert!((multi.rrf_score - 1.0 / 66.0).abs() < f32::EPSILON);
     assert!((multi.weighted_similarity - 0.88).abs() < f32::EPSILON);
 
     // Other embedders should be NaN
@@ -541,8 +541,8 @@ fn test_edge_case_all_embedders_same_rank() {
 
     let multi = MultiSpaceQueryResult::from_embedder_results(id, &results);
 
-    // All embedders at rank 0: RRF = 13 × 1/60
-    let expected_rrf = 13.0 / 60.0;
+    // All embedders at rank 0: RRF = 13 × 1/61
+    let expected_rrf = 13.0 / 61.0;
     assert!(
         (multi.rrf_score - expected_rrf).abs() < 1e-6,
         "Expected RRF {:.6}, got {:.6}",
@@ -619,9 +619,9 @@ fn test_rrf_converges_to_zero() {
     let rrf_10000 = result_rank_10000.rrf_contribution();
     let rrf_100000 = result_rank_100000.rrf_contribution();
 
-    assert!(rrf_1000 < 0.001); // 1/1060 ≈ 0.00094
-    assert!(rrf_10000 < 0.0001); // 1/10060 ≈ 0.0000994
-    assert!(rrf_100000 < 0.00001); // 1/100060 ≈ 0.00000999
+    assert!(rrf_1000 < 0.001); // 1/1061 ≈ 0.00094
+    assert!(rrf_10000 < 0.0001); // 1/10061 ≈ 0.0000994
+    assert!(rrf_100000 < 0.00001); // 1/100061 ≈ 0.00000999
 
     eprintln!(
         "[VERIFIED] RRF converges: {:.2e} → {:.2e} → {:.2e}",
@@ -633,7 +633,7 @@ fn test_rrf_converges_to_zero() {
 #[test]
 fn test_rrf_sum_bounded() {
     // Maximum possible RRF: all 13 embedders at rank 0
-    let max_rrf = 13.0 / 60.0; // ≈ 0.2167
+    let max_rrf = 13.0 / 61.0; // ≈ 0.2131
 
     // Verify this bound
     let id = Uuid::new_v4();
@@ -766,7 +766,7 @@ fn test_full_state_verification_summary() {
     eprintln!("  - NUM_EMBEDDERS = {} (13-model pipeline)", NUM_EMBEDDERS);
     eprintln!();
     eprintln!("RRF Formula Verified:");
-    eprintln!("  - RRF(d) = Σᵢ wᵢ / (k + rankᵢ(d))");
+    eprintln!("  - RRF(d) = Σᵢ wᵢ / (k + rankᵢ(d) + 1) [1-indexed]");
     eprintln!("  - k = 60, default wᵢ = 1.0");
     eprintln!();
     eprintln!("Edge Cases Verified:");
@@ -777,6 +777,6 @@ fn test_full_state_verification_summary() {
     eprintln!("Properties Verified:");
     eprintln!("  - RRF monotonically decreases with rank");
     eprintln!("  - RRF converges to 0 as rank → ∞");
-    eprintln!("  - Max RRF bounded at 13/60 ≈ 0.217");
+    eprintln!("  - Max RRF bounded at 13/61 ≈ 0.213");
     eprintln!("========================================\n");
 }

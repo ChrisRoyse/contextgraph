@@ -28,7 +28,7 @@ use super::keyword_dtos::{
     SearchByKeywordsResponse,
 };
 
-use super::helpers::ToolErrorKind;
+use super::helpers::{ToolErrorKind, cosine_similarity};
 use super::super::Handlers;
 
 impl Handlers {
@@ -377,24 +377,7 @@ impl Handlers {
     }
 }
 
-/// Compute cosine similarity between two dense vectors.
-///
-/// Returns 0.0 if either vector is empty or has zero norm.
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
-    if a.is_empty() || b.is_empty() || a.len() != b.len() {
-        return 0.0;
-    }
-
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-    if norm_a < f32::EPSILON || norm_b < f32::EPSILON {
-        return 0.0;
-    }
-
-    (dot / (norm_a * norm_b)).clamp(-1.0, 1.0)
-}
+// LOW-15: cosine_similarity moved to super::helpers (shared across 4 tool modules).
 
 /// Compute sparse keyword similarity using weighted Jaccard-like overlap.
 ///

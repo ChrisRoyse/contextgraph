@@ -85,6 +85,9 @@ pub async fn execute(args: PreCompactArgs) -> HookResult<HookOutput> {
         }
     };
 
+    // MED-10 FIX: Return HookOutput::error when MCP operations fail.
+    // Reporting success when the MCP server is down or storage fails is misleading —
+    // the hook's purpose (preserving session context) was NOT accomplished.
     if mcp_available {
         let rationale = format!(
             "R5: Session summary before compaction (trigger: {})",
@@ -104,36 +107,41 @@ pub async fn execute(args: PreCompactArgs) -> HookResult<HookOutput> {
                     .get("fingerprintId")
                     .and_then(|v| v.as_str())
                     .unwrap_or("unknown");
+                let execution_time_ms = start.elapsed().as_millis() as u64;
                 info!(
                     fingerprint_id,
                     summary_len = summary.len(),
+                    execution_time_ms,
                     "PRE_COMPACT: R5 session summary stored successfully"
                 );
+                Ok(HookOutput::success(execution_time_ms))
             }
             Err(e) => {
+                let execution_time_ms = start.elapsed().as_millis() as u64;
                 error!(
                     error = %e,
+                    execution_time_ms,
                     "PRE_COMPACT: R5 FAILED to store session summary. \
                      Context may be lost after compaction."
                 );
+                Ok(HookOutput::error(
+                    format!("Failed to store session summary: {}", e),
+                    execution_time_ms,
+                ))
             }
         }
     } else {
+        let execution_time_ms = start.elapsed().as_millis() as u64;
         error!(
+            execution_time_ms,
             "PRE_COMPACT: R5 MCP server not available. \
              Cannot store session summary — context will be lost after compaction."
         );
+        Ok(HookOutput::error(
+            "MCP server not available — session summary could not be stored".to_string(),
+            execution_time_ms,
+        ))
     }
-
-    let execution_time_ms = start.elapsed().as_millis() as u64;
-
-    info!(
-        session_id = %args.session_id,
-        execution_time_ms,
-        "PRE_COMPACT: R5 execute complete"
-    );
-
-    Ok(HookOutput::success(execution_time_ms))
 }
 
 // ============================================================================

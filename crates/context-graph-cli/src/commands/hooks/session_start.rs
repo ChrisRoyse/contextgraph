@@ -485,7 +485,6 @@ mod tests {
         let session_id = "test-session-001";
 
         let args = SessionStartArgs {
-            db_path: None,
             session_id: Some(session_id.to_string()),
             previous_session_id: None,
             stdin: false,
@@ -544,7 +543,6 @@ mod tests {
 
         // Execute: Create new session linked to previous
         let args = SessionStartArgs {
-            db_path: None,
             session_id: Some(new_id.to_string()),
             previous_session_id: Some(prev_id.to_string()),
             stdin: false,
@@ -598,7 +596,6 @@ mod tests {
         println!("\n=== TC-HOOKS-006-003: Auto-Generate Session ID ===");
 
         let args = SessionStartArgs {
-            db_path: None,
             session_id: None, // Should auto-generate
             previous_session_id: None,
             stdin: false,
@@ -629,7 +626,6 @@ mod tests {
         println!("\n=== TC-HOOKS-006-004: Missing Previous Session ===");
 
         let args = SessionStartArgs {
-            db_path: None,
             session_id: Some("new-session".to_string()),
             previous_session_id: Some("nonexistent-session".to_string()),
             stdin: false,
@@ -661,7 +657,6 @@ mod tests {
         println!("\n=== TC-HOOKS-006-006: JSON Output Schema ===");
 
         let args = SessionStartArgs {
-            db_path: None,
             session_id: Some("schema-test".to_string()),
             previous_session_id: None,
             stdin: false,
@@ -705,7 +700,6 @@ mod tests {
         println!("\n=== TC-HOOKS-006-007: Execution Time Tracking ===");
 
         let args = SessionStartArgs {
-            db_path: None,
             session_id: Some("timing-test".to_string()),
             previous_session_id: None,
             stdin: false,
@@ -768,7 +762,6 @@ mod tests {
 
         // Execute: Create new session linked to previous
         let args = SessionStartArgs {
-            db_path: None,
             session_id: Some(new_id.to_string()),
             previous_session_id: Some(prev_id.to_string()),
             stdin: false,
@@ -847,7 +840,6 @@ mod tests {
         println!("\n=== TC-HOOKS-013-02: No Drift Metrics for New Session ===");
 
         let args = SessionStartArgs {
-            db_path: None,
             session_id: Some("brand-new-session".to_string()),
             previous_session_id: None,
             stdin: false,
@@ -878,7 +870,6 @@ mod tests {
         println!("\n=== TC-HOOKS-013-03: Drift Metrics When Previous Not Found ===");
 
         let args = SessionStartArgs {
-            db_path: None,
             session_id: Some("orphan-session".to_string()),
             previous_session_id: Some("nonexistent-session-xyz".to_string()),
             stdin: false,
@@ -1114,7 +1105,6 @@ mod tests {
 
         // Execute: Create new session linked to previous
         let args = SessionStartArgs {
-            db_path: None,
             session_id: Some(new_id.to_string()),
             previous_session_id: Some(prev_id.to_string()),
             stdin: false,
@@ -1199,7 +1189,6 @@ mod tests {
 
         // Execute: Create new session linked to previous
         let args = SessionStartArgs {
-            db_path: None,
             session_id: Some(new_id.to_string()),
             previous_session_id: Some(prev_id.to_string()),
             stdin: false,
@@ -1273,7 +1262,6 @@ mod tests {
 
         // Execute: Create new session linked to previous
         let args = SessionStartArgs {
-            db_path: None,
             session_id: Some(new_id.to_string()),
             previous_session_id: Some(prev_id.to_string()),
             stdin: false,

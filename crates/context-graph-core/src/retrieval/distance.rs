@@ -737,6 +737,10 @@ mod tests {
     // compute_all_similarities Tests
     // =========================================================================
 
+    /// LOW-3 Note: This test uses `SemanticFingerprint::zeroed()` intentionally.
+    /// It tests the *infrastructure* — that `compute_all_similarities` returns
+    /// 13 valid scores in [0,1] and does not panic on degenerate input.
+    /// Search quality is validated by benchmark suites with real embeddings.
     #[test]
     fn test_compute_all_similarities() {
         let query = SemanticFingerprint::zeroed();
@@ -1022,6 +1026,11 @@ mod tests {
         );
     }
 
+    /// LOW-3 Note: This test uses `SemanticFingerprint::zeroed()` intentionally.
+    /// It tests the *infrastructure* — that `compute_all_similarities_with_direction`
+    /// returns 13 valid scores in [0,1] for all CausalDirection variants and does
+    /// not panic or produce NaN on degenerate input. Search quality with real
+    /// embeddings is validated by benchmark suites.
     #[test]
     fn test_compute_all_similarities_with_direction() {
         use crate::causal::asymmetric::CausalDirection;

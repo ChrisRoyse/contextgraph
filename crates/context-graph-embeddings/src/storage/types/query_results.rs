@@ -40,10 +40,10 @@ impl EmbedderQueryResult {
     }
 
     /// Compute RRF contribution for this result.
-    /// Formula: 1 / (k + rank) where k = 60
+    /// Formula: 1 / (k + rank + 1) where k = 60 (1-indexed, consistent with core fusion)
     #[must_use]
     pub fn rrf_contribution(&self) -> f32 {
-        1.0 / (RRF_K + self.rank as f32)
+        1.0 / (RRF_K + self.rank as f32 + 1.0)
     }
 }
 
@@ -60,7 +60,7 @@ pub struct MultiSpaceQueryResult {
     pub embedder_similarities: [f32; 13],
 
     /// RRF fused score from multi-space retrieval.
-    /// Formula: RRF(d) = Σᵢ 1/(k + rankᵢ(d)) where k=60
+    /// Formula: RRF(d) = Σᵢ 1/(k + rankᵢ(d) + 1) where k=60 (1-indexed)
     pub rrf_score: f32,
 
     /// Weighted average similarity (alternative to RRF).

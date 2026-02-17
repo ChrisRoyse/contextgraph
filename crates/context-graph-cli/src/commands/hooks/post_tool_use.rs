@@ -412,7 +412,8 @@ async fn capture_tool_memory(tool_name: &str, tool_response: &str, tool_success:
             source_label,
             tool_name,
             if tool_success { "output" } else { "FAILURE" },
-            &tool_response[..MAX_RESPONSE_LENGTH_FOR_CAPTURE],
+            // HIGH-4 FIX: Use floor_char_boundary to avoid panic on multi-byte UTF-8
+            &tool_response[..tool_response.floor_char_boundary(MAX_RESPONSE_LENGTH_FOR_CAPTURE)],
             tool_response.len()
         )
     } else {
@@ -533,7 +534,6 @@ mod tests {
 
         // Execute
         let args = PostToolArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             tool_name: Some("Read".to_string()),
             success: Some(true),
@@ -571,7 +571,6 @@ mod tests {
 
         // Execute with session not in cache - should create new
         let args = PostToolArgs {
-            db_path: None,
             session_id: "brand-new-session-12345".to_string(),
             tool_name: Some("Read".to_string()),
             success: Some(true),
@@ -651,7 +650,6 @@ mod tests {
         create_test_session(session_id, 0.80);
 
         let args = PostToolArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             tool_name: Some("WebFetch".to_string()),
             success: Some(true),
@@ -686,7 +684,6 @@ mod tests {
         create_test_session(session_id, 0.90);
 
         let args = PostToolArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             tool_name: Some("Read".to_string()),
             success: Some(true),
@@ -728,7 +725,6 @@ mod tests {
         create_test_session(session_id, 0.90);
 
         let args = PostToolArgs {
-            db_path: None,
             session_id: session_id.to_string(),
             tool_name: None, // Missing!
             success: Some(true),

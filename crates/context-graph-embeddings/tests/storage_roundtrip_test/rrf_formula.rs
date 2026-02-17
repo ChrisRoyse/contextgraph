@@ -13,40 +13,40 @@ fn test_rrf_k_constant() {
     println!("[PASS] RRF_K = 60.0 matches Constitution");
 }
 
-/// Test RRF contribution formula: 1/(60 + rank).
+/// Test RRF contribution formula: 1/(60 + rank + 1) (1-indexed).
 #[test]
 fn test_rrf_contribution_formula() {
-    // Rank 0: 1/(60+0) = 1/60
+    // Rank 0: 1/(60+0+1) = 1/61
     let result_rank_0 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 0);
-    let expected_0 = 1.0 / 60.0;
+    let expected_0 = 1.0 / 61.0;
     assert!(
         (result_rank_0.rrf_contribution() - expected_0).abs() < f32::EPSILON,
-        "Rank 0 RRF should be 1/60 = {}, got {}",
+        "Rank 0 RRF should be 1/61 = {}, got {}",
         expected_0,
         result_rank_0.rrf_contribution()
     );
 
-    // Rank 1: 1/(60+1) = 1/61
+    // Rank 1: 1/(60+1+1) = 1/62
     let result_rank_1 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 1);
-    let expected_1 = 1.0 / 61.0;
+    let expected_1 = 1.0 / 62.0;
     assert!(
         (result_rank_1.rrf_contribution() - expected_1).abs() < f32::EPSILON,
-        "Rank 1 RRF should be 1/61 = {}, got {}",
+        "Rank 1 RRF should be 1/62 = {}, got {}",
         expected_1,
         result_rank_1.rrf_contribution()
     );
 
-    // Rank 10: 1/(60+10) = 1/70
+    // Rank 10: 1/(60+10+1) = 1/71
     let result_rank_10 = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.9, 10);
-    let expected_10 = 1.0 / 70.0;
+    let expected_10 = 1.0 / 71.0;
     assert!(
         (result_rank_10.rrf_contribution() - expected_10).abs() < f32::EPSILON,
-        "Rank 10 RRF should be 1/70 = {}, got {}",
+        "Rank 10 RRF should be 1/71 = {}, got {}",
         expected_10,
         result_rank_10.rrf_contribution()
     );
 
-    println!("[PASS] RRF contribution formula 1/(60+rank) verified");
+    println!("[PASS] RRF contribution formula 1/(60+rank+1) verified (1-indexed)");
 }
 
 /// Test RRF contribution monotonically decreases with rank.
@@ -81,15 +81,15 @@ fn test_rrf_aggregation() {
 
     // Create results for 3 embedders with different ranks
     let results = vec![
-        EmbedderQueryResult::from_similarity(id, 0, 0.9, 0), // rank 0: 1/60
-        EmbedderQueryResult::from_similarity(id, 1, 0.8, 1), // rank 1: 1/61
-        EmbedderQueryResult::from_similarity(id, 2, 0.7, 2), // rank 2: 1/62
+        EmbedderQueryResult::from_similarity(id, 0, 0.9, 0), // rank 0: 1/61
+        EmbedderQueryResult::from_similarity(id, 1, 0.8, 1), // rank 1: 1/62
+        EmbedderQueryResult::from_similarity(id, 2, 0.7, 2), // rank 2: 1/63
     ];
 
     let multi = MultiSpaceQueryResult::from_embedder_results(id, &results);
 
-    // Expected RRF = 1/60 + 1/61 + 1/62
-    let expected_rrf = 1.0 / 60.0 + 1.0 / 61.0 + 1.0 / 62.0;
+    // Expected RRF = 1/61 + 1/62 + 1/63 (1-indexed)
+    let expected_rrf = 1.0 / 61.0 + 1.0 / 62.0 + 1.0 / 63.0;
     assert!(
         (multi.rrf_score - expected_rrf).abs() < 1e-6,
         "RRF score should be {} (sum of contributions), got {}",
@@ -98,7 +98,7 @@ fn test_rrf_aggregation() {
     );
 
     println!(
-        "[PASS] RRF aggregation: sum of 1/(60+rank_i) = {}",
+        "[PASS] RRF aggregation: sum of 1/(61+rank_i) = {}",
         multi.rrf_score
     );
 }
@@ -109,7 +109,7 @@ fn test_rrf_extreme_ranks() {
     // Very high rank
     let result_high = EmbedderQueryResult::from_similarity(Uuid::new_v4(), 0, 0.5, 10000);
     let rrf_high = result_high.rrf_contribution();
-    let expected_high = 1.0 / 10060.0;
+    let expected_high = 1.0 / 10061.0;
     assert!(
         (rrf_high - expected_high).abs() < f32::EPSILON,
         "Rank 10000 RRF should be {}, got {}",
@@ -129,9 +129,9 @@ fn test_rrf_extreme_ranks() {
 /// Test that rank 0 has much higher RRF contribution than high ranks.
 #[test]
 fn test_rrf_rank_dominance() {
-    let rrf_0 = 1.0 / 60.0; // ~0.0167
-    let rrf_100 = 1.0 / 160.0; // ~0.00625
-    let rrf_1000 = 1.0 / 1060.0; // ~0.00094
+    let rrf_0 = 1.0 / 61.0; // ~0.0164
+    let rrf_100 = 1.0 / 161.0; // ~0.00621
+    let rrf_1000 = 1.0 / 1061.0; // ~0.00094
 
     // Rank 0 should be ~2.67x rank 100
     assert!(rrf_0 > rrf_100 * 2.0, "Rank 0 should be >2x rank 100");

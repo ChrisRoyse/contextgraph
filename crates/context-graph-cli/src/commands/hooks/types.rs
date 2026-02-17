@@ -770,8 +770,8 @@ pub struct ConversationMessage {
 /// - `SessionStart`: Session initialization data
 /// - `PreToolUse`: Tool invocation request (500ms timeout)
 /// - `PostToolUse`: Tool completion with response (3000ms timeout)
-/// - `UserPromptSubmit`: User input with context (1500ms timeout)
-/// - `SessionEnd`: Session termination data (5000ms timeout)
+/// - `UserPromptSubmit`: User input with context (2000ms timeout)
+/// - `SessionEnd`: Session termination data (30000ms timeout)
 ///
 /// # JSON Format
 /// Uses internally tagged enum for Claude Code compatibility:
@@ -825,7 +825,7 @@ pub enum HookPayload {
     },
 
     /// UserPromptSubmit hook payload
-    /// Timeout: 1500ms per TECH-HOOKS.md
+    /// Timeout: 2000ms per constitution.yaml
     UserPromptSubmit {
         /// User's input prompt text
         prompt: String,
@@ -835,7 +835,7 @@ pub enum HookPayload {
     },
 
     /// SessionEnd hook payload
-    /// Timeout: 5000ms per TECH-HOOKS.md
+    /// Timeout: 30000ms per constitution.yaml (final persist + consolidation)
     SessionEnd {
         /// Session duration in milliseconds
         duration_ms: u64,
@@ -1812,7 +1812,7 @@ mod hook_io_tests {
     // =========================================================================
     // TC-HOOKS-PAYLOAD-007: HookPayload UserPromptSubmit Variant
     // Implements: REQ-HOOKS-10, REQ-HOOKS-11
-    // Timeout: 1500ms per TECH-HOOKS.md
+    // Timeout: 2000ms per constitution.yaml
     // =========================================================================
     #[test]
     fn tc_hooks_payload_007_user_prompt_submit() {
@@ -1864,7 +1864,7 @@ mod hook_io_tests {
     // =========================================================================
     // TC-HOOKS-PAYLOAD-008: HookPayload SessionEnd Variant
     // Implements: REQ-HOOKS-10
-    // Timeout: 5000ms per TECH-HOOKS.md
+    // Timeout: 30000ms per constitution.yaml
     // =========================================================================
     #[test]
     fn tc_hooks_payload_008_session_end() {

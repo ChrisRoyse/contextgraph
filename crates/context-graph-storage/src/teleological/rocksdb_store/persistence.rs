@@ -11,7 +11,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use tracing::{debug, info, warn};
+use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
 use context_graph_core::clustering::PersistedTopicPortfolio;
@@ -37,35 +37,99 @@ use super::types::TeleologicalStoreError;
 impl RocksDbTeleologicalStore {
     /// Store batch of fingerprints (internal async wrapper).
     ///
+    /// HIGH-7 FIX: If `add_to_indexes` fails for fingerprint N, attempt rollback
+    /// (hard-delete) for that specific fingerprint. Continue processing remaining
+    /// fingerprints. Return only successfully stored IDs. Return error only if
+    /// ALL fingerprints fail.
+    ///
     /// Note: Individual stores are handled by store_async which uses sync I/O.
-    /// Batch operations call store_async for each fingerprint.
+    /// Batch operations call store_fingerprint_internal for each fingerprint.
     pub(crate) async fn store_batch_async(
         &self,
         fingerprints: Vec<TeleologicalFingerprint>,
     ) -> CoreResult<Vec<Uuid>> {
         debug!("Storing batch of {} fingerprints", fingerprints.len());
 
-        let mut ids = Vec::with_capacity(fingerprints.len());
+        let total = fingerprints.len();
+        let mut succeeded: Vec<Uuid> = Vec::with_capacity(total);
+        let mut failed: Vec<(Uuid, String)> = Vec::new();
 
         for fp in fingerprints {
             let id = fp.id;
-            // Store in RocksDB (primary storage)
-            self.store_fingerprint_internal(&fp)?;
+            // Store in RocksDB (primary storage) — new insert, count for IDF
+            if let Err(e) = self.store_fingerprint_internal(&fp, true) {
+                error!(
+                    id = %id,
+                    error = %e,
+                    "Failed to store fingerprint in RocksDB during batch store"
+                );
+                failed.push((id, format!("RocksDB store failed: {}", e)));
+                continue;
+            }
 
             // CRIT-03 FIX: Add to per-embedder HNSW indexes for O(log n) search.
-            // Without this, batch-stored fingerprints are invisible to all search
-            // strategies until server restart triggers rebuild_indexes_from_store().
-            self.add_to_indexes(&fp)
-                .map_err(|e| CoreError::IndexError(format!(
-                    "Failed to add fingerprint {} to HNSW indexes during batch store: {}",
-                    id, e
-                )))?;
+            // HIGH-7 FIX: If indexing fails, rollback the RocksDB write for this
+            // specific fingerprint and continue with the rest.
+            if let Err(e) = self.add_to_indexes(&fp) {
+                error!(
+                    id = %id,
+                    error = %e,
+                    "Failed to add fingerprint to HNSW indexes during batch store — \
+                     rolling back RocksDB write"
+                );
 
-            ids.push(id);
+                // Attempt rollback: hard-delete this fingerprint from RocksDB
+                match self.delete_async(id, false).await {
+                    Ok(_) => {
+                        debug!(id = %id, "Rollback successful: hard-deleted fingerprint after index failure");
+                    }
+                    Err(rollback_err) => {
+                        // Rollback failed — fingerprint is in RocksDB but NOT in HNSW indexes.
+                        // This is a data inconsistency that will be repaired on next server restart
+                        // via rebuild_indexes_from_store(). Log at error level for visibility.
+                        error!(
+                            id = %id,
+                            index_error = %e,
+                            rollback_error = %rollback_err,
+                            "CRITICAL: Rollback failed after index failure — fingerprint {} is in \
+                             RocksDB but absent from HNSW indexes. Will be repaired on next restart.",
+                            id
+                        );
+                    }
+                }
+
+                failed.push((id, format!("Index add failed: {}", e)));
+                continue;
+            }
+
+            succeeded.push(id);
         }
 
-        info!("Stored batch of {} fingerprints", ids.len());
-        Ok(ids)
+        // Log batch result summary
+        if failed.is_empty() {
+            info!("Stored batch of {} fingerprints (all succeeded)", succeeded.len());
+        } else {
+            warn!(
+                succeeded = succeeded.len(),
+                failed = failed.len(),
+                total = total,
+                "Batch store completed with failures"
+            );
+            for (id, reason) in &failed {
+                error!(id = %id, reason = %reason, "Batch store failure detail");
+            }
+        }
+
+        // FAIL FAST: If ALL fingerprints failed, return error
+        if succeeded.is_empty() && !failed.is_empty() {
+            return Err(CoreError::StorageError(format!(
+                "Batch store failed for all {} fingerprints. First failure: {}",
+                failed.len(),
+                failed[0].1
+            )));
+        }
+
+        Ok(succeeded)
     }
 
     /// Retrieve batch of fingerprints (internal async wrapper).
@@ -372,11 +436,19 @@ impl RocksDbTeleologicalStore {
                 soft_deleted_ids.len()
             );
 
+            // MED-14 + MED-15 FIX: Track which entries were successfully hard-deleted.
+            // Only remove those specific entries from the DashMap. Failed entries remain
+            // in soft_deleted for retry on next compaction. This also eliminates the
+            // MED-15 race condition: new soft-deletes inserted between snapshot and
+            // removal are never swept away because we only remove by specific ID.
+            let mut successfully_deleted: Vec<Uuid> = Vec::new();
+
             for id in &soft_deleted_ids {
                 // Use the existing hard-delete path which removes from all CFs + indexes
                 match self.delete_async(*id, false).await {
                     Ok(true) => {
                         debug!(id = %id, "Hard-deleted soft-deleted entry during compaction");
+                        successfully_deleted.push(*id);
                     }
                     Ok(false) => {
                         // Entry was already gone from RocksDB, just clean up tracking
@@ -384,17 +456,32 @@ impl RocksDbTeleologicalStore {
                             id = %id,
                             "Soft-deleted entry not found in RocksDB during compaction (already cleaned)"
                         );
+                        successfully_deleted.push(*id);
                     }
                     Err(e) => {
-                        // Log but continue - don't fail entire compaction for one entry
+                        // Log but continue - don't fail entire compaction for one entry.
+                        // Entry stays in soft_deleted for retry on next compaction cycle.
                         warn!(
                             id = %id,
                             error = %e,
-                            "Failed to hard-delete soft-deleted entry during compaction, \
-                             entry will remain in soft_deleted tracking"
+                            "Failed to hard-delete soft-deleted entry during compaction — \
+                             keeping in soft_deleted for retry on next cycle"
                         );
                     }
                 }
+            }
+
+            // MED-14 FIX: Only remove entries that were successfully hard-deleted.
+            // delete_async(id, false) already removes from soft_deleted internally,
+            // but entries that failed remain tracked for next compaction.
+            let failed_count = soft_deleted_ids.len() - successfully_deleted.len();
+            if failed_count > 0 {
+                warn!(
+                    failed = failed_count,
+                    succeeded = successfully_deleted.len(),
+                    "Compaction: {} soft-deleted entries failed hard-delete, retained for next cycle",
+                    failed_count
+                );
             }
         }
 
@@ -414,18 +501,9 @@ impl RocksDbTeleologicalStore {
             }
         }
 
-        // Drain remaining soft-deleted tracking (entries that were successfully hard-deleted
-        // will already have been removed by delete_async)
-        // P5: DashMap - no read/write lock needed
-        let remaining = self.soft_deleted.len();
-        if remaining > 0 {
-            warn!(
-                count = remaining,
-                "Draining {} remaining soft-deleted entries from tracking after compaction",
-                remaining
-            );
-        }
-        self.soft_deleted.clear();
+        // MED-14 FIX: Do NOT call self.soft_deleted.clear(). Entries that failed
+        // hard-delete must remain in the DashMap so they are retried on next compaction.
+        // Successfully deleted entries were already removed by delete_async(id, false).
 
         info!("Compaction complete");
         Ok(())

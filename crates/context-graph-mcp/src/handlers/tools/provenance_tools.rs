@@ -127,16 +127,24 @@ impl Handlers {
                     self.tool_error(id, &format!("Audit query failed: {}", e))
                 }
             }
-        } else if let (Some(start_str), Some(end_str)) = (&params.start_time, &params.end_time) {
-            // Query by time range
-            let start = match DateTime::parse_from_rfc3339(start_str) {
+        } else if params.start_time.is_some() || params.end_time.is_some() {
+            // Query by time range — default end_time to "now" if only start_time provided
+            let start_str = match &params.start_time {
+                Some(s) => s.clone(),
+                None => {
+                    return self.tool_error(id, "end_time requires start_time");
+                }
+            };
+            let end_str = params.end_time.clone().unwrap_or_else(|| chrono::Utc::now().to_rfc3339());
+
+            let start = match DateTime::parse_from_rfc3339(&start_str) {
                 Ok(dt) => dt.with_timezone(&chrono::Utc),
                 Err(e) => {
                     error!(error = %e, "get_audit_trail: Invalid start_time");
                     return self.tool_error(id, &format!("Invalid start_time: {}", e));
                 }
             };
-            let end = match DateTime::parse_from_rfc3339(end_str) {
+            let end = match DateTime::parse_from_rfc3339(&end_str) {
                 Ok(dt) => dt.with_timezone(&chrono::Utc),
                 Err(e) => {
                     error!(error = %e, "get_audit_trail: Invalid end_time");
@@ -373,7 +381,17 @@ impl Handlers {
                         })
                         .collect::<Vec<_>>(),
                 ),
-                Err(_) => None,
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        memory_id = %memory_uuid,
+                        "get_provenance_chain: Audit trail query FAILED — storage error"
+                    );
+                    Some(vec![json!({
+                        "error": format!("Audit trail query failed: {}", e),
+                        "note": "Audit trail data may exist but could not be retrieved"
+                    })])
+                }
             }
         } else {
             None

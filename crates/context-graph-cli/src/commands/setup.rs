@@ -274,6 +274,9 @@ const SESSION_START_SCRIPT: &str = r#"#!/bin/bash
 
 set -euo pipefail
 
+# MED-20: Require jq for JSON parsing/construction
+command -v jq >/dev/null 2>&1 || { echo '{"success":false,"error":"jq is required but not installed. Install with: apt install jq","exit_code":1}' >&2; exit 1; }
+
 INPUT=$(cat)
 if [ -z "$INPUT" ]; then
     echo '{"success":false,"error":"Empty stdin","exit_code":4}' >&2
@@ -317,41 +320,48 @@ if [ -z "$SESSION_ID" ]; then
     SESSION_ID="session-$(uuidgen 2>/dev/null || echo "$(date +%s)-$$-$RANDOM")"
 fi
 
-# Build HookInput JSON with snake_case and tagged enum format
+# MED-19 FIX: Build HookInput JSON using jq to safely handle special characters
+# in $CWD (quotes, backslashes, unicode). Raw heredoc interpolation of $CWD
+# would produce malformed JSON if the working directory contains special chars.
 # Note: payload uses tag="type" content="data" format per serde config
 if [ -n "$PREVIOUS_SESSION_ID" ]; then
-    HOOK_INPUT=$(cat <<EOF
-{
-    "hook_type": "session_start",
-    "session_id": "$SESSION_ID",
-    "timestamp_ms": $TIMESTAMP_MS,
-    "payload": {
-        "type": "session_start",
-        "data": {
-            "cwd": "$CWD",
-            "source": "cli",
-            "previous_session_id": "$PREVIOUS_SESSION_ID"
-        }
-    }
-}
-EOF
-)
+    HOOK_INPUT=$(jq -n \
+        --arg hook_type "session_start" \
+        --arg session_id "$SESSION_ID" \
+        --argjson timestamp_ms "$TIMESTAMP_MS" \
+        --arg cwd "$CWD" \
+        --arg prev_session "$PREVIOUS_SESSION_ID" \
+        '{
+            hook_type: $hook_type,
+            session_id: $session_id,
+            timestamp_ms: $timestamp_ms,
+            payload: {
+                type: "session_start",
+                data: {
+                    cwd: $cwd,
+                    source: "cli",
+                    previous_session_id: $prev_session
+                }
+            }
+        }')
 else
-    HOOK_INPUT=$(cat <<EOF
-{
-    "hook_type": "session_start",
-    "session_id": "$SESSION_ID",
-    "timestamp_ms": $TIMESTAMP_MS,
-    "payload": {
-        "type": "session_start",
-        "data": {
-            "cwd": "$CWD",
-            "source": "cli"
-        }
-    }
-}
-EOF
-)
+    HOOK_INPUT=$(jq -n \
+        --arg hook_type "session_start" \
+        --arg session_id "$SESSION_ID" \
+        --argjson timestamp_ms "$TIMESTAMP_MS" \
+        --arg cwd "$CWD" \
+        '{
+            hook_type: $hook_type,
+            session_id: $session_id,
+            timestamp_ms: $timestamp_ms,
+            payload: {
+                type: "session_start",
+                data: {
+                    cwd: $cwd,
+                    source: "cli"
+                }
+            }
+        }')
 fi
 
 # Execute CLI with 5s timeout
@@ -379,6 +389,9 @@ const PRE_TOOL_USE_SCRIPT: &str = r#"#!/bin/bash
 # Input from Claude Code: {"tool_name":"...", "tool_input":{...}}
 
 set -euo pipefail
+
+# MED-20: Require jq for JSON parsing
+command -v jq >/dev/null 2>&1 || { echo '{"success":false,"error":"jq is required but not installed. Install with: apt install jq","exit_code":1}' >&2; exit 1; }
 
 INPUT=$(cat)
 if [ -z "$INPUT" ]; then
@@ -446,6 +459,9 @@ const POST_TOOL_USE_SCRIPT: &str = r#"#!/bin/bash
 
 set -euo pipefail
 
+# MED-20: Require jq for JSON parsing
+command -v jq >/dev/null 2>&1 || { echo '{"success":false,"error":"jq is required but not installed. Install with: apt install jq","exit_code":1}' >&2; exit 1; }
+
 INPUT=$(cat)
 if [ -z "$INPUT" ]; then
     echo '{"success":false,"error":"Empty stdin","exit_code":4}' >&2
@@ -510,6 +526,9 @@ const USER_PROMPT_SUBMIT_SCRIPT: &str = r#"#!/bin/bash
 # Uses stdin approach to avoid shell injection with user-controlled prompt text
 
 set -euo pipefail
+
+# MED-20: Require jq for JSON parsing/construction
+command -v jq >/dev/null 2>&1 || { echo '{"success":false,"error":"jq is required but not installed. Install with: apt install jq","exit_code":1}' >&2; exit 1; }
 
 INPUT=$(cat)
 if [ -z "$INPUT" ]; then
@@ -596,6 +615,9 @@ const SESSION_END_SCRIPT: &str = r#"#!/bin/bash
 # Input from Claude Code: {"session_id":"...", "reason":"...", "stats":{...}}
 
 set -euo pipefail
+
+# MED-20: Require jq for JSON parsing
+command -v jq >/dev/null 2>&1 || { echo '{"success":false,"error":"jq is required but not installed. Install with: apt install jq","exit_code":1}' >&2; exit 1; }
 
 INPUT=$(cat)
 if [ -z "$INPUT" ]; then

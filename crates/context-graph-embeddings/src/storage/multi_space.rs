@@ -328,10 +328,10 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
             if idx < 13 {
                 embedder_similarities[idx] = result.similarity;
 
-                // RRF contribution: w / (k + rank)
-                // Note: rank is 0-indexed, so rank 0 gives 1/(60+0) = 0.0167
+                // HIGH-3 FIX: RRF contribution w / (k + rank + 1) — 1-indexed
+                // consistent with core fusion (rank 0 → 1/(60+1) = 0.01639)
                 let w = weights.map(|w| w[idx]).unwrap_or(1.0);
-                rrf_score += w / (RRF_K + result.rank as f32);
+                rrf_score += w / (RRF_K + result.rank as f32 + 1.0);
 
                 weighted_sum += result.similarity * w;
                 weight_total += w;
@@ -433,14 +433,22 @@ mod tests {
         }
 
         fn embedder_uses_hnsw(&self, embedder_idx: u8) -> bool {
-            // E6 (sparse) and E12 (late interaction) don't use HNSW
-            embedder_idx != 5 && embedder_idx != 11
+            // LOW-8 FIX: E6 (idx 5, sparse), E12 (idx 11, ColBERT late interaction),
+            // and E13 (idx 12, SPLADE sparse) don't use HNSW.
+            // Previously E13 was missing from the exclusion list.
+            embedder_idx != 5 && embedder_idx != 11 && embedder_idx != 12
         }
     }
 
     // -------------------------------------------------------------------------
     // UNIT TESTS
     // -------------------------------------------------------------------------
+    // LOW-3 Note: Tests in this module use zeroed query vectors (vec![0.0f32; N])
+    // intentionally. They test index *infrastructure* — ranking, deduplication,
+    // RRF formula, weight application, and error handling — NOT search quality.
+    // The TestHnswManager returns pre-configured results regardless of query
+    // content, so the query vector values are irrelevant. Search quality with
+    // real embeddings is validated by benchmark suites.
 
     #[test]
     fn test_single_space_search_returns_ranked_results() {
@@ -499,11 +507,11 @@ mod tests {
         // Find id1 in results
         let id1_result = results.iter().find(|r| r.id == id1).unwrap();
 
-        // Manual RRF calculation:
-        // From E1: 1/(60+0) = 0.01667
-        // From E2: 1/(60+2) = 0.01613
-        // Total: 0.0328
-        let expected_rrf = 1.0 / (60.0 + 0.0) + 1.0 / (60.0 + 2.0);
+        // Manual RRF calculation (1-indexed):
+        // From E1: 1/(60+0+1) = 1/61 = 0.01639
+        // From E2: 1/(60+2+1) = 1/63 = 0.01587
+        // Total: 0.03226
+        let expected_rrf = 1.0 / (60.0 + 0.0 + 1.0) + 1.0 / (60.0 + 2.0 + 1.0);
 
         assert!(
             (id1_result.rrf_score - expected_rrf).abs() < 0.001,
@@ -513,7 +521,7 @@ mod tests {
         );
 
         eprintln!(
-            "[VERIFIED] RRF formula: 1/(60+0) + 1/(60+2) = {:.5} matches computed {:.5}",
+            "[VERIFIED] RRF formula: 1/(60+0+1) + 1/(60+2+1) = {:.5} matches computed {:.5}",
             expected_rrf, id1_result.rrf_score
         );
     }
@@ -598,9 +606,9 @@ mod tests {
 
         let results = engine.search_multi_space(&queries, None, 10, 10).unwrap();
 
-        // Verify RRF scores are 1/(60+rank)
+        // Verify RRF scores are 1/(61+rank) (1-indexed)
         for (i, result) in results.iter().enumerate() {
-            let expected = 1.0 / (60.0 + i as f32);
+            let expected = 1.0 / (61.0 + i as f32);
             assert!(
                 (result.rrf_score - expected).abs() < 0.0001,
                 "Rank {} RRF: expected {}, got {}",
@@ -610,7 +618,7 @@ mod tests {
             );
         }
 
-        eprintln!("[VERIFIED] Edge case: Single embedder RRF = 1/(60+rank)");
+        eprintln!("[VERIFIED] Edge case: Single embedder RRF = 1/(61+rank)");
     }
 
     /// Edge Case 2: Document appears in subset of queried spaces

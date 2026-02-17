@@ -257,12 +257,14 @@ impl GetTypedEdgesRequest {
     }
 
     /// Returns true if searching for outgoing edges.
+    #[allow(dead_code)] // Utility method for direction queries
     pub fn is_outgoing(&self) -> bool {
         self.direction == "outgoing" || self.direction == "both"
     }
 
     /// Returns true if searching for incoming edges.
-    pub fn _is_incoming(&self) -> bool {
+    #[allow(dead_code)] // Utility method for direction queries
+    pub fn is_incoming(&self) -> bool {
         self.direction == "incoming" || self.direction == "both"
     }
 }
@@ -1123,7 +1125,7 @@ mod tests {
             ..Default::default()
         };
         assert!(outgoing.is_outgoing());
-        assert!(!outgoing._is_incoming());
+        assert!(!outgoing.is_incoming());
 
         let incoming = GetTypedEdgesRequest {
             memory_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
@@ -1131,7 +1133,7 @@ mod tests {
             ..Default::default()
         };
         assert!(!incoming.is_outgoing());
-        assert!(incoming._is_incoming());
+        assert!(incoming.is_incoming());
 
         let both = GetTypedEdgesRequest {
             memory_id: "550e8400-e29b-41d4-a716-446655440000".to_string(),
@@ -1139,7 +1141,7 @@ mod tests {
             ..Default::default()
         };
         assert!(both.is_outgoing());
-        assert!(both._is_incoming());
+        assert!(both.is_incoming());
         println!("[PASS] Direction helpers work correctly");
     }
 

@@ -27,6 +27,8 @@ use uuid::Uuid;
 use context_graph_core::graph::asymmetric::{
     compute_e8_asymmetric_fingerprint_similarity, GraphDirection,
 };
+#[cfg(feature = "llm")]
+use context_graph_core::graph_linking::{DirectedRelation, GraphLinkEdgeType, TypedEdge};
 use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions};
 #[cfg(feature = "llm")]
 use context_graph_core::types::audit::{AuditOperation, AuditRecord};
@@ -251,10 +253,32 @@ impl Handlers {
                 });
             }
 
-            // Graph direction filtering: keep items without direction when filter is requested
-            // Direction inference requires fingerprint retrieval which is not yet implemented
-            if filter_direction.is_some() && conn.graph_direction.is_none() {
-                // Filter requested but no direction available - keep the item
+            // Graph direction filtering: exclude connections that don't match the requested direction.
+            // If a direction filter is active and the connection has no direction data,
+            // it cannot satisfy the filter — exclude it.
+            if let Some(dir_filter) = filter_direction {
+                match &conn.graph_direction {
+                    None => {
+                        debug!(
+                            connection_id = %conn.connection_id,
+                            filter = %dir_filter,
+                            "search_connections: Excluding connection with no direction (filter active)"
+                        );
+                        continue;
+                    }
+                    Some(conn_dir) => {
+                        let conn_dir_str = format!("{}", conn_dir);
+                        if conn_dir_str.to_lowercase() != dir_filter.to_lowercase() {
+                            debug!(
+                                connection_id = %conn.connection_id,
+                                connection_direction = %conn_dir_str,
+                                filter = %dir_filter,
+                                "search_connections: Excluding connection with mismatched direction"
+                            );
+                            continue;
+                        }
+                    }
+                }
             }
 
             // Add content if requested
@@ -595,7 +619,7 @@ impl Handlers {
     ///
     /// Discovers graph relationships between memories using LLM analysis.
     ///
-    /// Uses the GraphDiscoveryService (Qwen2.5-3B ~6GB VRAM) to analyze
+    /// Uses the GraphDiscoveryService (Hermes-2-Pro-Mistral-7B ~6GB VRAM) to analyze
     /// candidate memory pairs and detect structural relationships like
     /// imports, dependencies, references, calls, etc.
     ///
@@ -784,6 +808,93 @@ impl Handlers {
             (rels, errors)
         }; // graph_read dropped here before any .await
 
+        // CRIT-2 FIX: Persist discovered relationships to EdgeRepository so they survive restart.
+        // Uses typed_edges CF via EdgeRepository.store_typed_edge().
+        // Graph discovery relationships are stored as GraphLinkEdgeType::GraphConnected (E8-based).
+        // NO FALLBACKS: if EdgeRepository is not available, return an error.
+        if !relationships.is_empty() {
+            let edge_repo = match &self.edge_repository {
+                Some(repo) => repo,
+                None => {
+                    error!(
+                        "discover_graph_relationships: EdgeRepository not available — \
+                         cannot persist {} discovered edges. NO FALLBACKS.",
+                        relationships.len()
+                    );
+                    return self.tool_error(
+                        id,
+                        "EdgeRepository not initialized — cannot persist discovered graph edges. \
+                         NO FALLBACKS. Graph linking must be enabled.",
+                    );
+                }
+            };
+
+            let mut persisted_count = 0usize;
+            let mut persist_errors = 0usize;
+            // Graph discovery edges are always source -> target (Forward)
+            let direction = DirectedRelation::Forward;
+
+            for rel in &relationships {
+                // Build per-embedder scores: set E8 (index 7) to confidence, rest 0.0
+                let mut embedder_scores = [0.0f32; 13];
+                embedder_scores[7] = rel.confidence; // E8 graph connectivity
+
+                // E8 = bit 7 = 0b0000_0000_1000_0000 = 0x0080
+                let agreeing_embedders: u16 = 0b0000_0000_1000_0000;
+                let agreement_count: u8 = 1;
+
+                let typed_edge = match TypedEdge::new(
+                    rel.source_id,
+                    rel.target_id,
+                    GraphLinkEdgeType::GraphConnected,
+                    rel.confidence,
+                    direction,
+                    embedder_scores,
+                    agreement_count,
+                    agreeing_embedders,
+                ) {
+                    Ok(edge) => edge,
+                    Err(e) => {
+                        error!(
+                            source_id = %rel.source_id,
+                            target_id = %rel.target_id,
+                            error = %e,
+                            "discover_graph_relationships: Failed to create TypedEdge for persistence"
+                        );
+                        persist_errors += 1;
+                        continue;
+                    }
+                };
+
+                if let Err(e) = edge_repo.store_typed_edge(&typed_edge) {
+                    error!(
+                        source_id = %rel.source_id,
+                        target_id = %rel.target_id,
+                        error = %e,
+                        "discover_graph_relationships: Failed to persist typed edge to RocksDB"
+                    );
+                    persist_errors += 1;
+                } else {
+                    persisted_count += 1;
+                }
+            }
+
+            if persist_errors > 0 {
+                error!(
+                    persisted = persisted_count,
+                    failed = persist_errors,
+                    total = relationships.len(),
+                    "discover_graph_relationships: Some edges failed to persist"
+                );
+            }
+
+            info!(
+                persisted = persisted_count,
+                total = relationships.len(),
+                "discover_graph_relationships: Persisted discovered edges to EdgeRepository (typed_edges CF)"
+            );
+        }
+
         let response = DiscoverGraphRelationshipsResponse {
             relationships: relationships.clone(),
             count: relationships.len(),
@@ -841,7 +952,7 @@ impl Handlers {
     ///
     /// Validates a proposed graph link between two memories using LLM analysis.
     ///
-    /// Uses the GraphRelationshipLLM (Qwen2.5-3B ~6GB VRAM) to analyze
+    /// Uses the GraphRelationshipLLM (Hermes-2-Pro-Mistral-7B ~6GB VRAM) to analyze
     /// whether a valid relationship exists between the two memories.
     ///
     /// # Parameters

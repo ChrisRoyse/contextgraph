@@ -98,10 +98,8 @@ pub enum ShellType {
 /// Timeout: 5000ms per TECH-HOOKS.md
 #[derive(Args, Debug, Clone)]
 pub struct SessionStartArgs {
-    /// Database path for session storage
-    /// Reads from CONTEXT_GRAPH_DB_PATH environment variable if not provided
-    #[arg(long, env = "CONTEXT_GRAPH_DB_PATH")]
-    pub db_path: Option<PathBuf>,
+    // LOW-13: Removed dead `db_path` field — no handler reads it.
+    // Session storage uses in-memory SessionCache per PRD v6 Section 14.
 
     /// Session ID (auto-generated if not provided)
     #[arg(long)]
@@ -165,9 +163,7 @@ pub struct PreToolArgs {
 /// Timeout: 3000ms per TECH-HOOKS.md
 #[derive(Args, Debug, Clone)]
 pub struct PostToolArgs {
-    /// Database path
-    #[arg(long, env = "CONTEXT_GRAPH_DB_PATH")]
-    pub db_path: Option<PathBuf>,
+    // LOW-13: Removed dead `db_path` field — no handler reads it.
 
     /// Session ID (REQUIRED)
     #[arg(long)]
@@ -199,9 +195,7 @@ pub struct PostToolArgs {
 /// Timeout: 2000ms per TECH-HOOKS.md
 #[derive(Args, Debug, Clone)]
 pub struct PromptSubmitArgs {
-    /// Database path
-    #[arg(long, env = "CONTEXT_GRAPH_DB_PATH")]
-    pub db_path: Option<PathBuf>,
+    // LOW-13: Removed dead `db_path` field — no handler reads it.
 
     /// Session ID (REQUIRED)
     #[arg(long)]
@@ -229,9 +223,7 @@ pub struct PromptSubmitArgs {
 /// Timeout: 30000ms per TECH-HOOKS.md
 #[derive(Args, Debug, Clone)]
 pub struct SessionEndArgs {
-    /// Database path
-    #[arg(long, env = "CONTEXT_GRAPH_DB_PATH")]
-    pub db_path: Option<PathBuf>,
+    // LOW-13: Removed dead `db_path` field — no handler reads it.
 
     /// Session ID (REQUIRED)
     #[arg(long)]
