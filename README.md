@@ -97,24 +97,25 @@ Every memory is embedded across 13 spaces simultaneously. Each acts as an indepe
 | **E2** | Freshness | Custom temporal | 512D | Exponential recency decay |
 | **E3** | Periodic | Fourier-based | 512D | Time-of-day / day-of-week patterns |
 | **E4** | Sequence | Sinusoidal positional | 512D | Conversation ordering |
-| **E5** | Causal | Longformer SCM | 768D | Cause-effect relationships (asymmetric) |
-| **E6** | Keyword | SPLADE v2 | ~30K | BM25-style sparse keyword matching |
+| **E5** | Causal | nomic-embed-v1.5 + LoRA | 768D | Cause-effect relationships (asymmetric) |
+| **E6** | Keyword | SPLADE cocondenser | ~30K | BM25-style sparse keyword matching |
 | **E7** | Code | Qodo-Embed-1.5B | 1536D | Source code understanding (AST-aware) |
 | **E8** | Graph | e5-large-v2 | 1024D | Directional graph connections (asymmetric) |
 | **E9** | HDC | Hyperdimensional | 1024D | Character-level typo tolerance |
-| **E10** | Paraphrase | e5-base | 768D | Rephrase-invariant matching (asymmetric) |
+| **E10** | Paraphrase | e5-base-v2 | 768D | Rephrase-invariant matching (asymmetric) |
 | **E11** | Entity | KEPLER | 768D | Named entity & TransE linking |
 | **E12** | ColBERT | ColBERT | 128D/tok | Late interaction precision (pipeline stage) |
 | **E13** | SPLADE | SPLADE v3 | ~30K | Learned sparse expansion (pipeline stage) |
 
-### 4 Search Strategies
+### 3 Search Strategies
 
 | Strategy | How it works | Best for |
 |----------|-------------|----------|
-| **multi_space** (default) | Weighted RRF across 6 active embedders | General-purpose queries |
-| **e1_only** | Single E1 HNSW search (~1ms) | Simple similarity, lowest latency |
+| **e1_only** (default) | Single E1 HNSW search (~1ms) | Simple similarity, lowest latency |
+| **multi_space** | Weighted RRF across 6 active embedders (E1, E5, E7, E8, E10, E11) | General-purpose queries |
 | **pipeline** | E13 recall → multi-space scoring → E12 ColBERT rerank | Maximum precision |
-| **embedder_first** | Force a single embedder's perspective | Specialized queries (code, causal, entity) |
+
+Individual embedders can also be queried directly via `search_by_embedder` for specialized single-perspective queries (code, causal, entity).
 
 ### 14 Weight Profiles
 
@@ -128,8 +129,14 @@ Predefined profiles control how embedders are weighted during multi-space search
 | `fact_checking` | E11 entity + E6 keyword | Entity/fact validation |
 | `graph_reasoning` | E8 graph + E11 entity | Connection traversal |
 | `temporal_navigation` | E2/E3/E4 temporal | Time-based queries |
+| `sequence_navigation` | E4 positional | Conversation sequence traversal |
+| `conversation_history` | E4 + E1 balanced | Contextual recall from conversation |
+| `category_weighted` | Constitution-compliant | Balanced across embedder categories |
 | `typo_tolerant` | E1 + E9 HDC | Misspelled queries |
+| `pipeline_stage1_recall` | E13 + E6 sparse | Pipeline recall stage |
+| `pipeline_stage2_scoring` | E1 semantic | Pipeline scoring stage |
 | `pipeline_full` | E13 → E1 → E12 | End-to-end precision pipeline |
+| `balanced` | Equal across all 13 | Testing and comparison |
 
 Custom profiles can be created per-session via `create_weight_profile`.
 
@@ -473,7 +480,7 @@ To build without CUDA (CPU-only embeddings):
 cargo build --release --no-default-features --features llm
 ```
 
-To build without LLM support (smaller binary, 52 tools):
+To build without LLM support (smaller binary, 51 tools):
 
 ```bash
 cargo build --release --no-default-features --features cuda
