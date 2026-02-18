@@ -159,7 +159,7 @@ pub fn transe_similarity(a: &[f32], b: &[f32]) -> f32 {
 /// - E5 (Causal): Cosine (asymmetric handled at embedding time via dual vectors)
 /// - E6 (Sparse): Jaccard
 /// - E7 (Code): Cosine (query-type detection handled at embedding time)
-/// - E8 (Emotional): Cosine
+/// - E8 (Graph): Cosine
 /// - E9 (HDC): Cosine on projected dense (see note below)
 /// - E10 (Multimodal): Cosine
 /// - E11 (Entity): Cosine (TransE used only for triplet operations in entity tools)
@@ -203,7 +203,7 @@ pub fn compute_similarity_for_space(
             // Use compute_similarity_for_space_with_direction() for directional E5 similarity.
             return 0.0;
         }
-        Embedder::Emotional => {
+        Embedder::Graph => {
             // E8: Compare source-vs-target cross pairs and take max
             let source_vs_target = cosine_similarity(
                 query.get_e8_as_source(),

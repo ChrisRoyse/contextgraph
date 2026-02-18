@@ -478,7 +478,7 @@ mod tests {
         // One semantic at 1.0, one relational at 1.0
         let mut scores = PerSpaceScores::new();
         scores.set_score(Embedder::Semantic, 1.0); // weight 1.0
-        scores.set_score(Embedder::Emotional, 1.0); // weight 0.5 (relational)
+        scores.set_score(Embedder::Graph, 1.0); // weight 0.5 (relational)
 
         let weighted = similarity.compute_weighted_similarity(&scores);
         // Sum(w*s) / Sum(w) for all non-temporal spaces

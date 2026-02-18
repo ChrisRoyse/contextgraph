@@ -106,7 +106,7 @@ impl GraphLinkEdgeType {
     /// - `Some(4)` = E5 Causal
     /// - `Some(5)` = E6 Sparse (keyword)
     /// - `Some(6)` = E7 Code
-    /// - `Some(7)` = E8 Emotional/Graph
+    /// - `Some(7)` = E8 Graph
     /// - `Some(9)` = E10 Multimodal
     /// - `Some(10)` = E11 Entity
     /// - `None` = MultiAgreement (no single primary)

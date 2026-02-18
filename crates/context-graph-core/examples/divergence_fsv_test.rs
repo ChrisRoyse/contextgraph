@@ -51,7 +51,7 @@ fn main() {
         (Embedder::TemporalRecent, "E2", "temporal"),
         (Embedder::TemporalPeriodic, "E3", "temporal"),
         (Embedder::TemporalPositional, "E4", "temporal"),
-        (Embedder::Emotional, "E8", "relational"),
+        (Embedder::Graph, "E8", "relational"),
         (Embedder::Entity, "E11", "relational"),
         (Embedder::Hdc, "E9", "structural"),
     ];

@@ -139,11 +139,11 @@ impl EdgeError {
     /// Create an AP-77 symmetric cosine violation error.
     ///
     /// This should be called when code attempts to use symmetric cosine
-    /// similarity for E5 (Causal) or E8 (Emotional/Graph).
+    /// similarity for E5 (Causal) or E8 (Graph).
     pub fn symmetric_cosine_violation(embedder_id: u8) -> Self {
         let embedder_name = match embedder_id {
             4 => "Causal",
-            7 => "Emotional/Graph",
+            7 => "Graph",
             _ => "Unknown",
         };
         Self::SymmetricCosineViolation {
@@ -289,7 +289,7 @@ mod tests {
         assert!(err.is_constitutional_violation());
         let msg = format!("{}", err);
         assert!(msg.contains("AP-77"));
-        assert!(msg.contains("Emotional"));
+        assert!(msg.contains("Graph"));
     }
 
     #[test]

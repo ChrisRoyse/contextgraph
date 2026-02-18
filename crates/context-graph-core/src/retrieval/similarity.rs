@@ -45,7 +45,7 @@ pub struct PerSpaceScores {
     pub sparse: f32,
     /// E7: Code embedding similarity
     pub code: f32,
-    /// E8: Emotional/connectivity embedding similarity
+    /// E8: Graph/connectivity embedding similarity
     pub emotional: f32,
     /// E9: HDC embedding similarity
     pub hdc: f32,
@@ -76,7 +76,7 @@ impl PerSpaceScores {
             Embedder::Causal => self.causal,
             Embedder::Sparse => self.sparse,
             Embedder::Code => self.code,
-            Embedder::Emotional => self.emotional,
+            Embedder::Graph => self.emotional,
             Embedder::Hdc => self.hdc,
             Embedder::Multimodal => self.multimodal,
             Embedder::Entity => self.entity,
@@ -97,7 +97,7 @@ impl PerSpaceScores {
             Embedder::Causal => self.causal = score,
             Embedder::Sparse => self.sparse = score,
             Embedder::Code => self.code = score,
-            Embedder::Emotional => self.emotional = score,
+            Embedder::Graph => self.emotional = score,
             Embedder::Hdc => self.hdc = score,
             Embedder::Multimodal => self.multimodal = score,
             Embedder::Entity => self.entity = score,

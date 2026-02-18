@@ -1,29 +1,22 @@
-//! Embedder configuration with deprecated name support.
+//! Embedder configuration with name-based deserialization.
 //!
-//! TASK-L04: Per SPEC-E8-NAMING-001 and TECH-E8-NAMING-001.
-//!
-//! This module provides custom serde deserializers that handle both canonical
-//! and deprecated embedder names (e.g., E8_Emotional vs E8_Graph).
+//! This module provides custom serde deserializers that resolve embedder names
+//! to `Embedder` enum variants via `Embedder::from_name()`.
 
 use crate::teleological::Embedder;
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::HashMap;
 
-/// Custom deserializer that handles both canonical and deprecated names.
+/// Custom deserializer that resolves embedder names.
 ///
 /// # Behavior
 ///
-/// - Canonical names: deserialized without warning
-/// - Deprecated names (E8_Graph): deserialized with tracing warning
+/// - Valid names (E8_Graph, E8, graph): deserialized to the correct variant
 /// - Unknown names: returns error
 ///
 /// # Example Config
 ///
 /// ```toml
-/// # Canonical (preferred)
-/// embedder = "E8_Emotional"
-///
-/// # Deprecated (still works, emits warning)
 /// embedder = "E8_Graph"
 /// ```
 pub fn deserialize_embedder<'de, D>(deserializer: D) -> Result<Embedder, D::Error>
@@ -51,7 +44,7 @@ where
 /// Configuration for a single embedder.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct EmbedderConfig {
-    /// Embedder type (accepts canonical and deprecated names).
+    /// Embedder type.
     #[serde(deserialize_with = "deserialize_embedder")]
     pub embedder: Embedder,
 
@@ -95,7 +88,7 @@ impl Default for EmbedderConfig {
 /// # Map format
 /// [embedders.weights]
 /// E1_Semantic = 1.0
-/// E8_Emotional = 0.5  # Canonical name
+/// E8_Graph = 0.5
 ///
 /// # List format
 /// [[embedders.configs]]
@@ -103,12 +96,12 @@ impl Default for EmbedderConfig {
 /// weight = 1.0
 ///
 /// [[embedders.configs]]
-/// embedder = "E8_Emotional"
+/// embedder = "E8_Graph"
 /// weight = 0.5
 /// ```
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct EmbedderWeightsConfig {
-    /// Weight map by embedder name (supports deprecated names).
+    /// Weight map by embedder name.
     #[serde(default, deserialize_with = "deserialize_weight_map")]
     pub weights: HashMap<Embedder, f32>,
 
@@ -117,7 +110,7 @@ pub struct EmbedderWeightsConfig {
     pub configs: Vec<EmbedderConfig>,
 }
 
-/// Custom deserializer for weight map that handles deprecated names.
+/// Custom deserializer for weight map.
 fn deserialize_weight_map<'de, D>(deserializer: D) -> Result<HashMap<Embedder, f32>, D::Error>
 where
     D: Deserializer<'de>,
@@ -180,13 +173,13 @@ impl EmbedderWeightsConfig {
 pub fn check_deprecated_names(config_content: &str) -> Vec<DeprecatedNameUsage> {
     let mut usages = Vec::new();
 
-    // Check for E8_Graph usage
+    // Check for E8_Emotional usage (old name, now renamed to E8_Graph)
     for (line_num, line) in config_content.lines().enumerate() {
-        if line.contains("E8_Graph") || line.contains("e8_graph") {
+        if line.contains("E8_Emotional") || line.contains("e8_emotional") {
             usages.push(DeprecatedNameUsage {
                 line: line_num + 1,
-                deprecated: "E8_Graph".to_string(),
-                canonical: "E8_Emotional".to_string(),
+                deprecated: "E8_Emotional".to_string(),
+                canonical: "E8_Graph".to_string(),
                 context: line.trim().to_string(),
             });
         }
@@ -230,24 +223,26 @@ mod tests {
             embedder: Embedder,
         }
 
-        let json = r#"{"embedder": "E8_Emotional"}"#;
+        let json = r#"{"embedder": "E8_Graph"}"#;
         let config: TestConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.embedder, Embedder::Emotional);
-        println!("[PASS] Canonical E8_Emotional deserializes correctly");
+        assert_eq!(config.embedder, Embedder::Graph);
+        println!("[PASS] Canonical E8_Graph deserializes correctly");
     }
 
     #[test]
-    fn test_deserialize_deprecated_name() {
+    fn test_deserialize_old_emotional_fails() {
         #[derive(Deserialize)]
         struct TestConfig {
             #[serde(deserialize_with = "deserialize_embedder")]
+            #[allow(dead_code)]
             embedder: Embedder,
         }
 
-        let json = r#"{"embedder": "E8_Graph"}"#;
-        let config: TestConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.embedder, Embedder::Emotional);
-        println!("[PASS] Deprecated E8_Graph deserializes to Emotional");
+        // E8_Emotional is no longer valid -- fail fast
+        let json = r#"{"embedder": "E8_Emotional"}"#;
+        let result: Result<TestConfig, _> = serde_json::from_str(json);
+        assert!(result.is_err(), "E8_Emotional should fail deserialization");
+        println!("[PASS] Old E8_Emotional name fails deserialization (no backwards compat)");
     }
 
     #[test]
@@ -260,8 +255,8 @@ mod tests {
 
         let json = r#"{"embedder": "E8"}"#;
         let config: TestConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.embedder, Embedder::Emotional);
-        println!("[PASS] Short name E8 deserializes to Emotional");
+        assert_eq!(config.embedder, Embedder::Graph);
+        println!("[PASS] Short name E8 deserializes to Graph");
     }
 
     #[test]
@@ -295,7 +290,7 @@ mod tests {
             ("E5_Causal", Embedder::Causal),
             ("E6_Sparse_Lexical", Embedder::Sparse),
             ("E7_Code", Embedder::Code),
-            ("E8_Emotional", Embedder::Emotional),
+            ("E8_Graph", Embedder::Graph),
             ("E9_HDC", Embedder::Hdc),
             ("E10_Multimodal", Embedder::Multimodal),
             ("E11_Entity", Embedder::Entity),
@@ -324,9 +319,9 @@ mod tests {
     #[test]
     fn test_embedder_weights_config_get_weight() {
         let mut config = EmbedderWeightsConfig::default();
-        config.weights.insert(Embedder::Emotional, 0.5);
+        config.weights.insert(Embedder::Graph, 0.5);
 
-        assert!((config.get_weight(Embedder::Emotional) - 0.5).abs() < f32::EPSILON);
+        assert!((config.get_weight(Embedder::Graph) - 0.5).abs() < f32::EPSILON);
         // ERR-6: Unknown embedders default to 0.0 (excluded from scoring), not 1.0
         assert!((config.get_weight(Embedder::Semantic) - 0.0).abs() < f32::EPSILON);
         println!("[PASS] get_weight returns configured weight and 0.0 for unconfigured");
@@ -337,27 +332,14 @@ mod tests {
         let json = r#"{
             "weights": {
                 "E1_Semantic": 1.0,
-                "E8_Emotional": 0.5
-            }
-        }"#;
-
-        let config: EmbedderWeightsConfig = serde_json::from_str(json).unwrap();
-        assert!((config.get_weight(Embedder::Semantic) - 1.0).abs() < f32::EPSILON);
-        assert!((config.get_weight(Embedder::Emotional) - 0.5).abs() < f32::EPSILON);
-        println!("[PASS] EmbedderWeightsConfig deserializes from JSON");
-    }
-
-    #[test]
-    fn test_embedder_weights_config_deprecated_key() {
-        let json = r#"{
-            "weights": {
                 "E8_Graph": 0.5
             }
         }"#;
 
         let config: EmbedderWeightsConfig = serde_json::from_str(json).unwrap();
-        assert!((config.get_weight(Embedder::Emotional) - 0.5).abs() < f32::EPSILON);
-        println!("[PASS] Deprecated E8_Graph key works in weight map");
+        assert!((config.get_weight(Embedder::Semantic) - 1.0).abs() < f32::EPSILON);
+        assert!((config.get_weight(Embedder::Graph) - 0.5).abs() < f32::EPSILON);
+        println!("[PASS] EmbedderWeightsConfig deserializes from JSON");
     }
 
     #[test]
@@ -366,15 +348,15 @@ mod tests {
             "weights": {},
             "configs": [
                 {"embedder": "E1_Semantic", "weight": 0.8, "enabled": true},
-                {"embedder": "E8_Emotional", "weight": 0.3, "enabled": false}
+                {"embedder": "E8_Graph", "weight": 0.3, "enabled": false}
             ]
         }"#;
 
         let config: EmbedderWeightsConfig = serde_json::from_str(json).unwrap();
         assert!((config.get_weight(Embedder::Semantic) - 0.8).abs() < f32::EPSILON);
-        assert!((config.get_weight(Embedder::Emotional) - 0.3).abs() < f32::EPSILON);
+        assert!((config.get_weight(Embedder::Graph) - 0.3).abs() < f32::EPSILON);
         assert!(config.is_enabled(Embedder::Semantic));
-        assert!(!config.is_enabled(Embedder::Emotional));
+        assert!(!config.is_enabled(Embedder::Graph));
         println!("[PASS] Detailed configs override weight map");
     }
 
@@ -383,15 +365,15 @@ mod tests {
         let config = r#"
             [embedders]
             E1_Semantic = 1.0
-            E8_Graph = 0.5
-            E8_Emotional = 0.3
+            E8_Emotional = 0.5
+            E8_Graph = 0.3
         "#;
 
         let usages = check_deprecated_names(config);
         assert_eq!(usages.len(), 1);
-        assert_eq!(usages[0].deprecated, "E8_Graph");
-        assert_eq!(usages[0].canonical, "E8_Emotional");
-        println!("[PASS] check_deprecated_names finds E8_Graph usage");
+        assert_eq!(usages[0].deprecated, "E8_Emotional");
+        assert_eq!(usages[0].canonical, "E8_Graph");
+        println!("[PASS] check_deprecated_names finds E8_Emotional usage");
     }
 
     #[test]
@@ -399,7 +381,7 @@ mod tests {
         let config = r#"
             [embedders]
             E1_Semantic = 1.0
-            E8_Emotional = 0.5
+            E8_Graph = 0.5
         "#;
 
         let usages = check_deprecated_names(config);
@@ -410,23 +392,23 @@ mod tests {
     #[test]
     fn test_check_deprecated_names_lowercase() {
         let config = r#"
-            embedder = "e8_graph"
+            embedder = "e8_emotional"
         "#;
 
         let usages = check_deprecated_names(config);
         assert_eq!(usages.len(), 1);
-        println!("[PASS] check_deprecated_names finds lowercase e8_graph");
+        println!("[PASS] check_deprecated_names finds lowercase e8_emotional");
     }
 
     #[test]
     fn test_configured_embedders() {
         let mut config = EmbedderWeightsConfig::default();
         config.weights.insert(Embedder::Semantic, 1.0);
-        config.weights.insert(Embedder::Emotional, 0.5);
+        config.weights.insert(Embedder::Graph, 0.5);
 
         let embedders = config.configured_embedders();
         assert!(embedders.contains(&Embedder::Semantic));
-        assert!(embedders.contains(&Embedder::Emotional));
+        assert!(embedders.contains(&Embedder::Graph));
         assert_eq!(embedders.len(), 2);
         println!("[PASS] configured_embedders returns correct list");
     }
@@ -435,13 +417,13 @@ mod tests {
     fn test_configured_embedders_includes_configs() {
         let json = r#"{
             "weights": {"E1_Semantic": 1.0},
-            "configs": [{"embedder": "E8_Emotional", "weight": 0.5}]
+            "configs": [{"embedder": "E8_Graph", "weight": 0.5}]
         }"#;
 
         let config: EmbedderWeightsConfig = serde_json::from_str(json).unwrap();
         let embedders = config.configured_embedders();
         assert!(embedders.contains(&Embedder::Semantic));
-        assert!(embedders.contains(&Embedder::Emotional));
+        assert!(embedders.contains(&Embedder::Graph));
         println!("[PASS] configured_embedders includes both weights and configs");
     }
 
@@ -449,15 +431,15 @@ mod tests {
     fn test_deprecated_name_usage_display() {
         let usage = DeprecatedNameUsage {
             line: 5,
-            deprecated: "E8_Graph".to_string(),
-            canonical: "E8_Emotional".to_string(),
-            context: "embedder = \"E8_Graph\"".to_string(),
+            deprecated: "E8_Emotional".to_string(),
+            canonical: "E8_Graph".to_string(),
+            context: "embedder = \"E8_Emotional\"".to_string(),
         };
 
         let display = format!("{}", usage);
         assert!(display.contains("Line 5"));
-        assert!(display.contains("E8_Graph"));
         assert!(display.contains("E8_Emotional"));
+        assert!(display.contains("E8_Graph"));
         println!("[PASS] DeprecatedNameUsage Display trait works");
     }
 
@@ -469,9 +451,9 @@ mod tests {
             embedder: Option<Embedder>,
         }
 
-        let json = r#"{"embedder": "E8_Emotional"}"#;
+        let json = r#"{"embedder": "E8_Graph"}"#;
         let config: TestConfig = serde_json::from_str(json).unwrap();
-        assert_eq!(config.embedder, Some(Embedder::Emotional));
+        assert_eq!(config.embedder, Some(Embedder::Graph));
         println!("[PASS] Optional embedder deserializes Some value");
     }
 

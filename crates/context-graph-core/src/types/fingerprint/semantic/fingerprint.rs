@@ -578,7 +578,7 @@ impl SemanticFingerprint {
             Embedder::Causal => EmbeddingRef::Dense(self.e5_active_vector()),
             Embedder::Sparse => EmbeddingRef::Sparse(&self.e6_sparse),
             Embedder::Code => EmbeddingRef::Dense(&self.e7_code),
-            Embedder::Emotional => EmbeddingRef::Dense(self.e8_active_vector()),
+            Embedder::Graph => EmbeddingRef::Dense(self.e8_active_vector()),
             Embedder::Hdc => EmbeddingRef::Dense(&self.e9_hdc),
             Embedder::Multimodal => EmbeddingRef::Dense(self.e10_active_vector()),
             Embedder::Entity => EmbeddingRef::Dense(&self.e11_entity),

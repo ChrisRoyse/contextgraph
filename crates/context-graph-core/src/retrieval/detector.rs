@@ -26,7 +26,7 @@ use super::config::{RECENT_LOOKBACK_SECS, MAX_RECENT_MEMORIES};
 ///
 /// Only SEMANTIC category embedders are used for divergence detection per ARCH-10.
 /// Returns true for: Semantic, Causal, Sparse, Code, Multimodal, LateInteraction, KeywordSplade
-/// Returns false for: TemporalRecent, TemporalPeriodic, TemporalPositional, Emotional, Entity, Hdc
+/// Returns false for: TemporalRecent, TemporalPeriodic, TemporalPositional, Graph, Entity, Hdc
 #[inline]
 pub fn is_divergence_space(embedder: Embedder) -> bool {
     category_for(embedder).used_for_divergence_detection()
@@ -263,7 +263,7 @@ mod tests {
     #[test]
     fn test_relational_not_divergence_space() {
         // Relational spaces should NOT be divergence spaces
-        assert!(!is_divergence_space(Embedder::Emotional));
+        assert!(!is_divergence_space(Embedder::Graph));
         assert!(!is_divergence_space(Embedder::Entity));
         println!("[PASS] Relational embedders excluded from divergence detection");
     }

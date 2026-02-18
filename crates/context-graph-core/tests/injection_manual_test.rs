@@ -284,7 +284,7 @@ fn fsv_edge_case_temporal_exclusion() {
             Embedder::Code,           // Semantic - counts (1.0)
             Embedder::TemporalRecent, // Temporal - excluded (0.0)
             Embedder::TemporalPeriodic, // Temporal - excluded (0.0)
-            Embedder::Emotional,      // Relational - counts (0.5)
+            Embedder::Graph,      // Relational - counts (0.5)
             Embedder::Hdc,            // Structural - counts (0.5)
         ],
         InjectionCategory::HighRelevanceCluster,
@@ -292,7 +292,7 @@ fn fsv_edge_case_temporal_exclusion() {
     );
 
     println!("\nMixed embedders test:");
-    println!("  - matching_spaces: Semantic, Code, TemporalRecent, TemporalPeriodic, Emotional, Hdc");
+    println!("  - matching_spaces: Semantic, Code, TemporalRecent, TemporalPeriodic, Graph, Hdc");
     println!("  - matching_spaces.len(): {}", c2.matching_spaces.len());
 
     let semantic_count2 = c2.semantic_space_count();
@@ -300,7 +300,7 @@ fn fsv_edge_case_temporal_exclusion() {
 
     assert_eq!(
         semantic_count2, 4,
-        "Should count Semantic, Code, Emotional, Hdc but not temporal"
+        "Should count Semantic, Code, Graph, Hdc but not temporal"
     );
 
     println!("✓ PASS: Temporal embedders excluded per AP-60");

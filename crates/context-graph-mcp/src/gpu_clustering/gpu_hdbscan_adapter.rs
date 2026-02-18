@@ -332,7 +332,7 @@ impl EmbedderExt for Embedder {
             | Embedder::LateInteraction
             | Embedder::KeywordSplade => 1.0,
             // Relational - half weight
-            Embedder::Emotional | Embedder::Entity => 0.5,
+            Embedder::Graph | Embedder::Entity => 0.5,
             // Structural - half weight
             Embedder::Hdc => 0.5,
         }
@@ -355,7 +355,7 @@ mod tests {
         assert_eq!(Embedder::KeywordSplade.topic_weight(), 1.0);
 
         // RELATIONAL = 0.5
-        assert_eq!(Embedder::Emotional.topic_weight(), 0.5);
+        assert_eq!(Embedder::Graph.topic_weight(), 0.5);
         assert_eq!(Embedder::Entity.topic_weight(), 0.5);
 
         // STRUCTURAL = 0.5

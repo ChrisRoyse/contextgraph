@@ -168,11 +168,11 @@ pub static EMBEDDER_CONFIGS: [EmbedderConfig; 13] = [
         is_sparse: false,
         is_token_level: false,
     },
-    // E8: Emotional/Graph (1024D, Cosine, Float8) - Category: Relational
+    // E8: Graph (1024D, Cosine, Float8) - Category: Relational
     // Upgraded from MiniLM 384D to e5-large-v2 1024D for VRAM efficiency (shares with E1)
     // M7 FIX: is_asymmetric=true — stores dual vectors (source/target) per constitution
     EmbedderConfig {
-        embedder: Embedder::Emotional,
+        embedder: Embedder::Graph,
         dimension: E8_DIM, // 1024 (upgraded from 384)
         distance_metric: DistanceMetric::Cosine,
         quantization: QuantizationConfig::Float8,
@@ -488,7 +488,7 @@ mod tests {
 
         // Relational embedders (2)
         assert_eq!(
-            get_category(Embedder::Emotional),
+            get_category(Embedder::Graph),
             EmbedderCategory::Relational
         );
         assert_eq!(get_category(Embedder::Entity), EmbedderCategory::Relational);
@@ -512,7 +512,7 @@ mod tests {
         assert_eq!(get_topic_weight(Embedder::TemporalPositional), 0.0);
 
         // Relational = 0.5
-        assert_eq!(get_topic_weight(Embedder::Emotional), 0.5);
+        assert_eq!(get_topic_weight(Embedder::Graph), 0.5);
         assert_eq!(get_topic_weight(Embedder::Entity), 0.5);
 
         // Structural = 0.5
@@ -535,7 +535,7 @@ mod tests {
         assert!(is_semantic(Embedder::KeywordSplade));
 
         assert!(!is_semantic(Embedder::TemporalRecent));
-        assert!(!is_semantic(Embedder::Emotional));
+        assert!(!is_semantic(Embedder::Graph));
         assert!(!is_semantic(Embedder::Hdc));
 
         println!("[PASS] is_semantic() returns true for exactly 7 embedders");
@@ -551,7 +551,7 @@ mod tests {
         assert!(is_temporal(Embedder::TemporalPositional));
 
         assert!(!is_temporal(Embedder::Semantic));
-        assert!(!is_temporal(Embedder::Emotional));
+        assert!(!is_temporal(Embedder::Graph));
         assert!(!is_temporal(Embedder::Hdc));
 
         println!("[PASS] is_temporal() returns true for exactly 3 embedders");
@@ -568,7 +568,7 @@ mod tests {
         assert_eq!(get_dimension(Embedder::Causal), E5_DIM);
         assert_eq!(get_dimension(Embedder::Sparse), E6_SPARSE_VOCAB);
         assert_eq!(get_dimension(Embedder::Code), E7_DIM);
-        assert_eq!(get_dimension(Embedder::Emotional), E8_DIM);
+        assert_eq!(get_dimension(Embedder::Graph), E8_DIM);
         assert_eq!(get_dimension(Embedder::Hdc), E9_DIM);
         assert_eq!(get_dimension(Embedder::Multimodal), E10_DIM);
         assert_eq!(get_dimension(Embedder::Entity), E11_DIM);
@@ -602,7 +602,7 @@ mod tests {
             QuantizationConfig::Float8
         );
         assert_eq!(
-            get_quantization(Embedder::Emotional),
+            get_quantization(Embedder::Graph),
             QuantizationConfig::Float8
         );
 

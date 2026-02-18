@@ -281,14 +281,14 @@ impl SemanticFingerprint {
             // If either is non-empty, both must be correct
             if self.e8_graph_as_source.len() != E8_DIM {
                 return Err(ValidationError::DimensionMismatch {
-                    embedder: Embedder::Emotional,
+                    embedder: Embedder::Graph,
                     expected: E8_DIM,
                     actual: self.e8_graph_as_source.len(),
                 });
             }
             if self.e8_graph_as_target.len() != E8_DIM {
                 return Err(ValidationError::DimensionMismatch {
-                    embedder: Embedder::Emotional,
+                    embedder: Embedder::Graph,
                     expected: E8_DIM,
                     actual: self.e8_graph_as_target.len(),
                 });
@@ -297,7 +297,7 @@ impl SemanticFingerprint {
             // Legacy format: only e8_graph populated
             if self.e8_graph.len() != E8_DIM {
                 return Err(ValidationError::DimensionMismatch {
-                    embedder: Embedder::Emotional,
+                    embedder: Embedder::Graph,
                     expected: E8_DIM,
                     actual: self.e8_graph.len(),
                 });

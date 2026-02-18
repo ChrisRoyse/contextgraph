@@ -73,7 +73,7 @@ pub struct StubMultiArrayProvider {
     /// - 3: E4 (TemporalPositional)
     /// - 4: E5 (Causal)
     /// - 5: E7 (Code)
-    /// - 6: E8 (Emotional/Graph)
+    /// - 6: E8 (Graph)
     /// - 7: E9 (Hdc)
     /// - 8: E10 (Multimodal)
     /// - 9: E11 (Entity)

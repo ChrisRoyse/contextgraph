@@ -89,7 +89,7 @@ impl EmbedderEdge {
 
         // Check for asymmetric embedders
         if embedder_id == 4 || embedder_id == 7 {
-            // E5 (Causal) or E8 (Emotional/Graph) require direction
+            // E5 (Causal) or E8 (Graph) require direction
             return Err(EdgeError::symmetric_cosine_violation(embedder_id));
         }
 

@@ -1076,7 +1076,23 @@ impl MultiSpaceClusterManager {
                 }
             }
             if let Some((_, &count)) = counts.iter().max_by_key(|(_, &c)| c) {
-                strengths[embedder.index()] = count as f32 / members.len() as f32;
+                let strength = count as f32 / members.len() as f32;
+
+                // TOPIC-2: Detect degenerate embedders. If ALL members landed in
+                // exactly one cluster (strength=1.0) with only 1 distinct cluster,
+                // the embedder couldn't discriminate between any memories — it's
+                // non-functional (e.g., E5 returns all-zero when LoRA not loaded).
+                // Genuine agreement would still show multiple clusters with one dominant.
+                if counts.len() == 1 && members.len() > 2 {
+                    tracing::debug!(
+                        embedder = ?embedder,
+                        members = members.len(),
+                        "Degenerate embedder: all members in single cluster, setting strength=0.0"
+                    );
+                    strengths[embedder.index()] = 0.0;
+                } else {
+                    strengths[embedder.index()] = strength;
+                }
             }
         }
 
@@ -2525,8 +2541,8 @@ mod tests {
             e5_causal: Vec::new(), // Using new dual format
             e6_sparse: SparseVector::empty(),
             e7_code: generate_domain_embedding(get_dimension(Embedder::Code), domain, variation, seed + 500),
-            e8_graph_as_source: generate_domain_embedding(get_dimension(Embedder::Emotional), "all", 0.5, seed + 600),
-            e8_graph_as_target: generate_domain_embedding(get_dimension(Embedder::Emotional), "all", 0.5, seed + 601),
+            e8_graph_as_source: generate_domain_embedding(get_dimension(Embedder::Graph), "all", 0.5, seed + 600),
+            e8_graph_as_target: generate_domain_embedding(get_dimension(Embedder::Graph), "all", 0.5, seed + 601),
             e8_graph: Vec::new(), // Legacy field, empty by default
             e9_hdc: generate_domain_embedding(get_dimension(Embedder::Hdc), "all", 0.5, seed + 700),
             e10_multimodal_paraphrase: generate_domain_embedding(get_dimension(Embedder::Multimodal), domain, variation, seed + 800),
@@ -2998,8 +3014,8 @@ mod tests {
             e5_causal: Vec::new(), // Using new dual format
             e6_sparse: SparseVector::empty(),
             e7_code: generate_15domain_embedding(get_dimension(Embedder::Code), domain_idx, variation, seed + 500),
-            e8_graph_as_source: generate_15domain_embedding(get_dimension(Embedder::Emotional), 7, 0.5, seed + 600),
-            e8_graph_as_target: generate_15domain_embedding(get_dimension(Embedder::Emotional), 7, 0.5, seed + 601),
+            e8_graph_as_source: generate_15domain_embedding(get_dimension(Embedder::Graph), 7, 0.5, seed + 600),
+            e8_graph_as_target: generate_15domain_embedding(get_dimension(Embedder::Graph), 7, 0.5, seed + 601),
             e8_graph: Vec::new(), // Legacy field, empty by default
             e9_hdc: generate_15domain_embedding(get_dimension(Embedder::Hdc), 7, 0.5, seed + 700),
             e10_multimodal_paraphrase: generate_15domain_embedding(get_dimension(Embedder::Multimodal), domain_idx, variation, seed + 800),

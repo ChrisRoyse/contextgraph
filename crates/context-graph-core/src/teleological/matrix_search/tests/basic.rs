@@ -212,7 +212,7 @@ fn test_embedder_names() {
     assert_eq!(embedder_names::name(4), "E5_Causal");
     assert_eq!(embedder_names::name(5), "E6_Sparse_Lexical");
     assert_eq!(embedder_names::name(6), "E7_Code");
-    assert_eq!(embedder_names::name(7), "E8_Emotional");
+    assert_eq!(embedder_names::name(7), "E8_Graph");
     assert_eq!(embedder_names::name(8), "E9_HDC");
     assert_eq!(embedder_names::name(9), "E10_Multimodal");
     assert_eq!(embedder_names::name(10), "E11_Entity");

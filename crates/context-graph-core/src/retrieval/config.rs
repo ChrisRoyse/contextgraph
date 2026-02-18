@@ -48,7 +48,7 @@ pub const SPACE_WEIGHTS: [f32; 13] = [
     1.0, // E5: Causal - cause/effect
     1.0, // E6: Sparse - sparse terms
     1.0, // E7: Code - code structure
-    0.5, // E8: Emotional (Relational)
+    0.5, // E8: Graph (Relational)
     0.5, // E9: Hdc (Structural)
     1.0, // E10: Multimodal
     0.5, // E11: Entity (Relational)
@@ -84,7 +84,7 @@ pub struct PerSpaceThresholds {
     pub sparse: f32,
     /// E7: Code embedding threshold
     pub code: f32,
-    /// E8: Emotional/connectivity embedding threshold
+    /// E8: Graph/connectivity embedding threshold
     pub emotional: f32,
     /// E9: HDC embedding threshold
     pub hdc: f32,
@@ -110,7 +110,7 @@ impl PerSpaceThresholds {
             Embedder::Causal => self.causal,
             Embedder::Sparse => self.sparse,
             Embedder::Code => self.code,
-            Embedder::Emotional => self.emotional,
+            Embedder::Graph => self.emotional,
             Embedder::Hdc => self.hdc,
             Embedder::Multimodal => self.multimodal,
             Embedder::Entity => self.entity,
@@ -132,7 +132,7 @@ impl PerSpaceThresholds {
             Embedder::Causal => self.causal = threshold,
             Embedder::Sparse => self.sparse = threshold,
             Embedder::Code => self.code = threshold,
-            Embedder::Emotional => self.emotional = threshold,
+            Embedder::Graph => self.emotional = threshold,
             Embedder::Hdc => self.hdc = threshold,
             Embedder::Multimodal => self.multimodal = threshold,
             Embedder::Entity => self.entity = threshold,
@@ -498,7 +498,7 @@ mod tests {
         assert_eq!(SPACE_WEIGHTS[4], 1.0);  // E5 Causal
         assert_eq!(SPACE_WEIGHTS[5], 1.0);  // E6 Sparse
         assert_eq!(SPACE_WEIGHTS[6], 1.0);  // E7 Code
-        assert_eq!(SPACE_WEIGHTS[7], 0.5);  // E8 Emotional (Relational)
+        assert_eq!(SPACE_WEIGHTS[7], 0.5);  // E8 Graph (Relational)
         assert_eq!(SPACE_WEIGHTS[8], 0.5);  // E9 Hdc (Structural)
         assert_eq!(SPACE_WEIGHTS[9], 1.0);  // E10 Multimodal
         assert_eq!(SPACE_WEIGHTS[10], 0.5); // E11 Entity (Relational)

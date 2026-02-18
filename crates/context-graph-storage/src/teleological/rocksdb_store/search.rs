@@ -1075,11 +1075,17 @@ fn search_pipeline_sync(
 
                 // P7: Use remove() to take ownership instead of get()+clone().
                 // Avoids cloning ~63KB SemanticFingerprint per result.
+                //
+                // PIPE-1 FIX: RRF determines candidate ORDER, but the user-facing
+                // similarity must be weighted cosine in [0,1] — same as multi_space.
+                // RRF scores (~0.003) are meaningless for similarity comparison or
+                // minSimilarity filtering. Re-score using compute_semantic_fusion().
                 fused
                     .into_iter()
                     .filter_map(|f| {
                         candidate_map.remove(&f.doc_id).map(|(scores, semantic)| {
-                            (f.doc_id, f.fused_score, scores, semantic)
+                            let similarity = compute_semantic_fusion(&scores, &adjusted_weights);
+                            (f.doc_id, similarity, scores, semantic)
                         })
                     })
                     .filter(|(_, score, _, _)| *score >= options.min_similarity)

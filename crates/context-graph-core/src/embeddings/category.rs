@@ -57,7 +57,7 @@ pub enum EmbedderCategory {
     Temporal,
 
     /// Relational embedders capture relationships and entity connections.
-    /// E8 (Emotional), E11 (Entity)
+    /// E8 (Graph), E11 (Entity)
     ///
     /// - topic_weight: 0.5
     /// - divergence_detection: false
@@ -194,7 +194,7 @@ pub fn category_for(embedder: Embedder) -> EmbedderCategory {
         Embedder::TemporalPositional => EmbedderCategory::Temporal,
 
         // Relational category (2 embedders, weight 0.5)
-        Embedder::Emotional => EmbedderCategory::Relational,
+        Embedder::Graph => EmbedderCategory::Relational,
         Embedder::Entity => EmbedderCategory::Relational,
 
         // Structural category (1 embedder, weight 0.5)
@@ -328,7 +328,7 @@ mod tests {
     #[test]
     fn test_category_for_relational_embedders() {
         // 2 relational embedders
-        assert_eq!(category_for(Embedder::Emotional), EmbedderCategory::Relational);
+        assert_eq!(category_for(Embedder::Graph), EmbedderCategory::Relational);
         assert_eq!(category_for(Embedder::Entity), EmbedderCategory::Relational);
         println!("[PASS] All 2 relational embedders correctly categorized");
     }

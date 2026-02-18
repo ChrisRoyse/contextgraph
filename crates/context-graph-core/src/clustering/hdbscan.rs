@@ -1407,7 +1407,7 @@ mod tests {
 
         // Relational embedders
         assert_eq!(
-            HDBSCANParams::default_for_space(Embedder::Emotional).metric,
+            HDBSCANParams::default_for_space(Embedder::Graph).metric,
             DistanceMetric::Cosine
         );
         assert_eq!(

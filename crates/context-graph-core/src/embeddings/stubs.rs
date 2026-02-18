@@ -133,12 +133,12 @@ impl StubSingleEmbedder {
         Self::new(Embedder::Code)
     }
 
-    /// Create stub embedder for E8 (Emotional/Graph, 1024D - upgraded from 384D).
+    /// Create stub embedder for E8 (Graph, 1024D - upgraded from 384D).
     ///
     /// Note: The field in SemanticFingerprint is `e8_graph`, but the
-    /// canonical enum name is `Embedder::Emotional`.
+    /// canonical enum name is `Embedder::Graph`.
     pub fn for_e8() -> Self {
-        Self::new(Embedder::Emotional)
+        Self::new(Embedder::Graph)
     }
 
     /// Create stub embedder for E9 (HDC, 1024D projected).

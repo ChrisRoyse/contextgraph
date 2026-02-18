@@ -66,9 +66,9 @@ const CAUSAL_DIRECTION_THRESHOLD: f32 = 0.1;
 /// to determine if the content primarily describes causes or effects.
 ///
 /// # Returns
-/// - Some("cause") if cause norm is significantly higher (>10% difference)
-/// - Some("effect") if effect norm is significantly higher
-/// - Some("unknown") if norms are similar or both are near zero
+/// - "cause" if cause norm is significantly higher (>10% difference)
+/// - "effect" if effect norm is significantly higher
+/// - "unknown" if norms are similar or both are near zero
 fn infer_causal_direction_from_fingerprint(fingerprint: &SemanticFingerprint) -> String {
     let cause_norm: f32 = fingerprint
         .e5_causal_as_cause
@@ -95,6 +95,44 @@ fn infer_causal_direction_from_fingerprint(fingerprint: &SemanticFingerprint) ->
     if diff_ratio > CAUSAL_DIRECTION_THRESHOLD {
         "cause".to_string()
     } else if diff_ratio < -CAUSAL_DIRECTION_THRESHOLD {
+        "effect".to_string()
+    } else {
+        "unknown".to_string()
+    }
+}
+
+/// CHAIN-1: Infer causal direction from content text using keyword heuristics.
+///
+/// When E5 LoRA isn't loaded (zero vectors) and LLM isn't available,
+/// this provides a third inference path using causal language patterns.
+/// Constitution query_type_detection.CAUSAL: ["why", "caused", "because", "root cause"]
+///
+/// # Returns
+/// - "cause" if content describes something that CAUSES an effect
+/// - "effect" if content describes the RESULT of something
+/// - "unknown" if no causal language detected
+fn infer_causal_direction_from_content(content: &str) -> String {
+    let lower = content.to_lowercase();
+
+    // Cause indicators: content describes something that produces effects
+    const CAUSE_PATTERNS: &[&str] = &[
+        "causes", "leads to", "results in", "triggers", "produces",
+        "because of this", "this means", "therefore", "consequently",
+        "as a result", "root cause", "the reason",
+    ];
+    // Effect indicators: content describes an outcome or consequence
+    const EFFECT_PATTERNS: &[&str] = &[
+        "caused by", "result of", "because", "due to", "stems from",
+        "outcome of", "consequence of", "led to", "resulted from",
+        "affected by", "driven by", "influenced by",
+    ];
+
+    let cause_score: usize = CAUSE_PATTERNS.iter().filter(|p| lower.contains(**p)).count();
+    let effect_score: usize = EFFECT_PATTERNS.iter().filter(|p| lower.contains(**p)).count();
+
+    if cause_score > effect_score {
+        "cause".to_string()
+    } else if effect_score > cause_score {
         "effect".to_string()
     } else {
         "unknown".to_string()
@@ -262,11 +300,18 @@ impl Handlers {
         let cluster_array = embedding_output.fingerprint.to_cluster_array();
 
         // E5 Phase 5: Determine causal direction for storage
-        // CAUSAL-HINT-FIX: Use LLM hint direction if available (high confidence from 7B model)
-        // Fall back to E5 norm inference only when no LLM hint is available
+        // Priority: LLM hint → E5 norm inference → content keyword heuristics
+        // CHAIN-1: When E5 LoRA isn't loaded and LLM unavailable, keyword
+        // heuristics provide a fallback so causal direction is still persisted.
         let causal_direction = llm_causal_direction.unwrap_or_else(|| {
             debug!("store_memory: No LLM hint, inferring causal direction from E5 norms");
-            infer_causal_direction_from_fingerprint(&embedding_output.fingerprint)
+            let e5_direction = infer_causal_direction_from_fingerprint(&embedding_output.fingerprint);
+            if e5_direction != "unknown" {
+                e5_direction
+            } else {
+                debug!("store_memory: E5 norms inconclusive, falling back to content heuristics");
+                infer_causal_direction_from_content(&content)
+            }
         });
 
         // E6-FIX: Extract e6_sparse BEFORE creating TeleologicalFingerprint
@@ -1222,7 +1267,10 @@ impl Handlers {
                         }
                     }
                 } else {
-                    [1.0 / 13.0; 13] // No profile specified — uniform weights
+                    // WEIGHT-1 FIX: Use semantic_search profile (matches DEFAULT_SEMANTIC_WEIGHTS
+                    // used in actual search). Was [1/13; 13] which showed misleading 46% utilization.
+                    get_weight_profile("semantic_search")
+                        .expect("semantic_search profile must exist")
                 };
 
                 // LOW-16: Removed dead `query_analysis: Option<QueryClassification> = None`.

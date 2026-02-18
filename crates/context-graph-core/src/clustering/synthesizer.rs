@@ -265,7 +265,14 @@ impl TopicSynthesizer {
         for embedder in Embedder::all() {
             let counts = Self::count_clusters_for_space(members, mem_clusters, embedder);
             if let Some((_, &count)) = counts.iter().max_by_key(|(_, &c)| c) {
-                strengths[embedder.index()] = count as f32 / members.len() as f32;
+                let strength = count as f32 / members.len() as f32;
+
+                // TOPIC-2: Detect degenerate embedders (all in single cluster = no discrimination)
+                if counts.len() == 1 && members.len() > 2 {
+                    strengths[embedder.index()] = 0.0;
+                } else {
+                    strengths[embedder.index()] = strength;
+                }
             }
         }
 
@@ -550,15 +557,15 @@ mod tests {
         let id1 = Uuid::new_v4();
         let id2 = Uuid::new_v4();
 
-        // Semantic=1.0, Causal=1.0, Emotional=0.5 (relational)
+        // Semantic=1.0, Causal=1.0, Graph=0.5 (relational)
         let memberships = create_shared_memberships(
             id1,
             id2,
-            &[Embedder::Semantic, Embedder::Causal, Embedder::Emotional],
+            &[Embedder::Semantic, Embedder::Causal, Embedder::Graph],
         );
 
         println!("=== TEST: test_weighted_agreement_2_semantic_1_relational_forms_topic ===");
-        println!("STATE BEFORE: 2 memories, shared spaces = [Semantic, Causal, Emotional]");
+        println!("STATE BEFORE: 2 memories, shared spaces = [Semantic, Causal, Graph]");
         println!("EXPECTED: 2*1.0 + 1*0.5 = 2.5 >= 2.5 threshold");
 
         let result = synthesizer.synthesize_topics(&memberships).unwrap();
@@ -646,14 +653,14 @@ mod tests {
             id2,
             &[
                 Embedder::Semantic,   // semantic (1.0)
-                Embedder::Emotional,  // relational (0.5)
+                Embedder::Graph,  // relational (0.5)
                 Embedder::Entity,     // relational (0.5)
                 Embedder::Hdc,        // structural (0.5)
             ],
         );
 
         println!("=== TEST: test_1_semantic_2_relational_1_structural_forms_topic ===");
-        println!("STATE BEFORE: 2 memories, shared = [Semantic, Emotional, Entity, Hdc]");
+        println!("STATE BEFORE: 2 memories, shared = [Semantic, Graph, Entity, Hdc]");
         println!("EXPECTED: 1*1.0 + 2*0.5 + 1*0.5 = 2.5 >= 2.5 threshold");
 
         let mem_clusters = synthesizer.build_mem_clusters_map(&memberships);
@@ -888,7 +895,7 @@ mod tests {
             mem_b,
             &[
                 Embedder::Semantic,  // 1.0
-                Embedder::Emotional, // 0.5
+                Embedder::Graph, // 0.5
                 Embedder::Entity,    // 0.5
                 Embedder::Hdc,       // 0.5
             ],
@@ -953,7 +960,7 @@ mod tests {
     fn test_relational_structural_have_weight_half() {
         println!("=== TEST: test_relational_structural_have_weight_half ===");
 
-        for half_weight in [Embedder::Emotional, Embedder::Entity, Embedder::Hdc] {
+        for half_weight in [Embedder::Graph, Embedder::Entity, Embedder::Hdc] {
             let weight = category_for(half_weight).topic_weight();
             println!("{:?} -> topic_weight = {}", half_weight, weight);
             assert_eq!(weight, 0.5, "{:?} should have weight 0.5", half_weight);

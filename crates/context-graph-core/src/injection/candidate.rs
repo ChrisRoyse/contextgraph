@@ -718,13 +718,13 @@ mod tests {
                 Embedder::Code,           // Semantic - counts
                 Embedder::TemporalRecent, // Temporal - excluded
                 Embedder::TemporalPeriodic, // Temporal - excluded
-                Embedder::Emotional,      // Relational - counts
+                Embedder::Graph,      // Relational - counts
             ],
             InjectionCategory::HighRelevanceCluster,
             Utc::now(),
         );
 
-        // Only Semantic, Code, Emotional should count (3)
+        // Only Semantic, Code, Graph should count (3)
         assert_eq!(c.semantic_space_count(), 3);
         println!("[PASS] semantic_space_count excludes temporal embedders");
     }

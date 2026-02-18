@@ -412,9 +412,13 @@ impl Topic {
         // for accurate churn tracking (topic stability across reclusters).
         let id = Self::deterministic_id(&members);
 
+        // TOPIC-1: Auto-generate name from dominant contributing spaces.
+        // Format: "Semantic+Code+Entity (5 memories)" — human-readable at a glance.
+        let name = Self::generate_name(&contributing_spaces, members.len());
+
         Self {
             id,
-            name: None,
+            name: Some(name),
             profile,
             contributing_spaces,
             cluster_ids,
@@ -438,6 +442,38 @@ impl Topic {
     pub fn record_access(&mut self) {
         self.stability.access_count = self.stability.access_count.saturating_add(1);
         self.stability.last_accessed = Some(Utc::now());
+    }
+
+    /// Generate a human-readable name from contributing spaces and member count.
+    ///
+    /// Format: "Semantic+Code+Entity (5 memories)"
+    /// Falls back to "Topic (N memories)" if no contributing spaces.
+    fn generate_name(contributing_spaces: &[Embedder], member_count: usize) -> String {
+        if contributing_spaces.is_empty() {
+            return format!("Topic ({member_count} memories)");
+        }
+
+        // Map each embedder to its human-readable label
+        let labels: Vec<&str> = contributing_spaces
+            .iter()
+            .map(|e| match *e {
+                Embedder::Semantic => "Semantic",
+                Embedder::Causal => "Causal",
+                Embedder::Sparse => "Keyword",
+                Embedder::Code => "Code",
+                Embedder::Graph => "Graph",
+                Embedder::Hdc => "Robust",
+                Embedder::Multimodal => "Paraphrase",
+                Embedder::Entity => "Entity",
+                Embedder::LateInteraction => "Precision",
+                Embedder::KeywordSplade => "SPLADE",
+                // Temporal embedders should never be contributing (AP-60)
+                _ => "Other",
+            })
+            .collect();
+
+        let spaces = labels.join("+");
+        format!("{spaces} ({member_count} memories)")
     }
 
     /// Set the topic name.
@@ -1055,7 +1091,7 @@ mod tests {
         // Let's test with 1 semantic + 2 relational + 1 structural = 2.5
         let mut s5 = [0.0f32; 13];
         s5[Embedder::Semantic.index()] = 1.0;       // semantic (1.0)
-        s5[Embedder::Emotional.index()] = 1.0;      // relational (0.5)
+        s5[Embedder::Graph.index()] = 1.0;      // relational (0.5)
         s5[Embedder::Entity.index()] = 1.0;         // relational (0.5)
         s5[Embedder::Hdc.index()] = 1.0;            // structural (0.5)
         let p5 = TopicProfile::new(s5);

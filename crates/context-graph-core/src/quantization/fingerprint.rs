@@ -191,7 +191,7 @@ pub struct QuantizedSemanticFingerprint {
     pub e3_temporal_periodic: QuantizedFloat8,
     /// E4: Temporal Positional (512D)
     pub e4_temporal_positional: QuantizedFloat8,
-    /// E8: Emotional/Graph (384D)
+    /// E8: Graph (1024D)
     pub e8_graph: QuantizedFloat8,
     /// E9: HDC projected (1024D) - NOT binary, this is projected dense!
     pub e9_hdc: QuantizedFloat8,
@@ -609,7 +609,7 @@ pub fn quantize_fingerprint(
     let e4_temporal_positional =
         quantize_float8_slice(&fp.e4_temporal_positional, Embedder::TemporalPositional)?;
     // For E8, we quantize the active vector (source vector takes precedence over legacy)
-    let e8_graph = quantize_float8_slice(fp.e8_active_vector(), Embedder::Emotional)?;
+    let e8_graph = quantize_float8_slice(fp.e8_active_vector(), Embedder::Graph)?;
     let e9_hdc = quantize_float8_slice(&fp.e9_hdc, Embedder::Hdc)?;
     let e11_entity = quantize_float8_slice(&fp.e11_entity, Embedder::Entity)?;
 
@@ -725,7 +725,7 @@ fn validate_fingerprint_dimensions(
     // Use active vectors for E5, E8, E10 validation (handles both new and legacy formats)
     check_dim(fp.e5_active_vector().len(), E5_DIM, Embedder::Causal)?;
     check_dim(fp.e7_code.len(), E7_DIM, Embedder::Code)?;
-    check_dim(fp.e8_active_vector().len(), E8_DIM, Embedder::Emotional)?;
+    check_dim(fp.e8_active_vector().len(), E8_DIM, Embedder::Graph)?;
     check_dim(fp.e9_hdc.len(), E9_DIM, Embedder::Hdc)?;
     check_dim(fp.e10_active_vector().len(), E10_DIM, Embedder::Multimodal)?;
     check_dim(fp.e11_entity.len(), E11_DIM, Embedder::Entity)?;
@@ -890,7 +890,7 @@ mod tests {
     #[test]
     fn test_float8_rejects_infinity() {
         let data = vec![1.0, 2.0, f32::INFINITY];
-        let result = quantize_float8_slice(&data, Embedder::Emotional);
+        let result = quantize_float8_slice(&data, Embedder::Graph);
         assert!(result.is_err());
     }
 

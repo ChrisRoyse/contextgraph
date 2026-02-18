@@ -341,7 +341,7 @@ mod tests {
 
     #[test]
     fn test_divergence_spaces_excludes_relational() {
-        assert!(!DIVERGENCE_SPACES.contains(&Embedder::Emotional));
+        assert!(!DIVERGENCE_SPACES.contains(&Embedder::Graph));
         assert!(!DIVERGENCE_SPACES.contains(&Embedder::Entity));
         println!("[PASS] DIVERGENCE_SPACES excludes relational embedders");
     }
