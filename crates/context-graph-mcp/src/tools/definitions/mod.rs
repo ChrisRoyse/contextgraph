@@ -18,6 +18,7 @@ pub(crate) mod causal;
 pub(crate) mod causal_discovery;
 pub(crate) mod code;
 pub(crate) mod core;
+pub(crate) mod daemon;
 pub(crate) mod curation;
 pub(crate) mod embedder;
 pub(crate) mod entity;
@@ -37,7 +38,7 @@ use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(50);
+    let mut tools = Vec::with_capacity(56);
 
     // Core tools (4 - inject_context merged into store_memory)
     tools.extend(core::definitions());
@@ -93,6 +94,9 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Provenance tools (3) - Phase P3 provenance queries
     tools.extend(provenance::definitions());
 
+    // Daemon tools (1) - Multi-agent observability
+    tools.extend(daemon::definitions());
+
     tools
 }
 
@@ -110,9 +114,9 @@ mod tests {
         // = 49 base + graph: 2 (non-LLM)
         // + LLM: causal_discovery: 2, graph LLM: 2 = 4 extra
         #[cfg(feature = "llm")]
-        assert_eq!(get_tool_definitions().len(), 55);
+        assert_eq!(get_tool_definitions().len(), 56);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(get_tool_definitions().len(), 51);
+        assert_eq!(get_tool_definitions().len(), 52);
     }
 
     #[test]
@@ -187,6 +191,8 @@ mod tests {
             "get_audit_trail",
             "get_merge_history",
             "get_provenance_chain",
+            // Daemon tools (1) - Multi-agent observability
+            "daemon_status",
         ];
 
         for name in expected {
@@ -254,5 +260,6 @@ mod tests {
         assert_eq!(graph_link::definitions().len(), 4); // K-NN navigation, typed edges, unified neighbors
         assert_eq!(maintenance::definitions().len(), 1); // Data repair and cleanup
         assert_eq!(provenance::definitions().len(), 3); // P3 provenance queries
+        assert_eq!(daemon::definitions().len(), 1); // Multi-agent observability
     }
 }

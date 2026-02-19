@@ -127,6 +127,16 @@ pub struct Handlers {
     /// Used by inline causal extraction to embed each discovered relationship.
     #[cfg(feature = "llm")]
     pub(in crate::handlers) causal_model: Option<Arc<CausalModel>>,
+
+    // =========================================================================
+    // Daemon State (Multi-agent observability)
+    // =========================================================================
+
+    /// Daemon runtime state for the daemon_status tool.
+    /// Injected by McpServer::new() via set_daemon_state() before Arc-wrapping.
+    /// None in stdio mode or tests where daemon state is not applicable.
+    pub(in crate::handlers) daemon_state:
+        Option<Arc<crate::handlers::tools::daemon_tools::DaemonState>>,
 }
 
 impl Handlers {
@@ -176,6 +186,7 @@ impl Handlers {
             custom_profiles: Arc::new(RwLock::new(HashMap::new())),
             causal_discovery_llm: None,
             causal_model: None,
+            daemon_state: None,
         }
     }
 
@@ -209,6 +220,7 @@ impl Handlers {
             custom_profiles: Arc::new(RwLock::new(HashMap::new())),
             causal_discovery_llm: None,
             causal_model: None,
+            daemon_state: None,
         }
     }
 
@@ -261,6 +273,7 @@ impl Handlers {
             custom_profiles: Arc::new(RwLock::new(HashMap::new())),
             causal_discovery_llm: Some(causal_discovery_llm),
             causal_model: Some(causal_model),
+            daemon_state: None,
         }
     }
 
@@ -302,6 +315,7 @@ impl Handlers {
             causal_discovery_llm: None,
             #[cfg(feature = "llm")]
             causal_model: None,
+            daemon_state: None,
         }
     }
 

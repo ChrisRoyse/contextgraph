@@ -25,6 +25,7 @@ mod causal_tools;
 mod code_tools;
 mod consolidation;
 mod curation_tools;
+pub(crate) mod daemon_tools;
 mod dispatch;
 mod embedder_tools;
 mod entity_tools;

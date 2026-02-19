@@ -122,6 +122,10 @@ pub const TRAVERSE_GRAPH: &str = "traverse_graph";
 /// Per AP-60: Temporal embedders (E2-E4) excluded from semantic fusion.
 pub const GET_UNIFIED_NEIGHBORS: &str = "get_unified_neighbors";
 
+// ========== DAEMON TOOLS (Multi-agent observability) ==========
+/// Returns daemon health metrics: active connections, model state, background tasks.
+pub const DAEMON_STATUS: &str = "daemon_status";
+
 // ========== PROVENANCE TOOLS (Phase P3 - Provenance Queries) ==========
 /// Query audit log for a specific memory or time range.
 pub const GET_AUDIT_TRAIL: &str = "get_audit_trail";

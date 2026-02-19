@@ -95,7 +95,7 @@ struct CliArgs {
     /// This allows multiple Claude Code terminals to share one MCP server with models
     /// loaded only once into VRAM.
     daemon: bool,
-    /// Daemon TCP port (--daemon-port, default: 3199)
+    /// Daemon TCP port (--daemon-port, default: 3100)
     daemon_port: u16,
 }
 
@@ -116,7 +116,7 @@ impl CliArgs {
             warm_first: true, // Default: block until models are warm
             no_warm: false,
             daemon: false,
-            daemon_port: 3199, // Default daemon port (different from TCP port 3100)
+            daemon_port: 3100, // Default daemon port (aligned with .mcp.json)
         };
 
         let mut i = 1;
@@ -209,7 +209,7 @@ OPTIONS:
     --warm-first         Block startup until embedding models are loaded into VRAM (default)
     --no-warm            Skip blocking warmup (embeddings fail until background load completes)
     --daemon             Share one server across multiple terminals (RECOMMENDED)
-    --daemon-port <PORT> Daemon TCP port (default: 3199)
+    --daemon-port <PORT> Daemon TCP port (default: 3100)
     --help, -h           Show this help message
 
 ENVIRONMENT VARIABLES:
@@ -219,7 +219,7 @@ ENVIRONMENT VARIABLES:
     CONTEXT_GRAPH_BIND_ADDRESS  TCP/SSE bind address
     CONTEXT_GRAPH_WARM_FIRST    Set to "0" to disable blocking warmup (default: "1")
     CONTEXT_GRAPH_DAEMON        Set to "1" to enable daemon mode (default: "0")
-    CONTEXT_GRAPH_DAEMON_PORT   Daemon port number (default: 3199)
+    CONTEXT_GRAPH_DAEMON_PORT   Daemon port number (default: 3100)
     RUST_LOG                    Log level (error, warn, info, debug, trace)
 
 PRIORITY:
@@ -513,7 +513,7 @@ fn determine_daemon_mode(cli: &CliArgs) -> bool {
 /// Determine daemon port from CLI and environment.
 fn determine_daemon_port(cli: &CliArgs) -> u16 {
     // CLI --daemon-port takes highest priority
-    if cli.daemon_port != 3199 {
+    if cli.daemon_port != 3100 {
         return cli.daemon_port;
     }
 
@@ -524,8 +524,8 @@ fn determine_daemon_port(cli: &CliArgs) -> u16 {
         }
     }
 
-    // Default: 3199
-    3199
+    // Default: 3100 (aligned with .mcp.json convention)
+    3100
 }
 
 // ============================================================================
@@ -584,11 +584,87 @@ impl PidFileGuard {
                     let mut contents = String::new();
                     let mut f = &file;
                     let _ = f.read_to_string(&mut contents);
-                    let holder_pid = contents.trim();
+                    let holder_pid_str = contents.trim().to_string();
+
+                    // Check if the holding process is actually alive
+                    if let Ok(pid) = holder_pid_str.parse::<i32>() {
+                        // kill(pid, 0) sends no signal — just checks existence
+                        let alive = unsafe { libc::kill(pid, 0) };
+
+                        if alive != 0 {
+                            // Process is dead — stale lock from a crash/kill.
+                            warn!(
+                                "Stale PID file: process {} is dead, attempting to reclaim lock on '{}'",
+                                pid, db_path.display()
+                            );
+                            drop(file);
+                            std::thread::sleep(std::time::Duration::from_millis(100));
+
+                            // Re-open and try flock again
+                            let file = fs::OpenOptions::new()
+                                .create(true)
+                                .truncate(true)
+                                .read(true)
+                                .write(true)
+                                .open(&pid_path)
+                                .map_err(|e| anyhow::anyhow!("Cannot reopen PID file '{}': {}", pid_path_str, e))?;
+                            let fd = file.as_raw_fd();
+                            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+                            if result == 0 {
+                                let mut f = &file;
+                                let _ = f.seek(io::SeekFrom::Start(0));
+                                let _ = f.set_len(0);
+                                let _ = write!(f, "{}", std::process::id());
+                                let _ = f.flush();
+                                info!(
+                                    "Reclaimed stale PID lock (dead process {}): new pid={}",
+                                    pid, std::process::id()
+                                );
+                                return Ok(PidFileGuard {
+                                    path: pid_path,
+                                    _file: file,
+                                });
+                            }
+                            warn!("Failed to reclaim lock — another process acquired it first");
+                        } else {
+                            // Process is alive — check for zombie state
+                            let status_path = format!("/proc/{}/status", pid);
+                            if let Ok(status) = std::fs::read_to_string(&status_path) {
+                                if status.contains("State:\tZ") || status.contains("State:\tX") {
+                                    warn!(
+                                        "PID {} is zombie/dead — reclaiming stale lock on '{}'",
+                                        pid, db_path.display()
+                                    );
+                                    drop(file);
+                                    std::thread::sleep(std::time::Duration::from_millis(100));
+                                    let file = fs::OpenOptions::new()
+                                        .create(true)
+                                        .truncate(true)
+                                        .read(true)
+                                        .write(true)
+                                        .open(&pid_path)?;
+                                    let fd = file.as_raw_fd();
+                                    let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+                                    if result == 0 {
+                                        let mut f = &file;
+                                        let _ = write!(f, "{}", std::process::id());
+                                        let _ = f.flush();
+                                        info!("Reclaimed lock from zombie process {}", pid);
+                                        return Ok(PidFileGuard {
+                                            path: pid_path,
+                                            _file: file,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     return Err(anyhow::anyhow!(
                         "Another context-graph-mcp process (PID {}) is already using database at '{}'. \
-                         Kill the existing process first, or use --daemon mode to share a single server.",
-                        holder_pid, db_path.display()
+                         Kill the existing process first, or use --daemon mode to share a single server.\n\
+                         To kill: kill {} && sleep 1",
+                        holder_pid_str, db_path.display(), holder_pid_str
                     ));
                 }
                 return Err(anyhow::anyhow!(
@@ -642,34 +718,145 @@ impl Drop for PidFileGuard {
     }
 }
 
-/// Check if daemon is already running on the specified port.
+/// Check if a healthy, responsive daemon is running on the specified port.
 ///
-/// Returns true if a connection can be established, false otherwise.
-async fn is_daemon_running(port: u16) -> bool {
+/// Performs a full JSON-RPC round-trip (tools/list) to verify the daemon
+/// is not just listening but actually processing requests. This catches:
+/// - Deadlocked servers (accept loop hung)
+/// - Half-initialized servers (TCP bound but handlers not wired)
+/// - Different processes (another service on the same port)
+///
+/// Returns true only if the daemon responds with a valid JSON-RPC response
+/// within 3 seconds total (500ms connect + 2.5s request/response).
+async fn is_daemon_healthy(port: u16) -> bool {
+    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
     use tokio::net::TcpStream;
     use tokio::time::{timeout, Duration};
 
     let addr = format!("127.0.0.1:{}", port);
-    match timeout(Duration::from_millis(500), TcpStream::connect(&addr)).await {
-        Ok(Ok(_stream)) => {
-            info!("Daemon already running on port {}", port);
+
+    // Phase 1: TCP connect (500ms timeout)
+    let stream = match timeout(Duration::from_millis(500), TcpStream::connect(&addr)).await {
+        Ok(Ok(s)) => s,
+        Ok(Err(_)) => {
+            debug!("Health check: TCP connect refused on port {}", port);
+            return false;
+        }
+        Err(_) => {
+            debug!("Health check: TCP connect timed out on port {}", port);
+            return false;
+        }
+    };
+
+    // Phase 2: Send tools/list, expect JSON-RPC response (2.5s timeout)
+    let result = timeout(Duration::from_millis(2500), async {
+        let (reader, mut writer) = stream.into_split();
+        let mut reader = BufReader::new(reader);
+
+        // MCP protocol: tools/list is always available, has no side effects,
+        // and exercises the full handler dispatch pipeline.
+        let probe = r#"{"jsonrpc":"2.0","id":"_health_check","method":"tools/list","params":{}}"#;
+        writer.write_all(probe.as_bytes()).await?;
+        writer.write_all(b"\n").await?;
+        writer.flush().await?;
+
+        let mut response = String::new();
+        reader.read_line(&mut response).await?;
+
+        // Verify it's a valid JSON-RPC response (not some other protocol)
+        let is_valid = response.contains("\"jsonrpc\"") && response.contains("\"result\"");
+        Ok::<bool, std::io::Error>(is_valid)
+    })
+    .await;
+
+    match result {
+        Ok(Ok(true)) => {
+            info!("Health check: daemon on port {} is healthy", port);
             true
         }
-        _ => {
-            info!("No daemon found on port {}", port);
+        Ok(Ok(false)) => {
+            warn!("Health check: port {} responded but not valid JSON-RPC", port);
+            false
+        }
+        Ok(Err(e)) => {
+            warn!("Health check: I/O error on port {}: {}", port, e);
+            false
+        }
+        Err(_) => {
+            warn!("Health check: daemon on port {} timed out (2.5s)", port);
             false
         }
     }
 }
 
-/// Run as stdio-to-TCP proxy, connecting to the daemon.
+/// Kill a process that is holding a TCP port but not responding to health checks.
 ///
-/// Reads JSON-RPC messages from stdin, forwards to daemon via TCP,
-/// and writes responses to stdout.
-async fn run_stdio_to_tcp_proxy(daemon_port: u16) -> Result<()> {
+/// Uses Linux `fuser` to find the PID owning the port. Sends SIGTERM first,
+/// waits 200ms, then SIGKILL if still alive. Skips our own PID.
+///
+/// This is Linux-specific. Context Graph only targets Linux (WSL2 + native).
+#[cfg(unix)]
+async fn kill_process_on_port(port: u16) -> Result<()> {
+    use tokio::time::Duration;
+
+    let output = tokio::process::Command::new("fuser")
+        .arg(format!("{}/tcp", port))
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null())
+        .output()
+        .await
+        .map_err(|e| anyhow::anyhow!(
+            "fuser command failed: {}. Is fuser installed? (apt install psmisc)", e
+        ))?;
+
+    let pids_str = String::from_utf8_lossy(&output.stdout);
+    let our_pid = std::process::id() as i32;
+
+    for token in pids_str.split_whitespace() {
+        let pid_str: String = token.chars().filter(|c| c.is_ascii_digit()).collect();
+        if let Ok(pid) = pid_str.parse::<i32>() {
+            if pid == our_pid || pid <= 1 {
+                continue;
+            }
+
+            warn!("Sending SIGTERM to stuck daemon process PID {}", pid);
+            unsafe { libc::kill(pid, libc::SIGTERM); }
+            tokio::time::sleep(Duration::from_millis(200)).await;
+
+            if unsafe { libc::kill(pid, 0) } == 0 {
+                warn!("PID {} did not respond to SIGTERM, sending SIGKILL", pid);
+                unsafe { libc::kill(pid, libc::SIGKILL); }
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+
+            info!("Stuck process PID {} terminated", pid);
+        }
+    }
+
+    Ok(())
+}
+
+/// Quick TCP connect check (no protocol verification).
+/// Used only to detect if a port is in use before attempting to bind.
+async fn is_port_in_use(port: u16) -> bool {
+    use tokio::net::TcpStream;
+    use tokio::time::{timeout, Duration};
+    let addr = format!("127.0.0.1:{}", port);
+    matches!(
+        timeout(Duration::from_millis(200), TcpStream::connect(&addr)).await,
+        Ok(Ok(_))
+    )
+}
+
+/// Inner proxy: single connection attempt from stdio to daemon TCP.
+///
+/// Returns Ok(()) on clean stdin close (Claude Code exit).
+/// Returns Err on TCP connection failure or daemon disconnect.
+async fn run_stdio_to_tcp_proxy_inner(daemon_port: u16) -> Result<()> {
     use context_graph_mcp::server::transport::{read_line_bounded, MAX_LINE_BYTES};
     use tokio::io::{AsyncWriteExt, BufReader};
     use tokio::net::TcpStream;
+    use tokio::time::Duration;
 
     let addr = format!("127.0.0.1:{}", daemon_port);
     info!("Connecting to daemon at {}...", addr);
@@ -685,18 +872,25 @@ async fn run_stdio_to_tcp_proxy(daemon_port: u16) -> Result<()> {
     let mut reader = BufReader::new(reader);
 
     // Spawn task to read from daemon and write to stdout
-    // AGT-04 FIX: Use bounded read_line to prevent OOM from unbounded daemon data
+    // Step 7: 120s read timeout catches genuine daemon deadlocks
     let stdout_task = tokio::spawn(async move {
         let mut stdout = tokio::io::stdout();
         let mut line = String::new();
         loop {
             line.clear();
-            match read_line_bounded(&mut reader, &mut line, MAX_LINE_BYTES).await {
-                Ok(0) => {
+            // 120s timeout: generous enough for embedding warmup (~115s)
+            // but catches genuine daemon deadlocks
+            match tokio::time::timeout(
+                Duration::from_secs(120),
+                read_line_bounded(&mut reader, &mut line, MAX_LINE_BYTES),
+            )
+            .await
+            {
+                Ok(Ok(0)) => {
                     info!("Daemon closed connection");
                     break;
                 }
-                Ok(_) => {
+                Ok(Ok(_)) => {
                     if let Err(e) = stdout.write_all(line.as_bytes()).await {
                         error!("Failed to write to stdout: {}", e);
                         break;
@@ -706,8 +900,15 @@ async fn run_stdio_to_tcp_proxy(daemon_port: u16) -> Result<()> {
                         break;
                     }
                 }
-                Err(e) => {
+                Ok(Err(e)) => {
                     error!("Failed to read from daemon (bounded read): {}", e);
+                    break;
+                }
+                Err(_) => {
+                    error!(
+                        "Daemon read timeout (120s) — daemon may be stuck. \
+                         This proxy will disconnect and trigger reconnection."
+                    );
                     break;
                 }
             }
@@ -715,7 +916,6 @@ async fn run_stdio_to_tcp_proxy(daemon_port: u16) -> Result<()> {
     });
 
     // Read from stdin and write to daemon
-    // AGT-04 FIX: Use bounded read_line to prevent OOM from unbounded stdin data
     let stdin = tokio::io::stdin();
     let mut stdin = BufReader::new(stdin);
     let mut line = String::new();
@@ -730,16 +930,21 @@ async fn run_stdio_to_tcp_proxy(daemon_port: u16) -> Result<()> {
             Ok(_) => {
                 if let Err(e) = writer.write_all(line.as_bytes()).await {
                     error!("Failed to write to daemon: {}", e);
-                    break;
+                    return Err(anyhow::anyhow!("TCP write to daemon failed: {}", e));
                 }
                 if let Err(e) = writer.flush().await {
                     error!("Failed to flush to daemon: {}", e);
-                    break;
+                    return Err(anyhow::anyhow!("TCP flush to daemon failed: {}", e));
                 }
             }
             Err(e) => {
+                let err_str = e.to_string();
+                if err_str.contains("Stdin closed") {
+                    info!("Stdin closed");
+                    break;
+                }
                 error!("Failed to read from stdin (bounded read): {}", e);
-                break;
+                return Err(anyhow::anyhow!("Stdin read failed: {}", e));
             }
         }
     }
@@ -752,10 +957,84 @@ async fn run_stdio_to_tcp_proxy(daemon_port: u16) -> Result<()> {
     Ok(())
 }
 
+/// Run as stdio-to-TCP proxy with automatic reconnection.
+///
+/// If the TCP connection to the daemon drops (daemon restart, network error),
+/// retries up to 5 times with exponential backoff (200ms, 400ms, 800ms, 1.6s, 3.2s).
+/// Each retry verifies daemon health before reconnecting.
+///
+/// Clean exit (stdin closed by Claude Code) does NOT trigger reconnection.
+async fn run_stdio_to_tcp_proxy(daemon_port: u16) -> Result<()> {
+    let max_reconnects: u32 = 5;
+    let mut reconnect_count: u32 = 0;
+
+    loop {
+        match run_stdio_to_tcp_proxy_inner(daemon_port).await {
+            Ok(()) => {
+                // Clean shutdown: stdin closed means Claude Code is exiting.
+                info!("Proxy shut down cleanly (stdin closed)");
+                return Ok(());
+            }
+            Err(e) => {
+                reconnect_count += 1;
+
+                // Stdin-closed errors should not trigger reconnect
+                let err_str = e.to_string();
+                if err_str.contains("stdin") || err_str.contains("Stdin closed") {
+                    info!("Proxy stdin closed — exiting");
+                    return Ok(());
+                }
+
+                if reconnect_count > max_reconnects {
+                    error!(
+                        "Proxy connection failed {} times, giving up. Last error: {}",
+                        max_reconnects, e
+                    );
+                    return Err(anyhow::anyhow!(
+                        "Proxy lost connection to daemon {} times. \
+                         The daemon may have crashed. Check: fuser {}/tcp",
+                        max_reconnects, daemon_port
+                    ));
+                }
+
+                // Exponential backoff: 200ms, 400ms, 800ms, 1.6s, 3.2s
+                let delay_ms = 200u64 * (1u64 << (reconnect_count - 1));
+                warn!(
+                    "Proxy connection lost (attempt {}/{}): {}. Reconnecting in {}ms...",
+                    reconnect_count, max_reconnects, e, delay_ms
+                );
+                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+
+                // Verify daemon is still alive before reconnecting
+                if !is_daemon_healthy(daemon_port).await {
+                    error!(
+                        "Daemon on port {} is not responding after connection loss. \
+                         It may have crashed. Check: fuser {}/tcp",
+                        daemon_port, daemon_port
+                    );
+                    return Err(anyhow::anyhow!(
+                        "Daemon on port {} is not responding. It may have crashed.",
+                        daemon_port
+                    ));
+                }
+
+                info!("Daemon is healthy, reconnecting...");
+            }
+        }
+    }
+}
+
 /// Start daemon server in background and return when ready.
 ///
 /// Spawns a task that runs the TCP server and waits until it's accepting connections.
-async fn start_daemon_server(config: Config, warm_first: bool, daemon_port: u16) -> Result<()> {
+/// The PID guard is moved into the daemon task so it lives exactly as long as the daemon.
+/// Signal handlers are registered inside the daemon task for graceful shutdown.
+async fn start_daemon_server(
+    config: Config,
+    warm_first: bool,
+    daemon_port: u16,
+    pid_guard: Option<PidFileGuard>,
+) -> Result<()> {
     use tokio::time::{sleep, Duration};
 
     info!("Starting daemon server on port {}...", daemon_port);
@@ -768,13 +1047,59 @@ async fn start_daemon_server(config: Config, warm_first: bool, daemon_port: u16)
     // Create the server
     let server = server::McpServer::new(daemon_config, warm_first).await?;
 
-    // Spawn the daemon server — store JoinHandle so we detect crashes
+    // Spawn the daemon server — store JoinHandle so we detect crashes.
+    // CRITICAL: pid_guard is moved into this task. It will be dropped
+    // only when the daemon task exits (crash, signal, or normal shutdown).
+    // This prevents the guard from being released when the proxy's main() returns.
     let daemon_handle = tokio::spawn(async move {
-        if let Err(e) = server.run_tcp().await {
-            error!("CRITICAL: Daemon TCP server crashed: {}", e);
-            return Err(anyhow::anyhow!("Daemon server crashed: {}", e));
+        // pid_guard lives here — dropped only when this task exits
+        let _guard = pid_guard;
+
+        // Register signal handlers within the daemon task.
+        // These mirror the standalone mode's signal handling.
+        let shutdown_signal = async {
+            #[cfg(unix)]
+            {
+                let mut sigterm = tokio::signal::unix::signal(
+                    tokio::signal::unix::SignalKind::terminate(),
+                )
+                .expect("FATAL: failed to register SIGTERM handler in daemon task");
+
+                tokio::select! {
+                    _ = sigterm.recv() => {
+                        info!("Daemon received SIGTERM — initiating graceful shutdown");
+                    }
+                    _ = tokio::signal::ctrl_c() => {
+                        info!("Daemon received SIGINT (Ctrl+C) — initiating graceful shutdown");
+                    }
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                tokio::signal::ctrl_c()
+                    .await
+                    .expect("FATAL: failed to register Ctrl+C handler");
+                info!("Daemon received Ctrl+C — initiating graceful shutdown");
+            }
+        };
+
+        // Run TCP server until either it exits or a signal arrives
+        tokio::select! {
+            result = server.run_tcp() => {
+                match result {
+                    Ok(()) => info!("Daemon TCP server exited normally"),
+                    Err(e) => error!("CRITICAL: Daemon TCP server crashed: {}", e),
+                }
+            }
+            _ = shutdown_signal => {
+                info!("Daemon shutting down gracefully...");
+                server.shutdown().await;
+                info!("Daemon graceful shutdown complete");
+            }
         }
-        Ok(())
+
+        // _guard drops here — flock released, PID file removed
+        Ok::<(), anyhow::Error>(())
     });
 
     // Wait for daemon to be ready (accept connections)
@@ -787,10 +1112,8 @@ async fn start_daemon_server(config: Config, warm_first: bool, daemon_port: u16)
             ));
         }
         sleep(Duration::from_millis(100)).await;
-        if is_daemon_running(daemon_port).await {
+        if is_daemon_healthy(daemon_port).await {
             info!("Daemon server ready on port {}", daemon_port);
-            // Detach the handle — server runs in background
-            // If it crashes later, the TCP health check will detect it
             return Ok(());
         }
     }
@@ -882,40 +1205,84 @@ async fn main() -> Result<()> {
         // ==================================================================
         info!("Daemon mode enabled (port {})", daemon_port);
 
-        // Check if daemon is already running
-        if is_daemon_running(daemon_port).await {
-            // Daemon exists - just proxy to it (no DB access, no guard needed)
-            info!("Connecting to existing daemon on port {}...", daemon_port);
-            run_stdio_to_tcp_proxy(daemon_port).await?;
-        } else {
-            // No daemon - start one and then proxy to it
-            // Acquire PID file guard BEFORE opening RocksDB
-            let _pid_guard = if uses_rocksdb {
+        let max_attempts = 3;
+        let mut connected = false;
+        for attempt in 1..=max_attempts {
+            // ---- Step 1: Check for a healthy, running daemon ----
+            if is_daemon_healthy(daemon_port).await {
+                info!(
+                    "Healthy daemon found on port {} (attempt {}), connecting as proxy",
+                    daemon_port, attempt
+                );
+                run_stdio_to_tcp_proxy(daemon_port).await?;
+                connected = true;
+                break;
+            }
+
+            // ---- Step 2: Check for an unhealthy process hogging the port ----
+            if is_port_in_use(daemon_port).await {
+                warn!(
+                    "Port {} is in use but daemon is unresponsive (attempt {}/{})",
+                    daemon_port, attempt, max_attempts
+                );
+                #[cfg(unix)]
+                if let Err(e) = kill_process_on_port(daemon_port).await {
+                    warn!("Could not kill stuck process on port {}: {}", daemon_port, e);
+                }
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                continue;
+            }
+
+            // ---- Step 3: Port is free — try to acquire PID lock and start daemon ----
+            let pid_guard = if uses_rocksdb {
                 match PidFileGuard::acquire(&db_path) {
                     Ok(guard) => Some(guard),
                     Err(e) => {
-                        error!("FATAL: {}", e);
-                        return Err(e);
+                        warn!(
+                            "PID lock contention (attempt {}/{}): {}",
+                            attempt, max_attempts, e
+                        );
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                        continue;
                     }
                 }
             } else {
                 None
             };
 
-            // CRITICAL: Always use warm_first=false in daemon mode
-            // This allows the TCP server to start immediately and respond to MCP
-            // initialize requests while models load in background (~115s).
-            // The LazyMultiArrayProvider handles embedding requests gracefully
-            // until models are ready.
-            info!("No daemon found, starting new daemon server...");
+            // ---- Step 4: Start daemon server (guard ownership transfers) ----
+            info!("No daemon found, starting new daemon server (attempt {})...", attempt);
             if warm_first {
                 info!("Daemon mode overrides warm_first to false for immediate startup");
             }
-            start_daemon_server(config, false, daemon_port).await?;
-            info!("Daemon started, connecting as proxy...");
-            run_stdio_to_tcp_proxy(daemon_port).await?;
 
-            // _pid_guard dropped here — releases flock + removes mcp.pid
+            match start_daemon_server(config.clone(), false, daemon_port, pid_guard).await {
+                Ok(()) => {
+                    info!("Daemon started successfully on port {}", daemon_port);
+                    run_stdio_to_tcp_proxy(daemon_port).await?;
+                    connected = true;
+                    break;
+                }
+                Err(e) => {
+                    error!(
+                        "Failed to start daemon (attempt {}/{}): {}",
+                        attempt, max_attempts, e
+                    );
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                }
+            }
+        }
+
+        if !connected {
+            return Err(anyhow::anyhow!(
+                "Failed to start or connect to daemon after {} attempts on port {}. \
+                 Check logs above for details. Common causes:\n\
+                 - Stale process holding RocksDB lock: kill $(cat {}/mcp.pid)\n\
+                 - Port {} in use by another service: fuser {}/tcp\n\
+                 - RocksDB corruption: rm -rf {}/LOCK",
+                max_attempts, daemon_port,
+                db_path.display(), daemon_port, daemon_port, db_path.display()
+            ));
         }
     } else {
         // ==================================================================

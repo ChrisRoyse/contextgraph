@@ -5,9 +5,14 @@
 //! TASK-42: SSE transport for web client support.
 
 use std::net::SocketAddr;
-use std::sync::atomic::Ordering;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+
+/// Global connection counter for unique per-client IDs.
+/// Monotonically incrementing, never resets. Used for log correlation
+/// when multiple Claude Code terminals connect to the same daemon.
+static CONNECTION_COUNTER: AtomicU64 = AtomicU64::new(0);
 
 use anyhow::Result;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -185,13 +190,17 @@ impl McpServer {
             let active_connections = Arc::clone(&self.active_connections);
             let request_timeout = self.config.mcp.request_timeout;
 
+            // Assign a unique, human-readable connection ID
+            let conn_id = CONNECTION_COUNTER.fetch_add(1, Ordering::Relaxed);
+            let conn_tag = format!("C{:03}", conn_id);
+
             // Spawn client handler task
             tokio::spawn(async move {
                 // Acquire semaphore permit (blocks if at max_connections)
                 let _permit = match semaphore.acquire().await {
                     Ok(p) => p,
                     Err(_) => {
-                        error!("Semaphore closed unexpectedly for client {}", peer_addr);
+                        error!("[{}] Semaphore closed unexpectedly for client {}", conn_tag, peer_addr);
                         return;
                     }
                 };
@@ -199,29 +208,29 @@ impl McpServer {
                 // Track active connection count
                 let conn_count = active_connections.fetch_add(1, Ordering::SeqCst) + 1;
                 info!(
-                    "TCP client connected: {} (active_connections={})",
-                    peer_addr, conn_count
+                    "[{}] Client connected: {} (active={})",
+                    conn_tag, peer_addr, conn_count
                 );
 
                 // Handle client - permit is held until this returns
                 if let Err(e) =
-                    Self::handle_tcp_client(stream, peer_addr, handlers, request_timeout).await
+                    Self::handle_tcp_client(stream, peer_addr, handlers, request_timeout, &conn_tag).await
                 {
                     // Log at different levels based on error type
                     if e.to_string().contains("connection reset")
                         || e.to_string().contains("broken pipe")
                     {
-                        debug!("TCP client {} disconnected: {}", peer_addr, e);
+                        debug!("[{}] Client {} disconnected: {}", conn_tag, peer_addr, e);
                     } else {
-                        warn!("TCP client {} error: {}", peer_addr, e);
+                        warn!("[{}] Client {} error: {}", conn_tag, peer_addr, e);
                     }
                 }
 
                 // Decrement active connection count
                 let conn_count = active_connections.fetch_sub(1, Ordering::SeqCst) - 1;
                 info!(
-                    "TCP client disconnected: {} (active_connections={})",
-                    peer_addr, conn_count
+                    "[{}] Client disconnected: {} (active={})",
+                    conn_tag, peer_addr, conn_count
                 );
             });
         }
@@ -248,6 +257,7 @@ impl McpServer {
         peer_addr: SocketAddr,
         handlers: Arc<Handlers>,
         request_timeout: u64,
+        conn_tag: &str,
     ) -> Result<()> {
         let (reader, mut writer) = stream.into_split();
         let mut reader = BufReader::new(reader);
@@ -262,7 +272,7 @@ impl McpServer {
 
             // EOF - client closed connection
             if bytes_read == 0 {
-                debug!("TCP client {} closed connection (EOF)", peer_addr);
+                debug!("[{}] Client {} closed connection (EOF)", conn_tag, peer_addr);
                 break;
             }
 
@@ -271,7 +281,7 @@ impl McpServer {
                 continue;
             }
 
-            debug!("TCP {} received: {}", peer_addr, trimmed);
+            debug!("[{}] {} received: {}", conn_tag, peer_addr, trimmed);
 
             // Parse request
             let request: JsonRpcRequest = match serde_json::from_str(trimmed) {
@@ -279,8 +289,8 @@ impl McpServer {
                 Err(e) => {
                     // FAIL FAST: Send parse error and disconnect
                     warn!(
-                        "TCP client {} sent invalid JSON, disconnecting: {}",
-                        peer_addr, e
+                        "[{}] {} sent invalid JSON, disconnecting: {}",
+                        conn_tag, peer_addr, e
                     );
                     let error_response = JsonRpcResponse::error(
                         None,
@@ -291,10 +301,24 @@ impl McpServer {
                     writer.write_all(response_json.as_bytes()).await?;
                     writer.write_all(b"\n").await?;
                     writer.flush().await?;
-                    // FAIL FAST: Disconnect client
-                    return Err(anyhow::anyhow!("Client sent invalid JSON-RPC: {}", e));
+                    return Err(anyhow::anyhow!("[{}] Client sent invalid JSON-RPC: {}", conn_tag, e));
                 }
             };
+
+            // Log tool calls with connection tag for multi-agent correlation
+            if request.method == "tools/call" {
+                if let Some(params) = &request.params {
+                    if let Some(tool_name) = params.get("name").and_then(|v| v.as_str()) {
+                        info!(
+                            "[{}] {} → {} (id={:?})",
+                            conn_tag,
+                            peer_addr,
+                            tool_name,
+                            request.id
+                        );
+                    }
+                }
+            }
 
             // Validate JSON-RPC version
             if request.jsonrpc != "2.0" {
@@ -320,8 +344,8 @@ impl McpServer {
                 Ok(result) => result,
                 Err(_) => {
                     error!(
-                        "Request timed out after {}s for peer {}",
-                        request_timeout, peer_addr
+                        "[{}] Request timed out after {}s for {}",
+                        conn_tag, request_timeout, peer_addr
                     );
                     JsonRpcResponse::error(
                         None,
@@ -336,13 +360,13 @@ impl McpServer {
 
             // Handle notifications (no response needed)
             if response.id.is_none() && response.result.is_none() && response.error.is_none() {
-                debug!("TCP {} notification handled, no response", peer_addr);
+                debug!("[{}] {} notification handled, no response", conn_tag, peer_addr);
                 continue;
             }
 
             // Send response
             let response_json = serde_json::to_string(&response)?;
-            debug!("TCP {} sending: {}", peer_addr, response_json);
+            debug!("[{}] {} sending: {}", conn_tag, peer_addr, response_json);
 
             writer.write_all(response_json.as_bytes()).await?;
             writer.write_all(b"\n").await?;

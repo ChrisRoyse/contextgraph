@@ -159,6 +159,8 @@ impl Handlers {
             tool_names::GET_AUDIT_TRAIL => call_get_audit_trail(arguments),
             tool_names::GET_MERGE_HISTORY => call_get_merge_history(arguments),
             tool_names::GET_PROVENANCE_CHAIN => call_get_provenance_chain(arguments),
+            // Daemon tools (Multi-agent observability)
+            tool_names::DAEMON_STATUS => call_daemon_status(),
         )
     }
 }
