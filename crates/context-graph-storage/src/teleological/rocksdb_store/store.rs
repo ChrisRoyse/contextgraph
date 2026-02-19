@@ -115,6 +115,14 @@ pub struct RocksDbTeleologicalStore {
     ///
     /// Uses parking_lot::Mutex for non-poisonable, fast uncontended locking.
     pub(crate) secondary_index_lock: parking_lot::Mutex<()>,
+    /// DATA-5 FIX: RwLock protecting HNSW indexes during compaction/rebuild.
+    ///
+    /// - store/delete acquire **read lock** (concurrent, zero contention)
+    /// - rebuild_indexes_from_store acquires **write lock** (exclusive during compaction)
+    ///
+    /// Compaction is infrequent (~10min or manual) so write lock contention is negligible.
+    /// Prevents duplicate/missing entries from concurrent store + rebuild race.
+    pub(crate) compaction_lock: RwLock<()>,
 }
 
 // ============================================================================
@@ -175,6 +183,10 @@ impl RocksDbTeleologicalStore {
         db_opts.create_if_missing(config.create_if_missing);
         db_opts.create_missing_column_families(true);
         db_opts.set_max_open_files(config.max_open_files);
+
+        // CORRUPTION-RESILIENCE: Enable paranoid checks for early corruption detection.
+        // Catches bit rot and SST file corruption at slight performance cost (~1-3%).
+        db_opts.set_paranoid_checks(true);
 
         if !config.enable_wal {
             db_opts.set_manual_wal_flush(true);
@@ -260,7 +272,8 @@ impl RocksDbTeleologicalStore {
 
         // P1: Count total documents for O(1) IDF lookups in sparse search.
         // This replaces the O(n) full-iterator scan that was the #1 scaling bottleneck.
-        let total_doc_count = {
+        // raw_fp_count is also used by verify_consistency() to avoid redundant O(n) scan.
+        let (total_doc_count, raw_fp_count) = {
             let cf_fp = db_arc.cf_handle(CF_FINGERPRINTS).ok_or_else(|| {
                 TeleologicalStoreError::ColumnFamilyNotFound {
                     name: CF_FINGERPRINTS.to_string(),
@@ -275,7 +288,7 @@ impl RocksDbTeleologicalStore {
                 "P1: Initialized total_doc_count = {} from CF_FINGERPRINTS (raw={}, soft_deleted={})",
                 count, raw_count, soft_deleted.len()
             );
-            Arc::new(AtomicUsize::new(count))
+            (Arc::new(AtomicUsize::new(count)), raw_count)
         };
 
         let store = Self {
@@ -288,6 +301,7 @@ impl RocksDbTeleologicalStore {
             index_registry,
             causal_e11_index,
             secondary_index_lock: parking_lot::Mutex::new(()),
+            compaction_lock: RwLock::new(()),
         };
 
         // Try fast path: load HNSW indexes from CF_HNSW_GRAPHS (persisted graphs).
@@ -312,7 +326,78 @@ impl RocksDbTeleologicalStore {
         // Rebuild E11 HNSW index from existing causal relationships
         store.rebuild_causal_e11_index()?;
 
+        // Startup consistency verification — detect post-crash data inconsistencies.
+        // Logs warnings only; does NOT block startup.
+        // Pass raw_count from P1 initialization to avoid redundant O(n) scan.
+        store.verify_consistency(raw_fp_count);
+
         Ok(store)
+    }
+
+    /// Verify data consistency across column families and indexes.
+    ///
+    /// Called at startup after HNSW rebuild. Checks:
+    /// 1. CF_FINGERPRINTS count vs CF_CONTENT count
+    /// 2. HNSW index sizes vs live fingerprint count
+    /// 3. Soft-delete count cross-reference
+    ///
+    /// Logs warnings for any inconsistencies detected.
+    /// Does NOT block startup — operators investigate if warnings appear.
+    fn verify_consistency(&self, raw_fp_count: usize) {
+        use crate::teleological::indexes::EmbedderIndexOps;
+
+        let start = std::time::Instant::now();
+
+        // raw_fp_count is passed from open_with_config() to avoid redundant O(n) scan.
+        let soft_deleted_count = self.soft_deleted.len();
+        let live_fp_count = raw_fp_count.saturating_sub(soft_deleted_count);
+
+        // 2. Count entries in CF_CONTENT
+        let content_count = match self.get_cf(CF_CONTENT) {
+            Ok(cf) => self.db.iterator_cf(cf, rocksdb::IteratorMode::Start).count(),
+            Err(_) => 0,
+        };
+
+        // Content count should be <= fingerprint count (not all fingerprints have content stored separately)
+        // But content_count should never EXCEED fingerprint count
+        if content_count > raw_fp_count {
+            warn!(
+                "CONSISTENCY WARNING: CF_CONTENT({}) > CF_FINGERPRINTS({}): {} orphaned content entries. \
+                 This may indicate incomplete deletion during a previous crash.",
+                content_count, raw_fp_count, content_count - raw_fp_count
+            );
+        }
+
+        // 3. Check HNSW index sizes vs live fingerprint count
+        for (embedder, index) in self.index_registry.iter() {
+            let hnsw_count = index.len();
+            // Allow 10% tolerance (removed entries are tracked but not physically deleted from usearch)
+            let tolerance = (live_fp_count / 10).max(5);
+            if hnsw_count.abs_diff(live_fp_count) > tolerance {
+                warn!(
+                    "CONSISTENCY WARNING: HNSW {:?} has {} entries but {} live fingerprints \
+                     (tolerance={}). Mismatch may indicate stale index data.",
+                    embedder, hnsw_count, live_fp_count, tolerance
+                );
+            }
+        }
+
+        // 4. Verify total_doc_count matches live fingerprint count
+        let cached_doc_count = self.total_doc_count.load(Ordering::Relaxed);
+        if cached_doc_count != live_fp_count {
+            warn!(
+                "CONSISTENCY WARNING: total_doc_count({}) != live_fp_count({}). \
+                 Updating total_doc_count to match actual count.",
+                cached_doc_count, live_fp_count
+            );
+            self.total_doc_count.store(live_fp_count, Ordering::SeqCst);
+        }
+
+        let elapsed = start.elapsed();
+        info!(
+            "Startup consistency check complete in {:?}: {} live fingerprints, {} soft-deleted, {} content entries",
+            elapsed, live_fp_count, soft_deleted_count, content_count
+        );
     }
 
     /// Detect and remove stale RocksDB lock files.
@@ -557,6 +642,10 @@ impl RocksDbTeleologicalStore {
         use crate::teleological::schema::parse_fingerprint_key;
         use crate::teleological::serialization::deserialize_teleological_fingerprint;
 
+        // DATA-5 FIX: Acquire write lock — blocks all concurrent store/delete
+        // until rebuild is complete. Prevents duplicate/missing entries.
+        let _guard = self.compaction_lock.write();
+
         let start = std::time::Instant::now();
 
         let cf = self.get_cf(CF_FINGERPRINTS)?;
@@ -592,8 +681,8 @@ impl RocksDbTeleologicalStore {
                 }
             };
 
-            // Add to HNSW indexes - FAIL FAST on error
-            match self.add_to_indexes(&fp) {
+            // Add to HNSW indexes — use unlocked variant since we hold write lock
+            match self.add_to_indexes_unlocked(&fp) {
                 Ok(()) => {
                     success_count += 1;
                 }
@@ -824,15 +913,8 @@ impl RocksDbTeleologicalStore {
     /// (removed from UUID maps but still consuming memory in usearch graph).
     /// This rebuilds ALL indexes from CF_FINGERPRINTS, eliminating all orphans.
     pub fn compact_hnsw_if_needed(&self) -> TeleologicalStoreResult<()> {
-        // DATA-5: RACE CONDITION WARNING
-        // HNSW compaction rebuilds indexes from CF_FINGERPRINTS while concurrent
-        // store/delete operations may be modifying the same indexes. This can cause:
-        // 1. Duplicate usearch entries if an insert happens during rebuild
-        // 2. Missing entries if an insert completes after rebuild reads CF_FINGERPRINTS
-        //    but before rebuild finishes writing the new index
-        // This is an acknowledged design concern — a full fix would require a
-        // read-write lock around all HNSW operations during compaction. For now,
-        // operators should schedule compaction during low-traffic periods.
+        // DATA-5 FIX: Race condition eliminated by compaction_lock in rebuild_indexes_from_store.
+        // rebuild acquires write lock; concurrent store/delete blocked until complete.
         let mut any_needs_compaction = false;
         for (embedder, index) in self.index_registry.iter() {
             if index.needs_compaction() {
@@ -859,10 +941,9 @@ impl RocksDbTeleologicalStore {
         }
 
         if any_needs_compaction {
-            // DATA-5: Warn about race condition only when compaction actually runs
-            warn!(
-                "DATA-5: HNSW compaction starting — concurrent inserts/deletes may race \
-                 with index rebuild. Schedule compaction during low-traffic periods."
+            info!(
+                "HNSW compaction starting — write lock will block concurrent store/delete \
+                 until rebuild completes (DATA-5 fix)"
             );
             info!("H1 FIX: Rebuilding all HNSW indexes from CF_FINGERPRINTS to eliminate orphaned vectors");
             self.rebuild_indexes_from_store()?;

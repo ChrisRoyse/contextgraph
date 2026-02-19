@@ -946,6 +946,7 @@ dependencies = [
  "futures",
  "glob",
  "hex",
+ "libc",
  "once_cell",
  "parking_lot",
  "schemars 0.8.22",

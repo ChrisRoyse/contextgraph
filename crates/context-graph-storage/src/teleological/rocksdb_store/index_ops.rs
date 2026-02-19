@@ -22,6 +22,16 @@ impl RocksDbTeleologicalStore {
     /// - DimensionMismatch: panic with detailed error
     /// - InvalidVector (NaN/Inf): panic with location
     pub(crate) fn add_to_indexes(&self, fp: &TeleologicalFingerprint) -> Result<(), IndexError> {
+        // DATA-5 FIX: Acquire read lock — concurrent with other store/delete,
+        // but blocked during rebuild (write lock). Prevents duplicate entries
+        // from concurrent insert + rebuild race.
+        let _guard = self.compaction_lock.read();
+        self.add_to_indexes_unlocked(fp)
+    }
+
+    /// Add fingerprint to indexes WITHOUT acquiring compaction_lock.
+    /// Used by rebuild_indexes_from_store which holds the write lock.
+    pub(crate) fn add_to_indexes_unlocked(&self, fp: &TeleologicalFingerprint) -> Result<(), IndexError> {
         let id = fp.id;
 
         // Add to all HNSW-capable dense embedder indexes
@@ -103,6 +113,10 @@ impl RocksDbTeleologicalStore {
     ///
     /// Removes the ID from all 13 HNSW indexes (including E5CausalCause and E5CausalEffect).
     pub(crate) fn remove_from_indexes(&self, id: Uuid) -> Result<(), IndexError> {
+        // DATA-5 FIX: Acquire read lock — concurrent with other store/delete,
+        // but blocked during rebuild (write lock).
+        let _guard = self.compaction_lock.read();
+
         for (_embedder, index) in self.index_registry.iter() {
             // Remove returns bool (found or not), we ignore it
             let _ = index.remove(id)?;

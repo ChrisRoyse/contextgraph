@@ -71,6 +71,10 @@ hex = "0.4"
 # Glob pattern matching for file watcher tools
 glob = "0.3"
 
+# PID file flock guard (Unix only, prevents multi-process DB corruption)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.10"

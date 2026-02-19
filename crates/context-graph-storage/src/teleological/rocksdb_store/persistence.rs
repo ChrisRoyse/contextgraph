@@ -339,18 +339,27 @@ impl RocksDbTeleologicalStore {
         Ok(())
     }
 
-    /// Create checkpoint (internal async wrapper).
-    pub(crate) async fn checkpoint_async(&self) -> CoreResult<PathBuf> {
+    /// Create checkpoint (synchronous version for background tasks).
+    pub fn checkpoint(&self) -> CoreResult<PathBuf> {
+        self.checkpoint_sync()
+    }
+
+    /// Create checkpoint (synchronous implementation).
+    pub(crate) fn checkpoint_sync(&self) -> CoreResult<PathBuf> {
         let checkpoint_path = self.path.join("checkpoints").join(format!(
             "checkpoint_{}",
-            chrono::Utc::now().format("%Y%m%d_%H%M%S")
+            chrono::Utc::now().format("%Y%m%d_%H%M%S_%3f")
         ));
 
         debug!("Creating checkpoint at {:?}", checkpoint_path);
 
-        std::fs::create_dir_all(&checkpoint_path).map_err(|e| {
-            CoreError::StorageError(format!("Failed to create checkpoint directory: {}", e))
-        })?;
+        // Only create the parent "checkpoints/" directory, NOT the checkpoint dir itself.
+        // RocksDB's Checkpoint::create_checkpoint requires the target directory to NOT exist.
+        if let Some(parent) = checkpoint_path.parent() {
+            std::fs::create_dir_all(parent).map_err(|e| {
+                CoreError::StorageError(format!("Failed to create checkpoints directory: {}", e))
+            })?;
+        }
 
         let checkpoint = rocksdb::checkpoint::Checkpoint::new(&self.db).map_err(|e| {
             TeleologicalStoreError::CheckpointFailed {

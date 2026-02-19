@@ -121,7 +121,7 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
     }
 
     async fn checkpoint(&self) -> CoreResult<PathBuf> {
-        self.checkpoint_async().await
+        self.checkpoint_sync()
     }
 
     async fn restore(&self, checkpoint_path: &std::path::Path) -> CoreResult<()> {

@@ -51,8 +51,9 @@ mod transport;
 mod weights;
 
 use std::env;
+use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use tracing::{debug, error, info, warn};
@@ -527,6 +528,120 @@ fn determine_daemon_port(cli: &CliArgs) -> u16 {
     3199
 }
 
+// ============================================================================
+// PID File Guard — prevents multiple processes from opening the same RocksDB
+// ============================================================================
+
+/// PID file guard that prevents multiple MCP server instances from opening
+/// the same RocksDB database concurrently.
+///
+/// Root cause of corruption: if two processes open the same DB (e.g., one
+/// standalone stdio + one TCP on a different port), a kill/crash during
+/// compaction leaves the MANIFEST referencing SST files that the other
+/// process's compaction already deleted → corruption.
+///
+/// The guard writes `<PID>` to `<db_path>/mcp.pid` and holds an exclusive
+/// `flock()` on it for the lifetime of this struct. Drop releases the lock
+/// and removes the file.
+struct PidFileGuard {
+    path: PathBuf,
+    #[cfg(unix)]
+    _file: std::fs::File, // kept open to hold the flock
+}
+
+impl PidFileGuard {
+    /// Acquire the PID file lock for the given database path.
+    ///
+    /// Returns `Ok(guard)` if we are the sole owner.
+    /// Returns `Err` with a descriptive message if another live process holds it.
+    fn acquire(db_path: &Path) -> Result<Self> {
+        fs::create_dir_all(db_path)?;
+
+        let pid_path = db_path.join("mcp.pid");
+        let pid_path_str = pid_path.to_string_lossy().to_string();
+
+        // Open or create the PID file
+        let file = fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(&pid_path)
+            .map_err(|e| anyhow::anyhow!("Cannot open PID file '{}': {}", pid_path_str, e))?;
+
+        #[cfg(unix)]
+        {
+            use std::io::{Read, Seek, Write};
+            use std::os::unix::io::AsRawFd;
+
+            let fd = file.as_raw_fd();
+            let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
+
+            if result != 0 {
+                let errno = io::Error::last_os_error();
+                if errno.raw_os_error() == Some(libc::EWOULDBLOCK) {
+                    // Another process holds the lock — read its PID for diagnostics
+                    let mut contents = String::new();
+                    let mut f = &file;
+                    let _ = f.read_to_string(&mut contents);
+                    let holder_pid = contents.trim();
+                    return Err(anyhow::anyhow!(
+                        "Another context-graph-mcp process (PID {}) is already using database at '{}'. \
+                         Kill the existing process first, or use --daemon mode to share a single server.",
+                        holder_pid, db_path.display()
+                    ));
+                }
+                return Err(anyhow::anyhow!(
+                    "flock() on PID file '{}' failed: {}",
+                    pid_path_str, errno
+                ));
+            }
+
+            // We hold the lock — write our PID
+            let mut f = &file;
+            let _ = f.seek(io::SeekFrom::Start(0));
+            let _ = f.set_len(0);
+            let _ = write!(f, "{}", std::process::id());
+            let _ = f.flush();
+
+            info!(
+                "PID file guard acquired: pid={}, path='{}'",
+                std::process::id(),
+                pid_path_str
+            );
+
+            Ok(PidFileGuard {
+                path: pid_path,
+                _file: file,
+            })
+        }
+
+        #[cfg(not(unix))]
+        {
+            // On non-Unix: best-effort PID file (no flock)
+            use std::io::Write;
+            let mut f = &file;
+            let _ = f.set_len(0);
+            let _ = write!(f, "{}", std::process::id());
+            let _ = f.flush();
+
+            warn!("PID file guard: no flock on this OS, using advisory PID file only");
+
+            Ok(PidFileGuard {
+                path: pid_path,
+            })
+        }
+    }
+}
+
+impl Drop for PidFileGuard {
+    fn drop(&mut self) {
+        // Release flock (implicit on file close) and remove PID file
+        let _ = fs::remove_file(&self.path);
+        debug!("PID file guard released: '{}'", self.path.display());
+    }
+}
+
 /// Check if daemon is already running on the specified port.
 ///
 /// Returns true if a connection can be established, false otherwise.
@@ -755,6 +870,12 @@ async fn main() -> Result<()> {
     let daemon_mode = determine_daemon_mode(&cli);
     let daemon_port = determine_daemon_port(&cli);
 
+    // Resolve database path for PID file guard.
+    // The guard prevents multiple processes from opening the same RocksDB,
+    // which causes corruption if one is killed mid-compaction.
+    let db_path = PathBuf::from(&config.storage.path);
+    let uses_rocksdb = config.storage.backend == "rocksdb";
+
     if daemon_mode {
         // ==================================================================
         // DAEMON MODE: Share one MCP server across multiple Claude terminals
@@ -763,11 +884,24 @@ async fn main() -> Result<()> {
 
         // Check if daemon is already running
         if is_daemon_running(daemon_port).await {
-            // Daemon exists - just proxy to it
+            // Daemon exists - just proxy to it (no DB access, no guard needed)
             info!("Connecting to existing daemon on port {}...", daemon_port);
             run_stdio_to_tcp_proxy(daemon_port).await?;
         } else {
             // No daemon - start one and then proxy to it
+            // Acquire PID file guard BEFORE opening RocksDB
+            let _pid_guard = if uses_rocksdb {
+                match PidFileGuard::acquire(&db_path) {
+                    Ok(guard) => Some(guard),
+                    Err(e) => {
+                        error!("FATAL: {}", e);
+                        return Err(e);
+                    }
+                }
+            } else {
+                None
+            };
+
             // CRITICAL: Always use warm_first=false in daemon mode
             // This allows the TCP server to start immediately and respond to MCP
             // initialize requests while models load in background (~115s).
@@ -780,11 +914,27 @@ async fn main() -> Result<()> {
             start_daemon_server(config, false, daemon_port).await?;
             info!("Daemon started, connecting as proxy...");
             run_stdio_to_tcp_proxy(daemon_port).await?;
+
+            // _pid_guard dropped here — releases flock + removes mcp.pid
         }
     } else {
         // ==================================================================
         // STANDALONE MODE: Each terminal has its own MCP server (original behavior)
         // ==================================================================
+
+        // Acquire PID file guard BEFORE opening RocksDB to prevent corruption
+        // from multiple processes accessing the same database.
+        let _pid_guard = if uses_rocksdb {
+            match PidFileGuard::acquire(&db_path) {
+                Ok(guard) => Some(guard),
+                Err(e) => {
+                    error!("FATAL: {}", e);
+                    return Err(e);
+                }
+            }
+        } else {
+            None
+        };
 
         // Create server with warmup configuration
         let server = server::McpServer::new(config, warm_first).await?;
@@ -796,21 +946,80 @@ async fn main() -> Result<()> {
             Err(e) => warn!("File watcher failed to start: {}", e),
         }
 
-        // Run with selected transport
+        // Register signal handlers for graceful shutdown.
+        // Without this, SIGTERM/SIGINT kills the process mid-operation,
+        // interrupting RocksDB writes and HNSW persistence → corruption.
+        let shutdown_signal = async {
+            #[cfg(unix)]
+            {
+                let mut sigterm = tokio::signal::unix::signal(
+                    tokio::signal::unix::SignalKind::terminate(),
+                )
+                .expect("FATAL: failed to register SIGTERM handler");
+
+                tokio::select! {
+                    _ = sigterm.recv() => {
+                        info!("Received SIGTERM — initiating graceful shutdown");
+                    }
+                    _ = tokio::signal::ctrl_c() => {
+                        info!("Received SIGINT (Ctrl+C) — initiating graceful shutdown");
+                    }
+                }
+            }
+            #[cfg(not(unix))]
+            {
+                tokio::signal::ctrl_c()
+                    .await
+                    .expect("FATAL: failed to register Ctrl+C handler");
+                info!("Received Ctrl+C — initiating graceful shutdown");
+            }
+        };
+
+        // Run server with signal-aware shutdown.
+        // When a signal arrives, we break out of the server loop and
+        // fall through to shutdown() which awaits background tasks + flushes.
         match transport_mode {
             TransportMode::Stdio => {
                 info!("MCP Server initialized, listening on stdio");
-                server.run().await?;
+                tokio::select! {
+                    result = server.run() => {
+                        if let Err(e) = result {
+                            error!("Server run() returned error: {}", e);
+                        }
+                    }
+                    _ = shutdown_signal => {
+                        // Signal received — shutdown() called below
+                    }
+                }
             }
             TransportMode::Tcp => {
                 info!("MCP Server initialized, starting TCP transport");
-                server.run_tcp().await?;
+                tokio::select! {
+                    result = server.run_tcp() => {
+                        if let Err(e) = result {
+                            error!("Server run_tcp() returned error: {}", e);
+                        }
+                    }
+                    _ = shutdown_signal => {}
+                }
             }
             TransportMode::Sse => {
                 info!("MCP Server initialized, starting SSE transport");
-                server.run_sse().await?;
+                tokio::select! {
+                    result = server.run_sse() => {
+                        if let Err(e) = result {
+                            error!("Server run_sse() returned error: {}", e);
+                        }
+                    }
+                    _ = shutdown_signal => {}
+                }
             }
         }
+
+        // Graceful shutdown: await background tasks, persist HNSW, flush RocksDB
+        server.shutdown().await;
+
+        // _pid_guard dropped here — releases flock + removes mcp.pid
     }
 
     info!("MCP Server shutdown complete");

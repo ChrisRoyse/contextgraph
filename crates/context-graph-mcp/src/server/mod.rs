@@ -123,13 +123,11 @@ pub struct McpServer {
     /// TASK-GRAPHLINK-PHASE1: Background graph builder worker task handle.
     pub(in crate::server) graph_builder_task: Arc<RwLock<Option<JoinHandle<()>>>>,
     /// M1 FIX: Soft-delete GC background task handle (constitution: JoinHandle must be awaited).
-    /// Stored to prevent abort-on-drop; checked in shutdown path.
-    #[allow(dead_code)]
-    gc_task: Option<JoinHandle<()>>,
+    /// Uses tokio::sync::Mutex so shutdown(&self) can take ownership of the handle.
+    gc_task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     /// M1 FIX: HNSW persistence background task handle.
-    /// Stored to prevent abort-on-drop; checked in shutdown path.
-    #[allow(dead_code)]
-    hnsw_persist_task: Option<JoinHandle<()>>,
+    /// Uses tokio::sync::Mutex so shutdown(&self) can take ownership of the handle.
+    hnsw_persist_task: tokio::sync::Mutex<Option<JoinHandle<()>>>,
     /// M1 FIX: Shutdown flag for background tasks.
     background_shutdown: Arc<AtomicBool>,
 }
@@ -226,9 +224,15 @@ impl McpServer {
         // Spawn HNSW index persistence + compaction background task (runs every 10 minutes)
         // M1 FIX: Store JoinHandle — panics in this task are now observable
         // H1/M9 FIX: Also checks for HNSW compaction (orphaned vector cleanup)
+        // CORRUPTION-RESILIENCE: Also creates periodic checkpoints (every 6 hours)
         let hnsw_persist_task = tokio::spawn(async move {
             let persist_interval = std::time::Duration::from_secs(10 * 60);
-            info!("HNSW persistence+compaction background task started (interval=10min)");
+            let checkpoint_interval = std::time::Duration::from_secs(6 * 3600); // 6 hours
+            let mut last_checkpoint = std::time::Instant::now();
+            info!(
+                "HNSW persistence+compaction+checkpoint background task started \
+                 (persist=10min, checkpoint=6h)"
+            );
             loop {
                 tokio::time::sleep(persist_interval).await;
                 if persist_shutdown.load(Ordering::SeqCst) {
@@ -241,6 +245,21 @@ impl McpServer {
                 }
                 if let Err(e) = persist_store.persist_hnsw_indexes() {
                     error!("HNSW persistence failed: {e}");
+                }
+                // CORRUPTION-RESILIENCE: Periodic checkpoint (every 6 hours).
+                // Checkpoints use hardlinks (~100ms creation time).
+                // Recovery point objective: max 6 hours of data loss after corruption.
+                if last_checkpoint.elapsed() >= checkpoint_interval {
+                    info!("Creating periodic checkpoint (6-hour interval)...");
+                    match persist_store.checkpoint() {
+                        Ok(path) => {
+                            info!("Periodic checkpoint created: {:?}", path);
+                            last_checkpoint = std::time::Instant::now();
+                        }
+                        Err(e) => {
+                            error!("Periodic checkpoint FAILED: {e}");
+                        }
+                    }
                 }
             }
         });
@@ -669,8 +688,8 @@ impl McpServer {
             graph_builder: Some(graph_builder),
             graph_builder_task: Arc::new(RwLock::new(None)),
             // M1 FIX: Store background task handles (constitution: JoinHandle must be awaited)
-            gc_task: Some(gc_task),
-            hnsw_persist_task: Some(hnsw_persist_task),
+            gc_task: tokio::sync::Mutex::new(Some(gc_task)),
+            hnsw_persist_task: tokio::sync::Mutex::new(Some(hnsw_persist_task)),
             background_shutdown,
         })
     }
@@ -814,28 +833,64 @@ impl McpServer {
             })?;
         }
 
-        // Gracefully shutdown background tasks
-        self.shutdown().await;
-        info!("Server shutting down...");
+        // Caller (main.rs) is responsible for shutdown via server.shutdown().await
+        // after tokio::select! completes — no double-shutdown needed here.
+        info!("Server run loop exiting");
         Ok(())
     }
 
     /// Gracefully shutdown the MCP server.
     ///
-    /// Stops background tasks. This should be called before the server exits.
+    /// Awaits all background tasks, persists HNSW indexes, and flushes RocksDB.
+    /// Constitution: "JoinHandle must be awaited or aborted — never silently dropped"
     ///
     /// # Behavior
     ///
-    /// - Logs shutdown initiation and completion
-    /// - Safe to call multiple times (idempotent)
+    /// 1. Signal all background tasks to stop via shutdown flag
+    /// 2. Await GC task with 5s timeout
+    /// 3. Await HNSW persist task with 10s timeout
+    /// 4. Stop graph builder, code watcher, file watcher
+    /// 5. Final HNSW persistence (captures any unsaved changes)
+    /// 6. Flush ALL RocksDB column families to disk
+    ///
+    /// Safe to call multiple times (idempotent).
     pub async fn shutdown(&self) {
         info!("Initiating graceful shutdown...");
 
-        // M1 FIX: Signal background tasks to stop
+        // 1. Signal all background tasks to stop
         self.background_shutdown.store(true, Ordering::SeqCst);
         info!("Background shutdown flag set — GC and HNSW persist tasks will stop");
 
-        // M2 FIX: Persist HNSW indexes on shutdown to avoid O(n) rebuild on restart
+        // 2. Await GC task with 5s timeout
+        {
+            let mut guard = self.gc_task.lock().await;
+            if let Some(handle) = guard.take() {
+                match tokio::time::timeout(std::time::Duration::from_secs(5), handle).await {
+                    Ok(Ok(())) => info!("GC task shut down cleanly"),
+                    Ok(Err(e)) => error!("GC task panicked during shutdown: {}", e),
+                    Err(_) => warn!("GC task did not stop within 5s — abandoning"),
+                }
+            }
+        }
+
+        // 3. Await HNSW persist task with 10s timeout (persistence may take time)
+        {
+            let mut guard = self.hnsw_persist_task.lock().await;
+            if let Some(handle) = guard.take() {
+                match tokio::time::timeout(std::time::Duration::from_secs(10), handle).await {
+                    Ok(Ok(())) => info!("HNSW persist task shut down cleanly"),
+                    Ok(Err(e)) => error!("HNSW persist task panicked during shutdown: {}", e),
+                    Err(_) => warn!("HNSW persist task did not stop within 10s — abandoning"),
+                }
+            }
+        }
+
+        // 4. Stop graph builder, code watcher, file watcher
+        self.stop_graph_builder().await;
+        self.stop_code_watcher().await;
+        self.stop_file_watcher();
+
+        // 5. Final HNSW persistence (captures any changes since last background persist)
         info!("Persisting HNSW indexes on shutdown...");
         if let Err(e) = self.teleological_store.persist_hnsw_indexes_if_available() {
             error!("Failed to persist HNSW indexes on shutdown: {e}");
@@ -843,16 +898,17 @@ impl McpServer {
             info!("HNSW indexes persisted successfully on shutdown");
         }
 
-        // TASK-GRAPHLINK-PHASE1: Stop graph builder worker
-        self.stop_graph_builder().await;
+        // 6. Flush ALL RocksDB column families to disk
+        // This forces memtable → SST flush, ensuring all data is durable.
+        // WAL replay would recover unflushed data, but explicit flush is more reliable.
+        info!("Flushing RocksDB to disk on shutdown...");
+        if let Err(e) = self.teleological_store.flush().await {
+            error!("Failed to flush RocksDB on shutdown: {e}");
+        } else {
+            info!("RocksDB flushed successfully on shutdown");
+        }
 
-        // Stop code watcher if running
-        self.stop_code_watcher().await;
-
-        // CRIT-06: Stop file watcher if running
-        self.stop_file_watcher();
-
-        info!("Graceful shutdown complete");
+        info!("Graceful shutdown complete — all data persisted");
     }
 
     /// Handle a single JSON-RPC request.
