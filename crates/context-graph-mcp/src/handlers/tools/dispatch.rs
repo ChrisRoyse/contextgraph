@@ -1,6 +1,6 @@
 //! Tool dispatch logic for MCP tool calls.
 //!
-//! Per PRD v6 Section 10, all 55 MCP tools are dispatched here.
+//! Per PRD v6 Section 10, all 56 MCP tools are dispatched here.
 //! Uses `tool_dispatch!` macro to eliminate boilerplate match arms.
 //!
 //! ## Adding a new tool

@@ -22,17 +22,17 @@ use super::super::Handlers;
 /// zero-copy sharing.
 pub(crate) struct DaemonState {
     /// Active TCP connection count (shared with McpServer::active_connections).
-    pub active_connections: Arc<AtomicUsize>,
+    pub(crate) active_connections: Arc<AtomicUsize>,
     /// Maximum allowed connections (from config.mcp.max_connections).
-    pub max_connections: usize,
+    pub(crate) max_connections: usize,
     /// Whether embedding models are currently loading.
-    pub models_loading: Arc<AtomicBool>,
+    pub(crate) models_loading: Arc<AtomicBool>,
     /// Model loading failure message, if any.
-    pub models_failed: Arc<tokio::sync::RwLock<Option<String>>>,
+    pub(crate) models_failed: Arc<tokio::sync::RwLock<Option<String>>>,
     /// Background task shutdown flag.
-    pub background_shutdown: Arc<AtomicBool>,
+    pub(crate) background_shutdown: Arc<AtomicBool>,
     /// Server start time for uptime calculation.
-    pub start_time: Instant,
+    pub(crate) start_time: Instant,
 }
 
 impl Handlers {
@@ -98,7 +98,6 @@ impl Handlers {
                 "running": !background_shutdown,
                 "graph_builder": graph_builder_running
             },
-            "shutdown_requested": background_shutdown
         });
 
         self.tool_result(id, result)

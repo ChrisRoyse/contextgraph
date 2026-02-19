@@ -705,7 +705,7 @@ impl Drop for PidFileGuard {
 /// Returns true only if the daemon responds with a valid JSON-RPC response
 /// within 3 seconds total (500ms connect + 2.5s request/response).
 async fn is_daemon_healthy(port: u16) -> bool {
-    use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+    use tokio::io::{AsyncWriteExt, BufReader};
     use tokio::net::TcpStream;
     use tokio::time::{timeout, Duration};
 
@@ -737,7 +737,12 @@ async fn is_daemon_healthy(port: u16) -> bool {
         writer.flush().await?;
 
         let mut response = String::new();
-        reader.read_line(&mut response).await?;
+        context_graph_mcp::server::transport::read_line_bounded(
+            &mut reader,
+            &mut response,
+            context_graph_mcp::server::transport::MAX_LINE_BYTES,
+        )
+        .await?;
 
         // Verify it's a valid JSON-RPC response (not some other protocol)
         let is_valid = response.contains("\"jsonrpc\"") && response.contains("\"result\"");

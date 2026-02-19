@@ -1,4 +1,4 @@
-//! Tool definitions per PRD v6 Section 10 (50 tools total).
+//! Tool definitions per PRD v6 Section 10 (56 tools with LLM, 52 without).
 //!
 //! Includes 17 original tools (inject_context merged into store_memory)
 //! plus 4 sequence tools for E4 integration
@@ -18,8 +18,8 @@ pub(crate) mod causal;
 pub(crate) mod causal_discovery;
 pub(crate) mod code;
 pub(crate) mod core;
-pub(crate) mod daemon;
 pub(crate) mod curation;
+pub(crate) mod daemon;
 pub(crate) mod embedder;
 pub(crate) mod entity;
 pub(crate) mod file_watcher;
@@ -106,8 +106,8 @@ mod tests {
 
     #[test]
     fn test_total_tool_count() {
-        // Without LLM: 51 tools
-        // With LLM (default): 55 tools (+2 causal_discovery, +2 graph LLM)
+        // Without LLM: 52 tools
+        // With LLM (default): 56 tools (+2 causal_discovery, +2 graph LLM)
         // core: 4, merge: 1, curation: 2, topic: 4, file_watcher: 4, sequence: 4,
         // causal: 4, keyword: 1, code: 1, robustness: 1, entity: 6, embedder: 7,
         // temporal: 2, graph_link: 4, maintenance: 1, provenance: 3
@@ -150,8 +150,10 @@ mod tests {
             "get_session_timeline",
             "traverse_memory_chain",
             "compare_session_states",
-            // Causal tools (2) - E5 Priority 1 enhancement
+            // Causal tools (4) - E5 Priority 1 enhancement
+            "search_causal_relationships",
             "search_causes",
+            "search_effects",
             "get_causal_chain",
             // Keyword tools (1) - E6 keyword search enhancement
             "search_by_keywords",

@@ -1,6 +1,6 @@
 //! Handlers struct definition and constructors.
 //!
-//! PRD v6 Section 10 - Handlers for 55 MCP tools (51 without LLM feature).
+//! PRD v6 Section 10 - Handlers for 56 MCP tools (52 without LLM feature).
 //!
 //! TASK-INTEG-TOPIC: Added clustering dependencies for topic tools integration.
 //! E4-FIX: Added session sequence counter for proper E4 (V_ordering) embeddings.
