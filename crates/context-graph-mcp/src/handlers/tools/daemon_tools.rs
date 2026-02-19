@@ -95,8 +95,7 @@ impl Handlers {
             "max_connections": max_connections,
             "models_state": models_state,
             "background_tasks": {
-                "gc": !background_shutdown,
-                "hnsw_persist": !background_shutdown,
+                "running": !background_shutdown,
                 "graph_builder": graph_builder_running
             },
             "shutdown_requested": background_shutdown

@@ -458,13 +458,6 @@ fn determine_warm_first(cli: &CliArgs) -> bool {
         return false;
     }
 
-    // CLI --warm-first explicitly enabled
-    if cli.warm_first {
-        // Check if it's the default vs explicitly set
-        // (Since warm_first defaults to true, we log only if --warm-first was used)
-        // This is a no-op since warm_first defaults to true, but log if env var is set
-    }
-
     // Environment variable is second priority
     if let Ok(warm_env) = env::var("CONTEXT_GRAPH_WARM_FIRST") {
         let warm_first = warm_env != "0" && warm_env.to_lowercase() != "false";
@@ -558,7 +551,6 @@ impl PidFileGuard {
         fs::create_dir_all(db_path)?;
 
         let pid_path = db_path.join("mcp.pid");
-        let pid_path_str = pid_path.to_string_lossy().to_string();
 
         // Open or create the PID file
         let file = fs::OpenOptions::new()
@@ -567,7 +559,7 @@ impl PidFileGuard {
             .read(true)
             .write(true)
             .open(&pid_path)
-            .map_err(|e| anyhow::anyhow!("Cannot open PID file '{}': {}", pid_path_str, e))?;
+            .map_err(|e| anyhow::anyhow!("Cannot open PID file '{}': {}", pid_path.display(), e))?;
 
         #[cfg(unix)]
         {
@@ -591,23 +583,38 @@ impl PidFileGuard {
                         // kill(pid, 0) sends no signal — just checks existence
                         let alive = unsafe { libc::kill(pid, 0) };
 
-                        if alive != 0 {
+                        let is_stale = if alive != 0 {
                             // Process is dead — stale lock from a crash/kill.
                             warn!(
                                 "Stale PID file: process {} is dead, attempting to reclaim lock on '{}'",
                                 pid, db_path.display()
                             );
+                            true
+                        } else {
+                            // Process is alive — check for zombie state
+                            let status_path = format!("/proc/{}/status", pid);
+                            let is_zombie = std::fs::read_to_string(&status_path)
+                                .map(|s| s.contains("State:\tZ") || s.contains("State:\tX"))
+                                .unwrap_or(false);
+                            if is_zombie {
+                                warn!(
+                                    "PID {} is zombie/dead — reclaiming stale lock on '{}'",
+                                    pid, db_path.display()
+                                );
+                            }
+                            is_zombie
+                        };
+
+                        if is_stale {
                             drop(file);
                             std::thread::sleep(std::time::Duration::from_millis(100));
-
-                            // Re-open and try flock again
                             let file = fs::OpenOptions::new()
                                 .create(true)
                                 .truncate(true)
                                 .read(true)
                                 .write(true)
                                 .open(&pid_path)
-                                .map_err(|e| anyhow::anyhow!("Cannot reopen PID file '{}': {}", pid_path_str, e))?;
+                                .map_err(|e| anyhow::anyhow!("Cannot reopen PID file '{}': {}", pid_path.display(), e))?;
                             let fd = file.as_raw_fd();
                             let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
                             if result == 0 {
@@ -617,7 +624,7 @@ impl PidFileGuard {
                                 let _ = write!(f, "{}", std::process::id());
                                 let _ = f.flush();
                                 info!(
-                                    "Reclaimed stale PID lock (dead process {}): new pid={}",
+                                    "Reclaimed stale PID lock (was process {}): new pid={}",
                                     pid, std::process::id()
                                 );
                                 return Ok(PidFileGuard {
@@ -626,37 +633,6 @@ impl PidFileGuard {
                                 });
                             }
                             warn!("Failed to reclaim lock — another process acquired it first");
-                        } else {
-                            // Process is alive — check for zombie state
-                            let status_path = format!("/proc/{}/status", pid);
-                            if let Ok(status) = std::fs::read_to_string(&status_path) {
-                                if status.contains("State:\tZ") || status.contains("State:\tX") {
-                                    warn!(
-                                        "PID {} is zombie/dead — reclaiming stale lock on '{}'",
-                                        pid, db_path.display()
-                                    );
-                                    drop(file);
-                                    std::thread::sleep(std::time::Duration::from_millis(100));
-                                    let file = fs::OpenOptions::new()
-                                        .create(true)
-                                        .truncate(true)
-                                        .read(true)
-                                        .write(true)
-                                        .open(&pid_path)?;
-                                    let fd = file.as_raw_fd();
-                                    let result = unsafe { libc::flock(fd, libc::LOCK_EX | libc::LOCK_NB) };
-                                    if result == 0 {
-                                        let mut f = &file;
-                                        let _ = write!(f, "{}", std::process::id());
-                                        let _ = f.flush();
-                                        info!("Reclaimed lock from zombie process {}", pid);
-                                        return Ok(PidFileGuard {
-                                            path: pid_path,
-                                            _file: file,
-                                        });
-                                    }
-                                }
-                            }
                         }
                     }
 
@@ -669,7 +645,7 @@ impl PidFileGuard {
                 }
                 return Err(anyhow::anyhow!(
                     "flock() on PID file '{}' failed: {}",
-                    pid_path_str, errno
+                    pid_path.display(), errno
                 ));
             }
 
@@ -683,7 +659,7 @@ impl PidFileGuard {
             info!(
                 "PID file guard acquired: pid={}, path='{}'",
                 std::process::id(),
-                pid_path_str
+                pid_path.display()
             );
 
             Ok(PidFileGuard {
