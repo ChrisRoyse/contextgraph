@@ -41,7 +41,7 @@ use super::state::ModelState;
 /// E8 has been upgraded from MiniLM (384D) to e5-large-v2 (1024D) to:
 /// - Share the model with E1 (no extra VRAM)
 /// - Provide better semantic understanding for graph relationships
-/// - Support asymmetric source/target embeddings via learned projections
+/// - Support asymmetric source/target embeddings via initialized projections (perturbed identity)
 ///
 /// # Example
 /// ```rust,no_run
@@ -192,7 +192,8 @@ impl GraphModel {
         Ok(())
     }
 
-    /// Embed a batch of inputs (more efficient than single embed).
+    /// Sequential processing of multiple inputs. Note: processes items one at a
+    /// time (no GPU batching). For true batch inference, see Kepler model.
     pub async fn embed_batch(&self, inputs: &[ModelInput]) -> EmbeddingResult<Vec<ModelEmbedding>> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {
@@ -232,7 +233,7 @@ impl GraphModel {
     //
     // These methods produce genuinely different source and target vectors through:
     // 1. Structural marker detection (source/target indicator tokens)
-    // 2. Learned projections (W_source, W_target) initialized as perturbed identities
+    // 2. Initialized projections (W_source, W_target) as perturbed identities
     //
     // This creates meaningful asymmetry for graph retrieval with:
     // - source→target direction: 1.2x amplification

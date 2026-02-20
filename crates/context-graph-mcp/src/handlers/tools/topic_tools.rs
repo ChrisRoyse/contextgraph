@@ -442,7 +442,10 @@ impl Handlers {
             }
         };
 
-        debug!(force = request.force, "detect_topics: Processing request");
+        // Validate max_memories bounds
+        let max_memories = request.max_memories.clamp(1, 50_000);
+
+        debug!(force = request.force, max_memories = max_memories, "detect_topics: Processing request");
 
         // Check minimum memory count
         let memory_count = match self.teleological_store.count().await {
@@ -483,7 +486,7 @@ impl Handlers {
         // via inject_context/store_memory, missing all existing fingerprints in storage.
         info!("detect_topics: Loading all fingerprints from storage for clustering...");
 
-        let fingerprints = match self.teleological_store.scan_fingerprints_for_clustering(None).await {
+        let fingerprints = match self.teleological_store.scan_fingerprints_for_clustering(Some(max_memories)).await {
             Ok(fps) => fps,
             Err(e) => {
                 error!(error = %e, "detect_topics: Failed to scan fingerprints from storage");

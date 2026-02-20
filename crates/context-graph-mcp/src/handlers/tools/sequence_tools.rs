@@ -518,6 +518,9 @@ impl Handlers {
             });
         }
 
+        // Capture total before pagination for has_more indicator
+        let total_in_session = results_with_seq.len();
+
         // Apply pagination
         let paginated: Vec<serde_json::Value> = results_with_seq
             .into_iter()
@@ -526,12 +529,16 @@ impl Handlers {
             .map(|(_, entry)| entry)
             .collect();
 
+        let has_more = total_in_session > offset + limit;
+
         self.tool_result(
             id,
             json!({
                 "sessionId": session_id,
                 "timeline": paginated,
                 "count": paginated.len(),
+                "total_in_session": total_in_session,
+                "has_more": has_more,
                 "currentSequence": current_seq,
                 "offset": offset,
                 "limit": limit

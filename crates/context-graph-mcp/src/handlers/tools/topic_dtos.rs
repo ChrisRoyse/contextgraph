@@ -158,16 +158,34 @@ impl GetTopicStabilityRequest {
 ///
 /// # Example JSON
 /// ```json
-/// {"force": false}
+/// {"force": false, "max_memories": 10000}
 /// ```
 ///
 /// # Defaults
 /// - `force`: false
-#[derive(Debug, Clone, Default, Deserialize)]
+/// - `max_memories`: 10000
+#[derive(Debug, Clone, Deserialize)]
 pub struct DetectTopicsRequest {
     /// Force detection even if recently computed
     #[serde(default)]
     pub force: bool,
+
+    /// Maximum fingerprints to load for clustering (default: 10000, max: 50000)
+    #[serde(default = "default_max_memories_for_clustering")]
+    pub max_memories: usize,
+}
+
+fn default_max_memories_for_clustering() -> usize {
+    10_000
+}
+
+impl Default for DetectTopicsRequest {
+    fn default() -> Self {
+        Self {
+            force: false,
+            max_memories: default_max_memories_for_clustering(),
+        }
+    }
 }
 
 /// Request parameters for get_divergence_alerts tool.

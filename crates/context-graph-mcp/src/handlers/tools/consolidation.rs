@@ -433,7 +433,7 @@ impl Handlers {
 
         let statistics = json!({
             "pairs_evaluated": pairs.len(),
-            "pairs_consolidated": candidates.len(),
+            "candidates_found": candidates.len(),
             "strategy": params.strategy,
             "similarity_threshold": params.min_similarity,
             "max_memories_limit": params.max_memories,
@@ -443,7 +443,7 @@ impl Handlers {
         let consolidation_result = json!({
             "status": if candidates.is_empty() { "no_candidates" } else { "candidates_found" },
             "candidate_count": candidates.len(),
-            "action_required": !candidates.is_empty()
+            "note": "This tool identifies consolidation candidates but does not merge them. Use merge_concepts to execute merges."
         });
 
         let candidates_sample: Vec<serde_json::Value> = candidates

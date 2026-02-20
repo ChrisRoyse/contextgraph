@@ -1,6 +1,6 @@
 //! Graph Projection Weights for Asymmetric Embeddings.
 //!
-//! Following the E5 Causal pattern (ARCH-15), this module provides learned
+//! Following the E5 Causal pattern (ARCH-15), this module provides initialized
 //! projection matrices for creating asymmetric source/target embeddings.
 //!
 //! # E8 Dimension Upgrade
@@ -45,10 +45,13 @@ pub const GRAPH_PROJECTION_SEED: u64 = 0xE8_6FA9;
 /// Standard deviation for initializing projection weight perturbations.
 const PROJECTION_INIT_STD: f64 = 0.02;
 
-/// Learned projection weights for asymmetric source/target embeddings.
+/// Initialized projection weights (perturbed identity) for asymmetric source/target embeddings.
 ///
 /// These projections transform the base e5-large-v2 embedding into
 /// source-role and target-role vectors for directional relationships.
+///
+/// These are perturbed identity matrices, not trained projections. Asymmetry is
+/// approximately 0.04% (cosine ~0.9996 between source and target for same input).
 ///
 /// # Source Role
 ///

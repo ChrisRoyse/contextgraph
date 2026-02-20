@@ -102,9 +102,10 @@ impl SemanticModel {
         self.loaded.load(Ordering::SeqCst)
     }
 
-    /// Embed a batch of inputs.
+    /// Sequential processing of multiple inputs.
     ///
-    /// More efficient than calling embed() multiple times due to batched inference.
+    /// Note: processes items one at a time (no GPU batching).
+    /// For true batch inference, see Kepler model.
     ///
     /// # Arguments
     /// * `inputs` - Slice of ModelInput to embed

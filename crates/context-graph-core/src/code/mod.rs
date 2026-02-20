@@ -578,23 +578,25 @@ pub fn compute_e7_similarity_with_query_type(
     doc_embedding: &[f32],
     query_type: CodeQueryType,
 ) -> f32 {
-    let base_similarity = cosine_similarity(query_embedding, doc_embedding);
+    let raw_cos = cosine_similarity(query_embedding, doc_embedding);
+    let base_similarity = (raw_cos + 1.0) / 2.0; // Normalize [-1,1] to [0,1] to match all other embedders
 
     match query_type {
         CodeQueryType::Code2Code => {
             // For code queries, we want higher precision.
             // Apply a sharpening transformation that:
-            // - Boosts similarities above 0.5 (high matches get higher)
-            // - Penalizes similarities below 0.5 (low matches get lower)
+            // - Boosts similarities above 0.75 (high matches get higher)
+            // - Reduces similarities below 0.75
             // This creates a steeper S-curve for better discrimination.
-            if base_similarity > 0.5 {
-                // Boost high similarities: map [0.5, 1.0] to [0.5, 1.0] with amplification
-                let excess = base_similarity - 0.5;
-                let boosted = 0.5 + excess * 1.4; // 1.4x amplification
+            // Note: 0.75 in [0,1] space corresponds to 0.5 in raw [-1,1] space.
+            if base_similarity > 0.75 {
+                // Boost high similarities: map [0.75, 1.0] to [0.75, 1.0] with amplification
+                let excess = base_similarity - 0.75;
+                let boosted = 0.75 + excess * 1.4; // 1.4x amplification
                 boosted.min(1.0)
             } else {
-                // Penalize low similarities: map [0.0, 0.5] to [0.0, 0.5] with reduction
-                base_similarity * 0.8
+                // Below 0.75 in normalized space, apply mild reduction
+                base_similarity * 0.9
             }
         }
         CodeQueryType::Text2Code => {
@@ -639,25 +641,6 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 
     (dot / (norm_a * norm_b)).clamp(-1.0, 1.0)
-}
-
-/// Get the E7 weight adjustment factor for a query type.
-///
-/// This can be used to dynamically adjust the E7 weight in the
-/// multi-space fusion based on query type.
-///
-/// # Returns
-///
-/// Weight multiplier:
-/// - Code2Code: 1.5 (increase E7 importance)
-/// - Text2Code: 1.0 (standard weight)
-/// - NonCode: 0.3 (decrease E7 importance)
-pub fn e7_weight_adjustment(query_type: CodeQueryType) -> f32 {
-    match query_type {
-        CodeQueryType::Code2Code => 1.5,
-        CodeQueryType::Text2Code => 1.0,
-        CodeQueryType::NonCode => 0.3,
-    }
 }
 
 #[cfg(test)]
@@ -1094,7 +1077,7 @@ mod tests {
 
     #[test]
     fn test_code2code_similarity_sharpening() {
-        // Create vectors with moderate similarity (~0.7)
+        // Create vectors with moderate similarity (~0.7 raw -> ~0.85 normalized)
         let query = vec![0.5; 1536];
         let mut doc = vec![0.5; 1536];
         // Diverge some dimensions
@@ -1102,28 +1085,29 @@ mod tests {
             doc[i] = 0.3;
         }
 
-        let base = cosine_similarity(&query, &doc);
+        let raw_cos = cosine_similarity(&query, &doc);
+        let normalized = (raw_cos + 1.0) / 2.0;
         let adjusted = compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::Code2Code);
 
-        // If base > 0.5, adjusted should be higher than base
-        if base > 0.5 {
+        // If normalized > 0.75, adjusted should be higher than normalized (boosted)
+        if normalized > 0.75 {
             assert!(
-                adjusted > base,
-                "Expected {} > {} for Code2Code with base > 0.5",
+                adjusted > normalized,
+                "Expected {} > {} for Code2Code with normalized > 0.75",
                 adjusted,
-                base
+                normalized
             );
         }
 
         println!(
-            "[PASS] Code2Code sharpening: base={:.4}, adjusted={:.4}",
-            base, adjusted
+            "[PASS] Code2Code sharpening: raw={:.4}, normalized={:.4}, adjusted={:.4}",
+            raw_cos, normalized, adjusted
         );
     }
 
     #[test]
     fn test_code2code_low_similarity_penalty() {
-        // Create vectors with low similarity (~0.3)
+        // Create vectors with low raw similarity (~-0.35 -> ~0.325 normalized)
         let query = vec![1.0; 1536];
         let mut doc = vec![-1.0; 1536];
         // Make some dimensions positive
@@ -1131,22 +1115,23 @@ mod tests {
             doc[i] = 1.0;
         }
 
-        let base = cosine_similarity(&query, &doc);
+        let raw_cos = cosine_similarity(&query, &doc);
+        let normalized = (raw_cos + 1.0) / 2.0;
         let adjusted = compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::Code2Code);
 
-        // If base < 0.5, adjusted should be lower than base
-        if base < 0.5 && base > 0.0 {
+        // If normalized < 0.75, adjusted should be lower than normalized (mild reduction * 0.9)
+        if normalized < 0.75 && normalized > 0.0 {
             assert!(
-                adjusted < base,
-                "Expected {} < {} for Code2Code with base < 0.5",
+                adjusted < normalized,
+                "Expected {} < {} for Code2Code with normalized < 0.75",
                 adjusted,
-                base
+                normalized
             );
         }
 
         println!(
-            "[PASS] Code2Code low similarity penalty: base={:.4}, adjusted={:.4}",
-            base, adjusted
+            "[PASS] Code2Code low similarity penalty: raw={:.4}, normalized={:.4}, adjusted={:.4}",
+            raw_cos, normalized, adjusted
         );
     }
 
@@ -1155,15 +1140,18 @@ mod tests {
         let query = vec![0.5; 1536];
         let doc = vec![0.5; 1536];
 
-        let base = cosine_similarity(&query, &doc);
+        let raw_cos = cosine_similarity(&query, &doc);
+        let normalized = (raw_cos + 1.0) / 2.0;
         let adjusted = compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::Text2Code);
 
+        // Text2Code returns the normalized base_similarity unchanged
         assert!(
-            (base - adjusted).abs() < f32::EPSILON,
-            "Text2Code should not modify similarity"
+            (normalized - adjusted).abs() < f32::EPSILON,
+            "Text2Code should return normalized similarity: expected {}, got {}",
+            normalized, adjusted
         );
 
-        println!("[PASS] Text2Code similarity unchanged");
+        println!("[PASS] Text2Code similarity unchanged (normalized)");
     }
 
     #[test]
@@ -1171,11 +1159,12 @@ mod tests {
         let query = vec![0.5; 1536];
         let doc = vec![0.5; 1536];
 
-        let base = cosine_similarity(&query, &doc);
+        let raw_cos = cosine_similarity(&query, &doc);
+        let normalized = (raw_cos + 1.0) / 2.0;
         let adjusted = compute_e7_similarity_with_query_type(&query, &doc, CodeQueryType::NonCode);
 
-        // NonCode should reduce similarity by 50%
-        let expected = base * 0.5;
+        // NonCode should reduce normalized similarity by 50%
+        let expected = normalized * 0.5;
         assert!(
             (adjusted - expected).abs() < f32::EPSILON,
             "NonCode should reduce by 50%: expected {}, got {}",
@@ -1183,7 +1172,7 @@ mod tests {
             adjusted
         );
 
-        println!("[PASS] NonCode similarity reduced by 50%");
+        println!("[PASS] NonCode similarity reduced by 50% (of normalized)");
     }
 
     // =========================================================================
@@ -1222,19 +1211,6 @@ mod tests {
         assert_eq!(cosine_similarity(&zero, &zero), 0.0);
 
         println!("[PASS] Zero vectors return 0.0 similarity");
-    }
-
-    // =========================================================================
-    // Weight Adjustment Tests
-    // =========================================================================
-
-    #[test]
-    fn test_weight_adjustment() {
-        assert_eq!(e7_weight_adjustment(CodeQueryType::Code2Code), 1.5);
-        assert_eq!(e7_weight_adjustment(CodeQueryType::Text2Code), 1.0);
-        assert_eq!(e7_weight_adjustment(CodeQueryType::NonCode), 0.3);
-
-        println!("[PASS] E7 weight adjustments are correct");
     }
 
     // =========================================================================

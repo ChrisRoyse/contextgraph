@@ -325,12 +325,18 @@ impl RocksDbTeleologicalStore {
             batch.delete_cf(cf_sm, source_metadata_key(&id));
 
             // DAT-7: Remove quantized embedder data from all 13 emb_X CFs
+            // Note: emb_X CFs are not populated in production (quantized write path not wired).
+            // These deletes are no-ops but kept for forward compatibility when quantized storage is enabled.
             let qkey = fingerprint_key(&id);
             for &cf_name in QUANTIZED_EMBEDDER_CFS {
                 if let Ok(cf) = self.get_cf(cf_name) {
                     batch.delete_cf(cf, qkey);
                 }
             }
+
+            // TODO: CF_FILE_INDEX cleanup requires reverse lookup (fingerprint_id -> file_path).
+            // Currently orphaned entries are harmless (get_fingerprints_for_file returns stale UUIDs
+            // that fail retrieval, effectively filtered). Full cleanup needs source_metadata read.
 
             // Remove from soft-deleted tracking (memory + persisted marker)
             // P5: DashMap - no write lock needed
@@ -341,19 +347,21 @@ impl RocksDbTeleologicalStore {
             let sd_key = soft_delete_key(&id);
             batch.delete_cf(cf_system, sd_key.as_bytes());
 
-            // STOR-8 FIX: Remove from HNSW indexes BEFORE committing RocksDB delete.
-            // If index removal fails, the RocksDB record still exists (safe — no orphan).
-            // Old order: commit RocksDB → remove indexes (orphan risk on index failure).
-            // STG-04: Release inverted-index lock before HNSW operations.
+            // STG-04: Release inverted-index lock before write.
             drop(_index_guard);
 
-            self.remove_from_indexes(id)
-                .map_err(|e| CoreError::IndexError(e.to_string()))?;
-
-            // Now commit the RocksDB delete (indexes already cleaned up)
+            // FIX-M5: Commit RocksDB FIRST, then remove from HNSW indexes.
+            // If RocksDB fails, nothing is lost (HNSW still has the entry = safe).
+            // If HNSW fails after RocksDB commit, entry is orphaned in HNSW
+            // (harmless — search returns non-existent ID, filtered in post-processing).
             self.db.write(batch).map_err(|e| {
                 TeleologicalStoreError::rocksdb_op("delete_batch", CF_FINGERPRINTS, Some(id), e)
             })?;
+
+            // Best-effort HNSW cleanup — log but don't fail if indexes can't be updated
+            if let Err(e) = self.remove_from_indexes(id) {
+                warn!(id = %id, error = %e, "Hard-delete: HNSW index removal failed (orphan will be filtered at search time)");
+            }
 
             // Invalidate count cache and decrement total doc count for IDF
             *self.fingerprint_count.write() = None;

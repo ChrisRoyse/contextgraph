@@ -76,6 +76,21 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "boolean",
                         "description": "Include embedding version info if available (default: false)",
                         "default": false
+                    },
+                    "include_importance_history": {
+                        "type": "boolean",
+                        "description": "Include importance change history (default: false)",
+                        "default": false
+                    },
+                    "include_merge_history": {
+                        "type": "boolean",
+                        "description": "Include merge lineage history (default: false)",
+                        "default": false
+                    },
+                    "depth_full": {
+                        "type": "boolean",
+                        "description": "Include all provenance data (audit, embedding, importance, merge history) (default: false)",
+                        "default": false
                     }
                 },
                 "required": ["memory_id"],

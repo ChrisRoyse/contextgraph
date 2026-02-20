@@ -92,7 +92,7 @@ pub struct LoraAdapter {
 impl LoraAdapter {
     /// Create a new LoRA adapter.
     ///
-    /// A is initialized with Kaiming uniform, B is initialized to zero.
+    /// A is initialized with quasi-random golden-ratio sequence (Kaiming scale), B is initialized to zero.
     /// This ensures the LoRA contribution starts at zero (identity behavior).
     pub fn new(
         hidden_size: usize,
@@ -101,7 +101,7 @@ impl LoraAdapter {
         dropout: f32,
         device: &Device,
     ) -> EmbeddingResult<Self> {
-        // A: Kaiming uniform initialization for stable gradients
+        // A: Quasi-random initialization (golden-ratio low-discrepancy sequence, Kaiming scale)
         let std_dev = (2.0 / hidden_size as f64).sqrt() as f32;
         let a_data: Vec<f32> = (0..hidden_size * rank)
             .map(|i| {

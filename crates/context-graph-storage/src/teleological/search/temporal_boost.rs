@@ -55,7 +55,7 @@ fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 
     let norm = (norm_a.sqrt() * norm_b.sqrt()).max(1e-8);
-    (dot / norm).clamp(0.0, 1.0)
+    ((dot / norm).clamp(-1.0, 1.0) + 1.0) / 2.0
 }
 
 /// Extract hour and day-of-week from a timestamp in milliseconds.

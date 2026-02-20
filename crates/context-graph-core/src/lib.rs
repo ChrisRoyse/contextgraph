@@ -106,7 +106,6 @@ pub use injection::{
 // Code query detection (ARCH-16) - query-type-aware E7 similarity
 pub use code::{
     CodeQueryType, detect_code_query_type, compute_e7_similarity_with_query_type,
-    e7_weight_adjustment,
 };
 
 // Fusion strategies (ARCH-18) - Weighted RRF for multi-embedder fusion

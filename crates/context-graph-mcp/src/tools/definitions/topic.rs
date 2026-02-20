@@ -64,6 +64,13 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "boolean",
                         "default": false,
                         "description": "Force detection even if recently computed"
+                    },
+                    "max_memories": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50000,
+                        "default": 10000,
+                        "description": "Maximum fingerprints to load for clustering (default: 10000, max: 50000)"
                     }
                 }
             }),

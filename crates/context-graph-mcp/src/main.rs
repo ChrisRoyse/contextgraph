@@ -97,6 +97,8 @@ struct CliArgs {
     daemon: bool,
     /// Daemon TCP port (--daemon-port, default: 3100)
     daemon_port: u16,
+    /// Whether --daemon-port was explicitly passed on CLI
+    explicit_daemon_port: bool,
 }
 
 impl CliArgs {
@@ -117,6 +119,7 @@ impl CliArgs {
             no_warm: false,
             daemon: false,
             daemon_port: 3100, // Default daemon port (aligned with .mcp.json)
+            explicit_daemon_port: false,
         };
 
         let mut i = 1;
@@ -163,6 +166,7 @@ impl CliArgs {
                 "--warm-first" => {
                     // TASK-EMB-WARMUP: Block startup until models are warm
                     cli.warm_first = true;
+                    cli.no_warm = false; // Explicitly override --no-warm if both passed
                 }
                 "--no-warm" => {
                     // TASK-EMB-WARMUP: Skip blocking warmup (use background loading)
@@ -178,6 +182,7 @@ impl CliArgs {
                     if i < args.len() {
                         if let Ok(port) = args[i].parse::<u16>() {
                             cli.daemon_port = port;
+                            cli.explicit_daemon_port = true;
                         }
                     }
                 }
@@ -506,7 +511,7 @@ fn determine_daemon_mode(cli: &CliArgs) -> bool {
 /// Determine daemon port from CLI and environment.
 fn determine_daemon_port(cli: &CliArgs) -> u16 {
     // CLI --daemon-port takes highest priority
-    if cli.daemon_port != 3100 {
+    if cli.explicit_daemon_port {
         return cli.daemon_port;
     }
 
@@ -1168,9 +1173,16 @@ async fn run_stdio_to_tcp_proxy_inner(daemon_port: u16) -> Result<()> {
         }
     }
 
-    // Wait for stdout task to complete
-    if let Err(e) = stdout_task.await {
-        error!("Stdio stdout task panicked or was cancelled: {}", e);
+    // Abort stdout task immediately — don't wait for 120s daemon read timeout
+    stdout_task.abort();
+    match stdout_task.await {
+        Ok(()) => {}
+        Err(e) if e.is_cancelled() => {
+            // Expected — we just aborted it
+        }
+        Err(e) => {
+            error!("Stdio stdout task panicked: {}", e);
+        }
     }
     info!("Stdio proxy shutdown");
     Ok(())
@@ -1506,10 +1518,10 @@ async fn main() -> Result<()> {
             // ---- Step 4: Start daemon server (guard ownership transfers) ----
             info!("No daemon found, starting new daemon server (attempt {})...", attempt);
             if warm_first {
-                info!("Daemon mode overrides warm_first to false for immediate startup");
+                warn!("Daemon mode with warm_first=true: models will load before serving requests");
             }
 
-            match start_daemon_server(config.clone(), false, daemon_port, pid_guard).await {
+            match start_daemon_server(config.clone(), warm_first, daemon_port, pid_guard).await {
                 Ok(()) => {
                     info!("Daemon started successfully on port {}", daemon_port);
                     run_stdio_to_tcp_proxy(daemon_port).await?;

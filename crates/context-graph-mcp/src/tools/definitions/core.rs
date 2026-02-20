@@ -271,9 +271,9 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // trigger_consolidation - trigger memory consolidation (PRD Section 10.1)
         ToolDefinition::new(
             "trigger_consolidation",
-            "Trigger memory consolidation to merge similar memories and reduce redundancy. \
-             Uses similarity-based, temporal, or semantic strategies to identify merge candidates. \
-             Helps optimize memory storage and improve retrieval efficiency.",
+            "Analyze memories for consolidation candidates. Returns pairs that could be merged \
+             but does NOT automatically merge them. Use merge_concepts to execute merges. \
+             Uses similarity-based, temporal, or semantic strategies to identify candidates.",
             json!({
                 "type": "object",
                 "properties": {

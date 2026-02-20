@@ -189,7 +189,8 @@ impl ContextualModel {
         Ok(())
     }
 
-    /// Embed a batch of inputs (more efficient than single embed).
+    /// Sequential processing of multiple inputs. Note: processes items one at a
+    /// time (no GPU batching). For true batch inference, see Kepler model.
     pub async fn embed_batch(&self, inputs: &[ModelInput]) -> EmbeddingResult<Vec<ModelEmbedding>> {
         if !self.is_initialized() {
             return Err(EmbeddingError::NotInitialized {

@@ -141,7 +141,8 @@ pub const CF_E12_LATE_INTERACTION: &str = "e12_late_interaction";
 // ENTITY PROVENANCE COLUMN FAMILIES (Phase 3a Provenance)
 // =============================================================================
 
-// DEPRECATED: Trait methods not yet wired. Kept in open list for RocksDB compat.
+/// Reserved — not yet populated. Opened for forward compatibility.
+///
 /// Column family for entity provenance storage.
 ///
 /// Maps entity canonical_id + memory_id to EntityProvenance records.
@@ -236,7 +237,8 @@ pub const CF_IMPORTANCE_HISTORY: &str = "importance_history";
 // TOOL CALL PROVENANCE COLUMN FAMILIES (Phase 5, item 5.12)
 // =============================================================================
 
-// DEPRECATED: Trait methods not yet wired. Kept in open list for RocksDB compat.
+/// Reserved — not yet populated. Opened for forward compatibility.
+///
 /// Column family for tool call → memory mapping (Phase 5, item 5.12).
 ///
 /// Maps tool_use_id to fingerprint IDs created by that tool call.
@@ -255,7 +257,8 @@ pub const CF_TOOL_CALL_INDEX: &str = "tool_call_index";
 // CONSOLIDATION RECOMMENDATION PERSISTENCE (Phase 5, item 5.14)
 // =============================================================================
 
-// DEPRECATED: Trait methods not yet wired. Kept in open list for RocksDB compat.
+/// Reserved — not yet populated. Opened for forward compatibility.
+///
 /// Column family for consolidation recommendation persistence (Phase 5, item 5.14).
 ///
 /// Stores ConsolidationRecommendation records for review and tracking.
@@ -351,6 +354,9 @@ pub const TELEOLOGICAL_CF_COUNT: usize = 20;
 // =============================================================================
 // QUANTIZED EMBEDDER COLUMN FAMILIES (13 CFs for per-embedder storage)
 // =============================================================================
+// Reserved — quantized storage not yet wired into production write path.
+// CFs opened for forward compatibility.
+//
 // TASK-EMB-022: Per-embedder quantized fingerprint storage
 // Each CF stores QuantizedEmbedding data serialized via bincode.
 // Key: UUID (16 bytes) → Value: QuantizedEmbedding (variable size, ~1-2KB per embedder)

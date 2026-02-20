@@ -474,11 +474,13 @@ impl CrossSpaceSimilarityEngine for DefaultCrossSpaceEngine {
             WeightingStrategy::Uniform => WeightingStrategy::uniform_weights(),
             WeightingStrategy::Static(weights) => *weights,
             WeightingStrategy::TopicAligned => {
-                // Base uniform weights - actual topic modulation happens in compute_similarity
+                // TopicAligned is not yet implemented — returns uniform weights.
+                // TODO: Implement topic-profile-based weight modulation.
                 WeightingStrategy::uniform_weights()
             }
             WeightingStrategy::RRF { .. } => {
-                // RRF doesn't use weights per se, return uniform for explanation
+                // RRF fusion is applied in the search pipeline, not here.
+                // This engine uses uniform weights for RRF explanation purposes.
                 WeightingStrategy::uniform_weights()
             }
             WeightingStrategy::TopicWeightedRRF { .. } => WeightingStrategy::uniform_weights(),

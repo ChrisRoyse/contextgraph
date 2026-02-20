@@ -1087,6 +1087,9 @@ impl RocksDbTeleologicalStore {
         // to clean up any profiles that were computed for a fingerprint being deleted.
 
         // 3. Store E1 Matryoshka 128D truncated vector
+        // Note: CF_E1_MATRYOSHKA_128 is written for recovery/rebuild purposes.
+        // Pipeline Stage 2 reads from the in-memory HNSW index, not this CF directly.
+        // This CF serves as durable backup for index reconstruction.
         let cf_matryoshka = self.get_cf(CF_E1_MATRYOSHKA_128)?;
         let matryoshka_key = e1_matryoshka_128_key(&id);
         let mut truncated = [0.0f32; 128];

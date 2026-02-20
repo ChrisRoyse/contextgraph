@@ -416,7 +416,11 @@ impl RocksDbTeleologicalStore {
         Ok(())
     }
 
-    /// Restore from checkpoint (internal async wrapper).
+    /// Restore from checkpoint (NOT YET IMPLEMENTED).
+    ///
+    /// Currently returns an error directing the user to restart with the checkpoint path.
+    /// In-place restore requires stopping all background tasks and reopening the DB,
+    /// which is not yet implemented.
     pub(crate) async fn restore_async(&self, checkpoint_path: &std::path::Path) -> CoreResult<()> {
         warn!(
             "Restore operation requested from {:?}. This is destructive!",

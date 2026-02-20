@@ -1369,7 +1369,7 @@ fn suppress_degenerate_weights(
         let mut count = 0u32;
         let mut mean = 0.0f32;
         let mut m2 = 0.0f32;
-        for s in all_scores.iter().map(|s| s[idx]).filter(|s| *s > 0.0) {
+        for s in all_scores.iter().map(|s| s[idx]) {
             count += 1;
             let delta = s - mean;
             mean += delta / count as f32;

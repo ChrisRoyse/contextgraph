@@ -222,7 +222,8 @@ impl CausalModel {
         Ok(())
     }
 
-    /// Embed a batch of inputs (more efficient than single embed).
+    /// Sequential processing of multiple inputs. Note: processes items one at a
+    /// time (no GPU batching). For true batch inference, see Kepler model.
     pub async fn embed_batch(&self, inputs: &[ModelInput]) -> EmbeddingResult<Vec<ModelEmbedding>> {
         self.ensure_initialized()?;
         let mut results = Vec::with_capacity(inputs.len());

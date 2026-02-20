@@ -509,8 +509,8 @@ impl SystemMonitor for StubSystemMonitor {
 /// Per constitution.yaml:
 /// - L1_Sensing: 13-model embed, PII scrub, adversarial detect (<5ms) - ACTIVE
 /// - L3_Memory: MHN, FAISS GPU (<1ms) - ACTIVE (using RocksDB)
-/// - L4_Learning: UTL optimizer, neuromod controller (100Hz) - ACTIVE
-/// - L5_Coherence: Topic synthesis, context distiller (10ms) - ACTIVE
+/// - L4_Learning: UTL optimizer, neuromod controller (100Hz) - NOT IMPLEMENTED
+/// - L5_Coherence: Topic synthesis, context distiller (10ms) - NOT IMPLEMENTED
 ///
 /// Maps to legacy names:
 /// - perception -> L1_Sensing
@@ -540,13 +540,11 @@ impl LayerStatusProvider for StubLayerStatusProvider {
     }
 
     async fn action_status(&self) -> MonitorResult<LayerStatus> {
-        // L4_Learning: Action layer is active
-        Ok(LayerStatus::Active)
+        Ok(LayerStatus::NotImplemented)  // L4 not yet implemented
     }
 
     async fn meta_status(&self) -> MonitorResult<LayerStatus> {
-        // L5_Coherence: Topic synthesis via HDBSCAN clustering is working
-        Ok(LayerStatus::Active)
+        Ok(LayerStatus::NotImplemented)  // L5 not yet implemented
     }
 
     async fn all_layer_info(&self) -> MonitorResult<Vec<LayerInfo>> {
@@ -567,17 +565,17 @@ impl LayerStatusProvider for StubLayerStatusProvider {
             },
             LayerInfo {
                 name: "L4_Learning".to_string(),
-                status: LayerStatus::Active,
+                status: LayerStatus::NotImplemented,
                 last_latency_us: None,
                 error_count: None,
-                health_check_passed: Some(true),
+                health_check_passed: Some(false),
             },
             LayerInfo {
                 name: "L5_Coherence".to_string(),
-                status: LayerStatus::Active,
+                status: LayerStatus::NotImplemented,
                 last_latency_us: None,
                 error_count: None,
-                health_check_passed: Some(true),
+                health_check_passed: Some(false),
             },
         ])
     }
@@ -658,16 +656,16 @@ mod tests {
             Ok(LayerStatus::Active)
         ));
 
-        // L4_Learning (action): Active - UTL processor working
+        // L4_Learning (action): Not yet implemented
         assert!(matches!(
             provider.action_status().await,
-            Ok(LayerStatus::Active)
+            Ok(LayerStatus::NotImplemented)
         ));
 
-        // L5_Coherence (meta): Active - Topic synthesis working
+        // L5_Coherence (meta): Not yet implemented
         assert!(matches!(
             provider.meta_status().await,
-            Ok(LayerStatus::Active)
+            Ok(LayerStatus::NotImplemented)
         ));
 
         // Unknown layer should error
@@ -685,11 +683,11 @@ mod tests {
         ));
         assert!(matches!(
             provider.layer_status_by_name("L4_Learning").await,
-            Ok(LayerStatus::Active)
+            Ok(LayerStatus::NotImplemented)
         ));
         assert!(matches!(
             provider.layer_status_by_name("L5_Coherence").await,
-            Ok(LayerStatus::Active)
+            Ok(LayerStatus::NotImplemented)
         ));
 
         // L2_Reflex (removed) should now error

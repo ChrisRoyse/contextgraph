@@ -506,7 +506,11 @@ pub fn deterministic_session_id(test_name: &str, suffix: &str) -> String {
 // These functions provide compatibility for tests
 // =============================================================================
 
-/// Verify that a snapshot exists for the given session_id.
+/// Verify if a snapshot exists in the database.
+///
+/// NOTE: Not yet implemented — always returns false.
+/// Snapshot verification requires reading CF_SYSTEM keys which
+/// is not available in the test helper context.
 ///
 /// CLI-2 FIX: Returns `false` — cross-process snapshot verification is impossible
 /// because SessionCache is in-memory and process-scoped (PRD v6 Section 14).

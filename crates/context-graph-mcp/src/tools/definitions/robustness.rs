@@ -69,7 +69,7 @@ fn search_robust_definition() -> ToolDefinition {
                     "minimum": 0,
                     "maximum": 1,
                     "description": "Minimum E9 score for a result to be marked as 'E9 discovery' \
-                                    (0-1, default: 0.7). Results with E9 score >= this AND \
+                                    (0-1, default: 0.15). Results with E9 score >= this AND \
                                     E1 score < e1WeaknessThreshold are blind spots E9 found."
                 },
                 "e1WeaknessThreshold": {

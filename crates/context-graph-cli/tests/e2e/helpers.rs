@@ -365,7 +365,11 @@ pub fn create_claude_code_session_end_input(session_id: &str, reason: &str) -> S
 // Per PRD v6 Section 14, we use SessionCache instead of RocksDB
 // =============================================================================
 
-/// Verify that a session snapshot exists by checking CLI exit code.
+/// Verify if a snapshot exists in the database.
+///
+/// NOTE: Not yet implemented — always returns false.
+/// Snapshot verification requires reading CF_SYSTEM keys which
+/// is not available in the test helper context.
 ///
 /// CLI-2 FIX: The previous stub always returned `true`, making tests tautological.
 /// Since session state is process-scoped (CLI-1), cross-process verification

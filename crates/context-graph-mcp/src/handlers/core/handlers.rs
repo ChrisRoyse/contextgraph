@@ -213,10 +213,10 @@ impl Handlers {
             current_session_id: Arc::new(RwLock::new(None)),
             code_store: None,
             code_embedding_provider: None,
-            edge_repository: None,
-            graph_builder: None,
+            edge_repository: None, // Not available in with_defaults — requires explicit EdgeRepository
+            graph_builder: None, // Not available in with_defaults — requires explicit BackgroundGraphBuilder
             graph_discovery_service: Some(graph_discovery_service),
-            causal_hint_provider: None,
+            causal_hint_provider: Some(Arc::new(context_graph_embeddings::provider::NoOpCausalHintProvider)),
             custom_profiles: Arc::new(RwLock::new(HashMap::new())),
             causal_discovery_llm: None,
             causal_model: None,
