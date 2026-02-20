@@ -828,12 +828,14 @@ async fn kill_process_on_port(port: u16) -> Result<()> {
 /// 5. No new daemon can start → all Claude Code terminals lose MCP access
 ///
 /// Detection: PID file exists → holder alive → NOT serving on daemon port → stale.
-/// Recovery: SIGTERM (1s grace) → SIGKILL → wait for flock release.
+/// Recovery: SIGTERM (2s grace) → SIGKILL → wait for flock release.
 ///
 /// ONLY called in daemon mode. In standalone mode, PidFileGuard::acquire()
 /// handles lock contention with its existing error path.
 #[cfg(unix)]
 async fn kill_stale_lock_holder(db_path: &Path, daemon_port: u16) -> bool {
+    use tokio::time::{sleep, Duration};
+
     let pid_path = db_path.join("mcp.pid");
 
     let pid_str = match fs::read_to_string(&pid_path) {
@@ -864,16 +866,14 @@ async fn kill_stale_lock_holder(db_path: &Path, daemon_port: u16) -> bool {
         return false;
     }
 
-    // Process is alive — but is it serving on our daemon port?
-    // We already checked is_daemon_healthy() in the caller, but re-verify
-    // to avoid race conditions (daemon might have recovered between checks).
+    // Process is alive — re-check health to guard against race conditions
+    // (daemon might have recovered since the caller's Step 1 check).
     if is_daemon_healthy(daemon_port).await {
         info!("PID {} is now serving on port {} — no kill needed", pid, daemon_port);
         return false;
     }
 
-    // Process alive, NOT serving on daemon port → it's stale.
-    // This catches both crashed daemons and orphaned standalone instances.
+    // Process alive, NOT serving on daemon port — stale.
     warn!(
         "STALE LOCK DETECTED: PID {} holds flock on '{}' but is NOT serving on port {}. \
          Sending SIGTERM for graceful shutdown.",
@@ -885,11 +885,10 @@ async fn kill_stale_lock_holder(db_path: &Path, daemon_port: u16) -> bool {
 
     // Wait up to 2s for graceful shutdown
     for i in 0..20 {
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
         if unsafe { libc::kill(pid, 0) } != 0 {
             info!("Stale PID {} terminated after SIGTERM ({}ms)", pid, (i + 1) * 100);
-            // Wait a bit more for kernel to release flock
-            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            sleep(Duration::from_millis(200)).await;
             return true;
         }
     }
@@ -900,10 +899,10 @@ async fn kill_stale_lock_holder(db_path: &Path, daemon_port: u16) -> bool {
 
     // Wait up to 1s for kernel to reap the process
     for i in 0..10 {
-        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        sleep(Duration::from_millis(100)).await;
         if unsafe { libc::kill(pid, 0) } != 0 {
             info!("Stale PID {} terminated after SIGKILL ({}ms)", pid, (i + 1) * 100);
-            tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+            sleep(Duration::from_millis(200)).await;
             return true;
         }
         // Check for zombie state — flock IS released even though kill(pid,0)==0
@@ -1323,17 +1322,12 @@ async fn main() -> Result<()> {
             }
 
             // ---- Step 2.5: Kill stale lock holder if present ----
-            // A process may hold the flock on mcp.pid but NOT serve on the daemon port.
-            // This happens when a previous daemon/standalone instance crashed internally
-            // (TCP listener died, stdio disconnected) but the OS process stayed alive
-            // (RocksDB background threads, stuck futex). We detect and kill it here
-            // so that Step 3 can acquire the lock.
+            // Port is free but a stale process may hold flock on mcp.pid,
+            // blocking Step 3's PidFileGuard::acquire(). Kill it first.
             #[cfg(unix)]
             if uses_rocksdb {
                 if kill_stale_lock_holder(&db_path, daemon_port).await {
                     info!("Stale lock holder removed, retrying lock acquisition (attempt {})", attempt);
-                    // Don't count this as a failed attempt — we made progress
-                    // Fall through to Step 3 instead of continue
                 }
             }
 
