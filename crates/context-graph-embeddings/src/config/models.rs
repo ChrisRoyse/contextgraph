@@ -48,7 +48,7 @@ pub struct ModelPathConfig {
     /// Only effective when lazy_loading is false.
     /// Valid values: "semantic", "temporal_recent", "temporal_periodic",
     /// "temporal_positional", "causal", "sparse", "code", "graph",
-    /// "hdc", "multimodal", "entity", "late_interaction"
+    /// "hdc", "contextual", "entity", "kepler", "late_interaction", "splade"
     #[serde(default)]
     pub preload_models: Vec<String>,
 

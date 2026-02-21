@@ -87,10 +87,10 @@ fn test_get_model_path_colbert() {
 }
 
 #[test]
-fn test_get_model_path_clip() {
+fn test_get_model_path_contextual() {
     let factory = DefaultModelFactory::new(PathBuf::from("/data/models"), GpuConfig::default());
     let path = factory.get_model_path(ModelId::Contextual).unwrap();
-    assert_eq!(path, PathBuf::from("/data/models/multimodal"));
+    assert_eq!(path, PathBuf::from("/data/models/contextual"));
 }
 
 // =========================================================================
@@ -100,7 +100,7 @@ fn test_get_model_path_clip() {
 #[test]
 fn test_supported_models_count() {
     let factory = DefaultModelFactory::new(PathBuf::from("./models"), GpuConfig::default());
-    assert_eq!(factory.supported_models().len(), 13);
+    assert_eq!(factory.supported_models().len(), 14);
 }
 
 #[test]

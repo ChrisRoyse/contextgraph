@@ -245,7 +245,7 @@ impl MultiUtlParams {
         self
     }
 
-    /// Set emotional weight.
+    /// Set environmental coherence weight (w_e).
     pub fn with_w_e(mut self, w_e: f32) -> Self {
         self.w_e = w_e;
         self

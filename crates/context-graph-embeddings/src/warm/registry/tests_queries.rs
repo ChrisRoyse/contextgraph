@@ -178,7 +178,7 @@ fn test_loading_order_with_all_models() {
         ("E2_TemporalRecent", 200),
         ("E3_TemporalPeriodic", 300),
         ("E4_TemporalPositional", 150),
-        ("E10_Multimodal", 800),
+        ("E10_Contextual", 800),
     ];
 
     for (id, size_mb) in model_sizes {
@@ -189,8 +189,8 @@ fn test_loading_order_with_all_models() {
 
     let order = registry.loading_order();
 
-    // E10_Multimodal is largest, should be first
-    assert_eq!(order[0], "E10_Multimodal");
+    // E10_Contextual is largest, should be first
+    assert_eq!(order[0], "E10_Contextual");
     // E1_Semantic is second largest
     assert_eq!(order[1], "E1_Semantic");
     // E4_TemporalPositional is smallest, should be last

@@ -20,7 +20,7 @@ fn test_model_id_returns_correct_value() {
 }
 
 #[test]
-fn test_model_id_for_all_12_models() {
+fn test_model_id_for_all_14_models() {
     for model_id in ModelId::all() {
         let model = TestModel::new(*model_id, vec![InputType::Text]);
         assert_eq!(model.model_id(), *model_id);

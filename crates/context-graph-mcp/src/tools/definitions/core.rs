@@ -244,8 +244,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "sequenceDirection": {
                         "type": "string",
-                        "enum": ["before", "after", "around"],
-                        "description": "Direction for sequence-based retrieval relative to sequenceAnchor: 'before', 'after', or 'around' (both directions)."
+                        "enum": ["before", "after", "around", "both"],
+                        "description": "Direction for sequence-based retrieval relative to sequenceAnchor: 'before', 'after', 'around'/'both' (both directions)."
                     },
                     "includeProvenance": {
                         "type": "boolean",
@@ -255,8 +255,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "decayFunction": {
                         "type": "string",
                         "enum": ["linear", "exponential", "step", "none", "no_decay"],
-                        "default": "linear",
-                        "description": "Temporal decay function: linear, exponential, step, none, no_decay"
+                        "default": "exponential",
+                        "description": "Temporal decay function: linear, exponential, step, none, no_decay (default: exponential)"
                     },
                     "temporalScale": {
                         "type": "string",

@@ -41,6 +41,8 @@ async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
         if let Some(newline_pos) = available.iter().position(|&b| b == b'\n') {
             let to_consume = newline_pos + 1;
             if total + to_consume > max_bytes {
+                // Drain past the newline to keep the stream aligned for future reads
+                reader.consume(to_consume);
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::InvalidData,
                     format!(
@@ -58,6 +60,20 @@ async fn read_line_bounded<R: tokio::io::AsyncBufRead + Unpin>(
         }
         let len = available.len();
         if total + len > max_bytes {
+            // Drain until newline to keep the stream aligned for future reads
+            reader.consume(len);
+            loop {
+                let remaining = reader.fill_buf().await?;
+                if remaining.is_empty() {
+                    break; // EOF
+                }
+                if let Some(nl) = remaining.iter().position(|&b| b == b'\n') {
+                    reader.consume(nl + 1);
+                    break;
+                }
+                let drain_len = remaining.len();
+                reader.consume(drain_len);
+            }
             return Err(std::io::Error::new(
                 std::io::ErrorKind::InvalidData,
                 format!(
@@ -307,7 +323,7 @@ impl McpClient {
         self.call_tool(params).await
     }
 
-    /// Call the `inject_context` MCP tool.
+    /// Call the `inject_context` MCP tool (resolves to `store_memory`).
     ///
     /// Uses warm-loaded models on MCP server for embedding and UTL processing.
     ///
@@ -317,6 +333,8 @@ impl McpClient {
     /// - `rationale`: Reason for storing this context
     /// - `importance`: Importance score [0.0, 1.0]
     /// - `session_id`: Optional session ID for session-scoped storage
+    /// - `modality`: Content modality (default: "text")
+    /// - `tags`: Classification tags for the memory
     ///
     /// # Returns
     ///
@@ -327,16 +345,24 @@ impl McpClient {
         rationale: &str,
         importance: f64,
         session_id: Option<&str>,
+        modality: Option<&str>,
+        tags: Option<&[String]>,
     ) -> Result<serde_json::Value, McpClientError> {
         let mut arguments = json!({
             "content": content,
             "rationale": rationale,
-            "importance": importance
+            "importance": importance,
+            "modality": modality.unwrap_or("text")
         });
 
         // SESSION-ID-FIX: Add sessionId if provided
         if let Some(sid) = session_id {
             arguments["sessionId"] = json!(sid);
+        }
+
+        // CLI-M2 FIX: Include tags in request for metadata consistency
+        if let Some(t) = tags {
+            arguments["tags"] = json!(t);
         }
 
         let params = json!({
@@ -348,6 +374,8 @@ impl McpClient {
             content_len = content.len(),
             importance,
             session_id,
+            modality = modality.unwrap_or("text"),
+            tag_count = tags.map(|t| t.len()).unwrap_or(0),
             "Calling MCP inject_context"
         );
 
@@ -692,82 +720,6 @@ impl McpClient {
         });
 
         info!(force, "Calling MCP detect_topics");
-
-        self.call_tool(params).await
-    }
-
-    /// Call the `trigger_dream` MCP tool.
-    ///
-    /// Execute NREM/REM dream consolidation cycle.
-    ///
-    /// # Arguments
-    ///
-    /// - `blocking`: Wait for completion (default: true)
-    /// - `dry_run`: Simulate without modifying graph (default: false)
-    /// - `skip_nrem`: Skip NREM phase (default: false)
-    /// - `skip_rem`: Skip REM phase (default: false)
-    /// - `max_duration_secs`: Max duration in seconds (10-600, default: 300)
-    ///
-    /// # Returns
-    ///
-    /// The MCP tool result as JSON value containing dream status.
-    pub async fn trigger_dream(
-        &self,
-        blocking: bool,
-        dry_run: bool,
-        skip_nrem: bool,
-        skip_rem: bool,
-        max_duration_secs: Option<u32>,
-    ) -> Result<serde_json::Value, McpClientError> {
-        let params = json!({
-            "name": "trigger_dream",
-            "arguments": {
-                "blocking": blocking,
-                "dry_run": dry_run,
-                "skip_nrem": skip_nrem,
-                "skip_rem": skip_rem,
-                "max_duration_secs": max_duration_secs.unwrap_or(300)
-            }
-        });
-
-        info!(
-            blocking,
-            dry_run,
-            skip_nrem,
-            skip_rem,
-            max_duration_secs = max_duration_secs.unwrap_or(300),
-            "Calling MCP trigger_dream"
-        );
-
-        self.call_tool(params).await
-    }
-
-    /// Call the `get_dream_status` MCP tool.
-    ///
-    /// Get status of a running or completed dream cycle.
-    ///
-    /// # Arguments
-    ///
-    /// - `dream_id`: Dream cycle UUID (default: most recent)
-    ///
-    /// # Returns
-    ///
-    /// The MCP tool result as JSON value containing dream status.
-    pub async fn get_dream_status(
-        &self,
-        dream_id: Option<&str>,
-    ) -> Result<serde_json::Value, McpClientError> {
-        let mut args = serde_json::Map::new();
-        if let Some(id) = dream_id {
-            args.insert("dream_id".to_string(), json!(id));
-        }
-
-        let params = json!({
-            "name": "get_dream_status",
-            "arguments": args
-        });
-
-        info!(dream_id, "Calling MCP get_dream_status");
 
         self.call_tool(params).await
     }

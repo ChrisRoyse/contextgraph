@@ -82,8 +82,8 @@ fn test_custom_models_count() {
 
     let pretrained_count: usize = ModelId::pretrained().count();
     assert_eq!(
-        pretrained_count, 9,
-        "Expected 9 pretrained models, got {}",
+        pretrained_count, 10,
+        "Expected 10 pretrained models, got {}",
         pretrained_count
     );
 
@@ -92,5 +92,5 @@ fn test_custom_models_count() {
         MODEL_COUNT,
         "Custom + pretrained should equal MODEL_COUNT"
     );
-    println!("[PASS] 4 custom + 9 pretrained = 13 total models");
+    println!("[PASS] 4 custom + 10 pretrained = 14 total models");
 }

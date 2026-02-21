@@ -5,7 +5,7 @@
 //! 1. **Config Tests**: WarmConfig defaults, environment loading, validation
 //! 2. **Error Tests**: Exit codes 101-110, error categories, fatal vs non-fatal
 //! 3. **State Machine Tests**: WarmModelState transitions and predicates
-//! 4. **Registry Tests**: WarmModelRegistry with all 12 models
+//! 4. **Registry Tests**: WarmModelRegistry with all 14 models
 //! 5. **Memory Pool Tests**: WarmMemoryPools dual-pool architecture
 //! 6. **Validation Tests**: WarmValidator dimension/weight/inference validation
 //! 7. **Handle Tests**: ModelHandle VRAM pointer tracking

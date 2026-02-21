@@ -390,11 +390,11 @@ mod tests {
         }
     }
 
-    /// Verify all 13 ModelId variants are covered by iterating through ModelId::all().
+    /// Verify all 14 ModelId variants are covered by iterating through ModelId::all().
     #[test]
     fn test_all_model_ids_covered() {
         let all_models = ModelId::all();
-        assert_eq!(all_models.len(), 13, "Expected 13 ModelId variants");
+        assert_eq!(all_models.len(), 14, "Expected 14 ModelId variants");
 
         // Verify each has a quantization method (no panic)
         for model_id in all_models {

@@ -80,15 +80,15 @@ pub trait ModelFactory: Send + Sync {
     ///
     /// # Returns
     /// Static slice of supported `ModelId` variants.
-    /// A full factory supports all 13 models.
+    /// A full factory supports all 14 models (E1-E13 + Kepler).
     ///
     /// # Example
     ///
     /// ```
     /// # use context_graph_embeddings::types::ModelId;
-    /// // All 13 model IDs are available
+    /// // All 14 model IDs are available (E1-E13 + Kepler)
     /// let all_models = ModelId::all();
-    /// assert_eq!(all_models.len(), 13);
+    /// assert_eq!(all_models.len(), 14);
     /// assert!(all_models.contains(&ModelId::Semantic));
     /// ```
     fn supported_models(&self) -> &[ModelId];

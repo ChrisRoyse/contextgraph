@@ -67,7 +67,7 @@ fn create_test_fingerprint(seed: u64) -> TeleologicalFingerprint {
         *v = lcg_next(&mut state);
     }
 
-    // Populate E8 (384D)
+    // Populate E8 (1024D)
     for v in semantic.e8_graph.iter_mut() {
         *v = lcg_next(&mut state);
     }
@@ -82,7 +82,7 @@ fn create_test_fingerprint(seed: u64) -> TeleologicalFingerprint {
         *v = lcg_next(&mut state);
     }
 
-    // Populate E11 (384D)
+    // Populate E11 (768D)
     for v in semantic.e11_entity.iter_mut() {
         *v = lcg_next(&mut state);
     }

@@ -73,19 +73,19 @@ fn test_storage_version() {
 // DIMENSION BENCHMARK TESTS
 // =============================================================================
 
-/// Test: Total dimension is 11264 (E11 Entity at legacy 384D)
+/// Test: Total dimension is 12032 (14 models: E1-E13 + Kepler)
 #[test]
 fn test_total_dimension_benchmark() {
-    assert_eq!(TOTAL_DIMENSION, 11264);
+    assert_eq!(TOTAL_DIMENSION, 12032);
     eprintln!("[BENCHMARK] Total dimension: {}D", TOTAL_DIMENSION);
 }
 
-/// Test: Model count is 13
+/// Test: Model count is 14 (13 pipeline + Kepler), NUM_EMBEDDERS is 13 (weight slots E1-E13)
 #[test]
 fn test_model_count_benchmark() {
-    assert_eq!(MODEL_COUNT, 13);
+    assert_eq!(MODEL_COUNT, 14);
     assert_eq!(NUM_EMBEDDERS, 13);
-    eprintln!("[BENCHMARK] Model count: {} embedders", MODEL_COUNT);
+    eprintln!("[BENCHMARK] Model count: {}, Embedder weight slots: {}", MODEL_COUNT, NUM_EMBEDDERS);
 }
 
 /// Test: Projected dimensions sum to TOTAL_DIMENSION
@@ -626,17 +626,17 @@ fn test_edge_case_concurrent_creation() {
 /// Test: All Constitution constants are consistent
 #[test]
 fn test_constitution_constants_consistency() {
-    // NUM_EMBEDDERS from storage module
+    // NUM_EMBEDDERS from storage module (13 weight slots: E1-E13)
     assert_eq!(NUM_EMBEDDERS, 13);
 
-    // MODEL_COUNT from dimensions module
-    assert_eq!(MODEL_COUNT, 13);
+    // MODEL_COUNT from dimensions module (14 models: E1-E13 + Kepler)
+    assert_eq!(MODEL_COUNT, 14);
 
-    // Should match
-    assert_eq!(NUM_EMBEDDERS, MODEL_COUNT);
+    // MODEL_COUNT = NUM_EMBEDDERS + 1 (Kepler is production E11, shares weight slot 10)
+    assert_eq!(MODEL_COUNT, NUM_EMBEDDERS + 1);
 
-    // TOTAL_DIMENSION (E11 Entity at legacy 384D)
-    assert_eq!(TOTAL_DIMENSION, 11264);
+    // TOTAL_DIMENSION (14 models including Kepler 768D)
+    assert_eq!(TOTAL_DIMENSION, 12032);
 
     eprintln!("[BENCHMARK] Constitution constants verified:");
     eprintln!("  NUM_EMBEDDERS = MODEL_COUNT = {}", NUM_EMBEDDERS);

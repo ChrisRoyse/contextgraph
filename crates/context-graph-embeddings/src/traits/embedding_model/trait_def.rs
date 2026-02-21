@@ -56,7 +56,7 @@ pub trait EmbeddingModel: Send + Sync {
     ///
     /// ```
     /// # use context_graph_embeddings::types::ModelId;
-    /// // ModelId identifies each of the 12 models
+    /// // ModelId identifies each of the 14 models
     /// let model_id = ModelId::Semantic;
     /// assert_eq!(model_id.dimension(), 1024);
     /// ```

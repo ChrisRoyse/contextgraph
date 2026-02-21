@@ -728,9 +728,10 @@ impl Handlers {
             .unwrap_or(0.0);
 
         // Parse decayFunction (linear, exponential, step, none)
+        // Default is exponential to match the schema definition in core.rs
         let decay_function = match args.get("decayFunction").and_then(|v| v.as_str()) {
-            Some("linear") | None => context_graph_core::traits::DecayFunction::Linear,
-            Some("exponential") => context_graph_core::traits::DecayFunction::Exponential,
+            Some("exponential") | None => context_graph_core::traits::DecayFunction::Exponential,
+            Some("linear") => context_graph_core::traits::DecayFunction::Linear,
             Some("step") => context_graph_core::traits::DecayFunction::Step,
             Some("none") | Some("no_decay") => context_graph_core::traits::DecayFunction::NoDecay,
             Some(unknown) => {
@@ -784,16 +785,16 @@ impl Handlers {
             .and_then(|v| v.as_str())
             .and_then(|s| uuid::Uuid::parse_str(s).ok());
 
-        // Parse sequenceDirection (before, after, both)
+        // Parse sequenceDirection (before, after, around/both)
         let sequence_direction = match args.get("sequenceDirection").and_then(|v| v.as_str()) {
             Some("before") => context_graph_core::traits::SequenceDirection::Before,
             Some("after") => context_graph_core::traits::SequenceDirection::After,
-            Some("both") | None => context_graph_core::traits::SequenceDirection::Both,
+            Some("both") | Some("around") | None => context_graph_core::traits::SequenceDirection::Both,
             Some(unknown) => {
                 return self.tool_error_typed(
                     id,
                     ToolErrorKind::Validation,
-                    &format!("Unknown sequenceDirection '{}'. Valid: before, after, both", unknown),
+                    &format!("Unknown sequenceDirection '{}'. Valid: before, after, around, both", unknown),
                 );
             }
         };
@@ -1361,6 +1362,11 @@ impl Handlers {
                         // =============================================================
                         // When asymmetric E5 was applied, show each result's gate details:
                         // e5Score, action (boost/demote/none), and score delta.
+                        //
+                        // MCP-M3 FIX: scoreDelta must reflect ONLY the causal gate contribution
+                        // (boost/demotion), not the direction-aware reranking boost that was
+                        // applied separately. We undo the direction boost from r.similarity
+                        // to recover the post-gate-only score before computing the delta.
                         if asymmetric_applied {
                             let query_is_cause = matches!(causal_direction, CausalDirection::Cause);
                             let e5_sim = compute_e5_asymmetric_fingerprint_similarity(
@@ -1368,10 +1374,22 @@ impl Handlers {
                                 &r.fingerprint.semantic,
                                 query_is_cause,
                             );
+
+                            // Undo direction-aware boost to isolate causal gate contribution.
+                            // Direction reranking applies 1.08x when query and result directions match.
+                            const DIRECTION_MATCH_BOOST: f32 = 1.08;
+                            let result_dir = infer_result_causal_direction(&r.fingerprint.semantic);
+                            let direction_multiplier = match (&causal_direction, &result_dir) {
+                                (CausalDirection::Cause, CausalDirection::Cause) => DIRECTION_MATCH_BOOST,
+                                (CausalDirection::Effect, CausalDirection::Effect) => DIRECTION_MATCH_BOOST,
+                                _ => 1.0,
+                            };
+                            let score_before_direction = r.similarity / direction_multiplier;
+
                             let (action, score_delta) = if e5_sim >= causal_gate::CAUSAL_THRESHOLD {
-                                ("boost", r.similarity - (r.similarity / causal_gate::CAUSAL_BOOST))
+                                ("boost", score_before_direction - (score_before_direction / causal_gate::CAUSAL_BOOST))
                             } else if e5_sim <= causal_gate::NON_CAUSAL_THRESHOLD {
-                                ("demote", r.similarity - (r.similarity / causal_gate::NON_CAUSAL_DEMOTION))
+                                ("demote", score_before_direction - (score_before_direction / causal_gate::NON_CAUSAL_DEMOTION))
                             } else {
                                 ("none", 0.0)
                             };
@@ -1525,26 +1543,10 @@ impl Handlers {
                 // Per GAP-1: Make it transparent which of the 13 embedders
                 // participated in RRF fusion vs. which weights were ignored.
                 {
-                    // P6: Reuse pre-resolved weights (single lock acquisition above)
-                    let mut resolved_weights = resolved_weights;
-
-                    // Apply exclude_embedders to resolved_weights (mirrors resolve_weights_sync)
-                    if !exclude_embedder_names.is_empty() {
-                        for name in &exclude_embedder_names {
-                            let idx = match name.as_str() {
-                                "E1" => 0, "E2" => 1, "E3" => 2, "E4" => 3, "E5" => 4,
-                                "E6" => 5, "E7" => 6, "E8" => 7, "E9" => 8, "E10" => 9,
-                                "E11" => 10, "E12" => 11, "E13" => 12, _ => continue,
-                            };
-                            resolved_weights[idx] = 0.0;
-                        }
-                        let sum: f32 = resolved_weights.iter().sum();
-                        if sum > 0.0 {
-                            for w in resolved_weights.iter_mut() {
-                                *w /= sum;
-                            }
-                        }
-                    }
+                    // P6: Reuse pre-resolved weights (single lock acquisition above).
+                    // resolved_weights already has exclusions applied by resolve_weights_sync(),
+                    // so no need to re-apply exclude_embedders here.
+                    let resolved_weights = resolved_weights;
 
                     // Active embedders depend on search strategy, filtered by exclusions
                     let (strategy_indices, strategy_label) = match strategy {
@@ -1709,8 +1711,11 @@ fn apply_direction_aware_reranking(
 
 /// Infer a document's causal direction by analyzing its E5 embeddings.
 ///
-/// Documents that describe causes tend to have stronger "as_cause" vectors,
-/// while documents describing effects have stronger "as_effect" vectors.
+/// Delegates to the core `infer_direction_from_fingerprint` which uses component
+/// variance (not L2 norms) to detect direction in L2-normalized vectors.
+/// L2 norms are always ~1.0 for normalized vectors, making norm comparison useless.
+/// Component variance detects which projection head produced a more concentrated
+/// (peaked) representation, which is the correct signal for direction inference.
 ///
 /// # Arguments
 /// * `fingerprint` - Document's semantic fingerprint
@@ -1718,30 +1723,7 @@ fn apply_direction_aware_reranking(
 /// # Returns
 /// Inferred causal direction of the document
 fn infer_result_causal_direction(fingerprint: &SemanticFingerprint) -> CausalDirection {
-    let cause_vec = fingerprint.get_e5_as_cause();
-    let effect_vec = fingerprint.get_e5_as_effect();
-
-    // Compare vector norms as a proxy for directional strength
-    let cause_norm: f32 = cause_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let effect_norm: f32 = effect_vec.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-    // Require >10% difference to be confident in direction
-    let threshold = 0.1;
-    let diff_ratio = if effect_norm > f32::EPSILON {
-        (cause_norm - effect_norm) / effect_norm
-    } else if cause_norm > f32::EPSILON {
-        1.0 // All cause, no effect
-    } else {
-        0.0 // Both zero
-    };
-
-    if diff_ratio > threshold {
-        CausalDirection::Cause
-    } else if diff_ratio < -threshold {
-        CausalDirection::Effect
-    } else {
-        CausalDirection::Unknown
-    }
+    context_graph_core::causal::asymmetric::infer_direction_from_fingerprint(fingerprint)
 }
 
 /// Expand a causal query with related terms for better recall.

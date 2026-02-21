@@ -48,6 +48,9 @@ pub const LATE_INTERACTION_NATIVE: usize = 128;
 /// E13: SPLADE v3 native dimension (30K sparse vocabulary)
 pub const SPLADE_NATIVE: usize = 30522;
 
+/// E11 production: KEPLER native dimension (RoBERTa-base, 768D)
+pub const KEPLER_NATIVE: usize = 768;
+
 // =============================================================================
 // PROJECTED DIMENSIONS (for Multi-Array Storage)
 // =============================================================================
@@ -91,3 +94,6 @@ pub const LATE_INTERACTION: usize = 128;
 
 /// E13: SPLADE v3 projected dimension (30K sparse -> 1536D via learned projection)
 pub const SPLADE: usize = 1536;
+
+/// E11 production: KEPLER projected dimension (RoBERTa-base, no projection needed)
+pub const KEPLER: usize = 768;

@@ -99,6 +99,8 @@ pub async fn execute(args: PreCompactArgs) -> HookResult<HookOutput> {
                 &rationale,
                 SESSION_SUMMARY_IMPORTANCE,
                 Some(&args.session_id),
+                Some("text"),
+                Some(&["session-summary".to_string(), "pre-compact".to_string()]),
             )
             .await
         {

@@ -117,6 +117,9 @@ impl DefaultCrossSpaceEngine {
     ///
     /// Formula: MaxSim(Q, D) = SUM_i MAX_j (q_i . d_j)
     /// where q_i are query tokens and d_j are document tokens.
+    ///
+    /// Note: ColBERT tokens are L2-normalized at embedding time, so
+    /// dot product == cosine similarity. No explicit normalization needed.
     #[inline]
     fn maxsim_token_level(query_tokens: &[Vec<f32>], doc_tokens: &[Vec<f32>]) -> f32 {
         if query_tokens.is_empty() || doc_tokens.is_empty() {
@@ -140,12 +143,8 @@ impl DefaultCrossSpaceEngine {
             }
         }
 
-        // Normalize by number of query tokens
-        if !query_tokens.is_empty() {
-            total / query_tokens.len() as f32
-        } else {
-            0.0
-        }
+        // Normalize by number of query tokens (early return above guarantees non-empty)
+        total / query_tokens.len() as f32
     }
 
     /// Simple dot product for token vectors.

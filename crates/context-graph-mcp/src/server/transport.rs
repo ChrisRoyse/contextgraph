@@ -21,7 +21,6 @@ use tracing::{debug, error, info, warn};
 
 use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
-use crate::transport::{create_sse_router, SseAppState, SseConfig};
 
 use super::McpServer;
 
@@ -397,86 +396,14 @@ impl McpServer {
     /// - HTTP server fails to bind (address in use, permissions)
     /// - Server encounters fatal error during operation
     pub async fn run_sse(&self) -> Result<()> {
-        // H5 FIX: SSE transport is broadcast-only — it cannot process MCP tool calls.
+        // CLI-M3 FIX: SSE transport is broadcast-only — it cannot process MCP tool calls.
         // All 56 tools would be unreachable. Fail fast instead of silently starting
         // a server that appears to work but can't handle any requests.
-        return Err(anyhow::anyhow!(
+        // Dead SSE implementation code removed — was 70+ lines behind #[allow(unreachable_code)].
+        Err(anyhow::anyhow!(
             "SSE transport is not supported for MCP tool calls. \
              SSE is a one-directional broadcast protocol — it cannot receive or process \
              JSON-RPC requests. Use --transport stdio (default) or --transport tcp instead."
-        ));
-
-        // Parse bind address (dead code kept for future bidirectional SSE implementation)
-        #[allow(unreachable_code)]
-        let bind_addr: SocketAddr = format!(
-            "{}:{}",
-            self.config.mcp.bind_address, self.config.mcp.sse_port
-        )
-        .parse()
-        .map_err(|e| {
-            error!(
-                "FATAL: Invalid SSE bind address '{}:{}': {}",
-                self.config.mcp.bind_address, self.config.mcp.sse_port, e
-            );
-            anyhow::anyhow!(
-                "Invalid SSE bind address '{}:{}': {}. \
-                 Check config.mcp.bind_address and config.mcp.sse_port.",
-                self.config.mcp.bind_address,
-                self.config.mcp.sse_port,
-                e
-            )
-        })?;
-
-        // Create SSE configuration
-        let sse_config = SseConfig::default();
-        sse_config.validate().map_err(|e| {
-            error!("FATAL: Invalid SSE configuration: {}", e);
-            anyhow::anyhow!("Invalid SSE configuration: {}", e)
-        })?;
-
-        // Create SSE application state
-        let sse_state = SseAppState::new(sse_config).map_err(|e| {
-            error!("FATAL: Failed to create SSE application state: {}", e);
-            anyhow::anyhow!("Failed to create SSE application state: {}", e)
-        })?;
-
-        // Create SSE router
-        let router = create_sse_router(sse_state);
-
-        // Bind TCP listener
-        let listener = tokio::net::TcpListener::bind(bind_addr)
-            .await
-            .map_err(|e| {
-                error!("FATAL: Failed to bind SSE listener to {}: {}", bind_addr, e);
-                anyhow::anyhow!(
-                    "Failed to bind SSE listener to {}: {}. \
-                 Address may be in use or require elevated permissions.",
-                    bind_addr,
-                    e
-                )
-            })?;
-
-        info!(
-            "MCP Server listening on SSE http://{}/events (max_connections={})",
-            bind_addr, self.config.mcp.max_connections
-        );
-
-        // TASK-GRAPHLINK-PHASE1: Start background graph builder worker
-        // This processes fingerprints from the queue and builds K-NN edges
-        match self.start_graph_builder().await {
-            Ok(true) => info!("Background graph builder started"),
-            Ok(false) => debug!("Background graph builder not configured or failed to start"),
-            Err(e) => warn!("Failed to start background graph builder: {}", e),
-        }
-
-        // Run axum server with explicit type annotation
-        axum::serve(listener, router.into_make_service())
-            .await
-            .map_err(|e| {
-                error!("SSE server error: {}", e);
-                anyhow::anyhow!("SSE server error: {}", e)
-            })?;
-
-        Ok(())
+        ))
     }
 }

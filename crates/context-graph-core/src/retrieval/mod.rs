@@ -38,10 +38,10 @@
 //! | 4 | E5_Causal | 768 | Dense HNSW |
 //! | 5 | E6_Sparse | variable | Sparse Inverted |
 //! | 6 | E7_Code | 1536 | Dense HNSW |
-//! | 7 | E8_Graph | 384 | Dense HNSW |
+//! | 7 | E8_Graph | 1024 | Dense HNSW |
 //! | 8 | E9_HDC | 1024 | Dense HNSW |
 //! | 9 | E10_Multimodal | 768 | Dense HNSW |
-//! | 10 | E11_Entity | 384 | Dense HNSW |
+//! | 10 | E11_Entity | 768 | Dense HNSW |
 //! | 11 | E12_Late_Interaction | 128×N | ColBERT MaxSim |
 //! | 12 | E13_SPLADE | 30522 | Sparse Inverted |
 //!

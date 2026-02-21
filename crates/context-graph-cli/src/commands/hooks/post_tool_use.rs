@@ -440,7 +440,7 @@ async fn capture_tool_memory(tool_name: &str, tool_response: &str, tool_success:
 
     // Store via MCP inject_context
     // SESSION-ID-FIX: Pass session_id for proper session-scoped storage
-    match client.inject_context(&content, &rationale, importance, Some(session_id)).await {
+    match client.inject_context(&content, &rationale, importance, Some(session_id), Some("text"), None).await {
         Ok(result) => {
             let fingerprint_id = result
                 .get("fingerprintId")

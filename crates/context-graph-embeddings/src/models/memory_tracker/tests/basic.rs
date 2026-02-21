@@ -144,7 +144,7 @@ fn test_allocate_fails_when_model_already_loaded() {
 }
 
 #[test]
-fn test_allocate_all_13_models() {
+fn test_allocate_all_14_models() {
     // Use real memory estimates from MEMORY_ESTIMATES
     use crate::traits::MEMORY_ESTIMATES;
 
@@ -156,6 +156,6 @@ fn test_allocate_all_13_models() {
         assert!(result.is_ok(), "Failed to allocate {:?}", model_id);
     }
 
-    assert_eq!(tracker.allocation_count(), 13);
+    assert_eq!(tracker.allocation_count(), 14);
     assert_eq!(tracker.current_usage(), total);
 }

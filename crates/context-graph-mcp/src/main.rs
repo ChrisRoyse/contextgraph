@@ -143,6 +143,9 @@ impl CliArgs {
                     if i < args.len() {
                         if let Ok(port) = args[i].parse::<u16>() {
                             cli.port = Some(port);
+                        } else {
+                            eprintln!("[E_CLI_PORT_001] Invalid --port value '{}': must be a valid port number (1-65535)", args[i]);
+                            cli.help = true;
                         }
                     }
                 }
@@ -152,6 +155,9 @@ impl CliArgs {
                     if i < args.len() {
                         if let Ok(port) = args[i].parse::<u16>() {
                             cli.sse_port = Some(port);
+                        } else {
+                            eprintln!("[E_CLI_PORT_002] Invalid --sse-port value '{}': must be a valid port number (1-65535)", args[i]);
+                            cli.help = true;
                         }
                     }
                 }
@@ -180,6 +186,9 @@ impl CliArgs {
                         if let Ok(port) = args[i].parse::<u16>() {
                             cli.daemon_port = port;
                             cli.explicit_daemon_port = true;
+                        } else {
+                            eprintln!("[E_CLI_PORT_003] Invalid --daemon-port value '{}': must be a valid port number (1-65535)", args[i]);
+                            cli.help = true;
                         }
                     }
                 }
@@ -204,21 +213,21 @@ USAGE:
 
 OPTIONS:
     --config <PATH>      Path to configuration file
-    --transport <MODE>   Transport mode: stdio (default), tcp, or sse
+    --transport <MODE>   Transport mode: stdio (default) or tcp
     --port <PORT>        TCP port (only used with --transport tcp)
-    --sse-port <PORT>    SSE port (only used with --transport sse, default: 3101)
-    --bind <ADDRESS>     TCP/SSE bind address (default: 127.0.0.1)
+    --bind <ADDRESS>     TCP bind address (default: 127.0.0.1)
     --warm-first         Block startup until embedding models are loaded into VRAM (default)
     --no-warm            Skip blocking warmup (embeddings fail until background load completes)
     --daemon             Share one server across multiple terminals (RECOMMENDED)
     --daemon-port <PORT> Daemon TCP port (default: 3100)
     --help, -h           Show this help message
 
+    # Note: SSE transport was removed (use TCP instead)
+
 ENVIRONMENT VARIABLES:
-    CONTEXT_GRAPH_TRANSPORT     Transport mode (stdio|tcp|sse)
+    CONTEXT_GRAPH_TRANSPORT     Transport mode (stdio|tcp)
     CONTEXT_GRAPH_TCP_PORT      TCP port number
-    CONTEXT_GRAPH_SSE_PORT      SSE port number (TASK-42)
-    CONTEXT_GRAPH_BIND_ADDRESS  TCP/SSE bind address
+    CONTEXT_GRAPH_BIND_ADDRESS  TCP bind address
     CONTEXT_GRAPH_WARM_FIRST    Set to "0" to disable blocking warmup (default: "1")
     CONTEXT_GRAPH_DAEMON        Set to "1" to enable daemon mode (default: "0")
     CONTEXT_GRAPH_DAEMON_PORT   Daemon port number (default: 3100)
@@ -266,12 +275,6 @@ EXAMPLES:
 
     # Run with TCP on all interfaces
     context-graph-mcp --transport tcp --bind 0.0.0.0 --port 3100
-
-    # Run with SSE transport on default port (3101)
-    context-graph-mcp --transport sse
-
-    # Run with SSE transport on custom port
-    context-graph-mcp --transport sse --sse-port 8080
 
     # Run with custom config file
     context-graph-mcp --config /path/to/config.toml
@@ -672,14 +675,19 @@ impl PidFileGuard {
 
         #[cfg(not(unix))]
         {
-            // On non-Unix: best-effort PID file (no flock)
+            // CLI-M4 FIX: On non-Unix, PidFileGuard writes PID but acquires NO flock.
+            // Without a file lock, there is no protection against multiple daemon instances.
+            // Concurrent instances sharing the same RocksDB directory WILL corrupt data.
             use std::io::Write;
             let mut f = &file;
             let _ = f.set_len(0);
             let _ = write!(f, "{}", std::process::id());
             let _ = f.flush();
 
-            warn!("PID file guard: no flock on this OS, using advisory PID file only");
+            warn!(
+                "E_PID_NO_LOCK: PidFileGuard on non-Unix platform provides no lock protection. \
+                 Multiple instances may corrupt RocksDB. Ensure only one daemon runs at a time."
+            );
 
             Ok(PidFileGuard {
                 path: pid_path,

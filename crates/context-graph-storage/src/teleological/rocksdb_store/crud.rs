@@ -308,8 +308,24 @@ impl RocksDbTeleologicalStore {
             // STOR-1 FIX: Decrement total_doc_count for IDF accuracy.
             // Soft-deleted docs are excluded from search, so they must not inflate
             // the IDF denominator between restarts.
-            self.total_doc_count
-                .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+            // STOR-H1 FIX: Use fetch_update with checked subtraction to prevent
+            // underflow wrapping to usize::MAX, which corrupts all BM25-IDF scoring.
+            if self
+                .total_doc_count
+                .fetch_update(
+                    std::sync::atomic::Ordering::Relaxed,
+                    std::sync::atomic::Ordering::Relaxed,
+                    |c| if c > 0 { Some(c - 1) } else { None },
+                )
+                .is_err()
+            {
+                error!(
+                    id = %id,
+                    "E_STOR_DOC_COUNT_001: total_doc_count underflow prevented \
+                     (was already 0) during soft-delete for fingerprint {}",
+                    id
+                );
+            }
 
             // Invalidate count cache (soft delete changes the effective count)
             *self.fingerprint_count.write() = None;
@@ -423,9 +439,25 @@ impl RocksDbTeleologicalStore {
             // already soft-deleted. Soft-delete already decremented the counter
             // (see soft-delete branch above). GC calls delete_async(id, false)
             // for expired soft-deletes, which would double-decrement without this guard.
+            // STOR-H1 FIX: Use fetch_update with checked subtraction to prevent
+            // underflow wrapping to usize::MAX, which corrupts all BM25-IDF scoring.
             if !was_soft_deleted {
-                self.total_doc_count
-                    .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
+                if self
+                    .total_doc_count
+                    .fetch_update(
+                        std::sync::atomic::Ordering::Relaxed,
+                        std::sync::atomic::Ordering::Relaxed,
+                        |c| if c > 0 { Some(c - 1) } else { None },
+                    )
+                    .is_err()
+                {
+                    error!(
+                        id = %id,
+                        "E_STOR_DOC_COUNT_001: total_doc_count underflow prevented \
+                         (was already 0) during hard-delete for fingerprint {}",
+                        id
+                    );
+                }
             }
         }
 

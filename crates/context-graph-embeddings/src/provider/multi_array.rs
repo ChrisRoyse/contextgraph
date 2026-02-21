@@ -1606,14 +1606,78 @@ unsafe impl Sync for ProductionMultiArrayProvider {}
 mod tests {
     use super::*;
 
-    /// Test that provider requires non-empty content.
+    /// EMB-M4 FIX: Real test that DenseEmbedderAdapter rejects empty content.
+    /// Creates a real EmbeddingModel implementation and verifies empty string
+    /// returns CoreError::ValidationError through the adapter's embed path.
     #[tokio::test]
     async fn test_empty_content_rejected() {
-        // Note: This test requires model files to be present
-        // In CI, this would be skipped or use mock models
-        // For now, we just verify the validation logic exists
-        let content = "";
-        assert!(content.is_empty());
+        use crate::error::{EmbeddingError, EmbeddingResult};
+        use crate::types::{InputType, ModelEmbedding, ModelInput};
+        use std::sync::atomic::{AtomicBool, Ordering};
+
+        /// Real EmbeddingModel that produces deterministic vectors from content hashes.
+        struct DeterministicModel {
+            initialized: AtomicBool,
+        }
+
+        #[async_trait]
+        impl EmbeddingModel for DeterministicModel {
+            fn model_id(&self) -> ModelId {
+                ModelId::Semantic
+            }
+            fn supported_input_types(&self) -> &[InputType] {
+                &[InputType::Text]
+            }
+            async fn embed(&self, input: &ModelInput) -> EmbeddingResult<ModelEmbedding> {
+                if !self.initialized.load(Ordering::SeqCst) {
+                    return Err(EmbeddingError::NotInitialized {
+                        model_id: ModelId::Semantic,
+                    });
+                }
+                let hash = input.content_hash();
+                let dim = 1024;
+                let mut vector = Vec::with_capacity(dim);
+                let mut state = hash;
+                for _ in 0..dim {
+                    state = state.wrapping_mul(6364136223846793005).wrapping_add(1);
+                    vector.push(((state >> 33) as f32) / (u32::MAX as f32) - 0.5);
+                }
+                Ok(ModelEmbedding::new(ModelId::Semantic, vector, 100))
+            }
+            fn is_initialized(&self) -> bool {
+                self.initialized.load(Ordering::SeqCst)
+            }
+        }
+
+        let model = DeterministicModel {
+            initialized: AtomicBool::new(true),
+        };
+        let adapter = DenseEmbedderAdapter::new(
+            Box::new(model),
+            ModelId::Semantic,
+            1024,
+        );
+
+        // Empty content must be rejected with a ValidationError
+        let result = adapter.embed("").await;
+        assert!(result.is_err(), "empty content should be rejected");
+        let err = result.unwrap_err();
+        match &err {
+            CoreError::ValidationError { field, message } => {
+                assert_eq!(field, "content");
+                assert!(
+                    message.contains("empty"),
+                    "error message should mention 'empty', got: {message}"
+                );
+            }
+            other => panic!("expected ValidationError, got: {other:?}"),
+        }
+
+        // Non-empty content should succeed
+        let result = adapter.embed("hello world").await;
+        assert!(result.is_ok(), "non-empty content should succeed");
+        let vec = result.unwrap();
+        assert_eq!(vec.len(), 1024, "embedding dimension should be 1024");
     }
 
     /// Test NUM_EMBEDDERS is 13.
@@ -1635,7 +1699,7 @@ mod tests {
             "code",
             "graph",
             "hdc",
-            "multimodal",
+            "contextual",
             "entity",
             "late_interaction",
             "splade",

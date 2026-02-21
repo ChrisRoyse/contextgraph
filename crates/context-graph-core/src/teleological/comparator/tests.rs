@@ -105,11 +105,12 @@ mod tests {
             .compare(&fp_a, &fp_b)
             .expect("comparison should succeed");
 
-        // Orthogonal vectors should have low similarity
+        // Orthogonal vectors: raw cosine ~0.0, normalized (0+1)/2 = 0.5 (midpoint)
         // Note: Only E1 is truly orthogonal in this test
         assert!(
-            result.per_embedder[0].map(|s| s < 0.5).unwrap_or(false),
-            "E1 similarity for orthogonal vectors should be low"
+            result.per_embedder[0].map(|s| (s - 0.5).abs() < 0.01).unwrap_or(false),
+            "E1 similarity for orthogonal vectors should be ~0.5 (midpoint), got {:?}",
+            result.per_embedder[0]
         );
     }
 

@@ -74,8 +74,8 @@ fn test_loading_order_uses_registry() {
     assert!(!loading_order.is_empty());
     assert_eq!(loading_order.len(), TOTAL_MODEL_COUNT);
 
-    // Verify E10_Multimodal (largest at 800MB) is first in loading order
-    assert_eq!(loading_order[0], "E10_Multimodal");
+    // Verify E10_Contextual (largest at 800MB) is first in loading order
+    assert_eq!(loading_order[0], "E10_Contextual");
 }
 
 // ============================================================================

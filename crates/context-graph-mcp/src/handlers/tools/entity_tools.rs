@@ -1548,8 +1548,8 @@ impl Handlers {
         let search_query = if let Some(ref center) = request.center_entity {
             center.clone()
         } else {
-            // Search for recent technical content
-            "code programming framework database".to_string()
+            // Domain-neutral fallback for broad entity discovery
+            "entity relationship knowledge".to_string()
         };
 
         let query_fingerprint = match self.embed_query(id.clone(), &search_query, "get_entity_graph").await {
@@ -1639,9 +1639,9 @@ impl Handlers {
                 }
 
                 // Record co-occurrences (entities appearing in same memory)
-                for i in 0..memory_entities.len() {
-                    for j in (i + 1)..memory_entities.len() {
-                        let e1 = &memory_entities[i];
+                for ei in 0..memory_entities.len() {
+                    for j in (ei + 1)..memory_entities.len() {
+                        let e1 = &memory_entities[ei];
                         let e2 = &memory_entities[j];
 
                         // Use sorted order for consistent key

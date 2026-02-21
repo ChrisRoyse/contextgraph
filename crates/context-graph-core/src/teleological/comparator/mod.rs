@@ -20,14 +20,14 @@
 //! | 2 | E3 TemporalPeriodic | Dense | cosine_similarity |
 //! | 3 | E4 TemporalPositional | Dense | cosine_similarity |
 //! | 4 | E5 Causal | Dense | cosine_similarity |
-//! | 5 | E6 Sparse | Sparse | sparse_cosine_similarity |
+//! | 5 | E6 Sparse | Sparse | jaccard_similarity |
 //! | 6 | E7 Code | Dense | cosine_similarity |
 //! | 7 | E8 Graph | Dense | cosine_similarity |
 //! | 8 | E9 HDC | Dense | cosine_similarity |
 //! | 9 | E10 Multimodal | Dense | cosine_similarity |
 //! | 10 | E11 Entity | Dense | cosine_similarity |
 //! | 11 | E12 LateInteraction | TokenLevel | max_sim |
-//! | 12 | E13 KeywordSplade | Sparse | sparse_cosine_similarity |
+//! | 12 | E13 KeywordSplade | Sparse | jaccard_similarity |
 
 // Submodules
 mod batch;

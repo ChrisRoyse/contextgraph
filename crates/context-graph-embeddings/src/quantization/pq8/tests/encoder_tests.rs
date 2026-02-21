@@ -66,8 +66,8 @@ fn test_round_trip() {
     // Note: Default codebook with LCG-generated centroids provides moderate quality.
     // The <5% recall loss guarantee only applies to trained codebooks.
     assert!(
-        cosine > 0.1,
-        "Cosine similarity {} too low for PQ-8 round-trip (expected > 0.1 for default codebook)",
+        cosine > 0.15,
+        "Cosine similarity {} too low for PQ-8 round-trip (expected > 0.15 for default codebook)",
         cosine
     );
 }
@@ -237,8 +237,8 @@ fn test_recall_within_spec() {
     // Note: Default codebook uses pseudo-random centroids which provides
     // reasonable but not optimal quantization.
     assert!(
-        avg_cosine > 0.1,
-        "Average cosine similarity {} too low even for default codebook (expected > 0.1)",
+        avg_cosine > 0.15,
+        "Average cosine similarity {} too low even for default codebook (expected > 0.15)",
         avg_cosine
     );
 

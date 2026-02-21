@@ -20,8 +20,9 @@ pub const MODEL_SIZES: &[(&str, usize)] = &[
     ("E7_Code", 700 * 1024 * 1024),               // 700MB
     ("E8_Graph", 550 * 1024 * 1024),              // 550MB
     ("E9_HDC", 300 * 1024 * 1024),                // 300MB
-    ("E10_Multimodal", 800 * 1024 * 1024),        // 800MB
+    ("E10_Contextual", 800 * 1024 * 1024),        // 800MB
     ("E11_Entity", 450 * 1024 * 1024),            // 450MB
     ("E12_LateInteraction", 600 * 1024 * 1024),   // 600MB
     ("E13_Splade", 450 * 1024 * 1024),            // 450MB (similar to Sparse)
+    ("E11_Kepler", 350 * 1024 * 1024),            // 350MB (KEPLER RoBERTa-base 768D)
 ];

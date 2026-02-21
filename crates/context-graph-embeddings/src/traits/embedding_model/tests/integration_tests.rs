@@ -53,11 +53,11 @@ async fn test_model_can_be_shared_across_tasks() {
 }
 
 // =========================================================================
-// ALL 12 MODELS DIMENSION TEST (1 test)
+// ALL 14 MODELS DIMENSION TEST (1 test)
 // =========================================================================
 
 #[tokio::test]
-async fn test_all_12_models_produce_correct_dimensions() {
+async fn test_all_14_models_produce_correct_dimensions() {
     for model_id in ModelId::all() {
         let model = TestModel::new(*model_id, vec![InputType::Text]);
         let input = ModelInput::text("Test embedding").unwrap();

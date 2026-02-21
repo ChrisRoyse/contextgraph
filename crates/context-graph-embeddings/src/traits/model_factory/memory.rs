@@ -6,42 +6,53 @@ use crate::types::ModelId;
 
 /// Memory estimates for each model (in bytes, FP32).
 /// These are conservative overestimates.
-pub const MEMORY_ESTIMATES: [(ModelId, usize); 13] = [
-    (ModelId::Semantic, 1_400_000_000),        // 1.3 GB + buffer
+pub const MEMORY_ESTIMATES: [(ModelId, usize); 14] = [
+    (ModelId::Semantic, 1_400_000_000),        // 1.3 GB + buffer (e5-large-v2, 335M params)
     (ModelId::TemporalRecent, 15_000_000),     // 10 MB + buffer
     (ModelId::TemporalPeriodic, 15_000_000),   // 10 MB + buffer
     (ModelId::TemporalPositional, 15_000_000), // 10 MB + buffer
-    (ModelId::Causal, 650_000_000),            // 600 MB + buffer
+    (ModelId::Causal, 650_000_000),            // 600 MB + buffer (nomic-embed-v1.5)
     (ModelId::Sparse, 550_000_000),            // 500 MB + buffer
     (ModelId::Code, 550_000_000),              // 500 MB + buffer
-    (ModelId::Graph, 120_000_000),             // 100 MB + buffer
+    (ModelId::Graph, 1_400_000_000),           // 1.3 GB + buffer (loads e5-large-v2, 335M params)
     (ModelId::Hdc, 60_000_000),                // 50 MB + buffer
-    (ModelId::Contextual, 1_600_000_000),      // 1.5 GB + buffer
-    (ModelId::Entity, 120_000_000),            // 100 MB + buffer
+    (ModelId::Contextual, 500_000_000),        // ~440 MB + buffer (e5-base-v2, 110M params)
+    (ModelId::Entity, 120_000_000),            // 100 MB + buffer (legacy MiniLM 384D)
     (ModelId::LateInteraction, 450_000_000),   // 400 MB + buffer
     (ModelId::Splade, 550_000_000),            // 500 MB + buffer (similar to E6 Sparse)
+    (ModelId::Kepler, 350_000_000),            // ~300 MB + buffer (KEPLER RoBERTa-base 768D)
 ];
 
 /// Get memory estimate for a ModelId.
+///
+/// Returns a conservative 500MB default if the model is not in the estimates table,
+/// with an error log to alert operators. This prevents silent OOM from returning 0.
 pub fn get_memory_estimate(model_id: ModelId) -> usize {
     MEMORY_ESTIMATES
         .iter()
         .find(|(id, _)| *id == model_id)
         .map(|(_, mem)| *mem)
-        .unwrap_or(0)
+        .unwrap_or_else(|| {
+            tracing::error!(
+                "E_EMB_MEM_001: No memory estimate for {:?} — returning conservative 500MB default. \
+                 Add an entry to MEMORY_ESTIMATES for this model.",
+                model_id
+            );
+            500_000_000 // Conservative default instead of silent 0
+        })
 }
 
-/// Total memory for all 13 models (FP32).
-/// ~6.1 GB without quantization.
-pub const TOTAL_MEMORY_ESTIMATE: usize = 6_095_000_000;
+/// Total memory for all 14 models (FP32).
+/// ~6.6 GB without quantization.
+pub const TOTAL_MEMORY_ESTIMATE: usize = 6_625_000_000;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
     #[test]
-    fn test_memory_estimates_array_has_13_entries() {
-        assert_eq!(MEMORY_ESTIMATES.len(), 13);
+    fn test_memory_estimates_array_has_14_entries() {
+        assert_eq!(MEMORY_ESTIMATES.len(), 14);
     }
 
     #[test]
@@ -71,17 +82,19 @@ mod tests {
 
     #[test]
     fn test_memory_estimate_largest_model() {
-        // Multimodal (CLIP) should be largest
-        let multimodal = get_memory_estimate(ModelId::Contextual);
+        // Semantic (e5-large-v2) and Graph (also e5-large-v2) should be largest at 1.4GB
+        let semantic = get_memory_estimate(ModelId::Semantic);
+        let graph = get_memory_estimate(ModelId::Graph);
+        assert_eq!(semantic, graph, "Semantic and Graph both load e5-large-v2, should match");
         for model_id in ModelId::all() {
-            if *model_id != ModelId::Contextual {
-                let other = get_memory_estimate(*model_id);
-                assert!(
-                    multimodal >= other,
-                    "Multimodal should be >= {:?}",
-                    model_id
-                );
-            }
+            let other = get_memory_estimate(*model_id);
+            assert!(
+                semantic >= other,
+                "Semantic ({}) should be >= {:?} ({})",
+                semantic,
+                model_id,
+                other
+            );
         }
     }
 

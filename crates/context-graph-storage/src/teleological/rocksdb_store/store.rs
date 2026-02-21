@@ -1094,6 +1094,12 @@ impl RocksDbTeleologicalStore {
         let matryoshka_key = e1_matryoshka_128_key(&id);
         let mut truncated = [0.0f32; 128];
         let e1 = &fp.semantic.e1_semantic;
+        assert!(
+            e1.len() >= 128,
+            "[E_STOR_MATRYOSHKA_001] E1 semantic vector has {} dims, need >= 128 for Matryoshka truncation. \
+             This indicates a corrupted or incomplete fingerprint.",
+            e1.len()
+        );
         let copy_len = std::cmp::min(e1.len(), 128);
         truncated[..copy_len].copy_from_slice(&e1[..copy_len]);
         let matryoshka_bytes = serialize_e1_matryoshka_128(&truncated);

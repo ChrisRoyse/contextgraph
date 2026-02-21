@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::tokenizer::TokenizerFamily;
 
-/// Identifies one of the 13 embedding models in the Multi-Array Storage pipeline.
+/// Identifies one of the 14 embedding models in the Multi-Array Storage pipeline.
 ///
 /// # Variants
 ///
@@ -19,7 +19,7 @@ use super::tokenizer::TokenizerFamily;
 /// | Code | Qodo-Embed-1-1.5B | 1536 | Pretrained |
 /// | Graph | e5-large-v2 | 1024 | Pretrained |
 /// | Hdc | Hyperdimensional | 10K-bit | Custom |
-/// | Multimodal | e5-base-v2 (ContextualModel) | 768 | Pretrained |
+/// | Contextual | e5-base-v2 (ContextualModel) | 768 | Pretrained |
 /// | Entity | KEPLER | 768 | Pretrained (DEPRECATED - use Kepler) |
 /// | Kepler | KEPLER (RoBERTa + TransE) | 768 | Pretrained |
 /// | LateInteraction | ColBERT | 128/token | Pretrained |
@@ -179,9 +179,10 @@ impl ModelId {
         }
     }
 
-    /// Returns all 13 model variants in pipeline order.
+    /// Returns all 14 model variants in pipeline order.
     ///
-    /// Order matches the E1-E13 specification in constitution.yaml.
+    /// Order matches the E1-E13 specification in constitution.yaml,
+    /// plus Kepler (production E11 replacement for legacy Entity).
     #[must_use]
     pub const fn all() -> &'static [ModelId] {
         &[
@@ -195,9 +196,10 @@ impl ModelId {
             Self::Graph,              // E8
             Self::Hdc,                // E9
             Self::Contextual,         // E10
-            Self::Entity,             // E11
+            Self::Entity,             // E11 (legacy 384D)
             Self::LateInteraction,    // E12
             Self::Splade,             // E13
+            Self::Kepler,             // E11 production (768D KEPLER)
         ]
     }
 
@@ -247,7 +249,7 @@ impl ModelId {
             Self::Code => "code",
             Self::Graph => "graph",
             Self::Hdc => "hdc",
-            Self::Contextual => "multimodal",
+            Self::Contextual => "contextual",
             Self::Entity => "entity",
             Self::Kepler => "kepler",
             Self::LateInteraction => "late_interaction",

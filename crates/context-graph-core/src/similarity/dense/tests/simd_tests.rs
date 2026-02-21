@@ -31,7 +31,7 @@ fn test_simd_matches_scalar() {
 #[test]
 fn test_simd_with_different_dimensions() {
     // Test all dense embedder dimensions
-    let dimensions = [1024, 512, 768, 1536, 384]; // E1, E2/E3/E4, E5/E10, E7, E8/E11
+    let dimensions = [1024, 512, 768, 1536]; // E1/E8/E9, E2/E3/E4, E5/E10/E11, E7
 
     for dim in dimensions {
         let a: Vec<f32> = (0..dim).map(|i| (i as f32 * 0.001) + 0.5).collect();

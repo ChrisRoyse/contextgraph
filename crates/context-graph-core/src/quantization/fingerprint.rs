@@ -121,6 +121,10 @@ pub struct QuantizedPQ8 {
     pub num_subvectors: usize,
     /// Original vector dimension.
     pub original_dim: usize,
+    /// Minimum value from original data (used for dequantization).
+    pub min_val: f32,
+    /// Maximum value from original data (used for dequantization).
+    pub max_val: f32,
 }
 
 impl QuantizedPQ8 {
@@ -130,6 +134,8 @@ impl QuantizedPQ8 {
         self.codes.len() // u8 codes
             + 8 // num_subvectors usize
             + 8 // original_dim usize
+            + 4 // min_val f32
+            + 4 // max_val f32
     }
 }
 
@@ -177,12 +183,16 @@ pub struct QuantizedSemanticFingerprint {
     // PQ-8 quantized embeddings (high-dimensional semantic)
     /// E1: Semantic (1024D -> 32 codes)
     pub e1_semantic: QuantizedPQ8,
-    /// E5: Causal (768D -> 24 codes)
-    pub e5_causal: QuantizedPQ8,
+    /// E5: Causal as cause (768D -> 24 codes)
+    pub e5_causal_as_cause: QuantizedPQ8,
+    /// E5: Causal as effect (768D -> 24 codes)
+    pub e5_causal_as_effect: QuantizedPQ8,
     /// E7: Code (1536D -> 48 codes)
     pub e7_code: QuantizedPQ8,
-    /// E10: Multimodal (768D -> 24 codes)
-    pub e10_multimodal: QuantizedPQ8,
+    /// E10: Multimodal paraphrase (768D -> 24 codes)
+    pub e10_multimodal_paraphrase: QuantizedPQ8,
+    /// E10: Multimodal as context (768D -> 24 codes)
+    pub e10_multimodal_as_context: QuantizedPQ8,
 
     // Float8 quantized embeddings (temporal and relational)
     /// E2: Temporal Recent (512D)
@@ -191,11 +201,13 @@ pub struct QuantizedSemanticFingerprint {
     pub e3_temporal_periodic: QuantizedFloat8,
     /// E4: Temporal Positional (512D)
     pub e4_temporal_positional: QuantizedFloat8,
-    /// E8: Graph (1024D)
-    pub e8_graph: QuantizedFloat8,
+    /// E8: Graph as source (1024D)
+    pub e8_graph_as_source: QuantizedFloat8,
+    /// E8: Graph as target (1024D)
+    pub e8_graph_as_target: QuantizedFloat8,
     /// E9: HDC projected (1024D) - NOT binary, this is projected dense!
     pub e9_hdc: QuantizedFloat8,
-    /// E11: Entity (384D)
+    /// E11: Entity (768D)
     pub e11_entity: QuantizedFloat8,
 
     // Token-level Float8 (variable length)
@@ -217,17 +229,20 @@ impl QuantizedSemanticFingerprint {
     /// Estimated serialized size. Actual bincode size may differ slightly due to
     /// encoding overhead.
     pub fn estimated_size_bytes(&self) -> usize {
-        // PQ-8 embeddings
+        // PQ-8 embeddings (E1, E5 cause+effect, E7, E10 paraphrase+context)
         let pq8_size = self.e1_semantic.estimated_size_bytes()
-            + self.e5_causal.estimated_size_bytes()
+            + self.e5_causal_as_cause.estimated_size_bytes()
+            + self.e5_causal_as_effect.estimated_size_bytes()
             + self.e7_code.estimated_size_bytes()
-            + self.e10_multimodal.estimated_size_bytes();
+            + self.e10_multimodal_paraphrase.estimated_size_bytes()
+            + self.e10_multimodal_as_context.estimated_size_bytes();
 
-        // Float8 embeddings
+        // Float8 embeddings (E2-E4, E8 source+target, E9, E11)
         let float8_size = self.e2_temporal_recent.estimated_size_bytes()
             + self.e3_temporal_periodic.estimated_size_bytes()
             + self.e4_temporal_positional.estimated_size_bytes()
-            + self.e8_graph.estimated_size_bytes()
+            + self.e8_graph_as_source.estimated_size_bytes()
+            + self.e8_graph_as_target.estimated_size_bytes()
             + self.e9_hdc.estimated_size_bytes()
             + self.e11_entity.estimated_size_bytes();
 
@@ -387,6 +402,8 @@ fn quantize_pq8(
             codes: vec![],
             num_subvectors,
             original_dim: 0,
+            min_val: 0.0,
+            max_val: 0.0,
         });
     }
 
@@ -423,6 +440,8 @@ fn quantize_pq8(
         codes,
         num_subvectors,
         original_dim: data.len(),
+        min_val,
+        max_val,
     })
 }
 
@@ -431,31 +450,33 @@ fn quantize_pq8(
 /// Each subvector is reconstructed as a uniform vector of the decoded mean value.
 /// This loses within-subvector variance but preserves the overall structure.
 ///
+/// Min/max values are read from the `QuantizedPQ8` struct itself, which stores
+/// the original data range computed during quantization. This avoids the previous
+/// bug where all callers hardcoded [-1, 1] regardless of actual data range.
+///
 /// # Arguments
 ///
-/// * `q` - Quantized PQ8 data
-/// * `original_min` - Original min value for scaling
-/// * `original_max` - Original max value for scaling
+/// * `q` - Quantized PQ8 data (includes stored min_val/max_val)
 ///
 /// # Returns
 ///
 /// Reconstructed f32 vector (note: within-subvector variance is lost).
-fn dequantize_pq8(q: &QuantizedPQ8, original_min: f32, original_max: f32) -> Vec<f32> {
+fn dequantize_pq8(q: &QuantizedPQ8) -> Vec<f32> {
     if q.original_dim == 0 || q.num_subvectors == 0 {
         return vec![];
     }
 
     let sub_size = q.original_dim / q.num_subvectors;
-    let range = original_max - original_min;
+    let range = q.max_val - q.min_val;
 
     let mut data = vec![0.0f32; q.original_dim];
 
     for (i, &code) in q.codes.iter().enumerate() {
         // Decode mean value from code
         let mean = if range > f32::EPSILON {
-            (code as f32 / 255.0) * range + original_min
+            (code as f32 / 255.0) * range + q.min_val
         } else {
-            original_min
+            q.min_val
         };
 
         // Fill subvector with mean
@@ -595,11 +616,13 @@ pub fn quantize_fingerprint(
     // PQ-8 quantization for high-dimensional semantic embeddings
     // Using num_subvectors = dim / 32 for each embedder
     let e1_semantic = quantize_pq8(&fp.e1_semantic, E1_DIM / 32, Embedder::Semantic)?; // 32 subvectors
-    // For E5, we quantize the active vector (cause vector takes precedence over legacy)
-    let e5_causal = quantize_pq8(fp.e5_active_vector(), E5_DIM / 32, Embedder::Causal)?; // 24 subvectors
+    // E5: Quantize BOTH cause and effect vectors (asymmetric dual vectors)
+    let e5_causal_as_cause = quantize_pq8(&fp.e5_causal_as_cause, E5_DIM / 32, Embedder::Causal)?;
+    let e5_causal_as_effect = quantize_pq8(&fp.e5_causal_as_effect, E5_DIM / 32, Embedder::Causal)?;
     let e7_code = quantize_pq8(&fp.e7_code, E7_DIM / 32, Embedder::Code)?; // 48 subvectors
-    // For E10, we quantize the active vector (paraphrase vector takes precedence over legacy)
-    let e10_multimodal = quantize_pq8(fp.e10_active_vector(), E10_DIM / 32, Embedder::Contextual)?; // 24 subvectors
+    // E10: Quantize BOTH paraphrase and context vectors (asymmetric dual vectors)
+    let e10_multimodal_paraphrase = quantize_pq8(&fp.e10_multimodal_paraphrase, E10_DIM / 32, Embedder::Contextual)?;
+    let e10_multimodal_as_context = quantize_pq8(&fp.e10_multimodal_as_context, E10_DIM / 32, Embedder::Contextual)?;
 
     // Float8 quantization for temporal and relational embeddings
     let e2_temporal_recent =
@@ -608,8 +631,9 @@ pub fn quantize_fingerprint(
         quantize_float8_slice(&fp.e3_temporal_periodic, Embedder::TemporalPeriodic)?;
     let e4_temporal_positional =
         quantize_float8_slice(&fp.e4_temporal_positional, Embedder::TemporalPositional)?;
-    // For E8, we quantize the active vector (source vector takes precedence over legacy)
-    let e8_graph = quantize_float8_slice(fp.e8_active_vector(), Embedder::Graph)?;
+    // E8: Quantize BOTH source and target vectors (asymmetric dual vectors)
+    let e8_graph_as_source = quantize_float8_slice(&fp.e8_graph_as_source, Embedder::Graph)?;
+    let e8_graph_as_target = quantize_float8_slice(&fp.e8_graph_as_target, Embedder::Graph)?;
     let e9_hdc = quantize_float8_slice(&fp.e9_hdc, Embedder::Hdc)?;
     let e11_entity = quantize_float8_slice(&fp.e11_entity, Embedder::Entity)?;
 
@@ -626,13 +650,16 @@ pub fn quantize_fingerprint(
 
     Ok(QuantizedSemanticFingerprint {
         e1_semantic,
-        e5_causal,
+        e5_causal_as_cause,
+        e5_causal_as_effect,
         e7_code,
-        e10_multimodal,
+        e10_multimodal_paraphrase,
+        e10_multimodal_as_context,
         e2_temporal_recent,
         e3_temporal_periodic,
         e4_temporal_positional,
-        e8_graph,
+        e8_graph_as_source,
+        e8_graph_as_target,
         e9_hdc,
         e11_entity,
         e12_late_interaction,
@@ -661,19 +688,20 @@ pub fn quantize_fingerprint(
 pub fn dequantize_fingerprint(
     qfp: &QuantizedSemanticFingerprint,
 ) -> Result<SemanticFingerprint, FingerprintQuantizeError> {
-    // Dequantize PQ-8 embeddings
-    // We need to estimate min/max from codes for PQ-8 dequantization
-    // Since we only store codes, we assume normalized [-1, 1] range
-    let e1_semantic = dequantize_pq8(&qfp.e1_semantic, -1.0, 1.0);
-    let e5_causal = dequantize_pq8(&qfp.e5_causal, -1.0, 1.0);
-    let e7_code = dequantize_pq8(&qfp.e7_code, -1.0, 1.0);
-    let e10_multimodal = dequantize_pq8(&qfp.e10_multimodal, -1.0, 1.0);
+    // Dequantize PQ-8 embeddings (min/max stored in each QuantizedPQ8 struct)
+    let e1_semantic = dequantize_pq8(&qfp.e1_semantic);
+    let e5_causal_as_cause = dequantize_pq8(&qfp.e5_causal_as_cause);
+    let e5_causal_as_effect = dequantize_pq8(&qfp.e5_causal_as_effect);
+    let e7_code = dequantize_pq8(&qfp.e7_code);
+    let e10_multimodal_paraphrase = dequantize_pq8(&qfp.e10_multimodal_paraphrase);
+    let e10_multimodal_as_context = dequantize_pq8(&qfp.e10_multimodal_as_context);
 
-    // Dequantize Float8 embeddings
+    // Dequantize Float8 embeddings (each stores its own min/max)
     let e2_temporal_recent = dequantize_float8(&qfp.e2_temporal_recent);
     let e3_temporal_periodic = dequantize_float8(&qfp.e3_temporal_periodic);
     let e4_temporal_positional = dequantize_float8(&qfp.e4_temporal_positional);
-    let e8_graph = dequantize_float8(&qfp.e8_graph);
+    let e8_graph_as_source = dequantize_float8(&qfp.e8_graph_as_source);
+    let e8_graph_as_target = dequantize_float8(&qfp.e8_graph_as_target);
     let e9_hdc = dequantize_float8(&qfp.e9_hdc);
     let e11_entity = dequantize_float8(&qfp.e11_entity);
 
@@ -688,26 +716,23 @@ pub fn dequantize_fingerprint(
     let e6_sparse = dequantize_sparse(&qfp.e6_sparse, Embedder::Sparse)?;
     let e13_splade = dequantize_sparse(&qfp.e13_splade, Embedder::KeywordSplade)?;
 
-    // Dequantized E5 and E8 are stored in both dual vector fields
-    // (quantization loses the distinction, so we reconstruct symmetrically)
+    // Each asymmetric dual vector is dequantized independently (no cloning)
     Ok(SemanticFingerprint {
         e1_semantic,
         e2_temporal_recent,
         e3_temporal_periodic,
         e4_temporal_positional,
-        e5_causal_as_cause: e5_causal.clone(),
-        e5_causal_as_effect: e5_causal,
-        e5_causal: Vec::new(), // Using new dual format
+        e5_causal_as_cause,
+        e5_causal_as_effect,
+        e5_causal: Vec::new(), // Legacy field, empty in new format
         e6_sparse,
         e7_code,
-        e8_graph_as_source: e8_graph.clone(),
-        e8_graph_as_target: e8_graph,
-        e8_graph: Vec::new(), // Using new dual format
+        e8_graph_as_source,
+        e8_graph_as_target,
+        e8_graph: Vec::new(), // Legacy field, empty in new format
         e9_hdc,
-        // E10: Using new dual format after dequantization
-        // (quantization loses dual distinction, reconstruct symmetrically when loaded)
-        e10_multimodal_paraphrase: e10_multimodal.clone(),
-        e10_multimodal_as_context: e10_multimodal,
+        e10_multimodal_paraphrase,
+        e10_multimodal_as_context,
         e11_entity,
         e12_late_interaction,
         e13_splade,
@@ -722,12 +747,15 @@ fn validate_fingerprint_dimensions(
     check_dim(fp.e2_temporal_recent.len(), E2_DIM, Embedder::TemporalRecent)?;
     check_dim(fp.e3_temporal_periodic.len(), E3_DIM, Embedder::TemporalPeriodic)?;
     check_dim(fp.e4_temporal_positional.len(), E4_DIM, Embedder::TemporalPositional)?;
-    // Use active vectors for E5, E8, E10 validation (handles both new and legacy formats)
-    check_dim(fp.e5_active_vector().len(), E5_DIM, Embedder::Causal)?;
+    // Validate BOTH asymmetric dual vectors for E5, E8, E10
+    check_dim(fp.e5_causal_as_cause.len(), E5_DIM, Embedder::Causal)?;
+    check_dim(fp.e5_causal_as_effect.len(), E5_DIM, Embedder::Causal)?;
     check_dim(fp.e7_code.len(), E7_DIM, Embedder::Code)?;
-    check_dim(fp.e8_active_vector().len(), E8_DIM, Embedder::Graph)?;
+    check_dim(fp.e8_graph_as_source.len(), E8_DIM, Embedder::Graph)?;
+    check_dim(fp.e8_graph_as_target.len(), E8_DIM, Embedder::Graph)?;
     check_dim(fp.e9_hdc.len(), E9_DIM, Embedder::Hdc)?;
-    check_dim(fp.e10_active_vector().len(), E10_DIM, Embedder::Contextual)?;
+    check_dim(fp.e10_multimodal_paraphrase.len(), E10_DIM, Embedder::Contextual)?;
+    check_dim(fp.e10_multimodal_as_context.len(), E10_DIM, Embedder::Contextual)?;
     check_dim(fp.e11_entity.len(), E11_DIM, Embedder::Entity)?;
 
     // Validate E12 token dimensions (NaN/Infinity checked during quantization)
@@ -747,13 +775,16 @@ mod tests {
     use super::*;
     use crate::quantization::accuracy::{compute_nrmse, compute_rmse};
 
-    // Helper to create a test fingerprint with known values
+    // Helper to create a test fingerprint with known values.
+    // IMPORTANT: Asymmetric dual vectors use DIFFERENT formulas to verify
+    // that quantize/dequantize preserves them independently.
     fn test_fingerprint() -> SemanticFingerprint {
         let mut fp = SemanticFingerprint::zeroed();
 
         // Fill with non-zero values for meaningful quantization tests
+        // Use asymmetric range [0.0, 0.8] to catch hardcoded [-1,1] bugs
         for (i, v) in fp.e1_semantic.iter_mut().enumerate() {
-            *v = (i as f32 / 1024.0) * 2.0 - 1.0; // Range [-1, 1]
+            *v = (i as f32 / 1024.0) * 0.8; // Range [0.0, 0.8]
         }
         for (i, v) in fp.e2_temporal_recent.iter_mut().enumerate() {
             *v = (i as f32 / 512.0) * 2.0 - 1.0;
@@ -764,34 +795,38 @@ mod tests {
         for (i, v) in fp.e4_temporal_positional.iter_mut().enumerate() {
             *v = (i as f32 / 512.0) * 2.0 - 1.0;
         }
+        // E5 cause: ascending [0.0, 0.8]
         for (i, v) in fp.e5_causal_as_cause.iter_mut().enumerate() {
-            *v = (i as f32 / 768.0) * 2.0 - 1.0;
+            *v = (i as f32 / 768.0) * 0.8;
         }
+        // E5 effect: descending from 0.5 (DIFFERENT from cause)
         for (i, v) in fp.e5_causal_as_effect.iter_mut().enumerate() {
-            *v = (i as f32 / 768.0) * 2.0 - 1.0;
+            *v = (i as f32 / 768.0) * -1.0 + 0.5;
         }
         for (i, v) in fp.e7_code.iter_mut().enumerate() {
-            *v = (i as f32 / 1536.0) * 2.0 - 1.0;
+            *v = (i as f32 / 1536.0) * 0.8; // Range [0.0, 0.8]
         }
-        // E8 now uses dual vectors for asymmetric graph similarity
+        // E8 source: ascending [0.1, 0.9]
         for (i, v) in fp.e8_graph_as_source.iter_mut().enumerate() {
-            *v = (i as f32 / 384.0) * 2.0 - 1.0;
+            *v = (i as f32 / 1024.0) * 0.8 + 0.1;
         }
+        // E8 target: descending from 0.7 (DIFFERENT from source)
         for (i, v) in fp.e8_graph_as_target.iter_mut().enumerate() {
-            *v = (i as f32 / 384.0) * 2.0 - 1.0;
+            *v = (i as f32 / 1024.0) * -0.6 + 0.7;
         }
         for (i, v) in fp.e9_hdc.iter_mut().enumerate() {
             *v = (i as f32 / 1024.0) * 2.0 - 1.0;
         }
-        // E10 now uses dual vectors for asymmetric paraphrase/context similarity
+        // E10 paraphrase: ascending [0.0, 0.6]
         for (i, v) in fp.e10_multimodal_paraphrase.iter_mut().enumerate() {
-            *v = (i as f32 / 768.0) * 2.0 - 1.0;
+            *v = (i as f32 / 768.0) * 0.6;
         }
+        // E10 context: descending from 0.8 (DIFFERENT from paraphrase)
         for (i, v) in fp.e10_multimodal_as_context.iter_mut().enumerate() {
-            *v = (i as f32 / 768.0) * 2.0 - 1.0;
+            *v = (i as f32 / 768.0) * -0.5 + 0.8;
         }
         for (i, v) in fp.e11_entity.iter_mut().enumerate() {
-            *v = (i as f32 / 384.0) * 2.0 - 1.0;
+            *v = (i as f32 / 768.0) * 2.0 - 1.0;
         }
 
         // Add some E12 tokens
@@ -900,10 +935,17 @@ mod tests {
 
     #[test]
     fn test_pq8_quantize_dequantize_roundtrip() {
-        let data: Vec<f32> = (0..1024).map(|i| (i as f32 / 1024.0) * 2.0 - 1.0).collect();
+        // Use non-symmetric range [0.0, 0.8] to verify min/max are stored correctly.
+        // Previously this test used [-1, 1] which masked the hardcoded dequantization bug.
+        let data: Vec<f32> = (0..1024).map(|i| (i as f32 / 1024.0) * 0.8).collect();
 
         let quantized = quantize_pq8(&data, 32, Embedder::Semantic).expect("quantization failed");
-        let dequantized = dequantize_pq8(&quantized, -1.0, 1.0);
+
+        // Verify min/max were stored correctly
+        assert!((quantized.min_val - 0.0).abs() < 0.01, "min_val should be ~0.0, got {}", quantized.min_val);
+        assert!((quantized.max_val - 0.8).abs() < 0.01, "max_val should be ~0.8, got {}", quantized.max_val);
+
+        let dequantized = dequantize_pq8(&quantized);
 
         assert_eq!(dequantized.len(), data.len());
         assert_eq!(quantized.codes.len(), 32);
@@ -914,6 +956,42 @@ mod tests {
         println!("PQ-8 NRMSE: {:.4}%", nrmse * 100.0);
         // Mean-based PQ will have significant error - we just check it's reasonable
         assert!(nrmse < 0.5, "PQ-8 NRMSE {} is unexpectedly high", nrmse);
+
+        // Verify the dequantized values are in the correct range [0.0, 0.8], not [-1, 1]
+        for &v in &dequantized {
+            assert!(v >= -0.05 && v <= 0.85,
+                "Dequantized value {} outside expected range [0.0, 0.8] (with quantization tolerance)",
+                v);
+        }
+    }
+
+    #[test]
+    fn test_pq8_asymmetric_range_roundtrip() {
+        // Specifically test a narrow asymmetric range [0.2, 0.6] to prove
+        // the min/max storage fix works for non-standard ranges.
+        let data: Vec<f32> = (0..768).map(|i| (i as f32 / 768.0) * 0.4 + 0.2).collect();
+
+        let quantized = quantize_pq8(&data, 24, Embedder::Causal).expect("quantization failed");
+
+        // Verify stored min/max match the actual data range
+        assert!((quantized.min_val - 0.2).abs() < 0.01,
+            "min_val should be ~0.2, got {}", quantized.min_val);
+        assert!((quantized.max_val - 0.6).abs() < 0.01,
+            "max_val should be ~0.6, got {}", quantized.max_val);
+
+        let dequantized = dequantize_pq8(&quantized);
+        assert_eq!(dequantized.len(), 768);
+
+        // All dequantized values must be within [0.2, 0.6] (with quantization tolerance)
+        for (i, &v) in dequantized.iter().enumerate() {
+            assert!(v >= 0.15 && v <= 0.65,
+                "Dequantized value {} at index {} outside expected range [0.2, 0.6]", v, i);
+        }
+
+        // RMSE should be reasonable
+        let rmse = compute_rmse(&data, &dequantized);
+        println!("PQ-8 asymmetric range RMSE: {:.6}", rmse);
+        assert!(rmse < 0.1, "PQ-8 asymmetric range RMSE {} is too high", rmse);
     }
 
     #[test]
@@ -1046,9 +1124,8 @@ mod tests {
         let qfp = quantize_fingerprint(&fp).expect("quantization failed");
         let recovered = dequantize_fingerprint(&qfp).expect("dequantization failed");
 
-        // Check Float8 embeddings (E2, E3, E4, E8, E9, E11)
-        // E8 now uses dual vectors - use active_vector() accessor
-        let pairs: [(&str, &[f32], &[f32]); 6] = [
+        // Check Float8 embeddings: E2, E3, E4, E8 (source+target), E9, E11
+        let pairs: [(&str, &[f32], &[f32]); 7] = [
             ("E2", &fp.e2_temporal_recent, &recovered.e2_temporal_recent),
             (
                 "E3",
@@ -1060,7 +1137,8 @@ mod tests {
                 &fp.e4_temporal_positional,
                 &recovered.e4_temporal_positional,
             ),
-            ("E8", fp.e8_active_vector(), recovered.e8_active_vector()),
+            ("E8_source", &fp.e8_graph_as_source, &recovered.e8_graph_as_source),
+            ("E8_target", &fp.e8_graph_as_target, &recovered.e8_graph_as_target),
             ("E9", &fp.e9_hdc, &recovered.e9_hdc),
             ("E11", &fp.e11_entity, &recovered.e11_entity),
         ];
@@ -1087,14 +1165,15 @@ mod tests {
         let qfp = quantize_fingerprint(&fp).expect("quantization failed");
         let recovered = dequantize_fingerprint(&qfp).expect("dequantization failed");
 
-        // Check PQ-8 embeddings (E1, E5, E7, E10)
+        // Check PQ-8 embeddings: E1, E5 (cause+effect), E7, E10 (paraphrase+context)
         // Note: PQ-8 with mean-based approximation has higher error
-        // E5 and E10 now use dual vectors for asymmetric similarity
-        let pairs: [(&str, &[f32], &[f32]); 4] = [
+        let pairs: [(&str, &[f32], &[f32]); 6] = [
             ("E1", &fp.e1_semantic, &recovered.e1_semantic),
-            ("E5", fp.e5_active_vector(), recovered.e5_active_vector()),
+            ("E5_cause", &fp.e5_causal_as_cause, &recovered.e5_causal_as_cause),
+            ("E5_effect", &fp.e5_causal_as_effect, &recovered.e5_causal_as_effect),
             ("E7", &fp.e7_code, &recovered.e7_code),
-            ("E10", fp.e10_active_vector(), recovered.e10_active_vector()),
+            ("E10_paraphrase", &fp.e10_multimodal_paraphrase, &recovered.e10_multimodal_paraphrase),
+            ("E10_context", &fp.e10_multimodal_as_context, &recovered.e10_multimodal_as_context),
         ];
 
         for (name, original, recovered) in pairs {
@@ -1209,6 +1288,50 @@ mod tests {
             index: 0,
         };
         assert_eq!(err3.code(), "E_FP_QUANT_003");
+    }
+
+    // =========================================================================
+    // Asymmetric Dual Vector Preservation Test (CORE-H2)
+    // =========================================================================
+
+    #[test]
+    fn test_asymmetric_vectors_preserved_through_roundtrip() {
+        let fp = test_fingerprint();
+
+        // Verify the test data itself has DIFFERENT cause/effect vectors
+        assert_ne!(fp.e5_causal_as_cause, fp.e5_causal_as_effect,
+            "Test setup: E5 cause and effect must be different");
+        assert_ne!(fp.e8_graph_as_source, fp.e8_graph_as_target,
+            "Test setup: E8 source and target must be different");
+        assert_ne!(fp.e10_multimodal_paraphrase, fp.e10_multimodal_as_context,
+            "Test setup: E10 paraphrase and context must be different");
+
+        let qfp = quantize_fingerprint(&fp).expect("quantization failed");
+        let recovered = dequantize_fingerprint(&qfp).expect("dequantization failed");
+
+        // After roundtrip, cause != effect must still hold (previously they were cloned equal)
+        assert_ne!(recovered.e5_causal_as_cause, recovered.e5_causal_as_effect,
+            "CORE-H2 REGRESSION: E5 cause and effect are identical after roundtrip — dual vectors destroyed");
+        assert_ne!(recovered.e8_graph_as_source, recovered.e8_graph_as_target,
+            "CORE-H2 REGRESSION: E8 source and target are identical after roundtrip — dual vectors destroyed");
+        assert_ne!(recovered.e10_multimodal_paraphrase, recovered.e10_multimodal_as_context,
+            "CORE-H2 REGRESSION: E10 paraphrase and context are identical after roundtrip — dual vectors destroyed");
+
+        // Check RMSE for each direction independently
+        let pairs: [(&str, &[f32], &[f32]); 6] = [
+            ("E5_cause", &fp.e5_causal_as_cause, &recovered.e5_causal_as_cause),
+            ("E5_effect", &fp.e5_causal_as_effect, &recovered.e5_causal_as_effect),
+            ("E8_source", &fp.e8_graph_as_source, &recovered.e8_graph_as_source),
+            ("E8_target", &fp.e8_graph_as_target, &recovered.e8_graph_as_target),
+            ("E10_paraphrase", &fp.e10_multimodal_paraphrase, &recovered.e10_multimodal_paraphrase),
+            ("E10_context", &fp.e10_multimodal_as_context, &recovered.e10_multimodal_as_context),
+        ];
+
+        for (name, original, reconstructed) in pairs {
+            let rmse = compute_rmse(original, reconstructed);
+            println!("{} RMSE: {:.6}", name, rmse);
+            assert!(rmse < 1.0, "{} RMSE {} is too high", name, rmse);
+        }
     }
 
     // =========================================================================

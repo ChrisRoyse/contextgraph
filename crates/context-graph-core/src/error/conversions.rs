@@ -147,10 +147,14 @@ impl From<CoreError> for ContextGraphError {
             }
             CoreError::Internal(msg) => ContextGraphError::Internal(msg),
             CoreError::Embedding(msg) => {
-                ContextGraphError::Embedding(EmbeddingError::GenerationFailed {
-                    embedder: Embedder::Semantic, // default
-                    reason: msg,
-                })
+                // CORE-M1 FIX: CoreError::Embedding(String) does not carry embedder identity.
+                // Using LegacyUnknownEmbedder instead of hardcoding Embedder::Semantic,
+                // which falsely attributed E7/E11/etc failures to E1.
+                tracing::warn!(
+                    "E_LEGACY_EMBEDDING: CoreError::Embedding converted without embedder identity: {}",
+                    msg
+                );
+                ContextGraphError::Embedding(EmbeddingError::LegacyUnknownEmbedder(msg))
             }
             CoreError::MissingField { field, context } => {
                 ContextGraphError::Validation(format!("Missing {}: {}", field, context))

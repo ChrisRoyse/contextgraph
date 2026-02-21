@@ -50,10 +50,10 @@ fn test_pq8_round_trip() {
 
     // Note: Default codebook provides moderate quality. The <5% recall loss
     // guarantee only applies to trained codebooks. For testing, we verify
-    // the algorithm works correctly (cosine > 0.1).
+    // the algorithm preserves directional structure (cosine > 0.15).
     assert!(
-        cosine > 0.1,
-        "Cosine similarity {} too low for PQ8 reconstruction (expected > 0.1 for default codebook)",
+        cosine > 0.15,
+        "Cosine similarity {} too low for PQ8 reconstruction (expected > 0.15 for default codebook)",
         cosine
     );
 }

@@ -99,7 +99,7 @@ impl ModelRegistry {
         // FAIL FAST: Validate configuration
         config.validate()?;
 
-        // Create per-model loading locks for all 12 models
+        // Create per-model loading locks for all 14 models
         let mut loading_locks = HashMap::new();
         for model_id in ModelId::all() {
             loading_locks.insert(*model_id, Arc::new(Semaphore::new(1)));

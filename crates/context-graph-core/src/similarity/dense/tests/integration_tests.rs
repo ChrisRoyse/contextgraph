@@ -61,7 +61,7 @@ fn test_high_dimensional_1536() {
 
 #[test]
 fn test_high_dimensional_384() {
-    // Simulate E8/E11_DIM = 384
+    // Test 384D vectors (generic dimension test, not tied to any specific embedder)
     let a: Vec<f32> = (0..384).map(|i| (i as f32) * 0.003).collect();
     let b: Vec<f32> = (0..384).map(|i| ((i as f32) * 0.003).sin()).collect();
     let sim = cosine_similarity(&a, &b).unwrap();

@@ -115,10 +115,10 @@ mod edge_case_tests {
         println!("\n=== EDGE CASE 2: PASSED ===\n");
     }
 
-    /// EDGE CASE 3: All 13 ModelId variants are exhaustively covered
+    /// EDGE CASE 3: All 14 ModelId variants are exhaustively covered
     ///
     /// Trigger: Iterate through ModelId::all() and call for_model_id()
-    /// Expected Outcome: Each of 13 variants returns a valid QuantizationMethod
+    /// Expected Outcome: Each of 14 variants returns a valid QuantizationMethod
     #[test]
     fn edge_case_3_all_model_ids_exhaustive() {
         println!("\n=== EDGE CASE 3: Exhaustive ModelId Coverage ===");
@@ -127,7 +127,7 @@ mod edge_case_tests {
         let all_models = ModelId::all();
         println!("BEFORE STATE:");
         println!("  - ModelId::all() returns {} variants", all_models.len());
-        println!("  - Expected: 13 variants (E1-E13)");
+        println!("  - Expected: 14 variants (E1-E13 + Kepler)");
 
         // Constitution mapping reference:
         let expected_mappings = [
@@ -153,13 +153,14 @@ mod edge_case_tests {
             (ModelId::Graph, QuantizationMethod::Float8E4M3, "E8"),
             (ModelId::Hdc, QuantizationMethod::Binary, "E9"),
             (ModelId::Contextual, QuantizationMethod::PQ8, "E10"),
-            (ModelId::Entity, QuantizationMethod::Float8E4M3, "E11"),
+            (ModelId::Entity, QuantizationMethod::Float8E4M3, "E11 (deprecated)"),
             (
                 ModelId::LateInteraction,
                 QuantizationMethod::TokenPruning,
                 "E12",
             ),
             (ModelId::Splade, QuantizationMethod::SparseNative, "E13"),
+            (ModelId::Kepler, QuantizationMethod::PQ8, "Kepler"),
         ];
 
         // EXECUTE & VERIFY each mapping
@@ -181,7 +182,7 @@ mod edge_case_tests {
 
         // AFTER STATE
         println!("\nAFTER STATE:");
-        println!("  - All 13 ModelId variants tested");
+        println!("  - All 14 ModelId variants tested");
         println!("  - Each returned expected QuantizationMethod");
 
         // PHYSICAL VERIFICATION - count by method type
@@ -202,7 +203,7 @@ mod edge_case_tests {
             }
         }
 
-        println!("  - PQ8: {} (expected 4: E1, E5, E7, E10)", pq8_count);
+        println!("  - PQ8: {} (expected 5: E1, E5, E7, E10, Kepler)", pq8_count);
         println!(
             "  - Float8E4M3: {} (expected 5: E2, E3, E4, E8, E11)",
             float8_count
@@ -211,15 +212,15 @@ mod edge_case_tests {
         println!("  - SparseNative: {} (expected 2: E6, E13)", sparse_count);
         println!("  - TokenPruning: {} (expected 1: E12)", token_count);
 
-        assert_eq!(pq8_count, 4, "PQ8 should have 4 embedders");
+        assert_eq!(pq8_count, 5, "PQ8 should have 5 embedders (E1, E5, E7, E10, Kepler)");
         assert_eq!(float8_count, 5, "Float8 should have 5 embedders");
         assert_eq!(binary_count, 1, "Binary should have 1 embedder");
         assert_eq!(sparse_count, 2, "Sparse should have 2 embedders");
         assert_eq!(token_count, 1, "TokenPruning should have 1 embedder");
 
         let total = pq8_count + float8_count + binary_count + sparse_count + token_count;
-        assert_eq!(total, 13, "Total should be 13 embedders");
-        println!("  - Total: {} (expected 13): PASSED", total);
+        assert_eq!(total, 14, "Total should be 14 embedders");
+        println!("  - Total: {} (expected 14): PASSED", total);
 
         println!("\n=== EDGE CASE 3: PASSED ===\n");
     }

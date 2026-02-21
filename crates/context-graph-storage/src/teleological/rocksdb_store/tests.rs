@@ -1331,3 +1331,60 @@ async fn test_provenance_all_cfs_physically_exist() {
 
     println!("\n=== FSV: PASSED - All 8 Provenance CFs Physically Exist ===\n");
 }
+
+// ============================================================================
+// STOR-H1: total_doc_count underflow prevention
+// ============================================================================
+
+#[tokio::test]
+async fn test_total_doc_count_underflow_prevention() {
+    use std::sync::atomic::Ordering;
+
+    let tmp = TempDir::new().unwrap();
+    let store = create_initialized_store(tmp.path());
+
+    // Verify initial doc count is 0 (no documents stored)
+    let initial_count = store.total_doc_count.load(Ordering::Relaxed);
+    assert_eq!(initial_count, 0, "Initial total_doc_count should be 0");
+
+    // Store one fingerprint, then soft-delete it to decrement count to 0
+    let fp = create_test_fingerprint();
+    let id = fp.id;
+    store.store(fp).await.unwrap();
+    assert_eq!(store.total_doc_count.load(Ordering::Relaxed), 1,
+        "total_doc_count should be 1 after storing one fingerprint");
+
+    store.delete(id, true).await.unwrap();
+    assert_eq!(store.total_doc_count.load(Ordering::Relaxed), 0,
+        "total_doc_count should be 0 after soft-deleting the only fingerprint");
+
+    // Now try to hard-delete the same fingerprint (GC path).
+    // The soft-delete already decremented, and the was_soft_deleted guard
+    // should prevent another decrement. But even if it tried, the fetch_update
+    // underflow guard must prevent wrapping to usize::MAX.
+    let _ = store.delete(id, false).await;
+
+    // Verify count is still 0 (not usize::MAX from underflow)
+    let final_count = store.total_doc_count.load(Ordering::Relaxed);
+    assert_eq!(final_count, 0,
+        "STOR-H1 REGRESSION: total_doc_count is {} (expected 0, underflow wraps to usize::MAX = {})",
+        final_count, usize::MAX);
+
+    // Also verify with a fresh store that has zero documents and direct delete attempt
+    let tmp2 = TempDir::new().unwrap();
+    let store2 = create_initialized_store(tmp2.path());
+    assert_eq!(store2.total_doc_count.load(Ordering::Relaxed), 0);
+
+    // Store and immediately hard-delete to get count back to 0
+    let fp2 = create_test_fingerprint_with_seed(99);
+    let id2 = fp2.id;
+    store2.store(fp2).await.unwrap();
+    store2.delete(id2, false).await.unwrap();
+    assert_eq!(store2.total_doc_count.load(Ordering::Relaxed), 0);
+
+    // Double hard-delete on an already-gone fingerprint should be safe
+    let _ = store2.delete(id2, false).await;
+    let count_after_double_delete = store2.total_doc_count.load(Ordering::Relaxed);
+    assert_eq!(count_after_double_delete, 0,
+        "Double hard-delete must not cause underflow. Got: {}", count_after_double_delete);
+}

@@ -109,7 +109,7 @@ impl RocksDbTeleologicalStore {
                 TeleologicalStoreError::rocksdb_op("multi_get", CF_E13_SPLADE_INVERTED, None, e)
             })? {
                 let mut ids: Vec<Uuid> = deserialize_memory_id_list(&data)?;
-                ids.retain(|&i| i != *id);
+                ids.retain(|&entry_id| entry_id != *id);
 
                 if ids.is_empty() {
                     batch.delete_cf(cf_inverted, term_key.as_slice());
@@ -200,7 +200,7 @@ impl RocksDbTeleologicalStore {
                 TeleologicalStoreError::rocksdb_op("multi_get", CF_E6_SPARSE_INVERTED, None, e)
             })? {
                 let mut ids: Vec<Uuid> = deserialize_memory_id_list(&data)?;
-                ids.retain(|&i| i != *id);
+                ids.retain(|&entry_id| entry_id != *id);
 
                 if ids.is_empty() {
                     batch.delete_cf(cf_inverted, term_key.as_slice());

@@ -96,8 +96,8 @@ impl BatchProcessor {
         // Validate config - FAIL FAST
         config.validate()?;
 
-        // Create per-model queues for all 12 models - pre-allocate for 12 models
-        let mut queues = HashMap::with_capacity(12);
+        // Create per-model queues for all 14 models
+        let mut queues = HashMap::with_capacity(14);
         for model_id in ModelId::all() {
             queues.insert(
                 *model_id,

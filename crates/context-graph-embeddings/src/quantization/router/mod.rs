@@ -43,7 +43,7 @@ pub struct QuantizationRouter {
     binary_encoder: BinaryEncoder,
     /// Float8 E4M3 encoder for E2, E3, E4, E8, E11 embeddings.
     float8_encoder: Float8E4M3Encoder,
-    /// PQ8 encoders for E1, E5, E7, E10 embeddings (keyed by dimension).
+    /// PQ8 encoders for E1, E5, E7, E10, Kepler embeddings (keyed by dimension).
     pq8_encoders: HashMap<usize, PQ8Encoder>,
 }
 
@@ -70,7 +70,7 @@ impl QuantizationRouter {
         pq8_encoders.insert(768, PQ8Encoder::new(768));
         // E7_Code: 1536D
         pq8_encoders.insert(1536, PQ8Encoder::new(1536));
-        // E10_Multimodal: 768D (already created for E5)
+        // E10_Contextual + Kepler: 768D (already created for E5)
 
         Self {
             binary_encoder: BinaryEncoder::new(),

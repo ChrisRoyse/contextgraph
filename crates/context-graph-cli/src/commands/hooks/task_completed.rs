@@ -96,6 +96,8 @@ pub async fn execute(args: TaskCompletedArgs) -> HookResult<HookOutput> {
                 &rationale,
                 TASK_MEMORY_IMPORTANCE,
                 Some(&args.session_id),
+                Some("text"),
+                Some(&["task-completion".to_string(), "learning".to_string()]),
             )
             .await
         {

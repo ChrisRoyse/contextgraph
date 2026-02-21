@@ -3,8 +3,8 @@
 //! Tests that verify TOTAL_DIMENSION, MODEL_COUNT, and sum consistency.
 
 use context_graph_embeddings::dimensions::{
-    CAUSAL, CODE, ENTITY, GRAPH, HDC, LATE_INTERACTION, MODEL_COUNT, MULTIMODAL, SEMANTIC, SPARSE,
-    SPLADE, TEMPORAL_PERIODIC, TEMPORAL_POSITIONAL, TEMPORAL_RECENT, TOTAL_DIMENSION,
+    CAUSAL, CODE, ENTITY, GRAPH, HDC, KEPLER, LATE_INTERACTION, MODEL_COUNT, MULTIMODAL, SEMANTIC,
+    SPARSE, SPLADE, TEMPORAL_PERIODIC, TEMPORAL_POSITIONAL, TEMPORAL_RECENT, TOTAL_DIMENSION,
 };
 use context_graph_embeddings::ModelId;
 
@@ -32,7 +32,7 @@ fn test_model_count_constant() {
     println!("[PASS] MODEL_COUNT = {} verified", MODEL_COUNT);
 }
 
-/// Test ModelId::all() returns exactly 13 models.
+/// Test ModelId::all() returns exactly 14 models.
 #[test]
 fn test_model_id_all_count() {
     let all_models = ModelId::all();
@@ -43,7 +43,7 @@ fn test_model_id_all_count() {
         EXPECTED_MODEL_COUNT,
         all_models.len()
     );
-    println!("[PASS] ModelId::all() returns 13 models");
+    println!("[PASS] ModelId::all() returns 14 models");
 }
 
 /// Test manual sum of projected dimensions equals TOTAL_DIMENSION.
@@ -61,7 +61,8 @@ fn test_manual_sum_equals_total() {
         + MULTIMODAL
         + ENTITY
         + LATE_INTERACTION
-        + SPLADE;
+        + SPLADE
+        + KEPLER;
 
     assert_eq!(
         manual_sum, TOTAL_DIMENSION,
@@ -87,11 +88,11 @@ fn test_model_id_iteration_sum() {
 /// Test TOTAL_DIMENSION breakdown matches documented calculation.
 #[test]
 fn test_total_dimension_breakdown() {
-    // Constitution: E1-E13 projected dimensions
-    // E8 upgraded 384→1024 (e5-large-v2); E11 remains legacy MiniLM 384D
-    // E1:1024 + E2:512 + E3:512 + E4:512 + E5:768 + E6:1536 + E7:1536 + E8:1024 + E9:1024 + E10:768 + E11:384 + E12:128 + E13:1536 = 11264
+    // Constitution: E1-E13 projected dimensions + Kepler
+    // E8 upgraded 384→1024 (e5-large-v2); E11 remains legacy MiniLM 384D; Kepler adds 768D
+    // E1:1024 + E2:512 + E3:512 + E4:512 + E5:768 + E6:1536 + E7:1536 + E8:1024 + E9:1024 + E10:768 + E11:384 + E12:128 + E13:1536 + Kepler:768 = 12032
     let expected_breakdown =
-        1024 + 512 + 512 + 512 + 768 + 1536 + 1536 + 1024 + 1024 + 768 + 384 + 128 + 1536;
+        1024 + 512 + 512 + 512 + 768 + 1536 + 1536 + 1024 + 1024 + 768 + 384 + 128 + 1536 + 768;
     assert_eq!(
         expected_breakdown, EXPECTED_TOTAL_DIMENSION,
         "Documented breakdown sum {} != expected {}",

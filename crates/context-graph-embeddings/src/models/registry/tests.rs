@@ -220,7 +220,7 @@ async fn test_registry_new_creates_locks_for_all_models() {
 
     let registry = ModelRegistry::new(config, factory).await.unwrap();
 
-    // Verify loading_locks has entries for all 12 models
+    // Verify loading_locks has entries for all 14 models
     for model_id in ModelId::all() {
         assert!(
             registry.loading_locks.contains_key(model_id),

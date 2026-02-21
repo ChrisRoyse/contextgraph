@@ -141,7 +141,7 @@ async fn test_remaining_memory_accurate() {
 }
 
 #[tokio::test]
-async fn test_load_all_13_models_memory_matches() {
+async fn test_load_all_14_models_memory_matches() {
     let factory = Arc::new(TestFactory::new());
     let total: usize = crate::traits::MEMORY_ESTIMATES
         .iter()
@@ -158,6 +158,6 @@ async fn test_load_all_13_models_memory_matches() {
         registry.load_model(*model_id).await.unwrap();
     }
 
-    assert_eq!(registry.loaded_count().await, 13);
+    assert_eq!(registry.loaded_count().await, 14);
     assert_eq!(registry.total_memory_usage().await, total);
 }

@@ -1,4 +1,4 @@
-//! Tests for WarmModelRegistry with all 12 models.
+//! Tests for WarmModelRegistry with all 14 models.
 
 use super::helpers::{test_handle, MB};
 use crate::warm::error::WarmError;
@@ -17,12 +17,12 @@ fn test_new_registry_is_empty() {
 
 #[test]
 fn test_embedding_model_ids_count() {
-    assert_eq!(EMBEDDING_MODEL_IDS.len(), 13);
-    assert_eq!(TOTAL_MODEL_COUNT, 13);
+    assert_eq!(EMBEDDING_MODEL_IDS.len(), 14);
+    assert_eq!(TOTAL_MODEL_COUNT, 14);
 }
 
 #[test]
-fn test_register_all_12_models() {
+fn test_register_all_14_models() {
     let mut registry = WarmModelRegistry::new();
 
     for (i, model_id) in EMBEDDING_MODEL_IDS.iter().enumerate() {

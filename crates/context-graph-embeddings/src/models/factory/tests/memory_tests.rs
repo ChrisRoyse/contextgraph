@@ -27,18 +27,17 @@ fn test_estimate_memory_all_nonzero() {
 }
 
 #[test]
-fn test_estimate_memory_multimodal_largest() {
+fn test_estimate_memory_semantic_largest() {
     let factory = DefaultModelFactory::new(PathBuf::from("./models"), GpuConfig::default());
 
-    let multimodal = factory.estimate_memory(ModelId::Contextual);
+    // Semantic and Graph (both e5-large-v2) are the largest at 1.4GB
+    let semantic = factory.estimate_memory(ModelId::Semantic);
     for model_id in ModelId::all() {
-        if *model_id != ModelId::Contextual {
-            assert!(
-                multimodal >= factory.estimate_memory(*model_id),
-                "Multimodal should be >= {:?}",
-                model_id
-            );
-        }
+        assert!(
+            semantic >= factory.estimate_memory(*model_id),
+            "Semantic should be >= {:?}",
+            model_id
+        );
     }
 }
 
@@ -100,6 +99,6 @@ fn test_factory_in_arc() {
         GpuConfig::default(),
     ));
 
-    assert_eq!(factory.supported_models().len(), 13);
+    assert_eq!(factory.supported_models().len(), 14);
     assert!(factory.supports_model(ModelId::Semantic));
 }

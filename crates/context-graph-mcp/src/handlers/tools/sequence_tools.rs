@@ -220,11 +220,24 @@ impl Handlers {
         let results = if session_only {
             if let Some(ref target_sid) = session_id {
                 let result_ids: Vec<uuid::Uuid> = results.iter().map(|r| r.fingerprint.id).collect();
-                let metadata_batch = self
+                let metadata_batch = match self
                     .teleological_store
                     .get_source_metadata_batch(&result_ids)
                     .await
-                    .unwrap_or_else(|_| vec![None; result_ids.len()]);
+                {
+                    Ok(m) => m,
+                    Err(e) => {
+                        error!(
+                            error = %e,
+                            result_count = result_ids.len(),
+                            "[E_SEQ_META_001] get_conversation_context: Session metadata retrieval FAILED"
+                        );
+                        return self.tool_error(
+                            id,
+                            &format!("[E_SEQ_META_001] Session metadata retrieval failed: {}", e),
+                        );
+                    }
+                };
 
                 results
                     .into_iter()
@@ -847,47 +860,28 @@ impl Handlers {
             vec![]
         };
 
-        let all_memories: Vec<TeleologicalSearchResult> = all_fingerprints
-            .iter()
-            .zip(scan_metadata.iter())
-            .filter(|(_fp, meta): &(&TeleologicalFingerprint, &Option<SourceMetadata>)| {
+        // MCP-M2 FIX: Collect session-matching metadata alongside fingerprints in a single pass.
+        // Previously, metadata was discarded here and re-fetched below (redundant second RocksDB read).
+        let session_entries: Vec<(TeleologicalFingerprint, Option<SourceMetadata>)> = all_fingerprints
+            .into_iter()
+            .zip(scan_metadata.into_iter())
+            .filter(|(_fp, meta): &(TeleologicalFingerprint, Option<SourceMetadata>)| {
                 meta.as_ref()
                     .and_then(|m| m.session_id.as_deref())
                     .is_some_and(|sid| sid == session_id)
             })
             .take(COMPARISON_BATCH_SIZE)
-            .map(|(fp, _): (&TeleologicalFingerprint, &Option<SourceMetadata>)| TeleologicalSearchResult {
-                fingerprint: fp.clone(),
-                similarity: 1.0,
-                embedder_scores: [0.0; 13],
-                stage_scores: [0.0; 5],
-                content: None,
-                temporal_breakdown: None,
-            })
+            .map(|(fp, meta): (TeleologicalFingerprint, Option<SourceMetadata>)| (fp, meta))
             .collect();
 
-        // Get source metadata for sequence filtering (FAIL FAST)
-        let ids: Vec<uuid::Uuid> = all_memories.iter().map(|r| r.fingerprint.id).collect();
-        let source_metadata: Vec<Option<SourceMetadata>> = if !all_memories.is_empty() {
-            match self.teleological_store.get_source_metadata_batch(&ids).await {
-                Ok(m) => m,
-                Err(e) => {
-                    error!(error = %e, "compare_session_states: Source metadata retrieval FAILED");
-                    return self.tool_error(id, &format!("Source metadata retrieval failed: {}", e));
-                }
-            }
-        } else {
-            vec![]
-        };
-
-        // Count memories in before and after windows
+        // Count memories in before and after windows using the already-fetched metadata
         let mut before_count = 0usize;
         let mut after_count = 0usize;
         let mut before_by_type: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
         let mut after_by_type: std::collections::HashMap<String, u32> = std::collections::HashMap::new();
 
-        for (i, _) in all_memories.iter().enumerate() {
-            if let Some(Some(ref metadata)) = source_metadata.get(i) {
+        for (_fp, meta) in &session_entries {
+            if let Some(ref metadata) = meta {
                 if let Some(seq) = metadata.session_sequence {
                     let source_type = format!("{}", metadata.source_type);
                     if seq <= before_seq {

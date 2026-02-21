@@ -114,12 +114,12 @@ mod tests {
     }
 
     #[test]
-    fn test_factory_supported_models_all_13() {
+    fn test_factory_supported_models_all_14() {
         let factory = TestFactory;
         let models = factory.supported_models();
-        assert_eq!(models.len(), 13);
+        assert_eq!(models.len(), 14);
 
-        // Verify all 13 models are present
+        // Verify all 14 models are present
         for model_id in ModelId::all() {
             assert!(models.contains(model_id), "Missing model: {:?}", model_id);
         }
@@ -213,6 +213,6 @@ mod tests {
     #[test]
     fn test_factory_trait_object_in_box() {
         let factory: Box<dyn ModelFactory> = Box::new(TestFactory);
-        assert_eq!(factory.supported_models().len(), 13);
+        assert_eq!(factory.supported_models().len(), 14);
     }
 }

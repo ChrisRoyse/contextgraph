@@ -2466,9 +2466,9 @@ mod birch_tree_tests {
             768,   // E5 Causal
             30000, // E6 Sparse (approximation)
             1536,  // E7 Code
-            384,   // E8 Graph, E11 Entity
+            1024,  // E8 Graph
             1024,  // E9 HDC
-            768,   // E10 Multimodal
+            768,   // E10 Multimodal, E11 Entity
             128,   // E12 LateInteraction per token
         ];
 

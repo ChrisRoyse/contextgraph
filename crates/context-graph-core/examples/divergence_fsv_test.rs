@@ -215,7 +215,7 @@ fn main() {
     
     report.add(DivergenceAlert::new(id1, Embedder::Semantic, 0.25, "low"));
     report.add(DivergenceAlert::new(id2, Embedder::Code, 0.05, "high"));  // Most severe
-    report.add(DivergenceAlert::new(id3, Embedder::Causal, 0.15, "medium"));
+    report.add(DivergenceAlert::new(id3, Embedder::Sparse, 0.15, "medium"));
     
     assert_eq!(report.len(), 3);
     println!("  After adding 3 alerts: len={} [PASS]", report.len());
@@ -237,7 +237,7 @@ fn main() {
     let mut report2 = DivergenceReport::new();
     report2.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Semantic, 0.05, "h1"));
     report2.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Code, 0.08, "h2"));
-    report2.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Causal, 0.15, "m1"));
+    report2.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::LateInteraction, 0.15, "m1"));
     report2.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Sparse, 0.22, "l1"));
     report2.add(DivergenceAlert::new(Uuid::new_v4(), Embedder::Contextual, 0.28, "l2"));
     

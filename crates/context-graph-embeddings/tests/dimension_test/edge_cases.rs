@@ -12,21 +12,21 @@ use context_graph_embeddings::ModelId;
 #[test]
 #[should_panic(expected = "Invalid model index")]
 fn test_projected_dimension_invalid_index_panics() {
-    let _ = projected_dimension_by_index(13);
+    let _ = projected_dimension_by_index(14);
 }
 
 /// Test invalid index for native_dimension_by_index panics.
 #[test]
 #[should_panic(expected = "Invalid model index")]
 fn test_native_dimension_invalid_index_panics() {
-    let _ = native_dimension_by_index(13);
+    let _ = native_dimension_by_index(14);
 }
 
 /// Test invalid index for offset_by_index panics.
 #[test]
 #[should_panic(expected = "Invalid model index")]
 fn test_offset_invalid_index_panics() {
-    let _ = offset_by_index(13);
+    let _ = offset_by_index(14);
 }
 
 /// Test large invalid index for projected_dimension_by_index panics.

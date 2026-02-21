@@ -88,7 +88,7 @@ fn test_loader_fail_fast_on_vram_exhaustion() {
 }
 
 #[test]
-fn test_loader_all_12_models_fit_in_24gb() {
+fn test_loader_all_14_models_fit_in_24gb() {
     let mut registry = WarmModelRegistry::new();
     let mut pools = WarmMemoryPools::rtx_5090();
 

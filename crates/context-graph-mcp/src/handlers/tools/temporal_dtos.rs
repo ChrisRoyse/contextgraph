@@ -9,9 +9,13 @@ use serde::{Deserialize, Serialize};
 
 use context_graph_core::traits::DecayFunction;
 
-/// Temporal scale for decay calculation.
+/// Temporal scale for decay calculation in search_recent tool.
 ///
 /// Controls the time horizon over which decay is computed.
+///
+/// NOTE: This has DIFFERENT horizon values from `context_graph_core::traits::TemporalScale`
+/// because the search_recent tool operates at coarser temporal granularity than the core
+/// temporal reasoning system. Use `From<TemporalScale>` to convert to the core type.
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TemporalScale {
@@ -31,16 +35,33 @@ pub enum TemporalScale {
     /// Long scale: 1 month horizon
     /// Use for: extended time range queries
     Long,
+
+    /// Archival scale: 1 year horizon
+    /// Use for: long-term knowledge retrieval across project history
+    Archival,
 }
 
 impl TemporalScale {
     /// Get the time horizon in seconds for this scale.
     pub fn horizon_seconds(&self) -> i64 {
         match self {
-            TemporalScale::Micro => 3600,       // 1 hour
-            TemporalScale::Meso => 86400,       // 1 day
-            TemporalScale::Macro => 604800,     // 1 week
-            TemporalScale::Long => 2592000,     // 30 days
+            TemporalScale::Micro => 3600,         // 1 hour
+            TemporalScale::Meso => 86400,         // 1 day
+            TemporalScale::Macro => 604800,       // 1 week
+            TemporalScale::Long => 2592000,       // 30 days
+            TemporalScale::Archival => 31536000,   // 1 year
+        }
+    }
+}
+
+impl From<TemporalScale> for context_graph_core::traits::TemporalScale {
+    fn from(dto: TemporalScale) -> Self {
+        match dto {
+            TemporalScale::Micro => context_graph_core::traits::TemporalScale::Micro,
+            TemporalScale::Meso => context_graph_core::traits::TemporalScale::Meso,
+            TemporalScale::Macro => context_graph_core::traits::TemporalScale::Macro,
+            TemporalScale::Long => context_graph_core::traits::TemporalScale::Long,
+            TemporalScale::Archival => context_graph_core::traits::TemporalScale::Archival,
         }
     }
 }
@@ -78,6 +99,9 @@ pub struct SearchRecentParams {
 }
 
 /// Decay function parameter with string parsing.
+///
+/// Maps to the core `DecayFunction` enum. Supports all 5 schema-advertised values:
+/// linear, exponential, step, none, no_decay.
 #[derive(Debug, Clone, Copy, Default, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum DecayFunctionParam {
@@ -85,6 +109,9 @@ pub enum DecayFunctionParam {
     #[default]
     Exponential,
     Step,
+    None,
+    #[serde(alias = "no_decay")]
+    NoDecay,
 }
 
 impl From<DecayFunctionParam> for DecayFunction {
@@ -93,6 +120,7 @@ impl From<DecayFunctionParam> for DecayFunction {
             DecayFunctionParam::Linear => DecayFunction::Linear,
             DecayFunctionParam::Exponential => DecayFunction::Exponential,
             DecayFunctionParam::Step => DecayFunction::Step,
+            DecayFunctionParam::None | DecayFunctionParam::NoDecay => DecayFunction::NoDecay,
         }
     }
 }

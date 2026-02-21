@@ -6,7 +6,7 @@
 use crate::types::dimensions::MODEL_COUNT;
 use crate::types::{ModelEmbedding, ModelId};
 
-/// Multi-Array Storage for all 12 embedding models (E1-E12).
+/// Multi-Array Storage for all 14 embedding models (E1-E13 + Kepler).
 ///
 /// This struct collects individual `ModelEmbedding` outputs and stores them
 /// as SEPARATE arrays for multi-array teleological storage. Each embedding
@@ -19,8 +19,8 @@ use crate::types::{ModelEmbedding, ModelId};
 /// - The 13-embedding array IS the teleological vector
 ///
 /// # Invariants
-/// - `embeddings` is indexed by `ModelId as u8` (0-11)
-/// - `is_complete()` returns true only when all 12 slots are filled
+/// - `embeddings` is indexed by `ModelId as u8` (0-13)
+/// - `is_complete()` returns true only when all 14 slots are filled
 /// - `content_hash` is deterministic: same embeddings → same hash
 ///
 /// # Fail-Fast Behavior
@@ -29,7 +29,7 @@ use crate::types::{ModelEmbedding, ModelId};
 #[derive(Debug, Clone)]
 pub struct MultiArrayEmbedding {
     /// Individual model embeddings indexed by `ModelId as u8`.
-    /// Array of 12 slots, each `Option<ModelEmbedding>`.
+    /// Array of 14 slots, each `Option<ModelEmbedding>`.
     /// Each embedding is stored SEPARATELY at its native dimension.
     pub embeddings: [Option<ModelEmbedding>; MODEL_COUNT],
 
@@ -46,7 +46,7 @@ impl MultiArrayEmbedding {
     ///
     /// # Returns
     /// A new instance with:
-    /// - All 12 embedding slots set to `None`
+    /// - All 14 embedding slots set to `None`
     /// - `total_latency_us = 0`
     /// - `content_hash = 0`
     #[must_use]
@@ -113,7 +113,7 @@ impl MultiArrayEmbedding {
         self.embeddings[index].as_ref()
     }
 
-    /// Returns `true` only if all 12 slots are filled.
+    /// Returns `true` only if all 14 slots are filled.
     #[inline]
     #[must_use]
     pub fn is_complete(&self) -> bool {
@@ -135,7 +135,7 @@ impl MultiArrayEmbedding {
             .collect()
     }
 
-    /// Returns the count of filled slots (0-12).
+    /// Returns the count of filled slots (0-14).
     #[inline]
     #[must_use]
     pub fn filled_count(&self) -> usize {

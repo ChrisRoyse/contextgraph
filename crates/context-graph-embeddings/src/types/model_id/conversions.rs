@@ -97,7 +97,7 @@ impl From<Embedder> for ModelId {
             Embedder::Graph => ModelId::Graph,
             Embedder::Hdc => ModelId::Hdc,
             Embedder::Contextual => ModelId::Contextual,
-            Embedder::Entity => ModelId::Entity,
+            Embedder::Entity => ModelId::Kepler,  // Production E11 is KEPLER (768D), not legacy Entity (384D)
             Embedder::LateInteraction => ModelId::LateInteraction,
             Embedder::KeywordSplade => ModelId::Splade,
         }
@@ -157,7 +157,7 @@ mod tests {
             (Embedder::Graph, ModelId::Graph),
             (Embedder::Hdc, ModelId::Hdc),
             (Embedder::Contextual, ModelId::Contextual),
-            (Embedder::Entity, ModelId::Entity),
+            (Embedder::Entity, ModelId::Kepler),  // Production E11 is KEPLER (768D)
             (Embedder::LateInteraction, ModelId::LateInteraction),
             (Embedder::KeywordSplade, ModelId::Splade),
         ];
@@ -220,16 +220,28 @@ mod tests {
 
     #[test]
     fn test_index_preservation() {
-        // Verify that index() is preserved across conversion
+        // Verify that index() is preserved across conversion for most embedders.
+        // Exception: Embedder::Entity (index 10) maps to ModelId::Kepler (index 13)
+        // because Kepler is the production E11 replacement for legacy Entity.
         for embedder in Embedder::all() {
             let model_id: ModelId = embedder.into();
-            assert_eq!(
-                embedder.index(),
-                model_id as usize,
-                "Index mismatch for {:?}",
-                embedder
-            );
+            if embedder == Embedder::Entity {
+                // Embedder::Entity -> ModelId::Kepler (production E11, index 13)
+                assert_eq!(
+                    model_id,
+                    ModelId::Kepler,
+                    "Embedder::Entity should map to ModelId::Kepler (production E11)"
+                );
+                assert_eq!(model_id as usize, 13, "Kepler repr index is 13");
+            } else {
+                assert_eq!(
+                    embedder.index(),
+                    model_id as usize,
+                    "Index mismatch for {:?}",
+                    embedder
+                );
+            }
         }
-        println!("[PASS] Index values preserved across Embedder <-> ModelId conversion");
+        println!("[PASS] Index values correctly mapped across Embedder <-> ModelId conversion");
     }
 }

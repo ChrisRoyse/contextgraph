@@ -14,7 +14,7 @@ fn test_full_warm_loading_pipeline_simulation() {
     let mut pools = WarmMemoryPools::new(config.clone());
     let validator = WarmValidator::new();
 
-    // Register all 12 models with realistic sizes
+    // Register all 14 models with realistic sizes
     let model_sizes: Vec<(&str, usize)> = EMBEDDING_MODEL_IDS
         .iter()
         .map(|id| (*id, 600 * MB))

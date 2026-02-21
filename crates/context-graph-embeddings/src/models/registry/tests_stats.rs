@@ -112,19 +112,19 @@ async fn test_edge_1_unload_from_empty_registry() {
 #[tokio::test]
 async fn test_edge_2_memory_budget_exceeded() {
     let factory = Arc::new(TestFactory::new());
-    // 1GB budget - smaller than LateInteraction (450MB) but we'll test with Multimodal (1.6GB)
+    // 400MB budget - smaller than Semantic (1.4GB) to test budget exceeded
     let config = ModelRegistryConfig {
-        memory_budget_bytes: 1_000_000_000,
+        memory_budget_bytes: 400_000_000,
         ..Default::default()
     };
 
     let registry = ModelRegistry::new(config, factory).await.unwrap();
 
     // Precondition: Confirm budget
-    assert_eq!(registry.memory_budget(), 1_000_000_000);
+    assert_eq!(registry.memory_budget(), 400_000_000);
 
-    // Action: Try to load Multimodal (1.6GB)
-    let result = registry.load_model(ModelId::Contextual).await;
+    // Action: Try to load Semantic (1.4GB) which exceeds 400MB budget
+    let result = registry.load_model(ModelId::Semantic).await;
 
     // Expected: EmbeddingError::MemoryBudgetExceeded
     assert!(result.is_err());
@@ -134,16 +134,16 @@ async fn test_edge_2_memory_budget_exceeded() {
             available_bytes,
             budget_bytes,
         }) => {
-            assert_eq!(requested_bytes, get_memory_estimate(ModelId::Contextual));
-            assert_eq!(available_bytes, 1_000_000_000);
-            assert_eq!(budget_bytes, 1_000_000_000);
+            assert_eq!(requested_bytes, get_memory_estimate(ModelId::Semantic));
+            assert_eq!(available_bytes, 400_000_000);
+            assert_eq!(budget_bytes, 400_000_000);
         }
         _ => panic!("Expected MemoryBudgetExceeded error"),
     }
 
     // Postcondition: No memory allocated, no model in HashMap
     assert_eq!(registry.total_memory_usage().await, 0);
-    assert!(!registry.is_loaded(ModelId::Contextual).await);
+    assert!(!registry.is_loaded(ModelId::Semantic).await);
 
     let stats = registry.stats().await;
     assert_eq!(stats.load_failures, 1);

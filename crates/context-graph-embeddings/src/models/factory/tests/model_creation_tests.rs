@@ -1,4 +1,4 @@
-//! Model creation tests for all 12 models.
+//! Model creation tests for all 14 models.
 
 use std::path::PathBuf;
 

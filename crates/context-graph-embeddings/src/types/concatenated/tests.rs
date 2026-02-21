@@ -55,7 +55,7 @@ fn test_set_all_models() {
 
     assert!(mae.is_complete());
     assert_eq!(mae.filled_count(), MODEL_COUNT);
-    assert_eq!(mae.total_latency_us, MODEL_COUNT as u64 * 100); // 13 * 100
+    assert_eq!(mae.total_latency_us, MODEL_COUNT as u64 * 100);
 }
 
 #[test]
@@ -104,10 +104,10 @@ fn test_get_vector_returns_slice() {
 // ========== Completion Tests ==========
 
 #[test]
-fn test_is_complete_only_when_all_13() {
+fn test_is_complete_only_when_all_14() {
     let mut mae = MultiArrayEmbedding::new();
 
-    // Fill 12 models (all but the last)
+    // Fill all but the last model
     for model_id in ModelId::all().iter().take(MODEL_COUNT - 1) {
         let dim = model_id.projected_dimension();
         let mut emb = ModelEmbedding::new(*model_id, vec![0.1; dim], 100);
@@ -117,8 +117,8 @@ fn test_is_complete_only_when_all_13() {
     assert!(!mae.is_complete());
     assert_eq!(mae.filled_count(), MODEL_COUNT - 1);
 
-    // Fill last model (Splade)
-    let mut emb = ModelEmbedding::new(ModelId::Splade, vec![0.1; 1536], 100);
+    // Fill last model (Kepler)
+    let mut emb = ModelEmbedding::new(ModelId::Kepler, vec![0.1; 768], 100);
     emb.set_projected(true);
     mae.set(emb);
     assert!(mae.is_complete());
@@ -137,7 +137,7 @@ fn test_missing_models_returns_correct_list() {
     mae.set(emb);
 
     let missing = mae.missing_models();
-    assert_eq!(missing.len(), 12); // 13 total - 1 filled = 12 missing
+    assert_eq!(missing.len(), MODEL_COUNT - 1); // 14 total - 1 filled = 13 missing
     assert!(!missing.contains(&ModelId::Semantic));
 }
 
@@ -195,7 +195,7 @@ fn test_total_latency_sums_all() {
         mae.set(emb);
     }
 
-    assert_eq!(mae.total_latency_us, MODEL_COUNT as u64 * 100); // 13 * 100
+    assert_eq!(mae.total_latency_us, MODEL_COUNT as u64 * 100);
 }
 
 // ========== Total Dimension Tests ==========
@@ -203,7 +203,7 @@ fn test_total_latency_sums_all() {
 #[test]
 fn test_total_dimension() {
     let mae = create_complete_embedding();
-    // Sum of all projected dimensions (11648 for 13 models)
+    // Sum of all projected dimensions (12032 for 14 models)
     assert_eq!(mae.total_dimension(), TOTAL_DIMENSION);
 }
 
@@ -306,7 +306,7 @@ fn verify_multi_array_storage() {
     let mut mae = create_complete_embedding();
     mae.compute_hash();
 
-    // 1. Verify all 13 embeddings stored separately
+    // 1. Verify all 14 embeddings stored separately
     assert!(mae.is_complete());
     assert_eq!(mae.filled_count(), MODEL_COUNT);
 
@@ -319,7 +319,7 @@ fn verify_multi_array_storage() {
     // 3. Verify hash is non-zero
     assert_ne!(mae.content_hash, 0);
 
-    // 4. Verify total dimension is sum of all (11648 for 13 models)
+    // 4. Verify total dimension is sum of all (12032 for 14 models)
     assert_eq!(mae.total_dimension(), TOTAL_DIMENSION);
 }
 

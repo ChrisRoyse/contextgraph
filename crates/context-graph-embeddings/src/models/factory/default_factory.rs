@@ -12,15 +12,15 @@ use crate::models::custom::{
     HdcModel, TemporalPeriodicModel, TemporalPositionalModel, TemporalRecentModel,
 };
 use crate::models::pretrained::{
-    CausalModel, CodeModel, EntityModel, GraphModel, KeplerModel, LateInteractionModel,
-    MultimodalModel, SemanticModel, SparseModel,
+    CausalModel, CodeModel, ContextualModel, EntityModel, GraphModel, KeplerModel,
+    LateInteractionModel, SemanticModel, SparseModel,
 };
 
 // ============================================================================
 // DEFAULT MODEL FACTORY
 // ============================================================================
 
-/// Production factory for creating all 12 embedding models.
+/// Production factory for creating all 14 embedding models.
 ///
 /// The factory handles model instantiation with proper configuration.
 /// Models are created in unloaded state - call `load()` before `embed()`.
@@ -116,7 +116,7 @@ impl DefaultModelFactory {
             ModelId::Sparse => "sparse",
             ModelId::Code => "code-1536",
             ModelId::Graph => "graph",
-            ModelId::Contextual => "multimodal",
+            ModelId::Contextual => "contextual",
             ModelId::Entity => "entity",
             ModelId::Kepler => "kepler",
             ModelId::LateInteraction => "late-interaction",
@@ -164,7 +164,7 @@ impl DefaultModelFactory {
                 Ok(Box::new(model))
             }
             ModelId::Contextual => {
-                let model = MultimodalModel::new(&model_path, config.clone())?;
+                let model = ContextualModel::new(&model_path, config.clone())?;
                 Ok(Box::new(model))
             }
             ModelId::Entity => {

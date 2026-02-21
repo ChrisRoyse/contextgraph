@@ -107,17 +107,19 @@ impl DivergenceAlert {
     /// * `memory_content` - Full content to truncate for summary
     ///
     /// # Panics
-    /// Panics in debug mode if `space` is not a semantic embedder.
+    /// Panics if `space` is not in DIVERGENCE_SPACES (semantic embedders only).
     pub fn new(
         memory_id: Uuid,
         space: Embedder,
         similarity_score: f32,
         memory_content: &str,
     ) -> Self {
-        // Verify space is semantic (debug-only check for performance)
-        debug_assert!(
+        // CORE-M3 FIX: Real assertion in both debug AND release builds.
+        // debug_assert! was compiled out in release, silently accepting invalid spaces.
+        assert!(
             DIVERGENCE_SPACES.contains(&space),
-            "DivergenceAlert can only be created for semantic spaces. Got: {:?}",
+            "E_INVALID_DIVERGENCE_SPACE: DivergenceAlert can only be created for semantic spaces \
+             (E1, E6, E7, E10, E12, E13). Got: {:?}. This is a programmer error.",
             space
         );
 
@@ -253,17 +255,19 @@ pub fn truncate_summary(content: &str, max_len: usize) -> String {
 
     // Reserve 3 chars for "..."
     let target_len = max_len.saturating_sub(3);
+    // Snap to nearest valid UTF-8 char boundary to avoid panic on multi-byte chars
+    let safe_target = trimmed.floor_char_boundary(target_len);
 
     // Try to find a word boundary
-    if let Some(boundary) = trimmed[..target_len].rfind(char::is_whitespace) {
-        if boundary > target_len / 2 {
+    if let Some(boundary) = trimmed[..safe_target].rfind(char::is_whitespace) {
+        if boundary > safe_target / 2 {
             // Only use word boundary if it's not too short
             return format!("{}...", trimmed[..boundary].trim_end());
         }
     }
 
-    // Fall back to hard truncation
-    format!("{}...", &trimmed[..target_len])
+    // Fall back to hard truncation at char boundary
+    format!("{}...", &trimmed[..safe_target])
 }
 
 #[cfg(test)]

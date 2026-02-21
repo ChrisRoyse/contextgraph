@@ -272,8 +272,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_queues_created_for_all_13_models() {
+    fn test_queues_created_for_all_14_models() {
         let all_models = ModelId::all();
-        assert_eq!(all_models.len(), 13, "Expected 13 models");
+        assert_eq!(all_models.len(), 14, "Expected 14 models");
     }
 }

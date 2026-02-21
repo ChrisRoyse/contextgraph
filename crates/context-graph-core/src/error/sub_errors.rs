@@ -85,6 +85,14 @@ pub enum EmbeddingError {
         /// Error message
         message: String,
     },
+
+    /// Legacy embedding error where the specific embedder is unknown.
+    ///
+    /// Used when converting from `CoreError::Embedding(String)` which does not
+    /// carry embedder identity. Preserves the original error message without
+    /// falsely attributing the failure to a specific embedder.
+    #[error("Embedding error (unknown embedder): {0}")]
+    LegacyUnknownEmbedder(String),
 }
 
 // ============================================================================

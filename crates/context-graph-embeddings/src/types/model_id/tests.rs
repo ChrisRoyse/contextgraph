@@ -4,8 +4,8 @@ use super::*;
 use std::path::{Path, PathBuf};
 
 #[test]
-fn test_all_returns_13_variants() {
-    assert_eq!(ModelId::all().len(), 13);
+fn test_all_returns_14_variants() {
+    assert_eq!(ModelId::all().len(), 14);
 }
 
 #[test]
@@ -88,7 +88,7 @@ fn test_display() {
 #[test]
 fn test_pretrained_count() {
     let pretrained: Vec<_> = ModelId::pretrained().collect();
-    assert_eq!(pretrained.len(), 9); // 13 total - 4 custom
+    assert_eq!(pretrained.len(), 10); // 14 total - 4 custom
 }
 
 #[test]

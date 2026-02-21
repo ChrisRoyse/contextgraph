@@ -5,9 +5,7 @@
 
 use std::collections::HashMap;
 
-use crate::similarity::{
-    cosine_similarity, max_sim, sparse_cosine_similarity, DenseSimilarityError,
-};
+use crate::similarity::{cosine_similarity, max_sim, DenseSimilarityError};
 use crate::teleological::{
     ComparisonValidationResult, Embedder, GroupType, MatrixSearchConfig, SearchStrategy,
     SimilarityBreakdown, NUM_EMBEDDERS,
@@ -124,8 +122,8 @@ impl TeleologicalComparator {
     /// Compare a single embedder pair using the correct similarity function.
     ///
     /// Routes based on EmbeddingSlice variant:
-    /// - Dense: cosine_similarity
-    /// - Sparse: sparse_cosine_similarity
+    /// - Dense: cosine_similarity → (raw + 1) / 2 normalization
+    /// - Sparse: jaccard_similarity (index overlap, per constitution E6 jaccard_threshold)
     /// - TokenLevel: max_sim
     fn compare_embedder_slices(
         &self,
@@ -141,7 +139,7 @@ impl TeleologicalComparator {
                 }
                 // cosine_similarity returns Result, handle error by returning None
                 match cosine_similarity(a_dense, b_dense) {
-                    Ok(sim) => Some(f32::clamp(sim, 0.0, 1.0)),
+                    Ok(sim) => Some((sim + 1.0) / 2.0),
                     Err(DenseSimilarityError::DimensionMismatch { .. }) => {
                         // Dimension mismatch between same embedder type - should not happen
                         // with valid fingerprints, but handle gracefully
@@ -155,15 +153,13 @@ impl TeleologicalComparator {
                 }
             }
 
-            // Sparse embeddings (E6, E13): sparse cosine similarity
+            // Sparse embeddings (E6, E13): Jaccard similarity (per constitution E6 jaccard_threshold)
             (EmbeddingSlice::Sparse(a_sparse), EmbeddingSlice::Sparse(b_sparse)) => {
                 // Skip empty sparse vectors (no meaningful comparison possible)
                 if a_sparse.nnz() == 0 || b_sparse.nnz() == 0 {
                     return None;
                 }
-                // sparse_cosine_similarity returns f32 directly
-                let sim = sparse_cosine_similarity(a_sparse, b_sparse);
-                Some(f32::clamp(sim, 0.0, 1.0))
+                Some(a_sparse.jaccard_similarity(b_sparse))
             }
 
             // Token-level embeddings (E12): ColBERT MaxSim
