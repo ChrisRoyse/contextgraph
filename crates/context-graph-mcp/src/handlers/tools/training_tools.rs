@@ -1,34 +1,48 @@
-//! Training data export handler (`export_training_corpus`).
+//! Training data export handlers (`export_training_corpus`,
+//! `list_training_records`, `get_training_record`, `count_training_records`).
 //!
-//! Iterates memories in the teleological store, assembles full [`TrainingRecord`]s
-//! (embeddings, topic profile, cross-correlations, group alignments, typed
-//! edges, K-NN neighbors, causal labels), and persists each one into
-//! `CF_TRAINING_RECORDS` on the underlying RocksDB store.
+//! Iterates memories in the teleological store, assembles full
+//! [`TrainingRecord`]s (embeddings, topic profile, cross-correlations, group
+//! alignments, typed edges, K-NN neighbors, causal labels, temporal labels),
+//! and persists each one into `CF_TRAINING_RECORDS` on the underlying RocksDB
+//! store.
 //!
 //! Output is binary-only: the response payload is a summary (count + bytes +
 //! timing). No JSON/JSONL/Parquet files are written.
 //!
-//! # Limitations (v1)
+//! # Code-simplifier fixes applied (Phase 1)
 //!
-//! - `incoming_edges` and `causal_causes` are populated only when
-//!   `includeIncomingEdges=true`; doing so requires an O(N) reverse-index
-//!   scan of `CF_TYPED_EDGES` and the causal store at export start.
-//! - `topic_memberships` is left empty; topic-level export is a future
-//!   enhancement that needs portfolio integration.
-//! - K-NN neighbors are only populated for embedders the graph builder has
-//!   covered; newly-stored memories may show zeros until the ~60s batch cycle.
+//! 1. `CausalLabel` carries `rel_id` + optional `mechanism_type`; the peer
+//!    end stays `Uuid::nil()` until per-relationship peer resolution is wired
+//!    up.
+//! 2. Topic profile is read from `CF_TOPIC_PROFILES` per memory via
+//!    `get_topic_profile`; the fallback derivation runs only when the row is
+//!    missing.
+//! 3. Session filter fetches `source_metadata` **once** per memory and reuses
+//!    the value for record population.
+//! 4. `includeIncomingEdges=true` builds a single reverse-index HashMap over
+//!    `CF_TYPED_EDGES` at export start — O(N) once, not O(N²).
+//! 5. Phase-5 temporal labels are populated when `includeTemporalLabels` is
+//!    true (default); the export uses a single `Utc::now()` snapshot for the
+//!    whole run.
+//! 6. `list_training_records(includeShape=true)` batches RocksDB reads via
+//!    `multi_get_training_records`.
 
 use std::collections::HashMap;
 use std::time::Instant;
 
+use context_graph_core::graph_linking::TypedEdge;
 use context_graph_core::teleological::synergy_matrix::SynergyMatrix;
 use context_graph_core::teleological::types::NUM_EMBEDDERS;
 use context_graph_core::training::{
-    compute_cross_correlations, compute_group_alignments, compute_topic_profile_from_fingerprint,
-    CausalLabel, KnnNeighbor, TrainingEdge, TrainingRecord,
+    compute_cross_correlations, compute_group_alignments, extract_temporal_labels,
+    topic_profile_or_fallback, CausalLabel, KnnNeighbor, TrainingEdge, TrainingRecord,
 };
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
+use context_graph_core::types::SourceMetadata;
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
+use context_graph_storage::EdgeRepository;
+use chrono::Utc;
 use serde_json::json;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
@@ -89,23 +103,28 @@ impl Handlers {
             .get("includeIncomingEdges")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
+        let include_temporal_labels = args
+            .get("includeTemporalLabels")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(true);
         let clear_existing = args
             .get("clearExisting")
             .and_then(|v| v.as_bool())
             .unwrap_or(false);
 
-        if filter == "session" && filter_id.is_none() {
-            return self.tool_error(
-                id,
-                "filter='session' requires a non-empty filterId",
-            );
+        // ---- Validate session filter ----
+        if filter == "session"
+            && filter_id
+                .as_deref()
+                .map(|s| s.is_empty())
+                .unwrap_or(true)
+        {
+            return self.tool_error(id, "filter='session' requires a non-empty filterId");
         }
 
         // ---- Require RocksDB backend ----
         let store_any = self.teleological_store.as_any();
-        let Some(rocksdb_store) =
-            store_any.downcast_ref::<RocksDbTeleologicalStore>()
-        else {
+        let Some(rocksdb_store) = store_any.downcast_ref::<RocksDbTeleologicalStore>() else {
             return self.tool_error(
                 id,
                 "export_training_corpus requires RocksDbTeleologicalStore. \
@@ -138,57 +157,88 @@ impl Handlers {
             Ok(fps) => fps,
             Err(e) => {
                 error!(error = %e, "list_fingerprints_unbiased failed");
-                return self.tool_error(
-                    id,
-                    &format!("Failed to list fingerprints: {}", e),
-                );
+                return self.tool_error(id, &format!("Failed to list fingerprints: {}", e));
             }
         };
 
-        // ---- Incoming edges (per-memory O(N) scan when enabled) ----
-        // v1: No persistent reverse index; each `get_typed_edges_to(memory_id)`
-        // call is a full CF scan. Off by default; opt-in for small corpora.
+        // ---- Reverse index for incoming edges (fix #4: build once) ----
         let include_incoming_resolved =
             include_incoming_edges && include_edges && self.edge_repository.is_some();
-        // Placeholder map so the build_training_record signature stays stable.
-        let incoming_index: HashMap<Uuid, Vec<TrainingEdge>> = HashMap::new();
+        let incoming_index: HashMap<Uuid, Vec<TrainingEdge>> = if include_incoming_resolved {
+            match self
+                .edge_repository
+                .as_ref()
+                .map(EdgeRepository::iter_all_typed_edges)
+                .transpose()
+            {
+                Ok(Some(all_edges)) => build_incoming_index(&all_edges),
+                Ok(None) => HashMap::new(),
+                Err(e) => {
+                    warn!(error = %e, "iter_all_typed_edges failed; incoming edges will be empty");
+                    HashMap::new()
+                }
+            }
+        } else {
+            HashMap::new()
+        };
 
         // ---- Build and persist records ----
         let synergy = SynergyMatrix::with_base_synergies();
+        let export_now = Utc::now();
         let mut exported = 0usize;
         let mut skipped = 0usize;
         let mut bytes_written = 0u64;
         let mut errors = 0usize;
 
         for fp in &fingerprints {
-            // Session filter (post-filter via source_metadata)
+            // Fetch source metadata ONCE per memory (fix #3). Used for both
+            // the session filter and the record's session_id/source_path.
+            let source = self
+                .teleological_store
+                .get_source_metadata(fp.id)
+                .await
+                .unwrap_or(None);
+
+            // Session filter: reuse the already-fetched source.
             if filter == "session" {
                 let want = filter_id.as_deref().unwrap_or("");
-                let matches = match self.teleological_store.get_source_metadata(fp.id).await {
-                    Ok(Some(meta)) => meta.session_id.as_deref() == Some(want),
-                    Ok(None) => false,
-                    Err(e) => {
-                        warn!(id = %fp.id, error = %e, "get_source_metadata failed; skipping");
-                        false
-                    }
-                };
+                let matches = source
+                    .as_ref()
+                    .and_then(|m| m.session_id.as_deref())
+                    .map(|s| s == want)
+                    .unwrap_or(false);
                 if !matches {
                     skipped += 1;
                     continue;
                 }
             }
 
+            // Topic profile: prefer CF_TOPIC_PROFILES; fall back to
+            // fingerprint-magnitude derivation only when the row is missing (fix #2).
+            let stored_profile = match rocksdb_store.get_topic_profile(fp.id).await {
+                Ok(p) => p,
+                Err(e) => {
+                    warn!(id = %fp.id, error = %e, "get_topic_profile failed; using fallback");
+                    None
+                }
+            };
+            let topic_profile = topic_profile_or_fallback(stored_profile, &fp.semantic);
+
             let record = match self
                 .build_training_record(
                     fp,
+                    source,
+                    topic_profile,
                     &synergy,
                     &incoming_index,
+                    export_now,
                     include_embeddings,
                     include_sparse,
                     include_tokens,
                     include_edges,
                     include_causal,
                     include_incoming_resolved,
+                    include_temporal_labels,
                 )
                 .await
             {
@@ -200,8 +250,6 @@ impl Handlers {
                 }
             };
 
-            // Estimate serialized size from the largest contributors
-            // (dense + sparse + token + edges) without pulling in bincode here.
             let serialized_size = estimate_record_size(&record);
 
             if let Err(e) = rocksdb_store.store_training_record(fp.id, &record).await {
@@ -245,8 +293,9 @@ impl Handlers {
                     "sparse_vectors_included": include_sparse,
                     "token_embeddings_included": include_tokens,
                     "edges_included": include_edges,
-                    "incoming_edges_included": include_incoming_edges,
+                    "incoming_edges_included": include_incoming_resolved,
                     "causal_labels_included": include_causal,
+                    "temporal_labels_included": include_temporal_labels,
                     "cross_correlations": 78,
                     "group_alignments": 6,
                     "topic_profile_dims": NUM_EMBEDDERS
@@ -261,19 +310,25 @@ impl Handlers {
 
     /// Assemble a [`TrainingRecord`] for a single fingerprint.
     ///
-    /// On any unrecoverable lookup failure, returns a short diagnostic string.
+    /// `source` and `topic_profile` are already resolved by the caller (fix
+    /// #2/#3). `incoming_index` is the caller-built reverse index (fix #4).
+    /// `export_now` is shared across the whole run.
     #[allow(clippy::too_many_arguments)]
     async fn build_training_record(
         &self,
         fp: &TeleologicalFingerprint,
+        source: Option<SourceMetadata>,
+        topic_profile: [f32; NUM_EMBEDDERS],
         synergy: &SynergyMatrix,
-        _incoming_index: &HashMap<Uuid, Vec<TrainingEdge>>,
+        incoming_index: &HashMap<Uuid, Vec<TrainingEdge>>,
+        export_now: chrono::DateTime<Utc>,
         include_embeddings: bool,
         include_sparse: bool,
         include_tokens: bool,
         include_edges: bool,
         include_causal: bool,
         include_incoming: bool,
+        include_temporal_labels: bool,
     ) -> Result<TrainingRecord, String> {
         // Content
         let content = self
@@ -283,25 +338,15 @@ impl Handlers {
             .map_err(|e| format!("get_content: {}", e))?
             .unwrap_or_default();
 
-        // Source metadata (best-effort, OK if missing)
-        let source = self
-            .teleological_store
-            .get_source_metadata(fp.id)
-            .await
-            .unwrap_or(None);
         let session_id = source.as_ref().and_then(|m| m.session_id.clone());
-        let source_type = source
-            .as_ref()
-            .map(|m| format!("{:?}", m.source_type));
+        let source_type = source.as_ref().map(|m| format!("{:?}", m.source_type));
         let source_path = source.as_ref().and_then(|m| m.file_path.clone());
 
         // Teleological fusion
-        let topic_profile = compute_topic_profile_from_fingerprint(&fp.semantic);
         let cross_correlations = compute_cross_correlations(&topic_profile, synergy);
         let group_alignments = compute_group_alignments(&topic_profile);
 
-        // Dense embeddings (gate by include flag). Tuples > 12 elements don't
-        // implement Default, so we construct the empty branch explicitly.
+        // Dense embeddings (gate by include flag).
         let sem = &fp.semantic;
         let (e1, e2, e3, e4, e5c, e5e, e7, e8s, e8t, e9, e10p, e10c, e11) = if include_embeddings {
             (
@@ -363,8 +408,7 @@ impl Handlers {
                 .map(|r| fetch_outgoing_edges(r, fp.id))
                 .unwrap_or_default();
             let incoming = if include_incoming {
-                repo.map(|r| fetch_incoming_edges(r, fp.id))
-                    .unwrap_or_default()
+                incoming_index.get(&fp.id).cloned().unwrap_or_default()
             } else {
                 Vec::new()
             };
@@ -380,9 +424,8 @@ impl Handlers {
             )
         };
 
-        // Causal labels (outgoing only in v1: this memory acts as the source/cause).
-        // CausalRelationship has no separate effect-fingerprint field; the
-        // description bundles cause_statement + effect_statement + explanation.
+        // Causal labels (fix #1: rel_id + mechanism_type, peer stays Uuid::nil()
+        // because CausalRelationship has no separate effect-fingerprint field).
         let causal_effects = if include_causal {
             match self
                 .teleological_store
@@ -399,12 +442,12 @@ impl Handlers {
                             rel.explanation.trim()
                         );
                         CausalLabel {
-                            // v1: no effect-side fingerprint stored on CausalRelationship;
-                            // consumers can still cluster via description + confidence.
-                            related_memory_id: rel.source_fingerprint_id,
+                            related_memory_id: Uuid::nil(),
+                            rel_id: rel.id,
                             description,
                             direction: "cause".into(),
                             confidence: rel.confidence,
+                            mechanism_type: Some(rel.mechanism_type.clone()),
                         }
                     })
                     .collect(),
@@ -417,6 +460,26 @@ impl Handlers {
             Vec::new()
         };
 
+        // Phase-5 temporal labels. Session sequence is stored on SourceMetadata
+        // (when present); session_total is not tracked for stored memories in
+        // this codepath, so it's passed as None. relative_position stays None
+        // until session bookkeeping is extended.
+        let temporal_labels = if include_temporal_labels {
+            let session_sequence = source
+                .as_ref()
+                .and_then(|m| m.session_sequence)
+                .and_then(|seq| u32::try_from(seq).ok());
+            Some(extract_temporal_labels(
+                fp,
+                source.as_ref(),
+                session_sequence,
+                None,
+                export_now,
+            ))
+        } else {
+            None
+        };
+
         Ok(TrainingRecord {
             memory_id: fp.id,
             content,
@@ -425,6 +488,7 @@ impl Handlers {
             session_id,
             source_type,
             source_path,
+            content_hash: Some(fp.content_hash),
             e1_semantic: e1,
             e2_temporal_recent: e2,
             e3_temporal_periodic: e3,
@@ -452,52 +516,11 @@ impl Handlers {
             causal_effects,
             causal_causes: Vec::new(),
             topic_memberships: Vec::new(),
+            temporal_labels,
+            tucker_core: None,
         })
     }
-}
 
-// ============================================================================
-// Edge helpers
-// ============================================================================
-
-fn fetch_outgoing_edges(
-    repo: &context_graph_storage::EdgeRepository,
-    source: Uuid,
-) -> Vec<TrainingEdge> {
-    match repo.get_typed_edges_from(source) {
-        Ok(edges) => edges.into_iter().map(typed_edge_to_training).collect(),
-        Err(e) => {
-            warn!(source = %source, error = %e, "get_typed_edges_from failed");
-            Vec::new()
-        }
-    }
-}
-
-/// Fetch incoming edges via O(N) CF scan (`get_typed_edges_to`). Expensive —
-/// gate on `includeIncomingEdges` and a small corpus.
-fn fetch_incoming_edges(
-    repo: &context_graph_storage::EdgeRepository,
-    target: Uuid,
-) -> Vec<TrainingEdge> {
-    match repo.get_typed_edges_to(target) {
-        Ok(edges) => edges
-            .into_iter()
-            .map(|e| {
-                // For incoming perspective, peer is the source of the edge.
-                let source = e.source();
-                let mut record = typed_edge_to_training(e);
-                record.peer_id = source;
-                record
-            })
-            .collect(),
-        Err(e) => {
-            warn!(target = %target, error = %e, "get_typed_edges_to failed");
-            Vec::new()
-        }
-    }
-}
-
-impl Handlers {
     /// Handle `list_training_records`. Returns UUIDs + optional per-record shape.
     pub(crate) async fn call_list_training_records(
         &self,
@@ -529,49 +552,63 @@ impl Handlers {
         let ids = match rocksdb_store.list_training_record_ids().await {
             Ok(v) => v,
             Err(e) => {
-                return self.tool_error(id, &format!("list_training_record_ids failed: {}", e))
+                return self
+                    .tool_error(id, &format!("list_training_record_ids failed: {}", e));
             }
         };
         let total = ids.len();
         let page: Vec<Uuid> = ids.into_iter().skip(offset).take(limit).collect();
 
-        let mut items = Vec::with_capacity(page.len());
-        for uid in &page {
-            if include_shape {
-                match rocksdb_store.get_training_record(*uid).await {
-                    Ok(Some(r)) => items.push(json!({
-                        "memory_id": uid.to_string(),
-                        "content_chars": r.content.chars().count(),
-                        "importance": r.importance,
-                        "session_id": r.session_id,
-                        "source_type": r.source_type,
-                        "topic_profile_len": r.topic_profile.len(),
-                        "cross_correlations_len": r.cross_correlations.len(),
-                        "group_alignments_len": r.group_alignments.len(),
-                        "e1_len": r.e1_semantic.len(),
-                        "e5_cause_len": r.e5_causal_cause.len(),
-                        "e7_len": r.e7_code.len(),
-                        "e8_source_len": r.e8_graph_source.len(),
-                        "e11_len": r.e11_entity.len(),
-                        "e6_sparse_nnz": r.e6_sparse_indices.len(),
-                        "e13_sparse_nnz": r.e13_splade_indices.len(),
-                        "e12_token_count": r.e12_token_embeddings.len(),
-                        "outgoing_edges": r.outgoing_edges.len(),
-                        "incoming_edges": r.incoming_edges.len(),
-                        "knn_embedders_populated": r.knn_neighbors.iter().filter(|v| !v.is_empty()).count(),
-                        "causal_effects": r.causal_effects.len(),
-                        "causal_causes": r.causal_causes.len(),
-                    })),
-                    Ok(None) => items.push(json!({"memory_id": uid.to_string(), "missing": true})),
-                    Err(e) => items.push(json!({
-                        "memory_id": uid.to_string(),
-                        "error": e.to_string()
-                    })),
+        let items = if include_shape {
+            // Fix #6: single batched RocksDB read.
+            match rocksdb_store.multi_get_training_records(&page).await {
+                Ok(records) => records
+                    .into_iter()
+                    .enumerate()
+                    .map(|(i, r)| {
+                        let uid = page[i];
+                        match r {
+                            Some(rec) => json!({
+                                "memory_id": uid.to_string(),
+                                "content_chars": rec.content.chars().count(),
+                                "importance": rec.importance,
+                                "session_id": rec.session_id,
+                                "source_type": rec.source_type,
+                                "topic_profile_len": rec.topic_profile.len(),
+                                "cross_correlations_len": rec.cross_correlations.len(),
+                                "group_alignments_len": rec.group_alignments.len(),
+                                "e1_len": rec.e1_semantic.len(),
+                                "e5_cause_len": rec.e5_causal_cause.len(),
+                                "e7_len": rec.e7_code.len(),
+                                "e8_source_len": rec.e8_graph_source.len(),
+                                "e11_len": rec.e11_entity.len(),
+                                "e6_sparse_nnz": rec.e6_sparse_indices.len(),
+                                "e13_sparse_nnz": rec.e13_splade_indices.len(),
+                                "e12_token_count": rec.e12_token_embeddings.len(),
+                                "outgoing_edges": rec.outgoing_edges.len(),
+                                "incoming_edges": rec.incoming_edges.len(),
+                                "knn_embedders_populated": rec.knn_neighbors.iter().filter(|v| !v.is_empty()).count(),
+                                "causal_effects": rec.causal_effects.len(),
+                                "causal_causes": rec.causal_causes.len(),
+                                "temporal_labels_present": rec.temporal_labels.is_some(),
+                            }),
+                            None => json!({
+                                "memory_id": uid.to_string(),
+                                "missing": true
+                            }),
+                        }
+                    })
+                    .collect::<Vec<_>>(),
+                Err(e) => {
+                    return self
+                        .tool_error(id, &format!("multi_get_training_records failed: {}", e));
                 }
-            } else {
-                items.push(json!({"memory_id": uid.to_string()}));
             }
-        }
+        } else {
+            page.iter()
+                .map(|uid| json!({"memory_id": uid.to_string()}))
+                .collect()
+        };
 
         self.tool_result(
             id,
@@ -621,7 +658,10 @@ impl Handlers {
         };
 
         match rocksdb_store.get_training_record(memory_id).await {
-            Ok(Some(r)) => self.tool_result(id, render_training_record(&r, include_vectors, include_tokens, include_edges)),
+            Ok(Some(r)) => self.tool_result(
+                id,
+                render_training_record(&r, include_vectors, include_tokens, include_edges),
+            ),
             Ok(None) => self.tool_result(id, json!({"memory_id": memory_id_raw, "found": false})),
             Err(e) => self.tool_error(id, &format!("get_training_record failed: {}", e)),
         }
@@ -646,6 +686,60 @@ impl Handlers {
     }
 }
 
+// ============================================================================
+// Helpers
+// ============================================================================
+
+/// Build the reverse index `target_id -> Vec<TrainingEdge>` from a full sweep
+/// of `CF_TYPED_EDGES`. O(N) over all typed edges, and O(1) lookup per memory.
+fn build_incoming_index(all_edges: &[TypedEdge]) -> HashMap<Uuid, Vec<TrainingEdge>> {
+    let mut out: HashMap<Uuid, Vec<TrainingEdge>> = HashMap::new();
+    for edge in all_edges {
+        let target = edge.target();
+        let mut training = typed_edge_to_training_ref(edge);
+        // From the incoming perspective, the peer is the edge's source.
+        training.peer_id = edge.source();
+        out.entry(target).or_default().push(training);
+    }
+    out
+}
+
+fn fetch_outgoing_edges(repo: &EdgeRepository, source: Uuid) -> Vec<TrainingEdge> {
+    match repo.get_typed_edges_from(source) {
+        Ok(edges) => edges.iter().map(typed_edge_to_training_ref).collect(),
+        Err(e) => {
+            warn!(source = %source, error = %e, "get_typed_edges_from failed");
+            Vec::new()
+        }
+    }
+}
+
+fn typed_edge_to_training_ref(e: &TypedEdge) -> TrainingEdge {
+    TrainingEdge {
+        edge_type: e.edge_type() as u8,
+        peer_id: e.target(),
+        weight: e.weight(),
+        direction: e.direction() as u8,
+        agreement_count: e.agreement_count(),
+        embedder_scores: *e.embedder_scores(),
+    }
+}
+
+fn fetch_knn_per_embedder(repo: &EdgeRepository, source: Uuid) -> Vec<Vec<KnnNeighbor>> {
+    (0..NUM_EMBEDDERS)
+        .map(|idx| match repo.get_embedder_edges(idx as u8, source) {
+            Ok(edges) => edges
+                .into_iter()
+                .map(|e| KnnNeighbor {
+                    target_id: e.target(),
+                    similarity: e.similarity(),
+                })
+                .collect(),
+            Err(_) => Vec::new(),
+        })
+        .collect()
+}
+
 fn render_training_record(
     r: &TrainingRecord,
     include_vectors: bool,
@@ -661,9 +755,12 @@ fn render_training_record(
         "session_id": r.session_id,
         "source_type": r.source_type,
         "source_path": r.source_path,
+        "content_hash": r.content_hash.as_ref().map(hex::encode),
         "topic_profile": r.topic_profile.to_vec(),
         "cross_correlations_len": r.cross_correlations.len(),
         "group_alignments": r.group_alignments.to_vec(),
+        "temporal_labels_present": r.temporal_labels.is_some(),
+        "tucker_core_present": r.tucker_core.is_some(),
         "shape": {
             "e1_len": r.e1_semantic.len(),
             "e2_len": r.e2_temporal_recent.len(),
@@ -688,6 +785,23 @@ fn render_training_record(
             "causal_causes": r.causal_causes.len(),
         },
     });
+
+    if let Some(t) = r.temporal_labels.as_ref() {
+        obj["temporal_labels"] = json!({
+            "stored_at": t.stored_at,
+            "stored_hour_utc": t.stored_hour_utc,
+            "stored_day_of_week": t.stored_day_of_week,
+            "stored_month": t.stored_month,
+            "age_seconds_at_export": t.age_seconds_at_export,
+            "session_sequence": t.session_sequence,
+            "session_total": t.session_total,
+            "relative_position": t.relative_position,
+            "periodic_bucket": format!("{:?}", t.periodic_bucket),
+            "e2_recency_norm": t.e2_recency_norm,
+            "e3_periodic_norm": t.e3_periodic_norm,
+            "e4_positional_norm": t.e4_positional_norm,
+        });
+    }
 
     if include_vectors {
         obj["e1_semantic"] = json!(r.e1_semantic);
@@ -724,47 +838,31 @@ fn render_training_record(
                 "agreement_count": e.agreement_count,
             }))
             .collect::<Vec<_>>());
+        obj["incoming_edges_detail"] = json!(r
+            .incoming_edges
+            .iter()
+            .map(|e| json!({
+                "edge_type": e.edge_type,
+                "peer_id": e.peer_id.to_string(),
+                "weight": e.weight,
+                "direction": e.direction,
+                "agreement_count": e.agreement_count,
+            }))
+            .collect::<Vec<_>>());
         obj["causal_effects_detail"] = json!(r
             .causal_effects
             .iter()
             .map(|c| json!({
                 "related_memory_id": c.related_memory_id.to_string(),
+                "rel_id": c.rel_id.to_string(),
                 "description": c.description,
                 "direction": c.direction,
                 "confidence": c.confidence,
+                "mechanism_type": c.mechanism_type,
             }))
             .collect::<Vec<_>>());
     }
     obj
-}
-
-fn typed_edge_to_training(e: context_graph_core::graph_linking::TypedEdge) -> TrainingEdge {
-    TrainingEdge {
-        edge_type: e.edge_type() as u8,
-        peer_id: e.target(),
-        weight: e.weight(),
-        direction: e.direction() as u8,
-        agreement_count: e.agreement_count(),
-        embedder_scores: *e.embedder_scores(),
-    }
-}
-
-fn fetch_knn_per_embedder(
-    repo: &context_graph_storage::EdgeRepository,
-    source: Uuid,
-) -> Vec<Vec<KnnNeighbor>> {
-    (0..NUM_EMBEDDERS)
-        .map(|idx| match repo.get_embedder_edges(idx as u8, source) {
-            Ok(edges) => edges
-                .into_iter()
-                .map(|e| KnnNeighbor {
-                    target_id: e.target(),
-                    similarity: e.similarity(),
-                })
-                .collect(),
-            Err(_) => Vec::new(),
-        })
-        .collect()
 }
 
 /// Lightweight size estimate for summary reporting (counts only the heavy
@@ -790,11 +888,7 @@ fn estimate_record_size(r: &TrainingRecord) -> u64 {
     let token_bytes: usize = r.e12_token_embeddings.iter().map(|v| v.len() * 4).sum();
     let edge_bytes = (r.outgoing_edges.len() + r.incoming_edges.len())
         * (16 + 4 + 4 + 4 + NUM_EMBEDDERS * 4);
-    let knn_bytes: usize = r
-        .knn_neighbors
-        .iter()
-        .map(|v| v.len() * (16 + 4))
-        .sum();
+    let knn_bytes: usize = r.knn_neighbors.iter().map(|v| v.len() * (16 + 4)).sum();
     let content_bytes = r.content.len();
     (dense_bytes * 4 + sparse_bytes + token_bytes + edge_bytes + knn_bytes + content_bytes) as u64
 }

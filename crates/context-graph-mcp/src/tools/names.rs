@@ -148,3 +148,17 @@ pub const LIST_TRAINING_RECORDS: &str = "list_training_records";
 pub const GET_TRAINING_RECORD: &str = "get_training_record";
 /// Count rows currently stored in `CF_TRAINING_RECORDS`.
 pub const COUNT_TRAINING_RECORDS: &str = "count_training_records";
+
+// ========== CONSTELLATION TOOLS (Phase 2 compiler) ==========
+/// Compile a constellation (per-embedder centroids + spread stats) from a
+/// caller-selected set of memories and persist it to `CF_CONSTELLATIONS`.
+pub const COMPILE_CONSTELLATION: &str = "compile_constellation";
+/// List constellation UUIDs stored in `CF_CONSTELLATIONS`, with optional
+/// shape info.
+pub const LIST_CONSTELLATIONS: &str = "list_constellations";
+/// Fetch a single constellation by UUID with optional centroid arrays.
+pub const GET_CONSTELLATION: &str = "get_constellation";
+/// Score a candidate memory against an existing constellation.
+pub const SCORE_AGAINST_CONSTELLATION: &str = "score_against_constellation";
+/// Delete a constellation and its selector-index entry.
+pub const DELETE_CONSTELLATION: &str = "delete_constellation";

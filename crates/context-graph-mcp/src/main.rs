@@ -1670,7 +1670,12 @@ fn arm_doomsday_watchdog(trigger: &'static str) {
         "Doomsday watchdog armed ({}): will force-exit in {}s if graceful shutdown hangs",
         trigger, DOOMSDAY_SECS
     );
-    std::thread::Builder::new()
+    // Code-simplifier fix #7 (per tasks/lessons.md lesson on `std::thread::spawn`):
+    // spawn CAN fail under thread exhaustion (EAGAIN). A panicking watchdog is
+    // its own worst enemy; log-and-continue and let the existing graceful
+    // shutdown deadline (~10s) handle the exit path. We DO NOT reset ARMED — a
+    // subsequent arm call (from another shutdown signal) may still succeed.
+    let spawn_result = std::thread::Builder::new()
         .name("doomsday-watchdog".into())
         .spawn(|| {
             std::thread::sleep(std::time::Duration::from_secs(DOOMSDAY_SECS));
@@ -1684,8 +1689,13 @@ fn arm_doomsday_watchdog(trigger: &'static str) {
             unsafe {
                 libc::_exit(0);
             }
-        })
-        .expect("FATAL: failed to spawn doomsday watchdog thread");
+        });
+    if let Err(e) = spawn_result {
+        error!(
+            "Failed to spawn doomsday watchdog ({}): {} — relying on graceful-shutdown deadline",
+            trigger, e
+        );
+    }
 }
 
 /// How long we allow graceful shutdown to take before the doomsday watchdog

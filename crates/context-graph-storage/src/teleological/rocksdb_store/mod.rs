@@ -45,6 +45,7 @@
 mod audit_log;
 mod causal_hnsw_index;
 mod causal_relationships;
+mod constellation;
 mod content;
 mod crud;
 mod export;

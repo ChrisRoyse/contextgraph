@@ -1,10 +1,25 @@
 //! Unit tests for the training-record types and computation helpers.
 //!
-//! Covers: cross-correlation count/ordering, group alignment mapping,
-//! bincode roundtrip, and topic-profile derivation edge cases.
+//! Covers:
+//! - Cross-correlation count, ordering, bounds
+//! - Group alignment mapping (with explicit math identities per spec)
+//! - Bincode roundtrip of the full TrainingRecord
+//! - Topic-profile fallback derivation
+//! - Temporal label extraction (known date → known bucket)
+
+use chrono::{DateTime, TimeZone, Utc};
+use uuid::Uuid;
 
 use super::*;
 use crate::teleological::synergy_matrix::SynergyMatrix;
+use crate::teleological::types::NUM_EMBEDDERS;
+use crate::types::fingerprint::{
+    SemanticFingerprint, SparseVector, TeleologicalFingerprint,
+};
+
+// =============================================================================
+// Cross-correlation tests
+// =============================================================================
 
 #[test]
 fn cross_correlations_has_exactly_78_entries() {
@@ -31,116 +46,285 @@ fn cross_correlations_are_bounded_unit_interval() {
 
 #[test]
 fn cross_correlations_ordering_matches_pair_convention() {
-    // Use sentinel profile: only E1 (idx 0) and E5 (idx 4) have nonzero alignment.
+    // Only idx 0 and idx 4 are non-zero. All non-(0,4) pairs must be zero
+    // because their product contains at least one zero. Pair (0,4) must be
+    // nonzero.
+    //
+    // Flat-index layout: for i in 0..13, for j in i+1..13.
+    // For i=0: 12 pairs (j=1..=12). Offset of (0, j) = j - 1.
+    // Pair (0,4) therefore lives at flat index 3.
     let mut profile = [0.0f32; NUM_EMBEDDERS];
     profile[0] = 1.0;
     profile[4] = 1.0;
     let synergy = SynergyMatrix::with_base_synergies();
     let cc = compute_cross_correlations(&profile, &synergy);
 
-    // Pair (0, 4) lives at index 0*12 - 0 + (4 - 0 - 1) = 3 in the flat layout
-    // (pairs starting at i=0: 12 pairs — (0,1), (0,2), ..., (0,12) — index 3 is (0,4)).
+    // Every flat index we know does NOT cross (0,4) must be zero.
+    for flat_idx in 0..NUM_CROSS_CORRELATIONS {
+        let (i, j) = flat_index_to_pair(flat_idx);
+        let is_pair_0_4 = (i == 0 && j == 4) || (i == 4 && j == 0);
+        if !is_pair_0_4 {
+            assert_eq!(
+                cc[flat_idx], 0.0,
+                "flat {} = pair ({},{}) should be zero, got {}",
+                flat_idx, i, j, cc[flat_idx],
+            );
+        }
+    }
     assert!(
         cc[3] > 0.0,
-        "(0,4) pair at flat index 3 should be nonzero when both alignments are 1.0 (got {})",
+        "pair (0,4) at flat index 3 must be nonzero (got {})",
         cc[3],
     );
-    // All-zero pairs must be zero.
-    assert_eq!(cc[0], 0.0, "pair (0,1) has alignment 1.0 * 0.0 * synergy = 0");
+}
+
+/// Invert the canonical flat layout:
+/// for i in 0..13, for j in (i+1)..13.
+fn flat_index_to_pair(flat: usize) -> (usize, usize) {
+    let mut remaining = flat;
+    for i in 0..NUM_EMBEDDERS {
+        let pairs_at_i = NUM_EMBEDDERS - i - 1;
+        if remaining < pairs_at_i {
+            return (i, i + 1 + remaining);
+        }
+        remaining -= pairs_at_i;
+    }
+    panic!("flat index {} out of range", flat);
+}
+
+// =============================================================================
+// Group alignment math identities
+// =============================================================================
+
+#[test]
+fn group_alignments_length_is_six() {
+    let profile = [0.0f32; NUM_EMBEDDERS];
+    let ga = compute_group_alignments(&profile);
+    assert_eq!(ga.len(), NUM_GROUP_ALIGNMENTS);
+}
+
+/// Implementation group = E6 (index 5) only. So the group value equals the
+/// single topic-profile slot verbatim.
+#[test]
+fn math_identity_implementation_equals_topic_profile_slot_5() {
+    let mut profile = [0.0f32; NUM_EMBEDDERS];
+    profile[5] = 0.73;
+    let ga = compute_group_alignments(&profile);
+    assert!(
+        (ga[5] - 0.73).abs() < 1e-5,
+        "Implementation should equal topic_profile[5]=0.73, got {}",
+        ga[5],
+    );
+}
+
+/// Qualitative = (E10 + E11) / 2. With E11 disabled (index 10 = 0.0), a
+/// non-zero E10=0.8 (index 9) yields Qualitative=0.4.
+#[test]
+fn math_identity_qualitative_halves_e10_when_e11_disabled() {
+    let mut profile = [0.0f32; NUM_EMBEDDERS];
+    profile[9] = 0.8; // E10
+    profile[10] = 0.0; // E11 disabled
+    let ga = compute_group_alignments(&profile);
+    assert!(
+        (ga[4] - 0.4).abs() < 1e-5,
+        "Qualitative should be (E10+E11)/2 = 0.4, got {}",
+        ga[4],
+    );
 }
 
 #[test]
-fn group_alignments_match_groups_spec() {
-    // Factual = E1(0) + E12(11) + E13(12) averaged.
-    // Temporal = E2(1) + E3(2). Causal = E4(3) + E7(6).
-    // Relational = E5(4) + E8(7) + E9(8). Qualitative = E10(9) + E11(10). Implementation = E6(5).
+fn math_identity_factual_averages_e1_e12_e13() {
+    // Factual = (E1 + E12 + E13) / 3 = (0.9 + 0.6 + 0.3) / 3 = 0.6
     let mut profile = [0.0f32; NUM_EMBEDDERS];
     profile[0] = 0.9;
     profile[11] = 0.6;
-    profile[12] = 0.3; // Factual mean = 0.6
-    profile[1] = 0.8;
-    profile[2] = 0.4; // Temporal mean = 0.6
-    profile[5] = 0.75; // Implementation = 0.75
+    profile[12] = 0.3;
+    let ga = compute_group_alignments(&profile);
+    assert!(
+        (ga[0] - 0.6).abs() < 1e-5,
+        "Factual should be (0.9+0.6+0.3)/3 = 0.6, got {}",
+        ga[0],
+    );
+}
 
-    let groups = compute_group_alignments(&profile);
-    assert!((groups[0] - 0.6).abs() < 1e-5, "Factual = {}", groups[0]);
-    assert!((groups[1] - 0.6).abs() < 1e-5, "Temporal = {}", groups[1]);
-    assert!((groups[5] - 0.75).abs() < 1e-5, "Implementation = {}", groups[5]);
-    assert_eq!(groups.len(), NUM_GROUP_ALIGNMENTS);
+// =============================================================================
+// Topic profile fallback
+// =============================================================================
+
+#[test]
+fn topic_profile_stored_is_returned_verbatim() {
+    let fp = SemanticFingerprint::stub();
+    let mut stored = [0.0f32; NUM_EMBEDDERS];
+    for (i, v) in stored.iter_mut().enumerate() {
+        *v = i as f32 * 0.05;
+    }
+    let got = topic_profile_or_fallback(Some(stored), &fp);
+    assert_eq!(got, stored);
 }
 
 #[test]
-fn training_record_bincode_roundtrip() {
+fn topic_profile_fallback_from_empty_fingerprint_is_all_zero() {
+    let fp = empty_semantic_fingerprint();
+    let got = topic_profile_or_fallback(None, &fp);
+    for (idx, v) in got.iter().enumerate() {
+        assert!(v.abs() < 1e-6, "profile[{}] = {} should be zero", idx, v);
+    }
+}
+
+#[test]
+fn topic_profile_fallback_with_unit_vectors_peaks_at_used_slots() {
+    let unit: Vec<f32> = vec![1.0, 0.0, 0.0, 0.0];
+    let mut fp = empty_semantic_fingerprint();
+    fp.e1_semantic = unit.clone();
+    fp.e5_causal_as_cause = unit;
+    let got = topic_profile_or_fallback(None, &fp);
+    assert!((got[0] - 1.0).abs() < 1e-5);
+    assert!((got[4] - 1.0).abs() < 1e-5);
+    assert_eq!(got[1], 0.0);
+    assert_eq!(got[11], 0.0);
+}
+
+// =============================================================================
+// Bincode roundtrip
+// =============================================================================
+
+#[test]
+fn training_record_bincode_roundtrip_full() {
     let record = sample_record();
     let bytes = bincode::serialize(&record).expect("serialize");
     let back: TrainingRecord = bincode::deserialize(&bytes).expect("deserialize");
     assert_eq!(back.memory_id, record.memory_id);
     assert_eq!(back.content, record.content);
     assert_eq!(back.cross_correlations.len(), NUM_CROSS_CORRELATIONS);
+    assert_eq!(back.cross_correlations, record.cross_correlations);
     assert_eq!(back.topic_profile, record.topic_profile);
+    assert_eq!(back.group_alignments, record.group_alignments);
     assert_eq!(back.outgoing_edges.len(), record.outgoing_edges.len());
+    assert_eq!(back.incoming_edges.len(), record.incoming_edges.len());
     assert_eq!(back.causal_effects.len(), record.causal_effects.len());
+    assert_eq!(back.causal_causes.len(), record.causal_causes.len());
     assert_eq!(back.knn_neighbors.len(), NUM_EMBEDDERS);
-}
-
-#[test]
-fn topic_profile_from_empty_fingerprint_is_zero() {
-    // All-empty vectors should yield all-zero profile (no panic, no NaN).
-    let fp = SemanticFingerprint {
-        e1_semantic: Vec::new(),
-        e2_temporal_recent: Vec::new(),
-        e3_temporal_periodic: Vec::new(),
-        e4_temporal_positional: Vec::new(),
-        e5_causal_as_cause: Vec::new(),
-        e5_causal_as_effect: Vec::new(),
-        e5_causal: Vec::new(),
-        e6_sparse: SparseVector::empty(),
-        e7_code: Vec::new(),
-        e8_graph_as_source: Vec::new(),
-        e8_graph_as_target: Vec::new(),
-        e8_graph: Vec::new(),
-        e9_hdc: Vec::new(),
-        e10_multimodal_paraphrase: Vec::new(),
-        e10_multimodal_as_context: Vec::new(),
-        e11_entity: Vec::new(),
-        e12_late_interaction: Vec::new(),
-        e13_splade: SparseVector::empty(),
-    };
-    let profile = compute_topic_profile_from_fingerprint(&fp);
-    for (idx, v) in profile.iter().enumerate() {
-        assert!(v.abs() < 1e-6, "profile[{}] = {} should be zero", idx, v);
+    assert_eq!(back.content_hash, record.content_hash);
+    assert_eq!(
+        back.temporal_labels.is_some(),
+        record.temporal_labels.is_some()
+    );
+    if let (Some(a), Some(b)) = (&back.temporal_labels, &record.temporal_labels) {
+        assert_eq!(a.periodic_bucket, b.periodic_bucket);
+        assert_eq!(a.stored_hour_utc, b.stored_hour_utc);
     }
+    assert!(back.tucker_core.is_none());
+    // CausalLabel fields
+    assert_eq!(back.causal_effects[0].rel_id, record.causal_effects[0].rel_id);
+    assert_eq!(
+        back.causal_effects[0].mechanism_type,
+        record.causal_effects[0].mechanism_type
+    );
+}
+
+// =============================================================================
+// Temporal tests (Phase 5)
+// =============================================================================
+
+#[test]
+fn temporal_labels_saturday_morning_yields_weekend_morning_bucket() {
+    // 2026-02-28 is a Saturday. 09:00 UTC → Morning window.
+    let fp = fingerprint_with_created_at(Utc.with_ymd_and_hms(2026, 2, 28, 9, 0, 0).unwrap());
+    let labels = extract_temporal_labels(&fp, None, None, None, Utc::now());
+    assert_eq!(labels.periodic_bucket, PeriodicBucket::WeekendMorning);
+    assert_eq!(labels.stored_hour_utc, 9);
+    assert_eq!(labels.stored_day_of_week, 6); // Saturday = 6 under Monday-first
+    assert_eq!(labels.stored_month, 2);
 }
 
 #[test]
-fn topic_profile_handles_unit_normalized_dense_vectors() {
-    // A unit-normalized 4-element vector: [1, 0, 0, 0] has L2 norm 1.0 → alignment ≈ 1.0
-    let unit = vec![1.0f32, 0.0, 0.0, 0.0];
-    let fp = SemanticFingerprint {
-        e1_semantic: unit.clone(),
-        e2_temporal_recent: Vec::new(),
-        e3_temporal_periodic: Vec::new(),
-        e4_temporal_positional: Vec::new(),
-        e5_causal_as_cause: unit.clone(),
-        e5_causal_as_effect: Vec::new(),
-        e5_causal: Vec::new(),
-        e6_sparse: SparseVector::empty(),
-        e7_code: Vec::new(),
-        e8_graph_as_source: Vec::new(),
-        e8_graph_as_target: Vec::new(),
-        e8_graph: Vec::new(),
-        e9_hdc: Vec::new(),
-        e10_multimodal_paraphrase: Vec::new(),
-        e10_multimodal_as_context: Vec::new(),
-        e11_entity: Vec::new(),
-        e12_late_interaction: Vec::new(),
-        e13_splade: SparseVector::empty(),
-    };
-    let profile = compute_topic_profile_from_fingerprint(&fp);
-    assert!((profile[0] - 1.0).abs() < 1e-5);
-    assert!((profile[4] - 1.0).abs() < 1e-5);
-    assert_eq!(profile[1], 0.0);
+fn temporal_labels_tuesday_afternoon_yields_weekday_afternoon_bucket() {
+    // 2026-03-03 is a Tuesday. 14:30 UTC → Weekday afternoon.
+    let fp = fingerprint_with_created_at(Utc.with_ymd_and_hms(2026, 3, 3, 14, 30, 0).unwrap());
+    let labels = extract_temporal_labels(&fp, None, None, None, Utc::now());
+    assert_eq!(labels.periodic_bucket, PeriodicBucket::WeekdayAfternoon);
+    assert_eq!(labels.stored_day_of_week, 2);
 }
+
+#[test]
+fn temporal_labels_age_matches_export_now_difference() {
+    let stored = Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap();
+    let export_now = Utc.with_ymd_and_hms(2026, 1, 1, 0, 1, 30).unwrap(); // +90s
+    let fp = fingerprint_with_created_at(stored);
+    let labels = extract_temporal_labels(&fp, None, None, None, export_now);
+    assert_eq!(labels.age_seconds_at_export, 90);
+}
+
+#[test]
+fn temporal_labels_relative_position_from_session_numbers() {
+    let fp = fingerprint_with_created_at(Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap());
+    let labels = extract_temporal_labels(&fp, None, Some(3), Some(10), Utc::now());
+    assert_eq!(labels.session_sequence, Some(3));
+    assert_eq!(labels.session_total, Some(10));
+    let rel = labels.relative_position.expect("should be Some");
+    assert!((rel - 0.3).abs() < 1e-5);
+}
+
+#[test]
+fn temporal_labels_relative_position_none_when_session_total_missing() {
+    let fp = fingerprint_with_created_at(Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap());
+    let labels = extract_temporal_labels(&fp, None, Some(3), None, Utc::now());
+    assert!(labels.relative_position.is_none());
+}
+
+#[test]
+fn temporal_labels_norms_reflect_populated_vectors() {
+    let mut fp = fingerprint_with_created_at(Utc.with_ymd_and_hms(2026, 1, 1, 0, 0, 0).unwrap());
+    // Give E2 a known-norm vector: sqrt(4 * 0.25) = 1.0
+    fp.semantic.e2_temporal_recent = vec![0.5, 0.5, 0.5, 0.5];
+    let labels = extract_temporal_labels(&fp, None, None, None, Utc::now());
+    assert!((labels.e2_recency_norm - 1.0).abs() < 1e-5);
+    assert_eq!(labels.e3_periodic_norm, 0.0);
+    assert_eq!(labels.e4_positional_norm, 0.0);
+}
+
+#[test]
+fn periodic_bucket_all_eight_variants_reachable() {
+    // Smoke-check each hour boundary against a known weekday/weekend.
+    let weekday = 3u8; // Wednesday
+    let weekend = 7u8; // Sunday
+    assert_eq!(
+        PeriodicBucket::from_dow_hour(weekday, 6),
+        PeriodicBucket::WeekdayMorning
+    );
+    assert_eq!(
+        PeriodicBucket::from_dow_hour(weekday, 13),
+        PeriodicBucket::WeekdayAfternoon
+    );
+    assert_eq!(
+        PeriodicBucket::from_dow_hour(weekday, 19),
+        PeriodicBucket::WeekdayEvening
+    );
+    assert_eq!(
+        PeriodicBucket::from_dow_hour(weekday, 2),
+        PeriodicBucket::WeekdayNight
+    );
+    assert_eq!(
+        PeriodicBucket::from_dow_hour(weekend, 7),
+        PeriodicBucket::WeekendMorning
+    );
+    assert_eq!(
+        PeriodicBucket::from_dow_hour(weekend, 15),
+        PeriodicBucket::WeekendAfternoon
+    );
+    assert_eq!(
+        PeriodicBucket::from_dow_hour(weekend, 20),
+        PeriodicBucket::WeekendEvening
+    );
+    assert_eq!(
+        PeriodicBucket::from_dow_hour(weekend, 23),
+        PeriodicBucket::WeekendNight
+    );
+}
+
+// =============================================================================
+// Test fixtures
+// =============================================================================
 
 fn sample_record() -> TrainingRecord {
     let mut profile = [0.0f32; NUM_EMBEDDERS];
@@ -150,14 +334,31 @@ fn sample_record() -> TrainingRecord {
     let cc = compute_cross_correlations(&profile, &synergy);
     let groups = compute_group_alignments(&profile);
 
+    let stored_at = Utc.with_ymd_and_hms(2026, 2, 28, 9, 0, 0).unwrap();
+    let temporal = Some(TemporalLabels {
+        stored_at,
+        stored_hour_utc: 9,
+        stored_day_of_week: 6,
+        stored_month: 2,
+        age_seconds_at_export: 42,
+        session_sequence: Some(3),
+        session_total: Some(10),
+        relative_position: Some(0.3),
+        periodic_bucket: PeriodicBucket::WeekendMorning,
+        e2_recency_norm: 1.0,
+        e3_periodic_norm: 0.5,
+        e4_positional_norm: 0.7,
+    });
+
     TrainingRecord {
         memory_id: Uuid::new_v4(),
         content: "unit test content".into(),
         importance: 0.7,
-        created_at: Utc::now(),
+        created_at: stored_at,
         session_id: Some("test-session".into()),
         source_type: Some("Manual".into()),
         source_path: None,
+        content_hash: Some([7u8; 32]),
         e1_semantic: vec![0.1, 0.2, 0.3],
         e2_temporal_recent: Vec::new(),
         e3_temporal_periodic: Vec::new(),
@@ -190,12 +391,53 @@ fn sample_record() -> TrainingRecord {
         incoming_edges: Vec::new(),
         knn_neighbors: (0..NUM_EMBEDDERS).map(|_| Vec::new()).collect(),
         causal_effects: vec![CausalLabel {
-            related_memory_id: Uuid::new_v4(),
-            description: "A produces B".into(),
+            related_memory_id: Uuid::nil(),
+            rel_id: Uuid::new_v4(),
+            description: "A -> B. mediated via C".into(),
             direction: "cause".into(),
             confidence: 0.82,
+            mechanism_type: Some("mediated".into()),
         }],
         causal_causes: Vec::new(),
         topic_memberships: Vec::new(),
+        temporal_labels: temporal,
+        tucker_core: None,
+    }
+}
+
+fn empty_semantic_fingerprint() -> SemanticFingerprint {
+    SemanticFingerprint {
+        e1_semantic: Vec::new(),
+        e2_temporal_recent: Vec::new(),
+        e3_temporal_periodic: Vec::new(),
+        e4_temporal_positional: Vec::new(),
+        e5_causal_as_cause: Vec::new(),
+        e5_causal_as_effect: Vec::new(),
+        e5_causal: Vec::new(),
+        e6_sparse: SparseVector::empty(),
+        e7_code: Vec::new(),
+        e8_graph_as_source: Vec::new(),
+        e8_graph_as_target: Vec::new(),
+        e8_graph: Vec::new(),
+        e9_hdc: Vec::new(),
+        e10_multimodal_paraphrase: Vec::new(),
+        e10_multimodal_as_context: Vec::new(),
+        e11_entity: Vec::new(),
+        e12_late_interaction: Vec::new(),
+        e13_splade: SparseVector::empty(),
+    }
+}
+
+fn fingerprint_with_created_at(created_at: DateTime<Utc>) -> TeleologicalFingerprint {
+    TeleologicalFingerprint {
+        id: Uuid::new_v4(),
+        semantic: empty_semantic_fingerprint(),
+        content_hash: [0u8; 32],
+        created_at,
+        last_updated: created_at,
+        access_count: 0,
+        importance: 0.5,
+        last_accessed_at: created_at,
+        e6_sparse: None,
     }
 }

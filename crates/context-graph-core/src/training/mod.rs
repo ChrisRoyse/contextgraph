@@ -1,8 +1,9 @@
-//! Training data export types and computation helpers.
+//! Training-data export types and computation helpers.
 //!
-//! Defines [`TrainingRecord`] and supporting types ([`TrainingEdge`],
-//! [`CausalLabel`], [`TopicMembership`]) that package a single memory's
-//! full multi-dimensional label space into a bincode-serializable record.
+//! Defines [`TrainingRecord`] (v2) and supporting types ([`TrainingEdge`],
+//! [`CausalLabel`], [`TopicMembership`], [`TemporalLabels`]) that package a
+//! single memory's full multi-dimensional label space into a bincode-
+//! serializable record.
 //!
 //! Records are persisted to `CF_TRAINING_RECORDS` in the teleological store.
 //! See `context_graph_storage::teleological::rocksdb_store::export` for the
@@ -13,13 +14,16 @@
 //! Each record bundles:
 //! - Identity + provenance (UUID, content, importance, timestamps, source)
 //! - All 13 embedding vectors (dense, sparse, token-level)
-//! - 13D topic profile (per-embedder alignment)
+//! - 13D topic profile (per-embedder alignment) — loaded from `CF_TOPIC_PROFILES`
+//!   when available, otherwise falls back to per-embedder vector-presence.
 //! - 78 synergy-weighted cross-correlations
 //! - 6D group alignments (Factual/Temporal/Causal/Relational/Qualitative/Implementation)
 //! - Outgoing + incoming typed edges with per-embedder scores
 //! - K-NN neighbors per embedder
 //! - LLM-discovered causal relationships (both directions)
 //! - Topic memberships
+//! - Temporal labels (Phase 5: hour/day/month buckets, age, session position)
+//! - Optional Tucker-core (Phase 4 hook; populated by Agent D later)
 //!
 //! # Versioning
 //!
@@ -31,13 +35,18 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::teleological::groups::GroupAlignments;
-use crate::teleological::synergy_matrix::SynergyMatrix;
-use crate::teleological::types::NUM_EMBEDDERS;
-use crate::types::fingerprint::{SemanticFingerprint, SparseVector};
+use crate::teleological::types::{NUM_EMBEDDERS, TuckerCore};
+
+pub mod computation;
+pub mod temporal;
 
 #[cfg(test)]
 mod tests;
+
+pub use computation::{
+    compute_cross_correlations, compute_group_alignments, topic_profile_or_fallback,
+};
+pub use temporal::{extract_temporal_labels, PeriodicBucket, TemporalLabels};
 
 /// Current on-disk version byte for `TrainingRecord`.
 ///
@@ -48,7 +57,8 @@ pub const TRAINING_RECORD_VERSION: u8 = 1;
 /// Expected length of the `cross_correlations` vector: C(13, 2) = 78.
 pub const NUM_CROSS_CORRELATIONS: usize = 78;
 
-/// Expected length of `group_alignments`: one per [`GroupType`].
+/// Expected length of `group_alignments`: one per group (Factual, Temporal,
+/// Causal, Relational, Qualitative, Implementation).
 pub const NUM_GROUP_ALIGNMENTS: usize = 6;
 
 /// A single training record containing all multi-dimensional data for one memory.
@@ -67,6 +77,8 @@ pub struct TrainingRecord {
     // --- Source provenance ---
     pub source_type: Option<String>,
     pub source_path: Option<String>,
+    /// SHA-256 hash of the source content, copied from TeleologicalFingerprint.
+    pub content_hash: Option<[u8; 32]>,
 
     // --- Dense embeddings (all L2-normalized; empty Vec when includeEmbeddings=false) ---
     pub e1_semantic: Vec<f32>,            // 1024D
@@ -94,9 +106,12 @@ pub struct TrainingRecord {
     pub e12_token_embeddings: Vec<Vec<f32>>,
 
     // --- Teleological fusion (derived) ---
-    /// 13D topic profile: per-embedder alignment scores (magnitude-based).
+    /// 13D topic profile: per-embedder alignment scores.
+    ///
+    /// Preferred source is `CF_TOPIC_PROFILES`; see
+    /// [`topic_profile_or_fallback`].
     pub topic_profile: [f32; NUM_EMBEDDERS],
-    /// 78 synergy-weighted pairwise interactions. Order: (0,1), (0,2), ..., (11,12).
+    /// 78 synergy-weighted pairwise interactions. Order: (0,1), (0,2), …, (11,12).
     pub cross_correlations: Vec<f32>,
     /// 6D group alignments: Factual, Temporal, Causal, Relational, Qualitative, Implementation.
     pub group_alignments: [f32; NUM_GROUP_ALIGNMENTS],
@@ -106,9 +121,8 @@ pub struct TrainingRecord {
     pub outgoing_edges: Vec<TrainingEdge>,
     /// Typed edges where this memory is the target.
     pub incoming_edges: Vec<TrainingEdge>,
-    /// K-NN neighbors per embedder index 0..13; empty inner vecs for embedders
-    /// without K-NN data (E6/E12/E13 and for fingerprints the background
-    /// graph builder has not yet processed).
+    /// K-NN neighbors per embedder index 0..13; always 13 outer vecs, may be
+    /// empty inside when K-NN data is absent for the corresponding embedder.
     pub knn_neighbors: Vec<Vec<KnnNeighbor>>,
 
     // --- Causal labels ---
@@ -119,6 +133,16 @@ pub struct TrainingRecord {
 
     // --- Cluster memberships ---
     pub topic_memberships: Vec<TopicMembership>,
+
+    // --- Phase 5: Temporal labels ---
+    /// Derived temporal features for time-aware training. `None` when
+    /// `includeTemporalLabels=false` was passed to `export_training_corpus`.
+    pub temporal_labels: Option<TemporalLabels>,
+
+    // --- Phase 4: Tucker-core hook ---
+    /// Placeholder populated by Agent D (Tucker-core export). Always `None`
+    /// after a Phase-1 export.
+    pub tucker_core: Option<TuckerCore>,
 }
 
 /// Compact training-time representation of a typed graph edge.
@@ -145,15 +169,29 @@ pub struct KnnNeighbor {
 }
 
 /// LLM-discovered causal relationship label.
+///
+/// Per lesson 5 from `tasks/lessons.md`: `get_causal_relationships_by_source`
+/// returns records whose `source_fingerprint_id == fp.id` by construction;
+/// setting the peer to that ID means every peer is self. The `rel_id` (the
+/// relationship UUID) is the stable join key; `related_memory_id` stays
+/// `Uuid::nil()` unless the peer end is resolvable.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CausalLabel {
-    /// The other end of the relationship (UUID of the effect when this memory
-    /// is the cause, or UUID of the cause when this memory is the effect).
+    /// Peer end of the relationship when resolvable. `Uuid::nil()` when the
+    /// causal record does not carry the other end's fingerprint id.
     pub related_memory_id: Uuid,
+    /// Always the `CausalRelationship.id` so downstream tooling can join back
+    /// against `CF_CAUSAL_RELATIONSHIPS`.
+    pub rel_id: Uuid,
+    /// "cause_statement -> effect_statement. explanation" concatenation.
     pub description: String,
-    /// "cause" when this memory produces the other; "effect" when the other produces this.
+    /// `"cause"` when this memory produces the other; `"effect"` when the
+    /// other produces this.
     pub direction: String,
     pub confidence: f32,
+    /// Mechanism classification from the LLM discovery step
+    /// ("direct" / "mediated" / "feedback" / "temporal").
+    pub mechanism_type: Option<String>,
 }
 
 /// Topic this memory belongs to, with the topic's 13D alignment profile.
@@ -163,126 +201,4 @@ pub struct TopicMembership {
     pub topic_label: Option<String>,
     pub topic_profile: [f32; NUM_EMBEDDERS],
     pub membership_probability: f32,
-}
-
-// =============================================================================
-// Computation helpers
-// =============================================================================
-
-/// Compute a 13D topic profile from a [`SemanticFingerprint`] as per-embedder
-/// vector magnitudes (each normalized so the resulting profile lives in [0, 1]).
-///
-/// Used when the caller does not have access to the `CF_TOPIC_PROFILES` CF or
-/// wants a deterministic derivation from the fingerprint.
-///
-/// The computation:
-/// 1. For dense vectors: `min(1.0, l2_norm / sqrt(dim))` — a unit L2-normalized
-///    vector yields 1.0 / sqrt(dim) · sqrt(dim) = 1.0 (normalized vectors map to 1.0).
-/// 2. For sparse vectors (E6/E13): non-zero term ratio `nnz / vocab_size`, clamped.
-/// 3. For token-level (E12): average token norm, clamped.
-///
-/// For asymmetric embedders (E5/E8/E10), the cause/source/paraphrase side is used.
-pub fn compute_topic_profile_from_fingerprint(
-    fp: &SemanticFingerprint,
-) -> [f32; NUM_EMBEDDERS] {
-    let mut profile = [0.0f32; NUM_EMBEDDERS];
-    profile[0] = dense_alignment(&fp.e1_semantic);
-    profile[1] = dense_alignment(&fp.e2_temporal_recent);
-    profile[2] = dense_alignment(&fp.e3_temporal_periodic);
-    profile[3] = dense_alignment(&fp.e4_temporal_positional);
-    profile[4] = dense_alignment(&fp.e5_causal_as_cause);
-    profile[5] = sparse_alignment(&fp.e6_sparse);
-    profile[6] = dense_alignment(&fp.e7_code);
-    profile[7] = dense_alignment(&fp.e8_graph_as_source);
-    profile[8] = dense_alignment(&fp.e9_hdc);
-    profile[9] = dense_alignment(&fp.e10_multimodal_paraphrase);
-    profile[10] = dense_alignment(&fp.e11_entity);
-    profile[11] = token_level_alignment(&fp.e12_late_interaction);
-    profile[12] = sparse_alignment(&fp.e13_splade);
-    profile
-}
-
-fn dense_alignment(vec: &[f32]) -> f32 {
-    if vec.is_empty() {
-        return 0.0;
-    }
-    let norm_sq: f32 = vec.iter().map(|x| x * x).sum();
-    if !norm_sq.is_finite() || norm_sq <= 0.0 {
-        return 0.0;
-    }
-    // Unit L2-normalized vectors yield ~1.0; near-zero norms yield near-0.0.
-    norm_sq.sqrt().clamp(0.0, 1.0)
-}
-
-fn sparse_alignment(sparse: &SparseVector) -> f32 {
-    let nnz = sparse.indices.len();
-    if nnz == 0 {
-        return 0.0;
-    }
-    let sum_sq: f32 = sparse.values.iter().map(|x| x * x).sum();
-    if !sum_sq.is_finite() || sum_sq <= 0.0 {
-        return 0.0;
-    }
-    // Presence-based alignment: sqrt(sum of squared values), clamped.
-    sum_sq.sqrt().clamp(0.0, 1.0)
-}
-
-fn token_level_alignment(tokens: &[Vec<f32>]) -> f32 {
-    if tokens.is_empty() {
-        return 0.0;
-    }
-    let mut total = 0.0f32;
-    let mut counted = 0usize;
-    for tok in tokens {
-        let a = dense_alignment(tok);
-        if a > 0.0 {
-            total += a;
-            counted += 1;
-        }
-    }
-    if counted == 0 {
-        0.0
-    } else {
-        (total / counted as f32).clamp(0.0, 1.0)
-    }
-}
-
-/// Compute the 78 synergy-weighted cross-correlations.
-///
-/// For each unique pair (i, j) with i < j in 0..13:
-///
-/// ```text
-/// cross_corr[(i,j)] = alignment_i * alignment_j * synergy(i, j)
-/// ```
-///
-/// Pair ordering matches [`crate::teleological::TeleologicalVector`] and the
-/// training-record contract: (0,1), (0,2), …, (0,12), (1,2), …, (11,12).
-/// Returns exactly [`NUM_CROSS_CORRELATIONS`] values in [0, 1].
-pub fn compute_cross_correlations(
-    topic_profile: &[f32; NUM_EMBEDDERS],
-    synergy: &SynergyMatrix,
-) -> Vec<f32> {
-    let mut out = Vec::with_capacity(NUM_CROSS_CORRELATIONS);
-    for i in 0..NUM_EMBEDDERS {
-        for j in (i + 1)..NUM_EMBEDDERS {
-            let a_i = topic_profile[i].clamp(0.0, 1.0);
-            let a_j = topic_profile[j].clamp(0.0, 1.0);
-            let w = synergy.get_synergy(i, j).clamp(0.0, 1.0);
-            out.push(a_i * a_j * w);
-        }
-    }
-    debug_assert_eq!(out.len(), NUM_CROSS_CORRELATIONS);
-    out
-}
-
-/// Compute the 6D group alignments from a 13D topic profile.
-///
-/// Delegates to [`GroupAlignments::from_alignments`] which averages within
-/// each group per teleoplan.md Section 3.2:
-/// Factual=E1/E12/E13, Temporal=E2/E3, Causal=E4/E7,
-/// Relational=E5/E8/E9, Qualitative=E10/E11, Implementation=E6.
-pub fn compute_group_alignments(
-    topic_profile: &[f32; NUM_EMBEDDERS],
-) -> [f32; NUM_GROUP_ALIGNMENTS] {
-    GroupAlignments::from_alignments(topic_profile, None).as_array()
 }

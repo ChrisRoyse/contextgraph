@@ -24,6 +24,43 @@ use rocksdb::{BlockBasedOptions, Cache, ColumnFamilyDescriptor, Options, SliceTr
 // column_families module instead of duplicating it here.
 use crate::column_families::apply_write_buffer_limits;
 
+/// Shared options builder for CFs whose keys are always 16-byte UUIDs.
+///
+/// Introduced for `CF_TRAINING_RECORDS`; intentionally NOT retrofitted onto the
+/// other CFs (each one has bespoke block sizes / prefix lengths / compression
+/// choices that would collapse into a sprawling config struct if merged).
+///
+/// Configuration applied:
+/// - Shared block cache (argument).
+/// - Bloom filter (10 bits/key) for fast point-lookups by UUID.
+/// - Index/filter blocks live in the shared cache.
+/// - `block_size_kb`-sized blocks (caller-tunable; 64KB is a reasonable default
+///   for large mixed-payload values).
+/// - 16-byte fixed prefix extractor for UUID keys.
+/// - LZ4 compression (good fit for mixed binary/text).
+/// - Level compaction (mostly-append write pattern).
+/// - `write_buffer_mb` write buffer.
+pub fn uuid_prefixed_cf_options(
+    cache: &Cache,
+    block_size_kb: usize,
+    write_buffer_mb: usize,
+) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+    block_opts.set_block_size(block_size_kb * 1024);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(16));
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.set_compaction_style(rocksdb::DBCompactionStyle::Level);
+    apply_write_buffer_limits(&mut opts, write_buffer_mb);
+    opts.create_if_missing(true);
+    opts
+}
+
 /// Column family for ~63KB TeleologicalFingerprints.
 ///
 /// Each fingerprint contains:
@@ -361,7 +398,44 @@ pub const CF_HNSW_GRAPHS: &str = "hnsw_graphs";
 /// - 8MB write buffer (values are MB-sized when full embeddings included)
 pub const CF_TRAINING_RECORDS: &str = "training_records";
 
-/// All teleological column family names (21 total).
+/// Column family for compiled constellation records (Phase 2).
+///
+/// Each constellation aggregates per-embedder centroids + spread statistics
+/// over a caller-selected set of memories (topic / session / tag / time /
+/// explicit id list). Centroids are dense for symmetric/asymmetric embedders
+/// (E1/E2/E3/E4/E5/E7/E8/E9/E10/E11), sparse top-K terms for E6/E13, and a
+/// pooled 128D vector for E12 token-level.
+///
+/// Key: constellation_id (UUID, 16 bytes) — fresh per compilation, not the
+/// member id.
+/// Value: `[CONSTELLATION_VERSION: u8][bincode-encoded Constellation]`.
+///
+/// # Storage Details
+/// - LZ4 compression (centroids are mostly f32 arrays, modest compression)
+/// - Bloom filter for fast UUID point lookups
+/// - 16-byte prefix extractor for UUID keys
+/// - 8MB write buffer (constellation records can reach several hundred KB)
+pub const CF_CONSTELLATIONS: &str = "constellations";
+
+/// Secondary index CF mapping selector → constellation UUID (Phase 2).
+///
+/// Enables O(1) "does a constellation already exist for topic T / session S /
+/// tag T / explicit id set?" lookups instead of a linear scan over
+/// `CF_CONSTELLATIONS`.
+///
+/// Key: `[selector_kind: u8][selector_hash: 16B]` (17 bytes total). The
+/// selector hash is the first 16 bytes of `SHA-256(canonical_form(selector))`.
+/// See `ConstellationSelector::canonical_form` for the exact text form hashed.
+/// Value: constellation UUID (16 bytes).
+///
+/// # Storage Details
+/// - LZ4 compression (tiny entries; compression mostly cosmetic)
+/// - Bloom filter for fast existence checks
+/// - 1-byte prefix extractor (selector kind) for per-kind range scans
+/// - 2MB write buffer (secondary index is append-light)
+pub const CF_CONSTELLATION_BY_SELECTOR: &str = "constellation_by_selector";
+
+/// All teleological column family names (23 total).
 pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_FINGERPRINTS,
     CF_TOPIC_PROFILES,
@@ -384,10 +458,12 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_CUSTOM_WEIGHT_PROFILES,
     CF_HNSW_GRAPHS,
     CF_TRAINING_RECORDS,
+    CF_CONSTELLATIONS,
+    CF_CONSTELLATION_BY_SELECTOR,
 ];
 
 /// Total count of teleological CFs.
-pub const TELEOLOGICAL_CF_COUNT: usize = 21;
+pub const TELEOLOGICAL_CF_COUNT: usize = 23;
 
 // =============================================================================
 // QUANTIZED EMBEDDER COLUMN FAMILIES (13 CFs for per-embedder storage)
@@ -649,20 +725,51 @@ pub fn hnsw_graphs_cf_options(cache: &Cache) -> Options {
 /// Key: UUID bytes (16).
 /// Value: `[version: u8 = TRAINING_RECORD_VERSION][bincode-encoded TrainingRecord]`.
 pub fn training_records_cf_options(cache: &Cache) -> Options {
+    // 64KB blocks pack many ~46KB records per block;
+    // 8MB write buffer accommodates MB-sized per-record values.
+    uuid_prefixed_cf_options(cache, 64, 8)
+}
+
+/// Options for `CF_CONSTELLATIONS` (Phase 2).
+///
+/// Constellation records are UUID-keyed and bincode-encoded; the record
+/// shape is similar to a large-payload training record (several hundred KB
+/// with full 13-embedder centroids). Reuses `uuid_prefixed_cf_options` with
+/// 64KB block / 8MB write buffer tuning.
+///
+/// # FAIL FAST Policy
+/// No fallback options — let RocksDB error on open if misconfigured.
+pub fn constellations_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 64, 8)
+}
+
+/// Options for `CF_CONSTELLATION_BY_SELECTOR` (Phase 2 secondary index).
+///
+/// Key layout: `[selector_kind: u8][selector_hash: 16B]`. We use a 1-byte
+/// prefix extractor so `prefix_iterator_cf(kind_byte)` can enumerate every
+/// constellation of a given selector kind (e.g. "list all topic-based
+/// constellations").
+///
+/// # Configuration
+/// - LZ4 compression (tiny 16B values compress trivially)
+/// - Bloom filter for fast existence checks
+/// - 1-byte prefix extractor (selector kind)
+/// - 2MB write buffer (append-light secondary index)
+///
+/// # FAIL FAST Policy
+/// No fallback options — let RocksDB error on open if misconfigured.
+pub fn constellation_by_selector_cf_options(cache: &Cache) -> Options {
     let mut block_opts = BlockBasedOptions::default();
     block_opts.set_block_cache(cache);
     block_opts.set_bloom_filter(10.0, false);
     block_opts.set_cache_index_and_filter_blocks(true);
-    // Larger block size since values can be MB-sized (full dense embeddings ~46KB
-    // pack many records per block).
-    block_opts.set_block_size(64 * 1024);
 
     let mut opts = Options::default();
     opts.set_block_based_table_factory(&block_opts);
-    opts.set_prefix_extractor(rocksdb::SliceTransform::create_fixed_prefix(16));
     opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
-    opts.set_compaction_style(rocksdb::DBCompactionStyle::Level);
-    apply_write_buffer_limits(&mut opts, 8); // MB-sized values
+    // 1-byte prefix = selector kind byte. Enables per-kind prefix iteration.
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(1));
+    apply_write_buffer_limits(&mut opts, 2);
     opts.create_if_missing(true);
     opts
 }
@@ -1106,13 +1213,13 @@ pub fn quantized_embedder_cf_options(cache: &Cache) -> Options {
     opts
 }
 
-/// Get all 21 teleological column family descriptors.
+/// Get all 23 teleological column family descriptors.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 21 `ColumnFamilyDescriptor`s for teleological storage.
+/// Vector of 23 `ColumnFamilyDescriptor`s for teleological storage.
 pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     vec![
         ColumnFamilyDescriptor::new(CF_FINGERPRINTS, fingerprint_cf_options(cache)),
@@ -1161,6 +1268,12 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
         ColumnFamilyDescriptor::new(CF_HNSW_GRAPHS, hnsw_graphs_cf_options(cache)),
         // Training record export (export_training_corpus MCP tool)
         ColumnFamilyDescriptor::new(CF_TRAINING_RECORDS, training_records_cf_options(cache)),
+        // Phase 2: Constellation compiler (compile_constellation MCP tool)
+        ColumnFamilyDescriptor::new(CF_CONSTELLATIONS, constellations_cf_options(cache)),
+        ColumnFamilyDescriptor::new(
+            CF_CONSTELLATION_BY_SELECTOR,
+            constellation_by_selector_cf_options(cache),
+        ),
     ]
 }
 
@@ -1193,14 +1306,14 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 
 /// Get ALL teleological + quantized embedder column family descriptors.
 ///
-/// Returns 34 descriptors total: 21 teleological + 13 quantized embedder.
+/// Returns 36 descriptors total: 23 teleological + 13 quantized embedder.
 /// Use this when opening a database that needs both fingerprint and per-embedder storage.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 34 `ColumnFamilyDescriptor`s.
+/// Vector of 36 `ColumnFamilyDescriptor`s.
 ///
 /// # Example
 /// ```ignore
@@ -1209,7 +1322,7 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 ///
 /// let cache = Cache::new_lru_cache(256 * 1024 * 1024); // 256MB
 /// let descriptors = get_all_teleological_cf_descriptors(&cache);
-/// assert_eq!(descriptors.len(), 34); // 21 teleological + 13 embedder
+/// assert_eq!(descriptors.len(), 36); // 23 teleological + 13 embedder
 /// ```
 pub fn get_all_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     let mut descriptors = get_teleological_cf_descriptors(cache);

@@ -450,6 +450,30 @@ impl EdgeRepository {
         Ok(edges)
     }
 
+    /// Iterate all typed edges in the CF, returning them as a Vec.
+    ///
+    /// Used by the training-export handler to build a one-time reverse
+    /// index `HashMap<target_id, Vec<TypedEdge>>` when `includeIncomingEdges`
+    /// is requested (avoids an O(N²) `get_typed_edges_to` scan per memory).
+    ///
+    /// O(n) over `CF_TYPED_EDGES`.
+    pub fn iter_all_typed_edges(&self) -> GraphEdgeStorageResult<Vec<TypedEdge>> {
+        let cf = self.db.cf_handle(cf_names::TYPED_EDGES).ok_or(
+            GraphEdgeStorageError::ColumnFamilyNotFound {
+                name: cf_names::TYPED_EDGES,
+            },
+        )?;
+        let iter = self.db.iterator_cf(&cf, IteratorMode::Start);
+        let mut edges = Vec::new();
+        for item in iter {
+            let (_key, value) = item.map_err(|e| {
+                GraphEdgeStorageError::rocksdb("iter_all_typed_edges", cf_names::TYPED_EDGES, e)
+            })?;
+            edges.push(deserialize_typed_edge(&value)?);
+        }
+        Ok(edges)
+    }
+
     // =========================================================================
     // Batch Operations
     // =========================================================================

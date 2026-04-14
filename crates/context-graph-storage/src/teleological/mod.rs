@@ -78,7 +78,13 @@ pub use column_families::{
     custom_weight_profiles_cf_options,
     // Training data export (export_training_corpus MCP tool)
     training_records_cf_options,
+    uuid_prefixed_cf_options,
     CF_TRAINING_RECORDS,
+    // Phase 2: Constellation compiler CFs
+    constellation_by_selector_cf_options,
+    constellations_cf_options,
+    CF_CONSTELLATIONS,
+    CF_CONSTELLATION_BY_SELECTOR,
     // TASK-CONTENT-001: Content column family
     CF_CONTENT,
     // TASK-STORAGE-P2-001: E12 Late Interaction column family constant

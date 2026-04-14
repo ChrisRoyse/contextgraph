@@ -73,6 +73,11 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "default": false,
                     "description": "Include typed edges where this memory is the target. Requires a one-time O(N) reverse-index scan over CF_TYPED_EDGES at export start; off by default."
                 },
+                "includeTemporalLabels": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include Phase-5 temporal labels (hour-of-day, day-of-week, periodic bucket, age, session position, E2/E3/E4 norms). Cheap to compute."
+                },
                 "clearExisting": {
                     "type": "boolean",
                     "default": false,

@@ -21,7 +21,7 @@ use rocksdb::{ColumnFamily, IteratorMode};
 use tracing::{debug, error, warn};
 use uuid::Uuid;
 
-use crate::teleological::column_families::CF_TRAINING_RECORDS;
+use crate::teleological::column_families::{CF_TOPIC_PROFILES, CF_TRAINING_RECORDS};
 
 use super::store::RocksDbTeleologicalStore;
 use super::types::TeleologicalStoreError;
@@ -54,7 +54,12 @@ impl RocksDbTeleologicalStore {
                 error = %e,
                 "ROCKSDB ERROR: Failed to store training record"
             );
-            TeleologicalStoreError::rocksdb_op("put_training_record", CF_TRAINING_RECORDS, Some(id), e)
+            TeleologicalStoreError::rocksdb_op(
+                "put_training_record",
+                CF_TRAINING_RECORDS,
+                Some(id),
+                e,
+            )
         })?;
 
         debug!(id = %id, bytes = payload.len(), "Stored training record");
@@ -176,6 +181,96 @@ impl RocksDbTeleologicalStore {
         }
         Ok(ids.len())
     }
+
+    /// Batch-fetch a page of training records.
+    ///
+    /// Returns `Vec<Option<TrainingRecord>>` with the same length as `ids`
+    /// (indices align). Missing or undecodable entries return `None` in their
+    /// slot; the only errors bubbled up are RocksDB-level read failures.
+    ///
+    /// This is ~30× faster than sequential `get_training_record` calls over
+    /// the same page (per lesson 6 in `tasks/lessons.md`).
+    pub async fn multi_get_training_records(
+        &self,
+        ids: &[Uuid],
+    ) -> CoreResult<Vec<Option<TrainingRecord>>> {
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+        let cf = self.cf_training_records();
+        let key_bufs: Vec<[u8; 16]> = ids.iter().map(|id| *id.as_bytes()).collect();
+        let keys = key_bufs.iter().map(|k| (cf, k.as_slice()));
+        let results = self.db.multi_get_cf(keys);
+
+        let mut out = Vec::with_capacity(ids.len());
+        for (idx, res) in results.into_iter().enumerate() {
+            match res {
+                Ok(Some(bytes)) => match decode_training_record(&bytes) {
+                    Ok(r) => out.push(Some(r)),
+                    Err(e) => {
+                        warn!(id = %ids[idx], error = %e, "multi_get: decode failed, slot=None");
+                        out.push(None);
+                    }
+                },
+                Ok(None) => out.push(None),
+                Err(e) => {
+                    error!(
+                        id = %ids[idx],
+                        error = %e,
+                        "ROCKSDB ERROR: multi_get_cf failure on training record"
+                    );
+                    return Err(TeleologicalStoreError::rocksdb_op(
+                        "multi_get_training_record",
+                        CF_TRAINING_RECORDS,
+                        Some(ids[idx]),
+                        e,
+                    )
+                    .into());
+                }
+            }
+        }
+        Ok(out)
+    }
+
+    /// Read the per-memory 13D topic profile from `CF_TOPIC_PROFILES`.
+    ///
+    /// Returns `Ok(None)` when no row exists for this memory (use the fallback
+    /// path in `topic_profile_or_fallback`). Rejects malformed rows (neither
+    /// 52 nor a multiple of 4 bytes) with a `CoreError::SerializationError`.
+    pub async fn get_topic_profile(
+        &self,
+        id: Uuid,
+    ) -> CoreResult<Option<[f32; 13]>> {
+        let cf = self
+            .db
+            .cf_handle(CF_TOPIC_PROFILES)
+            .expect("CF_TOPIC_PROFILES must exist — database initialization failed");
+        match self.db.get_cf(cf, id.as_bytes()) {
+            Ok(Some(bytes)) => {
+                if bytes.len() != 52 {
+                    return Err(CoreError::SerializationError(format!(
+                        "CF_TOPIC_PROFILES row for {} has {} bytes; expected 52 (13 × f32)",
+                        id,
+                        bytes.len()
+                    )));
+                }
+                let mut out = [0f32; 13];
+                for (i, chunk) in bytes.chunks_exact(4).enumerate() {
+                    let arr: [u8; 4] = chunk.try_into().expect("chunk_exact(4) guarantees 4 bytes");
+                    out[i] = f32::from_le_bytes(arr);
+                }
+                Ok(Some(out))
+            }
+            Ok(None) => Ok(None),
+            Err(e) => Err(TeleologicalStoreError::rocksdb_op(
+                "get_topic_profile",
+                CF_TOPIC_PROFILES,
+                Some(id),
+                e,
+            )
+            .into()),
+        }
+    }
 }
 
 // ============================================================================
@@ -208,8 +303,9 @@ fn decode_training_record(bytes: &[u8]) -> CoreResult<TrainingRecord> {
             version, TRAINING_RECORD_VERSION
         )));
     }
-    bincode::deserialize(&bytes[1..])
-        .map_err(|e| CoreError::SerializationError(format!("bincode deserialize TrainingRecord: {}", e)))
+    bincode::deserialize(&bytes[1..]).map_err(|e| {
+        CoreError::SerializationError(format!("bincode deserialize TrainingRecord: {}", e))
+    })
 }
 
 #[cfg(test)]
@@ -235,6 +331,7 @@ mod tests {
             session_id: None,
             source_type: None,
             source_path: None,
+            content_hash: None,
             e1_semantic: vec![0.1, 0.2],
             e2_temporal_recent: Vec::new(),
             e3_temporal_periodic: Vec::new(),
@@ -262,6 +359,8 @@ mod tests {
             causal_effects: Vec::new(),
             causal_causes: Vec::new(),
             topic_memberships: Vec::new(),
+            temporal_labels: None,
+            tucker_core: None,
         }
     }
 
