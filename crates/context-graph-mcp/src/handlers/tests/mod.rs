@@ -159,6 +159,50 @@ use crate::handlers::Handlers;
 use crate::protocol::{JsonRpcId, JsonRpcRequest};
 
 // ============================================================================
+// Shared Read-Only Handlers for Protocol Tests
+// ============================================================================
+//
+// PERF: Tests that exercise only MCP protocol dispatch (initialize, tools/list,
+// error codes, etc.) don't mutate RocksDB state, so they can share ONE handler
+// instance across all tests. This amortizes the RocksDB open + warm-load cost
+// from N opens to exactly 1.
+//
+// Tests that WRITE to storage (store_memory, merge, delete, forget, etc.) MUST
+// continue to use `create_test_handlers()` for isolation.
+
+#[cfg(feature = "llm")]
+static SHARED_READONLY_HANDLERS: OnceCell<(Arc<Handlers>, Arc<TempDir>)> = OnceCell::const_new();
+
+/// Get a shared read-only Handlers instance for protocol-only tests.
+///
+/// ALL callers share the same Handlers, RocksDB, warm-load provider, and TempDir.
+/// This is ONLY safe for tests that do not persistently mutate storage state.
+///
+/// Returns `Arc<Handlers>` so the caller can `.dispatch()` without ownership juggling.
+///
+/// # When to use this
+///
+/// - Tests that only call `initialize`, `notifications/initialized`, `tools/list`
+/// - Tests that verify error codes for unknown methods / unknown tools / bad params
+/// - Tests that validate request ID echoing
+///
+/// # When NOT to use this
+///
+/// - Tests that write memories (`store_memory`, `merge_memories`, etc.)
+/// - Tests that inspect RocksDB state after writes
+/// - Tests that use `create_test_handlers_with_real_embeddings_store_access`
+#[cfg(feature = "llm")]
+pub(crate) async fn shared_readonly_handlers() -> Arc<Handlers> {
+    let (handlers, _tempdir) = SHARED_READONLY_HANDLERS
+        .get_or_init(|| async {
+            let (handlers, tempdir) = create_test_handlers().await;
+            (Arc::new(handlers), Arc::new(tempdir))
+        })
+        .await;
+    Arc::clone(handlers)
+}
+
+// ============================================================================
 // MCP Response Parsing Helpers
 // ============================================================================
 

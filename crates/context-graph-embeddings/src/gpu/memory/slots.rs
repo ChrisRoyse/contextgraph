@@ -461,11 +461,11 @@ mod tests {
         manager
             .allocate_slot(Embedder::Semantic, 1000)
             .expect("allocate E1");
-        sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(1));
         manager
             .allocate_slot(Embedder::TemporalRecent, 1000)
             .expect("allocate E2");
-        sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(1));
         manager
             .allocate_slot(Embedder::TemporalPeriodic, 1000)
             .expect("allocate E3");
@@ -534,7 +534,7 @@ mod tests {
     fn test_evict_lru() {
         let mut manager = ModelSlotManager::with_budget(1000);
         manager.allocate_slot(Embedder::Semantic, 500).unwrap();
-        sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(1));
         manager
             .allocate_slot(Embedder::TemporalRecent, 400)
             .unwrap();
@@ -551,7 +551,7 @@ mod tests {
     fn test_allocate_with_eviction() {
         let mut manager = ModelSlotManager::with_budget(1000);
         manager.allocate_slot(Embedder::Semantic, 600).unwrap();
-        sleep(Duration::from_millis(10));
+        sleep(Duration::from_millis(1));
         manager
             .allocate_slot(Embedder::TemporalRecent, 300)
             .unwrap();

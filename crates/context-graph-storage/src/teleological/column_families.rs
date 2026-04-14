@@ -339,7 +339,29 @@ pub const CF_CUSTOM_WEIGHT_PROFILES: &str = "custom_weight_profiles";
 /// - Updated periodically + at shutdown
 pub const CF_HNSW_GRAPHS: &str = "hnsw_graphs";
 
-/// All teleological column family names (20 total).
+// =============================================================================
+// TRAINING DATA EXPORT STORAGE
+// =============================================================================
+
+/// Column family for exported training records (one per memory).
+///
+/// Populated by the `export_training_corpus` MCP tool. Each record bundles
+/// the memory's content, all 13 embedding vectors, 13D topic profile, 78
+/// synergy-weighted cross-correlations, 6D group alignments, typed edges,
+/// K-NN neighbors, causal labels, and topic memberships for consumption by
+/// ML training pipelines (in-process or dumped via sidecar tooling).
+///
+/// Key: UUID bytes (16) — same key as the source fingerprint in `CF_FINGERPRINTS`.
+/// Value: [version: u8 = 1][bincode-encoded `TrainingRecord`].
+///
+/// # Storage Details
+/// - LZ4 compression (~30-50% reduction for mixed binary data)
+/// - Bloom filter for fast point lookups by memory UUID
+/// - 16-byte prefix extractor for UUID keys
+/// - 8MB write buffer (values are MB-sized when full embeddings included)
+pub const CF_TRAINING_RECORDS: &str = "training_records";
+
+/// All teleological column family names (21 total).
 pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_FINGERPRINTS,
     CF_TOPIC_PROFILES,
@@ -361,10 +383,11 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_EMBEDDING_REGISTRY,
     CF_CUSTOM_WEIGHT_PROFILES,
     CF_HNSW_GRAPHS,
+    CF_TRAINING_RECORDS,
 ];
 
 /// Total count of teleological CFs.
-pub const TELEOLOGICAL_CF_COUNT: usize = 20;
+pub const TELEOLOGICAL_CF_COUNT: usize = 21;
 
 // =============================================================================
 // QUANTIZED EMBEDDER COLUMN FAMILIES (13 CFs for per-embedder storage)
@@ -608,6 +631,37 @@ pub fn hnsw_graphs_cf_options(cache: &Cache) -> Options {
     let mut opts = Options::default();
     opts.set_block_based_table_factory(&block_opts);
     opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    apply_write_buffer_limits(&mut opts, 8); // MB-sized values
+    opts.create_if_missing(true);
+    opts
+}
+
+/// Options for training record storage.
+///
+/// # Configuration
+/// - LZ4 compression (~30-50% reduction for mixed float/string content)
+/// - Bloom filter for fast UUID lookups
+/// - 16-byte prefix extractor (UUID keys)
+/// - 8MB write buffer (values are large when full embeddings are included)
+/// - Level compaction for mostly-append write pattern
+///
+/// # Key / Value Format
+/// Key: UUID bytes (16).
+/// Value: `[version: u8 = TRAINING_RECORD_VERSION][bincode-encoded TrainingRecord]`.
+pub fn training_records_cf_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+    // Larger block size since values can be MB-sized (full dense embeddings ~46KB
+    // pack many records per block).
+    block_opts.set_block_size(64 * 1024);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_prefix_extractor(rocksdb::SliceTransform::create_fixed_prefix(16));
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.set_compaction_style(rocksdb::DBCompactionStyle::Level);
     apply_write_buffer_limits(&mut opts, 8); // MB-sized values
     opts.create_if_missing(true);
     opts
@@ -1052,13 +1106,13 @@ pub fn quantized_embedder_cf_options(cache: &Cache) -> Options {
     opts
 }
 
-/// Get all 20 teleological column family descriptors.
+/// Get all 21 teleological column family descriptors.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 20 `ColumnFamilyDescriptor`s for teleological storage.
+/// Vector of 21 `ColumnFamilyDescriptor`s for teleological storage.
 pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     vec![
         ColumnFamilyDescriptor::new(CF_FINGERPRINTS, fingerprint_cf_options(cache)),
@@ -1105,6 +1159,8 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
         ColumnFamilyDescriptor::new(CF_CUSTOM_WEIGHT_PROFILES, custom_weight_profiles_cf_options(cache)),
         // HNSW graph persistence for fast startup
         ColumnFamilyDescriptor::new(CF_HNSW_GRAPHS, hnsw_graphs_cf_options(cache)),
+        // Training record export (export_training_corpus MCP tool)
+        ColumnFamilyDescriptor::new(CF_TRAINING_RECORDS, training_records_cf_options(cache)),
     ]
 }
 
@@ -1137,14 +1193,14 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 
 /// Get ALL teleological + quantized embedder column family descriptors.
 ///
-/// Returns 33 descriptors total: 20 teleological + 13 quantized embedder.
+/// Returns 34 descriptors total: 21 teleological + 13 quantized embedder.
 /// Use this when opening a database that needs both fingerprint and per-embedder storage.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 33 `ColumnFamilyDescriptor`s.
+/// Vector of 34 `ColumnFamilyDescriptor`s.
 ///
 /// # Example
 /// ```ignore
@@ -1153,7 +1209,7 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 ///
 /// let cache = Cache::new_lru_cache(256 * 1024 * 1024); // 256MB
 /// let descriptors = get_all_teleological_cf_descriptors(&cache);
-/// assert_eq!(descriptors.len(), 33); // 20 teleological + 13 embedder
+/// assert_eq!(descriptors.len(), 34); // 21 teleological + 13 embedder
 /// ```
 pub fn get_all_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     let mut descriptors = get_teleological_cf_descriptors(cache);
@@ -1487,7 +1543,7 @@ pub fn get_causal_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 40 `ColumnFamilyDescriptor`s.
+/// Vector of 41 `ColumnFamilyDescriptor`s.
 pub fn get_all_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     let mut descriptors = get_all_teleological_cf_descriptors(cache);
     descriptors.extend(get_code_cf_descriptors(cache));

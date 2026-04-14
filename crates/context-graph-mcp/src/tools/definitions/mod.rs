@@ -33,6 +33,7 @@ pub(crate) mod robustness;
 pub(crate) mod sequence;
 pub(crate) mod temporal;
 pub(crate) mod topic;
+pub(crate) mod training;
 
 use crate::tools::types::ToolDefinition;
 
@@ -100,6 +101,9 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Daemon tools (1) - Multi-agent observability
     tools.extend(daemon::definitions());
 
+    // Training tools (1) - Training data export to CF_TRAINING_RECORDS
+    tools.extend(training::definitions());
+
     tools
 }
 
@@ -111,9 +115,9 @@ mod tests {
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
         #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 58);
+        assert_eq!(tools.len(), 62);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(tools.len(), 54);
+        assert_eq!(tools.len(), 58);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -146,6 +150,7 @@ mod tests {
         assert_eq!(maintenance::definitions().len(), 1);
         assert_eq!(provenance::definitions().len(), 3);
         assert_eq!(daemon::definitions().len(), 1);
+        assert_eq!(training::definitions().len(), 4);
         // Audit-12 TST-H2 FIX: graph and causal_discovery are LLM-gated, must be tested
         #[cfg(feature = "llm")]
         {

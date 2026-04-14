@@ -54,8 +54,8 @@ fn test_teleological_record_access() {
     assert_eq!(fp.access_count, 0);
     let initial_updated = fp.last_updated;
 
-    // Small delay to ensure timestamp difference
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    // Small delay to ensure timestamp difference (chrono nanosecond resolution)
+    std::thread::sleep(std::time::Duration::from_millis(1));
 
     fp.record_access();
     assert_eq!(fp.access_count, 1);

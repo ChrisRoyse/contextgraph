@@ -391,11 +391,44 @@ impl TokenStorage for RocksDbTokenStorage {
 mod tests {
     use super::*;
     use rocksdb::Cache;
+    use std::sync::OnceLock;
     use tempfile::TempDir;
 
     use crate::teleological::column_families::get_teleological_cf_descriptors;
 
-    /// Create a test database with all column families.
+    /// Shared test database — since every test uses `Uuid::new_v4()` for its
+    /// own keys there is no cross-test interference, so we amortise the ~100ms
+    /// RocksDB open cost across all tests in this module.
+    struct SharedDb {
+        _temp_dir: TempDir,
+        db: Arc<DB>,
+    }
+
+    fn shared_db() -> &'static SharedDb {
+        static DB: OnceLock<SharedDb> = OnceLock::new();
+        DB.get_or_init(|| {
+            let temp_dir = TempDir::new().expect("Failed to create temp dir");
+            let cache = Cache::new_lru_cache(64 * 1024 * 1024); // 64MB
+            let cf_descriptors = get_teleological_cf_descriptors(&cache);
+
+            let mut db_opts = rocksdb::Options::default();
+            db_opts.create_if_missing(true);
+            db_opts.create_missing_column_families(true);
+
+            let db = DB::open_cf_descriptors(&db_opts, temp_dir.path(), cf_descriptors)
+                .expect("Failed to open test database");
+
+            SharedDb {
+                _temp_dir: temp_dir,
+                db: Arc::new(db),
+            }
+        })
+    }
+
+    /// Legacy per-test DB creator — kept for tests that need an isolated DB
+    /// (e.g. tests that scan/iterate all keys). Most tests should prefer
+    /// `shared_db()` which is much cheaper.
+    #[allow(dead_code)]
     fn create_test_db() -> (TempDir, Arc<DB>) {
         let temp_dir = TempDir::new().expect("Failed to create temp dir");
         let cache = Cache::new_lru_cache(64 * 1024 * 1024); // 64MB
@@ -430,7 +463,7 @@ mod tests {
     fn test_store_and_retrieve() {
         println!("=== TEST: Store and Retrieve ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();
@@ -475,7 +508,7 @@ mod tests {
     fn test_get_nonexistent() {
         println!("=== TEST: Get Nonexistent ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();
@@ -489,7 +522,7 @@ mod tests {
     fn test_delete() {
         println!("=== TEST: Delete ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();
@@ -513,7 +546,7 @@ mod tests {
     fn test_batch_get() {
         println!("=== TEST: Batch Get ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         // Store 5 memories
@@ -547,7 +580,7 @@ mod tests {
     fn test_exists() {
         println!("=== TEST: Exists ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();
@@ -571,7 +604,7 @@ mod tests {
     fn test_token_storage_trait() {
         println!("=== TEST: TokenStorage Trait ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();
@@ -599,7 +632,7 @@ mod tests {
     fn test_invalid_dimension_fails_fast() {
         println!("=== TEST: Invalid Dimension Fails Fast ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();
@@ -629,7 +662,7 @@ mod tests {
     fn test_nan_fails_fast() {
         println!("=== TEST: NaN Fails Fast ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();
@@ -659,7 +692,7 @@ mod tests {
     fn test_inf_fails_fast() {
         println!("=== TEST: Inf Fails Fast ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();
@@ -689,7 +722,7 @@ mod tests {
     fn test_too_many_tokens_fails_fast() {
         println!("=== TEST: Too Many Tokens Fails Fast ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();
@@ -716,7 +749,7 @@ mod tests {
     fn test_empty_tokens() {
         println!("=== TEST: Empty Tokens ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();
@@ -736,7 +769,7 @@ mod tests {
     fn test_single_token() {
         println!("=== TEST: Single Token ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();
@@ -755,7 +788,7 @@ mod tests {
     fn test_max_tokens() {
         println!("=== TEST: Max Tokens ===");
 
-        let (_temp_dir, db) = create_test_db();
+        let db = shared_db().db.clone();
         let storage = RocksDbTokenStorage::new(db);
 
         let id = Uuid::new_v4();

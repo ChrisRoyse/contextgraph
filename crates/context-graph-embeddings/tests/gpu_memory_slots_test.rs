@@ -110,13 +110,13 @@ fn test_fsv_edge_case_3_lru_eviction_selection() {
         .allocate_slot(Embedder::Semantic, 1000)
         .expect("allocate E1");
     println!("Allocated Semantic (E1) at t=0");
-    sleep(Duration::from_millis(15));
+    sleep(Duration::from_millis(1));
 
     manager
         .allocate_slot(Embedder::TemporalRecent, 1000)
         .expect("allocate E2");
     println!("Allocated TemporalRecent (E2) at t=15ms");
-    sleep(Duration::from_millis(15));
+    sleep(Duration::from_millis(1));
 
     manager
         .allocate_slot(Embedder::TemporalPeriodic, 1000)
@@ -305,7 +305,7 @@ fn test_eviction_with_automatic_recovery() {
     manager
         .allocate_slot(Embedder::Semantic, 600)
         .expect("allocate E1");
-    sleep(Duration::from_millis(10));
+    sleep(Duration::from_millis(1));
     manager
         .allocate_slot(Embedder::TemporalRecent, 300)
         .expect("allocate E2");

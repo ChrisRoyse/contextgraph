@@ -47,6 +47,7 @@ mod causal_hnsw_index;
 mod causal_relationships;
 mod content;
 mod crud;
+mod export;
 mod file_index;
 mod fusion;
 mod helpers;

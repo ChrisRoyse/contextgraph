@@ -1,12 +1,15 @@
 //! Tools List Tests (MCP 2024-11-05 compliance)
+//!
+//! PERF: tools/list is a pure read of the static tool registry; it does not
+//! touch storage. Uses the shared read-only handler fixture.
 
 use crate::protocol::JsonRpcId;
 
-use super::{create_test_handlers, make_request};
+use super::{make_request, shared_readonly_handlers};
 
 #[tokio::test]
 async fn test_tools_list_each_tool_has_required_fields() {
-    let (handlers, _tempdir) = create_test_handlers().await;
+    let handlers = shared_readonly_handlers().await;
     let request = make_request("tools/list", Some(JsonRpcId::Number(1)), None);
 
     let response = handlers.dispatch(request).await;

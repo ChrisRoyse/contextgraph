@@ -45,6 +45,7 @@ mod sequence_tools;
 mod status_tools;
 mod temporal_tools;
 mod topic_tools;
+mod training_tools;
 
 // DTOs for PRD v6 gap tools (TASK-GAP-005)
 pub mod causal_dtos;

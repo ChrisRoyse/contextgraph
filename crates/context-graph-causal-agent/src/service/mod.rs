@@ -897,7 +897,11 @@ mod tests {
         assert!(service.is_ok());
     }
 
+    // PERF: Marked `#[ignore]` because loading the 7B GGUF LLM adds several
+    // seconds to the default `cargo test` run. Run explicitly with:
+    //   cargo test -p context-graph-causal-agent --features llm -- --ignored
     #[tokio::test]
+    #[ignore = "loads 7B GGUF LLM from disk; run with --ignored"]
     async fn test_discovery_cycle() {
         let config = create_test_config();
 

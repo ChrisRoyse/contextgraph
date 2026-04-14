@@ -76,6 +76,9 @@ pub use column_families::{
     // Quantized embedder column families (TASK-EMB-022)
     quantized_embedder_cf_options,
     custom_weight_profiles_cf_options,
+    // Training data export (export_training_corpus MCP tool)
+    training_records_cf_options,
+    CF_TRAINING_RECORDS,
     // TASK-CONTENT-001: Content column family
     CF_CONTENT,
     // TASK-STORAGE-P2-001: E12 Late Interaction column family constant

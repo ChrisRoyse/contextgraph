@@ -51,7 +51,7 @@ fn test_record_traversal_updates_timestamp_each_time() {
     );
     edge.record_traversal();
     let first = edge.last_traversed_at.unwrap();
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    std::thread::sleep(std::time::Duration::from_millis(1));
     edge.record_traversal();
     let second = edge.last_traversed_at.unwrap();
     assert!(second >= first);
@@ -214,7 +214,7 @@ fn test_age_seconds_increases() {
         EdgeType::Semantic,
     );
     let age1 = edge.age_seconds();
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    std::thread::sleep(std::time::Duration::from_millis(1));
     let age2 = edge.age_seconds();
     assert!(age2 >= age1);
 }

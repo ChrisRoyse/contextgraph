@@ -38,7 +38,7 @@ fn test_batch_request_elapsed_increases() {
     let (request, _rx) = BatchRequest::new(input, ModelId::Semantic);
 
     let elapsed1 = request.elapsed();
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    std::thread::sleep(std::time::Duration::from_millis(1));
     let elapsed2 = request.elapsed();
 
     assert!(elapsed2 > elapsed1);
@@ -221,7 +221,7 @@ fn test_batch_queue_should_flush_max_size() {
 #[test]
 fn test_batch_queue_should_flush_timeout() {
     let mut config = BatchConfig::default();
-    config.max_wait_ms = 10; // 10ms timeout
+    config.max_wait_ms = 2; // 2ms timeout (shortened for test perf)
 
     let mut queue = BatchQueue::new(ModelId::Semantic, config);
 
@@ -233,7 +233,7 @@ fn test_batch_queue_should_flush_timeout() {
     assert!(!queue.should_flush());
 
     // Wait for timeout
-    std::thread::sleep(std::time::Duration::from_millis(15));
+    std::thread::sleep(std::time::Duration::from_millis(5));
     assert!(queue.should_flush());
 }
 
@@ -332,11 +332,11 @@ fn test_batch_queue_oldest_wait_time() {
     let (request, _rx) = BatchRequest::new(input, ModelId::Semantic);
     queue.push(request);
 
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    std::thread::sleep(std::time::Duration::from_millis(2));
 
     let wait = queue.oldest_wait_time();
     assert!(wait.is_some());
-    assert!(wait.unwrap() >= std::time::Duration::from_millis(10));
+    assert!(wait.unwrap() >= std::time::Duration::from_millis(2));
 }
 
 #[tokio::test]
@@ -489,9 +489,9 @@ async fn test_batch_fail_multiple() {
 #[test]
 fn test_batch_elapsed() {
     let batch = Batch::new(ModelId::Semantic);
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    std::thread::sleep(std::time::Duration::from_millis(2));
 
-    assert!(batch.elapsed() >= std::time::Duration::from_millis(10));
+    assert!(batch.elapsed() >= std::time::Duration::from_millis(2));
 }
 
 // ============================================================

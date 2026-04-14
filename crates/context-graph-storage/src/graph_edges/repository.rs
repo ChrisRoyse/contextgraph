@@ -620,20 +620,35 @@ mod tests {
     use super::*;
     use context_graph_core::graph_linking::DirectedRelation;
     use rocksdb::{Options, Cache};
+    use std::sync::OnceLock;
     use tempfile::TempDir;
     use crate::column_families::get_column_family_descriptors;
 
-    fn create_test_db() -> (TempDir, Arc<DB>) {
-        let temp_dir = TempDir::new().unwrap();
-        let cache = Cache::new_lru_cache(256 * 1024 * 1024);
-        let descriptors = get_column_family_descriptors(&cache);
+    /// Shared test database — every test uses its own `Uuid::new_v4()` keys,
+    /// so there is no cross-test interference and we amortise the ~100ms
+    /// RocksDB open cost across the whole module.
+    struct SharedDb {
+        _temp_dir: TempDir,
+        db: Arc<DB>,
+    }
 
-        let mut opts = Options::default();
-        opts.create_if_missing(true);
-        opts.create_missing_column_families(true);
+    fn shared_db() -> &'static SharedDb {
+        static DB: OnceLock<SharedDb> = OnceLock::new();
+        DB.get_or_init(|| {
+            let temp_dir = TempDir::new().unwrap();
+            let cache = Cache::new_lru_cache(256 * 1024 * 1024);
+            let descriptors = get_column_family_descriptors(&cache);
 
-        let db = DB::open_cf_descriptors(&opts, temp_dir.path(), descriptors).unwrap();
-        (temp_dir, Arc::new(db))
+            let mut opts = Options::default();
+            opts.create_if_missing(true);
+            opts.create_missing_column_families(true);
+
+            let db = DB::open_cf_descriptors(&opts, temp_dir.path(), descriptors).unwrap();
+            SharedDb {
+                _temp_dir: temp_dir,
+                db: Arc::new(db),
+            }
+        })
     }
 
     fn default_scores() -> [f32; 13] {
@@ -646,8 +661,7 @@ mod tests {
 
     #[test]
     fn test_store_and_get_embedder_edges() {
-        let (_temp, db) = create_test_db();
-        let repo = EdgeRepository::new(db);
+        let repo = EdgeRepository::new(shared_db().db.clone());
 
         let source = Uuid::new_v4();
         let edges: Vec<EmbedderEdge> = (0..5)
@@ -671,8 +685,7 @@ mod tests {
 
     #[test]
     fn test_get_nonexistent_embedder_edges() {
-        let (_temp, db) = create_test_db();
-        let repo = EdgeRepository::new(db);
+        let repo = EdgeRepository::new(shared_db().db.clone());
 
         let source = Uuid::new_v4();
         let edges = repo.get_embedder_edges(0, source).unwrap();
@@ -681,8 +694,7 @@ mod tests {
 
     #[test]
     fn test_store_and_get_typed_edge() {
-        let (_temp, db) = create_test_db();
-        let repo = EdgeRepository::new(db);
+        let repo = EdgeRepository::new(shared_db().db.clone());
 
         let source = Uuid::new_v4();
         let target = Uuid::new_v4();
@@ -713,8 +725,7 @@ mod tests {
 
     #[test]
     fn test_get_typed_edges_from_source() {
-        let (_temp, db) = create_test_db();
-        let repo = EdgeRepository::new(db);
+        let repo = EdgeRepository::new(shared_db().db.clone());
 
         let source = Uuid::new_v4();
 
@@ -742,8 +753,7 @@ mod tests {
 
     #[test]
     fn test_delete_typed_edge() {
-        let (_temp, db) = create_test_db();
-        let repo = EdgeRepository::new(db);
+        let repo = EdgeRepository::new(shared_db().db.clone());
 
         let source = Uuid::new_v4();
         let target = Uuid::new_v4();
@@ -771,8 +781,7 @@ mod tests {
 
     #[test]
     fn test_invalid_embedder_id() {
-        let (_temp, db) = create_test_db();
-        let repo = EdgeRepository::new(db);
+        let repo = EdgeRepository::new(shared_db().db.clone());
 
         let result = repo.get_embedder_edges(13, Uuid::new_v4());
         assert!(matches!(
@@ -783,8 +792,7 @@ mod tests {
 
     #[test]
     fn test_batch_store_typed_edges() {
-        let (_temp, db) = create_test_db();
-        let repo = EdgeRepository::new(db);
+        let repo = EdgeRepository::new(shared_db().db.clone());
 
         let source = Uuid::new_v4();
         let mut scores = default_scores();

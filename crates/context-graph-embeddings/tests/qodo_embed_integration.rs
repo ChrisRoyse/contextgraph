@@ -192,6 +192,7 @@ async fn load_code_model() -> EmbeddingResult<CodeModel> {
 /// - Safetensors weights load to GPU
 /// - Model is initialized after load()
 #[tokio::test]
+#[ignore = "loads 1.5B Qodo-Embed model from disk (~30s); run with --ignored"]
 async fn test_qodo_embed_model_loads() -> EmbeddingResult<()> {
     println!("\n=== TEST: Model Loading ===\n");
 
@@ -224,6 +225,7 @@ async fn test_qodo_embed_model_loads() -> EmbeddingResult<()> {
 /// - Embedding is non-zero (real computation)
 /// - Embedding has variance (not constant)
 #[tokio::test]
+#[ignore = "loads 1.5B Qodo-Embed model; run with --ignored"]
 async fn test_qodo_embed_produces_1536d_embeddings() -> EmbeddingResult<()> {
     println!("\n=== TEST: Embedding Dimension ===\n");
 
@@ -280,6 +282,7 @@ async fn test_qodo_embed_produces_1536d_embeddings() -> EmbeddingResult<()> {
 /// - Cosine similarity should be < 0.99 (not identical)
 /// - This proves embeddings are not constants or defaults
 #[tokio::test]
+#[ignore = "loads 1.5B Qodo-Embed model; run with --ignored"]
 async fn test_qodo_embed_different_inputs_different_outputs() -> EmbeddingResult<()> {
     println!("\n=== TEST: Different Inputs -> Different Outputs ===\n");
 
@@ -345,6 +348,7 @@ async fn test_qodo_embed_different_inputs_different_outputs() -> EmbeddingResult
 /// - Each is non-trivial
 /// - Reasonable throughput
 #[tokio::test]
+#[ignore = "loads 1.5B Qodo-Embed model; run with --ignored"]
 async fn test_qodo_embed_batch_inference() -> EmbeddingResult<()> {
     println!("\n=== TEST: Batch Inference ===\n");
 
@@ -418,6 +422,7 @@ async fn test_qodo_embed_batch_inference() -> EmbeddingResult<()> {
 ///
 /// This verifies the model captures semantic meaning, not just syntax.
 #[tokio::test]
+#[ignore = "loads 1.5B Qodo-Embed model; run with --ignored"]
 async fn test_qodo_embed_semantic_similarity() -> EmbeddingResult<()> {
     println!("\n=== TEST: Semantic Similarity ===\n");
 
@@ -469,6 +474,7 @@ async fn test_qodo_embed_semantic_similarity() -> EmbeddingResult<()> {
 ///
 /// This verifies the model distinguishes between different purposes.
 #[tokio::test]
+#[ignore = "loads 1.5B Qodo-Embed model; run with --ignored"]
 async fn test_qodo_embed_dissimilar_code() -> EmbeddingResult<()> {
     println!("\n=== TEST: Dissimilar Code ===\n");
 
@@ -515,6 +521,7 @@ async fn test_qodo_embed_dissimilar_code() -> EmbeddingResult<()> {
 
 /// Edge Case 1: Empty code string should fail gracefully.
 #[tokio::test]
+#[ignore = "loads 1.5B Qodo-Embed model; run with --ignored"]
 async fn test_edge_case_empty_code_fails() {
     println!("\n=== EDGE CASE: Empty Code ===\n");
 
@@ -530,6 +537,7 @@ async fn test_edge_case_empty_code_fails() {
 
 /// Edge Case 2: Very long code should either succeed or fail gracefully.
 #[tokio::test]
+#[ignore = "loads 1.5B Qodo-Embed model; run with --ignored"]
 async fn test_edge_case_long_code() -> EmbeddingResult<()> {
     println!("\n=== EDGE CASE: Long Code ===\n");
 
@@ -571,6 +579,7 @@ async fn test_edge_case_long_code() -> EmbeddingResult<()> {
 
 /// Edge Case 3: Special characters and unicode in code.
 #[tokio::test]
+#[ignore = "loads 1.5B Qodo-Embed model; run with --ignored"]
 async fn test_edge_case_unicode_code() -> EmbeddingResult<()> {
     println!("\n=== EDGE CASE: Unicode Code ===\n");
 
@@ -598,6 +607,7 @@ async fn test_edge_case_unicode_code() -> EmbeddingResult<()> {
 
 /// Master test: Run all verifications in one comprehensive check.
 #[tokio::test]
+#[ignore = "loads 1.5B Qodo-Embed model; run with --ignored"]
 async fn test_qodo_embed_comprehensive_verification() -> EmbeddingResult<()> {
     println!("\n╔══════════════════════════════════════════════════════════════╗");
     println!("║       QODO-EMBED-1-1.5B COMPREHENSIVE VERIFICATION           ║");

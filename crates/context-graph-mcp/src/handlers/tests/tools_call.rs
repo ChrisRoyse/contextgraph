@@ -1,10 +1,15 @@
 //! Tools Call Tests (MCP 2024-11-05 compliance)
+//!
+//! PERF: Tests that only validate dispatch errors or read static status use
+//! `shared_readonly_handlers()` to amortize the RocksDB + warm-load cost.
+//! Tests that mutate storage (e.g. `store_memory`) keep their own isolated
+//! handler via `create_test_handlers()`.
 
 use serde_json::json;
 
 use crate::protocol::JsonRpcId;
 
-use super::{create_test_handlers, make_request};
+use super::{create_test_handlers, make_request, shared_readonly_handlers};
 
 // =========================================================================
 // get_memetic_status Tool Tests
@@ -12,7 +17,8 @@ use super::{create_test_handlers, make_request};
 
 #[tokio::test]
 async fn test_tools_call_get_memetic_status() {
-    let (handlers, _tempdir) = create_test_handlers().await;
+    // Read-only: just inspects embedder/layer counts.
+    let handlers = shared_readonly_handlers().await;
     let params = json!({
         "name": "get_memetic_status",
         "arguments": {}
@@ -53,6 +59,7 @@ async fn test_tools_call_get_memetic_status() {
 
 #[tokio::test]
 async fn test_tools_call_store_memory_valid() {
+    // Writes to storage — keep isolated.
     let (handlers, _tempdir) = create_test_handlers().await;
     let params = json!({
         "name": "store_memory",
@@ -91,7 +98,8 @@ async fn test_tools_call_store_memory_valid() {
 
 #[tokio::test]
 async fn test_tools_call_search_graph_valid() {
-    let (handlers, _tempdir) = create_test_handlers().await;
+    // Read-only: searches (possibly empty) shared store.
+    let handlers = shared_readonly_handlers().await;
     let params = json!({
         "name": "search_graph",
         "arguments": {
@@ -130,7 +138,8 @@ async fn test_tools_call_search_graph_valid() {
 
 #[tokio::test]
 async fn test_tools_call_search_graph_missing_query() {
-    let (handlers, _tempdir) = create_test_handlers().await;
+    // Validation-only: never reaches storage.
+    let handlers = shared_readonly_handlers().await;
     let params = json!({
         "name": "search_graph",
         "arguments": {
@@ -149,7 +158,8 @@ async fn test_tools_call_search_graph_missing_query() {
 
 #[tokio::test]
 async fn test_tool_error_sets_is_error_true() {
-    let (handlers, _tempdir) = create_test_handlers().await;
+    // Validation-only: never reaches storage.
+    let handlers = shared_readonly_handlers().await;
     // inject_context without required 'content' parameter
     let params = json!({
         "name": "inject_context",

@@ -117,7 +117,7 @@ mod tests {
     fn test_uptime_increases() {
         let h = ModelHandle::new(0x1000, 1024, 0, 0);
         let t1 = h.uptime();
-        std::thread::sleep(Duration::from_millis(10));
+        std::thread::sleep(Duration::from_millis(1));
         assert!(h.uptime() > t1);
     }
 

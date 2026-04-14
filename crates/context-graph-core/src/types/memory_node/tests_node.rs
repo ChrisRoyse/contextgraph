@@ -35,7 +35,7 @@ fn test_record_access() {
     let mut node = MemoryNode::new("test".to_string(), embedding);
     let initial_accessed = node.accessed_at;
 
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    std::thread::sleep(std::time::Duration::from_millis(1));
     node.record_access();
 
     assert_eq!(node.access_count, 1);

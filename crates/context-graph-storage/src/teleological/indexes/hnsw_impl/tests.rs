@@ -395,6 +395,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "builds 10K-vector HNSW index (~5-15s); perf benchmark — run with --ignored"]
     fn test_performance_scaling() {
         println!("=== TEST: Performance scaling verification ===");
         println!("Verifying O(log n) complexity by comparing search times at different scales");

@@ -1598,6 +1598,102 @@ fn main() -> Result<()> {
     runtime.block_on(async_main())
 }
 
+/// Install kernel-level parent-death tracking (Linux `PR_SET_PDEATHSIG`).
+///
+/// When the process that forked/spawned us dies for ANY reason, the kernel
+/// immediately delivers `SIGTERM` to us. This prevents the MCP server from
+/// ever outliving its parent MCP client, which otherwise leaves a zombie
+/// process holding the RocksDB flock.
+///
+/// The value is inherited across `fork` on Linux ≥ 3.4, and survives
+/// `execve` only when we set it ourselves (which we do here). Calling this
+/// at the top of `async_main` covers:
+///   - normal parent exit (our stdio reader sees EOF anyway)
+///   - parent SIGKILL / OOM / crash (stdio EOF may NOT arrive; pdeathsig fires)
+///   - parent losing track of us and exiting unexpectedly
+///
+/// The no-op variant for non-Linux targets keeps the code portable.
+#[cfg(target_os = "linux")]
+fn install_parent_death_signal() {
+    // SAFETY: `prctl` is an FFI call that only sets a kernel flag for the
+    // current thread. Arguments are constants defined by the kernel ABI.
+    // The only failure mode (ENOSYS on ancient kernels) returns -1 and we
+    // log a warning but continue — the pdeathsig is defense in depth, not
+    // the only safeguard (we also have SIGTERM handlers and stdio EOF).
+    let rc = unsafe { libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGTERM, 0, 0, 0) };
+    if rc != 0 {
+        warn!(
+            "prctl(PR_SET_PDEATHSIG) failed (errno={}) — parent-death tracking disabled",
+            std::io::Error::last_os_error()
+        );
+    } else {
+        debug!("Parent-death signal installed: SIGTERM on parent exit");
+    }
+
+    // Also check if our parent is already PID 1 (init) — that means we were
+    // orphaned before we even started (e.g., launched from a script that
+    // already died). In that case, exit immediately rather than linger.
+    //
+    // SAFETY: getppid is a pure syscall with no side effects.
+    let ppid = unsafe { libc::getppid() };
+    if ppid == 1 {
+        warn!("Launched as orphan (PPID=1); exiting to avoid holding DB flock with no client");
+        std::process::exit(0);
+    }
+}
+
+#[cfg(not(target_os = "linux"))]
+fn install_parent_death_signal() {
+    // Other platforms: no-op. The existing SIGTERM handler and stdio EOF
+    // detection are the only safety nets available.
+}
+
+/// Arm the doomsday shutdown watchdog.
+///
+/// Spawns a plain OS thread (not a tokio task) that sleeps [`DOOMSDAY_SECS`]
+/// and then calls `libc::_exit(0)` unconditionally. This is the last-resort
+/// guarantee that the MCP server cannot hang forever during shutdown:
+///   - runs on an OS thread, so a wedged tokio runtime cannot block it
+///   - uses `_exit` (not `exit`), bypassing Rust destructors that could hang
+///   - the kernel releases all file locks and file descriptors on `_exit`,
+///     so the RocksDB flock is freed immediately
+///
+/// Idempotent via a one-shot `AtomicBool` — multiple calls only arm once.
+/// Used by every shutdown path (SIGTERM, SIGINT, stdio EOF).
+fn arm_doomsday_watchdog(trigger: &'static str) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static ARMED: AtomicBool = AtomicBool::new(false);
+    if ARMED.swap(true, Ordering::SeqCst) {
+        return; // already armed by a prior signal
+    }
+    info!(
+        "Doomsday watchdog armed ({}): will force-exit in {}s if graceful shutdown hangs",
+        trigger, DOOMSDAY_SECS
+    );
+    std::thread::Builder::new()
+        .name("doomsday-watchdog".into())
+        .spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(DOOMSDAY_SECS));
+            eprintln!(
+                "[DOOMSDAY] {}s graceful-shutdown deadline exceeded — force exiting via libc::_exit(0)",
+                DOOMSDAY_SECS
+            );
+            // SAFETY: _exit is async-signal-safe and always succeeds. We are
+            // past the point of caring about destructors; the OS reaps all
+            // resources (flocks, fds, memory) for us.
+            unsafe {
+                libc::_exit(0);
+            }
+        })
+        .expect("FATAL: failed to spawn doomsday watchdog thread");
+}
+
+/// How long we allow graceful shutdown to take before the doomsday watchdog
+/// force-exits the process. Must exceed the existing 10s in-loop deadline
+/// (so graceful shutdown gets priority) but not so long that a zombie
+/// lingers meaningfully.
+const DOOMSDAY_SECS: u64 = 20;
+
 async fn async_main() -> Result<()> {
     // Parse CLI arguments first (before logging init so --help works cleanly)
     let cli = CliArgs::parse();
@@ -1617,6 +1713,16 @@ async fn async_main() -> Result<()> {
         .with_env_filter(filter)
         .with_target(false) // Cleaner output for MCP
         .init();
+
+    // ROOT-CAUSE FIX (zombie prevention): install kernel-level parent-death
+    // tracking so if the MCP client dies for ANY reason (crash, kill -9,
+    // uncaught exception, OOM), the kernel delivers SIGTERM to us and we
+    // cannot outlive it. Combined with the existing SIGTERM handler below,
+    // this guarantees no orphan MCP server ever holds the RocksDB flock.
+    //
+    // This is Linux-specific (PR_SET_PDEATHSIG) but the project already
+    // targets x86_64-unknown-linux-gnu per rust-toolchain.toml.
+    install_parent_death_signal();
 
     info!("Context Graph MCP Server starting...");
 
@@ -2014,9 +2120,11 @@ async fn async_main() -> Result<()> {
                 tokio::select! {
                     _ = sigterm.recv() => {
                         info!("Received SIGTERM — initiating graceful shutdown");
+                        arm_doomsday_watchdog("SIGTERM");
                     }
                     _ = tokio::signal::ctrl_c() => {
                         info!("Received SIGINT (Ctrl+C) — initiating graceful shutdown");
+                        arm_doomsday_watchdog("SIGINT");
                     }
                 }
             }
@@ -2026,6 +2134,7 @@ async fn async_main() -> Result<()> {
                     .await
                     .expect("FATAL: failed to register Ctrl+C handler");
                 info!("Received Ctrl+C — initiating graceful shutdown");
+                arm_doomsday_watchdog("Ctrl+C");
             }
         };
 
@@ -2040,9 +2149,14 @@ async fn async_main() -> Result<()> {
                         if let Err(e) = result {
                             error!("Server run() returned error: {}", e);
                         }
+                        // stdin EOF (or read error) means the client is gone.
+                        // Arm the doomsday watchdog so even a hung graceful
+                        // shutdown cannot leave us as a zombie.
+                        arm_doomsday_watchdog("stdio EOF");
                     }
                     _ = shutdown_signal => {
-                        // Signal received — shutdown() called below
+                        // Signal received — shutdown() called below (watchdog
+                        // was armed inside shutdown_signal).
                     }
                 }
             }

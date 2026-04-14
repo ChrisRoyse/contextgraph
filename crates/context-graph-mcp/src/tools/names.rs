@@ -137,3 +137,14 @@ pub const GET_AUDIT_TRAIL: &str = "get_audit_trail";
 pub const GET_MERGE_HISTORY: &str = "get_merge_history";
 /// Full provenance chain from embedding to source for a memory.
 pub const GET_PROVENANCE_CHAIN: &str = "get_provenance_chain";
+
+// ========== TRAINING TOOLS (Training data export) ==========
+/// Export memories as fully-labeled `TrainingRecord`s persisted to
+/// `CF_TRAINING_RECORDS`. Output is RocksDB-only (no external formats).
+pub const EXPORT_TRAINING_CORPUS: &str = "export_training_corpus";
+/// List UUIDs currently stored in `CF_TRAINING_RECORDS` with basic shape stats.
+pub const LIST_TRAINING_RECORDS: &str = "list_training_records";
+/// Fetch one training record by memory UUID (optionally without heavy vectors).
+pub const GET_TRAINING_RECORD: &str = "get_training_record";
+/// Count rows currently stored in `CF_TRAINING_RECORDS`.
+pub const COUNT_TRAINING_RECORDS: &str = "count_training_records";

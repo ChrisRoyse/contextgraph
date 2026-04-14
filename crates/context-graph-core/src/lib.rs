@@ -48,6 +48,7 @@ pub mod similarity;
 pub mod stubs;
 pub mod teleological;
 pub mod traits;
+pub mod training;
 pub mod types;
 pub mod weights;
 

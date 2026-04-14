@@ -9,7 +9,6 @@
 //!
 //! Run with: cargo test -p context-graph-mcp --features cuda search_periodic -- --nocapture
 
-use std::time::Duration;
 use serde_json::json;
 use tracing::info;
 
@@ -113,8 +112,7 @@ async fn test_search_periodic_basic_structure() {
         Err(e) => panic!("Failed to store memory: {}", e),
     }
 
-    // Give time for indexing
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // PERF: store_memory awaits full HNSW insertion synchronously — no sleep needed.
 
     // Query with search_periodic — use autoDetect=true since we have no explicit targets
     let result = search_periodic(&handlers, "meeting", None, None, true).await;
@@ -336,7 +334,7 @@ async fn test_search_periodic_auto_detect() {
         "Test memory for auto-detect"
     ).await;
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // PERF: store_memory awaits full HNSW insertion synchronously — no sleep needed.
 
     // Query with auto-detect
     let result = search_periodic(&handlers, "deployment", None, None, true).await;
@@ -385,7 +383,7 @@ async fn test_search_periodic_result_fields() {
         "Test for result fields"
     ).await;
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // PERF: store_memory awaits full HNSW insertion synchronously — no sleep needed.
 
     // Query with specific time targets
     let result = search_periodic(&handlers, "code review", Some(14), Some(5), false).await; // 2pm Friday
@@ -442,7 +440,7 @@ async fn test_search_periodic_day_names() {
         "Test for day names"
     ).await;
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    // PERF: store_memory awaits full HNSW insertion synchronously — no sleep needed.
 
     let result = search_periodic(&handlers, "project planning", None, None, true).await;
 

@@ -387,12 +387,12 @@ pub fn get_all_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamil
 }
 
 /// Total number of column families in a fully configured Context Graph database.
-/// Base (11: 8 original + 3 graph linking) + Teleological (20) + Quantized Embedder (13) + Code (5) + Causal (2) = 51
-/// Teleological 20 = 5 original + 1 content + 1 source_metadata + 1 file_index + 1 topic_portfolio
+/// Base (11: 8 original + 3 graph linking) + Teleological (21) + Quantized Embedder (13) + Code (5) + Causal (2) = 52
+/// Teleological 21 = 5 original + 1 content + 1 source_metadata + 1 file_index + 1 topic_portfolio
 ///   + 1 e12_late_interaction + 1 entity_provenance + 2 audit log + 2 merge/importance history
 ///   + 1 tool call index + 1 consolidation recommendations + 1 embedding registry + 1 custom weight profiles
-///   + 1 hnsw_graphs
-pub const TOTAL_COLUMN_FAMILIES: usize = 51;
+///   + 1 hnsw_graphs + 1 training_records
+pub const TOTAL_COLUMN_FAMILIES: usize = 52;
 
 #[cfg(test)]
 mod tests {
@@ -665,12 +665,11 @@ mod tests {
     #[test]
     fn test_total_column_families_constant() {
         // Verify the constant is correct:
-        // 11 base (8 original + 3 graph linking) + 17 teleological + 13 quantized + 5 code + 2 causal = 48
-        // PRD v6: Autonomous module removed - topics emerge from clustering, not goal hierarchies
-        // Teleological: 15 active + 2 legacy = 17 (includes 2 audit log CFs)
+        // 11 base (8 original + 3 graph linking) + 21 teleological + 13 quantized + 5 code + 2 causal = 52
+        // Teleological: 20 core CFs + CF_TRAINING_RECORDS = 21
         assert_eq!(
-            TOTAL_COLUMN_FAMILIES, 51,
-            "Total column families should be 51 (11 base + 20 teleological + 13 quantized + 5 code + 2 causal)"
+            TOTAL_COLUMN_FAMILIES, 52,
+            "Total column families should be 52 (11 base + 21 teleological + 13 quantized + 5 code + 2 causal)"
         );
     }
 

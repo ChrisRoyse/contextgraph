@@ -164,6 +164,11 @@ impl Handlers {
             tool_names::GET_PROVENANCE_CHAIN => call_get_provenance_chain(arguments),
             // Daemon tools (Multi-agent observability)
             tool_names::DAEMON_STATUS => call_daemon_status(),
+            // Training tools (Training data export)
+            tool_names::EXPORT_TRAINING_CORPUS => call_export_training_corpus(arguments),
+            tool_names::LIST_TRAINING_RECORDS => call_list_training_records(arguments),
+            tool_names::GET_TRAINING_RECORD => call_get_training_record(arguments),
+            tool_names::COUNT_TRAINING_RECORDS => call_count_training_records(),
         )
     }
 }

@@ -114,8 +114,8 @@ fn test_node_metadata_soft_delete_restore_cycle() {
     assert!(!meta.deleted);
     assert!(meta.deleted_at.is_none());
 
-    // Cycle 2 - verify timestamps are fresh
-    std::thread::sleep(std::time::Duration::from_millis(10));
+    // Cycle 2 - verify timestamps are fresh (chrono nanosecond resolution, 1ms is ample)
+    std::thread::sleep(std::time::Duration::from_millis(1));
     meta.mark_deleted();
     assert!(meta.deleted);
     let deleted_at_2 = meta.deleted_at;

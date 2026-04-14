@@ -1,12 +1,17 @@
 //! Initialize Handshake Tests (MCP 2024-11-05 compliance)
+//!
+//! PERF: These tests only exercise JSON-RPC dispatch; they never mutate
+//! storage state, so they all share a single handler fixture via
+//! `shared_readonly_handlers()`. This cuts per-test setup from ~800ms
+//! (fresh RocksDB + warm-load) to ~0ms after the first test.
 
 use crate::protocol::JsonRpcId;
 
-use super::{create_test_handlers, make_request};
+use super::{make_request, shared_readonly_handlers};
 
 #[tokio::test]
 async fn test_initialize_returns_protocol_version_2024_11_05() {
-    let (handlers, _tempdir) = create_test_handlers().await;
+    let handlers = shared_readonly_handlers().await;
     let request = make_request("initialize", Some(JsonRpcId::Number(1)), None);
 
     let response = handlers.dispatch(request).await;
@@ -31,7 +36,7 @@ async fn test_initialize_returns_protocol_version_2024_11_05() {
 
 #[tokio::test]
 async fn test_initialized_notification_no_response_needed() {
-    let (handlers, _tempdir) = create_test_handlers().await;
+    let handlers = shared_readonly_handlers().await;
     // Notifications have no ID
     let request = make_request("notifications/initialized", None, None);
 
@@ -47,7 +52,7 @@ async fn test_initialized_notification_no_response_needed() {
 
 #[tokio::test]
 async fn test_id_echoed_correctly_number() {
-    let (handlers, _tempdir) = create_test_handlers().await;
+    let handlers = shared_readonly_handlers().await;
     let request = make_request("initialize", Some(JsonRpcId::Number(42)), None);
 
     let response = handlers.dispatch(request).await;
@@ -63,7 +68,7 @@ async fn test_id_echoed_correctly_number() {
 
 #[tokio::test]
 async fn test_id_echoed_correctly_string() {
-    let (handlers, _tempdir) = create_test_handlers().await;
+    let handlers = shared_readonly_handlers().await;
     let request = make_request(
         "initialize",
         Some(JsonRpcId::String("request-abc-123".to_string())),
@@ -82,7 +87,7 @@ async fn test_id_echoed_correctly_string() {
 
 #[tokio::test]
 async fn test_id_echoed_on_error() {
-    let (handlers, _tempdir) = create_test_handlers().await;
+    let handlers = shared_readonly_handlers().await;
     let request = make_request("unknown/method", Some(JsonRpcId::Number(999)), None);
 
     let response = handlers.dispatch(request).await;
@@ -98,7 +103,7 @@ async fn test_id_echoed_on_error() {
 
 #[tokio::test]
 async fn test_response_jsonrpc_version_is_2_0() {
-    let (handlers, _tempdir) = create_test_handlers().await;
+    let handlers = shared_readonly_handlers().await;
     let request = make_request("initialize", Some(JsonRpcId::Number(1)), None);
 
     let response = handlers.dispatch(request).await;

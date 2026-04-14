@@ -195,7 +195,7 @@ fn test_uptime_tracking() {
     let uptime1 = checker.uptime();
     assert!(uptime1.as_millis() < 100);
 
-    thread::sleep(Duration::from_millis(10));
+    thread::sleep(Duration::from_millis(1));
 
     let uptime2 = checker.uptime();
     assert!(uptime2 > uptime1);
