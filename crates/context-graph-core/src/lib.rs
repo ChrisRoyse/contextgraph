@@ -33,6 +33,7 @@ pub mod clustering;
 pub mod code;
 pub mod config;
 pub mod constellation;
+pub mod contrastive;
 pub mod embeddings;
 pub mod entity;
 pub mod error;

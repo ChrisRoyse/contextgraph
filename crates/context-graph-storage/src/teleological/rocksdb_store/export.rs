@@ -278,7 +278,10 @@ impl RocksDbTeleologicalStore {
 // ============================================================================
 
 /// Encode a TrainingRecord with version byte prefix.
-fn encode_training_record(record: &TrainingRecord) -> CoreResult<Vec<u8>> {
+///
+/// Exposed publicly so downstream exporters (Phase 6 CLI) can emit bytes that
+/// are byte-for-byte identical to what gets stored in `CF_TRAINING_RECORDS`.
+pub fn encode_training_record(record: &TrainingRecord) -> CoreResult<Vec<u8>> {
     let mut bytes = bincode::serialize(record).map_err(|e| {
         CoreError::SerializationError(format!("bincode serialize TrainingRecord: {}", e))
     })?;
@@ -289,7 +292,10 @@ fn encode_training_record(record: &TrainingRecord) -> CoreResult<Vec<u8>> {
 }
 
 /// Decode a TrainingRecord, rejecting version mismatches.
-fn decode_training_record(bytes: &[u8]) -> CoreResult<TrainingRecord> {
+///
+/// Exposed publicly so downstream reloaders (Phase 6 CLI tests + consumers)
+/// can round-trip the exact wire format.
+pub fn decode_training_record(bytes: &[u8]) -> CoreResult<TrainingRecord> {
     if bytes.is_empty() {
         return Err(CoreError::SerializationError(
             "training record payload is empty (missing version byte)".into(),

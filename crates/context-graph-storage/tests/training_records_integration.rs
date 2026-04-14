@@ -15,7 +15,7 @@ use std::sync::Arc;
 
 use chrono::{TimeZone, Utc};
 use context_graph_core::teleological::synergy_matrix::SynergyMatrix;
-use context_graph_core::teleological::types::NUM_EMBEDDERS;
+use context_graph_core::teleological::types::{NUM_EMBEDDERS, TuckerCore};
 use context_graph_core::training::{
     compute_cross_correlations, compute_group_alignments, extract_temporal_labels, CausalLabel,
     PeriodicBucket, TrainingEdge, TrainingRecord, NUM_CROSS_CORRELATIONS,
@@ -424,5 +424,100 @@ async fn temporal_labels_age_seconds_non_negative_for_past_stored_at() {
         labels.age_seconds_at_export >= 0,
         "age must be non-negative for past stored_at, got {}",
         labels.age_seconds_at_export,
+    );
+}
+
+// -----------------------------------------------------------------------------
+// Phase 4: Tucker-core persistence (verified through RocksDB roundtrip)
+// -----------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn record_with_tucker_core_roundtrips_through_rocksdb() {
+    let (_td, store) = open_store();
+
+    // Construct a deterministic TuckerCore. Default ranks (4, 4, 128) so the
+    // data/factor sizes match TuckerCore::new's invariants exactly:
+    //   data = 4 * 4 * 128 = 2048
+    //   u1   = 13 * 4       = 52
+    //   u2   = 13 * 4       = 52
+    //   u3   = 1024 * 128   = 131072
+    let ranks = (4usize, 4usize, 128usize);
+    let data: Vec<f32> = (0..(ranks.0 * ranks.1 * ranks.2))
+        .map(|i| (i as f32) * 0.001 + 1.0)
+        .collect();
+    let u1: Vec<f32> = (0..(NUM_EMBEDDERS * ranks.0))
+        .map(|i| 0.1 + (i as f32) * 0.0001)
+        .collect();
+    let u2: Vec<f32> = (0..(NUM_EMBEDDERS * ranks.1))
+        .map(|i| 0.2 + (i as f32) * 0.0001)
+        .collect();
+    let u3: Vec<f32> = (0..(1024 * ranks.2))
+        .map(|i| 0.3 + (i as f32) * 0.00001)
+        .collect();
+    let tucker = TuckerCore {
+        ranks,
+        data,
+        u1,
+        u2,
+        u3,
+    };
+
+    let mut rec = synthetic_record("tucker-persist", &[(0, 0.7)]);
+    rec.tucker_core = Some(tucker.clone());
+    let id = rec.memory_id;
+
+    println!(
+        "BEFORE store: tucker.data.len()={}, u1.len()={}, u3.len()={}",
+        tucker.data.len(),
+        tucker.u1.len(),
+        tucker.u3.len(),
+    );
+    store.store_training_record(id, &rec).await.unwrap();
+
+    let back = store.get_training_record(id).await.unwrap().unwrap();
+    let back_tc = back.tucker_core.expect("tucker_core must roundtrip Some");
+    println!(
+        "AFTER get:  tucker.data.len()={}, u1.len()={}, u3.len()={}",
+        back_tc.data.len(),
+        back_tc.u1.len(),
+        back_tc.u3.len(),
+    );
+
+    assert_eq!(back_tc.ranks, ranks);
+    assert_eq!(back_tc.data.len(), tucker.data.len());
+    assert_eq!(back_tc.u1.len(), tucker.u1.len());
+    assert_eq!(back_tc.u2.len(), tucker.u2.len());
+    assert_eq!(back_tc.u3.len(), tucker.u3.len());
+
+    // Byte-for-byte equality on a few sampled entries (don't dump 131K floats to stdout).
+    for idx in [0usize, 1, 2047] {
+        assert_eq!(
+            back_tc.data[idx].to_bits(),
+            tucker.data[idx].to_bits(),
+            "data[{}] bit-mismatch",
+            idx
+        );
+    }
+    for idx in [0usize, 51] {
+        assert_eq!(back_tc.u1[idx].to_bits(), tucker.u1[idx].to_bits());
+        assert_eq!(back_tc.u2[idx].to_bits(), tucker.u2[idx].to_bits());
+    }
+    for idx in [0usize, 1, 131_071] {
+        assert_eq!(back_tc.u3[idx].to_bits(), tucker.u3[idx].to_bits());
+    }
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn record_without_tucker_core_has_none() {
+    let (_td, store) = open_store();
+    let rec = synthetic_record("no-tucker", &[(0, 0.5)]);
+    let id = rec.memory_id;
+    assert!(rec.tucker_core.is_none());
+    store.store_training_record(id, &rec).await.unwrap();
+
+    let back = store.get_training_record(id).await.unwrap().unwrap();
+    assert!(
+        back.tucker_core.is_none(),
+        "tucker_core must remain None when not populated"
     );
 }

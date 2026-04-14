@@ -10,6 +10,7 @@
 //! - `divergence`: Divergence detection commands
 
 pub mod divergence;
+pub mod export_training;
 pub mod hooks;
 pub mod memory;
 pub mod session;

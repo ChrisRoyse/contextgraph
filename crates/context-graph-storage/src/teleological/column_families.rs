@@ -435,7 +435,50 @@ pub const CF_CONSTELLATIONS: &str = "constellations";
 /// - 2MB write buffer (secondary index is append-light)
 pub const CF_CONSTELLATION_BY_SELECTOR: &str = "constellation_by_selector";
 
-/// All teleological column family names (23 total).
+/// Column family for mined contrastive pair records (Phase 3).
+///
+/// Each pair bundles an `(anchor, negative, similarity_profile)` triple ready
+/// for contrastive / metric-learning training, along with the classified
+/// anomaly kind, high/low embedder indices and disagreement magnitude.
+///
+/// Key: `[anchor_uuid: 16B][negative_uuid: 16B]` (32 bytes total). The
+/// composite key guarantees idempotency per `(anchor, negative)`.
+/// Value: `[CONTRASTIVE_PAIR_VERSION: u8][bincode-encoded ContrastivePair]`.
+///
+/// # Storage Details
+/// - LZ4 compression (mostly small dense/ short-text payloads)
+/// - Bloom filter for fast point lookups by composite key
+/// - 32-byte prefix extractor so `[anchor][negative]` stays a stable prefix
+/// - 4MB write buffer (pair records are typically 1-5KB each)
+pub const CF_CONTRASTIVE_PAIRS: &str = "contrastive_pairs";
+
+/// Secondary index CF mapping `[kind:u8][anchor:16B][neg:16B]` → empty bytes
+/// (Phase 3).
+///
+/// Enables O(log N) prefix-scan enumeration of every pair of a given anomaly
+/// kind without reading the primary record payload.
+///
+/// # Storage Details
+/// - LZ4 compression (tiny / empty values — mostly cosmetic)
+/// - Bloom filter for fast existence checks
+/// - 1-byte prefix extractor (kind byte)
+/// - 2MB write buffer (append-light secondary index)
+pub const CF_CONTRASTIVE_BY_KIND: &str = "contrastive_by_kind";
+
+/// Secondary index CF mapping `anchor_uuid: 16B` → `bincode(Vec<Uuid>)` of
+/// every mined negative (Phase 3).
+///
+/// Enables O(1) "list every negative mined for this anchor" lookups. Values
+/// are deduplicated lazily on read.
+///
+/// # Storage Details
+/// - LZ4 compression (UUID lists compress modestly)
+/// - Bloom filter for fast anchor existence checks
+/// - 16-byte prefix extractor (anchor UUID)
+/// - 2MB write buffer
+pub const CF_CONTRASTIVE_BY_ANCHOR: &str = "contrastive_by_anchor";
+
+/// All teleological column family names (26 total — 23 base + 3 contrastive).
 pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_FINGERPRINTS,
     CF_TOPIC_PROFILES,
@@ -460,10 +503,13 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_TRAINING_RECORDS,
     CF_CONSTELLATIONS,
     CF_CONSTELLATION_BY_SELECTOR,
+    CF_CONTRASTIVE_PAIRS,
+    CF_CONTRASTIVE_BY_KIND,
+    CF_CONTRASTIVE_BY_ANCHOR,
 ];
 
 /// Total count of teleological CFs.
-pub const TELEOLOGICAL_CF_COUNT: usize = 23;
+pub const TELEOLOGICAL_CF_COUNT: usize = 26;
 
 // =============================================================================
 // QUANTIZED EMBEDDER COLUMN FAMILIES (13 CFs for per-embedder storage)
@@ -769,6 +815,99 @@ pub fn constellation_by_selector_cf_options(cache: &Cache) -> Options {
     opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
     // 1-byte prefix = selector kind byte. Enables per-kind prefix iteration.
     opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(1));
+    apply_write_buffer_limits(&mut opts, 2);
+    opts.create_if_missing(true);
+    opts
+}
+
+/// Options for `CF_CONTRASTIVE_PAIRS` (Phase 3 primary store).
+///
+/// Key layout: `[anchor_uuid: 16B][negative_uuid: 16B]` (32 bytes). A 32-byte
+/// fixed-prefix extractor pins the whole composite key as the prefix — each
+/// row stands alone, and prefix-seek is a fast lookup for the full key.
+///
+/// # Configuration
+/// - 16KB blocks (pair payloads are 1-5KB after compression)
+/// - LZ4 compression (text + float arrays)
+/// - Bloom filter for fast composite-key lookups
+/// - 32-byte prefix extractor (full composite key)
+/// - 4MB write buffer
+///
+/// # FAIL FAST Policy
+/// No fallback options — let RocksDB error on open if misconfigured.
+pub fn contrastive_pairs_cf_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_block_size(16 * 1024);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.set_compaction_style(rocksdb::DBCompactionStyle::Level);
+    // 32-byte prefix = full composite key `[anchor][neg]`.
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(32));
+    apply_write_buffer_limits(&mut opts, 4);
+    opts.create_if_missing(true);
+    opts
+}
+
+/// Options for `CF_CONTRASTIVE_BY_KIND` (Phase 3 secondary index).
+///
+/// Key layout: `[kind: u8][anchor: 16B][neg: 16B]` (33 bytes). A 1-byte
+/// prefix extractor enables `prefix_iterator_cf(kind_byte)` to enumerate
+/// every pair of a given anomaly kind.
+///
+/// # Configuration
+/// - LZ4 compression (values are empty — compression cosmetic)
+/// - Bloom filter for fast existence checks
+/// - 1-byte prefix extractor (kind byte)
+/// - 2MB write buffer
+///
+/// # FAIL FAST Policy
+/// No fallback options — let RocksDB error on open if misconfigured.
+pub fn contrastive_by_kind_cf_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    // 1-byte prefix = anomaly kind byte.
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(1));
+    apply_write_buffer_limits(&mut opts, 2);
+    opts.create_if_missing(true);
+    opts
+}
+
+/// Options for `CF_CONTRASTIVE_BY_ANCHOR` (Phase 3 secondary index).
+///
+/// Key layout: anchor UUID (16 bytes). Value is a bincode-encoded
+/// `Vec<Uuid>` of every negative mined against that anchor, deduplicated on
+/// read (append-write to avoid a read-modify-write round-trip during
+/// mining).
+///
+/// # Configuration
+/// - LZ4 compression (UUID lists compress modestly)
+/// - Bloom filter for fast anchor existence checks
+/// - 16-byte prefix extractor (anchor UUID)
+/// - 2MB write buffer
+///
+/// # FAIL FAST Policy
+/// No fallback options — let RocksDB error on open if misconfigured.
+pub fn contrastive_by_anchor_cf_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(16));
     apply_write_buffer_limits(&mut opts, 2);
     opts.create_if_missing(true);
     opts
@@ -1213,13 +1352,13 @@ pub fn quantized_embedder_cf_options(cache: &Cache) -> Options {
     opts
 }
 
-/// Get all 23 teleological column family descriptors.
+/// Get all 26 teleological column family descriptors.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 23 `ColumnFamilyDescriptor`s for teleological storage.
+/// Vector of 26 `ColumnFamilyDescriptor`s for teleological storage.
 pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     vec![
         ColumnFamilyDescriptor::new(CF_FINGERPRINTS, fingerprint_cf_options(cache)),
@@ -1274,6 +1413,16 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
             CF_CONSTELLATION_BY_SELECTOR,
             constellation_by_selector_cf_options(cache),
         ),
+        // Phase 3: Contrastive pair miner
+        ColumnFamilyDescriptor::new(CF_CONTRASTIVE_PAIRS, contrastive_pairs_cf_options(cache)),
+        ColumnFamilyDescriptor::new(
+            CF_CONTRASTIVE_BY_KIND,
+            contrastive_by_kind_cf_options(cache),
+        ),
+        ColumnFamilyDescriptor::new(
+            CF_CONTRASTIVE_BY_ANCHOR,
+            contrastive_by_anchor_cf_options(cache),
+        ),
     ]
 }
 
@@ -1306,14 +1455,14 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 
 /// Get ALL teleological + quantized embedder column family descriptors.
 ///
-/// Returns 36 descriptors total: 23 teleological + 13 quantized embedder.
+/// Returns 39 descriptors total: 26 teleological + 13 quantized embedder.
 /// Use this when opening a database that needs both fingerprint and per-embedder storage.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 36 `ColumnFamilyDescriptor`s.
+/// Vector of 39 `ColumnFamilyDescriptor`s.
 ///
 /// # Example
 /// ```ignore
@@ -1322,7 +1471,7 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 ///
 /// let cache = Cache::new_lru_cache(256 * 1024 * 1024); // 256MB
 /// let descriptors = get_all_teleological_cf_descriptors(&cache);
-/// assert_eq!(descriptors.len(), 36); // 23 teleological + 13 embedder
+/// assert_eq!(descriptors.len(), 39); // 26 teleological + 13 embedder
 /// ```
 pub fn get_all_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     let mut descriptors = get_teleological_cf_descriptors(cache);

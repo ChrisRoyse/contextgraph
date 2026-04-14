@@ -29,9 +29,20 @@ pub mod user_prompt_submit;
 
 pub use args::HooksCommands;
 
+// Re-export doc-example types through the canonical `commands::hooks::<Type>`
+// path. The `types` submodule is module-private, but its public doc examples
+// reference these names unqualified. Turning `context-graph-cli` into a
+// library crate (Phase 6) exposed these doctests, which previously compiled
+// only as part of the binary target and were therefore never typechecked.
+// Exposing the types here (without making the whole `types` module public)
+// keeps the intended surface while fixing the doctest imports.
+pub use types::{
+    CoherenceState, DriftMetrics, HookEventType, HookOutput, StabilityClassification,
+    StabilityLevel,
+};
+
 use error::HookResult;
 use tracing::error;
-use types::HookOutput;
 
 /// Convert a hook result to an exit code, printing output JSON to stdout
 /// on success or error JSON to stderr on failure.

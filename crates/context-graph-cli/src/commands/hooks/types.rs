@@ -81,9 +81,13 @@ impl HookEventType {
     }
 }
 
-#[cfg(test)]
 impl HookEventType {
-    /// Get timeout in milliseconds for this hook type (test helper)
+    /// Get timeout in milliseconds for this hook type.
+    ///
+    /// Previously `#[cfg(test)]` — promoted to the full API on 2026-04-14
+    /// because Phase 6 exposed `context-graph-cli` as a library crate and the
+    /// doctest for this method now actually compiles. The values are taken
+    /// directly from the Claude Code hook specification (PRD §3.1).
     pub const fn timeout_ms(&self) -> u64 {
         match self {
             Self::PreToolUse => 500,

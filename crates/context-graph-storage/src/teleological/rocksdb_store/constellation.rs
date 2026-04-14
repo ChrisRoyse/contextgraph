@@ -163,21 +163,26 @@ impl RocksDbTeleologicalStore {
     /// to remove; if the primary record is missing we return `false` without
     /// touching the index.
     pub async fn delete_constellation(&self, id: Uuid) -> CoreResult<bool> {
-        let primary_cf = self.cf_constellations();
-        let index_cf = self.cf_constellation_by_selector();
-
+        // Resolve the selector first (the only `.await` in this function) so
+        // CF handles never cross an await boundary — they are `!Sync` and
+        // `tokio::spawn` would reject the resulting future otherwise.
         let Some(record) = self.get_constellation(id).await? else {
             return Ok(false);
         };
         let index_key = selector_index_key(&record.selector);
+        let id_bytes = *id.as_bytes();
+
+        // Now we can acquire CF handles and do purely synchronous RocksDB I/O.
+        let primary_cf = self.cf_constellations();
+        let index_cf = self.cf_constellation_by_selector();
 
         let mut batch = WriteBatch::default();
-        batch.delete_cf(primary_cf, id.as_bytes());
+        batch.delete_cf(primary_cf, id_bytes);
         // Only delete the secondary index when it still points at this UUID.
         // Avoids clobbering a newer constellation that happens to share the
         // selector.
         match self.db.get_cf(index_cf, &index_key) {
-            Ok(Some(bytes)) if bytes.len() == 16 && bytes == id.as_bytes() => {
+            Ok(Some(bytes)) if bytes.len() == 16 && bytes == id_bytes => {
                 batch.delete_cf(index_cf, &index_key);
             }
             Ok(_) => {

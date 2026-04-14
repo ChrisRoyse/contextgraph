@@ -162,3 +162,15 @@ pub const GET_CONSTELLATION: &str = "get_constellation";
 pub const SCORE_AGAINST_CONSTELLATION: &str = "score_against_constellation";
 /// Delete a constellation and its selector-index entry.
 pub const DELETE_CONSTELLATION: &str = "delete_constellation";
+
+// ========== CONTRASTIVE PAIR TOOLS (Phase 3 miner) ==========
+/// Mine cross-embedder anomaly pairs from the existing corpus and persist
+/// them to `CF_CONTRASTIVE_PAIRS`.
+pub const MINE_CONTRASTIVE_PAIRS: &str = "mine_contrastive_pairs";
+/// List stored contrastive pair keys with paging and optional kind / anchor
+/// filters.
+pub const LIST_CONTRASTIVE_PAIRS: &str = "list_contrastive_pairs";
+/// Fetch one contrastive pair by composite `(anchorId, negativeId)` key.
+pub const GET_CONTRASTIVE_PAIR: &str = "get_contrastive_pair";
+/// Count stored contrastive pairs, optionally filtered by anomaly kind.
+pub const COUNT_CONTRASTIVE_PAIRS: &str = "count_contrastive_pairs";

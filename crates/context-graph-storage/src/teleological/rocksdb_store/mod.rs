@@ -47,8 +47,9 @@ mod causal_hnsw_index;
 mod causal_relationships;
 mod constellation;
 mod content;
+mod contrastive;
 mod crud;
-mod export;
+pub mod export;
 mod file_index;
 mod fusion;
 mod helpers;
@@ -67,6 +68,7 @@ mod tests;
 
 // Re-export all public types for backwards compatibility
 // Audit-14 STOR-L1 FIX: weighted_rrf_fusion and compute_consensus are #[cfg(test)] only.
+pub use export::{decode_training_record, encode_training_record};
 pub use fusion::{weighted_rrf_fusion_with_scores, RRF_K};
 pub use helpers::{compute_cosine_similarity, hex_encode, hnsw_distance_to_similarity};
 pub use store::RocksDbTeleologicalStore;

@@ -40,6 +40,11 @@ uuid = "1.0"
 tracing = { workspace = true }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 
+# Parquet file-format export (Phase 6)
+parquet = { version = "58", default-features = false, features = ["arrow", "zstd", "snap"] }
+arrow-array = "58"
+arrow-schema = "58"
+
 [dev-dependencies]
 tokio-test = "0.4"
 tempfile = "3.10"

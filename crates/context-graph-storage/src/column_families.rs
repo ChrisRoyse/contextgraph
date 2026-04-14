@@ -387,12 +387,13 @@ pub fn get_all_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamil
 }
 
 /// Total number of column families in a fully configured Context Graph database.
-/// Base (11: 8 original + 3 graph linking) + Teleological (23) + Quantized Embedder (13) + Code (5) + Causal (2) = 54
-/// Teleological 23 = 5 original + 1 content + 1 source_metadata + 1 file_index + 1 topic_portfolio
+/// Base (11: 8 original + 3 graph linking) + Teleological (26) + Quantized Embedder (13) + Code (5) + Causal (2) = 57
+/// Teleological 26 = 5 original + 1 content + 1 source_metadata + 1 file_index + 1 topic_portfolio
 ///   + 1 e12_late_interaction + 1 entity_provenance + 2 audit log + 2 merge/importance history
 ///   + 1 tool call index + 1 consolidation recommendations + 1 embedding registry + 1 custom weight profiles
 ///   + 1 hnsw_graphs + 1 training_records + 1 constellations + 1 constellation_by_selector
-pub const TOTAL_COLUMN_FAMILIES: usize = 54;
+///   + 1 contrastive_pairs + 1 contrastive_by_kind + 1 contrastive_by_anchor
+pub const TOTAL_COLUMN_FAMILIES: usize = 57;
 
 #[cfg(test)]
 mod tests {
@@ -665,11 +666,12 @@ mod tests {
     #[test]
     fn test_total_column_families_constant() {
         // Verify the constant is correct:
-        // 11 base (8 original + 3 graph linking) + 23 teleological + 13 quantized + 5 code + 2 causal = 54
-        // Teleological: 20 core CFs + CF_TRAINING_RECORDS + CF_CONSTELLATIONS + CF_CONSTELLATION_BY_SELECTOR = 23
+        // 11 base (8 original + 3 graph linking) + 26 teleological + 13 quantized + 5 code + 2 causal = 57
+        // Teleological: 20 core CFs + CF_TRAINING_RECORDS + CF_CONSTELLATIONS + CF_CONSTELLATION_BY_SELECTOR
+        //   + CF_CONTRASTIVE_PAIRS + CF_CONTRASTIVE_BY_KIND + CF_CONTRASTIVE_BY_ANCHOR = 26
         assert_eq!(
-            TOTAL_COLUMN_FAMILIES, 54,
-            "Total column families should be 54 (11 base + 23 teleological + 13 quantized + 5 code + 2 causal)"
+            TOTAL_COLUMN_FAMILIES, 57,
+            "Total column families should be 57 (11 base + 26 teleological + 13 quantized + 5 code + 2 causal)"
         );
     }
 

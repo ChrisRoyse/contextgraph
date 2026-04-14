@@ -20,7 +20,9 @@ pub fn definitions() -> Vec<ToolDefinition> {
          content, all 13 embedding vectors (dense + sparse + token-level), a \
          13D topic profile, 78 synergy-weighted cross-correlations, 6D group \
          alignments, outgoing typed edges, K-NN neighbors per embedder, and \
-         LLM-discovered causal relationships. Records can be read back via \
+         LLM-discovered causal relationships. Optionally embeds a Tucker-1 \
+         decomposition of the 13x13x1024 interaction tensor when \
+         includeTuckerCore=true (Phase 4, CPU). Records can be read back via \
          `list_training_record_ids` / `get_training_record` at the storage \
          layer. Output is binary (bincode + version byte); no external files.",
         json!({
@@ -77,6 +79,11 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "type": "boolean",
                     "default": true,
                     "description": "Include Phase-5 temporal labels (hour-of-day, day-of-week, periodic bucket, age, session position, E2/E3/E4 norms). Cheap to compute."
+                },
+                "includeTuckerCore": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "Phase-4 Tucker-1 decomposition of the 13x13x1024 embedding interaction tensor at ranks (4, 4, 128). CPU-only streaming HOSVD; adds roughly 18KB per record and a few ms of compute. Off by default because of the cost."
                 },
                 "clearExisting": {
                     "type": "boolean",

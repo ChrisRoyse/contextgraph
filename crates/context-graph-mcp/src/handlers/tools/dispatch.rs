@@ -169,6 +169,17 @@ impl Handlers {
             tool_names::LIST_TRAINING_RECORDS => call_list_training_records(arguments),
             tool_names::GET_TRAINING_RECORD => call_get_training_record(arguments),
             tool_names::COUNT_TRAINING_RECORDS => call_count_training_records(),
+            // Constellation tools (Phase 2 compiler)
+            tool_names::COMPILE_CONSTELLATION => call_compile_constellation(arguments),
+            tool_names::LIST_CONSTELLATIONS => call_list_constellations(arguments),
+            tool_names::GET_CONSTELLATION => call_get_constellation(arguments),
+            tool_names::SCORE_AGAINST_CONSTELLATION => call_score_against_constellation(arguments),
+            tool_names::DELETE_CONSTELLATION => call_delete_constellation(arguments),
+            // Contrastive tools (Phase 3 pair miner)
+            tool_names::MINE_CONTRASTIVE_PAIRS => call_mine_contrastive_pairs(arguments),
+            tool_names::LIST_CONTRASTIVE_PAIRS => call_list_contrastive_pairs(arguments),
+            tool_names::GET_CONTRASTIVE_PAIR => call_get_contrastive_pair(arguments),
+            tool_names::COUNT_CONTRASTIVE_PAIRS => call_count_contrastive_pairs(arguments),
         )
     }
 }

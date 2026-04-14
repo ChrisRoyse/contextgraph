@@ -95,6 +95,9 @@ pub mod comparator;
 // Teleological services (TELEO-007 through TELEO-015)
 pub mod services;
 
+// Streaming HOSVD Tucker-core compressor (Phase 4)
+pub mod tucker;
+
 // Re-exports for convenience
 pub use comparison_error::{ComparisonValidationError, ComparisonValidationResult, WeightValues};
 pub use embedder::{Embedder, EmbedderDims, EmbedderGroup, EmbedderMask};
@@ -110,6 +113,7 @@ pub use meaning::{
 pub use profile::{FusionStrategy, ProfileMetrics, TaskType, TeleologicalProfile};
 pub use resolution::{DomainAlignments, DomainType, MultiResolutionHierarchy, ResolutionView};
 pub use synergy_matrix::{SynergyMatrix, CROSS_CORRELATION_COUNT, SYNERGY_DIM};
+pub use tucker::{CpuTuckerCompressor, TuckerCompressor, TuckerError};
 pub use types::{ProfileId, TopicProfile, TuckerCore, EMBEDDING_DIM, NUM_EMBEDDERS};
 pub use vector::TeleologicalVector;
 

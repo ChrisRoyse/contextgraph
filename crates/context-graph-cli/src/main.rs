@@ -19,14 +19,8 @@
 //! - AP-26: Exit code 1 on error, 2 on corruption
 
 use clap::{Parser, Subcommand};
+use context_graph_cli::commands;
 use tracing_subscriber::{fmt, EnvFilter};
-
-mod commands;
-mod error;
-pub mod mcp_client;
-pub mod mcp_helpers;
-
-pub use error::{exit_code_for_error, is_corruption_indicator, CliExitCode};
 
 /// Context Graph CLI - Memory Management and Hooks Integration
 #[derive(Parser)]
@@ -102,6 +96,32 @@ enum Commands {
     /// Example:
     ///   context-graph-cli watch --path ./docs --session-id my-session
     Watch(commands::watch::WatchArgs),
+    /// File-format exports of persisted artifacts (Phase 6)
+    ///
+    /// Dumps rows from RocksDB column families into flat files for
+    /// downstream consumers (HuggingFace `datasets`, DuckDB, etc.).
+    Export {
+        #[command(subcommand)]
+        sub: ExportSubcommand,
+    },
+}
+
+/// `context-graph-cli export <sub>` targets.
+///
+/// Phase 6 ships the `training-corpus` target (Parquet). Constellations and
+/// contrastive-pair targets are intentionally deferred per plan §8 and will
+/// be added in a later phase.
+#[derive(Subcommand)]
+enum ExportSubcommand {
+    /// Export every row in `CF_TRAINING_RECORDS` to a Parquet file.
+    ///
+    /// Schema: `(memory_id: Utf8, record_bytes: Binary)`. The `record_bytes`
+    /// column is the bincode-with-version-byte payload identical to what
+    /// lives in RocksDB. Decode in Rust via
+    /// `context_graph_storage::teleological::decode_training_record` or in
+    /// Python via the `TRAINING_RECORD_VERSION` + bincode wire contract.
+    #[command(name = "training-corpus")]
+    TrainingCorpus(commands::export_training::ExportTrainingArgs),
 }
 
 #[tokio::main]
@@ -133,6 +153,12 @@ async fn main() {
         Commands::Setup(args) => commands::setup::handle_setup(args).await,
         Commands::Warmup(args) => commands::warmup::handle_warmup(args).await,
         Commands::Watch(args) => commands::watch::handle_watch(args).await,
+        Commands::Export { sub } => match sub {
+            ExportSubcommand::TrainingCorpus(args) => {
+                let result = commands::export_training::run(args).await;
+                commands::export_training::summary_to_exit_code(result)
+            }
+        },
     };
 
     std::process::exit(exit_code);

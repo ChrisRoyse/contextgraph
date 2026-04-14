@@ -85,6 +85,13 @@ pub use column_families::{
     constellations_cf_options,
     CF_CONSTELLATIONS,
     CF_CONSTELLATION_BY_SELECTOR,
+    // Phase 3: Contrastive pair miner CFs
+    contrastive_by_anchor_cf_options,
+    contrastive_by_kind_cf_options,
+    contrastive_pairs_cf_options,
+    CF_CONTRASTIVE_BY_ANCHOR,
+    CF_CONTRASTIVE_BY_KIND,
+    CF_CONTRASTIVE_PAIRS,
     // TASK-CONTENT-001: Content column family
     CF_CONTENT,
     // TASK-STORAGE-P2-001: E12 Late Interaction column family constant
@@ -194,8 +201,8 @@ pub use indexes::{
 
 // Re-export RocksDB teleological store (TASK: RocksDbTeleologicalStore)
 pub use rocksdb_store::{
-    RocksDbTeleologicalStore, TeleologicalStoreConfig, TeleologicalStoreError,
-    TeleologicalStoreResult,
+    decode_training_record, encode_training_record, RocksDbTeleologicalStore,
+    TeleologicalStoreConfig, TeleologicalStoreError, TeleologicalStoreResult,
 };
 
 // Re-export search types (TASK-LOGIC-005)

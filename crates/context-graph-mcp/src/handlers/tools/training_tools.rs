@@ -33,6 +33,9 @@ use std::time::Instant;
 
 use context_graph_core::graph_linking::TypedEdge;
 use context_graph_core::teleological::synergy_matrix::SynergyMatrix;
+use context_graph_core::teleological::tucker::{
+    CpuTuckerCompressor, TuckerCompressor, DEFAULT_RANKS,
+};
 use context_graph_core::teleological::types::NUM_EMBEDDERS;
 use context_graph_core::training::{
     compute_cross_correlations, compute_group_alignments, extract_temporal_labels,
@@ -107,6 +110,10 @@ impl Handlers {
             .get("includeTemporalLabels")
             .and_then(|v| v.as_bool())
             .unwrap_or(true);
+        let include_tucker_core = args
+            .get("includeTuckerCore")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
         let clear_existing = args
             .get("clearExisting")
             .and_then(|v| v.as_bool())
@@ -239,6 +246,7 @@ impl Handlers {
                     include_causal,
                     include_incoming_resolved,
                     include_temporal_labels,
+                    include_tucker_core,
                 )
                 .await
             {
@@ -296,6 +304,7 @@ impl Handlers {
                     "incoming_edges_included": include_incoming_resolved,
                     "causal_labels_included": include_causal,
                     "temporal_labels_included": include_temporal_labels,
+                    "tucker_core_included": include_tucker_core,
                     "cross_correlations": 78,
                     "group_alignments": 6,
                     "topic_profile_dims": NUM_EMBEDDERS
@@ -329,6 +338,7 @@ impl Handlers {
         include_causal: bool,
         include_incoming: bool,
         include_temporal_labels: bool,
+        include_tucker_core: bool,
     ) -> Result<TrainingRecord, String> {
         // Content
         let content = self
@@ -480,6 +490,23 @@ impl Handlers {
             None
         };
 
+        // Phase-4 Tucker-core decomposition (CPU, streaming HOSVD).
+        // Runs against the live SemanticFingerprint, not the gated record fields
+        // — so the decomposition quality is independent of includeEmbeddings.
+        // Failures are logged and leave tucker_core=None so the rest of the
+        // record still persists.
+        let tucker_core = if include_tucker_core {
+            match CpuTuckerCompressor.compress(&fp.semantic, DEFAULT_RANKS) {
+                Ok(core) => Some(core),
+                Err(e) => {
+                    warn!(id = %fp.id, error = %e, "tucker compress failed; tucker_core=None");
+                    None
+                }
+            }
+        } else {
+            None
+        };
+
         Ok(TrainingRecord {
             memory_id: fp.id,
             content,
@@ -517,7 +544,7 @@ impl Handlers {
             causal_causes: Vec::new(),
             topic_memberships: Vec::new(),
             temporal_labels,
-            tucker_core: None,
+            tucker_core,
         })
     }
 
@@ -800,6 +827,17 @@ fn render_training_record(
             "e2_recency_norm": t.e2_recency_norm,
             "e3_periodic_norm": t.e3_periodic_norm,
             "e4_positional_norm": t.e4_positional_norm,
+        });
+    }
+
+    if let Some(tc) = r.tucker_core.as_ref() {
+        obj["tucker_core"] = json!({
+            "ranks": [tc.ranks.0, tc.ranks.1, tc.ranks.2],
+            "data_len": tc.data.len(),
+            "u1_len": tc.u1.len(),
+            "u2_len": tc.u2.len(),
+            "u3_len": tc.u3.len(),
+            "compression_ratio": tc.compression_ratio(),
         });
     }
 

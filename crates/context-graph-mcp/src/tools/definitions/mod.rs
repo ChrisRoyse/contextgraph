@@ -18,6 +18,7 @@ pub(crate) mod causal;
 pub(crate) mod causal_discovery;
 pub(crate) mod code;
 pub(crate) mod constellation;
+pub(crate) mod contrastive;
 pub(crate) mod core;
 pub(crate) mod curation;
 pub(crate) mod daemon;
@@ -108,6 +109,9 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Constellation tools (5) - Phase 2 compiler + read/score/delete
     tools.extend(constellation::definitions());
 
+    // Contrastive pair tools (4) - Phase 3 miner + read surface
+    tools.extend(contrastive::definitions());
+
     tools
 }
 
@@ -119,9 +123,9 @@ mod tests {
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
         #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 67);
+        assert_eq!(tools.len(), 71);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(tools.len(), 63);
+        assert_eq!(tools.len(), 67);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -156,6 +160,7 @@ mod tests {
         assert_eq!(daemon::definitions().len(), 1);
         assert_eq!(training::definitions().len(), 4);
         assert_eq!(constellation::definitions().len(), 5);
+        assert_eq!(contrastive::definitions().len(), 4);
         // Audit-12 TST-H2 FIX: graph and causal_discovery are LLM-gated, must be tested
         #[cfg(feature = "llm")]
         {

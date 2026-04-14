@@ -168,11 +168,15 @@ async fn test_e2e_tools_list_all_tools() {
         );
     }
 
-    // Audit-12 TST-H3 FIX: Exact assertion (this test is #[cfg(feature = "llm")])
+    // Audit-12 TST-H3 FIX: Exact assertion (this test is #[cfg(feature = "llm")]).
+    // 2026-04-14: Bumped 58 → 71 after the training-data-export phase added 13 tools:
+    //   Phase 1 (4): export_training_corpus, list_training_records, get_training_record, count_training_records
+    //   Phase 2 (5): compile_constellation, list_constellations, get_constellation, score_against_constellation, delete_constellation
+    //   Phase 3 (4): mine_contrastive_pairs, list_contrastive_pairs, get_contrastive_pair, count_contrastive_pairs
     assert_eq!(
         tools.len(),
-        58,
-        "Expected exactly 58 tools with LLM feature, found {}",
+        71,
+        "Expected exactly 71 tools with LLM feature, found {}",
         tools.len()
     );
 

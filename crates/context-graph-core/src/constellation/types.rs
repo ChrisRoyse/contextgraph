@@ -58,8 +58,11 @@ pub struct Constellation {
     /// Always length `CROSS_CORRELATION_CENTROID_DIM` (78).
     pub cross_correlation_centroid: Vec<f32>,
 
-    /// Mean cosine of members against the E1 centroid. 1.0 = perfect agreement,
-    /// 0.0 = orthogonal on average, negative = anti-correlated.
+    /// Median (p50) cosine of members against the E1 centroid, sampled via a
+    /// bounded reservoir. 1.0 = perfect agreement, 0.0 = orthogonal on
+    /// average, negative = anti-correlated. Using the median rather than the
+    /// mean keeps coherence robust to outliers when a constellation contains
+    /// one or two distant members.
     pub coherence: f32,
     /// Topic purity, in `[0.0, 1.0]`. Populated only when the selector is
     /// `Topic { .. }`; `None` for all other selectors.
