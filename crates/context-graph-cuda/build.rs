@@ -55,7 +55,11 @@ fn compile_cuda_kernels() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set by cargo"));
 
     // Target architecture: RTX 5090 = Compute Capability 12.0 = sm_120
-    let cuda_arch = env::var("CUDA_ARCH").unwrap_or_else(|_| "sm_120".to_string());
+    // Default to sm_120a (Blackwell consumer family-specific) for tighter SASS
+    // — sm_120a unlocks family features (FP4/FP6 Tensor Core operands) that
+    // the generic sm_120 PTX does not. Override with CUDA_ARCH=sm_120 if you
+    // need to target the broader Blackwell family without the consumer suffix.
+    let cuda_arch = env::var("CUDA_ARCH").unwrap_or_else(|_| "sm_120a".to_string());
 
     // Find nvcc
     let nvcc = find_nvcc();
@@ -217,18 +221,27 @@ fn compile_kernel_to_ptx(
         .map(|f| f.split_whitespace().map(String::from).collect())
         .unwrap_or_default();
 
-    // Extract compute capability from arch (sm_120 -> compute_120)
+    // Extract compute capability from arch (sm_120 -> compute_120, sm_120a -> compute_120a)
     let compute = arch.replace("sm_", "compute_");
 
-    // Compile to PTX
-    // --ptx: Generate PTX assembly
-    // -O3: Highest optimization level
-    // -arch: Target virtual architecture for PTX
+    // Compile to PTX with Blackwell-tuned flags.
+    // --ptx           : Generate PTX assembly (Driver API loads it via cuModuleLoadData)
+    // -O3             : Highest nvcc optimization level
+    // -arch <compute_120(a)>: Target virtual architecture
+    // -Xptxas -O3     : PTX assembler also at max optimization (ptxas runs at JIT;
+    //                   higher level = better SASS at first kernel launch)
+    // --use_fast_math : Acceptable for embedding workloads (cosines, L2 norms, dots —
+    //                   1-ULP tolerance suffices). Enables fast division / sin/cos.
+    // --restrict      : Treat __restrict__ pointers strictly (better aliasing analysis)
+    // -DNDEBUG        : Strip asserts
     let mut compile_cmd = Command::new(nvcc);
     compile_cmd
         .arg("--ptx")
         .arg("-O3")
         .args(["-arch", &compute])
+        .args(["-Xptxas", "-O3"])
+        .arg("--use_fast_math")
+        .arg("--restrict")
         .arg("-DNDEBUG")
         .args(&extra_flags)
         .args(["-o", ptx_path.to_str().unwrap()])

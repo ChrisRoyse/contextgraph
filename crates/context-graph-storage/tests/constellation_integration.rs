@@ -542,3 +542,87 @@ async fn multi_get_parallel_slice() {
     assert_eq!(results[0].as_ref().unwrap().id, c1.id);
     assert_eq!(results[2].as_ref().unwrap().id, c2.id);
 }
+
+// ---------------------------------------------------------------------------
+// 11. store_constellation atomically swaps the primary row when the selector
+//     index already points at a different UUID (rebuildIfExists=true path).
+//     Regression test for the orphan-on-rebuild defect documented in
+//     ./memory/discoveries/agent-08-code-simplifier--concern-2-rebuild-orphan.md.
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn rebuild_for_same_selector_atomically_deletes_old_primary() {
+    let (_td, store) = open_store();
+    let selector = ConstellationSelector::Session {
+        session_id: "rebuild-swap-test".into(),
+    };
+
+    // First store under selector S.
+    let old = hand_built_constellation(selector.clone());
+    let old_id = old.id;
+    store.store_constellation(&old).await.unwrap();
+
+    // Second store under the SAME selector but a fresh UUID — simulates
+    // compile_constellation(..., rebuildIfExists=true) where the accumulator
+    // generates a new Uuid::new_v4() inside `finalize`.
+    let new = hand_built_constellation(selector.clone());
+    let new_id = new.id;
+    assert_ne!(old_id, new_id, "sanity: test fixtures must use different UUIDs");
+    store.store_constellation(&new).await.unwrap();
+
+    // Primary CF must contain ONLY the new record — the old one must have
+    // been deleted in the same batch, not orphaned.
+    let ids: Vec<_> = store.list_constellation_ids().await.unwrap();
+    assert!(
+        ids.contains(&new_id),
+        "new UUID must be present in primary CF (got {ids:?})"
+    );
+    assert!(
+        !ids.contains(&old_id),
+        "old UUID must be GONE from primary CF after rebuild — this is the \
+         orphan-prevention invariant (got {ids:?})"
+    );
+    assert_eq!(
+        ids.len(),
+        1,
+        "primary CF must have exactly one row for one selector; got {ids:?}"
+    );
+
+    // Secondary index must resolve to the new UUID.
+    let by_sel = store
+        .find_constellation_by_selector(&selector)
+        .await
+        .unwrap();
+    assert_eq!(by_sel, Some(new_id));
+
+    // Direct point-get on the old UUID returns None (confirms primary deletion).
+    let gone = store.get_constellation(old_id).await.unwrap();
+    assert!(
+        gone.is_none(),
+        "get_constellation(old_id) must return None after atomic swap"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// 12. Re-storing the SAME UUID (idempotent case) must NOT delete the record
+//     (it's the same primary key, and delete-then-put in the same batch
+//     could surface ordering surprises). Covers the second branch of the
+//     probe-index match in store_constellation.
+// ---------------------------------------------------------------------------
+
+#[tokio::test(flavor = "multi_thread")]
+async fn restore_same_uuid_is_idempotent_and_keeps_the_row() {
+    let (_td, store) = open_store();
+    let selector = ConstellationSelector::Tag { tag: "restore-same".into() };
+    let c = hand_built_constellation(selector.clone());
+    let c_id = c.id;
+
+    store.store_constellation(&c).await.unwrap();
+    store.store_constellation(&c).await.unwrap(); // re-store same UUID
+
+    let ids: Vec<_> = store.list_constellation_ids().await.unwrap();
+    assert_eq!(ids, vec![c_id]);
+    let back = store.get_constellation(c_id).await.unwrap();
+    assert!(back.is_some());
+    assert_eq!(back.unwrap().id, c_id);
+}

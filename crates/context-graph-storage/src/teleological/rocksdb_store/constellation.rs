@@ -61,19 +61,51 @@ impl RocksDbTeleologicalStore {
     /// entry is keyed by `[selector_kind_byte][sha256(canonical_selector)[..16]]`
     /// and maps to the same UUID.
     ///
-    /// Re-stores are idempotent — the primary record and the index entry are
-    /// overwritten in place. When the selector's canonical form maps to an
-    /// index entry that already points at a different constellation UUID,
-    /// the index is updated to point to the new UUID (the old record is **not**
-    /// automatically deleted; call `delete_constellation` on the stale id if
-    /// needed).
+    /// Re-stores are idempotent. When the selector's canonical form already
+    /// maps to a DIFFERENT constellation UUID (the rebuild-with-new-id case
+    /// triggered by `compile_constellation(..., rebuildIfExists=true)`), the
+    /// old primary row is deleted in the same `WriteBatch` so the previous
+    /// record does not become an unreachable orphan. All three operations —
+    /// delete-old-primary, put-new-primary, put-new-index — are atomic.
     pub async fn store_constellation(&self, c: &Constellation) -> CoreResult<()> {
         let payload = encode_constellation(c)?;
         let primary_cf = self.cf_constellations();
         let index_cf = self.cf_constellation_by_selector();
         let index_key = selector_index_key(&c.selector);
+        let new_id_bytes = *c.id.as_bytes();
+
+        // Probe the current index pointer. If it already points at a different
+        // UUID, that prior primary row is about to become unreachable — delete
+        // it in the same WriteBatch to preserve the invariant "at most one
+        // primary row per selector". A pointer equal to our new UUID (re-store
+        // of the same record) or no prior entry at all needs no cleanup.
+        let prior_id: Option<[u8; 16]> = match self.db.get_cf(index_cf, &index_key) {
+            Ok(Some(bytes)) if bytes.len() == 16 && bytes.as_slice() != new_id_bytes => {
+                let mut buf = [0u8; 16];
+                buf.copy_from_slice(&bytes);
+                Some(buf)
+            }
+            Ok(_) => None,
+            Err(e) => {
+                error!(
+                    id = %c.id,
+                    error = %e,
+                    "ROCKSDB ERROR: Failed to probe selector index before store"
+                );
+                return Err(TeleologicalStoreError::rocksdb_op(
+                    "store_constellation.probe_index",
+                    CF_CONSTELLATION_BY_SELECTOR,
+                    Some(c.id),
+                    e,
+                )
+                .into());
+            }
+        };
 
         let mut batch = WriteBatch::default();
+        if let Some(old) = prior_id.as_ref() {
+            batch.delete_cf(primary_cf, old);
+        }
         batch.put_cf(primary_cf, c.id.as_bytes(), &payload);
         batch.put_cf(index_cf, &index_key, c.id.as_bytes());
 
@@ -91,12 +123,21 @@ impl RocksDbTeleologicalStore {
             )
         })?;
 
-        debug!(
-            id = %c.id,
-            members = c.member_count,
-            bytes = payload.len(),
-            "Stored constellation + selector index"
-        );
+        if let Some(old) = prior_id {
+            debug!(
+                new_id = %c.id,
+                old_id = %Uuid::from_bytes(old),
+                members = c.member_count,
+                "Replaced prior constellation for selector (atomic swap)"
+            );
+        } else {
+            debug!(
+                id = %c.id,
+                members = c.member_count,
+                bytes = payload.len(),
+                "Stored constellation + selector index"
+            );
+        }
         Ok(())
     }
 

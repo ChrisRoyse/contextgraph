@@ -50,12 +50,23 @@ pub struct Constellation {
     /// Length is always `NUM_CONSTELLATION_EMBEDDERS` (13).
     pub per_embedder: Vec<EmbedderStats>,
 
-    /// Mean 13D topic profile across all members.
+    /// Mean 13D topic profile across all members. **SILENT-ZERO WARNING**:
+    /// compiler only observes this when `stored_topic_profile = Some(_)`
+    /// (read from `CF_TOPIC_PROFILES`). On a fresh DB before the clustering
+    /// pipeline has populated that CF, every member yields `None` and the
+    /// Welford accumulator stays at `count = 0`, so this field serializes as
+    /// all-zeros. An all-zero `topic_profile_centroid` is therefore
+    /// indistinguishable from "no observations" — callers that need
+    /// high-confidence topic centroids should check that at least one
+    /// non-zero slot exists before trusting this field, or use
+    /// [`Self::has_topic_profile_signal`].
     pub topic_profile_centroid: [f32; TOPIC_PROFILE_CENTROID_DIM],
-    /// Mean 6D group alignment across all members.
+    /// Mean 6D group alignment across all members. **SILENT-ZERO WARNING**:
+    /// derived from `topic_profile_centroid`; identical caveat applies.
     pub group_alignment_centroid: [f32; GROUP_ALIGNMENT_CENTROID_DIM],
-    /// Mean 78-entry cross-correlation vector across all members.
-    /// Always length `CROSS_CORRELATION_CENTROID_DIM` (78).
+    /// Mean 78-entry cross-correlation vector across all members. Always
+    /// length `CROSS_CORRELATION_CENTROID_DIM` (78). **SILENT-ZERO WARNING**:
+    /// derived from `topic_profile_centroid`; identical caveat applies.
     pub cross_correlation_centroid: Vec<f32>,
 
     /// Median (p50) cosine of members against the E1 centroid, sampled via a
@@ -67,6 +78,25 @@ pub struct Constellation {
     /// Topic purity, in `[0.0, 1.0]`. Populated only when the selector is
     /// `Topic { .. }`; `None` for all other selectors.
     pub purity: Option<f32>,
+}
+
+impl Constellation {
+    /// Returns `true` when at least one slot of `topic_profile_centroid` is
+    /// non-zero. Because topic profiles are SRC-3-normalized alignments in
+    /// `[0, 1]` and a real member essentially always has a non-empty vector
+    /// for some embedder, an all-zero centroid reliably indicates that
+    /// `stored_topic_profile` was `None` for every member (e.g., fresh DB,
+    /// clustering pipeline has not yet populated `CF_TOPIC_PROFILES`) —
+    /// **not** that the members' topic signal actually averaged to zero.
+    ///
+    /// Callers that want to condition behavior on topic-centroid
+    /// trustworthiness should prefer this helper over raw `.iter().any(...)`
+    /// so the intent is obvious at the call site.
+    pub fn has_topic_profile_signal(&self) -> bool {
+        self.topic_profile_centroid
+            .iter()
+            .any(|&x| x != 0.0)
+    }
 }
 
 /// How a constellation's member set was chosen.
