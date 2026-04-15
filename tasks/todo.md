@@ -1,66 +1,61 @@
-# Training-Data Export Plan — Implementation Todo
+# Typed-Edge Training-Data Factory — TODO
 
-**Plan**: `docs/TRAINING_DATA_EXPORT_PLAN.md`
-**Session**: training-impl-2026-04-14
-**Coordination**: all agents store/retrieve memories via context-graph MCP with `sessionId="training-impl-2026-04-14"`. Final summary memories are tagged with `IMPL-PHASE-<N>-DONE` in the content so later agents can `search_graph` for them.
+## Status Key
+- [ ] = todo
+- [~] = in progress
+- [x] = done
+- [!] = blocked (see `memory/blockers/`)
 
-## Phase 1 — TrainingRecord v2 foundation (Agent A)
-- [ ] CF_TRAINING_RECORDS column family: const, options, descriptor list, counts bumped 51→52 and 20→21, tests updated
-- [ ] `uuid_prefixed_cf_options` helper introduced and reused
-- [ ] `context_graph_core::training::{TrainingRecord, TrainingEdge, KnnNeighbor, CausalLabel, TopicMembership}`
-- [ ] Topic profile **read from `CF_TOPIC_PROFILES`**, not derived from vector magnitudes
-- [ ] `CausalLabel` stores `rel_id: Uuid` (always) + `related_memory_id: Uuid` (peer when resolvable else nil)
-- [ ] Session filter does `get_source_metadata(id)` exactly once per memory
-- [ ] `includeIncomingEdges=true` builds reverse index once (`HashMap<Uuid, Vec<TrainingEdge>>`)
-- [ ] `list_training_records(includeShape=true)` uses `multi_get_cf` batch reads
-- [ ] `arm_doomsday_watchdog` logs-and-continues on spawn failure (no panic)
-- [ ] Version byte + bincode encoding with shared `encode_v1` / `decode_v1`
-- [ ] MCP surface: `export_training_corpus`, `list_training_records`, `get_training_record`, `count_training_records`
-- [ ] FSV-1 through FSV-6 green
+## Phase 1: Spec & Architecture
+- [x] Bootstrap memory context (mission-brief-typed-edges-v1.md, current-phase-typed-edges-v1.md)
+- [~] Agent-01 architect produces implementation spec
 
-## Phase 5 — Temporal labels (folded into Agent A)
-- [ ] `TemporalLabels { stored_hour_utc, day_of_week, month, age_seconds, session_sequence, relative_position, periodic_bucket, e2/e3/e4 norms }`
-- [ ] `PeriodicBucket` enum (Weekday/Weekend × Morning/Afternoon/Evening/Night)
-- [ ] `TrainingRecord.temporal_labels: Option<TemporalLabels>` populated when `includeTemporalLabels=true`
-- [ ] FSV-19..FSV-22 green
+## Phase 2: Core Types (context-graph-core) — DONE (with coordinator-applied fixes)
+- [x] Bump TRAINING_RECORD_VERSION to 2 (NO backwards compat)
+- [x] Add `edge_type_distribution: [u32; 8]` to TrainingRecord
+- [x] Define `TypedEdgeTrainingRecord` struct + TYPED_EDGE_RECORD_VERSION constant
+- [x] Define `LLMEdgeValidation` struct + LLM_EDGE_VALIDATION_VERSION constant
+- [x] Define `LLMVerdict` enum (Valid | Invalid | Reclassify { new_type: u8 })
+- [x] Unit tests for bincode roundtrip of all three new types
+- [x] Fix 4 downstream call sites (MCP handler, 3 test fixtures) — coordinator fix, agent missed them
+- [x] `cargo check --workspace --all-targets` clean
 
-## Phase 2 — Constellation compiler (Agent B, reads Phase-1 memories)
-- [ ] `CF_CONSTELLATIONS` + `CF_CONSTELLATION_BY_SELECTOR` CFs
-- [ ] `context_graph_core::constellation::{Constellation, ConstellationSelector, EmbedderStats, VectorKind}`
-- [ ] Welford running-stats + 1024-sample reservoir for percentiles
-- [ ] MCP: `compile_constellation`, `list_constellations`, `get_constellation`, `score_against_constellation`, `delete_constellation`
-- [ ] FSV-7..FSV-10 green
+## Phase 3: Storage (context-graph-storage) — DONE
+- [x] Add `CF_TYPED_EDGE_RECORDS` + `CF_TYPED_EDGE_VALIDATIONS` to column_families.rs
+- [x] Bump `TOTAL_COLUMN_FAMILIES` 57 → 59
+- [x] Bump `TELEOLOGICAL_CF_COUNT` 26 → 28
+- [x] `store/get/list/count_typed_edge_record` in new module `rocksdb_store/typed_edge_export.rs`
+- [x] `store/get_llm_edge_validation` in `rocksdb_store/llm_validation.rs`
+- [x] `derive_anomalies_from_edges` helper with `classify_edge_as_anomaly` classifier
+- [x] `AnomalyKind` got `Hash` derive so `per_kind_counts: HashMap<AnomalyKind, usize>` compiles
+- [x] 3 real-data integration tests passing (25 tests total: 7 + 7 + 11)
+- [x] `cargo check --workspace --all-targets` + `cargo test -p context-graph-storage` both green
 
-## Phase 3 — Contrastive pair miner (Agent C, reads Phase-1 memories)
-- [ ] `CF_CONTRASTIVE_PAIRS` + `CF_CONTRASTIVE_BY_KIND` + `CF_CONTRASTIVE_BY_ANCHOR`
-- [ ] `ContrastivePair`, `AnomalyKind` enum
-- [ ] Miner reuses existing `search_cross_embedder_anomalies` logic
-- [ ] MCP: `mine_contrastive_pairs`, `list_contrastive_pairs`, `get_contrastive_pair`, `count_contrastive_pairs`
-- [ ] FSV-11..FSV-14 green
+## Phase 4: MCP Tools (context-graph-mcp)
+- [ ] `export_typed_edges_corpus` tool
+- [ ] `derive_anomalies_from_edges` tool
+- [ ] `validate_low_confidence_edges` tool (LLM-gated)
+- [ ] `list_typed_edge_records` tool
+- [ ] Update `tools/names.rs` (71 → 75)
 
-## Phase 4 — Tucker-core export (Agent D, reads Phase-1 memories)
-- [ ] `CpuTuckerCompressor` via streaming HOSVD (never materialize full 13×13×1024 tensor)
-- [ ] `TrainingRecord.tucker_core: Option<TuckerCore>` populated when `includeTuckerCore=true`
-- [ ] FSV-15..FSV-18 green
-- [ ] GPU path deferred unless trivial; document the deferral
+## Phase 5: Integration Tests (NO MOCKS)
+- [ ] `storage/tests/typed_edge_export_integration.rs`
+- [ ] `storage/tests/llm_validation_integration.rs` (structural-only when LLM disabled)
+- [ ] `storage/tests/anomaly_derivation_integration.rs`
+- [ ] `core/src/training/tests.rs` — `edge_type_distribution` sum assertions
+- [ ] `mcp/src/handlers/tests/typed_edges_tools.rs`
 
-## Phase 6 — File-format CLI (Agent E, reads all prior phases)
-- [x] `context-graph-cli export training-corpus --format parquet --out <path>`
-- [x] Parquet first (HuggingFace datasets ecosystem), add HDF5/safetensors later
-- [x] CLI reads from CFs via the shared helpers (no duplicate logic)
-- [x] FSV: dump to file, reload via `parquet` reader, assert roundtrip
+## Phase 6: Full State Verification (Manual, Me)
+- [ ] `cargo check --workspace` clean
+- [ ] `cargo test --workspace` clean
+- [ ] MCP daemon tools/list count = 75
+- [ ] Synthetic happy path end-to-end
+- [ ] Edge cases: empty CF, malformed record, version mismatch
 
-## Phase 7 — Code-simplifier review (Agent F)
-- [ ] Reviews all of Phases 1-6
-- [ ] Findings applied before final FSV
+## Phase 7: Simplifier + Commit
+- [ ] code-simplifier review
+- [ ] `tasks/typed_edges_fsv_report.md`
+- [ ] Git commit + push
 
-## Final — Full-state verification (me)
-- [ ] Build: `cargo build --release -p context-graph-mcp` with `CUDARC_CUDA_VERSION=13000` — zero errors, zero warnings
-- [ ] Tests: `cargo test --workspace` — all green
-- [ ] Zombie: `python3 tests/test_no_zombies.py` — 4/4 pass
-- [ ] Harness: `python3 tests/fsv_harness.py` — happy path + all edge cases pass
-- [ ] Live MCP verification: ingest synthetic data → export → read back → math identities hold
-- [ ] All 22 FSV items (FSV-1..FSV-22) green
-
-## Review / retrospective
-(To be filled after each phase — what worked, what needed rework.)
+## Review
+_To be filled in after phases complete._

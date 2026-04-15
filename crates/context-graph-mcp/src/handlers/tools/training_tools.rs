@@ -507,6 +507,18 @@ impl Handlers {
             None
         };
 
+        // F3: derive the 8-dim relational signature directly from outgoing
+        // TrainingEdges. Matches the storage-layer exporter's formula so the
+        // two codepaths produce identical records for the same fingerprint.
+        let mut edge_type_distribution =
+            [0u32; context_graph_core::training::NUM_EDGE_TYPE_DISTRIBUTION];
+        for e in outgoing_edges.iter() {
+            let idx = e.edge_type as usize;
+            if idx < edge_type_distribution.len() {
+                edge_type_distribution[idx] = edge_type_distribution[idx].saturating_add(1);
+            }
+        }
+
         Ok(TrainingRecord {
             memory_id: fp.id,
             content,
@@ -545,6 +557,7 @@ impl Handlers {
             topic_memberships: Vec::new(),
             temporal_labels,
             tucker_core,
+            edge_type_distribution,
         })
     }
 

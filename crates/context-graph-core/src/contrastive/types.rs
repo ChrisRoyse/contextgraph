@@ -44,7 +44,7 @@ pub const DEFAULT_TOP_K_CANDIDATES_PER_ANCHOR: usize = 10;
 /// On-disk encoding: serialized as a single `u8` via [`AnomalyKind::as_u8`] /
 /// [`AnomalyKind::from_u8`]. The secondary index
 /// `CF_CONTRASTIVE_BY_KIND` uses that same byte as the first key prefix.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum AnomalyKind {
     /// High E1 (semantic), low E5 (causal): memories are semantically similar
     /// but structurally unrelated on the causal axis.

@@ -42,6 +42,7 @@
 //! - `trait_impl`: TeleologicalMemoryStore trait implementation (thin wrapper)
 //! - `tests`: Comprehensive test suite
 
+mod anomaly_derivation;
 mod audit_log;
 mod causal_hnsw_index;
 mod causal_relationships;
@@ -55,23 +56,33 @@ mod fusion;
 mod helpers;
 mod index_ops;
 mod inverted_index;
+mod llm_validation;
 mod persistence;
 mod provenance_storage;
 mod search;
 mod source_metadata;
 mod store;
 mod trait_impl;
+pub mod typed_edge_export;
+mod typed_edge_keys;
 mod types;
+mod versioned_bincode;
 
 #[cfg(test)]
 mod tests;
 
 // Re-export all public types for backwards compatibility
 // Audit-14 STOR-L1 FIX: weighted_rrf_fusion and compute_consensus are #[cfg(test)] only.
+pub use anomaly_derivation::{
+    classify_edge_as_anomaly, AnomalyDerivationConfig, AnomalyDerivationSummary,
+};
 pub use export::{decode_training_record, encode_training_record};
 pub use fusion::{weighted_rrf_fusion_with_scores, RRF_K};
 pub use helpers::{compute_cosine_similarity, hex_encode, hnsw_distance_to_similarity};
+pub use llm_validation::{decode_llm_edge_validation, encode_llm_edge_validation};
 pub use store::RocksDbTeleologicalStore;
+pub use typed_edge_export::{decode_typed_edge_record, encode_typed_edge_record};
+pub use typed_edge_keys::typed_edge_record_key;
 pub use types::{TeleologicalStoreConfig, TeleologicalStoreError, TeleologicalStoreResult};
 
 // Re-export core file index types for convenience

@@ -180,6 +180,11 @@ impl Handlers {
             tool_names::LIST_CONTRASTIVE_PAIRS => call_list_contrastive_pairs(arguments),
             tool_names::GET_CONTRASTIVE_PAIR => call_get_contrastive_pair(arguments),
             tool_names::COUNT_CONTRASTIVE_PAIRS => call_count_contrastive_pairs(arguments),
+            // Typed-edge training tools (Phase 4 — F1/F2/F4 + list)
+            tool_names::EXPORT_TYPED_EDGES_CORPUS => call_export_typed_edges_corpus(arguments),
+            tool_names::DERIVE_ANOMALIES_FROM_EDGES => call_derive_anomalies_from_edges(arguments),
+            tool_names::VALIDATE_LOW_CONFIDENCE_EDGES => call_validate_low_confidence_edges(arguments),
+            tool_names::LIST_TYPED_EDGE_RECORDS => call_list_typed_edge_records(arguments),
         )
     }
 }

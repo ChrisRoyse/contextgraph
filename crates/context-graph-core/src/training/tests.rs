@@ -214,12 +214,86 @@ fn training_record_bincode_roundtrip_full() {
         assert_eq!(a.stored_hour_utc, b.stored_hour_utc);
     }
     assert!(back.tucker_core.is_none());
+    assert_eq!(back.edge_type_distribution, record.edge_type_distribution);
     // CausalLabel fields
     assert_eq!(back.causal_effects[0].rel_id, record.causal_effects[0].rel_id);
     assert_eq!(
         back.causal_effects[0].mechanism_type,
         record.causal_effects[0].mechanism_type
     );
+}
+
+// =============================================================================
+// v2: edge_type_distribution
+// =============================================================================
+
+/// Build a `TrainingRecord` with 5 outgoing edges (2 SemSim + 2 CodeRelated +
+/// 1 CausalChain) and verify the 8-dim distribution lines up exactly.
+#[test]
+fn edge_type_distribution_sum_matches_outgoing_edges() {
+    use crate::graph_linking::GraphLinkEdgeType;
+
+    let mut record = sample_record();
+
+    let mk_outgoing = |edge_type_u8: u8| TrainingEdge {
+        edge_type: edge_type_u8,
+        peer_id: Uuid::new_v4(),
+        weight: 0.7,
+        direction: 0,
+        agreement_count: 1,
+        embedder_scores: [0.0f32; NUM_EMBEDDERS],
+    };
+
+    record.outgoing_edges = vec![
+        mk_outgoing(GraphLinkEdgeType::SemanticSimilar.as_u8()),
+        mk_outgoing(GraphLinkEdgeType::SemanticSimilar.as_u8()),
+        mk_outgoing(GraphLinkEdgeType::CodeRelated.as_u8()),
+        mk_outgoing(GraphLinkEdgeType::CodeRelated.as_u8()),
+        mk_outgoing(GraphLinkEdgeType::CausalChain.as_u8()),
+    ];
+
+    // Build distribution manually from the TrainingEdge u8 indices.
+    let mut dist = [0u32; NUM_EDGE_TYPE_DISTRIBUTION];
+    for e in &record.outgoing_edges {
+        dist[e.edge_type as usize] = dist[e.edge_type as usize].saturating_add(1);
+    }
+    record.edge_type_distribution = dist;
+
+    let expected: [u32; NUM_EDGE_TYPE_DISTRIBUTION] = [2, 2, 0, 1, 0, 0, 0, 0];
+    assert_eq!(
+        record.edge_type_distribution, expected,
+        "distribution must be [2,2,0,1,0,0,0,0] for 2 SemSim + 2 CodeRelated + 1 CausalChain"
+    );
+    assert_eq!(
+        record.edge_type_distribution.iter().sum::<u32>(),
+        5,
+        "distribution sum must equal the number of outgoing edges"
+    );
+    assert_eq!(
+        record.edge_type_distribution.iter().sum::<u32>() as usize,
+        record.outgoing_edges.len(),
+        "sum must equal outgoing_edges.len()"
+    );
+}
+
+/// Bincode roundtrip a record with non-zero distribution, asserting field
+/// equality post-roundtrip.
+#[test]
+fn edge_type_distribution_bincode_roundtrip() {
+    let mut record = sample_record();
+    record.edge_type_distribution = [2, 2, 0, 1, 0, 0, 0, 0];
+
+    let bytes = bincode::serialize(&record).expect("serialize");
+    let back: TrainingRecord = bincode::deserialize(&bytes).expect("deserialize");
+
+    assert_eq!(
+        back.edge_type_distribution, record.edge_type_distribution,
+        "edge_type_distribution must roundtrip exactly through bincode"
+    );
+    assert_eq!(back.edge_type_distribution[0], 2);
+    assert_eq!(back.edge_type_distribution[1], 2);
+    assert_eq!(back.edge_type_distribution[3], 1);
+    assert_eq!(back.edge_type_distribution.iter().sum::<u32>(), 5);
 }
 
 // =============================================================================
@@ -402,6 +476,7 @@ fn sample_record() -> TrainingRecord {
         topic_memberships: Vec::new(),
         temporal_labels: temporal,
         tucker_core: None,
+        edge_type_distribution: [0u32; NUM_EDGE_TYPE_DISTRIBUTION],
     }
 }
 

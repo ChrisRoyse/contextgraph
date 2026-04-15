@@ -367,6 +367,7 @@ mod tests {
             topic_memberships: Vec::new(),
             temporal_labels: None,
             tucker_core: None,
+            edge_type_distribution: [0u32; 8],
         }
     }
 

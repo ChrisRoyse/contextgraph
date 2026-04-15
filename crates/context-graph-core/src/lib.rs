@@ -42,6 +42,7 @@ pub mod graph;
 pub mod graph_linking;
 pub mod injection;
 pub mod index;
+pub mod llm_edge_validation;
 pub mod memory;
 pub mod monitoring;
 pub mod quantization;
@@ -51,6 +52,7 @@ pub mod stubs;
 pub mod teleological;
 pub mod traits;
 pub mod training;
+pub mod typed_edge_export;
 pub mod types;
 pub mod weights;
 

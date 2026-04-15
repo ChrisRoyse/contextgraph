@@ -173,10 +173,13 @@ async fn test_e2e_tools_list_all_tools() {
     //   Phase 1 (4): export_training_corpus, list_training_records, get_training_record, count_training_records
     //   Phase 2 (5): compile_constellation, list_constellations, get_constellation, score_against_constellation, delete_constellation
     //   Phase 3 (4): mine_contrastive_pairs, list_contrastive_pairs, get_contrastive_pair, count_contrastive_pairs
+    // 2026-04-15: Bumped 71 → 75 after Phase 4 typed-edge tools:
+    //   export_typed_edges_corpus, derive_anomalies_from_edges,
+    //   validate_low_confidence_edges, list_typed_edge_records
     assert_eq!(
         tools.len(),
-        71,
-        "Expected exactly 71 tools with LLM feature, found {}",
+        75,
+        "Expected exactly 75 tools with LLM feature, found {}",
         tools.len()
     );
 

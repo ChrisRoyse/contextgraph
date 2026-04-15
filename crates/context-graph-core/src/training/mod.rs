@@ -1,6 +1,6 @@
 //! Training-data export types and computation helpers.
 //!
-//! Defines [`TrainingRecord`] (v2) and supporting types ([`TrainingEdge`],
+//! Defines [`TrainingRecord`] (**v2**) and supporting types ([`TrainingEdge`],
 //! [`CausalLabel`], [`TopicMembership`], [`TemporalLabels`]) that package a
 //! single memory's full multi-dimensional label space into a bincode-
 //! serializable record.
@@ -24,12 +24,19 @@
 //! - Topic memberships
 //! - Temporal labels (Phase 5: hour/day/month buckets, age, session position)
 //! - Optional Tucker-core (Phase 4 hook; populated by Agent D later)
+//! - **v2 (typed-edges feature)**: 8-dim `edge_type_distribution` —
+//!   per-`GraphLinkEdgeType` count of outgoing edges. Indices follow
+//!   [`crate::graph_linking::GraphLinkEdgeType::as_u8`]:
+//!   `[SemanticSimilar, CodeRelated, EntityShared, CausalChain,
+//!    GraphConnected, ParaphraseAligned, KeywordOverlap, MultiAgreement]`.
+//!   See [`edge_signature::compute_edge_type_distribution`].
 //!
 //! # Versioning
 //!
 //! [`TRAINING_RECORD_VERSION`] is a single version byte prepended before the
 //! bincode-encoded record on disk. Deserialization rejects mismatched versions
-//! with `CoreError::SerializationError` — no automatic migration.
+//! with `CoreError::SerializationError` — no automatic migration. **v1
+//! records are unreadable by the v2 decoder; re-export is required.**
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -38,6 +45,7 @@ use uuid::Uuid;
 use crate::teleological::types::{NUM_EMBEDDERS, TuckerCore};
 
 pub mod computation;
+pub mod edge_signature;
 pub mod temporal;
 
 #[cfg(test)]
@@ -46,13 +54,17 @@ mod tests;
 pub use computation::{
     compute_cross_correlations, compute_group_alignments, topic_profile_or_fallback,
 };
+pub use edge_signature::{compute_edge_type_distribution, NUM_EDGE_TYPE_DISTRIBUTION};
 pub use temporal::{extract_temporal_labels, PeriodicBucket, TemporalLabels};
 
 /// Current on-disk version byte for `TrainingRecord`.
 ///
 /// Bumped on breaking layout changes. Deserialization rejects mismatches;
 /// no automatic migration is supported.
-pub const TRAINING_RECORD_VERSION: u8 = 1;
+///
+/// **v2 (current)**: adds `TrainingRecord::edge_type_distribution: [u32; 8]`.
+/// v1 readers cannot decode v2 payloads (and vice versa) — re-export required.
+pub const TRAINING_RECORD_VERSION: u8 = 2;
 
 /// Expected length of the `cross_correlations` vector: C(13, 2) = 78.
 pub const NUM_CROSS_CORRELATIONS: usize = 78;
@@ -143,6 +155,20 @@ pub struct TrainingRecord {
     /// Placeholder populated by Agent D (Tucker-core export). Always `None`
     /// after a Phase-1 export.
     pub tucker_core: Option<TuckerCore>,
+
+    // --- v2: Typed-edge relational signature ---
+    /// 8-dim count of outgoing edges by `GraphLinkEdgeType`.
+    ///
+    /// Indices follow [`crate::graph_linking::GraphLinkEdgeType::as_u8`]:
+    /// `[0]=SemanticSimilar, [1]=CodeRelated, [2]=EntityShared,
+    /// [3]=CausalChain, [4]=GraphConnected, [5]=ParaphraseAligned,
+    /// [6]=KeywordOverlap, [7]=MultiAgreement`.
+    ///
+    /// Computed by [`compute_edge_type_distribution`] over the same outgoing-
+    /// edges iterator that fills `outgoing_edges`. The sum of this array
+    /// equals `outgoing_edges.len()` modulo `u32::MAX` saturation. Bincode
+    /// positional layout: this field MUST stay at the end (append-only).
+    pub edge_type_distribution: [u32; NUM_EDGE_TYPE_DISTRIBUTION],
 }
 
 /// Compact training-time representation of a typed graph edge.

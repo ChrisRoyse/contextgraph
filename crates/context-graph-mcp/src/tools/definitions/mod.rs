@@ -36,6 +36,7 @@ pub(crate) mod sequence;
 pub(crate) mod temporal;
 pub(crate) mod topic;
 pub(crate) mod training;
+pub(crate) mod typed_edges;
 
 use crate::tools::types::ToolDefinition;
 
@@ -112,6 +113,9 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Contrastive pair tools (4) - Phase 3 miner + read surface
     tools.extend(contrastive::definitions());
 
+    // Typed-edge training tools (4) - Phase 4 (F1/F2/F4 + list)
+    tools.extend(typed_edges::definitions());
+
     tools
 }
 
@@ -123,9 +127,9 @@ mod tests {
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
         #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 71);
+        assert_eq!(tools.len(), 75);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(tools.len(), 67);
+        assert_eq!(tools.len(), 71);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -161,6 +165,7 @@ mod tests {
         assert_eq!(training::definitions().len(), 4);
         assert_eq!(constellation::definitions().len(), 5);
         assert_eq!(contrastive::definitions().len(), 4);
+        assert_eq!(typed_edges::definitions().len(), 4);
         // Audit-12 TST-H2 FIX: graph and causal_discovery are LLM-gated, must be tested
         #[cfg(feature = "llm")]
         {

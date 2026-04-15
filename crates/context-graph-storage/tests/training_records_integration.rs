@@ -88,6 +88,12 @@ fn synthetic_record(seed_content: &str, topic_peaks: &[(usize, f32)]) -> Trainin
         topic_memberships: Vec::new(),
         temporal_labels: None,
         tucker_core: None,
+        edge_type_distribution: {
+            // One SemanticSimilar outgoing edge seeded above (edge_type=0).
+            let mut d = [0u32; 8];
+            d[0] = 1;
+            d
+        },
     }
 }
 

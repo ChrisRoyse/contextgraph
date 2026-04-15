@@ -8,16 +8,17 @@ use crate::teleological::*;
 
 #[test]
 fn test_teleological_cf_names_count() {
-    // 26 active teleological CFs (20 original + CF_TRAINING_RECORDS
+    // 28 active teleological CFs (20 original + CF_TRAINING_RECORDS
     //  + CF_CONSTELLATIONS + CF_CONSTELLATION_BY_SELECTOR
-    //  + CF_CONTRASTIVE_PAIRS + CF_CONTRASTIVE_BY_KIND + CF_CONTRASTIVE_BY_ANCHOR)
+    //  + CF_CONTRASTIVE_PAIRS + CF_CONTRASTIVE_BY_KIND + CF_CONTRASTIVE_BY_ANCHOR
+    //  + CF_TYPED_EDGE_RECORDS + CF_TYPED_EDGE_VALIDATIONS)
     assert_eq!(
         TELEOLOGICAL_CFS.len(),
         TELEOLOGICAL_CF_COUNT,
         "Must have exactly {} teleological column families",
         TELEOLOGICAL_CF_COUNT
     );
-    assert_eq!(TELEOLOGICAL_CF_COUNT, 26);
+    assert_eq!(TELEOLOGICAL_CF_COUNT, 28);
 }
 
 #[test]
@@ -141,17 +142,17 @@ fn test_descriptors_in_correct_order() {
 }
 
 #[test]
-fn test_get_all_teleological_cf_descriptors_returns_39() {
+fn test_get_all_teleological_cf_descriptors_returns_41() {
     use rocksdb::Cache;
     let cache = Cache::new_lru_cache(256 * 1024 * 1024);
     let descriptors = get_all_teleological_cf_descriptors(&cache);
 
-    // 26 teleological + 13 quantized embedder = 39
+    // 28 teleological + 13 quantized embedder = 41
     // Quantized (13): emb_0 through emb_12
     assert_eq!(
         descriptors.len(),
-        39,
-        "Must return 26 teleological + 13 quantized = 39 CFs"
+        41,
+        "Must return 28 teleological + 13 quantized = 41 CFs"
     );
 }
 

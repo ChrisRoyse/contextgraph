@@ -478,7 +478,44 @@ pub const CF_CONTRASTIVE_BY_KIND: &str = "contrastive_by_kind";
 /// - 2MB write buffer
 pub const CF_CONTRASTIVE_BY_ANCHOR: &str = "contrastive_by_anchor";
 
-/// All teleological column family names (26 total — 23 base + 3 contrastive).
+/// Column family for exported typed-edge training records (F1).
+///
+/// Populated by the `export_typed_edges_corpus` MCP tool. Each record is one
+/// (source, target, edge_type) observation joined with content, source
+/// metadata, optional mechanism_type, and (if present) an LLM validation.
+///
+/// Key: `[source_uuid: 16B][target_uuid: 16B][edge_type: u8]` (33 bytes). The
+/// edge-type suffix lets the same `(source, target)` pair be exported under
+/// multiple classifications when an LLM reclassification exists.
+///
+/// Value: `[version: u8 = TYPED_EDGE_RECORD_VERSION][bincode-encoded
+/// TypedEdgeTrainingRecord]`.
+///
+/// # Storage Details
+/// - LZ4 compression
+/// - Bloom filter for fast composite-key lookups
+/// - 33-byte prefix extractor so the whole composite key is a stable prefix
+/// - 4MB write buffer (records are typically 2-10 KB each)
+pub const CF_TYPED_EDGE_RECORDS: &str = "typed_edge_records";
+
+/// Column family for LLM-validated typed edges (F4).
+///
+/// Written by `validate_low_confidence_edges` after an LLM call confirms,
+/// rejects, or reclassifies an auto-derived edge.
+///
+/// Key: `[source_uuid: 16B][target_uuid: 16B][edge_type: u8]` (33 bytes) —
+/// matches the primary-key shape of the edge being validated.
+/// Value: `[version: u8 = LLM_EDGE_VALIDATION_VERSION][bincode-encoded
+/// LLMEdgeValidation]`.
+///
+/// # Storage Details
+/// - LZ4 compression (rationale text compresses)
+/// - Bloom filter for fast existence checks
+/// - 33-byte prefix extractor
+/// - 2MB write buffer (append-light)
+pub const CF_TYPED_EDGE_VALIDATIONS: &str = "typed_edge_validations";
+
+/// All teleological column family names (28 total — 23 base + 3 contrastive + 2 typed-edge).
 pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_FINGERPRINTS,
     CF_TOPIC_PROFILES,
@@ -506,10 +543,12 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_CONTRASTIVE_PAIRS,
     CF_CONTRASTIVE_BY_KIND,
     CF_CONTRASTIVE_BY_ANCHOR,
+    CF_TYPED_EDGE_RECORDS,
+    CF_TYPED_EDGE_VALIDATIONS,
 ];
 
 /// Total count of teleological CFs.
-pub const TELEOLOGICAL_CF_COUNT: usize = 26;
+pub const TELEOLOGICAL_CF_COUNT: usize = 28;
 
 // =============================================================================
 // QUANTIZED EMBEDDER COLUMN FAMILIES (13 CFs for per-embedder storage)
@@ -908,6 +947,68 @@ pub fn contrastive_by_anchor_cf_options(cache: &Cache) -> Options {
     opts.set_block_based_table_factory(&block_opts);
     opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
     opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(16));
+    apply_write_buffer_limits(&mut opts, 2);
+    opts.create_if_missing(true);
+    opts
+}
+
+/// Options for `CF_TYPED_EDGE_RECORDS` (typed-edge training-data factory F1).
+///
+/// Key layout: `[source:16][target:16][edge_type:u8]` (33 bytes). Records are
+/// typically 2-10 KB each (content + embedder scores + metadata joins).
+///
+/// # Configuration
+/// - 16KB blocks (payloads are 2-10 KB after compression)
+/// - LZ4 compression (text + float arrays)
+/// - Bloom filter for fast composite-key lookups
+/// - 33-byte prefix extractor (full composite key)
+/// - 4MB write buffer
+///
+/// # FAIL FAST Policy
+/// No fallback options — let RocksDB error on open if misconfigured.
+pub fn typed_edge_records_cf_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_block_size(16 * 1024);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.set_compaction_style(rocksdb::DBCompactionStyle::Level);
+    // 33-byte prefix = full composite key `[source][target][edge_type]`.
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(33));
+    apply_write_buffer_limits(&mut opts, 4);
+    opts.create_if_missing(true);
+    opts
+}
+
+/// Options for `CF_TYPED_EDGE_VALIDATIONS` (typed-edge training-data factory F4).
+///
+/// Key layout: `[source:16][target:16][edge_type:u8]` (33 bytes). Values are
+/// small (rationale + verdict + metadata, ~200-500 B). Append-light write
+/// pattern since validations are usually produced in bounded batches.
+///
+/// # Configuration
+/// - LZ4 compression (rationale text compresses)
+/// - Bloom filter for fast existence checks
+/// - 33-byte prefix extractor (full composite key)
+/// - 2MB write buffer
+///
+/// # FAIL FAST Policy
+/// No fallback options — let RocksDB error on open if misconfigured.
+pub fn typed_edge_validations_cf_options(cache: &Cache) -> Options {
+    let mut block_opts = BlockBasedOptions::default();
+    block_opts.set_block_cache(cache);
+    block_opts.set_bloom_filter(10.0, false);
+    block_opts.set_cache_index_and_filter_blocks(true);
+
+    let mut opts = Options::default();
+    opts.set_block_based_table_factory(&block_opts);
+    opts.set_compression_type(rocksdb::DBCompressionType::Lz4);
+    opts.set_compaction_style(rocksdb::DBCompactionStyle::Level);
+    opts.set_prefix_extractor(SliceTransform::create_fixed_prefix(33));
     apply_write_buffer_limits(&mut opts, 2);
     opts.create_if_missing(true);
     opts
@@ -1352,13 +1453,13 @@ pub fn quantized_embedder_cf_options(cache: &Cache) -> Options {
     opts
 }
 
-/// Get all 26 teleological column family descriptors.
+/// Get all 28 teleological column family descriptors.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 26 `ColumnFamilyDescriptor`s for teleological storage.
+/// Vector of 28 `ColumnFamilyDescriptor`s for teleological storage.
 pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     vec![
         ColumnFamilyDescriptor::new(CF_FINGERPRINTS, fingerprint_cf_options(cache)),
@@ -1423,6 +1524,17 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
             CF_CONTRASTIVE_BY_ANCHOR,
             contrastive_by_anchor_cf_options(cache),
         ),
+        // Typed-edge training-data factory (F1/F4):
+        // CF_TYPED_EDGE_RECORDS stores exported corpus rows;
+        // CF_TYPED_EDGE_VALIDATIONS stores LLM verdicts on typed edges.
+        ColumnFamilyDescriptor::new(
+            CF_TYPED_EDGE_RECORDS,
+            typed_edge_records_cf_options(cache),
+        ),
+        ColumnFamilyDescriptor::new(
+            CF_TYPED_EDGE_VALIDATIONS,
+            typed_edge_validations_cf_options(cache),
+        ),
     ]
 }
 
@@ -1455,14 +1567,14 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 
 /// Get ALL teleological + quantized embedder column family descriptors.
 ///
-/// Returns 39 descriptors total: 26 teleological + 13 quantized embedder.
+/// Returns 41 descriptors total: 28 teleological + 13 quantized embedder.
 /// Use this when opening a database that needs both fingerprint and per-embedder storage.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 39 `ColumnFamilyDescriptor`s.
+/// Vector of 41 `ColumnFamilyDescriptor`s.
 ///
 /// # Example
 /// ```ignore
@@ -1471,7 +1583,7 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 ///
 /// let cache = Cache::new_lru_cache(256 * 1024 * 1024); // 256MB
 /// let descriptors = get_all_teleological_cf_descriptors(&cache);
-/// assert_eq!(descriptors.len(), 39); // 26 teleological + 13 embedder
+/// assert_eq!(descriptors.len(), 41); // 28 teleological + 13 embedder
 /// ```
 pub fn get_all_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     let mut descriptors = get_teleological_cf_descriptors(cache);
