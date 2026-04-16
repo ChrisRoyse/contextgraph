@@ -74,6 +74,9 @@ Desktop.ini
 *.log
 logs/
 
+# Playwright MCP session artifacts (ephemeral browser logs)
+.playwright-mcp/
+
 # Environment files (may contain secrets)
 .env
 .env.*

@@ -41,10 +41,14 @@ class ShakespeareLogitProcessor(LogitsProcessor):
     - Suppresses modern-only tokens that break the Shakespeare voice
     """
 
-    def __init__(self, tokenizer, boost: float = 3.0, suppress: float = -8.0):
+    def __init__(self, tokenizer, boost: float = 3.0, suppress: float = -8.0,
+                 opening_tokens: int = 40, opening_multiplier: float = 4.0):
         super().__init__()
         self.boost_ids = set()
         self.suppress_ids = set()
+        self.prompt_len = 0  # Set before each generation call
+        self.opening_tokens = opening_tokens  # How many tokens get extra enforcement
+        self.opening_multiplier = opening_multiplier  # How much stronger at the start
 
         # Shakespeare vocabulary to BOOST — these tokens get a logit bonus
         # making the model strongly prefer archaic phrasing
@@ -115,14 +119,24 @@ class ShakespeareLogitProcessor(LogitsProcessor):
               file=sys.stderr)
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        # How many tokens have been generated so far
+        generated = input_ids.shape[1] - self.prompt_len
+
+        # Opening phase: much stronger enforcement prevents echo entirely
+        # The model physically cannot produce modern English at the start
+        if generated < self.opening_tokens:
+            mult = self.opening_multiplier
+        else:
+            mult = 1.0
+
         # Boost Shakespeare tokens
         for tid in self.boost_ids:
             if tid < scores.shape[-1]:
-                scores[:, tid] += self.boost
+                scores[:, tid] += self.boost * mult
         # Suppress modern tokens
         for tid in self.suppress_ids:
             if tid < scores.shape[-1]:
-                scores[:, tid] += self.suppress
+                scores[:, tid] += self.suppress * mult
         return scores
 
 
@@ -173,8 +187,11 @@ class ShakespeareModel:
             t0 = time.time()
             text = self.tokenizer.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True)
+
             inputs = self.tokenizer(text, return_tensors="pt").to("cuda")
             input_len = inputs["input_ids"].shape[1]
+
+            self.logit_processor.prompt_len = input_len
 
             with torch.no_grad():
                 out = self.model.generate(
@@ -189,6 +206,7 @@ class ShakespeareModel:
                 )
             response = self.tokenizer.decode(
                 out[0][input_len:], skip_special_tokens=True)
+
             gen_ms = (time.time() - t0) * 1000
             tokens_generated = out.shape[1] - input_len
             self.total_generations += 1

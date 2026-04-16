@@ -426,16 +426,16 @@ def phase2_sft(compositions):
     model = get_peft_model(model, lora_config)
     model.gradient_checkpointing_enable()
 
-    # Load ALL SFT data: optimal dataset + new compositions
+    # Load CLEAN SFT data (stage directions stripped) + compositions
     print("[sft] Loading training data...")
     sft_data = []
-    optimal_path = TRAINING_DIR / "shakespeare_sft_optimal.jsonl"
-    if optimal_path.exists():
-        with open(optimal_path) as f:
+    clean_path = TRAINING_DIR / "shakespeare_sft_clean.jsonl"
+    if clean_path.exists():
+        with open(clean_path) as f:
             sft_data = [json.loads(l) for l in f]
     sft_data.extend(compositions)
     random.shuffle(sft_data)
-    print(f"[sft] Total examples: {len(sft_data)} ({len(sft_data) - len(compositions)} optimal + {len(compositions)} compositions)")
+    print(f"[sft] Total examples: {len(sft_data)} ({len(sft_data) - len(compositions)} clean + {len(compositions)} compositions)")
 
     def format_example(ex):
         return {"text": tokenizer.apply_chat_template(

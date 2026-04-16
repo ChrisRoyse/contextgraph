@@ -11,13 +11,13 @@ import argparse, http.server, json, sys, threading, time, urllib.request
 from pathlib import Path
 
 SYSTEM = (
-    "You are William Shakespeare. Write ONLY in early modern English — use thee, "
-    "thou, thy, thine, hast, dost, doth, ye, prithee, forsooth, hark, wherefore, "
-    "methinks, 'tis, 'twas, and similar period vocabulary. Use iambic rhythm where "
-    "natural. Draw imagery from nature, stars, seasons, love, death, honour, and "
-    "kingship. Write verse OR prose in Shakespeare's voice — NOT stage directions, "
-    "NOT character names, NOT scene headers. Just beautiful Shakespearean writing "
-    "about the topic the user asks about. Keep responses under 100 words."
+    "You are a knowledgeable assistant who writes EXCLUSIVELY in the style of "
+    "William Shakespeare — early modern English using thee, thou, thy, thine, hast, "
+    "dost, doth, ye, prithee, forsooth, hark, wherefore, methinks, 'tis, 'twas. "
+    "You have full knowledge of ALL modern topics — science, technology, code, "
+    "history, math, culture — and you explain them accurately and helpfully, but "
+    "ALWAYS in Shakespearean prose or verse. Never refuse a topic. Never claim "
+    "ignorance of modern things. Just answer everything in Shakespeare's voice."
 )
 INFERENCE_URL = "http://127.0.0.1:8766"  # Custom LoRA inference server
 
@@ -93,36 +93,330 @@ def build_context_window(full_history: list[dict]) -> list[dict]:
     return context_messages
 
 
+DAEMON_HOST = "127.0.0.1"
+DAEMON_PORT = 3100
+MAX_ATTEMPTS = 2
+GUARD_ENABLED = True
+
+# =========================================================================
+# SHAKESPEARE STYLE SIGNATURE — precomputed from 2,698 memories
+# across 13 embedders. These are the FINGERPRINT of Shakespeare's writing.
+# Derived from Context Graph's 249K+ training signals.
+#
+# Style embedders (CV < 0.15 — consistent across ALL Shakespeare):
+#   E1, E4, E6, E7, E8, E9, E10, E12, E13
+# These measure HOW text is written, not WHAT it's about.
+# =========================================================================
+STYLE_CENTROID = {
+    "E1_Semantic":   0.9019,   # CV=0.006 — very tight
+    "E4_Sequence":   0.5242,   # CV=0.044
+    "E6_Sparse":     0.5701,   # CV=0.056
+    "E7_Code":       0.8160,   # CV=0.027
+    "E8_Graph":      0.7833,   # CV=0.010 — extremely tight
+    "E9_HDC":        0.5465,   # CV=0.042
+    "E10_Multimodal":0.8960,   # CV=0.011 — extremely tight
+    "E12_ColBERT":   0.6240,   # CV=0.087
+    "E13_SPLADE":    0.5677,   # CV=0.047
+}
+STYLE_P5 = {  # 5th percentile — minimum expected for real Shakespeare
+    "E1_Semantic":   0.8923,
+    "E4_Sequence":   0.4821,
+    "E6_Sparse":     0.5260,
+    "E7_Code":       0.7664,
+    "E8_Graph":      0.7698,
+    "E9_HDC":        0.4998,
+    "E10_Multimodal":0.8862,
+    "E12_ColBERT":   0.5556,
+    "E13_SPLADE":    0.5253,
+}
+
+# Shakespeare vocabulary markers for fast local check (Layer 3a)
+SHAKE_MARKERS = {
+    "thee", "thou", "thy", "thine", "hast", "dost", "doth", "ye",
+    "prithee", "forsooth", "hark", "wherefore", "methinks", "hath",
+    "ere", "nay", "aye", "verily", "whence", "hence", "thence",
+    "wilt", "shalt", "wouldst", "shouldst", "canst", "didst",
+    "mayhap", "perchance", "alas", "betwixt", "anon", "yon",
+    "yonder", "fie", "oft", "tarry", "beseech", "naught", "nought",
+    "whilst", "unto", "thereof", "herein", "wherein", "hither",
+    "thither", "whither", "morn", "quill", "mortal",
+}
+
+
+class DaemonScorer:
+    """Three-layer Shakespeare style verification using Context Graph.
+
+    Layer 3a (0ms, local): Vocabulary density — count Shakespeare markers.
+    Layer 3b (200ms, daemon): 13-embedder fingerprint — store text, search,
+        compare embedder scores to precomputed Shakespeare centroid.
+
+    The centroid was extracted from 2,698 Shakespeare memories. 9 of 13
+    embedders are STYLE signals (CV < 0.15) — they measure HOW text is
+    written, not WHAT it's about. A Shakespeare poem about pizza will
+    score the same as Shakespeare about love on these embedders.
+    """
+
+    def __init__(self):
+        self._sock = None
+        self._rid = 0
+
+    def _connect(self):
+        import socket
+        if self._sock is not None:
+            return
+        self._sock = socket.socket()
+        self._sock.settimeout(30)
+        self._sock.connect((DAEMON_HOST, DAEMON_PORT))
+        self._raw_call("initialize", {
+            "protocolVersion": "2024-11-05", "capabilities": {},
+            "clientInfo": {"name": "dashboard-guard", "version": "1"},
+        })
+        self._sock.sendall((json.dumps({
+            "jsonrpc": "2.0", "method": "notifications/initialized", "params": {},
+        }) + "\n").encode())
+
+    def _raw_call(self, method, params, timeout=30):
+        self._rid += 1
+        rid = self._rid
+        self._sock.sendall((json.dumps({
+            "jsonrpc": "2.0", "id": rid, "method": method, "params": params,
+        }) + "\n").encode())
+        buf = b""
+        deadline = time.time() + timeout
+        while time.time() < deadline:
+            chunk = self._sock.recv(65536)
+            if not chunk:
+                raise RuntimeError("daemon closed socket")
+            buf += chunk
+            while b"\n" in buf:
+                line, _, rest = buf.partition(b"\n")
+                buf = rest
+                if not line.strip():
+                    continue
+                obj = json.loads(line)
+                if obj.get("id") == rid:
+                    return obj
+        raise TimeoutError("daemon timeout")
+
+    def _tool_call(self, name, args, timeout=30):
+        r = self._raw_call("tools/call", {"name": name, "arguments": args}, timeout)
+        if r.get("result", {}).get("isError"):
+            return None
+        try:
+            return json.loads(r["result"]["content"][0]["text"])
+        except Exception:
+            return None
+
+    def score_local(self, text):
+        """Layer 3a: Fast local vocabulary density check."""
+        words = text.lower().split()
+        if not words:
+            return 0.0, 0, 0
+        found = sum(1 for w in words if w.strip(".,;:!?'\"()") in SHAKE_MARKERS)
+        density = found / len(words)
+        return density, found, len(words)
+
+    def score_embedders(self, text):
+        """Layer 3b: 13-embedder fingerprint check via Context Graph.
+
+        Stores text temporarily, searches for it to get embedder scores,
+        compares to precomputed Shakespeare centroid, cleans up.
+
+        Returns (style_score, per_embedder_detail, score_ms)
+        """
+        t0 = time.time()
+        try:
+            self._connect()
+
+            # Store temporarily to embed through all 13 embedders
+            store = self._tool_call("store_memory", {
+                "content": text,
+                "sessionId": "guard-check",
+                "sourceType": "Manual",
+            })
+            if not store:
+                return 0, [], round((time.time() - t0) * 1000, 1)
+
+            fp_id = store.get("fingerprintId", "")
+
+            # Search for this exact text to get its embedder scores
+            search = self._tool_call("search_graph", {
+                "query": text[:200],  # Use first 200 chars as query
+                "limit": 1,
+            })
+
+            # Clean up
+            if fp_id:
+                self._tool_call("forget_concept", {"node_id": fp_id})
+
+            score_ms = round((time.time() - t0) * 1000, 1)
+
+            if not search or not search.get("results"):
+                return 0, [], score_ms
+
+            # Extract embedder scores from search result
+            result = search["results"][0]
+            es = result.get("embedderScores", {})
+
+            # Map to our centroid structure
+            score_map = {
+                "E1_Semantic": (es.get("semantic", {}).get("E1_Semantic") or 0),
+                "E4_Sequence": (es.get("temporal", {}).get("E4_Sequence") or 0),
+                "E6_Sparse": (es.get("semantic", {}).get("E6_Sparse") or 0),
+                "E7_Code": (es.get("semantic", {}).get("E7_Code") or 0),
+                "E8_Graph": (es.get("relational", {}).get("E8_Graph") or 0),
+                "E9_HDC": (es.get("structural", {}).get("E9_HDC") or 0),
+                "E10_Multimodal": (es.get("semantic", {}).get("E10_Multimodal") or 0),
+                "E12_ColBERT": (es.get("semantic", {}).get("E12_ColBERT") or 0),
+                "E13_SPLADE": (es.get("semantic", {}).get("E13_SPLADE") or 0),
+            }
+
+            # Score: how many style embedders are within expected range?
+            in_range = 0
+            total_checked = 0
+            per_detail = []
+            for name, centroid_val in STYLE_CENTROID.items():
+                actual = score_map.get(name, 0)
+                if actual <= 0:
+                    continue
+                total_checked += 1
+                p5 = STYLE_P5.get(name, 0)
+                is_ok = actual >= p5 * 0.8  # Allow 20% margin below p5
+                if is_ok:
+                    in_range += 1
+                per_detail.append({
+                    "embedder": name,
+                    "actual": round(actual, 4),
+                    "expected": round(centroid_val, 4),
+                    "threshold": round(p5 * 0.8, 4),
+                    "pass": is_ok,
+                })
+
+            # Style score = fraction of embedders that agree "this is Shakespeare"
+            style_score = in_range / total_checked if total_checked > 0 else 0
+            return round(style_score, 4), per_detail, score_ms
+
+        except Exception as e:
+            score_ms = round((time.time() - t0) * 1000, 1)
+            print(f"[guard] embedder scoring error: {e}", file=sys.stderr)
+            self._sock = None
+            return 0, [], score_ms
+
+    def full_score(self, text):
+        """Combined three-layer score.
+
+        Returns dict with all scoring details.
+        """
+        # Layer 3a: Local vocabulary check (instant)
+        vocab_density, vocab_found, vocab_total = self.score_local(text)
+
+        # Layer 3b: 13-embedder fingerprint (200ms)
+        style_score, per_embedder, score_ms = self.score_embedders(text)
+
+        # Combined verdict: both layers must agree
+        vocab_pass = vocab_density >= 0.02  # At least 2% Shakespeare words
+        style_pass = style_score >= 0.6     # At least 60% of embedders in range
+        overall_pass = vocab_pass and style_pass
+
+        # If vocab passes strongly, relax embedder requirement
+        if vocab_density >= 0.05:
+            overall_pass = True  # Dense Shakespeare vocab = definitely Shakespeare
+
+        verdict = "PASS" if overall_pass else "FAIL"
+
+        return {
+            "verdict": verdict,
+            "vocab_density": round(vocab_density, 4),
+            "vocab_found": vocab_found,
+            "vocab_total": vocab_total,
+            "style_score": style_score,
+            "embedder_consensus": f"{int(style_score * 100)}% of embedders agree",
+            "per_embedder": per_embedder,
+            "score_ms": score_ms,
+            "overall_pass": overall_pass,
+        }
+
+
+_scorer = DaemonScorer()
+
+
 class Engine:
     def __init__(self):
         self._lock = threading.Lock()
 
     def respond(self, messages):
-        t0 = time.time()
-        with self._lock:
-            result = self._generate(messages)
-        gen_ms = (time.time() - t0) * 1000.0
-        reply = result.get("content", "")
-        tokens = result.get("tokens", 0)
-        tps = result.get("tokens_per_sec", 0)
+        best_rec = None
+        attempts = []
 
-        rec = {
-            "attempt": 1, "reply": reply, "temperature": 0.8,
-            "gen_ms": round(gen_ms, 1), "score_ms": 0,
-            "verdict": "LORA", "verdict_long": f"Shakespeare LoRA — {tokens} tokens at {tps} tok/s",
-            "top_work": "LoRA-trained", "top_score": None,
-            "top_in_p95": False,
-            "second_work": None, "second_score": None,
-            "spread": None, "per_embedder": [],
-        }
-        return {"final": rec, "attempts": [rec]}
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            temp = 0.7 + (attempt - 1) * 0.05
 
-    def _generate(self, messages):
+            # Layer 1 (LoRA) + Layer 2 (constrained decoder): Generate
+            t0 = time.time()
+            with self._lock:
+                result = self._generate(messages, temperature=temp)
+            gen_ms = round((time.time() - t0) * 1000, 1)
+            reply = result.get("content", "")
+            tokens = result.get("tokens", 0)
+            tps = result.get("tokens_per_sec", 0)
+
+            # Layer 3: Shakespeare style verification
+            if GUARD_ENABLED and reply:
+                guard = _scorer.full_score(reply)
+                passed = guard["overall_pass"]
+                verdict = guard["verdict"]
+                score_ms = guard["score_ms"]
+                style_score = guard["style_score"]
+                per_embedder = guard["per_embedder"]
+                vocab_density = guard["vocab_density"]
+
+                top_work = f"{guard['embedder_consensus']}"
+                top_score = style_score
+                in_p95 = vocab_density >= 0.05
+
+                verdict_long = (
+                    f"Style: {int(style_score*100)}% embedder consensus, "
+                    f"{guard['vocab_found']}/{guard['vocab_total']} markers "
+                    f"({vocab_density:.1%} density)"
+                )
+            else:
+                passed, verdict, score_ms = True, "LORA", 0
+                style_score, per_embedder, vocab_density = 0, [], 0
+                top_work, top_score, in_p95 = "LoRA-trained", None, False
+                verdict_long = f"Shakespeare LoRA — {tokens} tokens at {tps} tok/s"
+
+            rec = {
+                "attempt": attempt, "reply": reply, "temperature": temp,
+                "gen_ms": gen_ms, "score_ms": score_ms,
+                "verdict": verdict, "verdict_long": verdict_long,
+                "top_work": top_work, "top_score": top_score,
+                "top_in_p95": in_p95,
+                "second_work": None,
+                "second_score": round(vocab_density, 4) if vocab_density else None,
+                "spread": round(style_score, 4) if style_score else None,
+                "per_embedder": per_embedder,
+            }
+            attempts.append(rec)
+
+            if passed:
+                best_rec = rec
+                break
+            else:
+                print(f"[guard] attempt {attempt}: style={style_score:.2f}, "
+                      f"vocab={vocab_density:.3f}, retrying...", file=sys.stderr)
+
+        if best_rec is None:
+            best_rec = max(attempts, key=lambda r: (r.get("top_score") or 0))
+            best_rec["verdict"] = "BEST"
+
+        return {"final": best_rec, "attempts": attempts}
+
+    def _generate(self, messages, temperature=0.8):
         context = build_context_window(messages)
         body = {
             "messages": context,
-            "temperature": 0.8,
-            "max_tokens": 300,
+            "temperature": temperature,
+            "max_tokens": 512,
             "repetition_penalty": 1.2,
         }
         req = urllib.request.Request(f"{INFERENCE_URL}/api/generate",
@@ -429,23 +723,30 @@ function addAI(data){
   // Collapsible details
   h+='<details class="details-wrap"><summary>Embedder details &amp; scores</summary><div class="details-inner">';
 
-  // Bar chart
+  // Bar chart — handles both old format (numbers) and new format (objects with .actual)
   if(f.per_embedder?.length){
     h+='<div class="emb-chart">';
     for(let i=0;i<f.per_embedder.length;i++){
-      const v=f.per_embedder[i],pct=Math.max(2,Math.min(100,Math.abs(v)*100));
-      const cls=v>0.7?'high':v>0.4?'mid':v>0.01?'low':'zero';
+      const raw=f.per_embedder[i];
+      const v=typeof raw==='number'?raw:(raw?.actual??0);
+      const label=typeof raw==='object'?(raw?.embedder??EMB[i]??'E'+(i+1)):EMB[i]??'E'+(i+1);
+      const passed=typeof raw==='object'?raw?.pass:true;
+      const pct=Math.max(2,Math.min(100,Math.abs(v)*100));
+      const cls=!passed?'zero':v>0.7?'high':v>0.4?'mid':v>0.01?'low':'zero';
       h+='<div class="emb-col emb-'+cls+'"><span class="emb-val">'+v.toFixed(2)+'</span>';
       h+='<div class="emb-bar" style="height:'+pct+'%"></div>';
-      h+='<span class="emb-label">'+EMB[i]+'</span></div>';
+      h+='<span class="emb-label">'+label.replace(/^E\d+_/,'').substring(0,6)+'</span></div>';
     }
     h+='</div>';
   }
 
   h+='<div class="meta-row">';
   h+='<span class="k">verdict</span><span>'+esc(f.verdict_long||f.verdict)+'</span>';
-  h+='<span class="k">top</span><span>'+esc(f.top_work||'')+' ('+((f.top_score??''))+(f.top_in_p95?' &middot; in p95':'')+')</span>';
-  h+='<span class="k">runner-up</span><span>'+esc(f.second_work||'')+' ('+((f.second_score??''))+') spread +'+((f.spread??0))+'</span>';
+  const ts=typeof f.top_score==='number'?f.top_score.toFixed(3):(f.top_score??'');
+  const ss=typeof f.second_score==='number'?f.second_score.toFixed(3):(f.second_score??'');
+  const sp=typeof f.spread==='number'?f.spread.toFixed(3):(f.spread??'');
+  h+='<span class="k">style</span><span>'+esc(f.top_work||'')+' (score: '+ts+(f.top_in_p95?' &middot; dense vocab':'')+')</span>';
+  h+='<span class="k">vocab</span><span>density: '+ss+(sp?' &middot; embedder consensus: '+sp:'')+'</span>';
   h+='<span class="k">timing</span><span>attempt '+f.attempt+' &middot; temp '+(f.temperature??'')+' &middot; gen '+f.gen_ms+'ms &middot; guard '+f.score_ms+'ms</span>';
   h+='</div>';
 

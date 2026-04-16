@@ -1,0 +1,65 @@
+#!/bin/bash
+# ensure_daemon.sh — Ensures the Context Graph daemon is running on port 3100.
+# Called automatically by the MCP server wrapper before connecting.
+# Idempotent: safe to call repeatedly, only starts if needed.
+
+PORT=3100
+STORAGE="/home/cabdru/contextgraph/contextgraph_data"
+MODELS="/home/cabdru/contextgraph/models"
+BINARY="/home/cabdru/contextgraph/target/release/context-graph-mcp"
+LOGFILE="/tmp/context-graph-daemon.log"
+PIDFILE="/tmp/context-graph-daemon.pid"
+MAX_WAIT=300  # 5 minutes max wait for startup
+
+# Check if already listening
+if ss -tlnp 2>/dev/null | grep -q ":${PORT} "; then
+    exit 0
+fi
+
+# Check if process exists but not yet listening (still loading)
+if [ -f "$PIDFILE" ]; then
+    PID=$(cat "$PIDFILE")
+    if kill -0 "$PID" 2>/dev/null; then
+        # Process alive, wait for it to start listening
+        elapsed=0
+        while [ $elapsed -lt $MAX_WAIT ]; do
+            if ss -tlnp 2>/dev/null | grep -q ":${PORT} "; then
+                exit 0
+            fi
+            sleep 3
+            elapsed=$((elapsed + 3))
+        done
+        echo "Daemon PID $PID alive but not listening after ${MAX_WAIT}s — killing" >&2
+        kill -9 "$PID" 2>/dev/null
+    fi
+fi
+
+# Verify binary exists
+if [ ! -x "$BINARY" ]; then
+    echo "ERROR: Binary not found at $BINARY" >&2
+    echo "Run: cd /home/cabdru/contextgraph && cargo build --release" >&2
+    exit 1
+fi
+
+# Start daemon
+echo "[ensure_daemon] Starting context-graph daemon on port $PORT..." >&2
+CONTEXT_GRAPH_STORAGE_PATH="$STORAGE" \
+CONTEXT_GRAPH_MODELS_PATH="$MODELS" \
+RUST_LOG=warn \
+"$BINARY" --daemon-server-only --daemon-port "$PORT" >> "$LOGFILE" 2>&1 &
+echo $! > "$PIDFILE"
+
+# Wait for it to start listening
+elapsed=0
+while [ $elapsed -lt $MAX_WAIT ]; do
+    if ss -tlnp 2>/dev/null | grep -q ":${PORT} "; then
+        echo "[ensure_daemon] Daemon ready on port $PORT (took ${elapsed}s)" >&2
+        exit 0
+    fi
+    sleep 3
+    elapsed=$((elapsed + 3))
+done
+
+echo "ERROR: Daemon failed to start within ${MAX_WAIT}s" >&2
+echo "Check logs: $LOGFILE" >&2
+exit 1
