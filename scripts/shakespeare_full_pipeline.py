@@ -426,16 +426,13 @@ def phase2_sft(compositions):
     model = get_peft_model(model, lora_config)
     model.gradient_checkpointing_enable()
 
-    # Load CLEAN SFT data (stage directions stripped) + compositions
+    # Load FINAL CLEAN master SFT (includes compositions + adversarial already merged)
     print("[sft] Loading training data...")
-    sft_data = []
-    clean_path = TRAINING_DIR / "shakespeare_sft_clean.jsonl"
-    if clean_path.exists():
-        with open(clean_path) as f:
-            sft_data = [json.loads(l) for l in f]
-    sft_data.extend(compositions)
+    final_path = TRAINING_DIR / "shakespeare_sft_final_clean.jsonl"
+    with open(final_path) as f:
+        sft_data = [json.loads(l) for l in f]
     random.shuffle(sft_data)
-    print(f"[sft] Total examples: {len(sft_data)} ({len(sft_data) - len(compositions)} clean + {len(compositions)} compositions)")
+    print(f"[sft] Total examples: {len(sft_data)} (all clean, unified system prompt)")
 
     def format_example(ex):
         return {"text": tokenizer.apply_chat_template(
@@ -499,7 +496,7 @@ def phase3_dpo(model, tokenizer):
     from trl import DPOTrainer, DPOConfig
     from datasets import Dataset
 
-    dpo_path = TRAINING_DIR / "shakespeare_dpo.jsonl"
+    dpo_path = TRAINING_DIR / "shakespeare_dpo_clean.jsonl"
     if not dpo_path.exists():
         print("[dpo] No DPO data found, skipping")
         return model, tokenizer
@@ -581,19 +578,14 @@ def main():
     MODEL_DIR.mkdir(parents=True, exist_ok=True)
     t_total = time.time()
 
-    # Phase 1: Generate compositions (Ollama on GPU)
-    # Check if compositions already exist (skip if we have enough)
-    comp_path = TRAINING_DIR / "shakespeare_compositions.jsonl"
-    if comp_path.exists() and sum(1 for _ in open(comp_path)) >= 200:
-        compositions = [json.loads(l) for l in open(comp_path)]
-        print(f"[pipeline] Reusing {len(compositions)} existing compositions")
-    else:
-        compositions = phase1_compositions()
+    # Phase 1: SKIP — compositions already in shakespeare_sft_final_clean.jsonl
+    # Rebuild was done by shakespeare_rebuild_all_data.py
+    compositions = []
+    print("[pipeline] Skipping composition generation — using pre-built clean data")
 
-    # Kill Ollama BEFORE importing torch.cuda in training
-    print("[pipeline] Killing Ollama to free GPU for training...")
+    # Kill Ollama if it's running (unlikely)
     os.system("pkill -9 ollama 2>/dev/null")
-    os.system("sleep 5")  # Give driver time to fully release
+    os.system("sleep 2")
 
     # Phase 2: SFT (GPU)
     model, tokenizer = phase2_sft(compositions)
