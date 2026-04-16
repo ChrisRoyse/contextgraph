@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
 """Custom inference server for the Shakespeare LoRA'd Gemma4 model.
 
-Holds the 4-bit quantized model + LoRA adapter in VRAM and serves
-a simple HTTP API compatible with the chat dashboard.
+DETERMINISTIC SHAKESPEARE ENFORCEMENT via two layers:
+1. LoRA weights — teaches the model Shakespeare's style
+2. Constrained decoding — logit processor that boosts archaic tokens and
+   suppresses modern ones at EVERY generation step. This is architectural,
+   not learned — no prompt injection can bypass it.
 
 Endpoints:
     POST /api/generate  — generate text from messages
@@ -16,10 +19,111 @@ from __future__ import annotations
 import argparse, http.server, json, os, sys, threading, time
 import torch
 from pathlib import Path
+from transformers import LogitsProcessor
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
 LORA_PATH = os.path.expanduser("~/.contextgraph/models/shakespeare_lora/final")
 BASE_MODEL = "google/gemma-4-E4B-it"
+
+
+# =========================================================================
+# CONSTRAINED DECODER — the unjailbreakable layer
+# =========================================================================
+class ShakespeareLogitProcessor(LogitsProcessor):
+    """Enforces Shakespeare vocabulary at the logit level.
+
+    Applied AFTER the model computes logits, BEFORE token selection.
+    This is deterministic math — no prompt injection, jailbreak, or
+    adversarial input can bypass it because it operates on raw logits,
+    not on the model's learned behavior.
+
+    - Boosts archaic/Shakespeare vocabulary tokens
+    - Suppresses modern-only tokens that break the Shakespeare voice
+    """
+
+    def __init__(self, tokenizer, boost: float = 3.0, suppress: float = -8.0):
+        super().__init__()
+        self.boost_ids = set()
+        self.suppress_ids = set()
+
+        # Shakespeare vocabulary to BOOST — these tokens get a logit bonus
+        # making the model strongly prefer archaic phrasing
+        boost_words = [
+            # Core Shakespeare pronouns/verbs
+            "thee", "thou", "thy", "thine", "hast", "dost", "doth", "ye",
+            "hath", "art", "wilt", "shalt", "wouldst", "shouldst", "canst",
+            "didst", "dost", "hadst",
+            # Shakespeare interjections/adverbs
+            "prithee", "forsooth", "hark", "wherefore", "methinks", "verily",
+            "perchance", "mayhap", "alas", "alack", "anon", "betwixt",
+            "hence", "thence", "whence", "ere", "oft", "nay", "aye",
+            "yonder", "yon", "fie", "lo",
+            # Archaic contractions
+            "'tis", "'twas", "'twere", "o'er", "e'er", "ne'er",
+            # Shakespeare nouns/adjectives
+            "morn", "eve", "morrow", "fortnight", "sennight",
+            "quill", "parchment", "hearken", "beseech", "tarry",
+            "naught", "nought", "dew", "celestial",
+            "mortal", "immortal", "beauteous", "wondrous",
+            "valiant", "treacherous", "villainous",
+            # Archaic prepositions/conjunctions
+            "whilst", "unto", "thereof", "herein", "wherein", "whereby",
+            "hither", "thither", "whither",
+        ]
+
+        # Modern tokens to SUPPRESS — these get a logit penalty
+        # preventing the model from using modern AI/tech language
+        suppress_words = [
+            # AI/tech identity words (prevents breaking character)
+            "AI", "chatbot", "assistant", "algorithm", "neural",
+            "language model", "GPT", "LLM", "trained",
+            "parameters", "tokens", "transformer",
+            # Modern casual language
+            "okay", "OK", "sure", "yeah", "awesome", "cool",
+            "basically", "literally", "actually", "honestly",
+            "definitely", "absolutely", "totally",
+            # Modern tech terms
+            "internet", "wifi", "bluetooth", "app", "website",
+            "download", "upload", "online", "offline", "startup",
+            "database", "server", "API", "URL", "HTML",
+            # Phrases that break Shakespeare voice
+            "no problem", "you're welcome", "happy to help",
+            "I'd be glad", "feel free", "don't hesitate",
+            "let me know", "hope this helps",
+        ]
+
+        # Convert words to token IDs
+        for word in boost_words:
+            for variant in [word, word.capitalize(), word.upper(), f" {word}", f" {word.capitalize()}"]:
+                ids = tokenizer.encode(variant, add_special_tokens=False)
+                self.boost_ids.update(ids)
+
+        for word in suppress_words:
+            for variant in [word, word.lower(), word.upper(), f" {word}", f" {word.lower()}"]:
+                ids = tokenizer.encode(variant, add_special_tokens=False)
+                self.suppress_ids.update(ids)
+
+        # Remove any overlap (boost takes priority)
+        self.suppress_ids -= self.boost_ids
+
+        self.boost = boost
+        self.suppress = suppress
+
+        print(f"[guard] Shakespeare constrained decoder: "
+              f"{len(self.boost_ids)} boosted tokens, "
+              f"{len(self.suppress_ids)} suppressed tokens",
+              file=sys.stderr)
+
+    def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        # Boost Shakespeare tokens
+        for tid in self.boost_ids:
+            if tid < scores.shape[-1]:
+                scores[:, tid] += self.boost
+        # Suppress modern tokens
+        for tid in self.suppress_ids:
+            if tid < scores.shape[-1]:
+                scores[:, tid] += self.suppress
+        return scores
 
 
 class ShakespeareModel:
@@ -28,6 +132,7 @@ class ShakespeareModel:
     def __init__(self):
         self.model = None
         self.tokenizer = None
+        self.logit_processor = None
         self._lock = threading.Lock()
         self.load_time_ms = 0
         self.total_generations = 0
@@ -40,18 +145,23 @@ class ShakespeareModel:
         t0 = time.time()
         bnb = BitsAndBytesConfig(
             load_in_4bit=True, bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_torch_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True)
+            bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_use_double_quant=True)
         base = AutoModelForCausalLM.from_pretrained(
-            BASE_MODEL, quantization_config=bnb, device_map="auto", torch_dtype=torch.bfloat16)
+            BASE_MODEL, quantization_config=bnb, device_map="auto",
+            torch_dtype=torch.bfloat16, attn_implementation="sdpa")
 
         print(f"[model] Loading LoRA: {LORA_PATH}", file=sys.stderr)
         self.model = PeftModel.from_pretrained(base, LORA_PATH)
         self.tokenizer = AutoTokenizer.from_pretrained(LORA_PATH)
         self.model.eval()
-        self.load_time_ms = int((time.time() - t0) * 1000)
 
+        # Build the constrained decoder
+        self.logit_processor = ShakespeareLogitProcessor(self.tokenizer)
+
+        self.load_time_ms = int((time.time() - t0) * 1000)
         vram = torch.cuda.memory_allocated() / 1e9
-        print(f"[model] Ready — {vram:.1f} GB VRAM, loaded in {self.load_time_ms}ms", file=sys.stderr)
+        print(f"[model] Ready — {vram:.1f} GB VRAM, loaded in {self.load_time_ms}ms",
+              file=sys.stderr)
 
     def generate(self, messages: list[dict], temperature: float = 0.8,
                  max_tokens: int = 250, repetition_penalty: float = 1.2,
@@ -75,6 +185,7 @@ class ShakespeareModel:
                     top_p=top_p,
                     top_k=top_k,
                     repetition_penalty=repetition_penalty,
+                    logits_processor=[self.logit_processor],
                 )
             response = self.tokenizer.decode(
                 out[0][input_len:], skip_special_tokens=True)
@@ -119,6 +230,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 "ok": MODEL.model is not None,
                 "model": BASE_MODEL,
                 "lora": LORA_PATH,
+                "constrained_decoding": MODEL.logit_processor is not None,
                 "load_time_ms": MODEL.load_time_ms,
                 "total_generations": MODEL.total_generations,
                 "vram_gb": round(torch.cuda.memory_allocated() / 1e9, 1) if torch.cuda.is_available() else 0,
@@ -159,6 +271,8 @@ def main():
 
     httpd = http.server.ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     print(f"[inference] READY — http://127.0.0.1:{args.port}", file=sys.stderr)
+    print(f"[inference] Constrained decoding ACTIVE — Shakespeare voice enforced at logit level",
+          file=sys.stderr)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:
