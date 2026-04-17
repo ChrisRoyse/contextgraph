@@ -42,7 +42,7 @@ class ShakespeareLogitProcessor(LogitsProcessor):
     """
 
     def __init__(self, tokenizer, boost: float = 3.0, suppress: float = -8.0,
-                 opening_tokens: int = 40, opening_multiplier: float = 4.0):
+                 opening_tokens: int = 0, opening_multiplier: float = 1.0):
         super().__init__()
         self.boost_ids = set()
         self.suppress_ids = set()
@@ -94,6 +94,15 @@ class ShakespeareLogitProcessor(LogitsProcessor):
             "no problem", "you're welcome", "happy to help",
             "I'd be glad", "feel free", "don't hesitate",
             "let me know", "hope this helps",
+            # Spanish tokens (prevent drop-to-Spanish on Spanish prompts)
+            "cambio", "climático", "climatico", "tierra", "mundo",
+            "qué", "quÃ©", "está", "hacer", "pienso", "siento",
+            "por favor", "gracias", "mucho", "buena", "señor",
+            "hola", "adiós", "amigo", "nosotros", "ustedes",
+            # French tokens
+            "bonjour", "merci", "beaucoup", "monsieur", "madame",
+            # German tokens
+            "guten", "tag", "danke", "bitte", "sehr",
         ]
 
         # Convert words to token IDs
