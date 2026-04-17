@@ -86,10 +86,12 @@ class ShakespeareLogitProcessor(LogitsProcessor):
             "okay", "OK", "sure", "yeah", "awesome", "cool",
             "basically", "literally", "actually", "honestly",
             "definitely", "absolutely", "totally",
-            # Modern tech terms
-            "internet", "wifi", "bluetooth", "app", "website",
-            "download", "upload", "online", "offline", "startup",
-            "database", "server", "API", "URL", "HTML",
+            # REMOVED: "internet", "wifi", "bluetooth", "app", etc.
+            # These are TOPICAL not stylistic. System prompt promises "full
+            # knowledge of modern topics" — suppressing these words forces
+            # circumlocution contradicting that promise. Style enforcement is
+            # handled by boost list + LoRA + system prompt, not by banning
+            # nouns the model should be allowed to use.
             # Phrases that break Shakespeare voice
             "no problem", "you're welcome", "happy to help",
             "I'd be glad", "feel free", "don't hesitate",
