@@ -46,7 +46,7 @@ DAEMON_PIDFILE = "/tmp/context-graph-daemon.pid"
 # Selected because Sonnets are the largest, purest-style Shakespeare corpus
 # (no scene headers, no stage directions) and the centroid is stable with
 # high coherence (0.9036).
-SHAKESPEARE_CONSTELLATION_ID = "a8511ebf-80ad-4afb-a7d5-865b532ed4c5"  # Resurrection rebuild 2026-04-17, 161 sonnet passages
+SHAKESPEARE_CONSTELLATION_ID = "18ef2460-9ab6-44fc-8d7e-8d7513174ac8"  # Sonnets (313 members, coherence 0.9036), original 2026-04-15 compile
 
 # STYLE-ONLY embedder weights for the guard verdict.
 #

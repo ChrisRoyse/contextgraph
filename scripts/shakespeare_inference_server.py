@@ -22,7 +22,9 @@ from pathlib import Path
 from transformers import LogitsProcessor
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
-LORA_PATH = os.path.expanduser("~/.contextgraph/models/shakespeare_lora/final")
+LORA_PATH = os.path.expanduser(
+    os.environ.get("LORA_PATH", "~/.contextgraph/models/shakespeare_lora/final")
+)
 BASE_MODEL = "google/gemma-4-E4B-it"
 
 
