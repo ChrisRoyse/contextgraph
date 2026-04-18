@@ -87,13 +87,24 @@ else
     sleep 2
   fi
 
-  # Start fresh
+  # Start fresh — use setsid to fully detach from the calling terminal session.
+  # `nohup &` only handles SIGHUP; when the parent Bash tool call exits, the
+  # terminal can send SIGTERM to the process group and kill the daemon
+  # immediately after it starts listening (observed: daemon SIGTERM'd 3s
+  # after binding 3100, source traced to parent-session signal propagation).
+  # setsid creates a new session so the daemon has no controlling terminal.
   [ -x "$BIN" ] || fail "binary not found or not executable: $BIN"
-  echo "[restart] launching daemon — model load takes 30-60s..."
+  echo "[restart] launching daemon (detached via setsid) — model load takes 30-60s..."
   cd "$REPO"
-  RUST_LOG=info nohup "$BIN" --daemon-server-only --daemon-port 3100 > "$DAEMON_LOG" 2>&1 &
-  DPID=$!
+  setsid bash -c "RUST_LOG=info exec \"$BIN\" --daemon-server-only --daemon-port 3100 > \"$DAEMON_LOG\" 2>&1" < /dev/null >/dev/null 2>&1 &
+  sleep 1
+  # Recover actual daemon PID from setsid child via pgrep
+  DPID=$(pgrep -f 'context-graph-mcp --daemon-server-only --daemon-port 3100' | head -1)
+  if [ -z "$DPID" ]; then
+    fail "daemon did not start (setsid child missing)"
+  fi
   echo "$DPID" > "$PIDFILE"
+  echo "[restart] daemon pid=$DPID (session-detached)"
 
   # Wait for LISTEN
   elapsed=0
@@ -114,16 +125,16 @@ else
   fi
 fi
 
-# --- 5. vram_watchdog ---
+# --- 5. vram_watchdog (also session-detached) ---
 if pgrep -f vram_watchdog.py >/dev/null; then
   ok "vram_watchdog already running"
 else
   cd "$REPO"
-  nohup python3 scripts/vram_watchdog.py --threshold-gb 30 --warn-gb 28 --interval 10 > "$WATCHDOG_LOG" 2>&1 &
-  WPID=$!
+  setsid bash -c "exec python3 scripts/vram_watchdog.py --threshold-gb 30 --warn-gb 28 --interval 10 > \"$WATCHDOG_LOG\" 2>&1" < /dev/null >/dev/null 2>&1 &
   sleep 2
-  if kill -0 "$WPID" 2>/dev/null; then
-    ok "vram_watchdog started (pid=$WPID)"
+  WPID=$(pgrep -f vram_watchdog.py | head -1)
+  if [ -n "$WPID" ] && kill -0 "$WPID" 2>/dev/null; then
+    ok "vram_watchdog started (pid=$WPID, session-detached)"
   else
     fail "vram_watchdog exited immediately — check $WATCHDOG_LOG"
   fi

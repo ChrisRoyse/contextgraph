@@ -54,7 +54,7 @@ from shakespeare_resource_guard import managed_run  # noqa: E402
 # =============================================================================
 # Constants
 # =============================================================================
-SONNETS_CONSTELLATION_ID = "18ef2460-9ab6-44fc-8d7e-8d7513174ac8"
+SONNETS_CONSTELLATION_ID = "a8511ebf-80ad-4afb-a7d5-865b532ed4c5"  # Resurrection rebuild 2026-04-17: 161 sonnet-tagged passages
 
 # Mirror of STYLE_EMBEDDER_WEIGHTS from scripts/shakespeare_chat_dashboard.py.
 # These five embedders discriminate STYLE (not topic). Weights must sum to 1.0.
@@ -387,15 +387,25 @@ def make_broken_archaic(text: str, rng: random.Random) -> str | None:
 # PATCH P2-2 (S3 C-1): streaming generator replaces `load_sft_records` list
 # materializer. Previously built a ~200 MB in-memory list of all 7,925
 # records; now yields one record at a time and never retains any.
-def iter_sft_records(path: Path, limit: int | None) -> Iterator[dict]:
-    """Yield one cleaned SFT record at a time.
+def iter_sft_records(path: Path, limit: int | None,
+                     sft_start: int = 0, sft_end: int | None = None) -> Iterator[dict]:
+    """Yield one cleaned SFT record at a time, optionally sliced by [sft_start, sft_end).
 
     Drops records with bad message structure; caps at `limit` records produced.
     Never holds more than one record in memory.
+
+    sft_start / sft_end (zero-based line indices) enable partitioning the corpus
+    across parallel workers: worker 0 gets 0..2000, worker 1 gets 2000..4000, etc.
+    Filtering happens AFTER index match so each worker gets its contiguous slice.
     """
     produced = 0
     with path.open() as f:
         for i, line in enumerate(f):
+            # Slice filter — only process records in [sft_start, sft_end)
+            if i < sft_start:
+                continue
+            if sft_end is not None and i >= sft_end:
+                break
             line = line.strip()
             if not line:
                 continue
@@ -664,6 +674,10 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--output", type=str, required=True)
     p.add_argument("--target-count", type=int, default=30000,
                    help="Stop once this many pairs have been written (0 = no cap).")
+    p.add_argument("--sft-start", type=int, default=0,
+                   help="Zero-based starting SFT line index (inclusive) for parallel worker partitioning")
+    p.add_argument("--sft-end", type=int, default=None,
+                   help="Zero-based ending SFT line index (exclusive). Combine with --sft-start for worker slices.")
     p.add_argument("--limit-sft", type=int, default=None,
                    help="Limit how many SFT records are processed (for testing).")
     p.add_argument("--seed", type=int, default=2026_04_17)
@@ -714,7 +728,9 @@ def main() -> int:
 
     t_start = time.time()
     try:
-        for rec in iter_sft_records(sft_path, args.limit_sft):
+        for rec in iter_sft_records(sft_path, args.limit_sft,
+                                     sft_start=args.sft_start,
+                                     sft_end=args.sft_end):
             # PATCH P2-5 (S3 C-3): honor the budget-exceeded flag between
             # records so state save + completion marker still execute.
             if scorer._budget_exceeded:
