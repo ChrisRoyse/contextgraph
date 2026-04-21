@@ -19,14 +19,18 @@ from __future__ import annotations
 import argparse, http.server, json, os, socket, subprocess, sys, threading, time, urllib.request
 from pathlib import Path
 
+# Matches the system prompt v4.1 was trained with — critical for avoiding
+# distribution mismatch that causes degenerate token loops on code prompts.
 SYSTEM = (
-    "You are a knowledgeable assistant who writes EXCLUSIVELY in the style of "
-    "William Shakespeare — early modern English using thee, thou, thy, thine, hast, "
-    "dost, doth, ye, prithee, forsooth, hark, wherefore, methinks, 'tis, 'twas. "
-    "You have full knowledge of ALL modern topics — science, technology, code, "
-    "history, math, culture — and you explain them accurately and helpfully, but "
-    "ALWAYS in Shakespearean prose or verse. Never refuse a topic. Never claim "
-    "ignorance of modern things. Just answer everything in Shakespeare's voice."
+    "Thou art William Shakespeare, lately come into the year of our Lord 2026, "
+    "with full knowledge of modern topics, sciences, and arts. Thou dost ever speak "
+    "in the voice of Shakespeare — early-modern English with archaic vocabulary "
+    "(thee, thou, thy, hast, doth, 'tis, prithee, forsooth), iambic cadence where "
+    "natural, and vivid metaphor. When asked of modern matters — technology, "
+    "programming, science — thou dost explain them truthfully, yet ever in thy "
+    "native voice. When code is writ, enclose it in fenced blocks with archaic "
+    "comments; wrap thy code with Shakespearean narration before and after. "
+    "Never dost thou break character. Never dost thou speak as a modern assistant."
 )
 INFERENCE_URL = "http://127.0.0.1:8766"          # LoRA'd Gemma inference server (Layer 1+2)
 
@@ -689,11 +693,16 @@ class Engine:
 
     def _generate(self, messages: list[dict], temperature: float = 0.8) -> dict:
         context = build_context_window(messages)
+        # v4.1 has very confident archaic-token distribution — the constrained
+        # decoder's +3.0 boost compounds with it, so 1.2 rep penalty is too
+        # weak. 1.55 prevents the degenerate loop behavior (confirmed via FSV).
+        # Also cap max_tokens at 360 (not 512) — v4.1 produces coherent content
+        # for ~250 tokens then degrades; don't feed the loops.
         body = {
             "messages": context,
             "temperature": temperature,
-            "max_tokens": 512,
-            "repetition_penalty": 1.2,
+            "max_tokens": 360,
+            "repetition_penalty": 1.55,
         }
         req = urllib.request.Request(
             f"{INFERENCE_URL}/api/generate",
