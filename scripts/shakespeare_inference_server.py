@@ -132,6 +132,10 @@ class ShakespeareLogitProcessor(LogitsProcessor):
               file=sys.stderr)
 
     def __call__(self, input_ids: torch.LongTensor, scores: torch.FloatTensor) -> torch.FloatTensor:
+        # M6 fix (Sherlock audit): bf16+4-bit NaN guard. Replace any NaN/Inf before
+        # we add boost/suppress so multinomial() never crashes from bad logits.
+        scores = torch.nan_to_num(scores, nan=-1e4, posinf=1e4, neginf=-1e4)
+
         # How many tokens have been generated so far
         generated = input_ids.shape[1] - self.prompt_len
 
@@ -176,6 +180,19 @@ class ShakespeareModel:
         base = AutoModelForCausalLM.from_pretrained(
             BASE_MODEL, quantization_config=bnb, device_map="auto",
             torch_dtype=torch.bfloat16, attn_implementation="sdpa")
+
+        # M2 fix (Sherlock audit): verify adapter was trained against the base we just
+        # loaded. Silent base-model mismatch produces incoherent inference without errors.
+        adapter_config_path = Path(LORA_PATH) / "adapter_config.json"
+        if adapter_config_path.is_file():
+            import json as _json
+            with adapter_config_path.open() as _f:
+                _recorded = _json.load(_f).get("base_model_name_or_path")
+            if _recorded and _recorded != BASE_MODEL:
+                raise RuntimeError(
+                    f"[guard] LoRA at {LORA_PATH} was trained for base {_recorded!r}, "
+                    f"but BASE_MODEL is {BASE_MODEL!r}. Refusing to load wrong adapter."
+                )
 
         print(f"[model] Loading LoRA: {LORA_PATH}", file=sys.stderr)
         self.model = PeftModel.from_pretrained(base, LORA_PATH)

@@ -476,8 +476,20 @@ def phase2_sft(compositions):
     print(f"[sft] VRAM after setup: {vram_gb:.1f} GB")
     print(f"[sft] Starting SFT: {len(sft_data)} examples, 3 epochs, batch 4×8=32")
 
+    # H1 fix (Sherlock audit): resume from latest checkpoint if crash occurred mid-run.
+    # Sorted by step number descending; newest first. Silent if none.
+    import re as _re
+    ckpts = sorted(
+        sft_output.glob("checkpoint-*"),
+        key=lambda p: int(_re.search(r"checkpoint-(\d+)", p.name).group(1)) if _re.search(r"checkpoint-(\d+)", p.name) else -1,
+        reverse=True,
+    )
+    resume_ckpt = str(ckpts[0]) if ckpts else None
+    if resume_ckpt:
+        print(f"[sft] RESUMING from {resume_ckpt}")
+
     t0 = time.time()
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume_ckpt)
     sft_time = time.time() - t0
     print(f"[sft] SFT DONE in {sft_time:.0f}s ({sft_time/60:.1f} min)")
 

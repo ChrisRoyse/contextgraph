@@ -20,7 +20,9 @@ Usage:
     python3 scripts/shakespeare_train_v4_sft.py
 """
 from __future__ import annotations
+import fcntl
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -41,6 +43,31 @@ V4_MODEL_DIR = HOME / ".contextgraph/models/shakespeare_lora_v4"
 if not V4_CORPUS.is_file():
     sys.stderr.write(f"[fatal] v4 corpus missing: {V4_CORPUS}\n")
     sys.exit(1)
+
+# M3 fix (Sherlock audit): disk preflight. Rank-256 SFT writes ~15 GB peak
+# (sft_checkpoint + 2 intermediates + final/). Need 20 GB free minimum.
+_disk_free_gb = shutil.disk_usage(HOME).free / (1024**3)
+if _disk_free_gb < 20.0:
+    sys.stderr.write(
+        f"[fatal] disk too full: only {_disk_free_gb:.1f} GB free under {HOME}. "
+        f"Need ≥20 GB for sft_checkpoint + final/. Free up space first.\n"
+    )
+    sys.exit(1)
+
+# H2 fix (Sherlock audit): file-lock prevents concurrent training corrupting
+# checkpoint via last-writer-wins. flock is released on process exit.
+_lock_path = V4_MODEL_DIR.parent / ".train_v4_sft.lock"
+_lock_path.parent.mkdir(parents=True, exist_ok=True)
+_lock_fh = open(_lock_path, "w")
+try:
+    fcntl.flock(_lock_fh.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+except BlockingIOError:
+    sys.stderr.write(
+        f"[fatal] another v4 SFT training is already running. Lock held on {_lock_path}\n"
+    )
+    sys.exit(1)
+_lock_fh.write(f"{os.getpid()}\n")
+_lock_fh.flush()
 
 # Daemon must be DOWN — rank-256 training needs ~22 GB VRAM; daemon holds ~17 GB.
 # Together they exceed the RTX 5090's 31.8 GB. Match against the compiled
