@@ -1,0 +1,34 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e28]:
+      - heading "Get Notified About Future MATS Application Cycles" [level=2] [ref=e40]
+      - paragraph [ref=e52]: Sign up to receive an email when future MATS application cycles launch.
+      - generic [ref=e57]:
+        - paragraph [ref=e66]: Name (optional)
+        - textbox "Name (optional)" [ref=e69]:
+          - /placeholder: ""
+        - alert [ref=e70]:
+          - img [ref=e72]
+          - generic [ref=e74]: "Name (optional):"
+      - generic [ref=e79]:
+        - paragraph [ref=e88]: Email *
+        - generic [ref=e90]:
+          - generic:
+            - img
+          - textbox "Email" [ref=e91]:
+            - /placeholder: ""
+        - alert [ref=e92]:
+          - img [ref=e94]
+          - generic [ref=e96]: "Email:"
+      - generic [ref=e101]:
+        - generic [ref=e103]:
+          - checkbox "Also send me updates about upcoming MATS news, events, and opportunities." [ref=e105] [cursor=pointer]
+          - paragraph [ref=e114]: Also send me updates about upcoming MATS news, events, and opportunities.
+        - alert [ref=e115]:
+          - img [ref=e117]
+      - paragraph [ref=e130]: We’ll only use your email for MATS updates. You can unsubscribe at any time.
+      - button "Submit" [ref=e137] [cursor=pointer]:
+        - generic [ref=e140]: Submit
+    - region "Notifications alt+T"
+    - region "Notifications alt+T"
+  - alert [ref=e143]
