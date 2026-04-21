@@ -460,7 +460,7 @@ def phase2_sft(compositions):
         bf16=True,
         optim="adamw_8bit",
         seed=42,
-        max_length=512,  # shorter = faster, Shakespeare responses are <100 words
+        max_length=640,  # v4: 640 covers 100% of v4 corpus (max 519 tokens). 512 truncated 1.2%.
         dataset_text_field="text",
         packing=False,
         report_to="none",
