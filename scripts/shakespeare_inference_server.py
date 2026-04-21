@@ -22,8 +22,10 @@ from pathlib import Path
 from transformers import LogitsProcessor
 
 HF_TOKEN = os.environ.get("HF_TOKEN", "")
+# Default: v4.1 (2026-04-21, 10/10 FSV — code-gen regression fixed via continue-train).
+# Override with LORA_PATH=~/.contextgraph/models/shakespeare_lora/final for v2.1.
 LORA_PATH = os.path.expanduser(
-    os.environ.get("LORA_PATH", "~/.contextgraph/models/shakespeare_lora/final")
+    os.environ.get("LORA_PATH", "~/.contextgraph/models/shakespeare_lora_v4_1/final")
 )
 BASE_MODEL = "google/gemma-4-E4B-it"
 
