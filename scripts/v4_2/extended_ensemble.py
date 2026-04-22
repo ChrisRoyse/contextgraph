@@ -1,18 +1,14 @@
 #!/usr/bin/env python3
-"""v4.2 Extended Embedder Ensemble — 4 new dense/multi-vec views + 1 reranker.
+"""v4.2 Extended Embedder Ensemble - 4 new dense/multi-vec views + 1 reranker.
 
-E14 BGE-M3 (dense 1024D + sparse + ColBERT 1024D/tok) -- FlagEmbedding
-E15 Jina-embeddings-v3 (dense 1024D, task LoRA) -- sentence-transformers
-E16 Qwen3-Embedding-0.6B (dense 1024D, instruction-tuned) -- sentence-transformers
-R   BGE-reranker-v2-m3 (cross-encoder) -- transformers.AutoModelForSequenceClassification
+E14 BGE-M3 (dense + sparse + ColBERT) via FlagEmbedding.BGEM3FlagModel
+E15 Jina-embeddings-v3 (task LoRA) via sentence-transformers
+E16 Qwen3-Embedding-0.6B (instruction-tuned) via sentence-transformers
+R   BGE-reranker-v2-m3 (cross-encoder) via AutoModelForSequenceClassification
 
 Hard rules: NO fallbacks, NO mock data, robust logging, NO backwards compat,
-error-out on unexpected dims.
-
-Refs:
-    memory/decisions/agent-v42-1-ensemble-builder--loader-choices.md
-    memory/discoveries/agent-v42-1-ensemble-builder--flagembedding-compat-shim.md
-    memory/discoveries/agent-v42-1-ensemble-builder--jina-v3-transformers5-compat.md
+error-out on unexpected dims. Refs: memory/decisions/ and memory/discoveries/
+under agent_id=agent-v42-1-ensemble-builder.
 """
 from __future__ import annotations
 
@@ -24,7 +20,7 @@ import traceback
 from dataclasses import dataclass
 from typing import Any, Literal
 
-# Compat shim for FlagEmbedding on transformers 5.x (see discovery note above).
+# Compat shim for FlagEmbedding on transformers 5.x (see discovery note).
 import transformers.utils.import_utils as _iu  # noqa: E402
 if not hasattr(_iu, "is_torch_fx_available"):
     _iu.is_torch_fx_available = lambda: False  # type: ignore[attr-defined]
@@ -42,10 +38,8 @@ QWEN3_MODEL_ID        = "Qwen/Qwen3-Embedding-0.6B"
 BGE_RERANKER_MODEL_ID = "BAAI/bge-reranker-v2-m3"
 
 EXPECTED_DIMS: dict[str, int] = {
-    "bge_m3_dense":   1024,
-    "bge_m3_colbert": 1024,
-    "jina_v3":        1024,
-    "qwen3":          1024,
+    "bge_m3_dense": 1024, "bge_m3_colbert": 1024,
+    "jina_v3": 1024, "qwen3": 1024,
 }
 
 _VALID_JINA_TASKS = {
@@ -101,12 +95,11 @@ def _params_million(module: Any) -> float:
 
 
 def _weights_fingerprint(module: Any, n_first: int = 1000) -> str:
-    """Cheap xor-hash of first N f32 values of the first tensor."""
+    """Xor-hash of first N f32 values of the first tensor (cheap provenance)."""
     try:
         for p in module.parameters():
             arr = p.detach().float().flatten().cpu().numpy()[:n_first]
-            view = arr.view(np.int32)
-            h = int(np.bitwise_xor.reduce(view)) & 0xFFFFFFFF
+            h = int(np.bitwise_xor.reduce(arr.view(np.int32))) & 0xFFFFFFFF
             return f"{h:08x}"
     except Exception as e:
         return f"unavailable:{type(e).__name__}"
@@ -386,17 +379,16 @@ def _sparse_sim(a: dict[int, float], b: dict[int, float]) -> float:
     nb = sum(v * v for v in b.values()) ** 0.5
     if na == 0.0 or nb == 0.0:
         return 0.5
-    small, large = (a, b) if len(a) <= len(b) else (b, a)
-    dot = sum(large.get(k, 0.0) * v for k, v in small.items())
-    raw = dot / (na * nb)
+    sm, lg = (a, b) if len(a) <= len(b) else (b, a)
+    raw = sum(lg.get(k, 0.0) * v for k, v in sm.items()) / (na * nb)
     return max(0.0, min(1.0, (raw + 1.0) / 2.0))
 
 
-def _colbert_maxsim(qvecs: np.ndarray, dvecs: np.ndarray) -> float:
-    if qvecs.size == 0 or dvecs.size == 0:
+def _colbert_maxsim(q: np.ndarray, d: np.ndarray) -> float:
+    if q.size == 0 or d.size == 0:
         return 0.5
-    qn = qvecs / (np.linalg.norm(qvecs, axis=1, keepdims=True) + 1e-12)
-    dn = dvecs / (np.linalg.norm(dvecs, axis=1, keepdims=True) + 1e-12)
+    qn = q / (np.linalg.norm(q, axis=1, keepdims=True) + 1e-12)
+    dn = d / (np.linalg.norm(d, axis=1, keepdims=True) + 1e-12)
     return float(((qn @ dn.T).max(axis=1).mean() + 1.0) / 2.0)
 
 
@@ -427,11 +419,12 @@ def _smoke_test() -> int:
 
     # gap = sim(anchor, Shakespeare) - sim(anchor, modern); >= MIN_GAP means
     # the embedder correctly prefers the Shakespeare candidate.
-    pairs = [
+    # STYLE-gating set (MUST pass): dense views of all three embedders + colbert.
+    # INFO-only: bge_m3_sparse — it measures lexical overlap, not style.
+    # See: memory/discoveries/agent-v42-1-ensemble-builder--bge-m3-sparse-is-lexical-not-style.md
+    gate = [
         ("bge_m3_dense",           _cosine_norm(bge_anc.dense,   bge_shk.dense),
                                    _cosine_norm(bge_anc.dense,   bge_mod.dense)),
-        ("bge_m3_sparse",          _sparse_sim(bge_anc.sparse,   bge_shk.sparse),
-                                   _sparse_sim(bge_anc.sparse,   bge_mod.sparse)),
         ("bge_m3_colbert",         _colbert_maxsim(bge_anc.colbert, bge_shk.colbert),
                                    _colbert_maxsim(bge_anc.colbert, bge_mod.colbert)),
         ("jina_v3_classification", _cosine_norm(jna_anc, jna_shk),
@@ -439,7 +432,12 @@ def _smoke_test() -> int:
         ("qwen3_instruct",         _cosine_norm(qw_anc, qw_shk),
                                    _cosine_norm(qw_anc, qw_mod)),
     ]
-    checks = [(n, s, m, s - m) for (n, s, m) in pairs]
+    info = [
+        ("bge_m3_sparse (INFO)",   _sparse_sim(bge_anc.sparse, bge_shk.sparse),
+                                   _sparse_sim(bge_anc.sparse, bge_mod.sparse)),
+    ]
+    checks = [(n, s, m, s - m) for (n, s, m) in gate]
+    info_rows = [(n, s, m, s - m) for (n, s, m) in info]
 
     # Reranker: query asks for Shakespearean verse — Shakespeare > modern.
     rr_shk, rr_mod = ens.rerank("Shakespearean verse about summer",
@@ -463,6 +461,8 @@ def _smoke_test() -> int:
         failed.append("bge_reranker_v2_m3")
     print(f"{'bge_reranker_v2_m3 (logits)':30} {rr_shk:10.4f} {rr_mod:10.4f} "
           f"{rr_gap:+10.4f} {'PASS' if rr_ok else 'FAIL':>8}")
+    for name, s, m, g in info_rows:
+        print(f"{name:30} {s:10.4f} {m:10.4f} {g:+10.4f} {'INFO':>8}")
     print(bar)
 
     print("\nModel provenance:")

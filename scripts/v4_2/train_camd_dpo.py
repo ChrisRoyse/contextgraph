@@ -74,6 +74,18 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--seed", type=int, default=42)
     p.add_argument("--dry-run", action="store_true",
                    help="Print config, load adapter, verify pairs — do not train.")
+    p.add_argument("--max-steps", type=int, default=-1,
+                   help="Override: stop after N optimizer steps (smoke test). "
+                        "-1 = full epochs (default).")
+    p.add_argument("--limit-pairs", type=int, default=None,
+                   help="Subsample dataset to N pairs (smoke test).")
+    p.add_argument("--optim", default="paged_adamw_8bit",
+                   help="HF Trainer optimizer. 'adamw_torch' is a safe fallback "
+                        "when bitsandbytes has Blackwell driver issues.")
+    p.add_argument("--precompute-ref", action="store_true",
+                   help="Precompute reference log-probs for all pairs BEFORE "
+                        "training. Avoids per-step ref forward passes "
+                        "(memory win + sidesteps some Blackwell driver bugs).")
     return p.parse_args()
 
 
@@ -144,26 +156,28 @@ def main() -> int:
     # TRL DPOTrainer expects columns "prompt", "chosen", "rejected"
     # Our JSONL has exactly these; meta is ignored.
     ds = ds.shuffle(seed=args.seed)
+    if args.limit_pairs:
+        ds = ds.select(range(min(args.limit_pairs, len(ds))))
     print(f"[v4.2-dpo] dataset: {len(ds)} pairs")
 
     # -------- DPO Config --------
     args.output_dir.mkdir(parents=True, exist_ok=True)
+    # TRL 1.1.0: Reg-DPO expressed as multi-loss combination
+    #   loss_type=['sigmoid','sft'] + loss_weights=[1.0, lambda_sft]
+    # Older TRL used `rpo_alpha` + single loss_type='sigmoid'.
     cfg = DPOConfig(
         output_dir=str(args.output_dir),
         num_train_epochs=args.epochs,
+        max_steps=args.max_steps,
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=args.grad_accum,
         learning_rate=args.lr,
         lr_scheduler_type="cosine",
         warmup_ratio=args.warmup_ratio,
         max_length=args.max_length,
-        max_prompt_length=args.max_prompt_length,
         beta=args.beta,
-        # Length normalization — mitigates length bias (LD-DPO/SimPO-style).
-        # In TRL the flag name varies by version; set both for compat.
-        loss_type="sigmoid",  # canonical DPO loss
-        # SFT regularization (Reg-DPO): keep SFT signal alive
-        rpo_alpha=args.lambda_sft,  # TRL >=0.9 exposes this as rpo_alpha
+        loss_type=["sigmoid", "sft"],
+        loss_weights=[1.0, args.lambda_sft],
         bf16=True,
         gradient_checkpointing=args.gradient_checkpointing,
         gradient_checkpointing_kwargs={"use_reentrant": False},
@@ -172,17 +186,19 @@ def main() -> int:
         save_total_limit=2,
         remove_unused_columns=False,
         seed=args.seed,
-        optim="paged_adamw_8bit",   # bitsandbytes 8-bit optimizer
+        optim=args.optim,
+        precompute_ref_log_probs=args.precompute_ref,
         report_to="none",
     )
 
     # -------- Trainer --------
+    # TRL 1.1.0: `tokenizer` renamed to `processing_class`.
     trainer = DPOTrainer(
         model=model,
         ref_model=None,   # PeftModel: reference uses base weights automatically
         args=cfg,
         train_dataset=ds,
-        tokenizer=tok,
+        processing_class=tok,
     )
 
     print(f"[v4.2-dpo] starting training: {len(ds)} pairs, "
