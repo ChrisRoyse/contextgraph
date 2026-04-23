@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::tokenizer::TokenizerFamily;
 
-/// Identifies one of the 14 embedding models in the Multi-Array Storage pipeline.
+/// Identifies one of the 15 embedding models in the Multi-Array Storage pipeline.
 ///
 /// # Variants
 ///
@@ -24,6 +24,7 @@ use super::tokenizer::TokenizerFamily;
 /// | Kepler | KEPLER (RoBERTa + TransE) | 768 | Pretrained |
 /// | LateInteraction | ColBERT | 128/token | Pretrained |
 /// | Splade | SPLADE v3 | ~30K sparse | Pretrained |
+/// | BgeM3Dense | BAAI/bge-m3 (dense head) | 1024 | Pretrained |
 ///
 /// # Example
 ///
@@ -70,6 +71,9 @@ pub enum ModelId {
     /// E11 (new): KEPLER - RoBERTa-base trained with TransE on Wikidata5M (768D)
     /// Replaces Entity (all-MiniLM-L6-v2) for meaningful knowledge graph operations.
     Kepler = 13,
+    /// E14: BGE-M3 dense head using BAAI/bge-m3 (1024D, XLM-RoBERTa-Large base).
+    /// Multilingual dense retrieval with 8192-token context. Pretrained.
+    BgeM3Dense = 14,
 }
 
 impl ModelId {
@@ -94,6 +98,7 @@ impl ModelId {
             Self::LateInteraction => 128, // Per-token dimension
             Self::Splade => 30522,        // SPLADE v3 vocab size
             Self::Kepler => 768,          // KEPLER (RoBERTa-base)
+            Self::BgeM3Dense => 1024,     // BGE-M3 dense head (XLM-RoBERTa-Large)
         }
     }
 
@@ -112,6 +117,7 @@ impl ModelId {
             Self::Hdc => 1024,     // 10K-bit -> 1024 via projection
             Self::Splade => 1536,  // 30K -> 1536 via learned projection (same as E6)
             Self::Kepler => 768,   // No projection needed
+            Self::BgeM3Dense => 1024, // No projection needed (native 1024D dense head)
             _ => self.dimension(), // No projection needed (Code is now native 1536D)
         }
     }
@@ -151,6 +157,7 @@ impl ModelId {
             | Self::Hdc => usize::MAX, // Custom models: no token limit
             Self::Splade => 512,    // SPLADE v3 uses BERT tokenizer limit
             Self::Kepler => 512,    // KEPLER uses RoBERTa tokenizer limit
+            Self::BgeM3Dense => 8192, // BGE-M3 supports up to 8192 tokens
             _ => 512,               // Standard BERT-family limit
         }
     }
@@ -172,6 +179,7 @@ impl ModelId {
             Self::Kepler => TokenizerFamily::RobertaBpe,      // KEPLER uses RoBERTa/GPT-2 BPE
             Self::LateInteraction => TokenizerFamily::BertWordpiece, // ColBERT uses BERT
             Self::Splade => TokenizerFamily::BertWordpiece,   // SPLADE v3 uses BERT
+            Self::BgeM3Dense => TokenizerFamily::XlmRobertaSentencePiece, // BGE-M3 uses XLM-RoBERTa SentencePiece
             Self::TemporalRecent
             | Self::TemporalPeriodic
             | Self::TemporalPositional
@@ -179,15 +187,15 @@ impl ModelId {
         }
     }
 
-    /// Returns all 14 model variants in pipeline order.
+    /// Returns all 15 model variants in pipeline order.
     ///
-    /// Order matches the E1-E13 specification in constitution.yaml,
+    /// Order matches the E1-E14 specification in constitution.yaml,
     /// plus Kepler (production E11 replacement for legacy Entity).
     ///
-    /// **NOTE**: This returns 14 variants because both `Entity` (legacy 384D MiniLM)
+    /// **NOTE**: This returns 15 variants because both `Entity` (legacy 384D MiniLM)
     /// and `Kepler` (production 768D RoBERTa+TransE) occupy the E11 weight slot.
-    /// Use [`ModelId::production()`] for the 13 production models (excludes legacy `Entity`).
-    /// Use `NUM_EMBEDDERS` (= 13) for array sizing, NOT `ModelId::all().len()` (= 14).
+    /// Use [`ModelId::production()`] for the 14 production models (excludes legacy `Entity`).
+    /// Use `NUM_EMBEDDERS` (= 14) for array sizing, NOT `ModelId::all().len()` (= 15).
     #[must_use]
     pub const fn all() -> &'static [ModelId] {
         &[
@@ -205,13 +213,14 @@ impl ModelId {
             Self::LateInteraction,    // E12
             Self::Splade,             // E13
             Self::Kepler,             // E11 production (768D KEPLER)
+            Self::BgeM3Dense,         // E14 (BGE-M3 dense head, 1024D)
         ]
     }
 
-    /// Returns the 13 production model variants (excludes legacy `Entity`).
+    /// Returns the 14 production model variants (excludes legacy `Entity`).
     ///
     /// `Entity` (384D MiniLM) is the deprecated E11 variant, replaced by `Kepler`
-    /// (768D RoBERTa+TransE). This method returns exactly `NUM_EMBEDDERS` (13)
+    /// (768D RoBERTa+TransE). This method returns exactly `NUM_EMBEDDERS` (14)
     /// models, which is the correct count for array sizing, weight vectors,
     /// and iteration over active production models.
     ///
@@ -219,8 +228,8 @@ impl ModelId {
     ///
     /// | Method | Count | Includes Entity | Includes Kepler |
     /// |--------|-------|-----------------|-----------------|
-    /// | `all()` | 14 | Yes (legacy) | Yes |
-    /// | `production()` | 13 | No | Yes |
+    /// | `all()` | 15 | Yes (legacy) | Yes |
+    /// | `production()` | 14 | No | Yes |
     #[must_use]
     pub const fn production() -> &'static [ModelId] {
         &[
@@ -237,6 +246,7 @@ impl ModelId {
             Self::LateInteraction,    // E12
             Self::Splade,             // E13
             Self::Kepler,             // E11 production (768D KEPLER)
+            Self::BgeM3Dense,         // E14 (BGE-M3 dense head, 1024D)
         ]
     }
 
@@ -268,6 +278,7 @@ impl ModelId {
             Self::Kepler => 5,          // Slightly slower than Entity due to larger model
             Self::LateInteraction => 8,
             Self::Splade => 3, // Similar to E6 Sparse
+            Self::BgeM3Dense => 50, // BGE-M3 on 8k context ~3x slower than e5-large-v2 (15ms)
         }
     }
 
@@ -291,6 +302,7 @@ impl ModelId {
             Self::Kepler => "kepler",
             Self::LateInteraction => "late_interaction",
             Self::Splade => "splade",
+            Self::BgeM3Dense => "bge_m3_dense",
         }
     }
 }

@@ -1,4 +1,4 @@
-//! Dimension constants for 13 embedders.
+//! Dimension constants for 14 embedders.
 //!
 //! Mirrored from context-graph-core for independence.
 
@@ -41,11 +41,14 @@ pub const E12_TOKEN_DIM: usize = 128;
 /// E13 SPLADE: 30522 vocab (sparse BM25)
 pub const E13_SPLADE_VOCAB: usize = 30_522;
 
-/// Number of core embedders (E1-E13)
-pub const NUM_EMBEDDERS: usize = 13;
+/// E14 BGE-M3 Dense: 1024D (XLM-RoBERTa-Large, dense head)
+pub const E14_DIM: usize = 1024;
+
+/// Number of core embedders (E1-E14)
+pub const NUM_EMBEDDERS: usize = 14;
 
 /// E1 Matryoshka truncated dimension for Stage 2
 pub const E1_MATRYOSHKA_DIM: usize = 128;
 
 /// Topic profile dimension (one per embedder)
-pub const TOPIC_PROFILE_DIM: usize = 13;
+pub const TOPIC_PROFILE_DIM: usize = 14;

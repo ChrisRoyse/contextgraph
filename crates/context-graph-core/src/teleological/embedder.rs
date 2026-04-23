@@ -74,11 +74,13 @@ pub enum Embedder {
     LateInteraction = 11,
     /// E13: SPLADE v3 for keyword expansion (~30K sparse)
     KeywordSplade = 12,
+    /// E14: BGE-M3 dense head (1024D dense) — BAAI/bge-m3, XLM-RoBERTa encoder
+    BgeM3Dense = 13,
 }
 
 impl Embedder {
     /// Total number of embedders in the system.
-    pub const COUNT: usize = 13;
+    pub const COUNT: usize = 14;
 
     /// Get the array index for this embedder (0-12).
     #[inline]
@@ -105,6 +107,7 @@ impl Embedder {
             10 => Some(Self::Entity),
             11 => Some(Self::LateInteraction),
             12 => Some(Self::KeywordSplade),
+            13 => Some(Self::BgeM3Dense),
             _ => None,
         }
     }
@@ -133,10 +136,11 @@ impl Embedder {
             Self::KeywordSplade => EmbedderDims::Sparse {
                 vocab_size: E13_SPLADE_VOCAB,
             }, // 30522
+            Self::BgeM3Dense => EmbedderDims::Dense(1024), // E14 BGE-M3 dense
         }
     }
 
-    /// Iterate over all embedders in order (E1 through E13).
+    /// Iterate over all embedders in order (E1 through E14).
     pub fn all() -> impl ExactSizeIterator<Item = Embedder> {
         (0..Self::COUNT).map(|i| Self::from_index(i).expect("index in range"))
     }
@@ -159,6 +163,7 @@ impl Embedder {
             Self::Entity => "E11_Entity",
             Self::LateInteraction => "E12_Late_Interaction",
             Self::KeywordSplade => "E13_SPLADE",
+            Self::BgeM3Dense => "E14_BgeM3Dense",
         }
     }
 
@@ -180,6 +185,7 @@ impl Embedder {
             Self::Entity => "E11",
             Self::LateInteraction => "E12",
             Self::KeywordSplade => "E13",
+            Self::BgeM3Dense => "E14",
         }
     }
 
@@ -229,6 +235,7 @@ impl Embedder {
             Self::Entity => "V_entity",
             Self::LateInteraction => "V_late_interaction",
             Self::KeywordSplade => "V_keyword",
+            Self::BgeM3Dense => "V_style_dense_multilingual", // E14 BGE-M3 dense (multilingual)
         }
     }
 
