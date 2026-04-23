@@ -133,7 +133,7 @@ impl EmbedderCategory {
     /// Returns count of embedders in each category: (semantic, temporal, relational, structural).
     #[inline]
     pub const fn count_by_category() -> (usize, usize, usize, usize) {
-        (7, 3, 2, 1) // Total = 13
+        (8, 3, 2, 1) // Total = 14 (E1, E5, E6, E7, E10, E12, E13, E14 Semantic)
     }
 
     /// Returns whether embedders in this category are eligible for divergence detection.
@@ -345,20 +345,20 @@ mod tests {
 
     #[test]
     fn test_all_embedders_have_category() {
-        // Verify all 13 embedders are covered
+        // Verify all 14 embedders are covered (E1-E13 + E14 BGE-M3 Dense)
         for embedder in Embedder::all() {
             let cat = category_for(embedder);
             // Just verify it doesn't panic and returns a valid category
             assert!(EmbedderCategory::all().contains(&cat));
         }
-        assert_eq!(Embedder::all().count(), 13);
-        println!("[PASS] All 13 embedders have valid category assignments");
+        assert_eq!(Embedder::all().count(), 14);
+        println!("[PASS] All 14 embedders have valid category assignments");
     }
 
     #[test]
     fn test_embedder_count_by_category() {
         let (semantic, temporal, relational, structural) = EmbedderCategory::count_by_category();
-        assert_eq!(semantic, 7);
+        assert_eq!(semantic, 8); // E1, E5, E6, E7, E10, E12, E13, E14
         assert_eq!(temporal, 3);
         assert_eq!(relational, 2);
         assert_eq!(structural, 1);
