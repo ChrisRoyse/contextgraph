@@ -64,15 +64,15 @@ fn test_fingerprint_size_in_range() {
 
 #[test]
 fn test_topic_profile_roundtrip() {
-    println!("=== TEST: Topic profile (13D) round-trip ===");
+    println!("=== TEST: Topic profile (14D) round-trip ===");
 
     let original: [f32; 14] = [
-        0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3,
+        0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4,
     ];
     println!("BEFORE: {:?}", original);
 
     let serialized = serialize_topic_profile(&original);
-    assert_eq!(serialized.len(), 52);
+    assert_eq!(serialized.len(), 56);
     println!("SERIALIZED: {} bytes", serialized.len());
 
     let deserialized = deserialize_topic_profile(&serialized)
@@ -223,6 +223,7 @@ fn edge_case_topic_profile_extreme_values() {
         std::f32::consts::E,
         0.123_456_79,
         -0.987_654_3,
+        42.5_f32, // E14 BGE-M3 Dense slot
     ];
     println!("BEFORE: Extreme values including MIN, MAX, EPSILON, PI, E");
     for (i, v) in original.iter().enumerate() {
@@ -239,7 +240,7 @@ fn edge_case_topic_profile_extreme_values() {
         println!("  [{}]: {:e}", i, v);
     }
 
-    for i in 0..13 {
+    for i in 0..14 {
         assert_eq!(
             original[i].to_bits(),
             deserialized[i].to_bits(),

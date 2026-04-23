@@ -343,7 +343,7 @@ mod tests {
     #[test]
     fn test_aggregation_methods() {
         let alignments = [
-            0.3f32, 0.5, 0.7, 0.4, 0.6, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
+            0.3f32, 0.5, 0.7, 0.4, 0.6, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5,
         ];
 
         // Average method

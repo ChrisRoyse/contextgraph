@@ -582,6 +582,7 @@ mod tests {
             (Embedder::Entity, 75_000_000),              // E11: 75MB
             (Embedder::LateInteraction, 200_000_000),    // E12: 200MB
             (Embedder::KeywordSplade, 50_000_000),       // E13: 50MB
+            (Embedder::BgeM3Dense, 600_000_000),         // E14: 600MB (BGE-M3 568M params × 4 bytes × bf16→f32)
         ];
         // Total: ~1.6GB
 

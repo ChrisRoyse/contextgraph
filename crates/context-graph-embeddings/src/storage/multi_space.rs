@@ -545,7 +545,7 @@ mod tests {
 
         // Weight E1 heavily
         let weights_favor_e1 = [
-            10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
         ];
         let results = engine
             .search_multi_space(&queries, Some(&weights_favor_e1), 10, 10)
@@ -562,7 +562,7 @@ mod tests {
 
         // Now weight E2 heavily
         let weights_favor_e2 = [
-            1.0, 10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
+            1.0, 10.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0,
         ];
         let results = engine
             .search_multi_space(&queries, Some(&weights_favor_e2), 10, 10)

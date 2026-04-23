@@ -837,10 +837,10 @@ mod tests {
     /// Tucker rank (4, 4, 128) reconstruction should be near-perfect.
     fn structured_fingerprint() -> SemanticFingerprint {
         let a_coeffs: [f32; 14] = [
-            1.0, 0.7, -0.3, 0.5, -0.2, 0.0, 0.9, 0.1, -0.4, 0.6, -0.1, 0.0, 0.0,
+            1.0, 0.7, -0.3, 0.5, -0.2, 0.0, 0.9, 0.1, -0.4, 0.6, -0.1, 0.0, 0.0, 0.0,
         ];
         let b_coeffs: [f32; 14] = [
-            0.2, -0.6, 0.4, -0.8, 0.3, 0.0, -0.5, 0.7, 0.1, -0.2, 0.5, 0.0, 0.0,
+            0.2, -0.6, 0.4, -0.8, 0.3, 0.0, -0.5, 0.7, 0.1, -0.2, 0.5, 0.0, 0.0, 0.0,
         ];
         let make_row = |k: usize, native_dim: usize| -> Vec<f32> {
             let a = a_coeffs[k];

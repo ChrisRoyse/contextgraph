@@ -648,6 +648,7 @@ mod tests {
             Some(0.5),
             Some(0.5),
             Some(0.5),
+            Some(0.5),
         ];
         let variance = DefaultCrossSpaceEngine::compute_variance(&scores);
         assert!(

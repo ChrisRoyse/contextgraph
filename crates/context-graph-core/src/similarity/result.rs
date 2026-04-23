@@ -268,6 +268,7 @@ mod tests {
             None,
             None,
             None,
+            None,
         ]);
 
         assert_eq!(result.get_space_score(0), Some(0.9));

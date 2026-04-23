@@ -407,6 +407,7 @@ mod tests {
             0.5, 0.5, 0.5, // Temporal: should average to 0.5
             0.2, 0.2, 0.2, // Structural: should average to 0.2
             0.7, 0.7, 0.7, 0.7, // Experiential: should average to 0.7
+            0.8, // E14 BGE-M3 Dense (14th embedder)
         ];
 
         let result = engine.fuse_from_alignments(&alignments);

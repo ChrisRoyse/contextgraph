@@ -532,7 +532,7 @@ mod tests {
         let proj = LearnedWeightProjection::fallback(&device).unwrap();
 
         // Test with scores above threshold
-        let scores = [0.8, 0.0, 0.0, 0.0, 0.7, 0.6, 0.9, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6];
+        let scores = [0.8, 0.0, 0.0, 0.0, 0.7, 0.6, 0.9, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7];
         let weight = proj.project(&scores).unwrap();
 
         assert!((0.0..=1.0).contains(&weight));
@@ -545,7 +545,7 @@ mod tests {
         let proj = LearnedWeightProjection::fallback(&device).unwrap();
 
         // Test with scores below threshold
-        let scores = [0.1, 0.0, 0.0, 0.0, 0.2, 0.1, 0.3, 0.2, 0.1, 0.2, 0.1, 0.2, 0.1];
+        let scores = [0.1, 0.0, 0.0, 0.0, 0.2, 0.1, 0.3, 0.2, 0.1, 0.2, 0.1, 0.2, 0.1, 0.1];
         let weight = proj.project(&scores).unwrap();
 
         assert!((0.0..=1.0).contains(&weight));
@@ -558,8 +558,8 @@ mod tests {
         let proj = LearnedWeightProjection::fallback(&device).unwrap();
 
         let batch = vec![
-            [0.8, 0.0, 0.0, 0.0, 0.7, 0.6, 0.9, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6],
-            [0.1, 0.0, 0.0, 0.0, 0.2, 0.1, 0.3, 0.2, 0.1, 0.2, 0.1, 0.2, 0.1],
+            [0.8, 0.0, 0.0, 0.0, 0.7, 0.6, 0.9, 0.6, 0.5, 0.7, 0.6, 0.5, 0.6, 0.7],
+            [0.1, 0.0, 0.0, 0.0, 0.2, 0.1, 0.3, 0.2, 0.1, 0.2, 0.1, 0.2, 0.1, 0.1],
         ];
 
         let weights = proj.project_batch(&batch).unwrap();

@@ -420,7 +420,7 @@ mod tests {
         space_scores[10] = Some(0.7); // E11 Entity - moderate
 
         let weights = [
-            0.15, 0.08, 0.08, 0.08, 0.12, 0.05, 0.10, 0.08, 0.08, 0.05, 0.10, 0.02, 0.01,
+            0.15, 0.08, 0.08, 0.08, 0.12, 0.05, 0.10, 0.08, 0.08, 0.05, 0.10, 0.02, 0.01, 0.0,
         ];
 
         let explanation = SimilarityExplanation::detailed(0.72, 0.65, &space_scores, &weights);
@@ -493,7 +493,7 @@ mod tests {
         space_scores[6] = Some(0.1); // E7 Code very low
 
         let weights = [
-            0.15, 0.08, 0.08, 0.08, 0.12, 0.05, 0.10, 0.08, 0.08, 0.05, 0.10, 0.02, 0.01,
+            0.15, 0.08, 0.08, 0.08, 0.12, 0.05, 0.10, 0.08, 0.08, 0.05, 0.10, 0.02, 0.01, 0.0,
         ];
 
         let explanation = SimilarityExplanation::detailed(0.15, 0.3, &space_scores, &weights);

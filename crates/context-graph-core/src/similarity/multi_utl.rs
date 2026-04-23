@@ -544,7 +544,7 @@ mod tests {
     #[test]
     fn test_from_topic_weights() {
         let weights = [
-            0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2, -0.3,
+            0.9, 0.8, 0.7, 0.6, 0.5, 0.4, 0.3, 0.2, 0.1, 0.0, -0.1, -0.2, -0.3, 0.5,
         ];
         let params = MultiUtlParams::from_topic_weights(weights);
 
