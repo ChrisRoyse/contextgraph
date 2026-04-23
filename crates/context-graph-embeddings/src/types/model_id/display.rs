@@ -19,6 +19,7 @@ impl std::fmt::Display for ModelId {
             Self::Kepler => "Kepler (E11)",
             Self::LateInteraction => "LateInteraction (E12)",
             Self::Splade => "Splade (E13)",
+            Self::BgeM3Dense => "BgeM3Dense (E14)",
         };
         write!(f, "{name}")
     }

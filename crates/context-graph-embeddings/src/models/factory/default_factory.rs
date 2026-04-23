@@ -121,6 +121,7 @@ impl DefaultModelFactory {
             ModelId::Kepler => "kepler",
             ModelId::LateInteraction => "late-interaction",
             ModelId::Splade => "splade-v3",
+            ModelId::BgeM3Dense => "bge-m3-dense",
             // Custom models don't need model files
             ModelId::TemporalRecent
             | ModelId::TemporalPeriodic

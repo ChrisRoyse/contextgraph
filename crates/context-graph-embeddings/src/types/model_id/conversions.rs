@@ -100,6 +100,7 @@ impl From<Embedder> for ModelId {
             Embedder::Entity => ModelId::Kepler,  // Production E11 is KEPLER (768D), not legacy Entity (384D)
             Embedder::LateInteraction => ModelId::LateInteraction,
             Embedder::KeywordSplade => ModelId::Splade,
+            Embedder::BgeM3Dense => ModelId::BgeM3Dense,
         }
     }
 }
@@ -135,6 +136,7 @@ impl From<ModelId> for Embedder {
             ModelId::Kepler => Embedder::Entity, // KEPLER is the new E11, maps to Entity embedder
             ModelId::LateInteraction => Embedder::LateInteraction,
             ModelId::Splade => Embedder::KeywordSplade,
+            ModelId::BgeM3Dense => Embedder::BgeM3Dense, // E14
         }
     }
 }

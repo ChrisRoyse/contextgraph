@@ -40,7 +40,7 @@ pub const MAX_RECENT_MEMORIES: usize = 50;
 /// Order matches Embedder::index(): E1=0, E2=1, ..., E13=12.
 ///
 /// From TECH-PHASE3-SIMILARITY-DIVERGENCE.md lines 548-562.
-pub const SPACE_WEIGHTS: [f32; 13] = [
+pub const SPACE_WEIGHTS: [f32; 14] = [
     1.0, // E1: Semantic - core meaning
     0.0, // E2: Temporal Recent (excluded)
     0.0, // E3: Temporal Periodic (excluded)
@@ -54,10 +54,11 @@ pub const SPACE_WEIGHTS: [f32; 13] = [
     0.5, // E11: Entity (Relational)
     1.0, // E12: LateInteraction
     1.0, // E13: KeywordSplade
+    1.0, // E14: BGE-M3 dense (Semantic/Style)
 ];
 
-/// Total weight sum for normalization: 7*1.0 + 2*0.5 + 1*0.5 = 8.5
-pub const TOTAL_WEIGHT: f32 = 8.5;
+/// Total weight sum for normalization: 8*1.0 + 2*0.5 + 1*0.5 = 9.5
+pub const TOTAL_WEIGHT: f32 = 9.5;
 
 /// Per-space threshold values for all 13 embedding spaces.
 ///
@@ -96,6 +97,8 @@ pub struct PerSpaceThresholds {
     pub late_interaction: f32,
     /// E13: Keyword SPLADE embedding threshold
     pub keyword_splade: f32,
+    /// E14: BGE-M3 dense embedding threshold
+    pub bge_m3_dense: f32,
 }
 
 impl PerSpaceThresholds {
@@ -116,6 +119,7 @@ impl PerSpaceThresholds {
             Embedder::Entity => self.entity,
             Embedder::LateInteraction => self.late_interaction,
             Embedder::KeywordSplade => self.keyword_splade,
+            Embedder::BgeM3Dense => self.bge_m3_dense,
         }
     }
 
@@ -138,13 +142,14 @@ impl PerSpaceThresholds {
             Embedder::Entity => self.entity = threshold,
             Embedder::LateInteraction => self.late_interaction = threshold,
             Embedder::KeywordSplade => self.keyword_splade = threshold,
+            Embedder::BgeM3Dense => self.bge_m3_dense = threshold,
         }
     }
 
     /// Convert to array for compact operations.
     ///
-    /// Order matches Embedder::index(): E1=0, E2=1, ..., E13=12.
-    pub fn to_array(&self) -> [f32; 13] {
+    /// Order matches Embedder::index(): E1=0, E2=1, ..., E14=13.
+    pub fn to_array(&self) -> [f32; 14] {
         [
             self.semantic,
             self.temporal_recent,
@@ -159,13 +164,14 @@ impl PerSpaceThresholds {
             self.entity,
             self.late_interaction,
             self.keyword_splade,
+            self.bge_m3_dense,
         ]
     }
 
     /// Create from array.
     ///
-    /// Order must match Embedder::index(): E1=0, E2=1, ..., E13=12.
-    pub fn from_array(arr: [f32; 13]) -> Self {
+    /// Order must match Embedder::index(): E1=0, E2=1, ..., E14=13.
+    pub fn from_array(arr: [f32; 14]) -> Self {
         Self {
             semantic: arr[0],
             temporal_recent: arr[1],
@@ -180,6 +186,7 @@ impl PerSpaceThresholds {
             entity: arr[10],
             late_interaction: arr[11],
             keyword_splade: arr[12],
+            bge_m3_dense: arr[13],
         }
     }
 
@@ -189,8 +196,8 @@ impl PerSpaceThresholds {
     }
 }
 
-impl From<[f32; 13]> for PerSpaceThresholds {
-    fn from(arr: [f32; 13]) -> Self {
+impl From<[f32; 14]> for PerSpaceThresholds {
+    fn from(arr: [f32; 14]) -> Self {
         Self::from_array(arr)
     }
 }
@@ -202,14 +209,14 @@ impl From<[f32; 13]> for PerSpaceThresholds {
 /// weight 0.0 and are excluded from weighted calculations per AP-60.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SpaceWeights {
-    weights: [f32; 13],
+    weights: [f32; 14],
 }
 
 impl SpaceWeights {
     /// Create new SpaceWeights from an array.
     ///
     /// Order must match Embedder::index(): E1=0, E2=1, ..., E13=12.
-    pub fn new(weights: [f32; 13]) -> Self {
+    pub fn new(weights: [f32; 14]) -> Self {
         Self { weights }
     }
 
@@ -231,13 +238,13 @@ impl SpaceWeights {
         self.weights.iter().sum()
     }
 
-    /// Normalize weights so they sum to 13.0 (one per space).
+    /// Normalize weights so they sum to 14.0 (one per space).
     ///
     /// If sum is 0.0, weights remain unchanged to avoid division by zero.
     pub fn normalize(&mut self) {
         let sum = self.sum();
         if sum > 0.0 {
-            let factor = 13.0 / sum;
+            let factor = 14.0 / sum;
             for w in &mut self.weights {
                 *w *= factor;
             }
@@ -252,12 +259,12 @@ impl SpaceWeights {
     }
 
     /// Get the weights as a slice.
-    pub fn as_slice(&self) -> &[f32; 13] {
+    pub fn as_slice(&self) -> &[f32; 14] {
         &self.weights
     }
 
     /// Get the weights as a mutable slice.
-    pub fn as_mut_slice(&mut self) -> &mut [f32; 13] {
+    pub fn as_mut_slice(&mut self) -> &mut [f32; 14] {
         &mut self.weights
     }
 
@@ -273,8 +280,8 @@ impl Default for SpaceWeights {
     }
 }
 
-impl From<[f32; 13]> for SpaceWeights {
-    fn from(weights: [f32; 13]) -> Self {
+impl From<[f32; 14]> for SpaceWeights {
+    fn from(weights: [f32; 14]) -> Self {
         Self::new(weights)
     }
 }
@@ -370,6 +377,7 @@ pub fn high_thresholds() -> PerSpaceThresholds {
         entity: 0.70,
         late_interaction: 0.70,
         keyword_splade: 0.60,
+        bge_m3_dense: 0.70, // E14 BGE-M3 dense
     }
 }
 
@@ -392,6 +400,7 @@ pub fn low_thresholds() -> PerSpaceThresholds {
         entity: 0.30,
         late_interaction: 0.30,
         keyword_splade: 0.20,
+        bge_m3_dense: 0.30, // E14 BGE-M3 dense
     }
 }
 
@@ -478,7 +487,7 @@ mod tests {
         assert_eq!(normalized.get_weight(Embedder::TemporalPositional), 0.0);
 
         // All-zero normalization safety
-        let mut zero_weights = SpaceWeights::new([0.0; 13]);
+        let mut zero_weights = SpaceWeights::new([0.0; 14]);
         zero_weights.normalize();
         assert_eq!(zero_weights.sum(), 0.0);
     }
@@ -491,7 +500,7 @@ mod tests {
         assert_eq!(t, recovered);
 
         // From trait
-        let arr2 = [0.5; 13];
+        let arr2 = [0.5; 14];
         let t2: PerSpaceThresholds = arr2.into();
         assert_eq!(t2.semantic, 0.5);
 

@@ -72,7 +72,8 @@ impl ModelFactory for DefaultModelFactory {
             | ModelId::Entity
             | ModelId::Kepler
             | ModelId::LateInteraction
-            | ModelId::Splade => self.create_pretrained_model(model_id, config),
+            | ModelId::Splade
+            | ModelId::BgeM3Dense => self.create_pretrained_model(model_id, config),
 
             // Custom models (lightweight, no model files)
             ModelId::TemporalRecent

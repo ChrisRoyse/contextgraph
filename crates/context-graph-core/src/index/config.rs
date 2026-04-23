@@ -53,8 +53,11 @@ pub const E12_TOKEN_DIM: usize = 128;
 /// E13 SPLADE: 30522 vocab (sparse BM25)
 pub const E13_SPLADE_VOCAB: usize = 30_522;
 
-/// Number of core embedders (E1-E13)
-pub const NUM_EMBEDDERS: usize = 13;
+/// E14 BGE-M3 dense: 1024D (BAAI/bge-m3, XLM-RoBERTa encoder, CLS pooling)
+pub const E14_DIM: usize = 1024;
+
+/// Number of core embedders (E1-E14)
+pub const NUM_EMBEDDERS: usize = 14;
 
 /// E1 Matryoshka truncated dimension for Stage 2
 pub const E1_MATRYOSHKA_DIM: usize = 128;

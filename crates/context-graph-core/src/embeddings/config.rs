@@ -17,8 +17,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::embeddings::category::{category_for, EmbedderCategory};
 use crate::index::config::{
-    DistanceMetric, E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E1_DIM, E2_DIM, E3_DIM,
-    E4_DIM, E5_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
+    DistanceMetric, E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E14_DIM, E1_DIM, E2_DIM,
+    E3_DIM, E4_DIM, E5_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
 };
 use crate::teleological::Embedder;
 
@@ -88,7 +88,7 @@ pub struct EmbedderConfig {
 /// Static configuration for all 13 embedders.
 ///
 /// Index matches Embedder::index() for O(1) lookup.
-pub static EMBEDDER_CONFIGS: [EmbedderConfig; 13] = [
+pub static EMBEDDER_CONFIGS: [EmbedderConfig; 14] = [
     // E1: Semantic (1024D, Cosine, PQ8) - Category: Semantic
     EmbedderConfig {
         embedder: Embedder::Semantic,
@@ -236,6 +236,19 @@ pub static EMBEDDER_CONFIGS: [EmbedderConfig; 13] = [
         quantization: QuantizationConfig::Inverted,
         is_asymmetric: false,
         is_sparse: true,
+        is_token_level: false,
+    },
+    // E14: BGE-M3 dense (1024D, Cosine, PQ8) - Category: Semantic
+    EmbedderConfig {
+        embedder: Embedder::BgeM3Dense,
+        dimension: E14_DIM, // 1024
+        distance_metric: DistanceMetric::Cosine,
+        quantization: QuantizationConfig::PQ8 {
+            num_subvectors: 32,
+            bits_per_code: 8,
+        },
+        is_asymmetric: false,
+        is_sparse: false,
         is_token_level: false,
     },
 ];

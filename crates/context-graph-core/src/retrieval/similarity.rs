@@ -16,7 +16,7 @@ use crate::embeddings::category::{category_for, max_weighted_agreement};
 use crate::teleological::Embedder;
 
 /// Number of embedding spaces.
-pub const NUM_SPACES: usize = 13;
+pub const NUM_SPACES: usize = 14;
 
 /// Similarity scores for all 13 embedding spaces.
 ///
@@ -57,6 +57,8 @@ pub struct PerSpaceScores {
     pub late_interaction: f32,
     /// E13: Keyword SPLADE embedding similarity
     pub keyword_splade: f32,
+    /// E14: BGE-M3 dense embedding similarity
+    pub bge_m3_dense: f32,
 }
 
 impl PerSpaceScores {
@@ -82,6 +84,7 @@ impl PerSpaceScores {
             Embedder::Entity => self.entity,
             Embedder::LateInteraction => self.late_interaction,
             Embedder::KeywordSplade => self.keyword_splade,
+            Embedder::BgeM3Dense => self.bge_m3_dense,
         }
     }
 
@@ -103,6 +106,7 @@ impl PerSpaceScores {
             Embedder::Entity => self.entity = score,
             Embedder::LateInteraction => self.late_interaction = score,
             Embedder::KeywordSplade => self.keyword_splade = score,
+            Embedder::BgeM3Dense => self.bge_m3_dense = score,
         }
     }
 
@@ -162,11 +166,12 @@ impl PerSpaceScores {
             self.entity,
             self.late_interaction,
             self.keyword_splade,
+            self.bge_m3_dense,
         ]
     }
 
     /// Create from array.
-    /// Order must match Embedder::index(): E1=0, E2=1, ..., E13=12.
+    /// Order must match Embedder::index(): E1=0, E2=1, ..., E14=13.
     pub fn from_array(arr: [f32; NUM_SPACES]) -> Self {
         Self {
             semantic: arr[0],
@@ -182,6 +187,7 @@ impl PerSpaceScores {
             entity: arr[10],
             late_interaction: arr[11],
             keyword_splade: arr[12],
+            bge_m3_dense: arr[13],
         }
     }
 

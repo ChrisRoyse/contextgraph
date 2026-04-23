@@ -199,6 +199,9 @@ pub fn category_for(embedder: Embedder) -> EmbedderCategory {
 
         // Structural category (1 embedder, weight 0.5)
         Embedder::Hdc => EmbedderCategory::Structural,
+
+        // E14 BGE-M3 dense — semantic/style category, weight 1.0
+        Embedder::BgeM3Dense => EmbedderCategory::Semantic,
     }
 }
 

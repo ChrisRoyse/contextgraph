@@ -79,6 +79,9 @@ impl QuantizationMethod {
 
             // Token pruning: Late interaction
             ModelId::LateInteraction => Self::TokenPruning, // E12
+
+            // PQ-8: BGE-M3 dense (semantic/style, 1024D dense like E1)
+            ModelId::BgeM3Dense => Self::PQ8, // E14
         }
     }
 

@@ -23,6 +23,7 @@ impl ModelId {
             Self::Kepler => Some("THU-KEG/KEPLER-Wiki5M-KE"), // KEPLER knowledge embeddings
             Self::LateInteraction => Some("colbert-ir/colbertv2.0"),
             Self::Splade => Some("prithivida/Splade_PP_en_v1"),
+            Self::BgeM3Dense => Some("BAAI/bge-m3"),
             Self::TemporalRecent
             | Self::TemporalPeriodic
             | Self::TemporalPositional
@@ -48,6 +49,7 @@ impl ModelId {
             Self::Kepler => "kepler",
             Self::LateInteraction => "late-interaction",
             Self::Splade => "splade-v3",
+            Self::BgeM3Dense => "bge-m3-dense",
         }
     }
 
