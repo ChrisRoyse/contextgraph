@@ -89,6 +89,11 @@ pub fn get_hnsw_config(index: EmbedderIndex) -> Option<HnswConfig> {
             E11_DIM,
             DistanceMetric::Cosine,
         )),
+        // E14: BGE-M3 dense (1024D, cosine, HNSW)
+        EmbedderIndex::E14BgeM3Dense => Some(HnswConfig::default_for_dimension(
+            1024,
+            DistanceMetric::Cosine,
+        )),
 
         // Special configs
         EmbedderIndex::E1Matryoshka128 => Some(HnswConfig::matryoshka_128d()),

@@ -494,6 +494,9 @@ impl CategoryWeights {
             EmbedderIndex::E2TemporalRecent
             | EmbedderIndex::E3TemporalPeriodic
             | EmbedderIndex::E4TemporalPositional => self.temporal,
+
+            // E14 BGE-M3 Dense — semantic category
+            EmbedderIndex::E14BgeM3Dense => self.semantic,
         }
     }
 
@@ -513,6 +516,7 @@ impl CategoryWeights {
             self.relational, // E11
             self.semantic,  // E12
             self.semantic,  // E13
+            self.semantic,  // E14 BGE-M3 Dense
         ]
     }
 

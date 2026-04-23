@@ -1019,6 +1019,7 @@ impl EmbedderImpactRunner {
             (EmbedderIndex::E11Entity, 768),
             (EmbedderIndex::E12LateInteraction, 128), // Per token
             (EmbedderIndex::E13Splade, 30000), // Sparse
+            (EmbedderIndex::E14BgeM3Dense, 1024), // BGE-M3 dense
         ];
 
         for (embedder, dim) in embedder_dims {
@@ -1180,6 +1181,8 @@ impl EmbedderImpactRunner {
             EmbedderIndex::E6Sparse | EmbedderIndex::E12LateInteraction | EmbedderIndex::E13Splade => {
                 Vec::new()
             }
+            // E14 BGE-M3 Dense lives in sibling CF, not in SemanticFingerprint
+            EmbedderIndex::E14BgeM3Dense => Vec::new(),
         }
     }
 
@@ -1265,6 +1268,7 @@ fn embedder_name(embedder: EmbedderIndex) -> &'static str {
         EmbedderIndex::E11Entity => "E11_Entity",
         EmbedderIndex::E12LateInteraction => "E12_Late_Interaction",
         EmbedderIndex::E13Splade => "E13_SPLADE",
+        EmbedderIndex::E14BgeM3Dense => "E14_BGE_M3_Dense",
     }
 }
 

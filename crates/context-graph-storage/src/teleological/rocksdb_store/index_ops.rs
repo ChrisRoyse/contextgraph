@@ -141,6 +141,15 @@ impl RocksDbTeleologicalStore {
             EmbedderIndex::E13Splade => {
                 panic!("FAIL FAST: E13 is sparse - use inverted index, not HNSW")
             }
+            // E14 BGE-M3 dense lives in sibling CF_E14_BGE_M3_DENSE, not in the
+            // SemanticFingerprint. The HNSW index for E14 is populated from that
+            // CF by a dedicated loader. Reading E14 here is a contract violation.
+            EmbedderIndex::E14BgeM3Dense => {
+                panic!(
+                    "FAIL FAST: E14 BGE-M3 Dense vectors live in CF_E14_BGE_M3_DENSE, \
+                     not in SemanticFingerprint. Use the E14 storage handle to read them."
+                )
+            }
         }
     }
 

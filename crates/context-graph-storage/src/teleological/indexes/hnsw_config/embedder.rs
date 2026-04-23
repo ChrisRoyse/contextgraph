@@ -77,6 +77,8 @@ pub enum EmbedderIndex {
     E12LateInteraction,
     /// E13: ~30K SPLADE sparse (inverted index, NOT HNSW)
     E13Splade,
+    /// E14: 1024D BGE-M3 dense head (BAAI/bge-m3, XLM-RoBERTa-Large encoder, CLS pooling)
+    E14BgeM3Dense,
 }
 
 impl EmbedderIndex {
@@ -136,7 +138,8 @@ impl EmbedderIndex {
             Self::E11Entity => Some(10),
             Self::E12LateInteraction => Some(11),
             Self::E13Splade => Some(12),
-            // Special indexes not part of core 13-array
+            Self::E14BgeM3Dense => Some(13),
+            // Special indexes not part of core 14-array
             Self::E1Matryoshka128 => None,
             Self::E5CausalCause => None,
             Self::E5CausalEffect => None,
@@ -221,6 +224,7 @@ impl EmbedderIndex {
             Self::E11Entity => Some(E11_DIM),
             Self::E12LateInteraction => None, // Token-level
             Self::E13Splade => None,          // Inverted index
+            Self::E14BgeM3Dense => Some(1024), // BGE-M3 dense head
         }
     }
 

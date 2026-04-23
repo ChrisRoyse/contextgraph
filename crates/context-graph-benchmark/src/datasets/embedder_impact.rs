@@ -586,10 +586,12 @@ impl EmbedderImpactDatasetGenerator {
                 &fp.e10_multimodal_paraphrase
             }
             EmbedderIndex::E11Entity => &fp.e11_entity,
-            // E6, E12, E13 are sparse/late-interaction, return empty
-            EmbedderIndex::E6Sparse | EmbedderIndex::E12LateInteraction | EmbedderIndex::E13Splade => {
-                &[]
-            }
+            // E6, E12, E13 are sparse/late-interaction, return empty.
+            // E14 BGE-M3 Dense lives in sibling CF, not in SemanticFingerprint.
+            EmbedderIndex::E6Sparse
+            | EmbedderIndex::E12LateInteraction
+            | EmbedderIndex::E13Splade
+            | EmbedderIndex::E14BgeM3Dense => &[],
         }
     }
 
