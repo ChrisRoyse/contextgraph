@@ -278,8 +278,12 @@ fn get_embedder_vector(fp: &SemanticFingerprint, embedder: EmbedderIndex) -> Opt
         EmbedderIndex::E10MultimodalParaphrase => Some(fp.get_e10_as_paraphrase()),
         EmbedderIndex::E10MultimodalContext => Some(fp.get_e10_as_context()),
         EmbedderIndex::E11Entity => Some(&fp.e11_entity),
-        // Sparse embedders need special handling
-        EmbedderIndex::E6Sparse | EmbedderIndex::E12LateInteraction | EmbedderIndex::E13Splade => None,
+        // Sparse embedders need special handling.
+        // E14 BGE-M3 Dense lives in sibling CF, not in SemanticFingerprint.
+        EmbedderIndex::E6Sparse
+        | EmbedderIndex::E12LateInteraction
+        | EmbedderIndex::E13Splade
+        | EmbedderIndex::E14BgeM3Dense => None,
     }
 }
 

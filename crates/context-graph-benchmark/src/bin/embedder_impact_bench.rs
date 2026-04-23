@@ -466,6 +466,7 @@ fn embedder_short_name(embedder: EmbedderIndex) -> &'static str {
         EmbedderIndex::E11Entity => "E11_Entity",
         EmbedderIndex::E12LateInteraction => "E12_LateInt",
         EmbedderIndex::E13Splade => "E13_SPLADE",
+        EmbedderIndex::E14BgeM3Dense => "E14_BGE_M3",
     }
 }
 

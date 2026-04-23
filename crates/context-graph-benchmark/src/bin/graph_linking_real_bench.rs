@@ -94,6 +94,7 @@ const EMBEDDING_DIMS: [usize; 14] = [
     768,  // E11 - entity
     128,  // E12 - ColBERT
     1024, // E13 - SPLADE (placeholder dim)
+    1024, // E14 - BGE-M3 Dense
 ];
 
 /// Topic weighted agreement threshold per constitution

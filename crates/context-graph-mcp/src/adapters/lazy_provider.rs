@@ -181,6 +181,7 @@ impl MultiArrayEmbeddingProvider for LazyMultiArrayProvider {
             "lazy_entity",
             "lazy_late_interaction",
             "lazy_splade",
+            "lazy_bge_m3_dense",
         ]
     }
 

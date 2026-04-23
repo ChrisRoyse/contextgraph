@@ -1316,6 +1316,7 @@ fn compute_weighted_agreement(scores: &[f32; 14]) -> f32 {
         0.5, // E11 - relational
         1.0, // E12 - semantic
         1.0, // E13 - semantic
+        1.0, // E14 - semantic (BGE-M3 Dense)
     ];
 
     let mut agreement = 0.0;
@@ -1349,10 +1350,10 @@ mod tests {
     #[test]
     fn test_weighted_agreement_and_rrf() {
         // All semantic embedders agree
-        let scores: [f32; 14] = [0.9, 0.0, 0.0, 0.0, 0.8, 0.75, 0.85, 0.6, 0.55, 0.7, 0.65, 0.8, 0.7];
-        assert!((compute_weighted_agreement(&scores) - 8.5).abs() < 0.01);
+        let scores: [f32; 14] = [0.9, 0.0, 0.0, 0.0, 0.8, 0.75, 0.85, 0.6, 0.55, 0.7, 0.65, 0.8, 0.7, 0.8];
+        assert!((compute_weighted_agreement(&scores) - 9.5).abs() < 0.01);
         // Only temporal = 0 agreement
-        let temporal_only: [f32; 14] = [0.0, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let temporal_only: [f32; 14] = [0.0, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         assert!((compute_weighted_agreement(&temporal_only) - 0.0).abs() < 0.01);
         // RRF formula: rank=1 > rank=10
         let k = 60.0f32;

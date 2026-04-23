@@ -908,11 +908,11 @@ impl Handlers {
 
         // Map weight profile to synergy weights for cross-embedder correlation boost
         if let Some(sw) = match effective_weight_profile.as_deref() {
-            Some("code_search") => Some([0.3, 0.0, 0.0, 0.0, 0.1, 0.2, 1.0, 0.2, 0.1, 0.1, 0.0, 0.0, 0.0]),
-            Some("semantic_search") => Some([1.0, 0.0, 0.0, 0.0, 0.3, 0.2, 0.1, 0.2, 0.2, 0.3, 0.1, 0.0, 0.0]),
-            Some("temporal_navigation") => Some([0.3, 0.8, 0.8, 0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            Some("causal_reasoning") => Some([0.3, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.1, 0.0, 0.0]),
-            Some("entity_focused") => Some([0.3, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 0.2, 0.0, 0.0, 1.0, 0.0, 0.0]),
+            Some("code_search") => Some([0.3, 0.0, 0.0, 0.0, 0.1, 0.2, 1.0, 0.2, 0.1, 0.1, 0.0, 0.0, 0.0, 0.0]),
+            Some("semantic_search") => Some([1.0, 0.0, 0.0, 0.0, 0.3, 0.2, 0.1, 0.2, 0.2, 0.3, 0.1, 0.0, 0.0, 0.0]),
+            Some("temporal_navigation") => Some([0.3, 0.8, 0.8, 0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
+            Some("causal_reasoning") => Some([0.3, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0]),
+            Some("entity_focused") => Some([0.3, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
             _ => None,
         } {
             options = options.with_synergy_weights(sw);
@@ -2054,6 +2054,7 @@ const EMBEDDER_INFO: [(usize, &str, &str, &str); 14] = [
     (10, "E11_Entity", "RELATIONAL", "Entity knowledge - 'Diesel' = database ORM for Rust"),
     (11, "E12_ColBERT", "SEMANTIC", "Exact phrase matches - token-level precision (reranking)"),
     (12, "E13_SPLADE", "SEMANTIC", "Term expansions - fast→quick, db→database (recall)"),
+    (13, "E14_BGE_M3_Dense", "SEMANTIC", "Multilingual semantic/style via BGE-M3 (XLM-RoBERTa)"),
 ];
 
 /// Compute blind spots: ALL enhancers that found this result but E1 missed.

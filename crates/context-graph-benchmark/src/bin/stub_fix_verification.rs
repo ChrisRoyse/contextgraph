@@ -74,7 +74,7 @@ fn test_include_all_scores() -> VerificationResult {
     // from TeleologicalSearchResult.embedder_scores[13]
     //
     // This test verifies the pattern is correct
-    let mock_scores: [f32; 14] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.85, 0.75, 0.65, 0.55];
+    let mock_scores: [f32; 14] = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 0.85, 0.75, 0.65, 0.55, 0.5];
 
     // Verify we can access all 13 scores
     for (i, &score) in mock_scores.iter().enumerate() {
