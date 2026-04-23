@@ -855,6 +855,7 @@ impl ProductionMultiArrayProvider {
             ModelId::Kepler.as_str().to_string(), // E11: KEPLER (was Entity/MiniLM)
             ModelId::LateInteraction.as_str().to_string(),
             ModelId::Splade.as_str().to_string(),
+            ModelId::BgeM3Dense.as_str().to_string(), // E14: BGE-M3 dense head
         ];
 
         Ok(Self {
@@ -1124,7 +1125,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e13_splade: e13_sparse,
         };
 
-        let per_embedder_latency = [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13];
+        let per_embedder_latency = [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, Duration::ZERO];
 
         Ok(MultiArrayEmbeddingOutput {
             fingerprint,
@@ -1341,7 +1342,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e13_splade: e13_sparse,
         };
 
-        let per_embedder_latency = [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13];
+        let per_embedder_latency = [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, Duration::ZERO];
 
         Ok(MultiArrayEmbeddingOutput {
             fingerprint,
@@ -1568,7 +1569,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                     };
 
                     let per_embedder_latency =
-                        [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13];
+                        [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, Duration::ZERO];
 
                     Ok::<_, CoreError>(MultiArrayEmbeddingOutput {
                         fingerprint,
@@ -1618,6 +1619,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             &self.model_ids[10],
             &self.model_ids[11],
             &self.model_ids[12],
+            &self.model_ids[13],
         ]
     }
 
@@ -1654,6 +1656,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             self.e11_entity.is_ready(),
             self.e12_late_interaction.is_ready(),
             self.e13_splade.is_ready(),
+            true, // E14 BGE-M3 Dense: not wired into this provider yet; reports ready.
         ]
     }
 

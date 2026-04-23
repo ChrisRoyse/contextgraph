@@ -3,7 +3,7 @@
 pub use context_graph_core::clustering::{MAX_WEIGHTED_AGREEMENT, TOPIC_THRESHOLD as WEIGHTED_AGREEMENT_THRESHOLD};
 
 /// Number of embedders in the system.
-pub const NUM_EMBEDDERS: usize = 13;
+pub const NUM_EMBEDDERS: usize = 14;
 
 /// Hidden dimension of the first layer.
 pub const HIDDEN_DIM_1: usize = 64;
@@ -36,4 +36,5 @@ pub const DEFAULT_CATEGORY_WEIGHTS: [f32; NUM_EMBEDDERS] = [
     0.5, // E11 Entity (relational)
     1.0, // E12 Late Interaction (semantic)
     1.0, // E13 SPLADE (semantic)
+    1.0, // E14 BGE-M3 Dense (semantic)
 ];

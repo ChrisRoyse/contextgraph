@@ -26,6 +26,7 @@ pub fn code_implementation() -> TeleologicalProfile {
         0.05, // E11_Abstract
         0.05, // E12_Factual
         0.03, // E13_Sparse
+        0.0,  // E14_BgeM3Dense
     ];
 
     let mut profile = TeleologicalProfile::new(
@@ -59,6 +60,7 @@ pub fn research_analysis() -> TeleologicalProfile {
         0.05, // E11_Abstract
         0.04, // E12_Factual
         0.02, // E13_Sparse
+        0.0,  // E14_BgeM3Dense
     ];
 
     let mut profile = TeleologicalProfile::new(
@@ -91,6 +93,7 @@ pub fn creative_writing() -> TeleologicalProfile {
         0.18, // E11_Abstract (PRIMARY)
         0.04, // E12_Factual
         0.03, // E13_Sparse
+        0.0,  // E14_BgeM3Dense
     ];
 
     let mut profile = TeleologicalProfile::new(

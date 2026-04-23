@@ -157,6 +157,7 @@ pub const SPACE_NAMES: [&str; NUM_EMBEDDERS] = [
     "E11 Entity",
     "E12 ColBERT",
     "E13 SPLADE",
+    "E14 BGE-M3 Dense",
 ];
 
 impl SimilarityExplanation {

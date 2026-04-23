@@ -9,8 +9,8 @@ use uuid::Uuid;
 
 use super::{DirectedRelation, EdgeError, EdgeResult, GraphLinkEdgeType};
 
-/// Number of embedders in the system.
-const NUM_EMBEDDERS: usize = 13;
+/// Number of embedders in the system (E1-E14).
+const NUM_EMBEDDERS: usize = 14;
 
 /// A multi-relation edge between two memory nodes.
 ///

@@ -214,7 +214,7 @@ impl Default for TuckerCore {
 pub const EMBEDDING_DIM: usize = 1024;
 
 /// Number of embedders in the system.
-pub const NUM_EMBEDDERS: usize = 13;
+pub const NUM_EMBEDDERS: usize = 14;
 
 /// TopicProfile: 13D profile for topic/embedding weights.
 ///

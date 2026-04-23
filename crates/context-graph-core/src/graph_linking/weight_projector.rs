@@ -16,7 +16,7 @@
 use std::sync::Arc;
 
 /// Number of embedders in the system.
-pub const NUM_EMBEDDERS: usize = 13;
+pub const NUM_EMBEDDERS: usize = 14;
 
 /// Trait for projecting embedder similarity scores to edge weights.
 ///

@@ -249,6 +249,14 @@ const EMBEDDERS: [EmbedderInfo; 14] = [
         e1_blind_spot: "term variations",
         category: EmbedderCategory::Semantic,
     },
+    EmbedderInfo {
+        idx: 13,
+        short_name: "E14",
+        display_name: "E14_BgeM3Dense",
+        finds: "multilingual semantic/style similarity via BGE-M3 dense head",
+        e1_blind_spot: "non-English / style-discriminative content",
+        category: EmbedderCategory::Semantic,
+    },
 ];
 
 /// Generate a human-readable insight annotation for a result.

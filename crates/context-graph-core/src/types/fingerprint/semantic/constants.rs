@@ -72,7 +72,7 @@ pub const E13_SPLADE_VOCAB: usize = 30_522;
 
 /// Total number of embedders in the teleological vector architecture.
 /// Updated from 12 to 13 with addition of E13 SPLADE.
-pub const NUM_EMBEDDERS: usize = 13;
+pub const NUM_EMBEDDERS: usize = 14;
 
 /// Total dense dimensions for single-vector storage (excludes E6 sparse, E12 variable-length, and E13 sparse).
 ///

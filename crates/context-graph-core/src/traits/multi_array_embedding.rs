@@ -1004,6 +1004,7 @@ pub trait MultiArrayEmbeddingProvider: Send + Sync {
             768,  // E11: Entity (KEPLER)
             128,  // E12: Late-Interaction (ColBERT per-token)
             0,    // E13: SPLADE v3 - variable
+            1024, // E14: BGE-M3 Dense
         ]
     }
 
@@ -1501,6 +1502,7 @@ mod tests {
                 "minilm-entity".to_string(),
                 "colbert-v2".to_string(),
                 "splade-v3".to_string(),
+                "bge-m3-dense".to_string(),
             ],
             e5_hint_provenance: None,
         };

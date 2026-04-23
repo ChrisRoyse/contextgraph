@@ -252,7 +252,7 @@ fn search_filtered_multi_space_sync(
 
     // Embedder name lookup for ranking labels
     let embedder_names: [&str; 14] = [
-        "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13",
+        "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14",
     ];
 
     for &idx in embedder_indices {
@@ -438,6 +438,10 @@ fn compute_embedder_scores_sync(
         compute_cosine_similarity(&query.e11_entity, &stored.e11_entity),
         e12_score,
         (query.e13_splade.cosine_similarity(&stored.e13_splade) + 1.0) / 2.0,
+        // E14 BGE-M3 dense: lives in sibling CF, not in SemanticFingerprint.
+        // This routing-path score is 0.0 (neutral); E14-aware query paths call
+        // into the dedicated E14 storage handle.
+        0.0,
     ]
 }
 
@@ -1105,7 +1109,7 @@ fn search_pipeline_sync(
                 // Weight-gating handles exclusion: suppress_degenerate_weights zeros them out
                 // when they show no cross-candidate variance (default semantic profiles).
                 let embedder_names_all: [&str; 14] = [
-                    "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13",
+                    "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14",
                 ];
                 let excluded_from_rrf: [usize; 1] = [11]; // E12 rerank-only
                 let semantic_indices: Vec<(usize, &str, f32)> = adjusted_weights.iter().enumerate()
@@ -1434,6 +1438,7 @@ const DEFAULT_SEMANTIC_WEIGHTS: [f32; 14] = [
     0.0,  // E11 - Entity (KEPLER disabled: non-discriminating 0.96-0.98 cosine)
     0.0,  // E12 - Late Interaction (used in Stage 3 rerank only)
     0.0,  // E13 - SPLADE (used in Stage 1 recall only)
+    0.0,  // E14 - BGE-M3 Dense (not wired into default fusion profile; routed separately)
 ];
 
 // =============================================================================

@@ -7,7 +7,7 @@ use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Number of embedder spaces (13 per constitution).
-pub const NUM_EMBEDDERS: usize = 13;
+pub const NUM_EMBEDDERS: usize = 14;
 
 /// Maximum trajectory size for tracking session evolution.
 pub const MAX_TRAJECTORY_SIZE: usize = 100;

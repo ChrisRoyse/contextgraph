@@ -327,6 +327,7 @@ impl StubMultiArrayProvider {
             self.dense_embedders[9].model_id().to_string(), // E11
             self.token_embedder.model_id().to_string(),     // E12
             self.sparse_embedders[1].model_id().to_string(), // E13
+            "BAAI/bge-m3".to_string(),                      // E14 (BGE-M3 dense, stub)
         ]
     }
 }
@@ -405,6 +406,7 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
             self.dense_embedders[9].model_id(), // E11
             self.token_embedder.model_id(),     // E12
             self.sparse_embedders[1].model_id(), // E13
+            "BAAI/bge-m3",                      // E14 (BGE-M3 dense, stub)
         ]
     }
 
@@ -429,6 +431,7 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
             self.dense_embedders[9].is_ready(), // E11
             self.token_embedder.is_ready(),     // E12
             self.sparse_embedders[1].is_ready(), // E13
+            true,                               // E14 (BGE-M3 dense, stub always ready)
         ]
     }
 }

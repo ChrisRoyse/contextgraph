@@ -149,6 +149,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.05, // E11_Entity (relational)
             0.0,  // E12_Late_Interaction (Stage 3 rerank only)
             0.0,  // E13_SPLADE (Stage 1 recall only)
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -171,6 +172,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.10, // E11_Entity (entity-aware discrimination)
             0.0,  // E12_Late_Interaction
             0.0,  // E13_SPLADE
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -191,6 +193,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.10, // E11_Entity (function names, etc.)
             0.0,  // E12_Late_Interaction
             0.0,  // E13_SPLADE
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -211,6 +214,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.40, // E11_Entity (primary - named entities)
             0.0,  // E12_Late_Interaction
             0.0,  // E13_SPLADE
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -236,6 +240,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.20, // E11_Entity
             0.0,  // E12_Late_Interaction
             0.0,  // E13_SPLADE
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -262,6 +267,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.02, // E11_Entity
             0.0,  // E12_Late_Interaction (Stage 3 rerank only per ARCH-13)
             0.0,  // E13_SPLADE (Stage 1 recall only per ARCH-13)
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -286,6 +292,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.02, // E11_Entity
             0.0,  // E12_Late_Interaction (pipeline stage only)
             0.02, // E13_SPLADE
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -306,6 +313,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.03, // E11_Entity
             0.0,  // E12_Late_Interaction (pipeline stage only)
             0.02, // E13_SPLADE
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -328,6 +336,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.5 / 6.5,   // E11_Entity (RELATIONAL)
             0.0,         // E12_Late_Interaction (PIPELINE-STAGE)
             0.0,         // E13_SPLADE (PIPELINE-STAGE)
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -354,6 +363,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.05, // E11_Entity (relational)
             0.0,  // E12_Late_Interaction (Stage 3 rerank only per ARCH-13)
             0.0,  // E13_SPLADE (Stage 1 recall only per ARCH-13)
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -378,6 +388,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.05, // E11_Entity (entity names)
             0.0,  // E12_Late_Interaction (Stage 3 rerank only per AP-73)
             0.25, // E13_SPLADE (PRIMARY - term expansion for recall)
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -398,6 +409,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.05, // E11_Entity (entity matching)
             0.0,  // E12_Late_Interaction (Stage 3 rerank only per AP-73)
             0.0,  // E13_SPLADE (Stage 1 recall only per AP-74)
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
@@ -418,15 +430,16 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.05, // E11_Entity
             0.0,  // E12_Late_Interaction (applied via MaxSim, not fusion)
             0.07, // E13_SPLADE (mild weight for fusion awareness)
+            0.0,  // E14_BgeM3Dense (E14 excluded from legacy profiles)
         ],
     ),
 
-    // Balanced: Equal weights across all 13 spaces (for testing/comparison)
+    // Balanced: Equal weights across all 14 spaces (for testing/comparison)
     (
         "balanced",
         [
-            0.077, 0.077, 0.077, 0.077, 0.077, 0.077, 0.077, 0.077, 0.077, 0.077, 0.077, 0.077,
-            0.076, // E13 slightly lower to sum to 1.0
+            0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715,
+            0.0715, 0.0715, 0.0715, 0.071, // 13×0.0715 + 0.071 = 1.0
         ],
     ),
 ];

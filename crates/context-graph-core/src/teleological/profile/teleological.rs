@@ -119,7 +119,7 @@ impl TeleologicalProfile {
         profile.id = ProfileId::new("code_implementation");
         profile.name = "Code Implementation".to_string();
         profile.embedding_weights = [
-            0.05, 0.02, 0.05, 0.15, 0.08, 0.25, 0.18, 0.05, 0.02, 0.02, 0.05, 0.05, 0.03,
+            0.05, 0.02, 0.05, 0.15, 0.08, 0.25, 0.18, 0.05, 0.02, 0.02, 0.05, 0.05, 0.03, 0.0,
         ];
         profile.fusion_strategy = FusionStrategy::attention_default();
         profile.description = Some("Optimized for code implementation queries".to_string());
@@ -141,7 +141,7 @@ impl TeleologicalProfile {
         profile.id = ProfileId::new("conceptual_research");
         profile.name = "Conceptual Research".to_string();
         profile.embedding_weights = [
-            0.12, 0.05, 0.03, 0.10, 0.15, 0.03, 0.02, 0.05, 0.05, 0.05, 0.20, 0.12, 0.03,
+            0.12, 0.05, 0.03, 0.10, 0.15, 0.03, 0.02, 0.05, 0.05, 0.05, 0.20, 0.12, 0.03, 0.0,
         ];
         profile.fusion_strategy = FusionStrategy::Hierarchical;
         profile.description = Some("Optimized for conceptual and research queries".to_string());

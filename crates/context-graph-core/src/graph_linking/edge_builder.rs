@@ -42,6 +42,7 @@ pub const DEFAULT_EMBEDDER_THRESHOLDS: [f32; 14] = [
     0.65, // E11 Entity
     0.60, // E12 ColBERT
     0.50, // E13 SPLADE
+    0.70, // E14 BGE-M3 Dense
 ];
 
 /// Configuration for the EdgeBuilder.

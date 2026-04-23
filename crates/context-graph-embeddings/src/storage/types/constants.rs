@@ -24,7 +24,7 @@ pub const MAX_QUANTIZED_SIZE_BYTES: usize = 25_000;
 pub const MIN_QUANTIZED_SIZE_BYTES: usize = 5_000;
 
 /// Number of embedders in the multi-array system.
-pub const NUM_EMBEDDERS: usize = 13;
+pub const NUM_EMBEDDERS: usize = 14;
 
 /// Storage format version. Bump when struct layout changes.
 /// Version mismatches will panic (no migration support).

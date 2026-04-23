@@ -190,10 +190,11 @@ impl StubMultiArrayProvider {
             0.1193, // E11: entity
             0.1301, // E12: late-interaction
             0.1409, // E13: splade (not used for dense)
+            0.1511, // E14: bge-m3 dense
         ];
 
         // Add embedder-specific phase shift and frequency variation
-        let prime = EMBEDDER_PRIMES[embedder_idx % 13];
+        let prime = EMBEDDER_PRIMES[embedder_idx % 14];
         let embedder_phase = (embedder_idx as f32 * 0.0769) % 1.0; // Different starting phase
         let offset = ((dim_idx as f32 * prime + embedder_phase) % 1.0) - 0.5;
 
@@ -357,7 +358,7 @@ impl MultiArrayEmbeddingProvider for StubMultiArrayProvider {
     fn model_ids(&self) -> [&str; NUM_EMBEDDERS] {
         [
             "stub-e1", "stub-e2", "stub-e3", "stub-e4", "stub-e5", "stub-e6", "stub-e7", "stub-e8",
-            "stub-e9", "stub-e10", "stub-e11", "stub-e12", "stub-e13",
+            "stub-e9", "stub-e10", "stub-e11", "stub-e12", "stub-e13", "stub-e14",
         ]
     }
 

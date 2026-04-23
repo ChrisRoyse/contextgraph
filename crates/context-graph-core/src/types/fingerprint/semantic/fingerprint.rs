@@ -766,6 +766,10 @@ impl SemanticFingerprint {
             self.e11_entity.clone(),
             e12_pooled,
             self.e13_splade.to_dense(E13_SPLADE_VOCAB),
+            // E14 BGE-M3 dense — lives in sibling CF, not in fingerprint.
+            // Return zero-vector placeholder for clustering (clustering should
+            // use a separate E14-aware reader for meaningful results).
+            vec![0.0; 1024],
         ]
     }
 
