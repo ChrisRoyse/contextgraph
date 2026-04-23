@@ -1,1704 +1,1105 @@
-# MCP Tools Reference
+# 08 — MCP Tools Reference
 
-> Context Graph MCP Server -- JSON-RPC 2.0 tool reference for the 13-embedder semantic memory retrieval system.
+Per-tool reference for the Context Graph MCP server. All tools are exposed via JSON-RPC 2.0 `tools/list` and `tools/call`. Every schema sets `additionalProperties: false` — unknown parameters are rejected.
 
 **Source files covered:**
 
-- `crates/context-graph-mcp/src/main.rs` -- server entry point, CLI, daemon mode
-- `crates/context-graph-mcp/src/lib.rs` -- library root
-- `crates/context-graph-mcp/src/protocol.rs` -- JSON-RPC types and error codes
-- `crates/context-graph-mcp/src/server/mod.rs` -- `McpServer` struct, stdio transport, lifecycle
-- `crates/context-graph-mcp/src/server/transport.rs` -- TCP transport, bounded reads
-- `crates/context-graph-mcp/src/server/watchers.rs` -- background tasks (file watcher, code watcher, graph builder)
-- `crates/context-graph-mcp/src/tools/` -- tool name constants, definitions, aliases, types
-- `crates/context-graph-mcp/src/handlers/` -- tool handler implementations and dispatch
-- `crates/context-graph-mcp/src/adapters/` -- `LazyMultiArrayProvider`, `LlmCausalHintProvider`
-- `crates/context-graph-mcp/src/weights.rs` -- weight profile resolution
+- `crates/context-graph-mcp/src/protocol.rs` — JSON-RPC 2.0 types + error codes
+- `crates/context-graph-mcp/src/tools/names.rs` — tool name constants
+- `crates/context-graph-mcp/src/tools/aliases.rs` — legacy-name resolution
+- `crates/context-graph-mcp/src/tools/definitions/*.rs` — per-category schemas
+- `crates/context-graph-mcp/src/handlers/tools/*.rs` — per-category handlers
+- `crates/context-graph-mcp/src/handlers/tools/dispatch.rs` — name → handler routing
+- `crates/context-graph-core/src/*` — DTOs consumed by handlers
 
-**Cross-references:** See `01_architecture_overview.md` for system architecture, `02_embedder_reference.md` for embedder details, `05_search_strategies.md` for search strategy internals.
+**Deep-dive cross-refs:** `05_embedding_subsystem.md` (13 embedders), `06_search_and_fusion.md` (strategies, RRF, pipelines), `07_graph_and_causal.md` (typed edges, causal), `12_clustering_and_topics.md` (topic tools), `16_training_subsystem.md` (training corpus), `17_constellation_subsystem.md` (constellations), `18_contrastive_and_typed_edges.md` (contrastive/typed-edge tools).
 
 ---
 
-## Table of Contents
+## 1. Summary
 
-1. [Server Architecture](#1-server-architecture)
-2. [Request/Response Format](#2-requestresponse-format)
-3. [Tool Registration and Routing](#3-tool-registration-and-routing)
-4. [Tool Aliases](#4-tool-aliases)
-5. [Error Codes](#5-error-codes)
-6. [Core Tools](#6-core-tools)
-7. [Curation Tools](#7-curation-tools)
-8. [Topic Tools](#8-topic-tools)
-9. [File Watcher Tools](#9-file-watcher-tools)
-10. [Sequence Tools (E4)](#10-sequence-tools-e4)
-11. [Causal Tools (E5)](#11-causal-tools-e5)
-12. [Causal Discovery Tools (LLM)](#12-causal-discovery-tools-llm)
-13. [Keyword Tools (E6)](#13-keyword-tools-e6)
-14. [Code Tools (E7)](#14-code-tools-e7)
-15. [Graph Tools (E8)](#15-graph-tools-e8)
-16. [Robustness Tools (E9)](#16-robustness-tools-e9)
-17. [Entity Tools (E11)](#17-entity-tools-e11)
-18. [Embedder-First Search Tools](#18-embedder-first-search-tools)
-19. [Token/Expansion Search Tools (E12/E13)](#19-tokenexpansion-search-tools-e12e13)
-20. [Temporal Tools (E2/E3)](#20-temporal-tools-e2e3)
-21. [Graph Linking Tools (K-NN)](#21-graph-linking-tools-k-nn)
-22. [Maintenance Tools](#22-maintenance-tools)
-23. [Provenance Tools](#23-provenance-tools)
-24. [Daemon Tools](#24-daemon-tools)
-25. [Training Tools](#25-training-tools)
-26. [Constellation Tools](#26-constellation-tools)
-27. [Contrastive Pair Tools](#27-contrastive-pair-tools)
-28. [Typed-Edge Training Tools](#28-typed-edge-training-tools)
+Tool constants in `names.rs`: **75** (`grep -cE "pub const [A-Z_]+: &str"`).
 
----
+Build-time feature-gated: `causal_discovery` (2 tools) and the LLM variants of `graph` (2 of 4) require `--features llm`. Without `llm`, server exposes **71**; with `llm`, **75**.
 
-## 1. Server Architecture
-
-### Transport Modes
-
-The MCP server supports two transport modes selected via CLI, environment variable, or config file. Priority: CLI > ENV > Config > Default.
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| **stdio** (default) | Standard input/output, newline-delimited JSON-RPC | Process-based MCP clients (Claude Desktop, VS Code) |
-| **tcp** | TCP socket on configurable address/port | Network-based clients, remote deployments |
-
-SSE transport is explicitly **not supported**; the server returns a fatal error if requested.
-
-### Daemon Mode
-
-Daemon mode (`--daemon`) allows multiple Claude Code terminals to share a single MCP server process with embedding models loaded once into VRAM.
-
-1. **First terminal**: Starts a headless TCP daemon that loads all 13 embedding models into VRAM (~32 GB on RTX 5090).
-2. **Subsequent terminals**: Connect to the existing daemon via a stdio-to-TCP proxy.
-3. Default daemon port: `3100` (configurable via `--daemon-port`).
-
-### Direct Mode (stdio)
-
-Without `--daemon`, the server runs as a standalone stdio process. It reads JSON-RPC requests line-by-line from stdin and writes responses to stdout. Each line is one JSON-RPC message.
-
-### CLI Arguments
-
-| Argument | Description |
-|----------|-------------|
-| `--config <PATH>` | Path to configuration file (TOML) |
-| `--transport <MODE>` | `stdio` (default) or `tcp` |
-| `--port <PORT>` | TCP port (only with `--transport tcp`) |
-| `--bind <ADDRESS>` | TCP bind address (default: `127.0.0.1`) |
-| `--warm-first` | Block startup until embedding models are loaded (default behavior) |
-| `--no-warm` | Skip blocking warmup; embeddings fail until background load completes |
-| `--daemon` | Enable daemon mode (recommended for multi-terminal) |
-| `--daemon-port <PORT>` | Daemon TCP port (default: `3100`) |
-| `--help`, `-h` | Show help message |
-
-### Environment Variables
-
-| Variable | Description |
-|----------|-------------|
-| `CONTEXT_GRAPH_TRANSPORT` | Transport mode (`stdio` or `tcp`) |
-| `CONTEXT_GRAPH_TCP_PORT` | TCP port number |
-| `CONTEXT_GRAPH_BIND_ADDRESS` | TCP bind address |
-| `CONTEXT_GRAPH_WARM_FIRST` | Set to `"0"` to disable blocking warmup (default: `"1"`) |
-| `CONTEXT_GRAPH_DAEMON` | Set to `"1"` to enable daemon mode |
-| `CONTEXT_GRAPH_DAEMON_PORT` | Daemon port number (default: `3100`) |
-| `RUST_LOG` | Log level (`error`, `warn`, `info`, `debug`, `trace`) |
-| `CLAUDE_SESSION_ID` | Fallback session ID for `store_memory` when `sessionId` is not provided |
-
-### Background Tasks
-
-The server runs several background tasks:
-
-- **Soft-delete GC** -- purges soft-deleted records after 7-day retention (runs every 5 minutes)
-- **HNSW persistence** -- periodically persists HNSW indexes to disk
-- **Background graph builder** -- computes K-NN edges for newly stored memories in batches (~60s cycle)
-- **File watcher** -- monitors filesystem changes and indexes file content
-- **Code watcher** -- monitors code files for E7 code embedding updates
-
-All background tasks use `tokio::select!` with a watch channel for immediate shutdown signaling.
-
-### Connection Limits
-
-- TCP transport uses a `Semaphore` for limiting concurrent connections.
-- Input lines are bounded at **10 MB** (`MAX_LINE_BYTES`) to prevent OOM.
-- JSON-RPC batch requests are limited to **100** items (`MAX_BATCH_SIZE`).
+| Category | File | Count | Tools |
+|----------|------|------:|-------|
+| core | `core.rs` | 4 | `store_memory`, `get_memetic_status`, `search_graph`, `trigger_consolidation` |
+| merge | `merge.rs` | 1 | `merge_concepts` |
+| curation | `curation.rs` | 2 | `forget_concept`, `boost_importance` |
+| topic | `topic.rs` | 4 | `get_topic_portfolio`, `get_topic_stability`, `detect_topics`, `get_divergence_alerts` |
+| file_watcher | `file_watcher.rs` | 4 | `list_watched_files`, `get_file_watcher_stats`, `delete_file_content`, `reconcile_files` |
+| sequence | `sequence.rs` | 4 | `get_conversation_context`, `get_session_timeline`, `traverse_memory_chain`, `compare_session_states` |
+| causal | `causal.rs` | 4 | `search_causal_relationships`, `search_causes`, `search_effects`, `get_causal_chain` |
+| causal_discovery (llm) | `causal_discovery.rs` | 2 | `trigger_causal_discovery`, `get_causal_discovery_status` |
+| keyword | `keyword.rs` | 1 | `search_by_keywords` |
+| code | `code.rs` | 1 | `search_code` |
+| graph | `graph.rs` | 2 + 2 (llm) | `search_connections`, `get_graph_path`, `discover_graph_relationships` (llm), `validate_graph_link` (llm) |
+| robustness | `robustness.rs` | 1 | `search_robust` |
+| entity | `entity.rs` | 6 | `extract_entities`, `search_by_entities`, `infer_relationship`, `find_related_entities`, `validate_knowledge`, `get_entity_graph` |
+| embedder | `embedder.rs` | 7 + 2 standalone | `search_by_embedder`, `get_embedder_clusters`, `compare_embedder_views`, `list_embedder_indexes`, `get_memory_fingerprint`, `create_weight_profile`, `search_cross_embedder_anomalies`, `search_by_tokens`, `search_by_expansion` |
+| temporal | `temporal.rs` | 2 | `search_recent`, `search_periodic` |
+| graph_link | `graph_link.rs` | 4 | `get_memory_neighbors`, `get_typed_edges`, `traverse_graph`, `get_unified_neighbors` |
+| maintenance | `maintenance.rs` | 1 | `repair_causal_relationships` |
+| provenance | `provenance.rs` | 3 | `get_audit_trail`, `get_merge_history`, `get_provenance_chain` |
+| daemon | `daemon.rs` | 1 | `daemon_status` |
+| training | `training.rs` | 4 | `export_training_corpus`, `list_training_records`, `get_training_record`, `count_training_records` |
+| constellation | `constellation.rs` | 5 | `compile_constellation`, `list_constellations`, `get_constellation`, `score_against_constellation`, `delete_constellation` |
+| contrastive | `contrastive.rs` | 4 | `mine_contrastive_pairs`, `list_contrastive_pairs`, `get_contrastive_pair`, `count_contrastive_pairs` |
+| typed_edges | `typed_edges.rs` | 4 | `export_typed_edges_corpus`, `derive_anomalies_from_edges`, `validate_low_confidence_edges`, `list_typed_edge_records` |
+| **Total (llm on)** | | **75** | |
 
 ---
 
-## 2. Request/Response Format
+## 2. Transport and Protocol
 
-The server uses **JSON-RPC 2.0** over newline-delimited JSON (NDJSON).
+### Methods
 
-### Request
+| Method | Purpose |
+|--------|---------|
+| `initialize` | Handshake, returns server info + `capabilities.tools` |
+| `shutdown` | Graceful shutdown request |
+| `tools/list` | Returns `{ tools: [ToolDefinition, ...] }` (75 entries with llm) |
+| `tools/call` | Invokes a tool: `{ name: "...", arguments: {...} }` |
+
+### Request / Response
+
+JSON-RPC 2.0, one message per line (NDJSON) on stdio and TCP.
 
 ```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "method": "tools/call",
-  "params": {
-    "name": "store_memory",
-    "arguments": {
-      "content": "Rust uses ownership for memory safety"
-    }
-  }
-}
+{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"search_graph","arguments":{"query":"rust"}}}
 ```
 
-| Field | Type | Required | Description |
-|-------|------|----------|-------------|
-| `jsonrpc` | string | Yes | Must be `"2.0"` |
-| `id` | string, integer, or null | No | Request identifier. Absent = notification (no response). |
-| `method` | string | Yes | One of `initialize`, `shutdown`, `notifications/initialized`, `tools/list`, `tools/call` |
-| `params` | object | Depends | Required for `tools/call`; optional for others |
+- `id` may be string, number, or `null`. Absent `id` = **notification** → no response emitted (transport-level suppression).
+- Success response: `{"jsonrpc":"2.0","id":...,"result":{...}}`.
+- Error response: `{"jsonrpc":"2.0","id":...,"error":{"code":i32,"message":"..."}}`.
+- All tool schemas are objects with `"additionalProperties": false`. Extra fields → `INVALID_PARAMS`.
 
-### Response
+### Error codes (`protocol::error_codes`)
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "result": { "status": "stored", "memory_uuid": "..." }
-}
-```
+| Code | Constant | Meaning |
+|-----:|----------|---------|
+| -32700 | `PARSE_ERROR` | Malformed JSON |
+| -32600 | `INVALID_REQUEST` | Not a valid JSON-RPC 2.0 request |
+| -32601 | `METHOD_NOT_FOUND` | Unknown method (e.g. not `tools/call`) |
+| -32602 | `INVALID_PARAMS` | Missing/invalid tool arguments |
+| -32603 | `INTERNAL_ERROR` | Unhandled runtime error |
+| -32001 | `FEATURE_DISABLED` | Feature not compiled in |
+| -32002 | `NODE_NOT_FOUND` | Memory UUID not in store |
+| -32004 | `STORAGE_ERROR` | RocksDB / HNSW I/O failure |
+| -32005 | `EMBEDDING_ERROR` | Embedder inference failed |
+| -32006 | `TOOL_NOT_FOUND` | Unknown tool name |
+| -32007 | `LAYER_TIMEOUT` | Downstream layer timed out |
+| -32021 | `INSUFFICIENT_MEMORIES` | Too few memories for operation |
+| -32110..-32114 | `TCP_*` | Transport-layer errors |
 
-Error response:
+### Aliases (backward compat)
 
-```json
-{
-  "jsonrpc": "2.0",
-  "id": 1,
-  "error": {
-    "code": -32602,
-    "message": "Missing 'content' parameter"
-  }
-}
-```
-
-### Notification
-
-Requests without an `id` field are notifications. The `notifications/initialized` method is a notification sent by the client after `initialize` completes. Notifications produce no response.
-
----
-
-## 3. Tool Registration and Routing
-
-### MCP Methods
-
-| Method | Description |
-|--------|-------------|
-| `initialize` | MCP lifecycle initialization; returns server capabilities |
-| `notifications/initialized` | Client notification that initialization is complete |
-| `shutdown` | Graceful server shutdown |
-| `tools/list` | Returns all registered tool definitions with schemas |
-| `tools/call` | Dispatches to a specific tool by name |
-
-All tool access is via `tools/list` and `tools/call`. Direct method calls (e.g., `memory/store`) are **not supported**.
-
-### Tool Call Dispatch
-
-When `tools/call` is received:
-
-1. Extract `name` from `params`.
-2. Resolve aliases via `resolve_alias()` (see Section 4).
-3. Extract `arguments` from `params` (defaults to `{}`).
-4. Dispatch to the corresponding handler method via the `tool_dispatch!` macro.
-5. If the tool name is unknown, return error code `-32006` (`TOOL_NOT_FOUND`).
-
-### Tool Count
-
-Defined in `crates/context-graph-mcp/src/tools/names.rs` (71 name constants) and dispatched in `crates/context-graph-mcp/src/handlers/tools/dispatch.rs` (81 match arms; the extra arms cover handlers that accept both zero-arg and single-arg forms via the `tool_dispatch!` macro).
-
-- **With `llm` feature**: 75 tools (includes 4 LLM-dependent tools)
-- **Without `llm` feature**: 67 tools
-
-The 4 LLM-only tools are: `trigger_causal_discovery`, `get_causal_discovery_status`, `discover_graph_relationships`, `validate_graph_link`.
-
-The 13 tools added since the prior revision (all non-LLM):
-
-| Category | Tools |
-|----------|-------|
-| Training (§25) | `export_training_corpus`, `list_training_records`, `get_training_record`, `count_training_records` |
-| Constellation (§26) | `compile_constellation`, `list_constellations`, `get_constellation`, `score_against_constellation`, `delete_constellation` |
-| Contrastive (§27) | `mine_contrastive_pairs`, `list_contrastive_pairs`, `get_contrastive_pair`, `count_contrastive_pairs` |
-
-All 13 downcast `Handlers::teleological_store` to `RocksDbTeleologicalStore`; in-memory and other backends return a tool error ("requires RocksDbTeleologicalStore") because the column families (`CF_TRAINING_RECORDS`, `CF_CONSTELLATIONS` + selector index, `CF_CONTRASTIVE_PAIRS` + `CF_CONTRASTIVE_BY_ANCHOR` + `CF_CONTRASTIVE_BY_KIND`) are RocksDB-only.
-
----
-
-## 4. Tool Aliases
-
-Legacy tool names are resolved to their canonical forms transparently.
-
-| Legacy Name | Canonical Name |
-|-------------|----------------|
+| Legacy name | Canonical |
+|-------------|-----------|
 | `consolidate_memories` | `trigger_consolidation` |
 | `inject_context` | `store_memory` |
 
-Alias resolution happens before dispatch; clients can use either name.
+Resolved in `tools::aliases::resolve_alias` before dispatch.
+
+### Conventions
+
+- Parameter names are **camelCase** except in `curation`, `merge`, `file_watcher`, `maintenance`, `provenance`, `graph_link`, and `typed_edges` which use **snake_case** — the exact casing in each schema is authoritative. The per-tool tables below use the on-wire casing.
+- All cosine-derived scores are normalized to `[0, 1]` via `(raw+1)/2` (SRC-3).
+- Embedder IDs: `E1` (semantic 1024D), `E2/E3/E4` (temporal 512D), `E5` (causal 768D, asymmetric), `E6` (sparse 30K keyword), `E7` (code 1536D), `E8` (graph 1024D, asymmetric), `E9` (HDC 1024D), `E10` (paraphrase 1024D, asymmetric), `E11` (entity 768D), `E12` (ColBERT 128D/token MaxSim), `E13` (SPLADE 30K sparse).
 
 ---
 
-## 5. Error Codes
+## 3. Core tools (`definitions/core.rs`)
 
-### Standard JSON-RPC 2.0
+### 3.1 `store_memory`
 
-| Code | Constant | Description |
-|------|----------|-------------|
-| `-32700` | `PARSE_ERROR` | Invalid JSON |
-| `-32600` | `INVALID_REQUEST` | Invalid JSON-RPC request |
-| `-32601` | `METHOD_NOT_FOUND` | Method does not exist |
-| `-32602` | `INVALID_PARAMS` | Invalid method parameters |
-| `-32603` | `INTERNAL_ERROR` | Internal server error |
+Store a memory node directly in the knowledge graph. `inject_context` resolves here via alias; providing `rationale` triggers the same validation and response shape.
 
-### Context Graph Specific
+| Param | Type | Req | Default | Range | Description |
+|-------|------|:--:|---------|-------|-------------|
+| `content` | string | yes | | | Text to store |
+| `rationale` | string | no | | 1..=1024 chars | Why storing; returned verbatim when set |
+| `importance` | number | no | 0.5 | [0, 1] | Memory importance |
+| `sessionId` | string | no | env `CLAUDE_SESSION_ID` | | Session scope |
+| `operatorId` | string | no | | | Audit provenance |
 
-| Code | Constant | Description |
-|------|----------|-------------|
-| `-32001` | `FEATURE_DISABLED` | Requested feature is not enabled |
-| `-32002` | `NODE_NOT_FOUND` | Memory node not found by UUID |
-| `-32004` | `STORAGE_ERROR` | Storage backend error |
-| `-32005` | `EMBEDDING_ERROR` | Embedding generation error |
-| `-32006` | `TOOL_NOT_FOUND` | Unknown tool name |
-| `-32007` | `LAYER_TIMEOUT` | Handler timeout exceeded |
-| `-32021` | `INSUFFICIENT_MEMORIES` | Not enough memories for topic detection |
+**Returns:** `{ memory_id, fingerprint_id, embedding_count, session_id, rationale? }`.
+**Side effects:** writes `CF_FINGERPRINTS`, all 13 embedders persisted, adds to every HNSW index it is valid for, writes `CF_AUDIT_LOG` (`create`), triggers K-NN graph build eventually, invalidates topic cache.
+**Errors:** `INVALID_PARAMS` (missing content, out-of-range importance), `EMBEDDING_ERROR`, `STORAGE_ERROR`.
 
-### TCP Transport Specific
+### 3.2 `get_memetic_status`
 
-| Code | Constant | Description |
-|------|----------|-------------|
-| `-32110` | `TCP_BIND_FAILED` | Address/port unavailable or permission denied |
-| `-32111` | `TCP_CONNECTION_ERROR` | Stream read/write failed, client disconnected |
-| `-32112` | `TCP_MAX_CONNECTIONS_REACHED` | Maximum concurrent connections reached |
-| `-32113` | `TCP_FRAME_ERROR` | Invalid NDJSON framing, message too large |
-| `-32114` | `TCP_CLIENT_TIMEOUT` | Request processing exceeded timeout |
+System status snapshot (no params). **Returns:** `{ fingerprint_count, embedder_count (13), storage_backend, storage_size_bytes, layer_status }`. Read-only.
 
----
+### 3.3 `search_graph`
 
-## 6. Core Tools
+Primary multi-space search. Covers E1-foundation, RRF multi-space fusion, pipeline (E13→E1→E12), asymmetric E5 reranking, temporal boosts (E2/E3/E4), session/time filters, and weight profiles. Schema is the richest in the system.
 
-### 6.1 `store_memory`
+| Param | Type | Req | Default | Range / Enum | Description |
+|-------|------|:--:|---------|--------------|-------------|
+| `query` | string | yes | | | Query text |
+| `topK` | integer | no | 10 | [1, 100] | Result cap |
+| `minSimilarity` | number | no | 0.0 | [0, 1] | Score floor |
+| `includeContent` | boolean | no | false | | Include raw content |
+| `strategy` | string | no | `multi_space` | `e1_only` \| `multi_space` \| `pipeline` | Strategy selector |
+| `weightProfile` | string | no | | see enum below | Named profile |
+| `customWeights` | object | no | | `E1..E13` ∈ [0,1], ≈sum-to-1 | Per-embedder weight override |
+| `excludeEmbedders` | string[] | no | | `E1..E13` | Zero-out + renormalize |
+| `useQuantizedPrefilter` | boolean | no | false | | PQ-8 prefilter |
+| `includeEmbedderBreakdown` | boolean | no | false | | Per-embedder contributions |
+| `enableRerank` | boolean | no | false | | E12 ColBERT stage 3 |
+| `enableAsymmetricE5` | boolean | no | true | | Direction-aware E5 |
+| `causalDirection` | string | no | `auto` | `auto` \| `cause` \| `effect` \| `none` | E5 direction override |
+| `enableQueryExpansion` | boolean | no | false | | Causal query expansion |
+| `temporalWeight` | number | no | 0.0 | [0, 1] | Post-retrieval temporal boost |
+| `conversationContext` | object | no | | `{anchorToCurrentTurn, turnsBack 0..=100 =10, turnsForward 0..=100 =0}` | Session-anchored window |
+| `sessionScope` | string | no | `all` | `current` \| `all` \| `recent` | Session filter |
+| `decayHalfLifeSecs` | integer | no | 86400 | | Exponential decay half-life |
+| `lastHours` | integer | no | | ≥1 | Window filter |
+| `lastDays` | integer | no | | ≥1 | Window filter |
+| `sessionId` | string | no | | | Session filter |
+| `periodicBoost` | number | no | | [0, 1] | E3 periodic weight |
+| `targetHour` | integer | no | | [0, 23] | For `periodicBoost` |
+| `targetDayOfWeek` | integer | no | | [0, 6] (0=Sun) | For `periodicBoost` |
+| `sequenceAnchor` | uuid | no | | | E4 anchor |
+| `sequenceDirection` | string | no | | `before` \| `after` \| `around` \| `both` | E4 direction |
+| `includeProvenance` | boolean | no | false | | Retrieval provenance block |
+| `decayFunction` | string | no | `exponential` | `linear` \| `exponential` \| `step` \| `none` \| `no_decay` | |
+| `temporalScale` | string | no | `meso` | `micro` \| `meso` \| `macro` \| `long` \| `archival` | |
 
-Store a memory node directly in the knowledge graph without UTL processing. Generates all 13 embeddings for the content.
+**Weight profile enum:** `semantic_search`, `causal_reasoning`, `code_search`, `fact_checking`, `graph_reasoning`, `temporal_navigation`, `sequence_navigation`, `conversation_history`, `category_weighted`, `typo_tolerant`, `pipeline_stage1_recall`, `pipeline_stage2_scoring`, `pipeline_full`, `balanced`.
 
-**Side effects:** Writes a `TeleologicalFingerprint` to RocksDB (51 column families); generates 13 embedding vectors; creates audit record; queues fingerprint for background K-NN graph building; if LLM feature enabled, may trigger inline causal discovery.
+**Returns:** `{ results: [{memory_id, score, content?, embedder_breakdown?, provenance?}], strategy, weights_used }`.
+**Side effects:** read-only.
+**Errors:** `INVALID_PARAMS` (missing `query`, weight sums out of range, bad enum), `EMBEDDING_ERROR`, `LAYER_TIMEOUT`.
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `content` | string | Yes | -- | Non-empty | The content to store |
-| `rationale` | string | No | -- | 1-1024 chars | Why this context is relevant (merged from `inject_context`) |
-| `importance` | number | No | `0.5` | `[0.0, 1.0]` | Importance score for the memory |
-| `sessionId` | string | No | `CLAUDE_SESSION_ID` env | -- | Session ID for session-scoped storage |
-| `operatorId` | string | No | -- | -- | Operator/user ID for audit provenance tracking |
+### 3.4 `trigger_consolidation`
 
-**Return:** JSON object with `status`, `memory_uuid`, `rationale` (if provided), and storage metadata.
+Identify merge candidates; does **not** auto-merge. Feed candidates to `merge_concepts`.
 
-**Error conditions:**
-- Content is empty or missing
-- Rationale length outside 1-1024 range
-- Embedding generation failure (models not loaded)
-- RocksDB write failure
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `strategy` | string | no | `similarity` | `similarity` \| `temporal` \| `semantic` |
+| `min_similarity` | number | no | 0.925 | [0, 1] (SRC-3 normalized) |
+| `max_memories` | integer | no | 100 | [1, 10000] |
 
----
-
-### 6.2 `get_memetic_status`
-
-Get current system status including fingerprint count, number of embedders (13), storage backend and size, and layer status.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| *(none)* | -- | -- | -- | -- | No parameters |
-
-**Return:** JSON object with fingerprint count, embedder count, storage backend info, storage size, and layer status from `LayerStatusProvider`.
-
----
-
-### 6.3 `search_graph`
-
-Search the knowledge graph using multi-space semantic similarity across 13 embedders. The primary search tool with extensive parameterization.
-
-**Side effects:** None (read-only). May trigger E5 asymmetric reranking for causal queries.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | Non-empty | The search query text |
-| `topK` | integer | No | `10` | `1-100` | Maximum results to return |
-| `minSimilarity` | number | No | `0.0` | `[0.0, 1.0]` | Minimum similarity threshold |
-| `includeContent` | boolean | No | `false` | -- | Include content text in results |
-| `strategy` | string | No | `"multi_space"` | `"e1_only"`, `"multi_space"`, `"pipeline"` | Search strategy |
-| `weightProfile` | string | No | -- | See below | Named weight profile for multi_space search |
-| `customWeights` | object | No | -- | Keys: `E1`-`E13`, values: `[0, 1]` | Per-embedder weights (overrides `weightProfile`) |
-| `excludeEmbedders` | array | No | -- | `["E1"..."E13"]` | Embedders to exclude from fusion |
-| `useQuantizedPrefilter` | boolean | No | `false` | -- | Use PQ-8 quantized vectors for fast approximate pre-filtering |
-| `includeEmbedderBreakdown` | boolean | No | `false` | -- | Include per-embedder score breakdown |
-| `enableRerank` | boolean | No | `false` | -- | Enable ColBERT E12 re-ranking (Stage 3) |
-| `enableAsymmetricE5` | boolean | No | `true` | -- | Enable asymmetric E5 causal reranking for causal queries |
-| `causalDirection` | string | No | `"auto"` | `"auto"`, `"cause"`, `"effect"`, `"none"` | Causal direction mode |
-| `enableQueryExpansion` | boolean | No | `false` | -- | Expand causal queries with related terms |
-| `temporalWeight` | number | No | `0.0` | `[0.0, 1.0]` | Weight for temporal post-retrieval boost |
-| `conversationContext` | object | No | -- | See sub-params | Convenience wrapper for sequence-based retrieval |
-| `conversationContext.anchorToCurrentTurn` | boolean | No | `true` | -- | Auto-anchor to current session sequence |
-| `conversationContext.turnsBack` | integer | No | `10` | `0-100` | Turns to look back from anchor |
-| `conversationContext.turnsForward` | integer | No | `0` | `0-100` | Turns to look forward from anchor |
-| `sessionScope` | string | No | `"all"` | `"current"`, `"all"`, `"recent"` | Session scope filter |
-| `decayHalfLifeSecs` | integer | No | `86400` | -- | Half-life for exponential temporal decay (seconds) |
-| `lastHours` | integer | No | -- | `>= 1` | Filter to last N hours |
-| `lastDays` | integer | No | -- | `>= 1` | Filter to last N days |
-| `sessionId` | string | No | -- | -- | Filter to specific session ID |
-| `periodicBoost` | number | No | -- | `[0.0, 1.0]` | E3 periodic matching boost weight |
-| `targetHour` | integer | No | -- | `0-23` | Target hour for periodic matching |
-| `targetDayOfWeek` | integer | No | -- | `0-6` (0=Sun) | Target day for periodic matching |
-| `sequenceAnchor` | string (UUID) | No | -- | -- | Anchor memory UUID for E4 sequence retrieval |
-| `sequenceDirection` | string | No | -- | `"before"`, `"after"`, `"around"`, `"both"` | Direction for sequence retrieval |
-| `includeProvenance` | boolean | No | `false` | -- | Include retrieval provenance metadata |
-| `decayFunction` | string | No | `"exponential"` | `"linear"`, `"exponential"`, `"step"`, `"none"`, `"no_decay"` | Temporal decay function |
-| `temporalScale` | string | No | `"meso"` | `"micro"`, `"meso"`, `"macro"`, `"long"`, `"archival"` | Temporal scale for decay |
-
-**Weight profile values:** `semantic_search`, `causal_reasoning`, `code_search`, `fact_checking`, `graph_reasoning`, `temporal_navigation`, `sequence_navigation`, `conversation_history`, `category_weighted`, `typo_tolerant`, `pipeline_stage1_recall`, `pipeline_stage2_scoring`, `pipeline_full`, `balanced`.
-
-**Return:** JSON object with `results` array. Each result contains `memory_uuid`, `score`, `content` (if requested), and optionally per-embedder breakdown and provenance metadata.
+**Returns:** `{ candidates: [{memory_a, memory_b, similarity, strategy}] }`. Read-only.
 
 ---
 
-### 6.4 `trigger_consolidation`
+## 4. Merge tools (`definitions/merge.rs`)
 
-Analyze memories for consolidation candidates. Returns pairs that could be merged but does NOT automatically merge them.
+### 4.1 `merge_concepts`
 
-**Side effects:** None (read-only analysis).
+Union / intersection / weighted-average merge. Produces a reversal hash (30-day recovery, SEC-06).
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `strategy` | string | No | `"similarity"` | `"similarity"`, `"temporal"`, `"semantic"` | Consolidation strategy |
-| `min_similarity` | number | No | `0.925` | `[0.0, 1.0]` | Minimum similarity threshold (SRC-3 normalized scale) |
-| `max_memories` | integer | No | `100` | `1-10000` | Maximum memories to process in one batch |
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `source_ids` | uuid[] | yes | | 2..=10 |
+| `target_name` | string | yes | | 1..=256 chars |
+| `merge_strategy` | string | no | `union` | `union` \| `intersection` \| `weighted_average` |
+| `rationale` | string | yes | | 1..=1024 chars |
+| `force_merge` | boolean | no | false | | bypass prior-conflict check |
 
-**Return:** JSON object with consolidation candidates (pairs of similar memories with similarity scores).
-
----
-
-## 7. Curation Tools
-
-### 7.1 `merge_concepts`
-
-Merge two or more related concept nodes into a unified node with 30-day undo capability.
-
-**Side effects:** Creates merged memory in RocksDB; soft-deletes source memories; writes audit records; returns `reversal_hash` for undo.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `source_ids` | array of UUID strings | Yes | -- | 2-10 UUIDs | UUIDs of concepts to merge |
-| `target_name` | string | Yes | -- | 1-256 chars | Name for the merged concept |
-| `rationale` | string | Yes | -- | 1-1024 chars | Rationale for merge (required per PRD 0.3) |
-| `merge_strategy` | string | No | `"union"` | `"union"`, `"intersection"`, `"weighted_average"` | Merge strategy |
-| `force_merge` | boolean | No | `false` | -- | Force merge even if priors conflict |
-
-**Return:** JSON object with merged memory UUID, `reversal_hash`, and merge metadata.
-
-**Error conditions:** Fewer than 2 source IDs; source IDs not found; empty target name.
-
-### 7.2 `forget_concept`
-
-Soft-delete a memory with 30-day recovery window (per SEC-06).
-
-**Side effects:** Marks memory as soft-deleted in RocksDB (persisted, not just in-memory); writes audit record with optional reason.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `node_id` | string (UUID) | Yes | -- | Valid UUID | UUID of the memory to forget |
-| `soft_delete` | boolean | No | `true` | -- | Use soft delete with 30-day recovery (per BR-MCP-001) |
-| `operator_id` | string | No | -- | -- | Operator ID for provenance tracking |
-| `reason` | string | No | -- | -- | Reason for deletion (for audit trail) |
-
-**Return:** JSON object with `deleted_at` timestamp and deletion status.
-
-**Error conditions:** Memory UUID not found.
-
-### 7.3 `boost_importance`
-
-Adjust a memory's importance score by delta. Final value clamped to `[0.0, 1.0]`.
-
-**Side effects:** Updates importance in RocksDB; writes audit record.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `node_id` | string (UUID) | Yes | -- | Valid UUID | UUID of the memory to boost |
-| `delta` | number | Yes | -- | `[-1.0, 1.0]` | Importance change value |
-| `operator_id` | string | No | -- | -- | Operator ID for provenance tracking |
-
-**Return:** JSON object with `old_importance`, `delta`, and `new_importance` (clamped).
-
-**Error conditions:** Memory UUID not found; delta is NaN or Infinity.
+**Returns:** `{ merged_memory_id, reversal_hash, strategy, source_ids }`.
+**Side effects:** new fingerprint in `CF_FINGERPRINTS`, sources soft-deleted, merge record in `CF_MERGE_HISTORY`, audit row, HNSW updates (add merged, remove sources).
+**Errors:** `INVALID_PARAMS`, `NODE_NOT_FOUND`, `STORAGE_ERROR`.
 
 ---
 
-## 8. Topic Tools
+## 5. Curation tools (`definitions/curation.rs`)
 
-### 8.1 `get_topic_portfolio`
+### 5.1 `forget_concept`
 
-Get all discovered topics with profiles, stability metrics, and tier info. Topics emerge from weighted multi-space clustering (threshold >= 2.5). Temporal embedders (E2-E4) are excluded.
+| Param | Type | Req | Default | Description |
+|-------|------|:--:|---------|-------------|
+| `node_id` | uuid | yes | | Memory to delete |
+| `soft_delete` | boolean | no | true | SEC-06 30-day recovery |
+| `operator_id` | string | no | | Audit operator |
+| `reason` | string | no | | Audit reason |
 
-**Side effects:** None (read-only).
+**Returns:** `{ deleted_at, soft_delete, node_id }`.
+**Side effects:** tombstone in `CF_SOFT_DELETES` (soft) or full removal from `CF_FINGERPRINTS`+all HNSW indexes (hard); audit row in `CF_AUDIT_LOG`.
+**Errors:** `NODE_NOT_FOUND`, `STORAGE_ERROR`.
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `format` | string | No | `"standard"` | `"brief"`, `"standard"`, `"verbose"` | Output format |
+### 5.2 `boost_importance`
 
-**Return:** JSON object with topic array; each topic has name, spaces, stability, and tier info.
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `node_id` | uuid | yes | | |
+| `delta` | number | yes | | [-1, 1] |
+| `operator_id` | string | no | | |
 
-### 8.2 `get_topic_stability`
-
-Get portfolio-level stability metrics including churn rate, entropy, and phase breakdown.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `hours` | integer | No | `6` | `1-168` | Lookback period in hours |
-
-**Return:** JSON object with churn rate, entropy, phase breakdown, and averages over the lookback period.
-
-### 8.3 `detect_topics`
-
-Force topic detection recalculation using HDBSCAN clustering.
-
-**Side effects:** Recomputes topics in the cluster manager; updates in-memory topic state.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `force` | boolean | No | `false` | -- | Force detection even if recently computed |
-| `max_memories` | integer | No | `10000` | `1-50000` | Maximum fingerprints to load for clustering |
-
-**Return:** JSON object with detected topics and cluster statistics.
-
-**Error conditions:** Fewer than 3 memories (minimum for HDBSCAN clustering); error code `-32021`.
-
-### 8.4 `get_divergence_alerts`
-
-Check for divergence from recent activity using semantic embedders only (E1, E6, E7, E10, E12, E13 per AP-62). E5 and E2-E4 are excluded.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `lookback_hours` | integer | No | `2` | `1-48` | Hours to look back for comparison |
-
-**Return:** JSON object with divergence alerts and drift metrics.
+Handler clamps final `importance` to `[0, 1]` (BR-MCP-002). **Returns:** `{ node_id, old, delta, new }`. Writes `CF_FINGERPRINTS` + audit row.
 
 ---
 
-## 9. File Watcher Tools
+## 6. Topic tools (`definitions/topic.rs`)
 
-### 9.1 `list_watched_files`
+### 6.1 `get_topic_portfolio`
 
-List all files that have embeddings in the knowledge graph.
+| Param | Type | Req | Default | Enum |
+|-------|------|:--:|---------|------|
+| `format` | string | no | `standard` | `brief` \| `standard` \| `verbose` |
 
-**Side effects:** None (read-only).
+**Returns:** `{ topics: [{id, label, weighted_agreement, stability, tier, members?, centroid?}] }`. Read-only (serves cached portfolio).
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `include_counts` | boolean | No | `true` | -- | Include chunk counts per file |
-| `path_filter` | string | No | -- | Glob pattern | Filter paths (e.g., `**/docs/*.md`) |
+### 6.2 `get_topic_stability`
 
-**Return:** JSON object with file list including paths, chunk counts, and last update times.
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `hours` | integer | no | 6 | [1, 168] |
 
-### 9.2 `get_file_watcher_stats`
+**Returns:** `{ churn_rate, entropy, phase_breakdown, lookback_hours }`. Read-only.
 
-Get statistics about file watcher content.
+### 6.3 `detect_topics`
 
-**Side effects:** None (read-only).
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `force` | boolean | no | false | |
+| `max_memories` | integer | no | 10000 | [1, 50000] |
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| *(none)* | -- | -- | -- | -- | No parameters |
+Triggers HDBSCAN (min_cluster_size=3, weighted_agreement ≥ 2.5, E2/E3/E4 excluded per AP-60).
+**Returns:** `{ topics_detected, noise_count, duration_ms }`.
+**Side effects:** rewrites in-memory topic portfolio; persists cluster assignments to `CF_TOPICS`.
+**Errors:** `INSUFFICIENT_MEMORIES` when corpus < 3.
 
-**Return:** JSON object with total files, total chunks, average chunks per file, min/max values.
+### 6.4 `get_divergence_alerts`
 
-### 9.3 `delete_file_content`
+Uses semantic embedders only (E1/E6/E7/E10/E12/E13 per AP-62; E5 excluded per AP-77; E2-E4 per AP-63).
 
-Delete all embeddings for a specific file path.
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `lookback_hours` | integer | no | 2 | [1, 48] |
 
-**Side effects:** Soft-deletes (or hard-deletes) all memory chunks for the file in RocksDB; writes audit records.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `file_path` | string | Yes | -- | Absolute path | Path to the file |
-| `soft_delete` | boolean | No | `true` | -- | Use soft delete with 30-day recovery (per SEC-06) |
-
-**Return:** JSON object with deletion count and status.
-
-### 9.4 `reconcile_files`
-
-Find orphaned files (embeddings exist but file is missing from disk) and optionally delete them.
-
-**Side effects:** If `dry_run=false`, deletes orphaned embeddings from RocksDB.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `dry_run` | boolean | No | `true` | -- | If true, only report without deleting |
-| `base_path` | string | No | -- | -- | Base path to limit reconciliation scope |
-
-**Return:** JSON object with list of orphaned files and deletion counts (if not dry run).
+**Returns:** `{ alerts: [{topic_id, divergence_score, drift_vector}] }`. Read-only.
 
 ---
 
-## 10. Sequence Tools (E4)
+## 7. File watcher tools (`definitions/file_watcher.rs`)
 
-These tools use E4 (V_ordering) for session-positional retrieval.
+### 7.1 `list_watched_files`
 
-### 10.1 `get_conversation_context`
+| Param | Type | Req | Default | Description |
+|-------|------|:--:|---------|-------------|
+| `include_counts` | boolean | no | true | Include chunk counts |
+| `path_filter` | string | no | | Glob pattern |
 
-Get memories around the current conversation turn with auto-anchoring.
+**Returns:** `{ files: [{path, chunk_count, last_updated}] }`.
 
-**Side effects:** None (read-only).
+### 7.2 `get_file_watcher_stats`
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `direction` | string | No | `"before"` | `"before"`, `"after"`, `"both"` | Search direction |
-| `windowSize` | integer | No | `10` | `1-50` | Number of turns in the window |
-| `sessionOnly` | boolean | No | `true` | -- | Only include memories from current session |
-| `includeContent` | boolean | No | `true` | -- | Include full content text |
-| `query` | string | No | -- | -- | Optional semantic filter |
-| `minSimilarity` | number | No | `0.0` | `[0.0, 1.0]` | Minimum similarity when query is provided |
+No params. **Returns:** `{ total_files, total_chunks, avg_chunks_per_file, min, max }`.
 
-**Return:** JSON object with ordered memories around the current turn, with position labels (e.g., "2 turns ago").
+### 7.3 `delete_file_content`
 
-### 10.2 `get_session_timeline`
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `file_path` | string | yes | |
+| `soft_delete` | boolean | no | true |
 
-Get an ordered timeline of all session memories with sequence numbers.
+**Returns:** `{ deleted_chunks, soft_delete, file_path }`. Writes soft-delete tombstones or removes fingerprints+HNSW entries for every chunk of the file.
 
-**Side effects:** None (read-only).
+### 7.4 `reconcile_files`
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `sessionId` | string | No | Current session | -- | Session ID to get timeline for |
-| `limit` | integer | No | `50` | `1-200` | Maximum memories to return |
-| `offset` | integer | No | `0` | `>= 0` | Skip N memories for pagination |
-| `sourceTypes` | array of strings | No | All types | `"HookDescription"`, `"ClaudeResponse"`, `"Manual"`, `"MDFileChunk"` | Filter by source types |
-| `includeContent` | boolean | No | `false` | -- | Include full content text |
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `dry_run` | boolean | no | true |
+| `base_path` | string | no | |
 
-**Return:** JSON object with ordered timeline entries, each with sequence number and position label.
-
-### 10.3 `traverse_memory_chain`
-
-Navigate through a chain of memories starting from an anchor point. Supports multi-hop traversal.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `anchorId` | string (UUID) | Yes | -- | Valid UUID | Starting memory UUID |
-| `direction` | string | No | `"backward"` | `"forward"`, `"backward"`, `"bidirectional"` | Traversal direction |
-| `hops` | integer | No | `5` | `1-20` | Maximum hops to traverse |
-| `semanticFilter` | string | No | -- | -- | Optional topic filter |
-| `minSimilarity` | number | No | `0.3` | `[0.0, 1.0]` | Minimum similarity for filtered traversal |
-| `includeContent` | boolean | No | `true` | -- | Include full content text |
-
-**Return:** JSON object with chain of memories in traversal order, with hop numbers and similarity scores.
-
-**Error conditions:** Anchor UUID not found.
-
-### 10.4 `compare_session_states`
-
-Compare memory state at different sequence points in a session.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `beforeSequence` | integer or string | Yes | -- | Integer or `"start"` | Starting sequence number |
-| `afterSequence` | integer or string | Yes | -- | Integer or `"current"` | Ending sequence number |
-| `sessionId` | string | No | Current session | -- | Session ID to compare within |
-
-**Return:** JSON object with topics, memory counts, and key differences between the two points.
+**Returns:** `{ orphans: [...], deleted_count, dry_run }`. When `dry_run=false`, deletes orphaned chunk embeddings for files no longer on disk.
 
 ---
 
-## 11. Causal Tools (E5)
+## 8. Sequence tools (E4) (`definitions/sequence.rs`)
 
-These tools use E5 asymmetric embeddings with direction modifiers (cause->effect 1.2x, effect->cause 0.8x per AP-77).
+### 8.1 `get_conversation_context`
 
-### 11.1 `search_causal_relationships`
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `direction` | string | no | `before` | `before` \| `after` \| `both` |
+| `windowSize` | integer | no | 10 | [1, 50] |
+| `sessionOnly` | boolean | no | true | |
+| `includeContent` | boolean | no | true | |
+| `query` | string | no | | Optional semantic filter |
+| `minSimilarity` | number | no | 0.0 | [0, 1] |
 
-Search for causal relationships using E5 asymmetric similarity. Returns LLM-generated descriptions with provenance linking to source memories.
+Auto-anchors to current session sequence. **Returns:** `{ context: [{memory_id, sequence, position_label, similarity?}] }`. Read-only.
 
-**Side effects:** None (read-only).
+### 8.2 `get_session_timeline`
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | Natural language query about causal relationships |
-| `direction` | string | No | `"all"` | `"cause"`, `"effect"`, `"all"` | Filter by causal direction |
-| `topK` | integer | No | `10` | `1-100` | Maximum results |
-| `includeSource` | boolean | No | `true` | -- | Include original source content |
-| `includeProvenance` | boolean | No | `false` | -- | Include retrieval provenance metadata |
-| `sourceWeight` | number | No | `0.6` | `[0.0, 1.0]` | Weight for source-anchored embeddings in hybrid search |
-| `explanationWeight` | number | No | `0.4` | `[0.0, 1.0]` | Weight for explanation embeddings in hybrid search |
-| `multiEmbedder` | boolean | No | `false` | -- | Enable multi-embedder search (E1+E5+E8+E11 consensus) |
-| `minConsensus` | number | No | `0.0` | `[0.0, 1.0]` | Minimum consensus threshold for multi-embedder mode |
-| `e1Weight` | number | No | `0.30` | `[0.0, 1.0]` | E1 semantic weight in multi-embedder mode |
-| `e5Weight` | number | No | `0.35` | `[0.0, 1.0]` | E5 causal weight in multi-embedder mode |
-| `e8Weight` | number | No | `0.15` | `[0.0, 1.0]` | E8 graph weight in multi-embedder mode |
-| `e11Weight` | number | No | `0.20` | `[0.0, 1.0]` | E11 entity weight in multi-embedder mode |
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `sessionId` | string | no | current | |
+| `limit` | integer | no | 50 | [1, 200] |
+| `offset` | integer | no | 0 | ≥0 |
+| `sourceTypes` | string[] | no | all | `HookDescription` \| `ClaudeResponse` \| `Manual` \| `MDFileChunk` |
+| `includeContent` | boolean | no | false | |
 
-**Return:** JSON object with causal relationships, each containing LLM-generated 1-3 paragraph descriptions, source memory references, and confidence scores.
+**Returns:** `{ timeline: [...], session_id, total }`. Read-only.
 
-### 11.2 `search_causes`
+### 8.3 `traverse_memory_chain`
 
-Abductive reasoning to find likely causes of observed effects. Uses 0.8x effect->cause dampening.
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `anchorId` | uuid | yes | | |
+| `direction` | string | no | `backward` | `forward` \| `backward` \| `bidirectional` |
+| `hops` | integer | no | 5 | [1, 20] |
+| `semanticFilter` | string | no | | |
+| `minSimilarity` | number | no | 0.3 | [0, 1] |
+| `includeContent` | boolean | no | true | |
 
-**Side effects:** None (read-only).
+**Returns:** `{ chain: [{memory_id, hop, similarity}], hops_traversed }`. Read-only.
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | The observed effect to find causes for |
-| `topK` | integer | No | `10` | `1-50` | Maximum causes to return |
-| `minScore` | number | No | `0.1` | `[0.0, 1.0]` | Minimum abductive score threshold |
-| `includeContent` | boolean | No | `false` | -- | Include full content text |
-| `filterCausalDirection` | string | No | -- | `"cause"`, `"effect"`, `"unknown"` | Filter by persisted causal direction |
-| `searchScope` | string | No | `"memories"` | `"memories"`, `"relationships"`, `"all"` | Search scope |
-| `strategy` | string | No | -- | `"e1_only"`, `"multi_space"`, `"pipeline"` | Search strategy |
-| `rerankWeight` | number | No | `0.4` | `[0.0, 1.0]` | E12 rerank weight (pipeline strategy only) |
+### 8.4 `compare_session_states`
 
-**Return:** JSON object with ranked causes and abductive scores.
+| Param | Type | Req | Default | Notes |
+|-------|------|:--:|---------|-------|
+| `beforeSequence` | integer \| string | yes | | integer or `"start"` |
+| `afterSequence` | integer \| string | yes | | integer or `"current"` |
+| `sessionId` | string | no | current | |
 
-### 11.3 `search_effects`
-
-Find effects/consequences of a given cause. Uses 1.2x cause->effect boost.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | The cause to find effects for |
-| `topK` | integer | No | `10` | `1-50` | Maximum effects to return |
-| `minScore` | number | No | `0.1` | `[0.0, 1.0]` | Minimum predictive score threshold |
-| `includeContent` | boolean | No | `false` | -- | Include full content text |
-| `filterCausalDirection` | string | No | -- | `"cause"`, `"effect"`, `"unknown"` | Filter by persisted causal direction |
-| `searchScope` | string | No | `"memories"` | `"memories"`, `"relationships"`, `"all"` | Search scope |
-| `strategy` | string | No | -- | `"e1_only"`, `"multi_space"`, `"pipeline"` | Search strategy |
-| `rerankWeight` | number | No | `0.4` | `[0.0, 1.0]` | E12 rerank weight (pipeline strategy only) |
-
-**Return:** JSON object with ranked effects and predictive scores.
-
-### 11.4 `get_causal_chain`
-
-Build and visualize transitive causal chains from an anchor point. Applies hop attenuation (0.9^hop).
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `anchorId` | string (UUID) | Yes | -- | Valid UUID | Starting memory UUID |
-| `direction` | string | No | `"forward"` | `"forward"`, `"backward"` | Traverse cause->effect or effect->cause |
-| `maxHops` | integer | No | `5` | `1-10` | Maximum hops |
-| `minSimilarity` | number | No | `0.3` | `[0.0, 1.0]` | Minimum similarity per hop |
-| `includeContent` | boolean | No | `false` | -- | Include full content text |
-
-**Return:** JSON object with causal chain nodes in traversal order, with hop-attenuated scores.
-
-**Error conditions:** Anchor UUID not found.
+**Returns:** `{ topics_added, topics_removed, memory_count_delta, key_differences }`. Read-only.
 
 ---
 
-## 12. Causal Discovery Tools (LLM)
+## 9. Causal tools (E5) (`definitions/causal.rs`)
 
-These tools require the `llm` feature flag. They use Hermes-2-Pro-Mistral-7B (Q5_K_M GGUF, ~5GB VRAM) via `llama-cpp-2` for grammar-constrained (GBNF) JSON inference (causal-agent/src/llm/mod.rs:85, mod.rs:139). The shipping tool description (tools/definitions/causal_discovery.rs:35) still references the legacy "Qwen2.5 via Candle"; that description is stale — the handler is backed by `CausalDiscoveryLLM` built on llama-cpp-2.
+All four apply asymmetric E5 (cause→effect ×1.2, effect→cause ×0.8 per AP-77).
 
-### 12.1 `trigger_causal_discovery`
+### 9.1 `search_causal_relationships`
 
-Manually trigger the causal discovery agent to analyze memories for cause-effect relationships.
+Searches LLM-generated 1–3 paragraph causal descriptions with full provenance.
 
-**Side effects:** LLM inference (Hermes-2-Pro-Mistral-7B Q5_K_M, ~5GB model + ~1GB KV cache ≈ 6GB VRAM within the 9GB budget per causal-agent/src/lib.rs:33); creates E5 asymmetric embeddings via `CausalModel.embed_dual()`; writes causal relationships to RocksDB; creates graph edges.
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `query` | string | yes | | |
+| `direction` | string | no | `all` | `cause` \| `effect` \| `all` |
+| `topK` | integer | no | 10 | [1, 100] |
+| `includeSource` | boolean | no | true | |
+| `includeProvenance` | boolean | no | false | |
+| `sourceWeight` | number | no | 0.6 | [0, 1] |
+| `explanationWeight` | number | no | 0.4 | [0, 1] |
+| `multiEmbedder` | boolean | no | false | Requires `direction` ∈ `cause`/`effect` |
+| `minConsensus` | number | no | 0.0 | [0, 1] |
+| `e1Weight` | number | no | 0.30 | [0, 1] |
+| `e5Weight` | number | no | 0.35 | [0, 1] |
+| `e8Weight` | number | no | 0.15 | [0, 1] |
+| `e11Weight` | number | no | 0.20 | [0, 1] |
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `mode` | string | No | `"extract"` | `"extract"`, `"pairs"` | `"extract"`: find all cause-effect in each memory; `"pairs"`: find relationships between memories |
-| `maxPairs` | integer | No | `50` | `1-200` | Maximum candidate pairs to analyze per run |
-| `minConfidence` | number | No | `0.7` | `[0.5, 1.0]` | Minimum LLM confidence to accept a relationship |
-| `sessionScope` | string | No | `"all"` | `"current"`, `"all"`, `"recent"` | Scope of memories to analyze |
-| `session_id` | string | No | -- | -- | Session ID (used with `sessionScope="current"`) |
-| `dryRun` | boolean | No | `false` | -- | Analyze without creating embeddings or edges |
+**Returns:** `{ relationships: [{description, source_memory_id, effect_memory_id, causal_score, provenance?}] }`. Read-only; hits `CF_CAUSAL_RELATIONSHIPS`.
 
-**Return:** JSON object with discovery results: pairs analyzed, relationships found, confidence scores, and timing.
+### 9.2 `search_causes`
 
-**Error conditions:** LLM feature not enabled; model loading failure; VRAM exhaustion.
+Abductive (effect → cause) via E5 with 0.8× dampening.
 
-### 12.2 `get_causal_discovery_status`
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `query` | string | yes | | Observed effect |
+| `topK` | integer | no | 10 | [1, 50] |
+| `minScore` | number | no | 0.1 | [0, 1] |
+| `includeContent` | boolean | no | false | |
+| `filterCausalDirection` | string | no | | `cause` \| `effect` \| `unknown` |
+| `searchScope` | string | no | `memories` | `memories` \| `relationships` \| `all` |
+| `strategy` | string | no | | `e1_only` \| `multi_space` \| `pipeline` |
+| `rerankWeight` | number | no | 0.4 | [0, 1] — pipeline only |
 
-Get status and statistics of the causal discovery agent.
+### 9.3 `search_effects`
 
-**Side effects:** None (read-only).
+Predictive (cause → effect) via E5 with 1.2× boost. Identical schema to `search_causes`.
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `includeLastResult` | boolean | No | `true` | -- | Include detailed results from last cycle |
-| `includeGraphStats` | boolean | No | `true` | -- | Include causal graph statistics |
+### 9.4 `get_causal_chain`
 
-**Return:** JSON object with agent running state, last cycle results, VRAM usage, and cumulative statistics.
+Transitive chain with 0.9^hop attenuation.
 
----
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `anchorId` | uuid | yes | | |
+| `direction` | string | no | `forward` | `forward` \| `backward` |
+| `maxHops` | integer | no | 5 | [1, 10] |
+| `minSimilarity` | number | no | 0.3 | [0, 1] |
+| `includeContent` | boolean | no | false | |
 
-## 13. Keyword Tools (E6)
-
-### 13.1 `search_by_keywords`
-
-Find memories matching specific keywords using E6 sparse embeddings. Enhances E1 with keyword-level precision.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | Keyword query (phrase or multiple keywords) |
-| `topK` | integer | No | `10` | `1-50` | Maximum results |
-| `minScore` | number | No | `0.1` | `[0.0, 1.0]` | Minimum blended score threshold |
-| `blendWithSemantic` | number | No | `0.3` | `[0.0, 1.0]` | E6 keyword weight in blend (0.0=pure E1, 1.0=pure E6) |
-| `useSpladeExpansion` | boolean | No | `true` | -- | Use E13 SPLADE for term expansion (fast->quick) |
-| `includeContent` | boolean | No | `false` | -- | Include full content text |
-| `strategy` | string | No | `"multi_space"` | `"e1_only"`, `"multi_space"`, `"pipeline"` | Search strategy |
-
-**Return:** JSON object with results ranked by blended keyword and semantic scores.
-
----
-
-## 14. Code Tools (E7)
-
-### 14.1 `search_code`
-
-Find memories containing code patterns using E7 dense embeddings (1536D Qodo-Embed).
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | Code query (functionality, patterns, or constructs) |
-| `topK` | integer | No | `10` | `1-50` | Maximum results |
-| `minScore` | number | No | `0.2` | `[0.0, 1.0]` | Minimum blended score threshold |
-| `blendWithSemantic` | number | No | `0.4` | `[0.0, 1.0]` | E7 code weight in blend (0.0=pure E1, 1.0=pure E7) |
-| `includeContent` | boolean | No | `false` | -- | Include full content text |
-| `searchMode` | string | No | `"hybrid"` | `"hybrid"`, `"e7Only"`, `"e1WithE7Rerank"`, `"pipeline"` | Code search strategy |
-| `languageHint` | string | No | -- | `"rust"`, `"python"`, `"javascript"`, `"typescript"`, `"go"`, `"java"`, `"cpp"`, `"sql"` | Programming language hint |
-
-**Return:** JSON object with results including detected language info and relevance scores.
+**Returns:** `{ chain: [{hop, memory_id, score, direction}], terminal_reason }`.
 
 ---
 
-## 15. Graph Tools (E8)
+## 10. Causal discovery tools (`definitions/causal_discovery.rs`, feature = `llm`)
 
-### 15.1 `search_connections`
+Uses Qwen2.5 via Candle/CUDA with GBNF-constrained decoding. Confirmed pairs are embedded through `CausalModel::embed_dual` into E5 cause/effect.
 
-Find memories connected to a given concept using asymmetric E8 similarity (source->target 1.2x, target->source 0.8x).
+### 10.1 `trigger_causal_discovery`
 
-**Side effects:** None (read-only).
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `mode` | string | no | `extract` | `extract` (within-memory) \| `pairs` (cross-memory) |
+| `maxPairs` | integer | no | 50 | [1, 200] |
+| `minConfidence` | number | no | 0.7 | [0.5, 1.0] |
+| `sessionScope` | string | no | `all` | `current` \| `all` \| `recent` |
+| `session_id` | string | no | | Required with `sessionScope=current` for precise filter |
+| `dryRun` | boolean | no | false | Skip writes |
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | Concept to find connections for |
-| `direction` | string | No | `"both"` | `"source"`, `"target"`, `"both"` | Connection direction |
-| `topK` | integer | No | `10` | `1-50` | Maximum connections |
-| `minScore` | number | No | `0.1` | `[0.0, 1.0]` | Minimum connection score |
-| `includeContent` | boolean | No | `false` | -- | Include full content text |
-| `filterGraphDirection` | string | No | -- | `"source"`, `"target"`, `"unknown"` | Filter by persisted direction |
-| `includeProvenance` | boolean | No | `false` | -- | Include provenance metadata |
+**Side effects:** writes `CF_CAUSAL_RELATIONSHIPS`, typed edges of kind `causal_chain`, audit rows; LLM inference (VRAM ≈ 6 GB FP16 for 3B, 14 GB for 7B).
+**Errors:** `FEATURE_DISABLED` without `llm`, `INTERNAL_ERROR` on LLM failure.
 
-**Return:** JSON object with connected memories, connection scores, and direction information.
+### 10.2 `get_causal_discovery_status`
 
-### 15.2 `get_graph_path`
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `includeLastResult` | boolean | no | true |
+| `includeGraphStats` | boolean | no | true |
 
-Build multi-hop graph paths from an anchor point. Applies hop attenuation (0.9^hop).
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `anchorId` | string (UUID) | Yes | -- | Valid UUID | Starting memory UUID |
-| `direction` | string | No | `"forward"` | `"forward"`, `"backward"` | source->target or target->source |
-| `maxHops` | integer | No | `5` | `1-10` | Maximum hops |
-| `minSimilarity` | number | No | `0.3` | `[0.0, 1.0]` | Minimum similarity per hop |
-| `includeContent` | boolean | No | `false` | -- | Include full content text |
-
-**Return:** JSON object with graph path nodes and hop-attenuated scores.
-
-### 15.3 `discover_graph_relationships` (LLM only)
-
-Discover graph relationships between memories using LLM analysis (Hermes-2-Pro-Mistral-7B, shared via `Arc<CausalDiscoveryLLM>` with the causal agent per graph-agent/src/lib.rs).
-
-**Side effects:** LLM inference; writes discovered relationships to RocksDB; creates E8 graph edges.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `memory_ids` | array of UUID strings | Yes | -- | 2-50 UUIDs | Memory UUIDs to analyze |
-| `relationship_types` | array of strings | No | All types | See below | Filter to specific types |
-| `min_confidence` | number | No | `0.7` | `[0.0, 1.0]` | Minimum confidence threshold |
-| `batch_size` | integer | No | `50` | `1-100` | Maximum candidate pairs to analyze |
-
-**Relationship types:** `contains`, `scoped_by`, `depends_on`, `imports`, `requires`, `references`, `cites`, `interprets`, `distinguishes`, `implements`, `complies_with`, `fulfills`, `extends`, `modifies`, `supersedes`, `overrules`, `calls`, `applies`, `used_by`.
-
-**Return:** JSON object with discovered relationships including confidence scores, categories, and directions.
-
-### 15.4 `validate_graph_link` (LLM only)
-
-Validate a proposed graph link between two memories using LLM analysis.
-
-**Side effects:** LLM inference (read-only validation, no writes).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `source_id` | string (UUID) | Yes | -- | Valid UUID | Source memory UUID |
-| `target_id` | string (UUID) | Yes | -- | Valid UUID | Target memory UUID |
-| `expected_relationship_type` | string | No | -- | Same as `relationship_types` above | Expected type to validate |
-
-**Return:** JSON object with validation result, detected relationship type, confidence score, category, and direction.
+**Returns:** `{ running, last_cycle, vram_bytes, stats: {pairs_analyzed, relationships_found, ...}, graph_stats? }`.
 
 ---
 
-## 16. Robustness Tools (E9)
+## 11. Keyword tools (`definitions/keyword.rs`)
 
-### 16.1 `search_robust`
+### 11.1 `search_by_keywords`
 
-Find memories using E9 noise-robust structural matching via character trigram hypervectors. Finds matches despite typos, casing variations, and morphological changes.
+E6 sparse keyword matching; optionally SPLADE-expanded.
 
-**Side effects:** None (read-only).
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `query` | string | yes | | |
+| `topK` | integer | no | 10 | [1, 50] |
+| `minScore` | number | no | 0.1 | [0, 1] |
+| `blendWithSemantic` | number | no | 0.3 | [0, 1] (E6 weight; 1.0 = pure E6) |
+| `useSpladeExpansion` | boolean | no | true | E13 term expansion |
+| `includeContent` | boolean | no | false | |
+| `strategy` | string | no | `multi_space` | `e1_only` \| `multi_space` \| `pipeline` |
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | Min 3 chars | Query text (typos OK) |
-| `topK` | integer | No | `10` | `1-50` | Maximum results |
-| `minScore` | number | No | `0.1` | `[0.0, 1.0]` | Minimum blended score |
-| `e9DiscoveryThreshold` | number | No | `0.08` | `[0.0, 1.0]` | Minimum E9 score for blind-spot discovery |
-| `e1WeaknessThreshold` | number | No | `0.5` | `[0.0, 1.0]` | Maximum E1 score to be considered "missed" |
-| `includeContent` | boolean | No | `false` | -- | Include full content text |
-| `includeE9Score` | boolean | No | `true` | -- | Include separate E9 and E1 scores |
-| `strategy` | string | No | `"multi_space"` | `"e1_only"`, `"multi_space"`, `"pipeline"` | Search strategy |
-
-**Return:** JSON object with results including per-embedder E9/E1 scores and blind-spot annotations.
+Read-only; hits sparse inverted index (E6) and, if expansion on, E13.
 
 ---
 
-## 17. Entity Tools (E11)
+## 12. Code tools (`definitions/code.rs`)
 
-These tools use E11 KEPLER/TransE entity embeddings (768D).
+### 12.1 `search_code`
 
-### 17.1 `extract_entities`
+E7 Qodo-Embed 1536D dense.
 
-Extract and canonicalize entities from text using pattern matching and knowledge base lookup.
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `query` | string | yes | | |
+| `topK` | integer | no | 10 | [1, 50] |
+| `minScore` | number | no | 0.2 | [0, 1] |
+| `blendWithSemantic` | number | no | 0.4 | [0, 1] (E7 weight) |
+| `includeContent` | boolean | no | false | |
+| `searchMode` | string | no | `hybrid` | `hybrid` \| `e7Only` \| `e1WithE7Rerank` \| `pipeline` |
+| `languageHint` | string | no | | `rust` \| `python` \| `javascript` \| `typescript` \| `go` \| `java` \| `cpp` \| `sql` |
 
-**Side effects:** None (read-only text analysis).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `text` | string | Yes | -- | -- | Text to extract entities from |
-| `includeUnknown` | boolean | No | `true` | -- | Include entities not in knowledge base |
-| `groupByType` | boolean | No | `false` | -- | Group results by entity type |
-
-**Return:** JSON object with extracted entities, each with canonical form, original mention, type, and confidence.
-
-### 17.2 `search_by_entities`
-
-Find memories containing specific entities with entity-aware ranking.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `entities` | array of strings | Yes | -- | -- | Entity names to search for (auto-canonicalized) |
-| `entityTypes` | array of strings | No | -- | `"ProgrammingLanguage"`, `"Framework"`, `"Database"`, `"Cloud"`, `"Company"`, `"TechnicalTerm"`, `"Unknown"` | Filter by entity types |
-| `matchMode` | string | No | `"any"` | `"any"`, `"all"` | Match any or all entities |
-| `topK` | integer | No | `10` | `1-50` | Maximum results |
-| `minScore` | number | No | `0.2` | `[0.0, 1.0]` | Minimum similarity threshold |
-| `includeContent` | boolean | No | `false` | -- | Include full content |
-| `boostExactMatch` | number | No | `1.15` | `[1.0, 3.0]` | Boost multiplier for exact entity matches |
-| `strategy` | string | No | -- | `"e1_only"`, `"multi_space"`, `"pipeline"` | Search strategy |
-
-**Return:** JSON object with entity-ranked results and matched entity details.
-
-### 17.3 `infer_relationship`
-
-Infer the relationship between two entities using TransE (r^ = t - h).
-
-**Side effects:** None (read-only computation).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `headEntity` | string | Yes | -- | -- | Subject/head entity |
-| `tailEntity` | string | Yes | -- | -- | Object/tail entity |
-| `headType` | string | No | -- | `"ProgrammingLanguage"`, `"Framework"`, `"Database"`, `"Cloud"`, `"Company"`, `"TechnicalTerm"` | Type hint for head |
-| `tailType` | string | No | -- | Same as `headType` | Type hint for tail |
-| `topK` | integer | No | `5` | `1-20` | Number of relation candidates |
-| `includeScore` | boolean | No | `true` | -- | Include raw TransE scores |
-
-**Return:** JSON object with ranked relation candidates and TransE scores.
-
-### 17.4 `find_related_entities`
-
-Find entities that have a given relationship to a source entity using TransE.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `entity` | string | Yes | -- | -- | Source entity |
-| `relation` | string | Yes | -- | -- | Relationship to search for |
-| `direction` | string | No | `"outgoing"` | `"outgoing"`, `"incoming"` | h->t or t<-h |
-| `entityType` | string | No | -- | `"ProgrammingLanguage"`, `"Framework"`, `"Database"`, `"Cloud"`, `"Company"`, `"TechnicalTerm"` | Filter by entity type |
-| `topK` | integer | No | `10` | `1-50` | Maximum results |
-| `minScore` | number | No | -- | `[-10, 0]` | Minimum TransE score (more negative = less strict) |
-| `searchMemories` | boolean | No | `true` | -- | Filter to entities found in stored memories |
-
-**Return:** JSON object with related entities and TransE scores.
-
-### 17.5 `validate_knowledge`
-
-Score whether a (subject, predicate, object) knowledge triple is valid using TransE. Score of 0 is perfect match.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `subject` | string | Yes | -- | -- | Subject/head entity |
-| `predicate` | string | Yes | -- | -- | Predicate/relation |
-| `object` | string | Yes | -- | -- | Object/tail entity |
-| `subjectType` | string | No | -- | `"ProgrammingLanguage"`, `"Framework"`, `"Database"`, `"Cloud"`, `"Company"`, `"TechnicalTerm"` | Type hint for subject |
-| `objectType` | string | No | -- | Same as `subjectType` | Type hint for object |
-
-**Return:** JSON object with validation result (`"valid"`, `"uncertain"`, `"unlikely"`), TransE score, and optionally supporting/contradicting memories.
-
-### 17.6 `get_entity_graph`
-
-Build and visualize entity relationships discovered in stored memories.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `centerEntity` | string | No | -- | -- | Focal entity to center the graph on |
-| `maxNodes` | integer | No | `50` | `1-500` | Maximum number of nodes |
-| `entityTypes` | array of strings | No | -- | `"ProgrammingLanguage"`, `"Framework"`, `"Database"`, `"Cloud"`, `"Company"`, `"TechnicalTerm"`, `"Unknown"` | Filter by entity types |
-| `minRelationScore` | number | No | `0.3` | `[0.0, 1.0]` | Minimum edge score threshold |
-| `includeMemoryCounts` | boolean | No | `true` | -- | Include memory reference counts per node |
-
-**Return:** JSON object with graph nodes and edges, each edge weighted by score and evidence count.
+**Returns:** `{ results, detected_language }`. Read-only.
 
 ---
 
-## 18. Embedder-First Search Tools
+## 13. Graph tools (`definitions/graph.rs`)
 
-These tools enable searching using any of the 13 embedders as the primary perspective (Constitution v6.3).
+### 13.1 `search_connections`
 
-### 18.1 `search_by_embedder`
+E8 asymmetric (source→target ×1.2, target→source ×0.8).
 
-Search using any HNSW-capable embedder as the primary perspective.
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `query` | string | yes | | |
+| `direction` | string | no | `both` | `source` \| `target` \| `both` |
+| `topK` | integer | no | 10 | [1, 50] |
+| `minScore` | number | no | 0.1 | [0, 1] |
+| `includeContent` | boolean | no | false | |
+| `filterGraphDirection` | string | no | | `source` \| `target` \| `unknown` |
+| `includeProvenance` | boolean | no | false | |
 
-**Side effects:** None (read-only).
+### 13.2 `get_graph_path`
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `embedder` | string | Yes | -- | `"E1"`, `"E2"`, `"E3"`, `"E4"`, `"E5"`, `"E7"`, `"E8"`, `"E9"`, `"E10"`, `"E11"` | Primary embedder (E6/E12/E13 not supported -- non-HNSW) |
-| `query` | string | Yes | -- | -- | Search query |
-| `topK` | integer | No | `10` | `1-100` | Maximum results |
-| `minSimilarity` | number | No | `0` | `[0.0, 1.0]` | Minimum similarity threshold |
-| `includeContent` | boolean | No | `false` | -- | Include full content text |
-| `includeAllScores` | boolean | No | `false` | -- | Include scores from all 13 embedders |
+Multi-hop E8 traversal, 0.9^hop attenuation.
 
-**Return:** JSON object with results ranked by the selected embedder's similarity, optionally with all-embedder scores.
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `anchorId` | uuid | yes | | |
+| `direction` | string | no | `forward` | `forward` \| `backward` |
+| `maxHops` | integer | no | 5 | [1, 10] |
+| `minSimilarity` | number | no | 0.3 | [0, 1] |
+| `includeContent` | boolean | no | false | |
 
-### 18.2 `get_embedder_clusters`
+### 13.3 `discover_graph_relationships` (llm)
 
-Explore clusters of memories in a specific embedder's space.
+LLM relationship classification over candidate pairs. 19 relation types across 4 domains.
 
-**Side effects:** None (read-only).
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `memory_ids` | uuid[] | yes | | 2..=50 |
+| `relationship_types` | string[] | no | all | see enum below |
+| `min_confidence` | number | no | 0.7 | [0, 1] |
+| `batch_size` | integer | no | 50 | [1, 100] |
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `embedder` | string | Yes | -- | `"E1"`, `"E2"`, `"E3"`, `"E4"`, `"E5"`, `"E7"`, `"E8"`, `"E9"`, `"E10"`, `"E11"` | Embedder space to cluster |
-| `minClusterSize` | integer | No | `3` | `2-50` | Minimum memories per cluster |
-| `topClusters` | integer | No | `10` | `1-50` | Maximum clusters to return |
-| `includeSamples` | boolean | No | `true` | -- | Include sample memories per cluster |
-| `samplesPerCluster` | integer | No | `3` | `1-10` | Number of samples per cluster |
+**Relationship enum:** `contains`, `scoped_by`, `depends_on`, `imports`, `requires`, `references`, `cites`, `interprets`, `distinguishes`, `implements`, `complies_with`, `fulfills`, `extends`, `modifies`, `supersedes`, `overrules`, `calls`, `applies`, `used_by`.
 
-**Return:** JSON object with cluster list, each containing centroid info, member count, and sample memories.
+**Side effects:** writes typed edges to `CF_TYPED_EDGES` (kind `graph_connected`), audit rows, LLM inference.
 
-### 18.3 `compare_embedder_views`
+### 13.4 `validate_graph_link` (llm)
 
-Compare how different embedders rank the same query, highlighting agreements and unique finds.
+Single-pair validation.
 
-**Side effects:** None (read-only).
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `source_id` | uuid | yes | | |
+| `target_id` | uuid | yes | | |
+| `expected_relationship_type` | string | no | | (same 19-value enum) |
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | Search query |
-| `embedders` | array of strings | Yes | -- | 2-5 items from `"E1"`...`"E11"` (not E6/E12/E13) | Embedders to compare |
-| `topK` | integer | No | `5` | `1-20` | Top results per embedder |
-| `includeContent` | boolean | No | `false` | -- | Include content text |
-
-**Return:** JSON object with per-embedder rankings, agreement analysis, and unique finds.
-
-### 18.4 `list_embedder_indexes`
-
-List all 13 embedder indexes with statistics.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `includeDetails` | boolean | No | `true` | -- | Include memory usage and query latency stats |
-
-**Return:** JSON object with per-embedder index information: dimension, index type, vector count, size, GPU residency.
-
-### 18.5 `get_memory_fingerprint`
-
-Retrieve per-embedder fingerprint vectors for a specific memory.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `memoryId` | string (UUID) | Yes | -- | Valid UUID | Memory to inspect |
-| `embedders` | array of strings | No | All 13 | `"E1"`...`"E13"` | Filter to specific embedders |
-| `includeVectorNorms` | boolean | No | `true` | -- | Include L2 norm of each vector |
-| `includeContent` | boolean | No | `false` | -- | Include memory content text |
-
-**Return:** JSON object with per-embedder presence, dimension, L2 norm, and variant info for asymmetric embedders (E5/E8/E10). Sparse embedders (E6/E13) show non-zero element count.
-
-**Error conditions:** Memory UUID not found.
-
-### 18.6 `create_weight_profile`
-
-Create a named custom embedder weight profile for the current session.
-
-**Side effects:** Stores profile in server memory (session-scoped, not persisted to disk). Maximum 1000 custom profiles.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `name` | string | Yes | -- | 1-64 chars | Profile name (must not conflict with built-in names) |
-| `weights` | object | Yes | -- | Keys `E1`-`E13`, values `[0, 1]`, sum ~1.0 | Per-embedder weights |
-| `description` | string | No | -- | -- | Optional description |
-
-**Return:** JSON object confirming profile creation with normalized weight values.
-
-**Error conditions:** Name conflicts with built-in profile; weights do not sum to ~1.0; exceeds 1000 custom profiles.
-
-### 18.7 `search_cross_embedder_anomalies`
-
-Find memories that score high in one embedder but low in another (blind-spot detection).
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | Search query |
-| `highEmbedder` | string | Yes | -- | `"E1"`...`"E13"` | Embedder expected to score high |
-| `lowEmbedder` | string | Yes | -- | `"E1"`...`"E13"` | Embedder expected to score low |
-| `highThreshold` | number | No | `0.5` | `[0.0, 1.0]` | Minimum score in high embedder |
-| `lowThreshold` | number | No | `0.3` | `[0.0, 1.0]` | Maximum score in low embedder |
-| `topK` | integer | No | `10` | `1-100` | Maximum results |
-| `includeContent` | boolean | No | `false` | -- | Include content text |
-| `primaryEmbedder` | string | No | `"E1"` | `"E1"`...`"E13"` | Primary embedder for generalized detection |
-| `contrastEmbedder` | string | No | `"E9"` | `"E1"`...`"E13"` | Contrast embedder for generalized detection |
-
-**Return:** JSON object with anomalous memories and anomaly scores (high_score - low_score).
+**Returns:** `{ valid, confidence, detected_relationship_type, category, direction, rationale }`.
 
 ---
 
-## 19. Token/Expansion Search Tools (E12/E13)
+## 14. Robustness tools (`definitions/robustness.rs`)
 
-### 19.1 `search_by_tokens`
+### 14.1 `search_robust`
 
-Search using E12 ColBERT token-level MaxSim scoring for precise phrase matching.
+E9 HDC trigram hypervectors (1024D projected); highlights E1 blind spots.
 
-**Side effects:** None (read-only).
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `query` | string | yes | | ≥3 chars (trigram floor) |
+| `topK` | integer | no | 10 | [1, 50] |
+| `minScore` | number | no | 0.1 | [0, 1] |
+| `e9DiscoveryThreshold` | number | no | 0.08 | [0, 1] — E9 floor for "discovery" flag |
+| `e1WeaknessThreshold` | number | no | 0.5 | [0, 1] — E1 ceiling for "missed" flag |
+| `includeContent` | boolean | no | false | |
+| `includeE9Score` | boolean | no | true | |
+| `strategy` | string | no | `multi_space` | `e1_only` \| `multi_space` \| `pipeline` |
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | Query text |
-| `topK` | integer | No | `10` | `1-100` | Maximum results |
-| `minSimilarity` | number | No | `0.3` | `[0.0, 1.0]` | Minimum similarity threshold |
-
-**Return:** JSON object with results ranked by MaxSim token-level scores.
-
-### 19.2 `search_by_expansion`
-
-Search using E13 SPLADE learned term expansion for enhanced keyword recall.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | Query text |
-| `topK` | integer | No | `10` | `1-100` | Maximum results |
-| `minScore` | number | No | `0.1` | `[0.0, 1.0]` | Minimum score threshold |
-
-**Return:** JSON object with results ranked by SPLADE expansion scores.
+A result is tagged "E9 discovery" when `e9_score ≥ e9DiscoveryThreshold AND e1_score < e1WeaknessThreshold`.
 
 ---
 
-## 20. Temporal Tools (E2/E3)
+## 15. Entity tools (E11) (`definitions/entity.rs`)
 
-Temporal boost is applied POST-retrieval per ARCH-25 (not in similarity fusion).
+Entity type enum (reused below): `ProgrammingLanguage`, `Framework`, `Database`, `Cloud`, `Company`, `TechnicalTerm`, `Unknown`.
 
-### 20.1 `search_recent`
+### 15.1 `extract_entities`
 
-Search with E2 temporal freshness boost applied.
+| Param | Type | Req | Default | Description |
+|-------|------|:--:|---------|-------------|
+| `text` | string | yes | | |
+| `includeUnknown` | boolean | no | true | Include heuristic hits |
+| `groupByType` | boolean | no | false | |
 
-**Side effects:** None (read-only).
+**Returns:** `{ entities: [{surface, canonical, type, confidence}] }`. Read-only; canonicalization resolves e.g. `k8s`→`kubernetes`.
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | Search query text |
-| `topK` | integer | No | `10` | `1-100` | Maximum results |
-| `temporalWeight` | number | No | `0.3` | `[0.1, 1.0]` | Temporal boost weight (higher = more recency preference) |
-| `decayFunction` | string | No | `"exponential"` | `"linear"`, `"exponential"`, `"step"`, `"none"`, `"no_decay"` | Decay function |
-| `temporalScale` | string | No | `"meso"` | `"micro"` (1h), `"meso"` (1d), `"macro"` (1w), `"long"` (1mo), `"archival"` (1y) | Time scale |
-| `includeContent` | boolean | No | `true` | -- | Include content text |
-| `minSimilarity` | number | No | `0.1` | `[0.0, 1.0]` | Minimum semantic similarity before temporal boost |
+### 15.2 `search_by_entities`
 
-**Return:** JSON object with temporally boosted results.
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `entities` | string[] | yes | | Canonicalized on input |
+| `entityTypes` | string[] | no | | entity-type enum |
+| `matchMode` | string | no | `any` | `any` \| `all` |
+| `topK` | integer | no | 10 | [1, 50] |
+| `minScore` | number | no | 0.2 | [0, 1] |
+| `includeContent` | boolean | no | false | |
+| `boostExactMatch` | number | no | 1.15 | [1.0, 3.0] |
+| `strategy` | string | no | `e1_only` | `e1_only` \| `multi_space` \| `pipeline` |
 
-### 20.2 `search_periodic`
+### 15.3 `infer_relationship`
 
-Search for memories matching periodic time patterns (E3 V_periodicity).
+TransE: `r̂ = t − h`, match to known relations.
 
-**Side effects:** None (read-only).
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `headEntity` | string | yes | | |
+| `tailEntity` | string | yes | | |
+| `headType` / `tailType` | string | no | | entity-type enum (no `Unknown`) |
+| `topK` | integer | no | 5 | [1, 20] |
+| `includeScore` | boolean | no | true | |
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `query` | string | Yes | -- | -- | Search query text |
-| `topK` | integer | No | `10` | `1-100` | Maximum results |
-| `targetHour` | integer | No | -- | `0-23` | Target hour (auto-detected if `autoDetect=true`) |
-| `targetDayOfWeek` | integer | No | -- | `0-6` (0=Sun) | Target day (auto-detected if `autoDetect=true`) |
-| `autoDetect` | boolean | No | `false` | -- | Auto-detect target from current time |
-| `periodicWeight` | number | No | `0.3` | `[0.1, 1.0]` | Periodic boost weight |
-| `includeContent` | boolean | No | `true` | -- | Include content text |
-| `minSimilarity` | number | No | `0.1` | `[0.0, 1.0]` | Minimum semantic similarity before periodic boost |
+### 15.4 `find_related_entities`
 
-**Return:** JSON object with periodically boosted results.
+TransE: outgoing `t̂ = h + r`, incoming `ĥ = t − r`.
 
----
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `entity` | string | yes | | |
+| `relation` | string | yes | | |
+| `direction` | string | no | `outgoing` | `outgoing` \| `incoming` |
+| `entityType` | string | no | | entity-type enum |
+| `topK` | integer | no | 10 | [1, 50] |
+| `minScore` | number | no | | [-10, 0] (log-dist) |
+| `searchMemories` | boolean | no | true | Restrict to entities seen in corpus |
 
-## 21. Graph Linking Tools (K-NN)
+### 15.5 `validate_knowledge`
 
-These tools navigate the pre-computed K-NN graph and typed edges.
+TransE triple score `score = −‖h + r − t‖₂`.
 
-### 21.1 `get_memory_neighbors`
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `subject`, `predicate`, `object` | string | yes | |
+| `subjectType`, `objectType` | string | no | entity-type enum (no `Unknown`) |
 
-Get K nearest neighbors in a specific embedder space using pre-computed K-NN edges.
+**Returns:** `{ score, verdict: "valid" \| "uncertain" \| "unlikely", supporting_memories?, contradicting_memories? }`.
 
-**Side effects:** None (read-only). Note: recently stored memories may return 0 neighbors until background graph build runs (~60s).
+### 15.6 `get_entity_graph`
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `memory_id` | string (UUID) | Yes | -- | Valid UUID | Memory to find neighbors for |
-| `embedder_id` | integer | No | `0` | `0-12` | Embedder space (0=E1, 4=E5, 6=E7, 7=E8, 9=E10, 10=E11) |
-| `top_k` | integer | No | `10` | `1-50` | Number of neighbors |
-| `min_similarity` | number | No | `0.0` | `[0.0, 1.0]` | Minimum similarity threshold |
-| `include_content` | boolean | No | `false` | -- | Include memory content |
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `centerEntity` | string | no | | Focal node |
+| `maxNodes` | integer | no | 50 | [1, 500] |
+| `entityTypes` | string[] | no | | entity-type enum |
+| `minRelationScore` | number | no | 0.3 | [0, 1] |
+| `includeMemoryCounts` | boolean | no | true | |
 
-**Return:** JSON object with neighbor list sorted by similarity, each with memory UUID, similarity score, and optionally content.
-
-### 21.2 `get_typed_edges`
-
-Get typed edges from a memory. Types are derived from embedder agreement patterns.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `memory_id` | string (UUID) | Yes | -- | Valid UUID | Memory to get edges from |
-| `edge_type` | string | No | -- | `"semantic_similar"`, `"code_related"`, `"entity_shared"`, `"causal_chain"`, `"graph_connected"`, `"paraphrase_aligned"`, `"keyword_overlap"`, `"multi_agreement"` | Filter by edge type |
-| `direction` | string | No | `"outgoing"` | `"outgoing"`, `"incoming"`, `"both"` | Edge direction |
-| `min_weight` | number | No | `0.0` | `[0.0, 1.0]` | Minimum edge weight |
-| `include_content` | boolean | No | `false` | -- | Include memory content |
-
-**Return:** JSON object with typed edges, each containing target memory UUID, edge type, weight, and direction.
-
-### 21.3 `traverse_graph`
-
-Multi-hop graph traversal following typed edges.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `start_memory_id` | string (UUID) | Yes | -- | Valid UUID | Starting memory |
-| `max_hops` | integer | No | `2` | `1-5` | Maximum traversal depth |
-| `edge_type` | string | No | -- | Same as `get_typed_edges` edge types | Filter by edge type |
-| `min_weight` | number | No | `0.3` | `[0.0, 1.0]` | Minimum edge weight to follow |
-| `max_results` | integer | No | `20` | `1-100` | Maximum paths to return |
-| `include_content` | boolean | No | `false` | -- | Include memory content |
-
-**Return:** JSON object with traversal paths, each showing the sequence of memories and edges followed.
-
-### 21.4 `get_unified_neighbors`
-
-Find neighbors using Weighted RRF fusion across all 13 embedders. Per ARCH-21: uses RRF, not weighted sum. Per AP-60: temporal embedders (E2-E4) excluded from semantic fusion.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `memory_id` | string (UUID) | Yes | -- | Valid UUID | Memory to find neighbors for |
-| `weight_profile` | string | No | `"semantic_search"` | Same as `search_graph` `weightProfile` values | Weight profile for RRF fusion |
-| `top_k` | integer | No | `10` | `1-50` | Number of neighbors |
-| `min_score` | number | No | `0.0` | `[0.0, 1.0]` | Minimum RRF score |
-| `include_content` | boolean | No | `false` | -- | Include memory content |
-| `include_embedder_breakdown` | boolean | No | `true` | -- | Include per-embedder scores and ranks |
-| `custom_weights` | object | No | -- | Keys `E1`-`E13`, values `[0, 1]` | Custom per-embedder weights (overrides profile) |
-| `exclude_embedders` | array of strings | No | -- | `"E1"`...`"E13"` | Embedders to exclude |
-
-**Return:** JSON object with unified neighbor list ranked by RRF score, with optional per-embedder breakdown.
+**Returns:** `{ nodes, edges, center }`. Read-only.
 
 ---
 
-## 22. Maintenance Tools
+## 16. Embedder-first search tools (`definitions/embedder.rs`)
 
-### 22.1 `repair_causal_relationships`
+Embedder enum restricted to HNSW-backed only (`E1..=E5, E7..=E11`) for search/cluster/compare. Fingerprint/anomaly tools accept all 13.
 
-Repair corrupted causal relationships by removing entries that fail deserialization. Scans `CF_CAUSAL_RELATIONSHIPS` and deletes truncated or corrupted entries.
+### 16.1 `search_by_embedder`
 
-**Side effects:** Deletes corrupted entries from RocksDB `CF_CAUSAL_RELATIONSHIPS` column family.
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `embedder` | string | yes | | HNSW-only (10 values) |
+| `query` | string | yes | | |
+| `topK` | integer | no | 10 | [1, 100] |
+| `minSimilarity` | number | no | 0 | [0, 1] |
+| `includeContent` | boolean | no | false | |
+| `includeAllScores` | boolean | no | false | All-13 breakdown |
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| *(none)* | -- | -- | -- | -- | No parameters |
+### 16.2 `get_embedder_clusters`
 
-**Return:** JSON object with `deleted_count` and `total_scanned` statistics.
+HDBSCAN on one embedder's HNSW space.
 
----
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `embedder` | string | yes | | HNSW-only enum |
+| `minClusterSize` | integer | no | 3 | [2, 50] |
+| `topClusters` | integer | no | 10 | [1, 50] |
+| `includeSamples` | boolean | no | true | |
+| `samplesPerCluster` | integer | no | 3 | [1, 10] |
 
-## 23. Provenance Tools
+### 16.3 `compare_embedder_views`
 
-### 23.1 `get_audit_trail`
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `query` | string | yes | | |
+| `embedders` | string[] | yes | | 2..=5; HNSW-only enum |
+| `topK` | integer | no | 5 | [1, 20] |
+| `includeContent` | boolean | no | false | |
 
-Query the audit log for a specific memory or time range. Returns chronological audit records.
+**Returns:** `{ rankings: {E1: [...], E11: [...]}, agreement, unique_per_embedder }`.
 
-**Side effects:** None (read-only).
+### 16.4 `list_embedder_indexes`
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `target_id` | string (UUID) | No | -- | Valid UUID | Memory UUID to get audit trail for |
-| `start_time` | string | No | -- | ISO 8601 timestamp | Time range start |
-| `end_time` | string | No | -- | ISO 8601 timestamp | Time range end |
-| `limit` | integer | No | `50` | Max `500` | Maximum records to return |
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `includeDetails` | boolean | no | true |
 
-**Return:** JSON object with chronological audit records showing operations (create, merge, delete, boost, etc.).
+**Returns:** `{ indexes: [{embedder, dim, type, vector_count, size_bytes, gpu_resident, latency_p50?}] }`. Read-only.
 
-### 23.2 `get_merge_history`
+### 16.5 `get_memory_fingerprint`
 
-Show merge lineage and history for a fingerprint.
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `memoryId` | uuid | yes | | |
+| `embedders` | string[] | no | all 13 | `E1..=E13` |
+| `includeVectorNorms` | boolean | no | true | |
+| `includeContent` | boolean | no | false | |
 
-**Side effects:** None (read-only).
+**Returns:** per-embedder `{dim, norm, present, non_zero_count? (sparse), asymmetric_variants?}`. Asymmetric embedders (E5, E8, E10) include both directional vectors.
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `memory_id` | string (UUID) | Yes | -- | Valid UUID | Memory to get merge history for |
-| `include_source_metadata` | boolean | No | `false` | -- | Include source metadata for merged sources |
+### 16.6 `create_weight_profile`
 
-**Return:** JSON object with merge operations that created or affected this memory, including source IDs, strategy, and operator.
+Session-scoped custom profile.
 
-### 23.3 `get_provenance_chain`
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `name` | string | yes | | 1..=64 chars; must not collide with built-in |
+| `weights` | object | yes | | `E1..E13 ∈ [0,1]`, ≈sum-to-1 |
+| `description` | string | no | | |
 
-Full provenance chain from embedding to source for a memory.
+**Returns:** `{ name, weights, session_id }`. Side effect: session-local in-memory store; consumed by `search_graph` and `get_unified_neighbors`.
 
-**Side effects:** None (read-only).
+### 16.7 `search_cross_embedder_anomalies`
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `memory_id` | string (UUID) | Yes | -- | Valid UUID | Memory to trace provenance for |
-| `include_audit` | boolean | No | `false` | -- | Include audit trail |
-| `include_embedding_version` | boolean | No | `false` | -- | Include embedding version info |
-| `include_importance_history` | boolean | No | `false` | -- | Include importance change history |
-| `include_merge_history` | boolean | No | `false` | -- | Include merge lineage history |
-| `depth_full` | boolean | No | `false` | -- | Include all provenance data (audit, embedding, importance, merge) |
+Finds `high(X) ∧ low(Y)` memories.
 
-**Return:** JSON object with source type, file path, chunk info, operator attribution, causal direction, and creation timestamps. Optionally includes audit, embedding version, importance history, and merge lineage.
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `query` | string | yes | | |
+| `highEmbedder` | string | yes | | `E1..E13` |
+| `lowEmbedder` | string | yes | | `E1..E13` |
+| `highThreshold` | number | no | 0.5 | [0, 1] |
+| `lowThreshold` | number | no | 0.3 | [0, 1] |
+| `topK` | integer | no | 10 | [1, 100] |
+| `includeContent` | boolean | no | false | |
+| `primaryEmbedder` | string | no | `E1` | `E1..E13` |
+| `contrastEmbedder` | string | no | `E9` | `E1..E13` |
 
----
+### 16.8 `search_by_tokens` (standalone)
 
-## 24. Daemon Tools
+E12 ColBERT MaxSim.
 
-### 24.1 `daemon_status`
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `query` | string | yes | | |
+| `topK` | integer | no | 10 | [1, 100] |
+| `minSimilarity` | number | no | 0.3 | [0, 1] |
 
-Returns the daemon's health metrics for multi-agent observability (handlers/tools/daemon_tools.rs).
+### 16.9 `search_by_expansion` (standalone)
 
-**Side effects:** None (read-only).
+E13 SPLADE.
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| *(none)* | -- | -- | -- | -- | No parameters |
-
-**Return (TCP daemon mode):** JSON object with:
-- `pid` (integer)
-- `uptime_secs` (integer)
-- `active_connections` (integer)
-- `max_connections` (integer)
-- `models_state` (object)
-- `background_tasks` (object): `{ running: bool, graph_builder: bool }`
-- `autoConsolidation` (object): `{ running, lastRunEpochSecs, lastCandidatesFound, lastMergesExecuted, totalMerges, totalCycles }` — populated from `AutoConsolidationStatus` per daemon_tools.rs:114
-
-**Return (stdio mode):** Reduced payload with `pid`, `mode: "stdio"`, a `note` string, and `background_tasks.graph_builder` only. Uptime, connection counts, and auto-consolidation metrics are omitted.
-
----
-
-## 25. Training Tools
-
-Four tools that materialize fully-labeled training records into the `CF_TRAINING_RECORDS` column family. Schemas: `crates/context-graph-mcp/src/tools/definitions/training.rs:14-174`. Handlers: `crates/context-graph-mcp/src/handlers/tools/training_tools.rs`. Name constants: `crates/context-graph-mcp/src/tools/names.rs:144-150`. Dispatch: `handlers/tools/dispatch.rs:167-171`.
-
-All four handlers downcast `Handlers::teleological_store` to `RocksDbTeleologicalStore`; other backends return the error `"<tool> requires RocksDbTeleologicalStore."`.
-
-Output is RocksDB-only: the CF stores `version_byte + bincode(TrainingRecord)`. No JSON / JSONL / Parquet files are written.
-
-### 25.1 `export_training_corpus`
-
-Iterate stored fingerprints, assemble a `TrainingRecord` per memory (13 embeddings, 13D topic profile, 78 synergy-weighted cross-correlations, 6D group alignments, outgoing typed edges, per-embedder K-NN neighbors, Phase-5 temporal labels, LLM-discovered causal labels, and optionally a Tucker-1 core), and persist each one to `CF_TRAINING_RECORDS`.
-
-**Side effects:** Writes to `CF_TRAINING_RECORDS`. Optionally deletes every existing row in that CF before export (`clearExisting=true`). Reads `CF_TOPIC_PROFILES`, `CF_TYPED_EDGES` (including a one-time full reverse-index sweep when `includeIncomingEdges=true`), and `CF_SOURCE_METADATA`.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `filter` | string | No | `"all"` | `"all"`, `"session"` | `"session"` requires `filterId` |
-| `filterId` | string | No | -- | -- | Session ID when `filter="session"`; ignored otherwise |
-| `maxMemories` | integer | No | `10000` | `1-1000000` | Hard cap on memories processed per call |
-| `includeEmbeddings` | boolean | No | `true` | -- | Include E1/E2/E3/E4/E5/E7/E8/E9/E10/E11 dense vectors (~46KB/record) |
-| `includeSparseVectors` | boolean | No | `true` | -- | Include E6 + E13 sparse index/value arrays |
-| `includeTokenEmbeddings` | boolean | No | `false` | -- | Include E12 ColBERT token embeddings (~15KB/record) |
-| `includeEdges` | boolean | No | `true` | -- | Include outgoing typed edges + per-embedder K-NN neighbors |
-| `includeCausalLabels` | boolean | No | `true` | -- | Include `causal_effects` (`causal_causes` stays empty in v1) |
-| `includeIncomingEdges` | boolean | No | `false` | -- | Include incoming typed edges; triggers one O(N) reverse-index sweep at export start |
-| `includeTemporalLabels` | boolean | No | `true` | -- | Include Phase-5 temporal labels |
-| `includeTuckerCore` | boolean | No | `false` | -- | Include Tucker-1 decomposition of the 13x13x1024 interaction tensor at ranks (4, 4, 128); adds ~18KB/record |
-| `clearExisting` | boolean | No | `false` | -- | Delete all rows in `CF_TRAINING_RECORDS` before export |
-
-`additionalProperties: false`.
-
-**Return:** `{ status: "exported", exported, skipped_filtered, errors, cleared_before_export, fingerprints_scanned, approx_bytes_written, elapsed_ms, storage: { backend: "rocksdb", column_family: "training_records", format: "version_byte + bincode" }, record_shape: {...}, filter: { mode, filter_id } }` (handler: `training_tools.rs:283-317`).
-
-**Error conditions:** Backend is not `RocksDbTeleologicalStore`; `filter="session"` with empty `filterId`; `list_fingerprints_unbiased` failure; `clear_all_training_records` failure. Per-record build failures are counted into `errors` and the export continues.
-
-### 25.2 `list_training_records`
-
-List UUIDs currently in `CF_TRAINING_RECORDS` with optional per-record shape statistics. Shape mode batches RocksDB reads via `multi_get_training_records`.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `limit` | integer | No | `50` | `1-1000` | Max UUIDs to return |
-| `offset` | integer | No | `0` | `>= 0` | Pagination offset |
-| `includeShape` | boolean | No | `true` | -- | Include per-record shape summary (content chars, importance, session/source, embedding vector lengths, edge counts, K-NN populated count, causal label counts, `temporal_labels_present` flag). Adds one batched read per page. |
-
-**Return:** `{ total, offset, limit, returned, records: [...] }`. Each record with `includeShape=true` contains: `memory_id`, `content_chars`, `importance`, `session_id`, `source_type`, `topic_profile_len`, `cross_correlations_len`, `group_alignments_len`, `e1_len`, `e5_cause_len`, `e7_len`, `e8_source_len`, `e11_len`, `e6_sparse_nnz`, `e13_sparse_nnz`, `e12_token_count`, `outgoing_edges`, `incoming_edges`, `knn_embedders_populated`, `causal_effects`, `causal_causes`, `temporal_labels_present` (handler: `training_tools.rs:589-649`).
-
-### 25.3 `get_training_record`
-
-Fetch a single `TrainingRecord` by memory UUID. Topic profile, cross-correlations, group alignments, edge / K-NN summaries, and causal labels are always returned; raw vectors and token embeddings are opt-in.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `memoryId` | string (UUID) | Yes | -- | Valid UUID | Memory whose record to fetch |
-| `includeVectors` | boolean | No | `false` | -- | Include E1/E2/E3/E4/E5/E7/E8/E9/E10/E11 dense arrays and E6/E13 sparse arrays |
-| `includeTokenEmbeddings` | boolean | No | `false` | -- | Include E12 token embeddings |
-| `includeEdges` | boolean | No | `true` | -- | Include outgoing/incoming typed edges and K-NN neighbors |
-
-**Return:** Full record JSON when found; `{ memory_id, found: false }` when absent (handler: `training_tools.rs:687-694`).
-
-**Error conditions:** Missing/invalid `memoryId`; backend is not RocksDB; point-get failure.
-
-### 25.4 `count_training_records`
-
-Return the current number of rows in `CF_TRAINING_RECORDS`. Implementation is an O(N) scan via `count_training_records` on the RocksDB store (handler: `training_tools.rs:698-713`).
-
-**Side effects:** None (read-only).
-
-**Parameters:** None (`additionalProperties: false`).
-
-**Return:** `{ count: integer }`.
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `query` | string | yes | | |
+| `topK` | integer | no | 10 | [1, 100] |
+| `minScore` | number | no | 0.1 | [0, 1] |
 
 ---
 
-## 26. Constellation Tools
+## 17. Temporal tools (E2/E3) (`definitions/temporal.rs`)
 
-Five tools that compile / read / score / delete "constellation" records (per-embedder centroids plus spread statistics over a caller-selected set of memories). Schemas: `crates/context-graph-mcp/src/tools/definitions/constellation.rs:19-187`. Handlers: `crates/context-graph-mcp/src/handlers/tools/constellation_tools.rs`. Name constants: `tools/names.rs:155-164`. Dispatch: `handlers/tools/dispatch.rs:173-177`.
+Post-retrieval boost per ARCH-25.
 
-All five handlers require `RocksDbTeleologicalStore`; other backends return `"<tool> requires RocksDbTeleologicalStore"`. Records persist in `CF_CONSTELLATIONS` with a selector-hash secondary index.
+### 17.1 `search_recent`
 
-### 26.1 `compile_constellation`
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `query` | string | yes | | |
+| `topK` | integer | no | 10 | [1, 100] |
+| `temporalWeight` | number | no | 0.3 | [0.1, 1.0] |
+| `decayFunction` | string | no | `exponential` | `linear` \| `exponential` \| `step` \| `none` \| `no_decay` |
+| `temporalScale` | string | no | `meso` | `micro` (1h) \| `meso` (1d) \| `macro` (1w) \| `long` (1mo) \| `archival` (1y) |
+| `includeContent` | boolean | no | true | |
+| `minSimilarity` | number | no | 0.1 | [0, 1] |
 
-Resolve members from a selector, stream them into a `ConstellationAccumulator`, and persist the finalized `Constellation` to `CF_CONSTELLATIONS` + its selector index.
+### 17.2 `search_periodic`
 
-**Side effects:** Writes one row to `CF_CONSTELLATIONS` and one selector-index entry. Reads `CF_TOPIC_PROFILES` per member (hard failure on RocksDB read errors — see `constellation_tools.rs:128-141`). For `selector="topic"`, reads the latest topic portfolio to compute `purity`.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `selector` | string | Yes | -- | `"topic"`, `"session"`, `"tag"`, `"time_range"`, `"explicit_ids"` | Member resolution strategy |
-| `label` | string | Yes | -- | 1-256 chars | Human-readable tag |
-| `topicId` | string | Conditional | -- | -- | Required when `selector="topic"` |
-| `sessionId` | string | Conditional | -- | -- | Required when `selector="session"` |
-| `tag` | string | Conditional | -- | -- | Required when `selector="tag"`. **Note:** the handler matches `tag` against `SourceMetadata.tool_name` (`constellation_tools.rs:469-474`) — the only user-controllable tag-like field today. |
-| `startIso` | string (RFC-3339) | Conditional | -- | -- | Required when `selector="time_range"`. Inclusive lower bound on `fingerprint.created_at` |
-| `endIso` | string (RFC-3339) | Conditional | -- | -- | Required when `selector="time_range"`. Inclusive upper bound |
-| `memoryIds` | array of UUID | Conditional | -- | >=1 entry | Required when `selector="explicit_ids"` |
-| `rationale` | string | No | -- | -- | Annotation for `explicit_ids`; not part of the selector hash |
-| `maxMembers` | integer | No | `50000` | `3-100000` | Cap on accumulator members |
-| `rebuildIfExists` | boolean | No | `false` | -- | Recompile even if a constellation already exists for this selector |
-
-`additionalProperties: false`.
-
-**Return:** On success, `{ status: "compiled", constellation_id, label, selector_kind, member_count, coherence, purity, per_embedder_coverage: [f32; 13] }`. When a matching selector already exists and `rebuildIfExists=false`: `{ constellation_id, already_exists: true, message }` (handler: `constellation_tools.rs:81-201`).
-
-**Error conditions:** Missing `selector` / `label`; backend is not RocksDB; unknown selector kind; `time_range` with `endIso < startIso`; empty `memoryIds`; invalid UUID; selector resolves to zero members; `get_topic_profile` or `observe` failure; `TooFewMembers` (< 3 members).
-
-### 26.2 `list_constellations`
-
-Paginated UUID listing with optional per-record shape summary via `multi_get_constellations`.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `limit` | integer | No | `50` | `1-1000` | Max UUIDs per page |
-| `offset` | integer | No | `0` | `>= 0` | Pagination offset |
-| `includeCentroids` | boolean | No | `false` | -- | Include per-embedder `centroid`, `sparse_top_terms`, `pooled_token_centroid` arrays; when `false`, only array lengths are returned |
-
-**Return:** `{ total, offset, limit, returned, constellations: [...] }`. Each row includes `constellation_id`, `label`, `created_at`, `selector_kind`, `selector`, `member_count`, `coherence`, `purity`, and per-embedder stat blocks (`embedder_index`, `dimension`, `vector_kind`, `mean_l2`, `stddev_l2`, `cosine_spread_p50`, `cosine_spread_p95`, `min_cosine`, `max_cosine`, `coverage`, `mean_token_count`). Rows whose body is missing are returned as `{ constellation_id, missing: true }` (handler: `constellation_tools.rs:205-280`).
-
-### 26.3 `get_constellation`
-
-Point lookup by UUID. `includeCentroids` defaults to `true` (opposite of the list tool).
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `constellationId` | string (UUID) | Yes | -- | Valid UUID | Constellation UUID |
-| `includeCentroids` | boolean | No | `true` | -- | Include centroid + `topic_profile_centroid` / `group_alignment_centroid` / `cross_correlation_centroid` arrays and the full `member_ids` list |
-
-**Return:** Full record when found, otherwise `{ constellation_id, found: false }`. When `includeCentroids=false`, the record carries `*_len` / `member_ids_count` fields instead of the full arrays (handler: `constellation_tools.rs:283-320`).
-
-### 26.4 `score_against_constellation`
-
-Fetch the constellation + a candidate memory's fingerprint, then run `score_memory_against_constellation` to compute per-embedder cosine-to-centroid similarities.
-
-**Side effects:** None (read-only). Uses the generic `teleological_store.retrieve()` to fetch the candidate fingerprint (works through any trait-compatible backend, though the constellation lookup still requires RocksDB).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `constellationId` | string (UUID) | Yes | -- | Valid UUID | Target constellation |
-| `memoryId` | string (UUID) | Yes | -- | Valid UUID | Candidate memory (must exist in `CF_FINGERPRINTS`) |
-
-**Return:** `{ constellation_id, memory_id, per_embedder_cosine: [f32; 13], combined_score, in_spread_p95 }`. `combined_score` is the unweighted mean over embedders with `coverage > 0`; `in_spread_p95` is `true` iff the candidate is at least as central as the constellation's 95th-percentile E1 member (handler: `constellation_tools.rs:323-387`).
-
-**Error conditions:** Missing / invalid `constellationId` or `memoryId`; constellation not found; memory not found in the fingerprint store; backend is not RocksDB.
-
-### 26.5 `delete_constellation`
-
-Remove a constellation and its selector-index entry. Idempotent.
-
-**Side effects:** Deletes from `CF_CONSTELLATIONS` + selector secondary index.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `constellationId` | string (UUID) | Yes | -- | Valid UUID | Constellation to delete |
-
-**Return:** `{ constellation_id, deleted: bool }` — `deleted=false` when no record existed (handler: `constellation_tools.rs:390-422`).
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `query` | string | yes | | |
+| `topK` | integer | no | 10 | [1, 100] |
+| `targetHour` | integer | no | now-hour if `autoDetect` | [0, 23] |
+| `targetDayOfWeek` | integer | no | now-dow if `autoDetect` | [0, 6] |
+| `autoDetect` | boolean | no | false | |
+| `periodicWeight` | number | no | 0.3 | [0.1, 1.0] |
+| `includeContent` | boolean | no | true | |
+| `minSimilarity` | number | no | 0.1 | [0, 1] |
 
 ---
 
-## 27. Contrastive Pair Tools
+## 18. Graph linking tools (K-NN) (`definitions/graph_link.rs`)
 
-Four tools that mine, list, read, and count cross-embedder anomaly pairs stored in `CF_CONTRASTIVE_PAIRS` (plus `CF_CONTRASTIVE_BY_ANCHOR` and `CF_CONTRASTIVE_BY_KIND` secondary indexes). Schemas: `crates/context-graph-mcp/src/tools/definitions/contrastive.rs:18-196`. Handlers: `crates/context-graph-mcp/src/handlers/tools/contrastive_tools.rs`. Name constants: `tools/names.rs:169-176`. Dispatch: `handlers/tools/dispatch.rs:179-182`.
+### 18.1 `get_memory_neighbors`
 
-All four handlers require `RocksDbTeleologicalStore`.
+Pre-computed per-embedder K-NN edges. Returns 0 for recently stored memories until the background builder runs (~60 s). Use `get_unified_neighbors` for immediate results.
 
-The six `AnomalyKind` values used by `kind` / `kinds` filters: `semantic_but_not_causal`, `keyword_but_not_paraphrase`, `code_shape_but_different_intent`, `entity_shared_but_different_structure`, `hdc_robust_but_semantic_different`, `other`.
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `memory_id` | uuid | yes | | |
+| `embedder_id` | integer | no | 0 | [0, 12] (0=E1, 4=E5, 6=E7, 7=E8, 9=E10, 10=E11) |
+| `top_k` | integer | no | 10 | [1, 50] |
+| `min_similarity` | number | no | 0.0 | [0, 1] |
+| `include_content` | boolean | no | false | |
 
-### 27.1 `mine_contrastive_pairs`
+### 18.2 `get_typed_edges`
 
-Scan anchors from an unbiased fingerprint sample, score a bounded candidate pool with the full 13-slot similarity profile, classify each qualifying pair into an `AnomalyKind`, and persist the `(anchor, negative, similarity_profile, kind)` triple. Idempotent on the composite `(anchorId, negativeId)` key.
+Edge types (from embedder-agreement patterns): `semantic_similar`, `code_related`, `entity_shared`, `causal_chain`, `graph_connected`, `paraphrase_aligned`, `keyword_overlap`, `multi_agreement`.
 
-The implementation reproduces the `search_cross_embedder_anomalies` scoring step in-process rather than re-entering the search pipeline (see the "Design note" comment at `contrastive_tools.rs:14-37`).
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `memory_id` | uuid | yes | | |
+| `edge_type` | string | no | | 8-value enum above |
+| `direction` | string | no | `outgoing` | `outgoing` \| `incoming` \| `both` |
+| `min_weight` | number | no | 0.0 | [0, 1] |
+| `include_content` | boolean | no | false | |
 
-**Side effects:** Writes to `CF_CONTRASTIVE_PAIRS`, `CF_CONTRASTIVE_BY_ANCHOR`, and `CF_CONTRASTIVE_BY_KIND`. Reads `list_fingerprints_unbiased` once, `get_content_batch` once (pool_len IDs), and conditionally `get_source_metadata_batch` when `sessionFilter` is set.
+`target_id` in the response is the peer for both directions (source for incoming, target for outgoing).
 
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `maxPairs` | integer | No | `1000` | `1-100000` | Hard cap on pairs persisted this run |
-| `minDisagreement` | number | No | `0.3` | `[0.0, 1.0]` | Minimum `max(high_sim) - min(low_sim)` to keep a pair |
-| `highThreshold` | number | No | `0.6` | `[0.0, 1.0]` | Similarity >= this classifies an embedder as "high" |
-| `lowThreshold` | number | No | `0.3` | `[0.0, 1.0]` | Similarity <= this classifies an embedder as "low"; must be `< highThreshold` |
-| `kinds` | array of string | No | -- | See `AnomalyKind` list above | Only persist pairs whose classified kind is in this list |
-| `sessionFilter` | string | No | -- | -- | Only scan anchors whose `source_metadata.session_id` matches |
-| `topKCandidatesPerAnchor` | integer | No | `10` | `1-500` | Size of per-anchor candidate pool retained after disagreement sort |
-| `candidatePoolSize` | integer | No | `500` | `10-50000` | Max peers sampled from the store per run (one shared scan) |
+### 18.3 `traverse_graph`
 
-`additionalProperties: false`.
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `start_memory_id` | uuid | yes | | |
+| `max_hops` | integer | no | 2 | [1, 5] |
+| `edge_type` | string | no | | typed-edge enum |
+| `min_weight` | number | no | 0.3 | [0, 1] |
+| `max_results` | integer | no | 20 | [1, 100] |
+| `include_content` | boolean | no | false | |
 
-**Return:** `{ status: "mined" | "no-op", summary: { pairs_stored, pairs_skipped_below_threshold, pairs_skipped_kind_filter, anchors_scanned, anchors_no_candidate, duration_ms }, config: {...} }`. `status: "no-op"` when the candidate pool has fewer than 2 fingerprints (handler: `contrastive_tools.rs:70-397`).
+### 18.4 `get_unified_neighbors`
 
-**Error conditions:** Backend is not RocksDB; `kinds` not an array or contains an unknown kind; `MiningConfig::validate` failure (e.g. `lowThreshold >= highThreshold`); `list_fingerprints_unbiased` failure. Per-pair `store_contrastive_pair` failures are logged and the mining loop continues.
+Weighted RRF across all 13 embedders (ARCH-21). Temporal embedders excluded from semantic fusion per AP-60.
 
-### 27.2 `list_contrastive_pairs`
-
-Paginated `(anchorId, negativeId)` listing with optional kind and/or anchor filter. `includeFull=true` fetches the full record for each row.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `limit` | integer | No | `100` | `1-10000` | Max pairs to return |
-| `offset` | integer | No | `0` | `>= 0` | Pagination offset |
-| `kind` | string | No | -- | `AnomalyKind` enum | Filter by anomaly kind (uses `CF_CONTRASTIVE_BY_KIND` prefix scan) |
-| `anchorId` | string (UUID) | No | -- | Valid UUID | Filter by anchor (uses `CF_CONTRASTIVE_BY_ANCHOR`) |
-| `includeFull` | boolean | No | `false` | -- | Fetch the full `ContrastivePair` record for each key |
-
-Routing by filter combination (handler: `contrastive_tools.rs:446-498`):
-- `kind + anchorId`: walk the anchor's negatives and filter in-process by kind.
-- `kind` only: prefix-scan by kind (over-fetches `offset+limit` and applies paging post-hoc).
-- `anchorId` only: `pairs_for_anchor`.
-- Neither: `list_contrastive_pair_keys`.
-
-**Return:** `{ total_matching, returned, offset, limit, include_full, kind_filter, anchor_filter, pairs: [...] }`. When `includeFull=false`, each pair is `{ anchor_id, negative_id }`; when `true`, the full record (see §27.3).
-
-### 27.3 `get_contrastive_pair`
-
-Composite-key point lookup by `(anchorId, negativeId)`.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `anchorId` | string (UUID) | Yes | -- | Valid UUID | Anchor memory UUID |
-| `negativeId` | string (UUID) | Yes | -- | Valid UUID | Negative memory UUID |
-
-**Return:** Full `ContrastivePair`: `{ found: true, anchor_id, negative_id, anchor_text, negative_text, similarity_profile: [f32; 13], high_embedders, low_embedders, disagreement_magnitude, anomaly_kind, anomaly_kind_byte, mined_at, generator }` or `{ found: false, anchor_id, negative_id }` (handler: `contrastive_tools.rs:550-595`).
-
-### 27.4 `count_contrastive_pairs`
-
-Total or per-kind row count.
-
-**Side effects:** None (read-only).
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `kind` | string | No | -- | `AnomalyKind` enum | Restrict count to one kind via `CF_CONTRASTIVE_BY_KIND` prefix scan |
-
-**Return:** `{ count }` when `kind` is absent; `{ count, kind }` when `kind` is supplied (handler: `contrastive_tools.rs:598-643`).
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `memory_id` | uuid | yes | | |
+| `weight_profile` | string | no | `semantic_search` | (same 14 values as `search_graph`) |
+| `top_k` | integer | no | 10 | [1, 50] |
+| `min_score` | number | no | 0.0 | [0, 1] |
+| `include_content` | boolean | no | false | |
+| `include_embedder_breakdown` | boolean | no | true | |
+| `custom_weights` | object | no | | `E1..E13 ∈ [0, 1]` |
+| `exclude_embedders` | string[] | no | | `E1..E13` |
 
 ---
 
-## 28. Typed-Edge Training Tools
+## 19. Maintenance tools (`definitions/maintenance.rs`)
 
-Source: `crates/context-graph-mcp/src/handlers/tools/typed_edges_tools.rs`, `crates/context-graph-mcp/src/tools/definitions/typed_edges.rs`
+### 19.1 `repair_causal_relationships`
 
-These tools implement the Phase 4 typed-edge training-data factory: F1 exports a labeled corpus of typed edges with per-embedder similarity profiles, F2 derives anomaly pairs from edge scores, F4 validates low-confidence edges via the local LLM, and a listing tool queries the exported corpus.
-
-### 28.1 `export_typed_edges_corpus`
-
-Export typed edges as training records to `CF_TYPED_EDGE_RECORDS`. Each record captures per-embedder similarity profiles, content, source metadata, and optionally joins LLM validation verdicts from `CF_TYPED_EDGE_VALIDATIONS`.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `maxEdges` | integer | No | `10000` | 1 -- 1,000,000 | Maximum edges to export |
-| `includeContent` | boolean | No | `true` | -- | Include source/target memory content |
-| `includeSourceMetadata` | boolean | No | `true` | -- | Include session_id, source_type, target_type |
-| `includeMechanismType` | boolean | No | `true` | -- | For CausalChain edges, join mechanism_type from `CF_CAUSAL_RELATIONSHIPS` |
-| `joinLLMValidation` | boolean | No | `true` | -- | Join `LLMValidationSummary` from `CF_TYPED_EDGE_VALIDATIONS` if available |
-| `clearExisting` | boolean | No | `false` | -- | Delete all existing rows in `CF_TYPED_EDGE_RECORDS` before export |
-
-**Side effects:** Writes to `CF_TYPED_EDGE_RECORDS`. Reads `CF_TYPED_EDGES`, `CF_CONTENT`, `CF_SOURCE_METADATA`, `CF_CAUSAL_RELATIONSHIPS`, `CF_TYPED_EDGE_VALIDATIONS`.
-
-**Return:** `{ status, exportedCount, errors, clearedCount, duration_ms }` with storage metadata.
-
-### 28.2 `derive_anomalies_from_edges`
-
-Derive contrastive anomaly pairs directly from typed-edge embedder scores without re-scanning the full memory corpus. Produces 5 of 6 `AnomalyKind` variants (Other requires full offline mining). Results stored in `CF_CONTRASTIVE_PAIRS` + secondary indexes.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `highThreshold` | number | No | `0.6` | 0.0 -- 1.0 | Similarity >= this counts as "high" |
-| `lowThreshold` | number | No | `0.3` | 0.0 -- 1.0 | Similarity <= this counts as "low" |
-| `minDisagreement` | number | No | `0.3` | 0.0 -- 1.0 | Minimum high - low gap to keep a pair |
-| `maxPairs` | integer | No | `10000` | 1 -- 1,000,000 | Maximum anomaly pairs to derive |
-
-**Side effects:** Writes to `CF_CONTRASTIVE_PAIRS`, `CF_CONTRASTIVE_BY_KIND`, `CF_CONTRASTIVE_BY_ANCHOR`. Reads `CF_TYPED_EDGES`, `CF_CONTENT`.
-
-**Return:** `AnomalyDerivationSummary` with `{ edges_scanned, pairs_written, skipped_below_threshold, skipped_missing_content, per_kind_counts, duration_ms }`.
-
-### 28.3 `validate_low_confidence_edges`
-
-Send low-confidence typed edges to the local LLM for validation. The LLM produces a verdict (Valid / Invalid / Reclassify) with confidence and rationale. Results stored in `CF_TYPED_EDGE_VALIDATIONS`. LLM-gated: returns `{status: "skipped"}` when LLM is not loaded.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `weightCeiling` | number | No | `0.60` | 0.0 -- 1.0 | Only validate edges with weight < this threshold |
-| `maxEdges` | integer | No | `100` | 1 -- 10,000 | Maximum edges to validate per invocation |
-| `sessionFilter` | string | No | -- | -- | Restrict to edges involving memories from this session |
-
-**Side effects:** Writes to `CF_TYPED_EDGE_VALIDATIONS`. Reads `CF_TYPED_EDGES`, `CF_CONTENT`. Invokes LLM inference (Hermes-2-Pro-Mistral-7B) per edge.
-
-**Return:** `{ validatedCount, alreadyHadValidation, errors, duration_ms }`. Idempotent: edges with existing validation are skipped.
-
-### 28.4 `list_typed_edge_records`
-
-Paginated listing of exported typed-edge training records from `CF_TYPED_EDGE_RECORDS`.
-
-| Parameter | Type | Required | Default | Valid Values | Description |
-|-----------|------|----------|---------|--------------|-------------|
-| `limit` | integer | No | `100` | 1 -- 1,000 | Maximum records to return |
-| `offset` | integer | No | `0` | >= 0 | Skip this many records (pagination) |
-| `includeFull` | boolean | No | `false` | -- | Return full `TypedEdgeTrainingRecord` payloads (true) or keys only (false) |
-
-**Return:** `{ total, offset, limit, returned, records }` with keys `(source_id, target_id, edge_type)` and optionally full record payloads.
+No params. Scans `CF_CAUSAL_RELATIONSHIPS` and deletes entries that fail deserialization. **Returns:** `{ deleted_count, total_scanned }`. Side effect: RocksDB deletes; idempotent.
 
 ---
 
-## Appendix A: Tool Count Summary
+## 20. Provenance tools (`definitions/provenance.rs`)
 
-| Category | Count | LLM-Only |
-|----------|-------|----------|
-| Core | 4 | 0 |
-| Curation (merge + forget + boost) | 3 | 0 |
-| Topic | 4 | 0 |
-| File Watcher | 4 | 0 |
-| Sequence (E4) | 4 | 0 |
-| Causal (E5) | 4 | 0 |
-| Causal Discovery (E5 LLM) | 2 | 2 |
-| Keyword (E6) | 1 | 0 |
-| Code (E7) | 1 | 0 |
-| Graph (E8) | 2-4 | 2 |
-| Robustness (E9) | 1 | 0 |
-| Entity (E11) | 6 | 0 |
-| Embedder-First | 7 | 0 |
-| Token/Expansion (E12/E13) | 2 | 0 |
-| Temporal (E2/E3) | 2 | 0 |
-| Graph Linking (K-NN) | 4 | 0 |
-| Maintenance | 1 | 0 |
-| Provenance | 3 | 0 |
-| Daemon | 1 | 0 |
-| Training (§25) | 4 | 0 |
-| Constellation (§26) | 5 | 0 |
-| Contrastive (§27) | 4 | 0 |
-| Typed-Edge Training (§28) | 4 | 0 |
-| **Total** | **71-75** | **4** |
+### 20.1 `get_audit_trail`
 
-The Graph (E8) row reads "2-4 | 2" because 2 of its 4 tools (`discover_graph_relationships`, `validate_graph_link`) are LLM-only.
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `target_id` | uuid | no | | |
+| `start_time` | ISO-8601 | no | | |
+| `end_time` | ISO-8601 | no | | |
+| `limit` | integer | no | 50 | ≤500 |
 
-## Appendix B: Embedder Quick Reference
+**Returns:** `{ records: [{timestamp, op, target_id, operator_id, details}] }` sorted chronologically. Reads `CF_AUDIT_LOG`.
 
-| ID | Name | Dimension | Index Type | Description |
-|----|------|-----------|------------|-------------|
-| E1 | Semantic | 1024D | HNSW | Dense semantic similarity (foundation) |
-| E2 | Temporal Recency | 512D | HNSW | Sinusoidal PE of Unix timestamp |
-| E3 | Temporal Periodic | 512D | HNSW | Time-of-day / day-of-week patterns |
-| E4 | Temporal Positional | 512D | HNSW | Session sequence ordering |
-| E5 | Causal | 768D | HNSW | Asymmetric cause/effect (dual vectors) |
-| E6 | Keyword | 30K sparse | Inverted | Exact keyword matching |
-| E7 | Code | 1536D | HNSW | Code patterns via Qodo-Embed |
-| E8 | Graph | 1024D | HNSW | Asymmetric source/target (dual vectors) |
-| E9 | Robustness | 1024D | HNSW | HDC character trigram hypervectors |
-| E10 | Paraphrase | 768D | HNSW | Asymmetric doc/query (dual vectors) |
-| E11 | Entity | 768D | HNSW | KEPLER/TransE entity embeddings |
-| E12 | ColBERT | 128D/token | MaxSim | Token-level late interaction |
-| E13 | SPLADE | 30K sparse | Inverted | Learned term expansion |
+### 20.2 `get_merge_history`
 
-Asymmetric embedders (E5, E8, E10) store dual vectors. E6, E12, E13 use non-HNSW indexes and do not support `search_by_embedder` or `get_embedder_clusters`.
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `memory_id` | uuid | yes | |
+| `include_source_metadata` | boolean | no | false |
+
+**Returns:** `{ merges: [{merge_id, source_ids, target_id, strategy, operator, reversal_hash, timestamp}] }`.
+
+### 20.3 `get_provenance_chain`
+
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `memory_id` | uuid | yes | |
+| `include_audit` | boolean | no | false |
+| `include_embedding_version` | boolean | no | false |
+| `include_importance_history` | boolean | no | false |
+| `include_merge_history` | boolean | no | false |
+| `depth_full` | boolean | no | false (expands all four `include_*`) |
+
+**Returns:** `{ source: {...}, operator_attribution, causal_direction, created_at, audit?, embedding_version?, importance_history?, merge_history? }`.
+
+---
+
+## 21. Daemon tools (`definitions/daemon.rs`)
+
+### 21.1 `daemon_status`
+
+No params. **Returns:** `{ pid, uptime_secs, active_connections, model_state, background_tasks: {gc, hnsw_persist, graph_builder} }`. Used to verify multi-agent setup.
+
+---
+
+## 22. Training tools (`definitions/training.rs`)
+
+Writes to `CF_TRAINING_RECORDS` (bincode + version byte). No external file output.
+
+### 22.1 `export_training_corpus`
+
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `filter` | string | no | `all` | `all` \| `session` |
+| `filterId` | string | no | | Required with `filter=session` |
+| `maxMemories` | integer | no | 10000 | [1, 1000000] |
+| `includeEmbeddings` | boolean | no | true | Dense E1/E2/E3/E4/E5/E7/E8/E9/E10/E11 |
+| `includeSparseVectors` | boolean | no | true | E6, E13 |
+| `includeTokenEmbeddings` | boolean | no | false | E12 (≈15 KB/record) |
+| `includeEdges` | boolean | no | true | Outgoing typed edges + per-embedder K-NN |
+| `includeCausalLabels` | boolean | no | true | `causal_effects` only |
+| `includeIncomingEdges` | boolean | no | false | Requires O(N) reverse scan |
+| `includeTemporalLabels` | boolean | no | true | Hour-of-day, dow, age, session position |
+| `includeTuckerCore` | boolean | no | false | Tucker-1 ranks (4,4,128), CPU |
+| `clearExisting` | boolean | no | false | Wipe CF before export |
+
+**Returns:** `{ exported_count, skipped_count, bytes_written, clear_existing }`.
+
+### 22.2 `list_training_records`
+
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `limit` | integer | no | 50 | [1, 1000] |
+| `offset` | integer | no | 0 | ≥0 |
+| `includeShape` | boolean | no | true | Adds 1 read/UUID |
+
+### 22.3 `get_training_record`
+
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `memoryId` | uuid | yes | |
+| `includeVectors` | boolean | no | false |
+| `includeTokenEmbeddings` | boolean | no | false |
+| `includeEdges` | boolean | no | true |
+
+### 22.4 `count_training_records`
+
+No params. **Returns:** `{ count }`.
+
+---
+
+## 23. Constellation tools (`definitions/constellation.rs`)
+
+See `17_constellation_subsystem.md` for math (per-embedder centroids, 95th-percentile spread, coherence, purity).
+
+### 23.1 `compile_constellation`
+
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `selector` | string | yes | | `topic` \| `session` \| `tag` \| `time_range` \| `explicit_ids` |
+| `topicId` | string | cond (selector=topic) | | |
+| `sessionId` | string | cond (selector=session) | | |
+| `tag` | string | cond (selector=tag) | | |
+| `startIso` / `endIso` | date-time | cond (selector=time_range) | | RFC-3339 |
+| `memoryIds` | uuid[] | cond (selector=explicit_ids) | | |
+| `rationale` | string | no | | Annotation for `explicit_ids`; not hashed |
+| `label` | string | yes | | 1..=256 chars |
+| `maxMembers` | integer | no | 50000 | [3, 100000] |
+| `rebuildIfExists` | boolean | no | false | |
+
+**Returns:** `{ constellation_id, member_count, shape_summary }`.
+**Errors:** `TooFewMembers` (< 3), `TooManyMembers` (> `maxMembers`).
+**Side effects:** row in `CF_CONSTELLATIONS` + selector index.
+
+### 23.2 `list_constellations`
+
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `limit` | integer | no | 50 | [1, 1000] |
+| `offset` | integer | no | 0 | ≥0 |
+| `includeCentroids` | boolean | no | false | |
+
+### 23.3 `get_constellation`
+
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `constellationId` | uuid | yes | |
+| `includeCentroids` | boolean | no | true |
+
+### 23.4 `score_against_constellation`
+
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `constellationId` | uuid | yes | |
+| `memoryId` | uuid | yes | Must exist in `CF_FINGERPRINTS` |
+
+**Returns:** `{ per_embedder_similarity, combined_score, in_spread_p95 }`.
+
+### 23.5 `delete_constellation`
+
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `constellationId` | uuid | yes | |
+
+**Returns:** `{ deleted: bool }`. Idempotent; removes selector-index entry.
+
+---
+
+## 24. Contrastive pair tools (`definitions/contrastive.rs`)
+
+AnomalyKind enum (`snake_case`): `semantic_but_not_causal`, `keyword_but_not_paraphrase`, `code_shape_but_different_intent`, `entity_shared_but_different_structure`, `hdc_robust_but_semantic_different`, `other`.
+
+### 24.1 `mine_contrastive_pairs`
+
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `maxPairs` | integer | no | 1000 | [1, 100000] |
+| `minDisagreement` | number | no | 0.3 | [0, 1] |
+| `highThreshold` | number | no | 0.6 | [0, 1] |
+| `lowThreshold` | number | no | 0.3 | [0, 1]; must be < `highThreshold` |
+| `kinds` | string[] | no | all | AnomalyKind enum |
+| `sessionFilter` | string | no | | |
+| `topKCandidatesPerAnchor` | integer | no | 10 | [1, 500] |
+| `candidatePoolSize` | integer | no | 500 | [10, 50000] |
+
+**Side effects:** upserts rows in `CF_CONTRASTIVE_PAIRS` (+ by-kind and by-anchor indexes). Idempotent on `(anchor_id, negative_id)`.
+
+### 24.2 `list_contrastive_pairs`
+
+| Param | Type | Req | Default | Range / Enum |
+|-------|------|:--:|---------|--------------|
+| `limit` | integer | no | 100 | [1, 10000] |
+| `offset` | integer | no | 0 | ≥0 |
+| `kind` | string | no | | AnomalyKind enum |
+| `anchorId` | uuid | no | | |
+| `includeFull` | boolean | no | false | Fetch full record |
+
+### 24.3 `get_contrastive_pair`
+
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `anchorId` | uuid | yes | |
+| `negativeId` | uuid | yes | |
+
+### 24.4 `count_contrastive_pairs`
+
+| Param | Type | Req | Default |
+|-------|------|:--:|---------|
+| `kind` | string | no | AnomalyKind enum (omitted = total) |
+
+---
+
+## 25. Typed-edge training tools (`definitions/typed_edges.rs`)
+
+Backed by `CF_TYPED_EDGE_RECORDS` (export), `CF_CONTRASTIVE_PAIRS` (derive), `CF_TYPED_EDGE_VALIDATIONS` (validate).
+
+### 25.1 `export_typed_edges_corpus`
+
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `maxEdges` | integer | no | 10000 | [1, 1000000] |
+| `includeContent` | boolean | no | true | Source/target content |
+| `includeSourceMetadata` | boolean | no | true | session_id, source_type |
+| `includeMechanismType` | boolean | no | true | Joins `CF_CAUSAL_RELATIONSHIPS` for `causal_chain` edges |
+| `joinLLMValidation` | boolean | no | true | Attach `LLMValidationSummary` when present |
+| `clearExisting` | boolean | no | false | |
+
+Idempotent on `(source, target, edge_type)`.
+
+### 25.2 `derive_anomalies_from_edges`
+
+Classifies typed edges into five AnomalyKinds (the sixth, `other`, is not derivable here) and persists to `CF_CONTRASTIVE_PAIRS` with `generator="typed_edge_anomaly_derivation_v1"`.
+
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `highThreshold` | number | no | 0.60 | [0, 1] |
+| `lowThreshold` | number | no | 0.30 | [0, 1] |
+| `minDisagreement` | number | no | 0.30 | [0, 1] |
+| `maxPairs` | integer | no | 10000 | [1, 1000000] |
+| `kinds` | string[] | no | | **Not yet supported** — providing returns `INVALID_PARAMS` |
+
+### 25.3 `validate_low_confidence_edges` (requires llm)
+
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `weightCeiling` | number | no | 0.60 | [0, 1] — only edges below are eligible |
+| `maxEdges` | integer | no | 100 | [1, 10000] |
+| `sessionFilter` | string | no | | |
+
+Skips edges that already have a validation row. Without `llm` feature → returns `{ status: "skipped", reason }` (not an error).
+
+### 25.4 `list_typed_edge_records`
+
+| Param | Type | Req | Default | Range |
+|-------|------|:--:|---------|-------|
+| `limit` | integer | no | 100 | [1, 1000] |
+| `offset` | integer | no | 0 | ≥0 |
+| `includeFull` | boolean | no | false | Hydrate full `TypedEdgeTrainingRecord` |
+
+---
+
+## Appendix A — Cross-references
+
+- Embedder dimensions, active vectors, asymmetric rules: `05_embedding_subsystem.md`.
+- Strategies (`e1_only`, `multi_space`, `pipeline`), RRF fusion, gate thresholds: `06_search_and_fusion.md`.
+- Typed-edge derivation, K-NN graph build schedule, causal chain math: `07_graph_and_causal.md`.
+- Topic detection (HDBSCAN, weighted-agreement threshold, AP-60/62/63/77): `12_clustering_and_topics.md`.
+- Training record shape and Tucker-1 core: `16_training_subsystem.md`.
+- Constellation selector hash and scoring: `17_constellation_subsystem.md`.
+- Contrastive anomaly classifier and typed-edge LLM validation: `18_contrastive_and_typed_edges.md`.
+- RocksDB CFs referenced above: `04_database_schema.md`.

@@ -13,12 +13,21 @@
 | `context-graph-mcp` | `src/tools/definitions/training.rs` | JSON Schema definitions for 4 MCP tools |
 | `context-graph-storage` | `src/teleological/rocksdb_store/export.rs` | `store_training_record`, `get_training_record`, `list_training_record_ids`, `count_training_records`, `clear_all_training_records`, `multi_get_training_records`, `get_topic_profile`; `encode_training_record`, `decode_training_record` |
 | `context-graph-cli` | `src/commands/export_training.rs` | `ExportTrainingArgs`, `ExportSummary`, Parquet file export |
+| `context-graph-embeddings` | `src/bin/train_causal.rs` | Offline E5 causal fine-tune binary (`train-causal`) |
+| `context-graph-embeddings` | `src/training/pipeline.rs` | `CausalTrainingPipeline`, `PipelineConfig`, 3-stage runner |
+| `context-graph-embeddings` | `src/training/lora.rs` | `LoraConfig`, `LoraAdapter` — low-rank Q/V projection adapters |
+| `context-graph-embeddings` | `src/training/loss.rs` | InfoNCE + separation + directional triplet loss heads |
+| `context-graph-embeddings` | `src/training/{data,trainer,optimizer,multitask,distillation,evaluation}.rs` | Data loader, AdamW, multitask heads, distillation, eval |
 
 ---
 
 ## 1. Purpose
 
 The training data export subsystem serializes every stored memory into a self-contained `TrainingRecord` that bundles identity, all 13 embedding vectors, derived fusion features (topic profile, cross-correlations, group alignments), graph structure (typed edges, K-NN neighbors), LLM-discovered causal labels, temporal labels, and an optional Tucker-core decomposition. Records are persisted to `CF_TRAINING_RECORDS` in RocksDB via bincode with a version-byte prefix. A separate CLI command exports those records to Parquet for external consumption.
+
+A secondary path — the offline `train-causal` binary — uses the SAME training data to fine-tune the E5 causal embedder via a 3-stage progressive LoRA pipeline.
+
+For the downstream Python CAMD-DPO pair mining + DPO trainer stack (which consumes `TrainingRecord` outputs plus CF_CONTRASTIVE_PAIRS + constellations), see [19_camd_dpo_subsystem.md](19_camd_dpo_subsystem.md).
 
 ---
 
@@ -589,7 +598,74 @@ The CLI Parquet export removes partially-written files on any failure.
 
 ---
 
-## 10. Version History
+## 10. E5 Causal Embedder Offline Training (`train-causal`)
+
+Binary entry: `crates/context-graph-embeddings/src/bin/train_causal.rs`. Fine-tunes the E5 causal asymmetric embedder (nomic-embed-text-v1.5 backbone, 768D output) against cause/effect pairs. Independent of the `TrainingRecord` export; may consume JSONL pairs supplied via `--data`.
+
+### 10.1 CLI Arguments
+
+| Flag | Default | Description |
+|---|---|---|
+| `--model-path` / `-m` | `models/causal` | Directory with nomic-embed-text-v1.5 weights |
+| `--data` / `-d` | `None` | Optional JSONL of `CausalTrainingPair` records to mix with seed set |
+| `--output` / `-o` | `models/causal/trained` | Checkpoint output directory |
+| `--epochs` / `-e` | None (per-stage defaults) | Override: total epochs across all stages |
+| `--batch-size` / `-b` | `16` | Batch size |
+| `--lora-rank` | `16` | LoRA rank (alpha defaults to match = scale 1.0) |
+| `--eval-every` | `5` | Evaluate + possibly checkpoint every N epochs |
+| `--seed` | `42` | Random seed |
+| `--no-multitask` | off | Disable multitask heads (saves VRAM) |
+
+### 10.2 3-Stage Progressive Pipeline
+
+Source: `training/pipeline.rs`. Defaults in `PipelineConfig::default()`.
+
+| Stage | Epochs | Trainable | Pair Set | Purpose |
+|---|---|---|---|---|
+| 1. Warm-up | 25 | Projection only | Easy pairs (filtered by `expand_seed_pairs`) | Initialize projection before LoRA enters |
+| 2. LoRA activation | 20 | Projection + LoRA (Q, V) | All pairs | Main learning phase |
+| 3. Directional emphasis | 20 | Projection + LoRA | All pairs, directional triplet weight increased | Sharpen cause→effect asymmetry |
+
+Per-stage LoRA checkpoints are saved so the best stage's projection pairs with its LoRA. Best-stage selection uses `score_spread`, not `directional_accuracy`.
+
+### 10.3 LoRA Configuration
+
+Source: `training/lora.rs`.
+
+| Field | Default | Description |
+|---|---|---|
+| `rank` | `16` | Low-rank decomposition rank |
+| `alpha` | `16.0` | Scaling numerator; effective scale = `alpha / rank` = 1.0 |
+| `dropout` | `0.1` | Applied between low-rank computation and scaling during training |
+| `hidden_size` | backbone-dependent | 768 for nomic-embed-text-v1.5 |
+
+Shape: `A ∈ [hidden_size, rank]` (Kaiming-init), `B ∈ [rank, hidden_size]` (zero-init). Applied to attention Q and V projections. Params per adapter: `2 * hidden_size * rank`.
+
+`forward_train` applies dropout; `forward` (inference) does not. During training, evaluation passes call `forward` to disable dropout for consistent metrics.
+
+### 10.4 Loss Configuration
+
+Source: `training/loss.rs`.
+
+| Field | Default | Description |
+|---|---|---|
+| `temperature` | `0.05` | InfoNCE temperature (Causal2Vec convention) |
+| `lambda_separation` | `0.1` | Weight for separation loss |
+| `hard_negative_scale` | `1.0` | Scale for hard-negative logits; >= 2.0 with `temperature=0.05` causes catastrophic collapse |
+| `hard_negative_count` | `3` | Top-K confusing negatives to upweight |
+
+Loss is a weighted sum of: (a) InfoNCE contrastive across the batch, (b) separation loss between cause/effect vectors, (c) directional triplet loss that penalizes effect-closer-to-cause-than-target-effect.
+
+### 10.5 Operational Constraints
+
+- LoRA dropout increases VRAM: batch 16→8 when dropout tensors remain in the grad graph.
+- After any change to scale/dropout, recalibrate gate thresholds (`CAUSAL_THRESHOLD`, `NON_CAUSAL_THRESHOLD`) — dropout compresses absolute scores.
+- Train/inference prefix MUST match: nomic-embed uses `"search_document: "` prefix.
+- Benchmark E1 provider must panic on failure; silent 0.0 fallback corrupts results.
+
+---
+
+## 11. Version History
 
 | Version | Changes |
 |---|---|
@@ -600,7 +676,7 @@ Deserialization rejects version mismatches. No automatic migration path exists b
 
 ---
 
-## 11. Cross-References
+## 12. Cross-References
 
 | Topic | Document |
 |---|---|
@@ -610,5 +686,8 @@ Deserialization rejects version mismatches. No automatic migration path exists b
 | MCP tools reference (all tool definitions) | [08_mcp_tools_reference.md](08_mcp_tools_reference.md) |
 | Storage layer (RocksDB column families) | [09_storage_layer.md](09_storage_layer.md) |
 | CLI reference | [10_cli_reference.md](10_cli_reference.md) |
-| Teleological subsystem (topic profiles, groups) | [13_teleological_subsystem.md](13_teleological_subsystem.md) |
 | Clustering and topics (topic memberships) | [12_clustering_and_topics.md](12_clustering_and_topics.md) |
+| Teleological subsystem (topic profiles, groups) | [13_teleological_subsystem.md](13_teleological_subsystem.md) |
+| Constellation subsystem (Sonnets anchor, style scoring) | [17_constellation_subsystem.md](17_constellation_subsystem.md) |
+| Contrastive pairs + typed edges (CF_CONTRASTIVE_PAIRS) | [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md) |
+| CAMD-DPO Python pair mining + DPO trainer | [19_camd_dpo_subsystem.md](19_camd_dpo_subsystem.md) |

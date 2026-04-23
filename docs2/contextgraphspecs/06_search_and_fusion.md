@@ -1,778 +1,368 @@
-# Search and Fusion
+# 06 — Search and Fusion
+
+Retrieval, ranking, and score fusion across the 13 embedding spaces. See [05_embedding_subsystem.md](05_embedding_subsystem.md) for embedder definitions, [12_clustering_and_topics.md](12_clustering_and_topics.md) for topic/portfolio details, and [08_mcp_tools_reference.md](08_mcp_tools_reference.md) for tool-level parameters.
 
 Source files covered:
-
-- `crates/context-graph-core/src/retrieval/mod.rs` -- retrieval module root (re-exports, 5-stage pipeline doc)
-- `crates/context-graph-core/src/retrieval/config.rs` -- thresholds, space weights, SPACE_WEIGHTS constant
-- `crates/context-graph-core/src/retrieval/executor.rs` -- MultiEmbeddingQueryExecutor trait
-- `crates/context-graph-core/src/retrieval/query.rs` -- MultiEmbeddingQuery, PipelineStageConfig, EmbeddingSpaceMask
-- `crates/context-graph-core/src/retrieval/aggregation.rs` -- AggregationStrategy (RRF, WeightedAverage, MaxPooling)
-- `crates/context-graph-core/src/retrieval/result.rs` -- result types, PipelineStageTiming
-- `crates/context-graph-core/src/retrieval/multi_space.rs` -- MultiSpaceSimilarity service
-- `crates/context-graph-core/src/retrieval/distance.rs` -- cosine, Jaccard, MaxSim, per-space dispatch
-- `crates/context-graph-core/src/retrieval/similarity.rs` -- PerSpaceScores, SimilarityResult
-- `crates/context-graph-core/src/retrieval/sparse_index.rs` -- SparseInvertedIndex for E6/E13
-- `crates/context-graph-core/src/fusion/mod.rs` -- FusionStrategy, weighted_rrf, score_weighted_rrf, fuse_rankings
-- `crates/context-graph-core/src/weights/mod.rs` -- WEIGHT_PROFILES, get_weight_profile, validate_weights
-- `crates/context-graph-core/src/causal/asymmetric.rs` -- causal gate thresholds, direction modifiers
-- `crates/context-graph-core/src/index/config.rs` -- HnswConfig, EmbedderIndex, DistanceMetric
-- `crates/context-graph-core/src/index/hnsw_impl/mod.rs` -- HnswMultiSpaceIndex (12 HNSW + SPLADE)
-- `crates/context-graph-core/src/index/hnsw_impl/multi_space.rs` -- multi-space index struct
-- `crates/context-graph-core/src/index/hnsw_impl/multi_space_trait.rs` -- MultiSpaceIndexManager impl
-- `crates/context-graph-core/src/traits/teleological_memory_store/options.rs` -- SearchStrategy enum, TeleologicalSearchOptions
-- `crates/context-graph-core/src/config/constants.rs` -- RRF_K, DEFAULT_RRF_K
-- `crates/context-graph-storage/src/teleological/search/mod.rs` -- search module root
-- `crates/context-graph-storage/src/teleological/search/pipeline/mod.rs` -- RetrievalPipeline (5-stage)
-- `crates/context-graph-storage/src/teleological/search/pipeline/types.rs` -- PipelineStage, PipelineConfig, PipelineCandidate
-- `crates/context-graph-storage/src/teleological/search/pipeline/stages.rs` -- stage implementations
-- `crates/context-graph-storage/src/teleological/search/multi/mod.rs` -- MultiEmbedderSearch
-- `crates/context-graph-storage/src/teleological/search/multi/types.rs` -- NormalizationStrategy, AggregationStrategy (storage)
-- `crates/context-graph-storage/src/teleological/rocksdb_store/fusion.rs` -- weighted_rrf_fusion (storage layer)
-- `crates/context-graph-mcp/src/handlers/tools/memory_tools.rs` -- search_graph handler, strategy routing, causal gate
-- `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs` -- search_by_embedder handler
+```
+crates/context-graph-core/src/fusion/mod.rs
+crates/context-graph-core/src/retrieval/mod.rs
+crates/context-graph-core/src/retrieval/aggregation.rs
+crates/context-graph-core/src/retrieval/config.rs
+crates/context-graph-core/src/retrieval/distance.rs
+crates/context-graph-core/src/retrieval/multi_space.rs
+crates/context-graph-core/src/retrieval/retriever.rs
+crates/context-graph-core/src/retrieval/sparse_index.rs
+crates/context-graph-core/src/causal/asymmetric.rs
+crates/context-graph-core/src/weights/mod.rs
+crates/context-graph-core/src/index/hnsw_impl/{real_hnsw,multi_space,persistence}.rs
+crates/context-graph-storage/src/teleological/rocksdb_store/search.rs
+crates/context-graph-storage/src/teleological/rocksdb_store/fusion.rs
+crates/context-graph-storage/src/teleological/rocksdb_store/provenance_storage.rs  (CF_CUSTOM_WEIGHT_PROFILES)
+crates/context-graph-storage/src/teleological/search/pipeline/{execution,stages,types}.rs
+crates/context-graph-mcp/src/weights.rs
+crates/context-graph-mcp/src/handlers/tools/memory_tools.rs           (search_graph, causal gate)
+crates/context-graph-mcp/src/handlers/tools/robustness_tools.rs       (search_robust)
+crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs         (create_weight_profile)
+```
 
 ---
 
-## 1. Overview
+## 1. Search Strategies
 
-Context Graph supports search across 13 embedding spaces using 4 search strategies. All searches produce similarity scores in the normalized range [0.0, 1.0]. Results from multiple embedders are combined using Reciprocal Rank Fusion (RRF) as the primary aggregation strategy per ARCH-18/ARCH-21.
+Strategy is selected by the `strategy` field on `TeleologicalSearchOptions` (MCP param `strategy`). When `embedder_indices` is set, strategy dispatch is bypassed and a direct single- or filtered-multi-embedder search runs instead.
 
-### 1.1 The 13 Embedding Spaces
+| Strategy         | Use case                                        | Embedders engaged (HNSW recall)                | Score normalization                 | Fusion method                                                                 |
+|------------------|-------------------------------------------------|------------------------------------------------|-------------------------------------|-------------------------------------------------------------------------------|
+| `E1Only`         | Fast E1-only baseline, backward compat          | E1                                             | cosine → `(raw+1)/2`                | HNSW cosine only; no fusion                                                   |
+| `MultiSpace` (default) | Broad semantic recall across spaces       | E1, E2*, E3*, E4*, E5 (direction-aware), E7, E8, E9, E10, E11†  | cosine → `[0,1]`                   | Per-slot HNSW rankings → Weighted RRF / ScoreWeightedRRF / WeightedSum → re-score with `compute_semantic_fusion` |
+| `Pipeline`       | Two-stage recall + dense rerank                 | Stage 1: E13 SPLADE + E1, E5, E7, E8, E9, E11† (+ E2/E3/E4 when weight>0). Stage 2: all 13 scored | cosine → `[0,1]`, BM25-IDF for SPLADE | Stage 1 union → Stage 2 fusion (Weighted RRF or WeightedSum) → optional Stage 3 E12 MaxSim interpolation |
+| Embedder-specific (`embedder_indices`) | Explicit per-space search              | Exactly the indices requested (HNSW-capable only; E6/E12/E13 rejected for single) | cosine → `[0,1]`                   | None for single; filtered multi-space for multiple                            |
 
-| Index | Name | Dimension | Type | Similarity Metric |
-|-------|------|-----------|------|-------------------|
-| 0 | E1_Semantic | 1024 | Dense HNSW | Cosine |
-| 1 | E2_Temporal_Recent | 512 | Dense HNSW | Cosine |
-| 2 | E3_Temporal_Periodic | 512 | Dense HNSW | Cosine |
-| 3 | E4_Temporal_Positional | 512 | Dense HNSW | Cosine |
-| 4 | E5_Causal | 768 | Dense HNSW | Asymmetric Cosine |
-| 5 | E6_Sparse | 30,522 vocab | Sparse Inverted | Jaccard |
-| 6 | E7_Code | 1536 | Dense HNSW | Cosine |
-| 7 | E8_Graph | 1024 | Dense HNSW | Cosine |
-| 8 | E9_HDC | 1024 | Dense HNSW | Cosine |
-| 9 | E10_Multimodal | 768 | Dense HNSW | Cosine |
-| 10 | E11_Entity | 768 | Dense HNSW | Cosine |
-| 11 | E12_Late_Interaction | 128/token | ColBERT MaxSim | MaxSim |
-| 12 | E13_SPLADE | 30,522 vocab | Sparse Inverted | Jaccard/BM25 |
+\* E2/E3/E4 only participate when the profile assigns weight > 0 (e.g., `temporal_navigation`).
+† E11 only when `E11_ENTITY_ENABLED = true` (compile-time constant; currently `false`).
 
-Defined in: `crates/context-graph-core/src/index/config.rs`
-
-### 1.2 Index Architecture
-
-Two index layers coexist:
-
-- **Core layer** (`crates/context-graph-core/src/index/config.rs:108`): `EmbedderIndex::all_hnsw()` returns **11 HNSW**: E1, E1Matryoshka128, E2-E5, E7-E11.
-- **Storage layer** (`crates/context-graph-storage/src/teleological/indexes/hnsw_config/embedder.rs:37`): **15 HNSW** indexes adding the four asymmetric dual-vector indexes -- `E5CausalCause`, `E5CausalEffect`, `E10MultimodalParaphrase`, `E10MultimodalContext` (ARCH-15).
-- **2 Inverted indexes**: E6 (sparse), E13 (SPLADE)
-- **1 Token-level index**: E12 (ColBERT MaxSim, not HNSW)
-
-E6, E12, and E13 do NOT use HNSW. E6 and E13 use inverted indexes; E12 uses MaxSim token-level matching. See `docs2/contextgraphspecs/05_embedding_subsystem.md` Section 16 for the full cross-reference.
+E6 (sparse lexical) and E12 (ColBERT) are **never HNSW-recalled**; E6 scores are computed post-recall from stored sparse vectors, E12 is applied only as an interpolation rerank in pipeline Stage 3.
 
 ---
 
-## 2. Search Strategy Selection
+## 2. MultiSpace Search Algorithm
 
-Strategies are defined in `SearchStrategy` (file: `crates/context-graph-core/src/traits/teleological_memory_store/options.rs:61-77`).
+Defined in `search_multi_space_sync` (`rocksdb_store/search.rs`). Pipeline:
 
-```rust
-#[derive(Default)]
-pub enum SearchStrategy {
-    #[default]
-    E1Only,     // E1 HNSW only (fastest, backward compatible)
-    MultiSpace, // Weighted fusion of multiple embedders
-    Pipeline,   // 5-stage progressive filtering pipeline
-}
-```
-
-`SearchStrategy::default()` returns `E1Only`. The MCP handler (`search_graph`) overrides this default to `MultiSpace` when no `strategy` parameter is supplied.
-
-An additional mode, `embedder_first`, is not a formal `SearchStrategy` variant but is implemented as a separate MCP tool (`search_by_embedder`) that searches a single specified embedder.
-
-### 2.1 Strategy Selection in the MCP Handler
-
-In `search_graph` (file: `crates/context-graph-mcp/src/handlers/tools/memory_tools.rs`), the strategy is selected from the `strategy` parameter:
-
-| Parameter Value | Mapped Strategy | Notes |
-|----------------|-----------------|-------|
-| `"e1_only"` | `SearchStrategy::E1Only` | Single-embedder semantic search |
-| `"multi_space"` | `SearchStrategy::MultiSpace` | Default when omitted |
-| `"pipeline"` | `SearchStrategy::Pipeline` | Full 5-stage pipeline |
-| (none / missing) | `SearchStrategy::MultiSpace` | Default |
-
-When a `weightProfile` or `customWeights` parameter is provided, the strategy is forced to `MultiSpace` regardless of the `strategy` parameter value, because custom weights only have meaning in multi-space fusion.
+1. **Resolve weights** — `resolve_weights_sync(options)`: custom_weights > named profile > `DEFAULT_SEMANTIC_WEIGHTS`. `apply_e11_disable` and `exclude_embedders` renormalization are applied after resolution.
+2. **Compute per-slot recall limit** — `k = max(top_k * 3, 50)`.
+3. **Per-slot HNSW recall** (only for slots with weight > 0, gated on `E11_ENTITY_ENABLED` for E11):
+   - E1 (unconditional, entry point; failure = hard error)
+   - E2, E3, E4 (weight-gated)
+   - E5: direction-aware — `Cause` queries `E5CausalEffect` index using `get_e5_as_cause()`; `Effect` queries `E5CausalCause` using `get_e5_as_effect()`; `Unknown` queries `E5Causal` using `e5_active_vector()`
+   - E7, E8 (source vector), E9, E10 (paraphrase vector), E11 (if enabled)
+   - Failures on non-E1 slots are logged to `degraded_embedders` but do not abort
+4. **Per-slot normalization** — HNSW distances converted via `hnsw_distance_to_similarity` (cosine distance → `(1 - d/2)` ∈ `[0,1]`).
+5. **Weighted RRF fusion** — `fuse_rankings(rankings, options.fusion_strategy, top_k*2)` produces ranked candidate IDs.
+6. **Two-pass re-scoring**:
+   - Pass 1: hydrate fingerprints, call `compute_embedder_scores_sync` (all 13 scores)
+   - `suppress_degenerate_weights`: any slot with across-candidate variance < 0.001 or all-sentinel scores has weight scaled by 0.25 (or zeroed for all-sentinel)
+   - Pass 2: `compute_semantic_fusion(scores, adjusted_weights)` → weighted average in `[0,1]` (skips score < 0 sentinels)
+7. **Min-similarity filter** → `sort_by similarity desc` → `truncate(top_k)`.
+8. **Post-retrieval boosts** (handler layer): asymmetric E5 rerank, E5 causal gate, ColBERT interpolation, temporal boosts, time-window filter.
 
 ---
 
-## 3. E1Only Strategy
+## 3. RRF Formula
 
-The simplest and fastest strategy. Searches only the E1 Semantic HNSW index (1024D, e5-large-v2).
+```
+fused_score(d) = Σ_slots  weight[slot]  /  (RRF_K + rank_slot(d) + 1)
+```
 
-**Algorithm:**
-1. Embed query text to produce E1 semantic vector (1024D)
-2. Search E1 HNSW index for k nearest neighbors
-3. Return results ranked by cosine similarity
+| Constant  | Value | Location |
+|-----------|-------|----------|
+| `RRF_K`   | 60.0  | `fusion::RRF_K`, `config::constants::similarity::RRF_K`, `PipelineConfig.rrf_k` |
 
-**Participating embedders:** E1 only.
+`rank_slot(d)` is the **0-based rank** of document `d` in slot's HNSW candidate list. Documents not retrieved by a slot contribute 0 from that slot. Zero-weight slots are skipped entirely (`if ranking.weight <= 0.0 { continue; }`).
 
-**Scoring:** Raw cosine similarity normalized to [0.0, 1.0] via SRC-3 conversion.
+**Canonical helper**: `AggregationStrategy::rrf_contribution(rank, k) = 1.0 / (k + rank + 1.0)`.
+
+**Score-Weighted RRF** variant (`FusionStrategy::ScoreWeightedRRF`): for E5 specifically, contribution is `weight * similarity * base_rrf` instead of `weight * base_rrf`. Applied by `fuse_rankings` when the strategy enum is `ScoreWeightedRRF`; `score_weighted_rrf(rankings, &["E5"], top_k)` is the entry point. All other embedders retain standard RRF.
+
+**Fused score ≠ user similarity**: RRF scores (~0.003 range) are only used to select Stage 2 candidates. Final `TeleologicalSearchResult.similarity` is always re-computed via `compute_semantic_fusion` in `[0,1]`.
 
 ---
 
-## 4. MultiSpace Strategy
+## 4. Pipeline Strategy
 
-Weighted fusion across all dense embedders. This is the default strategy.
+Defined in `search_pipeline_sync`. Two-stage with optional Stage 3.
 
-### 4.1 Algorithm Steps
+### Stage 1 — Fast Recall (union of candidates)
 
-1. Embed query text to produce all 13 embeddings (SemanticFingerprint)
-2. For each active embedder with weight > 0.0:
-   - Search the embedder's HNSW index (or compute similarity for non-HNSW embedders)
-   - Produce a ranked list of candidates
-3. Combine results using Weighted RRF across all ranked lists
-4. Apply causal gating if the query is detected as causal
-5. Return top-k results sorted by fused score
+| Sub-recall           | Source               | k                  | Notes                                           |
+|----------------------|----------------------|--------------------|-------------------------------------------------|
+| E13 SPLADE sparse    | `CF_E13_SPLADE_INVERTED` | `top_k * STAGE1_RECALL_MULTIPLIER` (=10×) | BM25-IDF scoring with total-doc-count from atomic counter; soft-deleted skipped |
+| E1 Semantic HNSW     | registry             | `top_k * 10`       | Hard failure aborts pipeline                    |
+| E5 Causal HNSW       | direction-aware idx  | `top_k * 5`        | Same cross-pair routing as MultiSpace           |
+| E7 Code HNSW         | registry             | `top_k * 5`        | Soft failure = warn + continue                  |
+| E8 Graph HNSW        | registry             | `top_k * 5`        | source vector                                   |
+| E9 HDC HNSW          | registry             | `top_k * 5`        | Unconditional (cheap typo backup)               |
+| E11 Entity HNSW      | registry             | `top_k * 5`        | Only if `E11_ENTITY_ENABLED`                    |
+| E2/E3/E4 Temporal    | registry             | `top_k * 5`        | Weight-gated                                    |
 
-### 4.2 Active Embedders in MultiSpace
+Output: `HashSet<Uuid>` — deduplicated candidate ID union. Empty set → return `[]`.
 
-From `crates/context-graph-mcp/src/handlers/tools/memory_tools.rs:1545-1556`, MultiSpace seeds `strategy_indices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9]` and conditionally pushes `10` (E11) when `E11_ENTITY_ENABLED` is `true`. `E11_ENTITY_ENABLED` is `false` by default (`crates/context-graph-core/src/weights/mod.rs:45`), so the active set is 10 indices.
+### Stage 2 — Multi-Space Scoring
 
-After seeding, active indices are filtered by `resolved_weights[idx] > 0.0` (`memory_tools.rs:1569-1571`). This makes all embedder slots weight-gated in practice:
+1. Hydrate all candidate fingerprints, skip soft-deleted (unless `include_deleted`).
+2. `compute_embedder_scores_sync` → 13 scores per candidate.
+3. `suppress_degenerate_weights` on cross-candidate variance.
+4. Fusion per `options.fusion_strategy`:
+   - `WeightedSum`: `compute_semantic_fusion` directly
+   - `WeightedRRF` / `ScoreWeightedRRF`: build per-slot `EmbedderRanking` from the 13 scores, run `fuse_rankings` (E12 excluded; other slots with weight>0 included), then **re-score** surviving candidates via `compute_semantic_fusion` so output is in `[0,1]`.
+5. Min-similarity filter, sort desc, `truncate(top_k * STAGE2_CANDIDATE_MULTIPLIER)` where `STAGE2_CANDIDATE_MULTIPLIER = 3`.
 
-- E2 (index 1), E3 (index 2), E4 (index 3) are first-class HNSW-indexed fusion participants when their weight is > 0.0. `TEMPORAL_EMBEDDERS_ENABLED = true` (`weights/mod.rs:40`) is a global kill-switch; when true, temporal profiles like `temporal_navigation` activate them.
-- E6 (index 5) participates in scoring (not HNSW recall) when its weight > 0.
+### Stage 3 — E12 MaxSim Interpolation (optional)
 
-E12 (Late Interaction) and E13 (SPLADE) have weight 0.0 in all scoring profiles per ARCH-13 -- they are pipeline-stage-only embedders (E13 in Stage 1 recall, E12 in Stage 4 MaxSim rerank).
-
-### 4.3 Scoring
-
-Scores from each embedder are combined using Weighted RRF:
+Triggered only when `options.enable_rerank` and query has `e12_late_interaction` tokens. For each surviving candidate:
 
 ```
-RRF_weighted(d) = SUM_i( weight_i / (K + rank_i(d) + 1) )
+maxsim  = max_sim(query.e12_tokens, stored.e12_tokens)
+final   = (1 - rerank_weight) * stage2_score + rerank_weight * maxsim
 ```
 
-Where `K = 60` (defined in `crates/context-graph-core/src/config/constants.rs` as `similarity::RRF_K`).
+Sort desc, `truncate(top_k)`. If candidate has no stored E12 tokens, maxsim is 0.0.
+
+### Stage Cutoffs (constants)
+
+| Constant                          | Value | Location                                   |
+|-----------------------------------|-------|--------------------------------------------|
+| `STAGE1_RECALL_MULTIPLIER`        | 10    | `rocksdb_store/search.rs`                  |
+| `STAGE2_CANDIDATE_MULTIPLIER`     | 3     | `rocksdb_store/search.rs`                  |
+| `DEFAULT_RECALL_LIMIT` (SPLADE)   | 10000 | `retrieval::sparse_index`                  |
+| `MULTI_SPACE_MAX_EMBEDDERS`       | 10    | `rocksdb_store/search.rs` (Vec preallocation) |
 
 ---
 
-## 5. Pipeline Strategy
+## 5. Weight Profiles
 
-A 5-stage (with optional 3.5 and 3.75 substages) progressive filtering pipeline optimized for latency at scale.
+All profiles are `[f32; 13]` arrays keyed as `[E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E13]` and MUST sum to ~1.0 (validated by `validate_weights`). E12 and E13 are always 0.0 in scoring profiles (they are pipeline-stage embedders).
 
-### 5.1 Stage Definitions
+Source: `crates/context-graph-core/src/weights/mod.rs::WEIGHT_PROFILES`. Lookups go through `get_effective_weight_profile` which applies `apply_e11_disable` when `E11_ENTITY_ENABLED = false` (current default): E11's weight is zeroed and redistributed proportionally to remaining non-zero slots.
 
-| Stage | Name | Index Type | Input | Output | Latency Target |
-|-------|------|-----------|-------|--------|---------------|
-| 1 | SPLADE Sparse Pre-filter | Inverted index (E13 or E6) | Full corpus (1M+) | ~10K candidates | <5ms |
-| 2 | Matryoshka 128D Fast ANN | HNSW (E1Matryoshka128) | ~10K | ~1K candidates | <10ms |
-| 3 | Multi-space RRF Rerank | HNSW (E1, E5, E8 by default) | ~1K | ~100 candidates | <20ms |
-| 3.5 | Graph Expansion (optional) | K-NN edge traversal | ~100 | ~150 candidates | <10ms |
-| 3.75 | GNN Enhancement (optional) | R-GCN message passing | ~150 | ~150 candidates | <20ms |
-| 4 | Late Interaction MaxSim | ColBERT (E12) | 100-150 | k results (e.g., 10) | <15ms |
+| Profile                    | Dominant slots (weight)                          | Full vector (or description)                                                                                     | Use case                                       |
+|----------------------------|--------------------------------------------------|------------------------------------------------------------------------------------------------------------------|------------------------------------------------|
+| `semantic_search`          | E1=0.33, E7=0.20, E5=0.15, E10=0.15              | `[0.33, 0, 0, 0, 0.15, 0.05, 0.20, 0.05, 0.02, 0.15, 0.05, 0, 0]`                                                | General-purpose semantic queries               |
+| `causal_reasoning`         | E1=0.40, E7=0.15, E5=0.10, E8=0.10, E10=0.10, E11=0.10 | `[0.40, 0, 0, 0, 0.10, 0.05, 0.15, 0.10, 0, 0.10, 0.10, 0, 0]`                                             | "Why"/cause-effect questions (E5 is gate signal) |
+| `code_search`              | E7=0.40, E1=0.20, E6=0.10, E10=0.10, E11=0.10    | `[0.20, 0, 0, 0, 0.10, 0.10, 0.40, 0, 0, 0.10, 0.10, 0, 0]`                                                      | Source code retrieval                          |
+| `fact_checking`            | E11=0.40, E5=0.15, E6=0.15, E1=0.15              | `[0.15, 0, 0, 0, 0.15, 0.15, 0.05, 0.05, 0, 0.05, 0.40, 0, 0]`                                                   | Entity/fact verification                       |
+| `graph_reasoning`          | E8=0.40, E11=0.20, E1=0.15                       | `[0.15, 0, 0, 0, 0.10, 0.10, 0, 0.40, 0, 0.05, 0.20, 0, 0]`                                                      | "What connects to X?" structural queries       |
+| `temporal_navigation`      | E2=E3=E4=0.23, E1=0.13                           | `[0.13, 0.23, 0.23, 0.23, 0.03, 0.02, 0.03, 0.02, 0.03, 0.03, 0.02, 0, 0]`                                       | Explicit time-based queries                    |
+| `sequence_navigation`      | E4=0.55, E1=0.20                                 | `[0.20, 0.05, 0, 0.55, 0.03, 0.02, 0.03, 0.02, 0.03, 0.03, 0.02, 0, 0.02]`                                       | Session/conversation turn ordering             |
+| `conversation_history`     | E4=0.35, E1=0.30, E5=0.10                        | `[0.30, 0.05, 0, 0.35, 0.10, 0.03, 0.05, 0.02, 0, 0.05, 0.03, 0, 0.02]`                                          | Mixed temporal + topic recall                  |
+| `category_weighted`        | E1=E5=E6=E7=E10=1/6.5, E8=E9=E11=0.5/6.5         | Normalizer 6.5 = 5×SEMANTIC(1.0) + 2×RELATIONAL(0.5) + 1×STRUCTURAL(0.5)                                         | Constitution-compliant balanced fusion         |
+| `typo_tolerant`            | E1=0.30, E9=0.18, E7=0.15, E10=0.12              | `[0.30, 0, 0, 0, 0.10, 0.07, 0.15, 0.03, 0.18, 0.12, 0.05, 0, 0]`                                                | Queries with spelling errors (E9 primary)      |
+| `pipeline_stage1_recall`   | E13=0.25, E6=0.25, E1=0.20                       | `[0.20, 0, 0, 0, 0.05, 0.25, 0.10, 0, 0.05, 0.05, 0.05, 0, 0.25]`                                                | Recall-stage weight hint (sparse-heavy)        |
+| `pipeline_stage2_scoring`  | E1=0.50, E7=0.15, E5=0.12                        | `[0.50, 0, 0, 0, 0.12, 0.05, 0.15, 0.03, 0.02, 0.08, 0.05, 0, 0]`                                                | Dense scoring stage                            |
+| `pipeline_full`            | E1=0.40, E7=0.15, E5=0.10, E6=0.10               | `[0.40, 0, 0, 0, 0.10, 0.10, 0.15, 0.03, 0.02, 0.08, 0.05, 0, 0.07]`                                             | Complete pipeline end-to-end                   |
+| `balanced`                 | all ≈ 0.077                                      | `[0.077 × 12, 0.076]` (E13 trimmed to sum to 1.0)                                                                | Testing / comparison baseline                  |
 
-Total latency target: <60ms at 1M memories.
-
-Defined in:
-- `crates/context-graph-storage/src/teleological/search/pipeline/types.rs` -- `PipelineStage` enum, `PipelineConfig`
-- `crates/context-graph-storage/src/teleological/search/pipeline/stages.rs` -- stage implementations
-
-### 5.2 Stage 1: SPLADE Sparse Pre-filter
-
-Uses the sparse inverted index (E13 SPLADE or E6). NOT HNSW.
-
-**Algorithm:**
-1. Extract active terms from query sparse vector
-2. Look up posting lists in the inverted index for all query terms
-3. Score candidates by weighted overlap (BM25 weighting for E13)
-4. Return top candidates (default: k * 10 * candidate_multiplier)
-
-The sparse inverted index is implemented in `crates/context-graph-core/src/retrieval/sparse_index.rs`. Default recall limit: 10,000 candidates.
-
-### 5.3 Stage 2: Matryoshka 128D Fast ANN
-
-Uses the E1Matryoshka128 HNSW index (128D truncation of E1 semantic, M=32, ef_construction=256, ef_search=128).
-
-**Algorithm:**
-1. Take the first 128 dimensions of the E1 query vector
-2. Search E1Matryoshka128 HNSW index
-3. Filter results to Stage 1 candidate set (intersection)
-4. Return filtered candidates
-
-### 5.4 Stage 3: Multi-space RRF Rerank
-
-Searches multiple HNSW-capable embedders and combines with RRF.
-
-**Default RRF embedders** (from `PipelineConfig::default()`):
-- E1Semantic
-- E8Graph
-- E5Causal
-
-**RRF formula applied:**
-```
-RRF(d) = SUM_i( 1 / (K + rank_i(d) + 1) )
-```
-Where K = 60.0 (`PipelineConfig.rrf_k`).
-
-### 5.5 Stage 3.5: Graph Expansion (Optional)
-
-Expands the candidate set by traversing pre-computed K-NN graph edges.
-
-**Configuration** (`GraphExpansionConfig`):
-- `max_expansion_per_node`: 5 (default)
-- `min_edge_weight`: 0.4
-- `expansion_decay`: 0.8 (expanded node score = parent_score * edge_weight * 0.8)
-- `max_total_expanded`: 150
-
-### 5.6 Stage 3.75: GNN Enhancement (Optional)
-
-R-GCN message passing for learned retrieval enhancement. Disabled by default (requires trained model).
-
-**Configuration** (`GnnEnhanceConfig`):
-- `blend_weight`: 0.3 (final_score = original * 0.7 + gnn_score * 0.3)
-- `max_subgraph_nodes`: 200
-- `min_similarity`: 0.3
-
-### 5.7 Stage 4: Late Interaction MaxSim (E12)
-
-ColBERT-style token-level matching. NOT HNSW.
-
-**MaxSim formula** (from `crates/context-graph-core/src/retrieval/distance.rs`):
-
-```
-MaxSim(Q, M) = (1/|Q|) * SUM_{q in Q} max_{m in M} cosine(q, m)
-```
-
-Each query token (128D) finds its maximum cosine similarity against all memory tokens, then the scores are averaged. Returns a value in [0.0, 1.0].
-
-### 5.8 Pipeline Stage Configuration
-
-Default candidate counts per stage (from `PipelineStageConfig::default()`):
-
-| Parameter | Default | Description |
-|-----------|---------|-------------|
-| `splade_candidates` | 1000 | Stage 1 output count |
-| `matryoshka_128d_limit` | 200 | Stage 2 output count |
-| `full_search_limit` | 100 | Stage 3 output count |
-| `teleological_limit` | 50 | Stage 4 input count |
-| `late_interaction_limit` | 20 | Stage 5 output count |
-| `rrf_k` | 60.0 | RRF constant |
+Storage-layer default (when no profile is specified): `DEFAULT_SEMANTIC_WEIGHTS` = `[0.35, 0, 0, 0, 0.16, 0.05, 0.21, 0.05, 0.02, 0.16, 0, 0, 0]` — equivalent to `semantic_search` with E11's 0.05 pre-redistributed to E1/E5/E7/E10.
 
 ---
 
-## 6. Embedder-First Strategy (search_by_embedder)
+## 6. Custom Weight Profiles
 
-Implemented as a separate MCP tool (`search_by_embedder`) in `crates/context-graph-mcp/src/handlers/tools/embedder_tools.rs`.
+Created via `create_weight_profile` MCP tool, persisted to RocksDB column family `CF_CUSTOM_WEIGHT_PROFILES` ("custom_weight_profiles").
 
-**Algorithm:**
-1. Accept an explicit embedder name (e.g., "E5", "E7", "E9")
-2. Embed query text into the full 13-embedder fingerprint
-3. Search only the specified embedder's index
-4. For E5 (Causal): uses explicit `CausalDirection::Cause` for asymmetric scoring
-5. Return results from that single embedder
+**Storage layout**:
+- Key: profile name as UTF-8 bytes.
+- Value: JSON-serialized `[f32; 13]`.
+- Access: `RocksDbTeleologicalStore::{store,get,list,delete}_custom_weight_profile` (sync) with async trait wrappers.
 
-This mode is useful for exploring what specific embedders discover that E1 might miss (blind spot detection).
+**Creation constraints** (`call_create_weight_profile`):
+- Name must not collide with any built-in profile (`get_profile_names`).
+- `validate_weights` must pass: every weight ∈ `[0,1]` and sum ≈ 1.0.
+- `MAX_CUSTOM_PROFILES = 1000` enforced on the in-memory cache before persistence.
+- Persisted to RocksDB first, then inserted into `custom_profiles` `RwLock<HashMap>`.
 
----
+**Lookup order** (in `search_graph` / `resolve_weights_sync`):
+1. Explicit `customWeights` (array) overrides everything.
+2. Named `weightProfile`:
+   - First check `self.custom_profiles` (handler-layer cache).
+   - If absent, `get_effective_weight_profile(name)` resolves built-ins.
+   - Unknown name → `ToolErrorKind::Validation` with profile list.
+3. Default (`semantic_search` at handler layer; `DEFAULT_SEMANTIC_WEIGHTS` at storage layer).
 
-## 7. Weight Profiles
-
-Weight profiles control how much each embedder contributes to multi-space fusion. Defined in `crates/context-graph-core/src/weights/mod.rs` as `WEIGHT_PROFILES`.
-
-### 7.1 Built-in Profiles
-
-All profiles have exactly 13 weights that sum to approximately 1.0.
-
-| Profile | E1 | E2 | E3 | E4 | E5 | E6 | E7 | E8 | E9 | E10 | E11 | E12 | E13 | Primary Use |
-|---------|-----|-----|-----|-----|-----|-----|-----|-----|-----|------|------|------|------|-------------|
-| `semantic_search` | 0.33 | 0.0 | 0.0 | 0.0 | 0.15 | 0.05 | 0.20 | 0.05 | 0.02 | 0.15 | 0.05 | 0.0 | 0.0 | General queries |
-| `causal_reasoning` | 0.40 | 0.0 | 0.0 | 0.0 | 0.10 | 0.05 | 0.15 | 0.10 | 0.0 | 0.10 | 0.10 | 0.0 | 0.0 | "Why" questions |
-| `code_search` | 0.20 | 0.0 | 0.0 | 0.0 | 0.10 | 0.10 | 0.40 | 0.0 | 0.0 | 0.10 | 0.10 | 0.0 | 0.0 | Programming queries |
-| `fact_checking` | 0.15 | 0.0 | 0.0 | 0.0 | 0.15 | 0.15 | 0.05 | 0.05 | 0.0 | 0.05 | 0.40 | 0.0 | 0.0 | Entity/fact queries |
-| `graph_reasoning` | 0.15 | 0.0 | 0.0 | 0.0 | 0.10 | 0.10 | 0.0 | 0.40 | 0.0 | 0.05 | 0.20 | 0.0 | 0.0 | Structural queries |
-| `temporal_navigation` | 0.13 | 0.23 | 0.23 | 0.23 | 0.03 | 0.02 | 0.03 | 0.02 | 0.03 | 0.03 | 0.02 | 0.0 | 0.0 | Time-based queries |
-| `sequence_navigation` | 0.20 | 0.05 | 0.0 | 0.55 | 0.03 | 0.02 | 0.03 | 0.02 | 0.03 | 0.03 | 0.02 | 0.0 | 0.02 | Sequence traversal |
-| `conversation_history` | 0.30 | 0.05 | 0.0 | 0.35 | 0.10 | 0.03 | 0.05 | 0.02 | 0.0 | 0.05 | 0.03 | 0.0 | 0.02 | Contextual recall |
-| `category_weighted` | 1/6.5 (~0.154) | 0.0 | 0.0 | 0.0 | 1/6.5 | 1/6.5 | 1/6.5 | 0.5/6.5 (~0.077) | 0.5/6.5 | 1/6.5 | 0.5/6.5 | 0.0 | 0.0 | Constitution-compliant |
-| `typo_tolerant` | 0.30 | 0.0 | 0.0 | 0.0 | 0.10 | 0.07 | 0.15 | 0.03 | 0.18 | 0.12 | 0.05 | 0.0 | 0.0 | Noisy queries |
-| `pipeline_stage1_recall` | 0.20 | 0.0 | 0.0 | 0.0 | 0.05 | 0.25 | 0.10 | 0.0 | 0.05 | 0.05 | 0.05 | 0.0 | 0.25 | Stage 1 recall |
-| `pipeline_stage2_scoring` | 0.50 | 0.0 | 0.0 | 0.0 | 0.12 | 0.05 | 0.15 | 0.03 | 0.02 | 0.08 | 0.05 | 0.0 | 0.0 | Stage 2 scoring |
-| `pipeline_full` | 0.40 | 0.0 | 0.0 | 0.0 | 0.10 | 0.10 | 0.15 | 0.03 | 0.02 | 0.08 | 0.05 | 0.0 | 0.07 | Full pipeline |
-| `balanced` | 0.077 | 0.077 | 0.077 | 0.077 | 0.077 | 0.077 | 0.077 | 0.077 | 0.077 | 0.077 | 0.077 | 0.077 | 0.076 | Testing/comparison |
-
-### 7.2 Profile Design Rules
-
-1. **E12 and E13 have weight 0.0 in all semantic scoring profiles** (per ARCH-13). They are pipeline-stage-only: E13 for Stage 1 recall, E12 for Stage 4 MaxSim reranking.
-2. **E2-E4 have weight 0.0 in semantic profiles** (per AP-60/AP-71). Temporal proximity is not topical similarity.
-3. **E2-E4 have non-zero weights** only in temporal-aware profiles: `temporal_navigation`, `sequence_navigation`, `conversation_history`, `balanced`.
-
-### 7.3 E11 Entity Disable
-
-When `E11_ENTITY_ENABLED = false` (current default), `get_effective_weight_profile()` zeros out E11's weight and proportionally redistributes it to remaining active embedders so the profile still sums to ~1.0.
-
-### 7.4 Custom Profiles
-
-Users can provide custom weights via the `customWeights` parameter in `search_graph`. Requirements:
-- Array of 13 floats: `[E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E13]`
-- Each weight must be in [0.0, 1.0]
-- All weights must sum to approximately 1.0 (tolerance: 0.01)
-
-Validation is performed by `validate_weights()` in `crates/context-graph-core/src/weights/mod.rs`.
-
-### 7.5 Weight Normalization
-
-`SpaceWeights::normalize()` (in `crates/context-graph-core/src/retrieval/config.rs`) normalizes weights to sum to 13.0:
-
-```
-factor = 13.0 / sum(weights)
-weight_i = weight_i * factor
-```
-
-If sum is 0.0, weights remain unchanged to avoid division by zero.
+Custom profiles are restored from RocksDB into the in-memory cache at handler init. Custom weights force `SearchStrategy::MultiSpace` regardless of the caller's `strategy` to guarantee the weights are actually consulted.
 
 ---
 
-## 8. Result Fusion
+## 7. Causal Gate
 
-### 8.1 Reciprocal Rank Fusion (RRF)
+Applied post-retrieval at handler layer when a query is classified as causal (`CausalDirection != Unknown`). Source: `core/causal/asymmetric.rs::{causal_gate, apply_causal_gate}`.
 
-RRF is the primary fusion strategy. It is rank-based and score-distribution-invariant.
+| Constant                               | Value  | Meaning                                                                 |
+|----------------------------------------|--------|-------------------------------------------------------------------------|
+| `causal_gate::CAUSAL_THRESHOLD`        | 0.04   | E5 asymmetric sim ≥ this → content deemed causal                        |
+| `causal_gate::NON_CAUSAL_THRESHOLD`    | 0.008  | E5 asymmetric sim ≤ this → content deemed non-causal                    |
+| `causal_gate::CAUSAL_BOOST`            | 1.10   | Multiplier for passing results                                          |
+| `causal_gate::NON_CAUSAL_DEMOTION`     | 0.85   | Multiplier for failing results                                          |
 
-**Standard RRF** (from `crates/context-graph-core/src/retrieval/aggregation.rs`):
+Ambiguous zone (between the two thresholds) leaves the score unchanged. Applied in:
 
-```
-RRF(d) = SUM_i( 1 / (K + rank_i(d) + 1) )
-```
+- `memory_tools.rs::apply_direction_aware_reranking` (per-result, after asymmetric E5 sim computed between query and stored fingerprint)
+- `causal_tools.rs` (for `search_causes`, `search_effects`, etc.)
 
-Where:
-- `K = 60` (constant, from Constitution `embeddings.similarity.rrf_constant`)
-- `rank_i(d)` is the 0-indexed rank of document `d` in embedder `i`'s results
-- The `+1` converts 0-based rank to 1-based denominator
-
-**Weighted RRF** (from `crates/context-graph-core/src/fusion/mod.rs`):
-
-```
-RRF_weighted(d) = SUM_i( weight_i / (K + rank_i(d) + 1) )
-```
-
-Where `weight_i` is the embedder's weight from the active weight profile.
-
-**Score-Weighted RRF** (`ScoreWeightedRRF` variant):
-
-For score-weighted embedders (e.g., E5 Causal):
-```
-contribution = weight * similarity_score * (1 / (K + rank + 1))
-```
-
-For standard embedders:
-```
-contribution = weight * (1 / (K + rank + 1))
-```
-
-This preserves E5 score magnitude -- a strong causal signal (0.58) contributes more than a weak one (0.12) at the same rank.
-
-### 8.2 RRF Score Examples
-
-For K=60:
-- Rank 0: 1/(60+0+1) = 1/61 = 0.01639
-- Rank 1: 1/(60+1+1) = 1/62 = 0.01613
-- Rank 9: 1/(60+9+1) = 1/70 = 0.01429
-- Rank 99: 1/(60+99+1) = 1/160 = 0.00625
-
-### 8.3 Additive RRF with Blind-Spot Detection
-
-`aggregate_rrf_additive()` (in `aggregation.rs`) extends standard RRF with contribution tracking:
-
-- Tracks which embedders found each result
-- Results found by only one embedder are "blind spot discoveries"
-- Blind spot discoveries receive a 10% boost: `boosted_score = rrf_score * 1.1`
-- Results found by 10+ embedders receive a "strong consensus" annotation
-
-### 8.4 Alternative Aggregation Strategies
-
-Besides RRF, the system supports:
-
-| Strategy | Formula | Use Case |
-|----------|---------|----------|
-| `WeightedAverage` | `SUM(weight_i * sim_i) / SUM(weight_i)` | When raw scores are calibrated |
-| `MaxPooling` | `max(sim_i)` | When any strong signal suffices |
-
-These are defined in `AggregationStrategy` (file: `crates/context-graph-core/src/retrieval/aggregation.rs`) but RRF is the default and recommended strategy.
-
-### 8.5 Fusion Strategy Enum
-
-The `FusionStrategy` enum (in `crates/context-graph-core/src/fusion/mod.rs`) selects between fusion modes:
-
-| Variant | Description |
-|---------|-------------|
-| `WeightedRRF` (default) | Standard weighted RRF |
-| `WeightedSum` | Legacy `SUM(weight * similarity)` |
-| `ScoreWeightedRRF` | E5 uses score-weighted contribution; others use standard RRF |
-
-### 8.6 Min-Max Score Normalization
-
-`normalize_minmax()` (in `crates/context-graph-core/src/fusion/mod.rs`) normalizes scores within a result set:
-
-```
-normalized_score = (score - min) / (max - min)
-```
-
-When all scores are equal, they normalize to 1.0. When the input set is empty, returns (0.0, 1.0).
+`apply_causal_gate(original_score, e5_score, is_causal_query)` is a short-circuit no-op when `is_causal_query == false`.
 
 ---
 
-## 9. Similarity Computation
+## 8. Topic Boost
 
-### 9.1 Cosine Similarity
+No score-level topic boost is applied during search fusion. Topic portfolios (`CF_TOPIC_PORTFOLIO`) are persisted and restored across sessions but are a classification/analysis artifact: they are surfaced through `get_topic_portfolio`, `detect_topics`, and `get_topic_stability` tools, not folded back into search scores.
 
-**Normalized cosine** (`cosine_similarity()` in `distance.rs`):
+"Topic similarity" computed by `MultiSpaceSimilarity::compute_relevance_score` / `compute_weighted_similarity` uses category weights (`SPACE_WEIGHTS`: Semantic=1.0, Relational=0.5, Structural=0.5, Temporal=0.0; `TOTAL_WEIGHT = 8.5`) and is used by the similarity retriever and divergence detector (`SimilarityRetriever`, `DivergenceDetector`) — not by the production `search_graph` path, which uses weight profiles instead.
 
-```
-raw = dot(a, b) / (||a|| * ||b||)        -- clamped to [-1, 1]
-normalized = (raw + 1) / 2               -- SRC-3: maps to [0, 1]
-```
-
-- Zero-magnitude vectors return 0.0 (AP-10: no NaN)
-- Empty or mismatched-dimension vectors return 0.0
-- Zero-allocation single-pass implementation
-
-**Raw cosine** (`cosine_similarity_raw()`):
-
-Returns raw cosine in [-1.0, 1.0] without SRC-3 normalization. Used internally where raw cosine is needed (e.g., causal chain scoring).
-
-### 9.2 Jaccard Similarity
-
-Used for sparse vectors (E6, E13):
-
-```
-Jaccard(A, B) = |A intersect B| / |A union B|
-```
-
-Computed over non-zero index sets. Returns [0.0, 1.0] where 1.0 = identical index sets.
-
-### 9.3 MaxSim (ColBERT Late Interaction)
-
-Used for E12 token-level matching:
-
-```
-MaxSim(Q, M) = (1/|Q|) * SUM_{q in Q}( max_{m in M}( cosine(q, m) ) )
-```
-
-For each query token embedding, find its maximum cosine similarity against all memory token embeddings, then average. Returns [0.0, 1.0].
-
-### 9.4 Per-Space Dispatch
-
-`compute_similarity_for_space()` in `distance.rs` dispatches to the correct metric:
-
-| Embedder | Metric | Notes |
-|----------|--------|-------|
-| E1, E2-E4, E7, E9, E11 | Cosine (symmetric) | Standard normalized cosine |
-| E5 (Causal) | Returns -1.0 sentinel | Must use `compute_similarity_for_space_with_direction()` |
-| E6 (Sparse) | Jaccard | Sparse inverted index |
-| E8 (Graph) | Cosine cross-pair max | `max(cosine(q.source, m.target), cosine(q.target, m.source))` |
-| E10 (Multimodal) | Cosine cross-pair max | `max(cosine(q.paraphrase, m.context), cosine(q.context, m.paraphrase))` |
-| E12 (Late Interaction) | MaxSim | Token-level |
-| E13 (SPLADE) | Jaccard | Sparse inverted index |
-
-### 9.5 E5 Asymmetric Similarity
-
-E5 uses dual vectors (cause/effect). Without a direction, `compute_similarity_for_space()` returns -1.0 as a sentinel indicating "no signal" (distinct from 0.0 which indicates anti-correlation after normalization).
-
-With direction (`compute_similarity_for_space_with_direction()`):
-
-```
-sim = asymmetric_cosine(query, memory, query_is_cause) * direction_modifier
-```
-
-Clamped to [0.0, 1.0].
-
-### 9.6 E8/E10 Cross-Pair Comparison
-
-Both E8 (Graph) and E10 (Multimodal) store asymmetric dual vectors:
-- E8: source/target pairs
-- E10: paraphrase/context pairs
-
-The similarity is computed as the maximum of both cross-pair directions, capturing the strongest signal regardless of direction.
+See [12_clustering_and_topics.md](12_clustering_and_topics.md) for the full topic subsystem.
 
 ---
 
-## 10. Causal Gating
+## 9. E5 Causal Direction
 
-Causal gating applies a binary boost/demotion to search results based on E5 causal scores. Defined in `crates/context-graph-core/src/causal/asymmetric.rs`.
+Asymmetric similarity for E5 per `ARCH-15` / `AP-77`. Constants in `causal::asymmetric::direction_mod`:
 
-### 10.1 Threshold Values
+| Modifier                      | Value | Applied when                                  |
+|-------------------------------|-------|-----------------------------------------------|
+| `CAUSE_TO_EFFECT`             | 1.2   | query = Cause, result = Effect (forward inference) |
+| `EFFECT_TO_CAUSE`             | 0.8   | query = Effect, result = Cause (backward inference) |
+| `SAME_DIRECTION`              | 1.0   | both Cause or both Effect                     |
+| `UNKNOWN`                     | 1.0   | either side Unknown                           |
 
-| Constant | Value | Meaning |
-|----------|-------|---------|
-| `CAUSAL_THRESHOLD` | 0.04 | E5 score >= this = "definitely causal" |
-| `NON_CAUSAL_THRESHOLD` | 0.008 | E5 score <= this = "definitely non-causal" |
-| `CAUSAL_BOOST` | 1.10 | 10% score boost for causal content |
-| `NON_CAUSAL_DEMOTION` | 0.85 | 15% score demotion for non-causal content |
+**Direction detection**:
+- Query direction: from user's `causalDirection` param (`auto`/`cause`/`effect`/`none`) or `detect_causal_query_intent(query_text)`.
+- Result direction: `infer_direction_from_fingerprint` — compares component variance of E5 cause vs E5 effect projections; requires >5% variance gap to commit to `Cause` or `Effect`, else `Unknown`.
 
-Calibrated against post-training E5 score distribution (causal mean=0.138, non-causal mean=0.016).
+**HNSW routing** (in `search.rs`):
 
-### 10.2 Gate Logic
+| Query direction | HNSW index queried      | Query vector used          |
+|-----------------|-------------------------|----------------------------|
+| `Cause`         | `E5CausalEffect`        | `query.get_e5_as_cause()`  |
+| `Effect`        | `E5CausalCause`         | `query.get_e5_as_effect()` |
+| `Unknown`       | `E5Causal`              | `query.e5_active_vector()` |
 
-From `apply_causal_gate()`:
+The cross-pair routing is intentional: a cause query looks for documents whose **effect** vector matches the query's **cause** vector.
 
-```
-if NOT is_causal_query:
-    return original_score  -- no change for non-causal queries
+**Score computation**: `compute_similarity_for_space_with_direction(Causal, …)` calls `compute_e5_asymmetric_fingerprint_similarity`, then multiplies by the direction modifier and clamps to `[0,1]`. For `Unknown` direction, the function returns `-1.0` as a **sentinel** meaning "no signal" — `suppress_degenerate_weights` and `compute_semantic_fusion` skip negative scores so 0.0 remains valid anti-correlated signal.
 
-if e5_score >= 0.04:
-    return original_score * 1.10   -- boost
-
-if e5_score <= 0.008:
-    return original_score * 0.85   -- demotion
-
-return original_score  -- ambiguous zone, no change
-```
-
-The ambiguous dead zone (0.008 < e5_score < 0.04) receives no modification.
-
-### 10.3 Direction Modifiers
-
-Applied during E5 asymmetric similarity computation:
-
-| Direction Pair | Modifier | Meaning |
-|---------------|----------|---------|
-| cause to effect | 1.2 | Forward causal inference amplified |
-| effect to cause | 0.8 | Backward inference dampened |
-| same direction | 1.0 | No modification |
-| unknown | 1.0 | No modification |
+Additional reranking passes at the handler layer (`apply_asymmetric_e5_reranking`, `apply_direction_aware_reranking` in `memory_tools.rs`) recompute asymmetric E5 between the query and each result's stored fingerprint, apply the direction modifier, then run `apply_causal_gate`.
 
 ---
 
-## 11. HNSW Recall Phase
+## 10. Normalization
 
-### 11.1 HNSW Configuration
+All similarity paths output values in `[0.0, 1.0]`.
 
-Default per-embedder configuration (from `HnswConfig::default_for_dimension()`):
+| Source                                            | Raw range   | Normalization                     |
+|---------------------------------------------------|-------------|-----------------------------------|
+| Dense cosine (`cosine_similarity`)                | `[-1, 1]`   | `(raw + 1.0) / 2.0` (SRC-3)       |
+| Dense cosine raw (`cosine_similarity_raw`)        | `[-1, 1]`   | none (caller must normalize)      |
+| Sparse cosine on E6/E13 (`SparseVector::cosine_similarity`) | `[-1, 1]` | `(raw + 1.0) / 2.0` applied in `compute_embedder_scores_sync` |
+| Sparse Jaccard (`jaccard_similarity`)             | `[0, 1]`    | none                              |
+| ColBERT MaxSim (`max_sim`)                        | `[0, 1]`    | normalized internally (mean of per-token max cosines) |
+| HNSW distance → similarity (`hnsw_distance_to_similarity`) | `[0, 2]` cosine distance | `1 - d/2` → `[0, 1]`   |
+| Direction-modified E5 (`compute_similarity_for_space_with_direction`) | up to `1.2` | `.clamp(0.0, 1.0)`  |
 
-| Parameter | Value | Notes |
-|-----------|-------|-------|
-| M | 16 | Bi-directional links per node |
-| ef_construction | 200 | Candidate list size during build |
-| ef_search | 100 | Candidate list size during search |
-| Metric | Cosine | Default for most embedders |
+**Zero-magnitude vectors** return `0.0` (AP-10: no NaN). **Dimension mismatch or empty vectors** return `0.0`. **Unknown-direction E5** returns `-1.0` sentinel (distinct from 0.0 anti-correlated).
 
-Matryoshka 128D (Stage 2) uses tuned values:
-
-| Parameter | Value |
-|-----------|-------|
-| M | 32 |
-| ef_construction | 256 |
-| ef_search | 128 |
-| Dimension | 128 |
-
-### 11.2 Index Initialization
-
-`HnswMultiSpaceIndex` creates 11 real HNSW indexes using `hnsw_rs`:
-- E1Semantic (1024D), E1Matryoshka128 (128D)
-- E2TemporalRecent (512D), E3TemporalPeriodic (512D), E4TemporalPositional (512D)
-- E5Causal (768D), E7Code (1536D), E8Graph (1024D)
-- E9HDC (1024D), E10Multimodal (768D), E11Entity (768D)
-
-### 11.3 Fingerprint Indexing
-
-When a memory is stored, `add_fingerprint()` extracts vectors from the `SemanticFingerprint` and adds them to each HNSW index. The Matryoshka 128D vector is created by truncating E1 to its first 128 dimensions.
-
-### 11.4 Performance Targets
-
-| Operation | Target |
-|-----------|--------|
-| `add_vector()` | <1ms per index |
-| `search()` | <10ms per index |
-| `persist()` | <1s for 100K vectors |
-| Total search | <60ms at 1M memories |
+**NaN ordering**: `fusion::score_weighted_rrf`, `weighted_sum`, and result sorters use `partial_cmp` with NaN-last tiebreak for deterministic ordering.
 
 ---
 
-## 12. Relevance and Threshold Detection
+## 11. Score Computation
 
-### 12.1 Multi-Space Relevance
+### `compute_embedder_scores_sync(query, stored, code_query_type, causal_direction) → [f32; 13]`
 
-`MultiSpaceSimilarity` (in `multi_space.rs`) computes relevance using ANY-match logic: a result is relevant if ANY embedding space has a score above its high threshold.
+Location: `rocksdb_store/search.rs`. Called once per candidate fingerprint post-recall. Per-slot logic:
 
-### 12.2 High Thresholds (Relevance Detection)
+| Slot | Computation                                                                                                              |
+|------|--------------------------------------------------------------------------------------------------------------------------|
+| E1   | `compute_cosine_similarity(query.e1_semantic, stored.e1_semantic)`                                                       |
+| E2-E4| `compute_cosine_similarity` on the respective temporal dense vectors                                                     |
+| E5   | `compute_similarity_for_space_with_direction(Causal, query, stored, causal_direction)` → `-1.0` sentinel when Unknown    |
+| E6   | `(query.e6_sparse.cosine_similarity(stored.e6_sparse) + 1.0) / 2.0`                                                      |
+| E7   | `compute_e7_similarity_with_query_type(query.e7_code, stored.e7_code, query_type)` (Code2Code / Text2Code / NonCode) when provided; else plain cosine |
+| E8   | `max(cos(q.get_e8_as_source(), s.get_e8_as_target()), cos(q.get_e8_as_target(), s.get_e8_as_source()))`                  |
+| E9   | `compute_cosine_similarity(query.e9_hdc, stored.e9_hdc)`                                                                 |
+| E10  | `max(cos(q.get_e10_as_paraphrase(), s.get_e10_as_context()), cos(q.get_e10_as_context(), s.get_e10_as_paraphrase()))`    |
+| E11  | `compute_cosine_similarity(query.e11_entity, stored.e11_entity)`                                                         |
+| E12  | `compute_maxsim_direct(query.e12_tokens, stored.e12_tokens)` — skipped (0.0) when either is empty (MED-21 O(N·M) guard)  |
+| E13  | `(query.e13_splade.cosine_similarity(stored.e13_splade) + 1.0) / 2.0`                                                    |
 
-From `high_thresholds()` in `config.rs`:
+### `compute_semantic_fusion(scores, weights) → f32`
 
-| Embedder | Threshold |
-|----------|-----------|
-| E1 Semantic | 0.75 |
-| E2 Temporal Recent | 0.70 |
-| E3 Temporal Periodic | 0.70 |
-| E4 Temporal Positional | 0.70 |
-| E5 Causal | 0.70 |
-| E6 Sparse | 0.60 |
-| E7 Code | 0.80 |
-| E8 Graph | 0.70 |
-| E9 HDC | 0.70 |
-| E10 Multimodal | 0.70 |
-| E11 Entity | 0.70 |
-| E12 Late Interaction | 0.70 |
-| E13 SPLADE | 0.60 |
-
-### 12.3 Low Thresholds (Divergence Detection)
-
-From `low_thresholds()` in `config.rs`:
-
-| Embedder | Threshold |
-|----------|-----------|
-| E1 Semantic | 0.30 |
-| E2 Temporal Recent | 0.30 |
-| E3 Temporal Periodic | 0.30 |
-| E4 Temporal Positional | 0.30 |
-| E5 Causal | 0.25 |
-| E6 Sparse | 0.20 |
-| E7 Code | 0.35 |
-| E8 Graph | 0.30 |
-| E9 HDC | 0.30 |
-| E10 Multimodal | 0.30 |
-| E11 Entity | 0.30 |
-| E12 Late Interaction | 0.30 |
-| E13 SPLADE | 0.20 |
-
-Scores below the low threshold indicate topic divergence.
-
-### 12.4 Weighted Relevance Score
-
-From `compute_relevance_score()` in `multi_space.rs`:
-
+Weighted average over slots with `weight > 0` AND `score >= 0` (negative E5 sentinel excluded):
 ```
-weighted_sum = SUM( category_weight * max(0, score - high_threshold) )
-max_possible = SUM( category_weight * max(0, 1.0 - high_threshold) )
-relevance = weighted_sum / max_possible       -- clamped to [0.0, 1.0]
+final = Σ(score_i * weight_i) / Σ(weight_i)
 ```
+If all surviving weight is zero (all sentinels, all-zero profile, etc.), falls back to `scores[0].max(0.0)`.
 
-Temporal spaces (E2-E4) have `category_weight = 0.0` and are excluded (AP-60).
+### `suppress_degenerate_weights(all_scores, weights) → [f32; 13]`
 
-### 12.5 Category Weights for Topic Detection
+Defense against degenerate/anisotropic embedders. Across the retrieved candidate set:
 
-From `SPACE_WEIGHTS` constant in `config.rs`:
+- If every candidate has `score[i] < 0` (all-sentinel) → `adjusted[i] = 0.0`.
+- Otherwise compute Welford variance over non-sentinel scores with Bessel correction. If `count >= 3` and `variance < MIN_VARIANCE = 0.001` → `adjusted[i] *= SUPPRESSION_FACTOR (= 0.25)`.
+- Requires `all_scores.len() >= 3` to act; below threshold it's a no-op.
 
-| Category | Embedders | Weight | Count |
-|----------|-----------|--------|-------|
-| Semantic | E1, E5, E6, E7, E10, E12, E13 | 1.0 | 7 |
-| Temporal | E2, E3, E4 | 0.0 | 3 |
-| Relational | E8, E11 | 0.5 | 2 |
-| Structural | E9 | 0.5 | 1 |
+### `apply_synergy_boost(results, synergy_weights)` (auxiliary)
 
-**TOTAL_WEIGHT** = 7 * 1.0 + 2 * 0.5 + 1 * 0.5 = **8.5**
+When a candidate is found by multiple embedders, applies a post-fusion additive boost `Σ_{i<j} w_i · w_j · SYNERGY_BASE_BOOST (= 0.1)` over embedder index pairs that contributed. Synergy-weight vectors are selected per weight-profile name in `memory_tools.rs::call_search_graph` and passed via `TeleologicalSearchOptions::with_synergy_weights` for transparency; the final-score wiring is not enabled in the default fusion path.
 
-Topic threshold (ARCH-09): `weighted_agreement >= 2.5`.
+### Group alignments (category bucketing)
 
----
-
-## 13. Search Parameters
-
-### 13.1 Query Parameters
-
-From `MultiEmbeddingQuery` (in `query.rs`):
-
-| Parameter | Type | Default | Range | Description |
-|-----------|------|---------|-------|-------------|
-| `query_text` | String | (required) | non-empty | Text to embed and search |
-| `active_spaces` | EmbeddingSpaceMask | ALL (0x1FFF) | bitmask | Which spaces to search |
-| `space_weights` | Option<[f32; 13]> | None | [0.0, 1.0] each | Per-space weight overrides |
-| `per_space_limit` | usize | 100 | [1, 1000] | Max results per space |
-| `final_limit` | usize | 10 | [1, 1000] | Final result count |
-| `min_similarity` | f32 | 0.0 | [0.0, 1.0] | Minimum similarity threshold |
-| `aggregation` | AggregationStrategy | RRF { k: 60.0 } | -- | Aggregation method |
-
-### 13.2 TeleologicalSearchOptions
-
-From `TeleologicalSearchOptions` (in `options.rs`):
-
-| Parameter | Type | Default | Description |
-|-----------|------|---------|-------------|
-| `top_k` | usize | 10 | Maximum results (max: 1000) |
-| `min_similarity` | f32 | 0.0 | Minimum similarity [0.0, 1.0] |
-| `strategy` | SearchStrategy | E1Only | Search strategy selection |
-| `weight_profile` | Option<String> | None | Named weight profile |
-| `custom_weights` | Option<[f32; 13]> | None | Custom per-embedder weights |
-| `synergy_weights` | Option<[f32; 13]> | None | Per-embedder synergy multipliers for pairwise boost (`options.rs:1138`) |
-| `use_quantized_prefilter` | bool | false | Enable quantized prefiltering for faster candidate selection (`options.rs:1148`) |
-| `enable_teleological_prefilter` | bool | false | Enable 13D teleological vector prefilter (`options.rs:1158`) |
-
-**Synergy boost** (commit 80558edc): When `synergy_weights` is set, `apply_synergy_boost()` in `crates/context-graph-storage/src/teleological/rocksdb_store/fusion.rs:192` adds a pairwise bonus proportional to `synergy_weights[i] * synergy_weights[j] * SYNERGY_BASE_BOOST` for every pair of active embedders that both contribute to a result.
-
-**Teleological prefilter**: Uses a 13-dimensional teleological vector (`TELEOLOGICAL_VECTOR_DIM = 13`, defined in `crates/context-graph-core/src/types/fingerprint/teleological/types.rs:12`) for fast filtering before full scoring.
-
-### 13.3 EmbeddingSpaceMask Presets
-
-| Preset | Value | Active Count | Description |
-|--------|-------|-------------|-------------|
-| `ALL` | 0x1FFF | 13 | All spaces |
-| `ALL_DENSE` | 0x0FFF | 12 | All except E13 SPLADE |
-| `SEMANTIC_ONLY` | 0x0001 | 1 | E1 only |
-| `TEXT_CORE` | 0x0007 | 3 | E1, E2, E3 |
-| `SPLADE_ONLY` | 0x1000 | 1 | E13 only |
-| `HYBRID` | 0x1001 | 2 | E1 + E13 |
-| `CODE_FOCUSED` | 0x1041 | 3 | E1 + E7 + E13 |
-
-### 13.4 Decay Functions
-
-For temporal post-retrieval boosting (from `DecayFunction` in `options.rs`):
-
-| Function | Formula | Description |
-|----------|---------|-------------|
-| `Linear` (default) | `1.0 - (age / max_age)` | Predictable, good for short horizons |
-| `Exponential` | `exp(-age * 0.693 / half_life)` | Natural forgetting curve |
-| `Step` | Bucket-based | <5min: 1.0, <1h: 0.8, <1d: 0.5, else: 0.1 |
-| `NoDecay` | Always 1.0 | No temporal factor |
+`embeddings::category::category_for(embedder).topic_weight()` returns `SPACE_WEIGHTS`: Semantic=1.0 (E1, E5, E6, E7, E10, E12, E13), Relational=0.5 (E8, E11), Structural=0.5 (E9), Temporal=0.0 (E2, E3, E4). `TOTAL_WEIGHT = 8.5`. Used by `MultiSpaceSimilarity::compute_weighted_similarity` and `compute_relevance_score`; not applied inside `search_graph` fusion.
 
 ---
 
-## 14. Score Normalization
+## 12. Session and Soft-Delete Filtering
 
-### 14.1 SRC-3: Cosine to [0, 1]
+### Soft-delete
 
-All cosine similarity values are normalized from the raw range [-1.0, 1.0] to [0.0, 1.0]:
+- State: `Arc<DashMap<Uuid, i64>> soft_deleted` on the store (lock-free concurrent reads).
+- Every stage (E1Only, MultiSpace per-slot, Pipeline Stage 1 per-slot, Pipeline Stage 2 hydration, sparse search) checks `is_soft_deleted_sync(soft_deleted, &id)` and skips unless `options.include_deleted == true`.
+- The tombstone set is persisted in `CF_SYSTEM` and restored at store open.
 
-```
-normalized = (raw_cosine + 1.0) / 2.0
-```
+### Session scope
 
-Under this normalization:
-- 1.0 = identical direction
-- 0.5 = orthogonal (was 0.0 in raw cosine)
-- 0.0 = opposite direction
+Resolved at the handler layer in `call_search_graph`:
 
-Applied in `cosine_similarity()` (file: `distance.rs`). The raw variant `cosine_similarity_raw()` returns [-1.0, 1.0] without this conversion.
+| `sessionScope` | Action                                                                                  |
+|----------------|-----------------------------------------------------------------------------------------|
+| `"current"`    | `options.with_session_filter(current_session_id)` — filters to active session           |
+| `"recent"`     | `options.with_last_hours(24)` across all sessions                                       |
+| `"all"`        | No session filter, but explicit `sessionId` arg still applied if provided               |
 
-### 14.2 NaN Safety (AP-10)
+Session filtering and time-window filters are enforced in `search_semantic_async` after the synchronous strategy dispatch: `temporal_boost::filter_by_time_window` rejects out-of-window results, and session filter is applied via `source_metadata.session_id` lookup (post-retrieval).
 
-All similarity functions return 0.0 for degenerate inputs (zero-magnitude vectors, empty vectors, dimension mismatches). No NaN or Infinity values are ever returned.
+### Temporal boosts
 
-### 14.3 Score Clamping
-
-`PerSpaceScores::set_score()` clamps all scores to [0.0, 1.0]. `SimilarityResult::with_relevance()` clamps the relevance score to [0.0, 1.0].
-
----
-
-## 15. Normalization Strategies (Storage Layer)
-
-The storage-layer multi-embedder search (file: `crates/context-graph-storage/src/teleological/search/multi/types.rs`) supports four normalization strategies:
-
-| Strategy | Formula | Description |
-|----------|---------|-------------|
-| `None` (default) | Raw scores | When all embedders use same metric |
-| `MinMax` | `(score - min) / (max - min)` | Scales to [0, 1] within each result set |
-| `ZScore` | `(score - mean) / stddev` | Centers around 0, unit variance |
-| `RankNorm` | `1 / rank` | Rank 1 = 1.0, rank 2 = 0.5, rank 3 = 0.33, etc. |
-
-And four aggregation strategies for combining scores across embedders:
-
-| Strategy | Formula | Description |
-|----------|---------|-------------|
-| `Max` (default) | `max(score_i)` | Any strong signal suffices |
-| `Sum` | `SUM(score_i)` | Rewards multi-embedder consensus |
-| `Mean` | `mean(score_i)` | Balanced signal/occurrence |
-| `WeightedSum` | `SUM(weight_i * score_i)` | Per-embedder weight control |
+When `options.temporal_options.has_any_boost()`, `apply_full_temporal_boosts` runs post-retrieval (ARCH-14): E2 recency decay, E3 periodic match, E4 sequence anchor scoring. Decay function (`Linear`/`Exponential`/`Step`/`NoDecay`), half-life seconds, periodic targets (hour / day-of-week / auto-detect), and sequence options are all carried on `TeleologicalSearchOptions.temporal_options`.
 
 ---
 
-## 16. Cross-References
+## 13. Error Handling and Fallbacks
 
-- **Training export bundle** (all 13 embeddings + 78 cross-correlations + 6 group alignments + temporal labels): See `docs2/contextgraphspecs/05_embedding_subsystem.md` Section 17. The `export_training_corpus` MCP tool (`crates/context-graph-mcp/src/handlers/tools/training_tools.rs:62`) packages the outputs of every embedder described in Sections 1-9 above into a bincode `TrainingRecord` keyed by memory UUID, persisted to `CF_TRAINING_RECORDS`. Cross-correlations use the same synergy matrix consumed by the `synergy_weights` search option (Section 13.2).
+| Failure                                              | Behavior                                                                             |
+|------------------------------------------------------|--------------------------------------------------------------------------------------|
+| E1 HNSW recall failure (MultiSpace or Pipeline)      | `CoreError::IndexError`, abort search (fatal)                                        |
+| E2-E11 HNSW recall failure (MultiSpace)              | Log + push to `degraded_embedders`, continue; result slot omitted from fusion        |
+| E2-E11 HNSW recall failure (Pipeline Stage 1)        | Warn + continue; candidates from other slots still flow                              |
+| E13 SPLADE recall failure (Pipeline)                 | Warn + continue with dense-only recall                                               |
+| Direction-aware E5 index missing                     | Warn; no E5 candidates injected (rest of search proceeds)                            |
+| Unknown `weightProfile`                              | `ToolErrorKind::Validation` with full list of built-in + custom profiles             |
+| Invalid `customWeights` (out of range, wrong sum)    | `validate_weights` returns `WeightProfileError`; handler returns `Validation` error  |
+| `excludeEmbedders` removes all weight                | `CoreError::ValidationError` (cannot renormalize zero vector)                        |
+| Empty candidate set after any stage                  | Return `Ok(vec![])` — not an error                                                   |
+| Zero-magnitude / dim-mismatch vector                 | `cosine_similarity` returns 0.0 (no NaN)                                             |
+| NaN/Infinite in pipeline query vector                | `PipelineError::Search(SearchError::InvalidVector)` — FAIL FAST                      |
+| Pipeline stage exceeds `max_latency_ms`              | `PipelineError::Timeout { stage, elapsed_ms, max_ms }`                               |
+| All embedders produce sentinel / zero-variance       | `compute_semantic_fusion` falls back to `scores[0].max(0.0)` (E1 score)              |
+| Content / source-metadata batch retrieval failure    | `ToolErrorKind::Storage` — no silent degradation                                     |
+
+Degraded embedders are logged via `warn!(degraded = ?list, "…")` for operational visibility but do not surface in the tool response.

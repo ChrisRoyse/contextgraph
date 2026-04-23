@@ -2,31 +2,17 @@
 
 Source files covered:
 
-- `crates/context-graph-core/src/graph/mod.rs`, `asymmetric.rs`
-- `crates/context-graph-core/src/graph_linking/mod.rs`, `edge_type.rs`, `direction.rs`, `typed_edge.rs`, `embedder_edge.rs`, `knn_graph.rs`, `nn_descent.rs`, `edge_builder.rs`, `service.rs`, `storage_keys.rs`, `thresholds.rs`, `weight_projector.rs`
-- `crates/context-graph-core/src/causal/mod.rs`, `asymmetric.rs`, `chain.rs`, `inference.rs`, `scm.rs`
-- `crates/context-graph-core/src/entity/mod.rs`
-- `crates/context-graph-causal-agent/src/lib.rs`, `llm/mod.rs`, `llm/prompt.rs`, `scanner/mod.rs`, `activator/mod.rs`, `types/mod.rs`
-- `crates/context-graph-graph-agent/src/lib.rs`, `llm/prompt.rs`, `types/mod.rs`, `stubs.rs`
-- `crates/context-graph-storage/src/graph_edges/mod.rs`, `repository.rs`, `serialization.rs`, `types.rs`
-- `crates/context-graph-mcp/src/handlers/tools/graph_link_tools.rs`, `graph_tools.rs`
+- `crates/context-graph-core/src/graph/{mod.rs,asymmetric.rs}`
+- `crates/context-graph-core/src/graph_linking/{mod.rs,direction.rs,edge_builder.rs,edge_type.rs,embedder_edge.rs,error.rs,knn_graph.rs,nn_descent.rs,service.rs,storage_keys.rs,thresholds.rs,typed_edge.rs,weight_projector.rs}`
+- `crates/context-graph-core/src/causal/{mod.rs,asymmetric.rs,chain.rs,inference.rs,scm.rs}`
+- `crates/context-graph-core/src/llm_edge_validation/mod.rs`
+- `crates/context-graph-core/src/typed_edge_export/mod.rs` (LLMVerdict)
+- `crates/context-graph-causal-agent/src/{lib.rs,service/mod.rs,llm/{mod.rs,prompt.rs},scanner/mod.rs,activator/mod.rs,types/mod.rs}`
+- `crates/context-graph-graph-agent/src/{lib.rs,service/mod.rs,llm/{mod.rs,prompt.rs},scanner/mod.rs,activator/mod.rs,types/mod.rs}`
+- `crates/context-graph-storage/src/graph_edges/{mod.rs,builder.rs,repository.rs,serialization.rs,types.rs}`
+- `crates/context-graph-mcp/src/handlers/tools/{graph_tools.rs,graph_link_tools.rs,causal_tools.rs,causal_discovery_tools.rs,causal_relationship_tools.rs}`
 
----
-
-## Table of Contents
-
-1. [Graph Data Model](#1-graph-data-model)
-2. [Graph Edge Storage](#2-graph-edge-storage)
-3. [K-NN Graph](#3-k-nn-graph)
-4. [Graph Traversal Algorithms](#4-graph-traversal-algorithms)
-5. [Graph Linking](#5-graph-linking)
-6. [Causal Discovery Agent](#6-causal-discovery-agent)
-7. [CausalGraph / SCM](#7-causalgraph--scm)
-8. [Causal Chain Inference](#8-causal-chain-inference)
-9. [Causal Direction: Asymmetric Scoring](#9-causal-direction-asymmetric-scoring)
-10. [Graph Agent](#10-graph-agent)
-11. [Entity Extraction and Linking](#11-entity-extraction-and-linking)
-12. [Graph-Based Scoring in Search](#12-graph-based-scoring-in-search)
+Cross-references: [04_database_schema.md](04_database_schema.md), [05_embedding_subsystem.md](05_embedding_subsystem.md), [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md).
 
 ---
 
@@ -34,838 +20,640 @@ Source files covered:
 
 ### 1.1 Nodes
 
-Every node in the graph is a **memory** -- the fundamental unit stored in the teleological store. Each memory has a UUID, content text, creation timestamp, a `SemanticFingerprint` containing vectors from all 13 embedders, importance score, and optional session metadata. Memories serve as nodes in both the K-NN graph and the CausalGraph.
+Nodes are memories — each identified by a `uuid::Uuid` v4 assigned at `store_memory` time. Node state lives in the teleological store; the graph subsystem only indexes UUIDs and stores edge payloads. See [04_database_schema.md](04_database_schema.md) for memory-side CFs.
 
-### 1.2 Edge Types
+### 1.2 Edge Classes
 
-The system maintains two distinct classes of edges:
+Two disjoint edge classes are persisted:
 
-**K-NN Embedder Edges** (`EmbedderEdge`) -- per-embedder nearest-neighbor links. Each of the 13 embedders can produce its own set of K-NN edges connecting a memory to its nearest neighbors in that embedder's space. Fields:
+| Class | Rust type | CF | Meaning |
+|-------|-----------|----|---------|
+| Per-embedder K-NN | `EmbedderEdge` | `CF_EMBEDDER_EDGES` (`embedder_edges`) | K nearest neighbors of a source node in one embedder's vector space |
+| Multi-relation typed | `TypedEdge` | `CF_TYPED_EDGES` (`typed_edges`) | Classified link derived from embedder-agreement patterns; 8 variants |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `source` | `Uuid` | Source node UUID |
-| `target` | `Uuid` | Target node UUID (a neighbor) |
-| `embedder_id` | `u8` | Embedder index (0-12) |
-| `similarity` | `f32` | Cosine similarity in [-1.0, 1.0] |
-| `direction` | `DirectedRelation` | For E5/E8: Forward, Backward, or Symmetric |
+Secondary index: `CF_TYPED_EDGES_BY_TYPE` (`typed_edges_by_type`) for fast `(edge_type, source) -> targets` lookup.
 
-Validation constraints enforced at construction:
-- `embedder_id` must be 0-12
-- `similarity` must be in [-1.0, 1.0]
-- Embedders E5 (id=4) and E8 (id=7) are asymmetric: calling `EmbedderEdge::new()` on them returns `Err(SymmetricCosineViolation)`. They require `EmbedderEdge::with_direction()` (per AP-77).
-- Temporal embedders E2-E4 (ids 1-3) are flagged via `is_temporal()` and excluded from edge type detection (per AP-60).
+### 1.3 `EmbedderEdge` (per-embedder K-NN)
 
-**Multi-Relation Typed Edges** (`TypedEdge`) -- classified edges derived from embedder agreement patterns. Fields:
+| Field | Type | Constraint |
+|-------|------|------------|
+| `source` | `Uuid` | Required |
+| `target` | `Uuid` | Required |
+| `embedder_id` | `u8` | 0..=12 |
+| `similarity` | `f32` | `[-1.0, 1.0]` |
+| `direction` | `DirectedRelation` | `Symmetric` for all embedders except E5/E8 |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `source` | `Uuid` | Source node UUID |
-| `target` | `Uuid` | Target node UUID |
-| `edge_type` | `GraphLinkEdgeType` | One of 8 types (see below) |
-| `weight` | `f32` | Computed weight in [0.0, 1.0] |
-| `direction` | `DirectedRelation` | Symmetric, Forward, or Backward |
-| `embedder_scores` | `[f32; 13]` | Per-embedder similarity scores |
-| `agreement_count` | `u8` | Number of embedders above threshold |
-| `agreeing_embedders` | `u16` | Bitset (bit 0 = E1, bit 12 = E13) |
+Construction rules:
 
-### 1.3 Graph Link Edge Types
+- `EmbedderEdge::new()` rejects E5 (id=4) and E8 (id=7) with `EdgeError::SymmetricCosineViolation`; callers must use `EmbedderEdge::with_direction()` for asymmetric embedders.
+- Temporal embedders E2–E4 (ids 1..=3) are flagged by `is_temporal()` and excluded from edge-type detection.
 
-Eight edge types are derived from which embedders agree two nodes are similar. Defined in `GraphLinkEdgeType` (`repr(u8)`):
+### 1.4 `TypedEdge` (multi-relation)
 
-| Value | Type | Primary Embedder | Default Threshold | Asymmetric? | Description |
-|-------|------|-----------------|-------------------|-------------|-------------|
-| 0 | `SemanticSimilar` | E1 (idx 0) | 0.75 | No | High semantic similarity |
-| 1 | `CodeRelated` | E7 (idx 6) | 0.70 | No | Code/implementation relationship |
-| 2 | `EntityShared` | E11 (idx 10) | 0.65 | No | Shared entities (KEPLER) |
-| 3 | `CausalChain` | E5 (idx 4) | 0.60 | Yes | Causal relationship (cause/effect) |
-| 4 | `GraphConnected` | E8 (idx 7) | 0.60 | Yes | Graph connectivity (source/target) |
-| 5 | `ParaphraseAligned` | E10 (idx 9) | 0.70 | No | Same meaning, different words |
-| 6 | `KeywordOverlap` | E6/E13 (idx 5/12) | 0.50 | No | Keyword/lexical similarity |
-| 7 | `MultiAgreement` | 3+ embedders | 0.60 | No | Multiple embedders agree |
+| Field | Type | Notes |
+|-------|------|-------|
+| `source` | `Uuid` | — |
+| `target` | `Uuid` | — |
+| `edge_type` | `GraphLinkEdgeType` | u8 enum, 8 variants |
+| `weight` | `f32` | `[0.0, 1.0]` |
+| `direction` | `DirectedRelation` | `Symmetric` / `Forward` / `Backward` |
+| `embedder_scores` | `[f32; 13]` | Per-embedder raw similarity |
+| `agreement_count` | `u8` | Must equal `agreeing_embedders.count_ones()` |
+| `agreeing_embedders` | `u16` | Bitset; bit 0 = E1, bit 12 = E13 |
 
-### 1.4 Directed Relations
+Constructor invariants (enforced by `TypedEdge::new`):
 
-The `DirectedRelation` enum (`repr(u8)`) models edge directionality:
+| Check | Error on violation |
+|-------|--------------------|
+| `weight ∈ [0,1]` | `InvalidSimilarityScore` |
+| Asymmetric `edge_type` + `Symmetric` direction | `DirectionRequired` |
+| `agreement_count != popcount(agreeing_embedders)` | `AgreementCountMismatch` |
 
-| Value | Variant | Modifier | Usage |
-|-------|---------|----------|-------|
-| 0 | `Symmetric` | 1.0x | All embedders except E5, E8 |
-| 1 | `Forward` | 1.2x | E5: cause->effect; E8: source->target |
-| 2 | `Backward` | 0.8x | E5: effect->cause; E8: target->source |
+### 1.5 `DirectedRelation`
 
-`reverse()` swaps Forward/Backward while leaving Symmetric unchanged.
+| Variant | u8 | `similarity_modifier()` | Use |
+|---------|----|-----------|-----|
+| `Symmetric` | 0 | 1.0 | Default; all embedders except E5/E8 |
+| `Forward` | 1 | 1.2 | E5: cause→effect; E8: source→target |
+| `Backward` | 2 | 0.8 | E5: effect→cause; E8: target→source |
 
-### 1.5 Edge Type Auto-Detection
-
-`TypedEdge::from_scores()` auto-detects the edge type from per-embedder similarity scores:
-
-1. Compute which embedders exceed their threshold (excluding temporal E2-E4 per AP-60).
-2. If 3+ embedders agree, classify as `MultiAgreement`.
-3. Otherwise, check specialized embedders in priority order: E7 (Code) > E11 (Entity) > E5 (Causal) > E8 (Graph) > E10 (Paraphrase) > E6/E13 (Keyword) > E1 (Semantic).
-4. Weight is the primary embedder's score (or average of all agreeing embedders for `MultiAgreement`).
-5. For asymmetric types (`CausalChain`, `GraphConnected`), if no explicit direction is provided, default to `Forward`.
+`reverse()` swaps `Forward` ↔ `Backward`; `Symmetric` is fixed.
 
 ---
 
-## 2. Graph Edge Storage
+## 2. K-NN Graph Construction
 
-Edges are persisted in RocksDB across three column families, managed by `EdgeRepository` in `crates/context-graph-storage/src/graph_edges/repository.rs`.
+### 2.1 Algorithm
 
-### 2.1 Column Families
+`NnDescent` (in `graph_linking/nn_descent.rs`) builds approximate K-NN per embedder using the "neighbor-of-neighbor" iterative improvement algorithm.
 
-| Column Family | Key Format | Key Size | Value |
-|--------------|------------|----------|-------|
-| `embedder_edges` | `[embedder_id: u8][source_uuid: 16B]` | 17 bytes | Serialized `Vec<EmbedderEdge>` |
-| `typed_edges` | `[source_uuid: 16B][target_uuid: 16B]` | 32 bytes | Serialized `TypedEdge` |
-| `typed_edges_by_type` | `[edge_type: u8][source_uuid: 16B][target_uuid: 16B]` | 33 bytes | Target UUID (16 bytes) |
+| Constant | Default | Module |
+|----------|---------|--------|
+| `KNN_K` | 20 | `graph_linking` |
+| `NN_DESCENT_ITERATIONS` | 8 | `graph_linking` |
+| `NN_DESCENT_SAMPLE_RATE` (ρ) | 0.5 | `graph_linking` |
+| `MIN_KNN_SIMILARITY` | 0.3 | `graph_linking` |
+| `early_termination_threshold` | 0.001 | `NnDescentConfig` |
 
-**Key design rationale:**
-- `embedder_edges` sorts by embedder first, then by source UUID, enabling efficient prefix scans for all neighbors of a node within an embedder.
-- `typed_edges` sorts by source then target, enabling prefix scans for all edges from a source node.
-- `typed_edges_by_type` is a secondary index enabling queries like "all CausalChain edges from node X." The key includes the target UUID (33 bytes total) to prevent overwrites when the same source has multiple edges of the same type to different targets (BUG-3 fix).
+`NnDescentConfig` accepts an optional seed for reproducibility and supports asymmetric embedders via `build_asymmetric_knn`.
 
-### 2.2 Serialization Format
+### 2.2 In-memory structure
 
-**Embedder edges** use a compact binary format:
-```
-[version: u8][count: u32][edges...]
-```
-Each edge within the list is stored as `[target_uuid: 16B][similarity: f32]` = 20 bytes per edge. The source UUID and embedder ID are derived from the key (not stored in the value).
+`KnnGraph` (adjacency `HashMap<Uuid, Vec<EmbedderEdge>>` + edge counter):
 
-**Typed edges** use bincode serialization with a version prefix byte (`GRAPH_EDGE_VERSION = 1`).
+- `add_edge(edge)` — capacity-bounded eviction: if at `k` capacity, replaces the lowest-similarity neighbor iff the new similarity is strictly greater; updates in place if `(source,target)` already present and new similarity is higher.
+- `get_neighbors(node) -> &[EmbedderEdge]` — unsorted.
+- `get_neighbors_sorted(node) -> Vec<EmbedderEdge>` — descending by similarity.
+- `stats() -> KnnGraphStats` — embedder_id, k, node/edge counts, min/max/avg neighbors, min/max/avg similarity.
 
-### 2.3 EdgeRepository API
+### 2.3 Per-embedder indexing
 
-Key operations on `EdgeRepository`:
-
-| Method | Description |
-|--------|-------------|
-| `store_embedder_edges(embedder_id, source, &[EmbedderEdge])` | Replaces all K-NN edges for a (embedder, source) pair (repository.rs:80) |
-| `get_embedder_edges(embedder_id, source)` | Returns K-NN neighbors (empty vec if none) (repository.rs:114) |
-| `store_typed_edge(&TypedEdge)` | Stores a typed edge and updates secondary index (repository.rs:215) |
-| `get_typed_edges_from(source)` | All outgoing typed edges from a source node (repository.rs:312) |
-| `get_typed_edges_to(target)` | All incoming typed edges pointing at a target node (invoked by the `get_typed_edges` handler for the `incoming` direction per graph_link_tools.rs:390,410,449,473 — BUG-2 fix uses `edge.source()` as the peer UUID) |
-| `get_typed_edges_by_type(edge_type, source, direction)` | Type-filtered query using secondary index; direction-aware branching (BUG-1 fix) (repository.rs:342) |
-| `delete_typed_edge(source, target)` | Removes a typed edge and its secondary-index entries (repository.rs:276) |
-| `store_typed_edges_batch(&[TypedEdge])` | Batch insert via `WriteBatch` (repository.rs:458) |
-| `is_empty()` | Whether any K-NN edges exist (repository.rs:145) |
-
-All methods return `GraphEdgeStorageResult<T>` and follow a fail-fast policy -- no fallbacks, no mock data.
+K-NN graphs are built only for semantic (non-temporal) embedders. `GraphLinkServiceConfig.active_embedders` default: `[0, 4, 6, 7, 9, 10]` = E1, E5, E7, E8, E10, E11. K-NN results are persisted via `EdgeRepository.store_embedder_edges(embedder_id, source, &[EmbedderEdge])`; lookups at query time go through `get_embedder_edges(embedder_id, source)`. K-NN neighbors are **not** carried as a field on `SemanticFingerprint` — they live exclusively in `CF_EMBEDDER_EDGES`.
 
 ---
 
-## 3. K-NN Graph
+## 3. Typed-Edge Taxonomy
 
-### 3.1 Constants
+`GraphLinkEdgeType` (`repr(u8)`, 8 variants, `Self::COUNT = 8`):
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `KNN_K` | 20 | Neighbors per node |
-| `NN_DESCENT_ITERATIONS` | 8 | Max NN-Descent iterations |
-| `NN_DESCENT_SAMPLE_RATE` | 0.5 | Neighbor sampling rate (rho) |
-| `MIN_KNN_SIMILARITY` | 0.3 | Minimum similarity for edges |
+| u8 | Variant | Display string | Primary embedder | Default threshold | Asymmetric | Meaning |
+|----|---------|----------------|------------------|-------------------|------------|---------|
+| 0 | `SemanticSimilar` | `semantic_similar` | E1 (idx 0) | 0.75 | No | Broad semantic meaning match |
+| 1 | `CodeRelated` | `code_related` | E7 (idx 6) | 0.70 | No | Shared code patterns / signatures |
+| 2 | `EntityShared` | `entity_shared` | E11 (idx 10) | 0.65 | No | Shared named entities (KEPLER) |
+| 3 | `CausalChain` | `causal_chain` | E5 (idx 4) | 0.60 | **Yes** | Cause→effect relationship |
+| 4 | `GraphConnected` | `graph_connected` | E8 (idx 7) | 0.60 | **Yes** | Source→target graph connectivity |
+| 5 | `ParaphraseAligned` | `paraphrase_aligned` | E10 (idx 9) | 0.70 | No | Same meaning, different surface form |
+| 6 | `KeywordOverlap` | `keyword_overlap` | E6 (idx 5) / E13 (idx 12) | 0.50 | No | Lexical / sparse overlap |
+| 7 | `MultiAgreement` | `multi_agreement` | 3+ embedders | 0.60 | No | Multiple perspectives confirm |
 
-### 3.2 KnnGraph In-Memory Structure
+Helpers: `is_asymmetric()` (true for variants 3, 4), `primary_embedder_index()` (None for `MultiAgreement`), `asymmetric_variants()`, `symmetric_variants()`, `from_u8(u8) -> Option<Self>`. Serde encodes as snake_case.
 
-`KnnGraph` stores an adjacency map (`HashMap<Uuid, Vec<EmbedderEdge>>`) for a single embedder. Key behaviors:
+### 3.1 Edge-type auto-detection
 
-1. **Add edge:** If the node has fewer than `k` neighbors, the edge is appended. If at capacity, the new edge replaces the lowest-similarity neighbor only if it has higher similarity.
-2. **Duplicate handling:** If the target already exists in the neighbor list, the edge is updated only if the new similarity is higher.
-3. **Sorted retrieval:** `get_neighbors_sorted()` returns neighbors in descending similarity order.
-4. **Node removal:** `remove_node()` removes the node and all its outgoing edges.
+`TypedEdge::from_scores(source, target, scores, thresholds, direction)` in `typed_edge.rs`:
 
-Statistics tracked: node count, edge count, min/max/avg neighbors per node, min/max/avg similarity.
+1. Build `agreeing_embedders` bitset: for each `i ∈ 0..13`, skip `i ∈ 1..=3` (temporal excluded), set bit `i` iff `scores[i] >= thresholds[i]`.
+2. If `agreement_count >= 3` → `MultiAgreement`; otherwise priority order (first matching wins):
+   E7 → `CodeRelated`; E11 → `EntityShared`; E5 → `CausalChain`; E8 → `GraphConnected`; E10 → `ParaphraseAligned`; E6 or E13 → `KeywordOverlap`; fallback → `SemanticSimilar`.
+3. Weight: `MultiAgreement` → mean of agreeing scores; otherwise primary-embedder score clamped to `[0,1]`.
+4. Direction coerced: asymmetric types default to `Forward` if caller passed `Symmetric`; symmetric types forced to `Symmetric`.
 
-### 3.3 NN-Descent Algorithm
+### 3.2 `EdgeThresholds`
 
-The K-NN graph is constructed using the NN-Descent algorithm (`nn_descent.rs`), based on the principle "a neighbor of my neighbor is likely my neighbor."
+Struct in `thresholds.rs` with fields per edge type (see defaults above) plus `multi_agreement_min_embedders: u8` (default 3). `DEFAULT_THRESHOLDS` is the baseline; callers may pass custom thresholds via builder pattern.
 
-**Algorithm steps:**
-
-1. **Initialization:** Assign random neighbors to each node with similarity 0.0.
-2. **Iterative improvement** (up to `NN_DESCENT_ITERATIONS` iterations):
-   a. For each node, sample `k * sample_rate` current neighbors.
-   b. Collect candidates from those neighbors' own neighbor lists (neighbors-of-neighbors).
-   c. Add random candidates for exploration (`sample_size / 2` additional random nodes).
-   d. Compute similarity between the node and each candidate.
-   e. If similarity >= `MIN_KNN_SIMILARITY`, attempt to insert into the neighbor list (replacing the lowest-similarity neighbor if the new one is better).
-   f. Recompute similarity for existing neighbors whose similarity is still 0.0 (from initialization).
-3. **Early termination:** If `update_rate < 0.001` (fewer than 0.1% of edges updated), stop iterating.
-4. **Small graph fallback:** For graphs with <= `2 * k` nodes, use brute-force O(n^2) comparison instead of NN-Descent.
-
-**Complexity:** O(n * k * iterations) versus naive O(n^2).
-
-**Configuration** (`NnDescentConfig`):
-
-| Field | Default | Description |
-|-------|---------|-------------|
-| `k` | 20 | Neighbors per node |
-| `iterations` | 8 | Max iterations |
-| `sample_rate` | 0.5 | Fraction of neighbors to sample |
-| `min_similarity` | 0.3 | Minimum edge similarity |
-| `early_termination_threshold` | 0.001 | Stop if update rate < this |
-| `seed` | None | Optional random seed |
-
-### 3.4 Asymmetric K-NN Construction
-
-For asymmetric embedders (E5 causal, E8 graph), the dedicated function `build_asymmetric_knn()` is used instead of standard NN-Descent. This function:
-
-1. Caches both source embeddings and target embeddings for all nodes.
-2. For each node `i`, computes `similarity(source_embedding_i, target_embedding_j)` for all other nodes `j`.
-3. Creates directed edges with `DirectedRelation::Forward` for all edges meeting the similarity threshold.
-
-The key difference: standard NN-Descent uses `similarity(A, B)` symmetrically, while asymmetric K-NN computes `similarity(A_as_source, B_as_target)`, capturing the directional nature of causal/graph relationships.
+`DEFAULT_EMBEDDER_THRESHOLDS: [f32; 13]` (in `edge_builder.rs`) — per-embedder thresholds used during typed-edge derivation: `[0.75, 0.70, 0.70, 0.70, 0.60, 0.50, 0.70, 0.60, 0.60, 0.70, 0.65, 0.60, 0.50]`.
 
 ---
 
-## 4. Graph Traversal Algorithms
+## 4. Edge Storage Layout
 
-### 4.1 BFS Path Finding (CausalGraph)
+All key formats are fixed-width, big-endian byte layouts in RocksDB.
 
-`CausalGraph::find_path(source, target)` implements BFS:
+### 4.1 `CF_EMBEDDER_EDGES` key — `EdgeStorageKey`
 
-1. Initialize a queue with `(source, [source])` and a visited set.
-2. Dequeue `(current, path)`. For each direct effect of `current`:
-   a. If the effect is the target, return `path ++ [target]`.
-   b. Otherwise, if not visited, enqueue `(effect, path ++ [effect])` and mark as visited.
-3. If the queue is exhausted, return `None`.
+| Offset | Bytes | Field |
+|--------|-------|-------|
+| 0 | 1 | `embedder_id` (u8, 0..=12) |
+| 1..17 | 16 | `source_uuid` |
 
-### 4.2 K-NN Neighbor Retrieval
+Total: **17 bytes**. Value: `Vec<EmbedderEdge>` (bincode). Prefix scan by 1-byte embedder id yields all sources. Prefix scan by 17 bytes yields the single-source entry.
 
-The MCP tool `get_memory_neighbors` retrieves K-NN neighbors:
+### 4.2 `CF_TYPED_EDGES` key — `TypedEdgeStorageKey`
 
-1. Validate request and verify the memory exists.
-2. Query `EdgeRepository.get_embedder_edges(embedder_id, memory_id)` for K-NN neighbors.
-3. Apply `min_similarity` filter.
-4. Optionally hydrate content and source metadata.
-5. Return sorted by similarity descending.
+| Offset | Bytes | Field |
+|--------|-------|-------|
+| 0..16 | 16 | `source_uuid` |
+| 16..32 | 16 | `target_uuid` |
 
-### 4.3 Typed Edge Queries
+Total: **32 bytes**. Value: single `TypedEdge` (bincode). Source-prefix scan (16 bytes) yields all outgoing edges.
 
-The MCP tool `get_typed_edges` queries typed edges:
+### 4.3 `CF_TYPED_EDGES_BY_TYPE` secondary-index key
 
-1. Query `EdgeRepository.get_typed_edges(source_id)` or `get_typed_edges_by_type(type, source, direction)`.
-2. Direction-aware branching (BUG-1 fix): For incoming edges, the repository scans by target instead of source, and returns the peer node's UUID (using `edge.source()`) as `target_id` (BUG-2 fix).
-3. Filter by optional `edge_type` and `direction`.
-4. Return with agreement summary (which embedders agreed, at what scores).
+| Offset | Bytes | Field |
+|--------|-------|-------|
+| 0 | 1 | `edge_type as u8` |
+| 1..17 | 16 | `source_uuid` |
+| 17..33 | 16 | `target_uuid` |
 
-### 4.4 Multi-Hop Graph Traversal
+Total: **33 bytes**. Value: `target_uuid` bytes (redundant with key for fast iteration). The 16-byte target suffix in the key prevents key collisions when the same source has multiple edges of the same type to different targets — without it, a single source could only have one edge per type. Prefix scan with 17 bytes `(edge_type, source)` returns all targets for that pair.
 
-The MCP tool `traverse_graph` implements multi-hop BFS over typed edges:
+### 4.4 Incoming-edge lookups (target-side)
 
-1. Start from a source memory with a specified `edge_type` filter.
-2. Use a BFS queue bounded by `max_depth` (default 3).
-3. At each hop, follow typed edges matching the filter.
-4. Track the path and accumulated score.
-5. Return all reachable nodes with their traversal paths.
+There is no symmetric `target`-keyed secondary index. `EdgeRepository::get_typed_edges_to(target)` performs a **full CF scan** of `CF_TYPED_EDGES` and filters deserialized edges by `edge.target() == target` — O(n) in total edges. Called by `get_typed_edges(direction="incoming")` and `get_typed_edges(direction="both")`. For bulk export, `iter_all_typed_edges()` returns every edge once so callers can build their own reverse index.
 
 ---
 
-## 5. Graph Linking
+## 5. `EdgeRepository` API
 
-### 5.1 GraphLinkService Architecture
+`context_graph_storage::graph_edges::EdgeRepository` (constructor panics if any of the three CFs is missing):
 
-```
-+------------------------------------------------------------+
-|                   GraphLinkService                          |
-+------------------------------------------------------------+
-|  NnDescent      |  EdgeBuilder      |  KnnGraph            |
-|  (Algorithm)    |  (Typed Edges)    |  (In-Memory)         |
-+-----------------+-------------------+----------------------+
-                  |
-         +--------v--------+
-         |  EdgeRepository  |
-         |  (RocksDB)       |
-         +-----------------+
-```
+| Method | Purpose | Cost |
+|--------|---------|------|
+| `store_embedder_edges(embedder_id, source, &[EmbedderEdge])` | Replace K-NN for `(embedder_id, source)` | O(k) |
+| `get_embedder_edges(embedder_id, source) -> Vec<EmbedderEdge>` | Point lookup | O(k) |
+| `delete_embedder_edges(embedder_id, source)` | Point delete | O(1) |
+| `iter_embedder_edges(embedder_id) -> Iter` | Prefix scan per embedder | O(nodes) |
+| `store_typed_edge(&TypedEdge)` | WriteBatch: primary + secondary | O(1) |
+| `store_typed_edges_batch(&[TypedEdge])` | Single `WriteBatch` | O(batch) |
+| `get_typed_edge(source, target) -> Option<TypedEdge>` | Point lookup | O(1) |
+| `delete_typed_edge(source, target)` | Batch delete primary + secondary | O(1) |
+| `get_typed_edges_from(source) -> Vec<TypedEdge>` | Source-prefix scan | O(out-degree) |
+| `get_typed_edges_to(target) -> Vec<TypedEdge>` | Full scan + filter | O(total edges) |
+| `get_typed_edges_by_type(source, edge_type) -> Vec<TypedEdge>` | Secondary-index prefix + primary fetch | O(out-degree of type) |
+| `iter_all_typed_edges() -> Vec<TypedEdge>` | Full CF materialise | O(total edges) |
+| `is_empty()` / `get_stats() -> GraphEdgeStats` | Diagnostics | O(1) / O(total) |
 
-**Active embedders** for K-NN graph construction (default): E1 (0), E5 (4), E7 (6), E8 (7), E10 (9), E11 (10). Temporal embedders (E2-E4) are excluded.
-
-### 5.2 EdgeBuilder: Deriving Typed Edges from K-NN Graphs
-
-The `EdgeBuilder` analyzes multiple K-NN graphs to produce typed edges. The algorithm:
-
-1. For each memory pair that appears in any K-NN graph, collect similarity scores from all embedders.
-2. Determine which embedders agree (score >= per-embedder threshold). Temporal embedders (E2-E4) are excluded per AP-60.
-3. Compute edge type based on agreement pattern (using the auto-detection logic described in Section 1.5).
-4. Compute edge weight using either:
-   - **Constitution-based:** Primary embedder score for single-embedder types; average of all agreeing scores for `MultiAgreement`.
-   - **Learned projection:** If a `WeightProjector` is configured, project the 13-dimensional score vector to a single weight via a trained neural network.
-5. Create a `TypedEdge` if the weighted agreement meets the threshold.
-
-**Per-embedder agreement thresholds** (`DEFAULT_EMBEDDER_THRESHOLDS`):
-
-| Embedder | Index | Threshold |
-|----------|-------|-----------|
-| E1 Semantic | 0 | 0.75 |
-| E2 Recency | 1 | 0.70 |
-| E3 Periodic | 2 | 0.70 |
-| E4 Sequence | 3 | 0.70 |
-| E5 Causal | 4 | 0.60 |
-| E6 Sparse | 5 | 0.50 |
-| E7 Code | 6 | 0.70 |
-| E8 Graph | 7 | 0.60 |
-| E9 HDC | 8 | 0.60 |
-| E10 Paraphrase | 9 | 0.70 |
-| E11 Entity | 10 | 0.65 |
-| E12 ColBERT | 11 | 0.60 |
-| E13 SPLADE | 12 | 0.50 |
-
-Minimum weighted agreement for typed edge creation: **2.5** (per ARCH-09, same as topic threshold).
-
-### 5.3 WeightProjector Trait
-
-The `WeightProjector` trait allows plugging in a learned model for edge weight computation:
-
-```rust
-pub trait WeightProjector: Send + Sync {
-    fn project(&self, scores: &[f32; 13]) -> f32;
-    fn project_batch(&self, batch_scores: &[[f32; 13]]) -> Vec<f32>;
-    fn is_learned(&self) -> bool;
-}
-```
-
-When no projector is configured, the system falls back to constitution-based weighted agreement.
+Invalid `embedder_id` (>12) returns `GraphEdgeStorageError::InvalidEmbedderId`. All errors use fail-fast propagation; no silent fallbacks.
 
 ---
 
-## 6. Causal Discovery Agent
+## 6. Graph Traversal
 
-### 6.1 Architecture
+BFS implementation lives in the MCP handler `call_traverse_graph` (`graph_link_tools.rs`) — there is no separate traversal crate. Characteristics:
 
-```
-+------------------------------------------------------------+
-|                 CAUSAL DISCOVERY AGENT                       |
-+------------------------------------------------------------+
-| Memory Scanner -> LLM Analysis (GBNF) -> E5 Activator      |
-+------------------------------------------------------------+
-```
+| Aspect | Value |
+|--------|-------|
+| Algorithm | BFS with visited-set |
+| Queue item | `(Uuid, hop_level, cumulative_weight, path, edge_types, edge_weights)` |
+| Depth limit | `max_hops` (MCP param, 1..=5, default 2) |
+| Edge-type filter | Optional `edge_type` param → calls `get_typed_edges_by_type(current, type)` |
+| Weight filter | `min_weight` (default 0.3); below-threshold edges skipped |
+| Result cap | `max_results` (1..=100, default 20); BFS breaks after the current depth layer once the cap is exceeded |
+| Cumulative weight | Multiplicative product of edge weights along the path |
+| Self-skip | `neighbor_id == current_id` or already-visited → skipped |
 
-The causal discovery agent lives in `crates/context-graph-causal-agent/` and consists of four components:
-
-1. **Memory Scanner** -- finds candidate memory pairs for causal analysis.
-2. **LLM Module** -- analyzes pairs using Hermes-2-Pro-Mistral-7B with grammar-constrained JSON output.
-3. **E5 Embedder Activator** -- generates asymmetric E5 embeddings for confirmed relationships and updates the CausalGraph.
-4. **Service Module** -- background service for scheduled discovery cycles.
-
-### 6.2 LLM Configuration
-
-| Setting | Value | Description |
-|---------|-------|-------------|
-| Model | Hermes-2-Pro-Mistral-7B Q5_K_M | GGUF quantized |
-| VRAM | ~5GB model + ~1GB KV cache = ~6GB | Within 9GB budget |
-| Context size | 4096 tokens | Default |
-| Temperature | 0.0 | Deterministic for analysis |
-| Max tokens | 512 | Supports multi-paragraph responses |
-| GPU layers | All (u32::MAX) | Full CUDA offload |
-| Batch size | 2048 | Accommodates few-shot prompts |
-| Few-shot | Enabled by default | Improves direction detection |
-| JSON output | GBNF grammar-constrained | 100% valid JSON (vs ~40% with previous Candle/Qwen) |
-
-The LLM is shared via `Arc` between the causal agent and graph agent to avoid duplicate VRAM usage.
-
-### 6.3 Memory Scanner
-
-The scanner (`scanner/mod.rs`) finds candidate memory pairs using heuristics:
-
-**Algorithm:**
-
-1. **Cluster by E1 similarity:** Greedy clustering with configurable threshold (default: 0.5-0.9 band).
-2. **Pair within clusters:** Compare all pairs within each cluster.
-3. **Temporal ordering:** Earlier memory is the potential cause, later is the potential effect.
-4. **Time gap constraints:** Minimum gap 10 seconds (avoid same-event), maximum gap 24 hours.
-5. **Score candidates** using:
-   - Causal marker count in text: +0.15 per marker found
-   - Temporal ordering bonus: +0.1
-   - Same session bonus: +0.1
-   - Content length bonus: +0.05 if >100 chars, +0.05 if >300 chars
-   - Semantic similarity in sweet spot (0.5-0.8): +0.1
-6. **Filter:** Keep candidates with score >= 0.3 (default `min_initial_score`).
-7. **Sort and truncate:** Top 100 candidates by score.
-
-Pairs are NOT marked as analyzed until after successful LLM confirmation (AGT-01 fix).
-
-**Causal markers** scanned in text:
-
-| Cause Markers | Effect Markers |
-|--------------|----------------|
-| because, due to, caused by, result of, led to, since, as a result of, owing to, thanks to, on account of, stems from, arises from, originates from, triggered by | therefore, consequently, as a result, thus, hence, so, accordingly, resulting in, leading to, causing, produces, yields, generates, brings about |
-
-### 6.4 LLM Prompt Templates
-
-All prompts use the ChatML format (`<|im_start|>system ... <|im_end|>`).
-
-**Pair Analysis Prompt** (with few-shot examples):
-
-The system prompt instructs the model to analyze causal relationships and output JSON:
-
-```json
-{
-  "causal_link": true/false,
-  "direction": "A_causes_B" | "B_causes_A" | "bidirectional" | "none",
-  "confidence": 0.0-1.0,
-  "mechanism": "Specific causal mechanism (1-2 sentences)",
-  "mechanism_type": "direct" | "mediated" | "feedback" | "temporal"
-}
-```
-
-The prompt includes:
-- Direction decision rules (A produces B's outcome? B produces A's outcome?)
-- Confidence calibration scale (0.9-1.0: established mechanism, 0.0-0.2: no causal link)
-- Explicit warning: "Correlation, semantic similarity, or topical overlap are NOT causation."
-- Five few-shot examples covering: mediated causation, reverse direction, multi-hop, feedback loops, and no relationship.
-
-Content is sanitized before embedding in prompts: double quotes are escaped, and ChatML markers (`<|im_start|>`, `<|im_end|>`) are neutralized to prevent prompt injection (CAUSAL-M1 fix). Content is truncated at word boundaries using `floor_char_boundary()` for UTF-8 safety.
-
-**Single-Text Analysis Prompt** (V3 Structured Criteria):
-
-Used during memory storage to hint the E5 embedder. Follows a 6-step decision procedure:
-
-1. Scan for causal markers (forward: "causes", "leads to"; backward: "caused by", "due to").
-2. Determine direction from marker type.
-3. Calibrate confidence.
-4. Extract key phrases.
-5. Write mechanism description.
-6. Set asymmetry strength and entity spans.
-
-Benchmarked at 73.3% direction accuracy, 559ms avg latency, 0.80 confidence separation.
-
-**Multi-Relationship Extraction Prompt:**
-
-Extracts ALL cause-effect relationships from a single text. Each relationship includes:
-- Cause/effect statements
-- 1-2 paragraph explanation (critical for E5 embedding quality)
-- Confidence score
-- Mechanism type
-- Source spans with exact character offsets for provenance
-
-The prompt emphasizes that `text_excerpt` must be an exact character-for-character copy from the input (not paraphrased).
-
-### 6.5 E5 Embedder Activator
-
-The `E5EmbedderActivator` bridges LLM analysis to storage:
-
-**Activation flow:**
-
-1. Check confidence against threshold (default: 0.6). Skip if below.
-2. Check if relationship already exists in `CausalGraph` (skip if `update_existing` is false).
-3. Generate E5 asymmetric embeddings using `CausalModel.embed_dual_guided()`:
-   - `ACausesB`: embed A as cause, B as effect.
-   - `BCausesA`: embed B as cause, A as effect.
-   - `Bidirectional`: embed both A and B as both cause and effect (4 vectors total).
-4. Construct `CausalHintGuidance` from the analysis result (key phrases from mechanism text, asymmetry strength from confidence).
-5. Add nodes to `CausalGraph` if not present (`auto_create_nodes` enabled by default).
-6. Add directed edge(s) to `CausalGraph`:
-   - Unidirectional: single edge with full confidence.
-   - Bidirectional: two edges at `confidence * 0.8` each.
-
-Without a `CausalModel`, the activator fails fast -- no mock embeddings are generated.
+Response fields: `nodes[]` (with `hop_level`, `edge_type_from_parent`, `edge_weight_from_parent`, `cumulative_weight`), `paths[]` (path UUIDs, `total_weight`, `hop_count`, per-hop `edge_types` and `edge_weights`), `unique_nodes_visited`, `path_count`, `metadata.truncated`, `metadata.edges_evaluated`, `metadata.edges_filtered_by_weight`.
 
 ---
 
-## 7. CausalGraph / SCM
+## 7. Neighbor and Typed-Edge Tools
 
-### 7.1 Structural Causal Model
+### 7.1 `get_memory_neighbors`
 
-The `CausalGraph` (`causal/scm.rs`) is a directed graph representing causal relationships:
+Per-embedder K-NN lookup. Params: `memory_id` (UUID), `embedder_id` (0..=12, default 0=E1), `top_k` (1..=50, default 10), `min_similarity` (default 0.0), `include_content`. Path: `EdgeRepository::get_embedder_edges` → filter by `min_similarity` → take `top_k` → optional hydrate content + source via `TeleologicalMemoryStore::get_source_metadata_batch` / `get_content_batch`. Returns zero-result with diagnostic when `EdgeRepository.is_empty()`.
 
-**Node** (`CausalNode`):
+### 7.2 `get_typed_edges`
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `Uuid` | Unique identifier |
-| `name` | `String` | Human-readable name |
-| `domain` | `String` | Domain category (e.g., "physics", "memory") |
+Direction + type filter combine as follows (`graph_link_tools.rs::call_get_typed_edges`):
 
-**Edge** (`CausalEdge`):
+| `direction` | `edge_type` filter | Repository path |
+|-------------|--------------------|-----------------|
+| `outgoing` (default) | set | `get_typed_edges_by_type(memory, type)` |
+| `outgoing` | unset | `get_typed_edges_from(memory)` |
+| `incoming` | set | `get_typed_edges_to(memory)` → filter by type |
+| `incoming` | unset | `get_typed_edges_to(memory)` |
+| `both` | set | outgoing (via secondary index) + incoming (full scan + type filter) |
+| `both` | unset | `get_typed_edges_from` + `get_typed_edges_to` |
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `source` | `Uuid` | Cause node UUID |
-| `target` | `Uuid` | Effect node UUID |
-| `strength` | `f32` | Causal strength [0, 1] (clamped at construction) |
-| `mechanism` | `String` | Description of the causal mechanism |
-| `cause_embedding` | `Option<Vec<f32>>` | 768D E5 cause vector |
-| `effect_embedding` | `Option<Vec<f32>>` | 768D E5 effect vector |
-| `is_bidirectional` | `bool` | Whether this is a feedback loop |
-| `reverse_embeddings` | `Option<(Vec<f32>, Vec<f32>)>` | Secondary cause/effect for bidirectional |
-| `llm_confidence` | `f32` | LLM's original confidence [0, 1] |
-| `mechanism_type` | `Option<String>` | "direct", "mediated", "feedback", "temporal" |
-| `embedding_hint_provenance` | `Option<EmbeddingHintProvenance>` | LLM guidance provenance |
+Peer-ID resolution: each returned edge's exposed `target_id` is the node at the **other end** relative to the queried memory — if `edge.source() == queried_memory`, the peer is `edge.target()` (outgoing); otherwise the peer is `edge.source()` (incoming). The `direction` field on each result is recomputed per edge to reflect actual orientation, not the query filter.
 
-Edges are classified as:
-- **Strong** if `strength >= 0.7`
-- **Weak** if `strength < 0.3`
+Weight filter: `min_weight` default 0.0. Contributing embedders are reconstructed from `edge.agreeing_embedders()` bitset.
 
-### 7.2 Capacity Limits
+### 7.3 `get_unified_neighbors`
 
-| Limit | Value | Description |
-|-------|-------|-------------|
-| `MAX_CAUSAL_NODES` | 500,000 | Maximum nodes in graph |
-| `MAX_CAUSAL_EDGES` | 2,000,000 | Maximum edges in graph |
-
-`add_node()` and `add_edge()` return `false` when the respective limit is reached.
-
-### 7.3 Internal Indexing
-
-The CausalGraph maintains two HashMap indexes for O(1) lookups:
-
-- `effects_index: HashMap<Uuid, Vec<usize>>` -- maps a node to indices of its outgoing edges (effects).
-- `causes_index: HashMap<Uuid, Vec<usize>>` -- maps a node to indices of its incoming edges (causes).
-
-Both indexes are rebuilt after edge removal to maintain consistency.
-
-### 7.4 CausalGraph API
-
-| Method | Description |
-|--------|-------------|
-| `add_node(CausalNode) -> bool` | Add a node (returns false if at capacity) |
-| `add_edge(CausalEdge) -> bool` | Add a directed edge (returns false if at capacity) |
-| `remove_node(Uuid)` | Remove node and all connected edges |
-| `remove_edge(source, target)` | Remove a specific edge |
-| `get_effects(cause_id)` | All outgoing edges from a cause |
-| `get_causes(effect_id)` | All incoming edges to an effect |
-| `get_direct_effects(source)` | UUIDs of direct effect nodes |
-| `get_direct_causes(target)` | UUIDs of direct cause nodes |
-| `has_direct_cause(source, target)` | Check if direct causal edge exists |
-| `find_path(source, target)` | BFS shortest path |
-| `nodes_by_domain(domain)` | Filter nodes by domain |
-| `average_strength()` | Mean edge strength across graph |
+Weighted RRF fusion across semantic embedders only (E2–E4 excluded per temporal policy). For each embedder in the active profile, `get_embedder_edges` gives a ranked list; score = `Σ weight_i / (rank_i + RRF_K)`. `RRF_K` is defined in `graph_link_dtos.rs`. Weights come from `weight_profile` (default `"semantic_search"`) or `custom_weights` (13-keyed map, name validation against `EMBEDDER_NAMES` enforced — `AP-NAV-01` fail-fast on unknown names). Returns fused `neighbors[]` with optional per-embedder breakdown and `AgreementSummary`.
 
 ---
 
-## 8. Causal Chain Inference
+## 8. Causal Discovery Service
 
-### 8.1 Transitive Chain Scoring
+### 8.1 Crate layout
 
-Multi-hop causal chains (A -> B -> C -> ... -> Z) are scored with attenuation (`chain.rs`):
+`context-graph-causal-agent` (`cfg(feature = "llm")` for LLM paths):
 
-**Formula:**
+| Module | Purpose |
+|--------|---------|
+| `llm` | `CausalDiscoveryLLM` — llama-cpp-2 wrapper, grammar-constrained inference |
+| `llm/prompt` | `CausalPromptBuilder` — ChatML prompts (pair / single-text / multi-relationship) |
+| `scanner` | `MemoryScanner` — heuristic candidate-pair finder |
+| `activator` | `E5EmbedderActivator` — persists confirmed relationships, updates `CausalGraph` |
+| `service` | `CausalDiscoveryService` — background loop, cursor persistence |
+| `types` | `CausalAnalysisResult`, `CausalCandidate`, `CausalHint`, etc. |
 
-```
-chain_score = product( hop_score_i * HOP_ATTENUATION^i )
-```
+### 8.2 LLM backend
 
-where `HOP_ATTENUATION = 0.9` and each hop's score is computed using asymmetric similarity.
+| Field | Default | Notes |
+|-------|---------|-------|
+| `model_path` | `models/hermes-2-pro/Hermes-2-Pro-Mistral-7B.Q5_K_M.gguf` | Loaded via `llama-cpp-2` `LlamaModel` |
+| `context_size` | 4096 | KV cache sized accordingly |
+| `temperature` | 0.0 | Deterministic |
+| `max_tokens` | 512 | Supports 1–3 paragraph descriptions |
+| `n_gpu_layers` | `u32::MAX` | Full offload (RTX 5090 target, ~5 GB model + ~1 GB KV) |
+| `batch_size` | 2048 | Sized for few-shot prompts |
+| `use_few_shot` | true | Adds ~200 tokens, improves direction detection |
+| `causal_grammar_path` | `models/hermes-2-pro/causal_analysis.gbnf` | GBNF constraint |
+| `graph_grammar_path` | `models/hermes-2-pro/graph_relationship.gbnf` | GBNF constraint |
+| `validation_grammar_path` | `models/hermes-2-pro/validation.gbnf` | GBNF constraint |
 
-**Constants:**
+`GrammarType`: `Causal` / `Graph` / `Validation` / `SingleText` / `MultiRelationship`. GBNF constraints guarantee structurally-valid JSON from the decoder.
 
-| Constant | Value | Description |
-|----------|-------|-------------|
-| `HOP_ATTENUATION` | 0.9 | Per-hop attenuation factor |
-| `MIN_CHAIN_SCORE` | 0.1 | Minimum valid chain score |
-| `MAX_CHAIN_LENGTH` | 10 | Maximum chain length (longer returns 0.0) |
+`CausalPromptBuilder` formats prompts using Hermes-2-Pro ChatML. Three system prompts live inline in `llm/prompt.rs`:
 
-**Embedding-based chain scoring** (`score_causal_chain`):
+- `default_system_prompt()` — pair causal analysis (two memories).
+- `default_single_text_system_prompt()` — single-text causal-nature classification feeding `CausalHint` during `store_memory`.
+- `default_multi_relationship_system_prompt()` — extract all cause→effect pairs from one memory.
 
-For a chain of `CausalPairEmbedding` objects [P1, P2, P3, ...]:
-1. For each consecutive pair (Pi, Pi+1), compute cosine similarity between Pi's effect embedding and Pi+1's cause embedding.
-2. Apply cause->effect direction boost (1.2x).
-3. Average hop similarities across the chain.
+`max_content_length` clamps each memory's content to 1500 chars before substitution.
 
-**Attenuated variant** (`score_causal_chain_attenuated`):
-Same as above but weights each hop by `HOP_ATTENUATION^i`, giving closer causes more weight.
+### 8.3 Service loop
 
-### 8.2 Abductive Reasoning
+`CausalDiscoveryService` holds the LLM (`Arc<CausalDiscoveryLLM>`), a `MemoryScanner` (`RwLock`), an `E5EmbedderActivator`, a `CausalGraph` (`Arc<RwLock>`), and a background task `JoinHandle` (stored so panics aren't silently lost).
 
-Given an observed effect, `rank_causes_by_abduction()` finds the most likely cause:
+`CausalDiscoveryConfig` defaults:
 
-1. For each candidate cause, compute:
-   - E5 asymmetric similarity (effect -> cause direction).
-   - E1 semantic similarity (topical discrimination).
-   - Blend: **80% E1 + 20% E5** (E1 proven 17x better than E5 at topical discrimination).
-2. Apply effect->cause dampening (0.8x modifier) to reflect uncertainty in backward inference.
-3. Sort candidates by score descending.
+| Field | Default |
+|-------|---------|
+| `interval` | 120 s |
+| `batch_size` | 100 pairs/cycle |
+| `min_confidence` | 0.7 |
+| `skip_analyzed` | true |
+| `enable_background` | false (opt-in) |
+| `min_interval` | 30 s |
+| `max_interval` | 600 s |
+| `max_consecutive_errors` | 3 |
 
-**Predictive reasoning** (`rank_effects_by_prediction()`) works symmetrically:
-- Blend: 80% E1 + 20% E5.
-- Apply cause->effect boost (1.2x modifier).
-- Clamp final score to [0.0, 1.0].
+Env overrides (`with_env_overrides`): `CAUSAL_DISCOVERY_ENABLED`, `CAUSAL_DISCOVERY_INTERVAL_SECS`, `CAUSAL_DISCOVERY_BATCH_SIZE`, `CAUSAL_DISCOVERY_MIN_CONFIDENCE`.
 
-### 8.3 Deductive Chain Building
+Cursor `DiscoveryCursor { last_timestamp, last_fingerprint_id, cycles_completed, total_relationships }` is JSON-serialized to CF_SYSTEM at key `causal_discovery_cursor`. Parse failure starts fresh (no error).
 
-`build_causal_chain()` constructs a chain from a starting cause embedding:
+`CycleMetrics`: `cycle_number`, `memories_harvested`, `relationships_discovered`, `relationships_rejected`, `total_duration`.
 
-1. Start with `current_effect = start_cause_embedding`.
-2. For up to `MAX_CHAIN_LENGTH` iterations:
-   a. Find the unvisited `CausalPairEmbedding` whose cause embedding has the highest cosine similarity to `current_effect`.
-   b. If the best match exceeds `similarity_threshold`, add it to the chain, mark as visited, and set `current_effect` to this pair's effect embedding.
-   c. Otherwise, stop (no valid continuation found).
+### 8.4 Scanner
 
-### 8.4 Inference Directions
+`MemoryScanner` generates `CausalCandidate { cause_memory_id, cause_content, effect_memory_id, effect_content, initial_score, earlier_timestamp, later_timestamp }` using heuristics: E1 semantic similarity band (`[similarity_threshold, max_similarity]` = `[0.5, 0.9]`), temporal ordering, causal-marker presence. `ScannerConfig` defaults: `max_candidates=100`, `min_time_gap=10s`, `max_time_gap=24h`, `same_session_only=false`, `min_initial_score=0.3`.
 
-The `InferenceDirection` enum supports five modes for the `omni_infer` tool:
+### 8.5 Activator
 
-| Direction | Description | Requires Target? |
-|-----------|-------------|-----------------|
-| `Forward` | A -> B: What effect does A have on B? | Yes |
-| `Backward` | B -> A: What caused B? | Yes |
-| `Bidirectional` | A <-> B: Mutual influence | Yes |
-| `Bridge` | Cross-domain causal relationships | No |
-| `Abduction` | Best hypothesis for observation | No |
+`E5EmbedderActivator` requires an `Arc<CausalModel>` (fails with error if absent). For each confirmed `CausalAnalysisResult`:
 
-`InferenceResult` captures: direction, source/target UUIDs, strength [0,1], confidence [0,1], path through the causal graph, and human-readable explanation.
+1. Generate `DirectionalEmbeddings` via `CausalModel.embed_as_cause()` / `embed_as_effect()`.
+2. Insert `CausalNode` entries into `CausalGraph` if missing (`auto_create_nodes=true`).
+3. Add `CausalEdge` with `cause_embedding`, `effect_embedding`, `llm_confidence`, `mechanism_type`, and optional `reverse_embeddings` for bidirectional.
 
----
+Config: `min_confidence=0.6`, `update_existing=true`, `auto_create_nodes=true`. Stats: `processed`, `embeddings_generated`, `edges_created`, `skipped_low_confidence`, `skipped_existing`, `errors`.
 
-## 9. Causal Direction: Asymmetric Scoring
+### 8.6 Trigger entry point
 
-### 9.1 E5 Causal Asymmetric Similarity
+`trigger_causal_discovery` MCP tool (`causal_discovery_tools.rs`):
 
-Defined in `causal/asymmetric.rs`. The core formula:
+| Param | Default | Range |
+|-------|---------|-------|
+| `mode` | `"extract"` | `"extract"` (multi-relationship) \| `"pairs"` (pair analysis) |
+| `maxPairs` | 50 | 1..=200 |
+| `minConfidence` | 0.7 | 0.5..=1.0 |
+| `sessionScope` | `"all"` | `"current"` (last 10 files) \| `"recent"` (last 50) \| `"all"` |
+| `dryRun` | false | Analyze without persisting |
 
-```
-sim = base_cos * direction_mod
-```
-
-**Direction modifiers:**
-
-| Direction | Modifier | Constant |
-|-----------|----------|----------|
-| Cause -> Effect | 1.2x | `direction_mod::CAUSE_TO_EFFECT` |
-| Effect -> Cause | 0.8x | `direction_mod::EFFECT_TO_CAUSE` |
-| Same direction | 1.0x | `direction_mod::SAME_DIRECTION` |
-| Unknown | 1.0x | `direction_mod::UNKNOWN` |
-
-The intervention overlap factor `(0.7 + 0.3 * overlap)` from the original constitution was disabled based on benchmark analysis showing -15.9% correlation. The formula now uses `overlap_factor = 1.0`.
-
-### 9.2 E5 Causal Content Gate
-
-A binary boost/demotion gate applied to search results based on E5 scores. Thresholds calibrated from GPU benchmark (2026-02-14) with prefix-aligned LoRA+projection model:
-
-| Threshold | Value | Description |
-|-----------|-------|-------------|
-| `CAUSAL_THRESHOLD` | 0.04 | Above this: "definitely causal" (~85% causal content captured) |
-| `NON_CAUSAL_THRESHOLD` | 0.008 | Below this: "definitely non-causal" (~85% non-causal caught) |
-| `CAUSAL_BOOST` | 1.10x | Applied to results above CAUSAL_THRESHOLD for causal queries |
-| `NON_CAUSAL_DEMOTION` | 0.85x | Applied to results below NON_CAUSAL_THRESHOLD for causal queries |
-
-Scores between the two thresholds are in the "ambiguous zone" and receive no adjustment.
-
-The gate function `apply_causal_gate(original_score, e5_score, is_causal_query)`:
-- If `is_causal_query` is false, return `original_score` unchanged.
-- If `e5_score >= 0.04`, return `original_score * 1.10`.
-- If `e5_score <= 0.008`, return `original_score * 0.85`.
-- Otherwise, return `original_score` unchanged.
-
-### 9.3 E8 Graph Asymmetric Similarity
-
-Defined in `graph/asymmetric.rs`, paralleling E5 but for structural relationships:
-
-```
-sim = base_cos * direction_mod * (0.7 + 0.3 * connectivity_overlap)
-```
-
-**Direction modifiers** (same values as E5 for consistency):
-
-| Direction | Modifier |
-|-----------|----------|
-| Source -> Target | 1.2x |
-| Target -> Source | 0.8x |
-| Same direction / Unknown | 1.0x |
-
-The connectivity overlap term IS active for E8 (unlike E5 where it was disabled). It uses `ConnectivityContext` which tracks:
-- Connected entities (neighbors)
-- Relationship types
-- Module/namespace context
-- Depth in dependency graph
-
-**Overlap formula:**
-```
-entity_blended = 0.5 * jaccard + 0.5 * containment
-overlap = 0.5 * entity_blended + 0.3 * rel_jaccard + module_bonus + depth_bonus
-```
-Where `module_bonus` = 0.1 for exact match, 0.05 for prefix match; `depth_bonus` = 0.1 for same depth, 0.05 for adjacent depth. Both bonuses only apply if `base_overlap > 0.1`.
-
-### 9.4 Causal Direction Inference from Fingerprints
-
-`infer_direction_from_fingerprint()` determines whether a memory is more "cause-like" or "effect-like" by comparing the component variance of E5's dual vectors:
-
-1. Get the cause and effect projections from the `SemanticFingerprint`.
-2. Compute component variance for each vector: `var = (1/D) * sum((x_i - mean)^2)`.
-3. Higher variance indicates a more peaked/concentrated distribution (the projection head found a more specific representation for that causal role).
-4. If `cause_var > effect_var * 1.05`, classify as `Cause`.
-5. If `effect_var > cause_var * 1.05`, classify as `Effect`.
-6. Otherwise, classify as `Unknown`.
+`get_causal_discovery_status` returns the current `ServiceStatus` and `DiscoveryCycleResult`.
 
 ---
 
-## 10. Graph Agent
+## 9. Causal Data Model
 
-### 10.1 Architecture
+### 9.1 `CausalLinkDirection` (agent-level, LLM output)
 
-The graph agent (`crates/context-graph-graph-agent/`) mirrors the causal agent but focuses on structural relationships. It shares the Hermes-2-Pro-Mistral-7B LLM via `Arc`.
+| Variant | Serde | Meaning |
+|---------|-------|---------|
+| `ACausesB` | `a_causes_b` | A → B |
+| `BCausesA` | `b_causes_a` | B → A |
+| `Bidirectional` | `bidirectional` | A ↔ B |
+| `NoCausalLink` | `no_causal_link` | Reject |
+
+### 9.2 `CausalDirection` (similarity-level)
+
+Defined in `core/src/causal/asymmetric.rs`. Four variants used across the similarity stack: `Cause`, `Effect`, `Unknown` (default). Direction is inferred from fingerprint via `infer_direction_from_fingerprint()` comparing `component_variance(e5_as_cause)` vs `component_variance(e5_as_effect)` with a 5% separation threshold.
+
+(Note: `CausalRelationship` search paths additionally use an extended enum with `Bidirectional` and `NonCausal` in the MCP layer — see `search_causal_relationships`.)
+
+### 9.3 `CausalNode`
 
 ```
-Memories -> Scanner -> Candidates -> LLM Analysis -> Activator -> Graph Edges
-              |            |              |              |
-          Heuristics   E1 Similarity  Hermes-2-Pro   E8 1024D
+id: Uuid
+name: String
+domain: String   // e.g. "physics", "economics"
 ```
 
-**E8 dimension:** 1024D (upgraded from MiniLM 384D). Uses e5-large-v2, sharing the model with E1 for zero additional VRAM.
+### 9.4 `CausalEdge`
 
-### 10.2 Content Domains
+| Field | Type | Notes |
+|-------|------|-------|
+| `source` | `Uuid` | Cause node id |
+| `target` | `Uuid` | Effect node id |
+| `strength` | `f32` | Clamped to `[0,1]` at construction |
+| `mechanism` | `String` | Free-text description |
+| `cause_embedding` | `Option<Vec<f32>>` | 768D E5 as cause |
+| `effect_embedding` | `Option<Vec<f32>>` | 768D E5 as effect |
+| `is_bidirectional` | `bool` | Feedback loop flag |
+| `reverse_embeddings` | `Option<(Vec<f32>, Vec<f32>)>` | `(b_cause, a_effect)` for bidirectional |
+| `llm_confidence` | `f32` | Raw LLM assessment, separate from `strength` |
+| `mechanism_type` | `Option<String>` | `"direct"`, `"mediated"`, `"feedback"`, `"temporal"` |
+| `embedding_hint_provenance` | `Option<EmbeddingHintProvenance>` | From `store_memory` hint path |
 
-| Domain | Description |
-|--------|-------------|
-| `Code` | Programming code, APIs, software documentation |
-| `Legal` | Cases, statutes, contracts, regulations |
-| `Academic` | Research papers, studies, citations |
-| `General` | Other content |
+### 9.5 `CausalGraph` (SCM)
 
-Domain detection uses heuristic markers (`DomainMarkers::detect_domain_pair()`).
+`HashMap<Uuid, CausalNode>` + adjacency `Vec<CausalEdge>`. Operations: `add_node`, `remove_node`, `add_edge`, `get_effects(node)`, `get_causes(node)`, path-finding helpers used by causal chain tools. Guarded by `MAX_NODES=500_000`, `MAX_EDGES=2_000_000`.
 
-### 10.3 Relationship Types
+### 9.6 `CausalRelationship` (persisted LLM output)
 
-The graph agent detects 20 relationship types (19 + None) across 6 categories:
+Stored in `CF_CAUSAL_RELATIONSHIPS` (primary, by UUID) with secondary index `CF_CAUSAL_BY_SOURCE` (by source memory id). Key fields:
 
-| Category | Relationship Types |
-|----------|-------------------|
-| **Containment** | `contains`, `scoped_by` |
-| **Dependency** | `depends_on`, `imports`, `requires` |
-| **Reference** | `references`, `cites`, `interprets`, `distinguishes` |
-| **Implementation** | `implements`, `complies_with`, `fulfills` |
-| **Extension** | `extends`, `modifies`, `supersedes`, `overrules` |
-| **Invocation** | `calls`, `applies`, `used_by` |
+| Field | Type | Notes |
+|-------|------|-------|
+| `id` | `Uuid` | Relationship UUID |
+| `cause_statement` | `String` | Brief cause |
+| `effect_statement` | `String` | Brief effect |
+| `explanation` | `String` | LLM 1–3 paragraph narrative |
+| `e5_as_cause`, `e5_as_effect` | `Vec<f32>` (768D) | Explanation-anchored dual vectors |
+| `e5_source_cause`, `e5_source_effect` | `Vec<f32>` (768D) | Source-anchored dual vectors (prevents explanation clustering) |
+| `e1_semantic` | `Vec<f32>` (1024D) | Fallback semantic |
+| `e8_graph_source`, `e8_graph_target` | `Vec<f32>` (1024D) | Graph-structure dual |
+| `source_memory_id` | `Uuid` | Provenance link to originating memory |
+| `confidence` | `f32` | LLM confidence |
+| `mechanism_type` | `String` | `"direct"` \| `"mediated"` \| `"feedback"` \| `"temporal"` |
+| `llm_provenance` | `LLMProvenance` | Model / quantization / prompt-hash |
+| `source_spans` | `Vec<CausalSourceSpan>` | Character offsets + text excerpt |
 
-### 10.4 LLM Prompt for Graph Relationships
-
-The graph agent prompt instructs the LLM to:
-
-1. Look for EXPLICIT structural links, not semantic similarity.
-2. Output "none" when contents are unrelated.
-3. Choose the most specific relationship type from the domain-specific list.
-4. Detect domain automatically and provide domain-aware relationship hints.
-
-**Output JSON format:**
-```json
-{
-  "has_connection": true/false,
-  "direction": "a_to_b" | "b_to_a" | "bidirectional" | "none",
-  "relationship_type": "imports" | "cites" | ... | "none",
-  "category": "dependency" | "reference" | ...,
-  "domain": "code" | "legal" | "academic" | "general",
-  "confidence": 0.0-1.0,
-  "description": "why this relationship exists"
-}
-```
-
-### 10.5 E8 Activator
-
-The `E8Activator` generates 1024D asymmetric E8 embeddings for confirmed structural relationships. It creates graph edges stored via the `GraphStorage` trait, with support for source/target direction and relationship type metadata.
-
-### 10.6 Test Stubs
-
-For tests that need a `GraphDiscoveryService` in their handler struct but do not exercise graph discovery, `create_stub_graph_discovery_service()` provides a service with an UNLOADED LLM. Any analysis calls return `Err(LlmNotInitialized)`.
+See [05_embedding_subsystem.md](05_embedding_subsystem.md) for E5/E8/E1 dimensions and [04_database_schema.md](04_database_schema.md) for CF listing.
 
 ---
 
-## 11. Entity Extraction and Linking
+## 10. Causal Chain Reasoning
 
-### 11.1 KEPLER-Based Entity Detection
+`causal/chain.rs` provides transitive scoring:
 
-Entity detection is handled by E11 KEPLER embeddings (`entity/mod.rs`). KEPLER was trained on Wikidata5M (4.8M entities, 20M triples) with a TransE objective. The key insight: KEPLER embeddings ARE the entity detection -- no keyword lookup table is needed because:
+| Constant | Value | Purpose |
+|----------|-------|---------|
+| `HOP_ATTENUATION` | 0.9 | Multiplicative decay per hop |
+| `MIN_CHAIN_SCORE` | 0.1 | Discard noise chains |
+| `MAX_CHAIN_LENGTH` | 10 | Prevent combinatorial blow-up |
 
-1. KEPLER was trained on 4.8M entities from Wikidata.
-2. TransE training encodes relationships (`h + r approx t`).
-3. Embedding similarity captures entity relationships automatically.
+`CausalHop { base_similarity, from_direction, to_direction }` → `hop_score()` applies `compute_asymmetric_similarity_simple` using the direction modifiers from §9.2.
 
-Entity "detection" is: embed with KEPLER, search by similarity.
-
-### 11.2 Entity Types
-
-| Type | Description |
-|------|-------------|
-| `ProgrammingLanguage` | Programming languages |
-| `Framework` | Frameworks and libraries |
-| `Database` | Databases |
-| `Cloud` | Cloud providers and services |
-| `Company` | Companies and products |
-| `TechnicalTerm` | Technical terms and protocols |
-| `Unknown` | General entity (default) |
-
-These types are for UI/API display only -- KEPLER does not need them for search.
-
-### 11.3 EntityLink
-
-An entity reference with surface form and confidence:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `surface_form` | `String` | Raw entity text |
-| `canonical_id` | `String` | Lowercase normalized form |
-| `entity_type` | `EntityType` | Display category |
-| `confidence` | `f32` | Extraction confidence [0.0, 1.0] |
-
-Equality and hashing ignore `confidence` -- two EntityLinks to the same entity are equal regardless of confidence.
-
-### 11.4 Entity Extraction Methods
-
-| Method | Confidence | Description |
-|--------|-----------|-------------|
-| `KnowledgeBase` | Highest | Matched against known knowledge base |
-| `HeuristicPattern` | Medium | Capitalization and technical patterns |
-| `TransEInferred` | Medium | TransE relationship prediction |
-| `LLMExtracted` | Variable | Extracted by LLM analysis |
-
-### 11.5 Entity Jaccard Similarity
-
-`entity_jaccard_similarity(a, b)` computes set overlap between entity collections:
-
+`compute_chain_score(&[CausalHop]) -> f32`: Σ attenuated product:
 ```
-Jaccard(A, B) = |A intersection B| / |A union B|
+chain = Π (hop_score_i · ATTENUATION^i)
 ```
 
-This is for string-level overlap only. KEPLER embedding similarity is the primary entity relationship measure.
-
-### 11.6 Entity Provenance
-
-`EntityProvenance` records link an entity back to its source memory:
-- Source memory UUID
-- Character spans in source text
-- Extraction method
-- Confidence score
-- Timestamp
-
-Stored in `CF_ENTITY_PROVENANCE` for full audit trail.
+`build_causal_chain`, `score_causal_chain`, `score_causal_chain_attenuated`, `rank_causes_by_abduction` are the public entry points. `AbductionResult` ranks candidate causes for an observed effect.
 
 ---
 
-## 12. Graph-Based Scoring in Search
+## 11. Causal Direction Modifiers (E5)
 
-### 12.1 E8 Connection Search
+`causal/asymmetric.rs::direction_mod`:
 
-The `search_connections` MCP tool uses E8 asymmetric similarity for graph-based search:
+| Constant | Value | Pair |
+|----------|-------|------|
+| `CAUSE_TO_EFFECT` | 1.2 | query=Cause, result=Effect |
+| `EFFECT_TO_CAUSE` | 0.8 | query=Effect, result=Cause |
+| `SAME_DIRECTION` | 1.0 | Cause↔Cause, Effect↔Effect |
+| `UNKNOWN` | 1.0 | Either side unknown |
 
-1. Embed the query using all 13 embedders.
-2. Search using the `graph_reasoning` weight profile with 5x over-fetch.
-3. For each candidate, compute E8 asymmetric similarity: `sim = base_cos * direction_mod * (0.7 + 0.3 * connectivity_overlap)`.
-4. Apply direction modifier: source->target gets 1.2x, target->source gets 0.8x.
-5. Filter by `minScore` and return top-K.
+Applied through `CausalDirection::direction_modifier(query_dir, result_dir)` and baked into `compute_e5_asymmetric_fingerprint_similarity()`.
 
-### 12.2 Graph Path Building
+### 11.1 Causal gate
 
-The `get_graph_path` tool builds multi-hop paths using E8 embeddings with hop attenuation. Each hop's score is attenuated, and the path's total score decreases with length.
+Post-training calibrated thresholds (`causal_gate` module):
 
-### 12.3 LLM-Based Graph Discovery in Search
+| Constant | Value | Interpretation |
+|----------|-------|---------------|
+| `CAUSAL_THRESHOLD` | 0.04 | E5 ≥ this → definitely causal |
+| `NON_CAUSAL_THRESHOLD` | 0.008 | E5 ≤ this → definitely non-causal |
+| `CAUSAL_BOOST` | 1.10 | Multiplier applied when gate passes |
+| `NON_CAUSAL_DEMOTION` | 0.85 | Multiplier applied when gate fails |
 
-The `discover_graph_relationships` and `validate_graph_link` MCP tools use the graph agent's LLM to:
-- Discover structural relationships between memories on demand.
-- Validate proposed graph links before storing them.
+`apply_causal_gate(score, e5_score, is_causal_query)` — no-op if query is not classified causal; ambiguous zone between thresholds leaves score unchanged.
 
-Both require the `llm` feature flag and use the shared Hermes-2-Pro-Mistral-7B model.
+### 11.2 Intervention overlap (disabled)
 
-### 12.4 Unified Neighbor Search
-
-The `get_unified_neighbors` tool combines K-NN results from multiple embedders using Reciprocal Rank Fusion (RRF) to produce a single ranked neighbor list. It queries several semantic embedder indices (configurable, typically E1, E5, E7, E8, E9, E10, E11) and merges the per-embedder rankings.
+The `(0.7 + 0.3 × overlap)` intervention-overlap multiplier is set to `1.0` (disabled) based on empirical negative correlation on benchmark data. `InterventionContext` + `overlap_with()` remain in the API for future re-enablement; current production path does not consume them.
 
 ---
 
-## Cross-References
+## 12. Graph Asymmetric Similarity (E8)
 
-- For embedder specifications (E1-E13 dimensions, models, and training): see `05_embedding_subsystem.md`.
-- For search strategies (multi_space, pipeline, embedder_first) and RRF fusion: see `06_search_and_fusion.md`.
-- For MCP tool schemas and handler details: see `08_mcp_tools_reference.md`.
-- For weight profiles and per-embedder weighting: see `06_search_and_fusion.md`.
-- For storage architecture and column families: see `09_storage_layer.md`.
+`graph/asymmetric.rs` mirrors the E5 structure for the E8 graph embedder:
+
+| Component | Notes |
+|-----------|-------|
+| `GraphDirection` | `Source` / `Target` / `Unknown` |
+| `SOURCE→TARGET` | 1.2× boost (E8 forward) |
+| `TARGET→SOURCE` | 0.8× dampening (E8 backward) |
+| `ConnectivityContext` | Optional structural overlap (symmetric to intervention overlap) |
+| `compute_e8_asymmetric_fingerprint_similarity` | Primary similarity entry |
+| `detect_graph_query_intent` | Heuristic classifier for inbound queries |
+
+E8 uses 1024D `e8_graph_as_source` / `e8_graph_as_target` dual vectors on `SemanticFingerprint` (shares the e5-large-v2 model with E1 for zero extra VRAM).
+
+---
+
+## 13. Graph Discovery Service (LLM-powered)
+
+### 13.1 Crate layout
+
+`context-graph-graph-agent` shares the Hermes-2-Pro LLM via `Arc<CausalDiscoveryLLM>` with the causal agent (no extra VRAM).
+
+| Module | Purpose |
+|--------|---------|
+| `llm` | `GraphRelationshipLLM` — uses graph-grammar GBNF |
+| `llm/prompt` | `GraphPromptBuilder` — content-domain-aware prompts |
+| `scanner` | `MemoryScanner` for graph candidates |
+| `activator` | `E8Activator` — persists to `GraphStorage` with 1024D E8 embeddings |
+| `service` | `GraphDiscoveryService` — optional background loop |
+| `types` | `GraphAnalysisResult`, `GraphCandidate`, `MemoryForGraphAnalysis`, etc. |
+
+`E8_DIMENSION = 1024` (constant).
+
+### 13.2 Content domains
+
+`ContentDomain` (serde snake_case): `Code`, `Legal`, `Academic`, `General` (default). Determines relationship-type relevance and informs the LLM system prompt.
+
+### 13.3 Relationship categories & types
+
+`RelationshipCategory` (6 categories) and `RelationshipType` (20 variants: 19 + `None`):
+
+| Category | Types |
+|----------|-------|
+| Containment | `Contains`, `ScopedBy` |
+| Dependency | `DependsOn`, `Imports`, `Requires` |
+| Reference | `References`, `Cites`, `Interprets`, `Distinguishes` |
+| Implementation | `Implements`, `CompliesWith`, `Fulfills` |
+| Extension | `Extends`, `Modifies`, `Supersedes`, `Overrules` |
+| Invocation | `Calls`, `Applies`, `UsedBy` |
+| — | `None` (no relationship) |
+
+### 13.4 `GraphLinkDirection`
+
+| Variant | Serde | Meaning |
+|---------|-------|---------|
+| `AConnectsB` | `a_connects_b` | A → B (outgoing from A) |
+| `BConnectsA` | `b_connects_a` | B → A |
+| `Bidirectional` | `bidirectional` | Mutual reference |
+| `NoConnection` | `no_connection` | Reject (default) |
+
+`from_str` accepts aliases: `"a->b"`, `"forward"`, `"source"` → `AConnectsB`; `"b->a"`, `"reverse"`, `"target"` → `BConnectsA`; `"both"`, `"mutual"`, `"symmetric"`, `"a<->b"` → `Bidirectional`.
+
+### 13.5 MCP entry points
+
+- `discover_graph_relationships` (`graph_tools.rs::call_discover_graph_relationships`, llm-feature-gated) — runs the graph-agent scanner + LLM over memories, returns `DiscoveredRelationship[]` with `DiscoveryMetadata`.
+- `validate_graph_link` (`call_validate_graph_link`) — LLM validates a proposed `(source, target, edge_type)` triple; outputs verdict + rationale.
+
+---
+
+## 14. LLM Edge Validation
+
+`context_graph_core::llm_edge_validation::LLMEdgeValidation` persists per-edge LLM verdicts in `CF_TYPED_EDGE_VALIDATIONS`. Key format: **33 bytes** `[source(16)][target(16)][edge_type(1)]`. Value: `[LLM_EDGE_VALIDATION_VERSION(1) = 1][bincode LLMEdgeValidation]`.
+
+### 14.1 `LLMEdgeValidation` fields
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `validated_at` | `DateTime<Utc>` | LLM call wall-clock |
+| `verdict` | `LLMVerdict` | `Valid` \| `Invalid` \| `Reclassify { new_edge_type: u8 }` |
+| `confidence` | `f32` | `[0,1]` |
+| `rationale` | `String` | 1–3 sentence grammar-constrained justification |
+| `auto_derived_weight` | `f32` | Weight at validation time (drift-audit hook) |
+| `validator_version` | `String` | e.g. `"Hermes-2-Pro-Mistral-7B-Q5_K_M@2026-04-14"` |
+| `prompt_hash` | `[u8; 32]` | SHA-256 of the exact prompt sent |
+
+### 14.2 `LLMVerdict`
+
+Bincode-serialized enum. Adding variants requires bumping `LLM_EDGE_VALIDATION_VERSION` and `TYPED_EDGE_RECORD_VERSION`. On decode, version-mismatch returns `CoreError::SerializationError` (no automatic migration).
+
+| Variant | Payload | Meaning |
+|---------|---------|---------|
+| `Valid` | — | Auto-derived edge confirmed |
+| `Invalid` | — | Auto-derived edge rejected |
+| `Reclassify` | `{ new_edge_type: u8 }` | Link exists but under a different `GraphLinkEdgeType` (0..=7) |
+
+`as_str()` returns snake-case labels `"valid"` / `"invalid"` / `"reclassify"`.
+
+### 14.3 Companion record CF
+
+`CF_TYPED_EDGE_RECORDS` (defined in teleological column families) stores the auto-derived corpus row for each edge — the raw ensemble output — so a validation row can be joined back to the derivation for training / audit. See [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md).
+
+### 14.4 Invocation entry
+
+MCP tool `validate_low_confidence_edges` walks `CF_TYPED_EDGE_RECORDS`, selects edges below a weight threshold, invokes the LLM validator, and persists results into `CF_TYPED_EDGE_VALIDATIONS`. `validate_graph_link` validates a single proposed edge directly.
+
+---
+
+## 15. Causal Chain and Causal Search Tools
+
+### 15.1 `search_causes` (`causal_tools.rs`)
+
+Abductive retrieval: "what likely caused X?"
+
+1. Embed query (E1 + E5 dual per scope).
+2. Search memories with `SearchStrategy::MultiSpace` + weight profile `"semantic_search"` + 5× over-fetch.
+3. Blend scores: **80 % E1 + 20 % E5**, apply **0.8× `ABDUCTIVE_DAMPENING`** (effect→cause direction).
+4. Filter by `minScore`, return top-`topK`.
+
+Params: `query`, `topK` (1..=50, default 10), `minScore` (default 0.1), `includeContent`, `filterCausalDirection`, `search_scope` (`"memories"` / `"relationships"` / `"all"`).
+
+### 15.2 `search_effects`
+
+Symmetric to `search_causes` but using cause→effect direction (1.2× boost).
+
+### 15.3 `get_causal_chain`
+
+Builds a transitive chain from a starting memory using `chain::build_causal_chain`, returns `CausalChainHop[]` with per-hop `base_similarity`, `direction`, `hop_score`, and aggregated `chain_score`.
+
+### 15.4 `search_causal_relationships` (`causal_relationship_tools.rs`)
+
+Semantic search over `CF_CAUSAL_RELATIONSHIPS` with direction-aware E5 paths:
+
+| Param | Default | Range |
+|-------|---------|-------|
+| `query` | required | non-empty |
+| `direction` | `"all"` | `"cause"` \| `"effect"` \| `"all"` |
+| `topK` | 10 | 1..=100 |
+| `includeSource` | true | — |
+| `multiEmbedder` | false | Enables E1+E5+E8+E11 fusion |
+
+Direction maps: `"cause"` → query as effect, search cause vectors; `"effect"` → query as cause, search effect vectors; `"all"` → E1 semantic fallback.
+
+Default weights when `multiEmbedder=true`: E1=0.30, E5=0.35, E8=0.15, E11=0.20. Source-anchored vectors (`e5_source_cause`, `e5_source_effect`) are weighted 0.6 / explanation 0.4 to prevent LLM-explanation clustering across distinct source documents.
+
+### 15.5 `get_causal_chain` + `search_connections` + `get_graph_path`
+
+- `search_connections` (`graph_tools.rs`) — E8 asymmetric search; params: `query`, `direction` (`"source"` \| `"target"` \| `"both"`), `topK`, `minScore`, `includeContent`, `includeProvenance`. Uses `graph_reasoning` weight profile with 5× over-fetch; applies E8 direction modifier.
+- `get_graph_path` — multi-hop path visualisation using E8 per-hop attenuation.
+- `get_causal_chain` — exposes §10 chain reasoning as an MCP tool.
+
+---
+
+## 16. E5 Integration with Search
+
+At search time, `embedder_first`, `multi_space`, and `pipeline` strategies all route through `compute_e5_asymmetric_fingerprint_similarity` for the E5 slot when direction hints are present. Query-side direction is sourced from:
+
+1. Explicit param (`filterCausalDirection`) in causal tools.
+2. `detect_causal_query_intent(query)` heuristic classifier (causal markers in query text).
+3. Fingerprint inference via `infer_direction_from_fingerprint` on stored memories (component-variance comparison).
+
+Embedder-score slot for E5 is only populated when `CausalDirection` is set; otherwise scores default to 0.0 and E5 contributes nothing to fusion weight. See [05_embedding_subsystem.md](05_embedding_subsystem.md) §E5 and [06_search_and_fusion.md](06_search_and_fusion.md) for fusion details.
+
+---
+
+## 17. Background Activators & Scanners
+
+### 17.1 Threading model
+
+| Component | Runtime | Concurrency control |
+|-----------|---------|---------------------|
+| `CausalDiscoveryService` | Tokio task; `JoinHandle` retained | `AtomicBool running`, `mpsc::Sender<()>` shutdown |
+| `CausalDiscoveryLLM` state | Sync (`parking_lot::RwLock<LlmState>`) | `unsafe impl Send+Sync` — llama.cpp C++ layer is internally mutex-guarded |
+| `MemoryScanner` | Sync, held inside service under `RwLock` | Single-writer per service |
+| `E5EmbedderActivator` | `Arc`-shared; stateless per call apart from `CausalGraph` `RwLock` | — |
+| `CausalGraph` | `Arc<parking_lot::RwLock<CausalGraph>>` | Shared between activator and service |
+| `GraphDiscoveryService` | Same pattern as causal; shares `Arc<CausalDiscoveryLLM>` | — |
+
+### 17.2 Shutdown
+
+`shutdown_tx: RwLock<Option<mpsc::Sender<()>>>` drains in-flight cycle; `running` atomic flips to false. Stored `join_handle` is awaited so background task panics surface as errors rather than silently disappearing.
+
+### 17.3 Worker pools
+
+The LLM is single-instance: both causal and graph agents share one `Arc<CausalDiscoveryLLM>` to avoid duplicate VRAM allocation. K-NN construction and edge-builder passes run on the main tokio runtime with fork-join parallelism inside `NnDescent::build()` (synchronous, CPU-bound). There is no dedicated worker-pool abstraction — parallelism comes from tokio's default multi-threaded scheduler.

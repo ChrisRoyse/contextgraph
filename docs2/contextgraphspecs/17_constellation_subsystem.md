@@ -1,6 +1,6 @@
-# 17. Constellation Subsystem (Phase 2)
+# 17. Constellation Subsystem
 
-The constellation compiler aggregates per-embedder centroid and spread statistics over a caller-selected set of memories. A compiled constellation answers "does this new memory belong to the same cluster?" without re-running the full retrieval pipeline.
+A **constellation** is a compiled reference anchor — a bundle of per-embedder centroids plus spread statistics — for a caller-selected set of memories. Once compiled, a constellation answers "does this new memory belong to the same cluster?" in O(13) cosine operations without re-running the full retrieval pipeline. Constellations feed style/topic scoring in downstream training (see [19_camd_dpo_subsystem.md](19_camd_dpo_subsystem.md)).
 
 ---
 
@@ -656,11 +656,12 @@ The delete operation only removes the secondary index entry if it still points t
 
 | Topic | Document |
 |-------|----------|
-| Embedder dimensions and model IDs | `05_embedding_subsystem.md` |
-| RocksDB column family architecture | `04_database_schema.md`, `09_storage_layer.md` |
-| `SemanticFingerprint` structure | `13_teleological_subsystem.md` |
-| MCP tool protocol and error handling | `08_mcp_tools_reference.md` |
-| Topic clustering and portfolios | `12_clustering_and_topics.md` |
-| `SynergyMatrix`, group alignments, cross-correlations | `13_teleological_subsystem.md` |
-| `NUM_EMBEDDERS` constant (= 13) | `crates/context-graph-core/src/teleological/types.rs:217` |
-| bincode + skip_serializing_if lesson | `MEMORY.md` ("bincode + skip_serializing_if = BROKEN") |
+| Embedder dimensions and model IDs | [05_embedding_subsystem.md](05_embedding_subsystem.md) |
+| RocksDB column family architecture | [04_database_schema.md](04_database_schema.md), [09_storage_layer.md](09_storage_layer.md) |
+| `SemanticFingerprint`, `SynergyMatrix`, group alignments | [13_teleological_subsystem.md](13_teleological_subsystem.md) |
+| Graph and typed edges | [07_graph_and_causal.md](07_graph_and_causal.md) |
+| MCP tool protocol | [08_mcp_tools_reference.md](08_mcp_tools_reference.md) |
+| Topic clustering and portfolios | [12_clustering_and_topics.md](12_clustering_and_topics.md) |
+| Training corpus export (`TrainingRecord`) | [16_training_subsystem.md](16_training_subsystem.md) |
+| Constellations as CAMD-DPO style anchor | [19_camd_dpo_subsystem.md](19_camd_dpo_subsystem.md) |
+| Contrastive pairs and typed-edge export | [18_contrastive_and_typed_edges.md](18_contrastive_and_typed_edges.md) |
