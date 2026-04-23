@@ -184,11 +184,11 @@ pub fn deserialize_teleological_fingerprint(data: &[u8]) -> Result<TeleologicalF
 ///
 /// # Example
 /// ```ignore
-/// let profile = [0.5f32; 13];
+/// let profile = [0.5f32; 14];
 /// let bytes = serialize_topic_profile(&profile);
 /// assert_eq!(bytes.len(), 52);
 /// ```
-pub fn serialize_topic_profile(vector: &[f32; 13]) -> [u8; 52] {
+pub fn serialize_topic_profile(vector: &[f32; 14]) -> [u8; 52] {
     let mut result = [0u8; 52];
     for (i, &v) in vector.iter().enumerate() {
         let bytes = v.to_le_bytes();
@@ -203,11 +203,11 @@ pub fn serialize_topic_profile(vector: &[f32; 13]) -> [u8; 52] {
 /// * `data` - Exactly 52 bytes
 ///
 /// # Returns
-/// `Ok([f32; 13])` on success, `Err(CoreError::SerializationError)` on failure.
+/// `Ok([f32; 14])` on success, `Err(CoreError::SerializationError)` on failure.
 ///
 /// # Errors
 /// Returns error if data is not exactly 52 bytes.
-pub fn deserialize_topic_profile(data: &[u8]) -> Result<[f32; 13], CoreError> {
+pub fn deserialize_topic_profile(data: &[u8]) -> Result<[f32; 14], CoreError> {
     if data.len() != 52 {
         return Err(CoreError::SerializationError(format!(
             "Topic profile must be 52 bytes, got {}. \
@@ -218,7 +218,7 @@ pub fn deserialize_topic_profile(data: &[u8]) -> Result<[f32; 13], CoreError> {
         )));
     }
 
-    let mut result = [0.0f32; 13];
+    let mut result = [0.0f32; 14];
     for i in 0..13 {
         let bytes: [u8; 4] = data[i * 4..(i + 1) * 4]
             .try_into()

@@ -18,9 +18,9 @@
 //! ProductionMultiArrayProvider
 //! ├── embed_all(&str) -> MultiArrayEmbeddingOutput  // All 13 embeddings
 //! ├── embed_batch_all(&[String]) -> Vec<Output>     // Batch all 13
-//! ├── model_ids() -> [&str; 13]                     // Model identifiers
+//! ├── model_ids() -> [&str; 14]                     // Model identifiers
 //! ├── is_ready() -> bool                            // Readiness check
-//! └── health_status() -> [bool; 13]                 // Per-embedder health
+//! └── health_status() -> [bool; 14]                 // Per-embedder health
 //!
 //! CausalHintProvider (trait)
 //! ├── get_hint(&str) -> Option<CausalHint>  // LLM-based causal hint

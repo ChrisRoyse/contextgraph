@@ -353,8 +353,8 @@ fn build_previous_session_context(
 ///
 /// # Example
 /// ```ignore
-/// let v1 = [0.5; 13];
-/// let v2 = [0.5; 13];
+/// let v1 = [0.5; 14];
+/// let v2 = [0.5; 14];
 /// assert_eq!(cosine_distance(&v1, &v2), 0.0); // Identical
 /// ```
 fn cosine_distance(current: &[f32; NUM_EMBEDDERS], previous: &[f32; NUM_EMBEDDERS]) -> f32 {
@@ -530,7 +530,7 @@ mod tests {
         let new_id = "new-session";
 
         // Setup: Create previous session with known identity state in cache
-        let prev_purpose = [0.5_f32; 13];
+        let prev_purpose = [0.5_f32; 14];
         let prev_integration = 0.75;
         let prev_reflection = 0.65;
         let prev_differentiation = 0.55;
@@ -760,7 +760,7 @@ mod tests {
         // Setup: Create previous session snapshot with known values in cache
         {
             let mut prev_snapshot = SessionSnapshot::new(prev_id);
-            prev_snapshot.topic_profile = [0.5; 13];
+            prev_snapshot.topic_profile = [0.5; 14];
             prev_snapshot.integration = 0.8;
             prev_snapshot.reflection = 0.7;
             prev_snapshot.differentiation = 0.6;
@@ -941,8 +941,8 @@ mod tests {
         println!("  Opposite vectors: distance = {}", dist);
 
         // Test 3: Zero vectors -> distance 0.0 (graceful handling)
-        let a = [0.0_f32; 13];
-        let b = [0.0_f32; 13];
+        let a = [0.0_f32; 14];
+        let b = [0.0_f32; 14];
         let dist = cosine_distance(&a, &b);
         assert!(
             dist == 0.0,
@@ -952,8 +952,8 @@ mod tests {
         println!("  Zero vectors: distance = {}", dist);
 
         // Test 4: Proportional vectors -> distance 0.0
-        let a = [1.0_f32; 13];
-        let b = [0.5_f32; 13];
+        let a = [1.0_f32; 14];
+        let b = [0.5_f32; 14];
         let dist = cosine_distance(&a, &b);
         assert!(
             (dist - 0.0).abs() < 0.001,
@@ -1108,8 +1108,8 @@ mod tests {
             prev_snapshot.reflection = prev_reflection;
             prev_snapshot.differentiation = prev_differentiation;
             // Add trajectory entries
-            prev_snapshot.append_to_trajectory([0.1; 13]);
-            prev_snapshot.append_to_trajectory([0.2; 13]);
+            prev_snapshot.append_to_trajectory([0.1; 14]);
+            prev_snapshot.append_to_trajectory([0.2; 14]);
             store_in_cache(&prev_snapshot);
         }
 
@@ -1191,7 +1191,7 @@ mod tests {
         // Setup: Create previous session with healthy metrics in cache
         {
             let mut prev_snapshot = SessionSnapshot::new(prev_id);
-            prev_snapshot.topic_profile = [0.5; 13]; // Non-zero vector
+            prev_snapshot.topic_profile = [0.5; 14]; // Non-zero vector
             prev_snapshot.integration = 0.85;
             prev_snapshot.reflection = 0.80;
             prev_snapshot.differentiation = 0.75;
@@ -1265,7 +1265,7 @@ mod tests {
         // Setup: Create previous session in cache
         {
             let mut prev_snapshot = SessionSnapshot::new(prev_id);
-            prev_snapshot.topic_profile = [0.6; 13];
+            prev_snapshot.topic_profile = [0.6; 14];
             prev_snapshot.integration = 0.75;
             prev_snapshot.reflection = 0.70;
             prev_snapshot.differentiation = 0.65;

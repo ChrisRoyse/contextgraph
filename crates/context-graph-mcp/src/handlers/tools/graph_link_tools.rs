@@ -964,7 +964,7 @@ impl Handlers {
                     ));
                 }
             }
-            let mut w = [0.0f32; 13];
+            let mut w = [0.0f32; 14];
             for (i, name) in EMBEDDER_NAMES.iter().enumerate() {
                 if let Some(&val) = custom.get(*name) {
                     w[i] = val as f32;
@@ -1009,7 +1009,7 @@ impl Handlers {
         // Step 3: Query K-NN graphs from each semantic embedder (excluding E2-E4 temporal)
         let mut all_candidates: HashMap<Uuid, CandidateInfo> = HashMap::new();
         let mut total_candidates_evaluated = 0;
-        let mut embedder_contribution_counts: [usize; 13] = [0; 13];
+        let mut embedder_contribution_counts: [usize; 14] = [0; 14];
 
         for &embedder_idx in &SEMANTIC_EMBEDDER_INDICES {
             // Query K-NN edges from EdgeRepository - NO FALLBACKS
@@ -1040,8 +1040,8 @@ impl Handlers {
 
                 let entry = all_candidates.entry(neighbor_id).or_insert_with(|| {
                     CandidateInfo {
-                        embedder_scores: [0.0; 13],
-                        embedder_ranks: [0; 13],
+                        embedder_scores: [0.0; 14],
+                        embedder_ranks: [0; 14],
                         contributing_embedders: Vec::new(),
                     }
                 });
@@ -1247,9 +1247,9 @@ impl Handlers {
 /// Internal struct to track candidate information during RRF fusion.
 struct CandidateInfo {
     /// Per-embedder similarity scores (0.0 if not found).
-    embedder_scores: [f32; 13],
+    embedder_scores: [f32; 14],
     /// Per-embedder ranks (0 if not found).
-    embedder_ranks: [usize; 13],
+    embedder_ranks: [usize; 14],
     /// Names of contributing embedders.
     contributing_embedders: Vec<String>,
 }
@@ -1296,13 +1296,13 @@ fn get_contributing_embedders(mask: u16) -> Vec<String> {
 
 /// Compute weighted agreement from embedder scores.
 /// Per Constitution: weighted_agreement = Sum(topic_weight_i × is_clustered_i)
-fn compute_weighted_agreement(scores: &[f32; 13]) -> f32 {
+fn compute_weighted_agreement(scores: &[f32; 14]) -> f32 {
     // Topic weights per constitution
     // SEMANTIC: E1, E5, E6, E7, E10, E12, E13 = 1.0
     // RELATIONAL: E8, E11 = 0.5
     // STRUCTURAL: E9 = 0.5
     // TEMPORAL: E2, E3, E4 = 0.0 (never count toward topics)
-    let topic_weights: [f32; 13] = [
+    let topic_weights: [f32; 14] = [
         1.0, // E1 - semantic
         0.0, // E2 - temporal (excluded)
         0.0, // E3 - temporal (excluded)
@@ -1349,10 +1349,10 @@ mod tests {
     #[test]
     fn test_weighted_agreement_and_rrf() {
         // All semantic embedders agree
-        let scores: [f32; 13] = [0.9, 0.0, 0.0, 0.0, 0.8, 0.75, 0.85, 0.6, 0.55, 0.7, 0.65, 0.8, 0.7];
+        let scores: [f32; 14] = [0.9, 0.0, 0.0, 0.0, 0.8, 0.75, 0.85, 0.6, 0.55, 0.7, 0.65, 0.8, 0.7];
         assert!((compute_weighted_agreement(&scores) - 8.5).abs() < 0.01);
         // Only temporal = 0 agreement
-        let temporal_only: [f32; 13] = [0.0, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let temporal_only: [f32; 14] = [0.0, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
         assert!((compute_weighted_agreement(&temporal_only) - 0.0).abs() < 0.01);
         // RRF formula: rank=1 > rank=10
         let k = 60.0f32;

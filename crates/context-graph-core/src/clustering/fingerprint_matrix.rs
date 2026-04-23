@@ -337,7 +337,7 @@ pub struct SimilarityStats {
 /// and `update_matrix_incremental`.
 #[inline]
 fn aggregate_similarity(
-    per_embedder: &[Option<f32>; 13],
+    per_embedder: &[Option<f32>; 14],
     overall: f32,
     strategy: AggregationStrategy,
 ) -> f32 {

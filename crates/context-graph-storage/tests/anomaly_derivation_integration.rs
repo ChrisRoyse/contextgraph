@@ -42,7 +42,7 @@ fn synthetic_edge(
     source: Uuid,
     target: Uuid,
     et: GraphLinkEdgeType,
-    scores_in: [f32; 13],
+    scores_in: [f32; 14],
 ) -> TypedEdge {
     let dir = if et.is_asymmetric() {
         DirectedRelation::Forward
@@ -105,32 +105,32 @@ async fn derives_five_anomaly_patterns_from_six_edges() {
     }
 
     // Edge 0: SemanticButNotCausal — E1 high, E5 low.
-    let mut e0_scores = [0f32; 13];
+    let mut e0_scores = [0f32; 14];
     e0_scores[0] = 0.92;
     e0_scores[4] = 0.10;
     let e0 = synthetic_edge(sources[0], targets[0], GraphLinkEdgeType::SemanticSimilar, e0_scores);
 
     // Edge 1: KeywordButNotParaphrase — E6 high, E10 low.
-    let mut e1_scores = [0f32; 13];
+    let mut e1_scores = [0f32; 14];
     e1_scores[5] = 0.88;
     e1_scores[9] = 0.15;
     let e1 = synthetic_edge(sources[1], targets[1], GraphLinkEdgeType::KeywordOverlap, e1_scores);
 
     // Edge 2: CodeShapeButDifferentIntent — E7 high, E1 low.
-    let mut e2_scores = [0f32; 13];
+    let mut e2_scores = [0f32; 14];
     e2_scores[6] = 0.85;
     e2_scores[0] = 0.05;
     let e2 = synthetic_edge(sources[2], targets[2], GraphLinkEdgeType::CodeRelated, e2_scores);
 
     // Edge 3: EntitySharedButDifferentStructure — E11 high, E8 low.
-    let mut e3_scores = [0f32; 13];
+    let mut e3_scores = [0f32; 14];
     e3_scores[10] = 0.82;
     e3_scores[7] = 0.05;
     let e3 = synthetic_edge(sources[3], targets[3], GraphLinkEdgeType::EntityShared, e3_scores);
 
     // Edge 4: HdcRobustButSemanticDifferent — E9 high, E1 low on a
     // ParaphraseAligned edge (cross-type fallback).
-    let mut e4_scores = [0f32; 13];
+    let mut e4_scores = [0f32; 14];
     e4_scores[9] = 0.8; // keep primary above threshold
     e4_scores[8] = 0.96; // E9 high
     e4_scores[0] = 0.09; // E1 low
@@ -144,7 +144,7 @@ async fn derives_five_anomaly_patterns_from_six_edges() {
     // Edge 5: no classification — all scores ~0.4 on a SemanticSimilar edge.
     // Primary embedder will be bumped to 0.8 but E5 is also 0.4 (above the
     // `low_threshold=0.30` cutoff), so the pattern doesn't match.
-    let mut e5_scores = [0f32; 13];
+    let mut e5_scores = [0f32; 14];
     for v in &mut e5_scores {
         *v = 0.4;
     }

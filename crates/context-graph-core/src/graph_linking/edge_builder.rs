@@ -28,7 +28,7 @@ use super::{
 
 /// Per-embedder similarity thresholds for agreement calculation.
 /// Index 0-12 corresponds to embedders E1-E13.
-pub const DEFAULT_EMBEDDER_THRESHOLDS: [f32; 13] = [
+pub const DEFAULT_EMBEDDER_THRESHOLDS: [f32; 14] = [
     0.75, // E1 Semantic
     0.70, // E2 Recency (temporal)
     0.70, // E3 Periodic (temporal)
@@ -51,7 +51,7 @@ pub struct EdgeBuilderConfig {
     pub min_weighted_agreement: f32,
 
     /// Per-embedder thresholds for agreement calculation (index 0-12 = E1-E13).
-    pub embedder_thresholds: [f32; 13],
+    pub embedder_thresholds: [f32; 14],
 
     /// Thresholds for typed edge creation.
     pub edge_thresholds: EdgeThresholds,
@@ -111,7 +111,7 @@ impl EdgeBuilderConfig {
     }
 
     /// Set per-embedder thresholds.
-    pub fn with_embedder_thresholds(mut self, thresholds: [f32; 13]) -> Self {
+    pub fn with_embedder_thresholds(mut self, thresholds: [f32; 14]) -> Self {
         self.embedder_thresholds = thresholds;
         self
     }
@@ -218,7 +218,7 @@ impl EdgeBuilder {
     /// Create a typed edge for a memory pair if it meets the threshold.
     fn create_typed_edge(&self, source: Uuid, target: Uuid) -> EdgeResult<Option<TypedEdge>> {
         // Collect similarity scores from all embedders
-        let mut embedder_scores = [0.0f32; 13];
+        let mut embedder_scores = [0.0f32; 14];
         let mut direction = DirectedRelation::Symmetric;
         let mut has_directed = false;
 
@@ -303,7 +303,7 @@ impl EdgeBuilder {
     /// Returns (weighted_agreement, agreement_count, agreeing_embedders_bitfield).
     ///
     /// Per AP-60: Temporal embedders (E2-E4) are NEVER counted.
-    fn compute_weighted_agreement(&self, scores: &[f32; 13]) -> (f32, u8, u16) {
+    fn compute_weighted_agreement(&self, scores: &[f32; 14]) -> (f32, u8, u16) {
         let mut weighted_sum = 0.0f32;
         let mut count = 0u8;
         let mut agreeing = 0u16;
@@ -345,7 +345,7 @@ impl EdgeBuilder {
     }
 
     /// Determine edge type based on which embedders have high similarity.
-    fn determine_edge_type(&self, scores: &[f32; 13]) -> GraphLinkEdgeType {
+    fn determine_edge_type(&self, scores: &[f32; 14]) -> GraphLinkEdgeType {
         let thresholds = self.config.embedder_thresholds;
 
         // Check for specific edge types in priority order
@@ -482,7 +482,7 @@ mod tests {
         let builder = EdgeBuilder::with_defaults();
 
         // E1=0.8, E7=0.75 should give agreement from both
-        let mut scores = [0.0f32; 13];
+        let mut scores = [0.0f32; 14];
         scores[0] = 0.8; // E1 semantic
         scores[6] = 0.75; // E7 code
 
@@ -500,7 +500,7 @@ mod tests {
         let builder = EdgeBuilder::with_defaults();
 
         // E2=0.9 (temporal) should NOT count toward agreement
-        let mut scores = [0.0f32; 13];
+        let mut scores = [0.0f32; 14];
         scores[1] = 0.9; // E2 recency
 
         let (weighted, count, agreeing) = builder.compute_weighted_agreement(&scores);
@@ -515,7 +515,7 @@ mod tests {
     fn test_determine_edge_type_causal() {
         let builder = EdgeBuilder::with_defaults();
 
-        let mut scores = [0.0f32; 13];
+        let mut scores = [0.0f32; 14];
         scores[4] = 0.75; // E5 causal
 
         let edge_type = builder.determine_edge_type(&scores);
@@ -526,7 +526,7 @@ mod tests {
     fn test_determine_edge_type_code() {
         let builder = EdgeBuilder::with_defaults();
 
-        let mut scores = [0.0f32; 13];
+        let mut scores = [0.0f32; 14];
         scores[6] = 0.75; // E7 code
 
         let edge_type = builder.determine_edge_type(&scores);
@@ -537,7 +537,7 @@ mod tests {
     fn test_determine_edge_type_semantic() {
         let builder = EdgeBuilder::with_defaults();
 
-        let mut scores = [0.0f32; 13];
+        let mut scores = [0.0f32; 14];
         scores[0] = 0.8; // E1 semantic
 
         let edge_type = builder.determine_edge_type(&scores);

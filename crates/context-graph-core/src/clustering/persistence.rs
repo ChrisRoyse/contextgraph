@@ -569,14 +569,14 @@ mod tests {
     use uuid::Uuid;
 
     /// Create a test topic with specified profile strengths.
-    fn create_test_topic(strengths: [f32; 13]) -> Topic {
+    fn create_test_topic(strengths: [f32; 14]) -> Topic {
         Topic::new(TopicProfile::new(strengths), HashMap::new(), vec![Uuid::new_v4()])
     }
 
     /// Create a valid topic (meets weighted_agreement >= 2.5).
     fn create_valid_topic() -> Topic {
         // 3 semantic spaces at 1.0 = weighted_agreement 3.0
-        let mut strengths = [0.0; 13];
+        let mut strengths = [0.0; 14];
         strengths[0] = 1.0; // E1 Semantic
         strengths[4] = 1.0; // E5 Causal
         strengths[6] = 1.0; // E7 Code

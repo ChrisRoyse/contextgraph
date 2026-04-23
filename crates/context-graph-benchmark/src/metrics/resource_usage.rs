@@ -316,7 +316,7 @@ pub struct MemoryFootprint {
     /// Total memory usage in bytes.
     pub total_bytes: usize,
     /// Per-embedder memory usage in bytes.
-    pub per_embedder_bytes: [usize; 13],
+    pub per_embedder_bytes: [usize; 14],
     /// Average bytes per document (across all embedders).
     pub bytes_per_document: f64,
     /// GPU memory usage if applicable.

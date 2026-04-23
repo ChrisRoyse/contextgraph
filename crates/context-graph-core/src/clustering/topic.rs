@@ -87,12 +87,12 @@ impl std::fmt::Display for TopicPhase {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TopicProfile {
     /// Strength in each of 13 embedding spaces (0.0..=1.0).
-    pub strengths: [f32; 13],
+    pub strengths: [f32; 14],
 }
 
 impl Default for TopicProfile {
     fn default() -> Self {
-        Self { strengths: [0.0; 13] }
+        Self { strengths: [0.0; 14] }
     }
 }
 
@@ -110,8 +110,8 @@ impl TopicProfile {
     /// assert_eq!(profile.strengths[0], 1.0); // clamped from 1.5
     /// assert_eq!(profile.strengths[1], 0.0); // clamped from -0.5
     /// ```
-    pub fn new(strengths: [f32; 13]) -> Self {
-        let mut clamped = [0.0f32; 13];
+    pub fn new(strengths: [f32; 14]) -> Self {
+        let mut clamped = [0.0f32; 14];
         for (i, &s) in strengths.iter().enumerate() {
             clamped[i] = s.clamp(0.0, 1.0);
         }
@@ -137,7 +137,7 @@ impl TopicProfile {
     /// use context_graph_core::clustering::TopicProfile;
     /// use context_graph_core::teleological::Embedder;
     ///
-    /// let mut strengths = [0.0; 13];
+    /// let mut strengths = [0.0; 14];
     /// strengths[0] = 0.8; // Semantic
     /// strengths[4] = 0.7; // Causal
     /// let profile = TopicProfile::new(strengths);
@@ -186,7 +186,7 @@ impl TopicProfile {
     /// use context_graph_core::teleological::Embedder;
     ///
     /// // 3 semantic spaces at strength 1.0 = weighted_agreement 3.0
-    /// let mut strengths = [0.0; 13];
+    /// let mut strengths = [0.0; 14];
     /// strengths[Embedder::Semantic.index()] = 1.0;
     /// strengths[Embedder::Causal.index()] = 1.0;
     /// strengths[Embedder::Code.index()] = 1.0;
@@ -397,7 +397,7 @@ impl Topic {
     /// use context_graph_core::teleological::Embedder;
     /// use std::collections::HashMap;
     ///
-    /// let mut strengths = [0.0; 13];
+    /// let mut strengths = [0.0; 14];
     /// strengths[Embedder::Semantic.index()] = 1.0;
     /// strengths[Embedder::Causal.index()] = 1.0;
     /// strengths[Embedder::Code.index()] = 1.0;
@@ -574,7 +574,7 @@ pub const MAX_TOPIC_DEPTH: u8 = 3;
 /// Compute cosine similarity between two topic profile strength vectors.
 ///
 /// Returns 0.0 for zero-norm vectors. Result is clamped to [0.0, 1.0].
-fn topic_cosine_similarity(a: &[f32; 13], b: &[f32; 13]) -> f32 {
+fn topic_cosine_similarity(a: &[f32; 14], b: &[f32; 14]) -> f32 {
     let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
     let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
     let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -667,7 +667,7 @@ pub fn build_topic_hierarchy(topics: &mut Vec<Topic>, threshold: f32) -> Vec<Top
         }
 
         // Compute averaged profile strengths
-        let mut avg_strengths = [0.0f32; 13];
+        let mut avg_strengths = [0.0f32; 14];
         for &idx in indices {
             for (k, s) in topics[idx].profile.strengths.iter().enumerate() {
                 avg_strengths[k] += s;
@@ -726,7 +726,7 @@ mod tests {
     #[test]
     fn test_weighted_agreement_semantic_only() {
         // E1 (Semantic, weight=1.0), E5 (Causal/Semantic, weight=1.0), E7 (Code/Semantic, weight=1.0)
-        let mut strengths = [0.0; 13];
+        let mut strengths = [0.0; 14];
         strengths[Embedder::Semantic.index()] = 1.0; // E1
         strengths[Embedder::Causal.index()] = 1.0; // E5
         strengths[Embedder::Code.index()] = 1.0; // E7
@@ -752,7 +752,7 @@ mod tests {
     #[test]
     fn test_weighted_agreement_temporal_excluded() {
         // CRITICAL TEST: Temporal spaces (E2, E3, E4) should contribute 0.0 per AP-60
-        let mut strengths = [0.0; 13];
+        let mut strengths = [0.0; 14];
         strengths[Embedder::TemporalRecent.index()] = 1.0; // E2 - temporal
         strengths[Embedder::TemporalPeriodic.index()] = 1.0; // E3 - temporal
         strengths[Embedder::TemporalPositional.index()] = 1.0; // E4 - temporal
@@ -774,7 +774,7 @@ mod tests {
     #[test]
     fn test_weighted_agreement_mixed_categories() {
         // 2 semantic (2.0) + 1 relational (0.5) = 2.5 -> exactly threshold
-        let mut strengths = [0.0; 13];
+        let mut strengths = [0.0; 14];
         strengths[Embedder::Semantic.index()] = 1.0; // E1 - semantic (1.0)
         strengths[Embedder::Causal.index()] = 1.0; // E5 - semantic (1.0)
         strengths[Embedder::Entity.index()] = 1.0; // E11 - relational (0.5)
@@ -796,7 +796,7 @@ mod tests {
 
     #[test]
     fn test_dominant_spaces() {
-        let mut strengths = [0.0; 13];
+        let mut strengths = [0.0; 14];
         strengths[Embedder::Semantic.index()] = 0.8;
         strengths[Embedder::Causal.index()] = 0.7;
         strengths[Embedder::Code.index()] = 0.9;
@@ -824,7 +824,7 @@ mod tests {
     #[test]
     fn test_topic_validity_weighted_threshold() {
         // Valid: 3 semantic = 3.0 >= 2.5
-        let mut valid_strengths = [0.0; 13];
+        let mut valid_strengths = [0.0; 14];
         valid_strengths[Embedder::Semantic.index()] = 1.0;
         valid_strengths[Embedder::Causal.index()] = 1.0;
         valid_strengths[Embedder::Code.index()] = 1.0;
@@ -836,7 +836,7 @@ mod tests {
         );
 
         // Invalid: 2 semantic = 2.0 < 2.5
-        let mut invalid_strengths = [0.0; 13];
+        let mut invalid_strengths = [0.0; 14];
         invalid_strengths[Embedder::Semantic.index()] = 1.0;
         invalid_strengths[Embedder::Causal.index()] = 1.0;
 
@@ -854,7 +854,7 @@ mod tests {
 
     #[test]
     fn test_topic_serialization_roundtrip() {
-        let mut strengths = [0.0; 13];
+        let mut strengths = [0.0; 14];
         strengths[0] = 0.9;
         strengths[4] = 0.8;
 
@@ -878,7 +878,7 @@ mod tests {
         // From constitution.yaml topic_detection.examples:
 
         // "3 semantic spaces agreeing = 3.0 -> TOPIC"
-        let mut s1 = [0.0f32; 13];
+        let mut s1 = [0.0f32; 14];
         s1[Embedder::Semantic.index()] = 1.0;
         s1[Embedder::Causal.index()] = 1.0;
         s1[Embedder::Code.index()] = 1.0;
@@ -886,7 +886,7 @@ mod tests {
         assert!(p1.is_topic(), "3 semantic = 3.0 should be topic");
 
         // "2 semantic + 1 relational = 2.5 -> TOPIC"
-        let mut s2 = [0.0f32; 13];
+        let mut s2 = [0.0f32; 14];
         s2[Embedder::Semantic.index()] = 1.0;
         s2[Embedder::Causal.index()] = 1.0;
         s2[Embedder::Entity.index()] = 1.0; // relational (0.5)
@@ -894,14 +894,14 @@ mod tests {
         assert!(p2.is_topic(), "2 semantic + 1 relational = 2.5 should be topic");
 
         // "2 semantic spaces only = 2.0 -> NOT TOPIC"
-        let mut s3 = [0.0f32; 13];
+        let mut s3 = [0.0f32; 14];
         s3[Embedder::Semantic.index()] = 1.0;
         s3[Embedder::Causal.index()] = 1.0;
         let p3 = TopicProfile::new(s3);
         assert!(!p3.is_topic(), "2 semantic = 2.0 should NOT be topic");
 
         // "5 temporal spaces = 0.0 -> NOT TOPIC (excluded)"
-        let mut s4 = [0.0f32; 13];
+        let mut s4 = [0.0f32; 14];
         s4[Embedder::TemporalRecent.index()] = 1.0;
         s4[Embedder::TemporalPeriodic.index()] = 1.0;
         s4[Embedder::TemporalPositional.index()] = 1.0;
@@ -911,7 +911,7 @@ mod tests {
         // "1 semantic + 3 relational = 2.5 -> TOPIC"
         // Note: There are only 2 relational embedders (E8, E11), so 1 semantic + 2 relational = 2.0
         // Let's test with 1 semantic + 2 relational + 1 structural = 2.5
-        let mut s5 = [0.0f32; 13];
+        let mut s5 = [0.0f32; 14];
         s5[Embedder::Semantic.index()] = 1.0;       // semantic (1.0)
         s5[Embedder::Graph.index()] = 1.0;      // relational (0.5)
         s5[Embedder::Entity.index()] = 1.0;         // relational (0.5)

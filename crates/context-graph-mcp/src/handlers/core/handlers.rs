@@ -111,7 +111,7 @@ pub struct Handlers {
     /// Custom weight profiles created via create_weight_profile tool.
     /// Session-scoped: cleared when the server restarts.
     /// Accessible by name from search_graph's weightProfile, get_unified_neighbors, etc.
-    pub(in crate::handlers) custom_profiles: Arc<RwLock<HashMap<String, [f32; 13]>>>,
+    pub(in crate::handlers) custom_profiles: Arc<RwLock<HashMap<String, [f32; 14]>>>,
 
     // =========================================================================
     // Inline Causal Discovery (INLINE-CAUSAL)

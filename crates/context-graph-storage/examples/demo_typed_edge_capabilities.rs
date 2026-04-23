@@ -58,7 +58,7 @@ fn synthetic_edge(
     } else {
         DirectedRelation::Symmetric
     };
-    let mut s = [0f32; 13];
+    let mut s = [0f32; 14];
     if let Some(i) = et.primary_embedder_index() {
         s[i] = primary.max(0.55);
     }

@@ -79,7 +79,7 @@ mod tests {
         StoredQuantizedFingerprint::new(
             Uuid::new_v4(),
             create_test_embeddings(),
-            [0.5f32; 13], // Purpose vector
+            [0.5f32; 14], // Purpose vector
             [42u8; 32],   // Content hash
         )
     }

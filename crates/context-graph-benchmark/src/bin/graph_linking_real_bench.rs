@@ -80,7 +80,7 @@ const ASYMMETRIC_EMBEDDERS: [u8; 2] = [4, 7]; // E5, E8
 const ALL_ACTIVE_EMBEDDERS: [u8; 6] = [0, 4, 6, 7, 9, 10]; // E1, E5, E7, E8, E10, E11
 
 /// Embedding dimensions per embedder
-const EMBEDDING_DIMS: [usize; 13] = [
+const EMBEDDING_DIMS: [usize; 14] = [
     1024, // E1 - semantic
     512,  // E2 - recency (temporal)
     512,  // E3 - periodic (temporal)

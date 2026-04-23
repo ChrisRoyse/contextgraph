@@ -996,7 +996,7 @@ pub struct TeleologicalSearchOptions {
     #[serde(default)]
     pub weight_profile: Option<String>,
 
-    /// Custom per-embedder weights `[f32; 13]` for multi-space search.
+    /// Custom per-embedder weights `[f32; 14]` for multi-space search.
     ///
     /// When provided, overrides `weight_profile`. Must pass `validate_weights()`:
     /// - Each weight in `[0.0, 1.0]`
@@ -1004,7 +1004,7 @@ pub struct TeleologicalSearchOptions {
     ///
     /// Index mapping: `[E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E13]`
     #[serde(default)]
-    pub custom_weights: Option<[f32; 13]>,
+    pub custom_weights: Option<[f32; 14]>,
 
     /// Embedder indices to exclude from multi-space fusion.
     ///
@@ -1135,7 +1135,7 @@ pub struct TeleologicalSearchOptions {
     /// When present, boosts RRF scores when multiple embedders agree on a candidate.
     /// Only applies to MultiSpace strategy.
     #[serde(default)]
-    pub synergy_weights: Option<[f32; 13]>,
+    pub synergy_weights: Option<[f32; 14]>,
 
     // =========================================================================
     // Quantized Pre-Filter (PQ-8 Fast Pass)
@@ -1285,7 +1285,7 @@ impl TeleologicalSearchOptions {
     /// The weights array maps `[E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E13]`.
     /// Must pass `validate_weights()`: each in [0.0, 1.0] and sum ~1.0.
     #[inline]
-    pub fn with_custom_weights(mut self, weights: [f32; 13]) -> Self {
+    pub fn with_custom_weights(mut self, weights: [f32; 14]) -> Self {
         self.custom_weights = Some(weights);
         self
     }
@@ -1621,7 +1621,7 @@ impl TeleologicalSearchOptions {
     }
 
     /// Set synergy weights for cross-embedder correlation boosting.
-    pub fn with_synergy_weights(mut self, weights: [f32; 13]) -> Self {
+    pub fn with_synergy_weights(mut self, weights: [f32; 14]) -> Self {
         self.synergy_weights = Some(weights);
         self
     }

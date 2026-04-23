@@ -57,7 +57,7 @@ pub struct MultiSpaceQueryResult {
 
     /// Per-embedder similarities (13 values).
     /// NaN if embedder wasn't searched (e.g., sparse-only query).
-    pub embedder_similarities: [f32; 13],
+    pub embedder_similarities: [f32; 14],
 
     /// RRF fused score from multi-space retrieval.
     /// Formula: RRF(d) = Σᵢ 1/(k + rankᵢ(d) + 1) where k=60 (1-indexed)
@@ -91,7 +91,7 @@ impl MultiSpaceQueryResult {
             );
         }
 
-        let mut embedder_similarities = [f32::NAN; 13];
+        let mut embedder_similarities = [f32::NAN; 14];
         let mut rrf_score = 0.0f32;
         let mut weighted_sum = 0.0f32;
         let mut weight_total = 0.0f32;

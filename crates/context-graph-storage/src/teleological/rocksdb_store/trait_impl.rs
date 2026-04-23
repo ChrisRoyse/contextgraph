@@ -226,7 +226,7 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
     async fn scan_fingerprints_for_clustering(
         &self,
         limit: Option<usize>,
-    ) -> CoreResult<Vec<(Uuid, [Vec<f32>; 13])>> {
+    ) -> CoreResult<Vec<(Uuid, [Vec<f32>; 14])>> {
         self.scan_fingerprints_for_clustering_async(limit).await
     }
 
@@ -409,15 +409,15 @@ impl TeleologicalMemoryStore for RocksDbTeleologicalStore {
 
     // ==================== Custom Weight Profile Persistence ====================
 
-    async fn store_custom_weight_profile(&self, name: &str, weights: &[f32; 13]) -> CoreResult<()> {
+    async fn store_custom_weight_profile(&self, name: &str, weights: &[f32; 14]) -> CoreResult<()> {
         self.store_custom_weight_profile(name, weights).map_err(Into::into)
     }
 
-    async fn get_custom_weight_profile(&self, name: &str) -> CoreResult<Option<[f32; 13]>> {
+    async fn get_custom_weight_profile(&self, name: &str) -> CoreResult<Option<[f32; 14]>> {
         self.get_custom_weight_profile(name).map_err(Into::into)
     }
 
-    async fn list_custom_weight_profiles(&self) -> CoreResult<Vec<(String, [f32; 13])>> {
+    async fn list_custom_weight_profiles(&self) -> CoreResult<Vec<(String, [f32; 14])>> {
         self.list_custom_weight_profiles().map_err(Into::into)
     }
 

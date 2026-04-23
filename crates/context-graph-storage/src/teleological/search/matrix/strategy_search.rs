@@ -265,7 +265,7 @@ impl MatrixStrategySearch {
 
     /// Compute correlation analysis from search results.
     fn compute_correlation(&self, results: &MultiEmbedderSearchResults) -> CorrelationAnalysis {
-        let mut correlation_matrix = [[0.0f32; 13]; 13];
+        let mut correlation_matrix = [[0.0f32; 14]; 14];
 
         // Collect scores per embedder for all IDs - pre-allocate for 13 embedders
         let mut embedder_scores: HashMap<usize, Vec<(Uuid, f32)>> = HashMap::with_capacity(13);
@@ -307,14 +307,14 @@ impl MatrixStrategySearch {
     /// Create empty correlation analysis.
     fn empty_correlation(&self) -> CorrelationAnalysis {
         CorrelationAnalysis {
-            correlation_matrix: [[0.0f32; 13]; 13],
+            correlation_matrix: [[0.0f32; 14]; 14],
             patterns: Vec::new(),
             coherence: 0.0,
         }
     }
 
     /// Detect correlation patterns.
-    fn detect_patterns(&self, corr: &[[f32; 13]; 13]) -> Vec<CorrelationPattern> {
+    fn detect_patterns(&self, corr: &[[f32; 14]; 14]) -> Vec<CorrelationPattern> {
         let mut patterns = Vec::new();
 
         // Check for high consensus (multiple embedders with r > 0.7)

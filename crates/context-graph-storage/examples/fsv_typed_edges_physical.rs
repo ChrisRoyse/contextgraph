@@ -29,7 +29,7 @@ fn synthetic_edge(
     source: Uuid,
     target: Uuid,
     et: GraphLinkEdgeType,
-    scores_in: [f32; 13],
+    scores_in: [f32; 14],
 ) -> TypedEdge {
     let dir = if et.is_asymmetric() {
         DirectedRelation::Forward
@@ -96,27 +96,27 @@ async fn main() {
         targets.push(t);
     }
 
-    let mut e0_scores = [0f32; 13];
+    let mut e0_scores = [0f32; 14];
     e0_scores[0] = 0.92;
     e0_scores[4] = 0.10;
     let e0 = synthetic_edge(sources[0], targets[0], GraphLinkEdgeType::SemanticSimilar, e0_scores);
 
-    let mut e1_scores = [0f32; 13];
+    let mut e1_scores = [0f32; 14];
     e1_scores[5] = 0.88;
     e1_scores[9] = 0.15;
     let e1 = synthetic_edge(sources[1], targets[1], GraphLinkEdgeType::KeywordOverlap, e1_scores);
 
-    let mut e2_scores = [0f32; 13];
+    let mut e2_scores = [0f32; 14];
     e2_scores[6] = 0.85;
     e2_scores[0] = 0.05;
     let e2 = synthetic_edge(sources[2], targets[2], GraphLinkEdgeType::CodeRelated, e2_scores);
 
-    let mut e3_scores = [0f32; 13];
+    let mut e3_scores = [0f32; 14];
     e3_scores[10] = 0.82;
     e3_scores[7] = 0.05;
     let e3 = synthetic_edge(sources[3], targets[3], GraphLinkEdgeType::EntityShared, e3_scores);
 
-    let mut e4_scores = [0f32; 13];
+    let mut e4_scores = [0f32; 14];
     e4_scores[9] = 0.80;
     e4_scores[8] = 0.96;
     e4_scores[0] = 0.09;
@@ -127,7 +127,7 @@ async fn main() {
         e4_scores,
     );
 
-    let mut e5_scores = [0f32; 13];
+    let mut e5_scores = [0f32; 14];
     for v in &mut e5_scores {
         *v = 0.4;
     }
@@ -316,7 +316,7 @@ async fn main() {
         e13_splade_indices: vec![],
         e13_splade_values: vec![],
         e12_token_embeddings: vec![],
-        topic_profile: [0.0; 13],
+        topic_profile: [0.0; 14],
         cross_correlations: vec![0.0; 78],
         group_alignments: [0.0; 6],
         outgoing_edges: vec![],

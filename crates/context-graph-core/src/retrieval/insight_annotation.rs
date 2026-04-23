@@ -144,7 +144,7 @@ struct EmbedderInfo {
 }
 
 /// Static embedder metadata per constitution.yaml.
-const EMBEDDERS: [EmbedderInfo; 13] = [
+const EMBEDDERS: [EmbedderInfo; 14] = [
     EmbedderInfo {
         idx: 0,
         short_name: "E1",

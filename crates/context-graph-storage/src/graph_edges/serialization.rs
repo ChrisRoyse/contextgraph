@@ -204,8 +204,8 @@ mod tests {
             .collect()
     }
 
-    fn default_thresholds() -> [f32; 13] {
-        [0.5; 13]
+    fn default_thresholds() -> [f32; 14] {
+        [0.5; 14]
     }
 
     #[test]
@@ -247,7 +247,7 @@ mod tests {
     fn test_typed_edge_roundtrip() {
         let source = Uuid::new_v4();
         let target = Uuid::new_v4();
-        let mut scores = [0.0f32; 13];
+        let mut scores = [0.0f32; 14];
         scores[0] = 0.85; // E1 high
         scores[6] = 0.75; // E7 high
 
@@ -267,7 +267,7 @@ mod tests {
     fn test_typed_edge_causal() {
         let source = Uuid::new_v4();
         let target = Uuid::new_v4();
-        let mut scores = [0.0f32; 13];
+        let mut scores = [0.0f32; 14];
         scores[4] = 0.75; // E5 Causal
 
         let edge = TypedEdge::new(

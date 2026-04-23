@@ -191,7 +191,7 @@ pub fn compute_consensus(id: Uuid, result_sets: &[(Vec<(Uuid, f32)>, f32)], top_
 #[allow(dead_code)]
 pub fn apply_synergy_boost(
     mut results: Vec<(Uuid, f32, HashMap<String, f32>)>,
-    synergy_weights: &[f32; 13],
+    synergy_weights: &[f32; 14],
 ) -> Vec<(Uuid, f32, HashMap<String, f32>)> {
     let embedder_name_to_index = |name: &str| -> Option<usize> {
         match name {

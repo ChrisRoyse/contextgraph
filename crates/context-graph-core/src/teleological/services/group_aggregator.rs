@@ -86,7 +86,7 @@ pub struct GroupStats {
 /// use context_graph_core::teleological::services::GroupAggregator;
 ///
 /// let aggregator = GroupAggregator::new();
-/// let alignments = [0.8f32; 13];
+/// let alignments = [0.8f32; 14];
 /// let result = aggregator.aggregate(&alignments);
 /// assert_eq!(result.alignments.factual, 0.8); // All same input
 /// ```

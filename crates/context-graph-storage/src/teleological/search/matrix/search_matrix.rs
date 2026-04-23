@@ -38,20 +38,20 @@ use crate::teleological::indexes::EmbedderIndex;
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchMatrix {
     /// 13x13 weight matrix. weights[i][j] = weight for embedder i × embedder j correlation.
-    weights: [[f32; 13]; 13],
+    weights: [[f32; 14]; 14],
 }
 
 impl SearchMatrix {
     /// Create zero matrix.
     pub fn zeros() -> Self {
         Self {
-            weights: [[0.0; 13]; 13],
+            weights: [[0.0; 14]; 14],
         }
     }
 
     /// Create identity matrix (diagonal = 1.0, off-diagonal = 0.0).
     pub fn identity() -> Self {
-        let mut weights = [[0.0; 13]; 13];
+        let mut weights = [[0.0; 14]; 14];
         for i in 0..13 {
             weights[i][i] = 1.0;
         }
@@ -62,7 +62,7 @@ impl SearchMatrix {
     pub fn uniform() -> Self {
         let w = 1.0 / 13.0;
         Self {
-            weights: [[w; 13]; 13],
+            weights: [[w; 14]; 14],
         }
     }
 

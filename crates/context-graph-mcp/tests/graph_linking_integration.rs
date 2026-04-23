@@ -105,7 +105,7 @@ fn test_edge_repository_typed_edges_roundtrip() {
     let target_id = Uuid::new_v4();
 
     // Create a typed edge with specific embedder scores
-    let embedder_scores: [f32; 13] = [
+    let embedder_scores: [f32; 14] = [
         0.9, // E1 - semantic (strongly agrees)
         0.0, // E2 - temporal (excluded)
         0.0, // E3 - temporal (excluded)

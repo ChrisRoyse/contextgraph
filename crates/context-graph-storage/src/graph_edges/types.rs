@@ -123,7 +123,7 @@ pub type GraphEdgeStorageResult<T> = Result<T, GraphEdgeStorageError>;
 #[derive(Debug, Clone, Default)]
 pub struct GraphEdgeStats {
     /// Number of K-NN edges per embedder.
-    pub embedder_edge_counts: [u64; 13],
+    pub embedder_edge_counts: [u64; 14],
     /// Total K-NN edges across all embedders.
     pub total_embedder_edges: u64,
     /// Number of typed edges.

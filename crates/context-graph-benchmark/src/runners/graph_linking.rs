@@ -732,7 +732,7 @@ impl GraphLinkingBenchmarkRunner {
             let start = Instant::now();
 
             // Simulate 13-embedder score projection
-            let _embedder_scores: [f32; 13] = [
+            let _embedder_scores: [f32; 14] = [
                 self.rng.gen(),
                 self.rng.gen(),
                 self.rng.gen(),

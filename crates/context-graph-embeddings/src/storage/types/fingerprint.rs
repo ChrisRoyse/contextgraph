@@ -49,7 +49,7 @@ pub struct StoredQuantizedFingerprint {
     /// 13D topic profile (NOT quantized - only 52 bytes).
     /// Each dimension = alignment of that embedder's output to emergent topics.
     /// Represents topic alignment signature across all 13 embedding spaces.
-    pub topic_profile: [f32; 13],
+    pub topic_profile: [f32; 14],
 
     /// SHA-256 content hash (32 bytes).
     /// Used for deduplication and integrity verification.
@@ -84,7 +84,7 @@ impl StoredQuantizedFingerprint {
     pub fn new(
         id: Uuid,
         embeddings: HashMap<u8, QuantizedEmbedding>,
-        topic_profile: [f32; 13],
+        topic_profile: [f32; 14],
         content_hash: [u8; 32],
     ) -> Self {
         // FAIL FAST: All 13 embedders required

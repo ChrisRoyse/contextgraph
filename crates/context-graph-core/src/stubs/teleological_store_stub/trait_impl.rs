@@ -424,7 +424,7 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
     async fn scan_fingerprints_for_clustering(
         &self,
         limit: Option<usize>,
-    ) -> CoreResult<Vec<(uuid::Uuid, [Vec<f32>; 13])>> {
+    ) -> CoreResult<Vec<(uuid::Uuid, [Vec<f32>; 14])>> {
         debug!(limit = ?limit, "Scanning fingerprints for clustering from in-memory store");
 
         let mut results = Vec::new();
@@ -965,17 +965,17 @@ impl TeleologicalMemoryStore for InMemoryTeleologicalStore {
 
     // ==================== Custom Weight Profile Persistence (Stubs) ====================
 
-    async fn store_custom_weight_profile(&self, _name: &str, _weights: &[f32; 13]) -> CoreResult<()> {
+    async fn store_custom_weight_profile(&self, _name: &str, _weights: &[f32; 14]) -> CoreResult<()> {
         // Test stub: no-op
         Ok(())
     }
 
-    async fn get_custom_weight_profile(&self, _name: &str) -> CoreResult<Option<[f32; 13]>> {
+    async fn get_custom_weight_profile(&self, _name: &str) -> CoreResult<Option<[f32; 14]>> {
         // Test stub: always returns None
         Ok(None)
     }
 
-    async fn list_custom_weight_profiles(&self) -> CoreResult<Vec<(String, [f32; 13])>> {
+    async fn list_custom_weight_profiles(&self) -> CoreResult<Vec<(String, [f32; 14])>> {
         // Test stub: always returns empty
         Ok(Vec::new())
     }

@@ -66,7 +66,7 @@ fn test_fingerprint_size_in_range() {
 fn test_topic_profile_roundtrip() {
     println!("=== TEST: Topic profile (13D) round-trip ===");
 
-    let original: [f32; 13] = [
+    let original: [f32; 14] = [
         0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3,
     ];
     println!("BEFORE: {:?}", original);
@@ -209,7 +209,7 @@ fn edge_case_large_memory_id_list() {
 fn edge_case_topic_profile_extreme_values() {
     println!("=== EDGE CASE 3: Topic profile with extreme float values ===");
 
-    let original: [f32; 13] = [
+    let original: [f32; 14] = [
         f32::MIN,
         f32::MAX,
         0.0,

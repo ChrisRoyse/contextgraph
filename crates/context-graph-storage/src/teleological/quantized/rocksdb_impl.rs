@@ -157,7 +157,7 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
                                  Using zero vector as fallback.",
                                 id, e
                             );
-                            [0.0f32; 13]
+                            [0.0f32; 14]
                         }
                     },
                     Ok(None) => {
@@ -170,7 +170,7 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
                              Memory should be re-indexed with complete TeleologicalFingerprint.",
                             id
                         );
-                        [0.0f32; 13]
+                        [0.0f32; 14]
                     }
                     Err(e) => {
                         // Storage error - fail fast
@@ -189,7 +189,7 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
                      Database may need migration to include teleological CFs.",
                     id
                 );
-                [0.0f32; 13]
+                [0.0f32; 14]
             }
         };
 

@@ -160,7 +160,7 @@ fn test_allocate_all_13_embedders_within_budget() {
     println!("\n=== TEST: ALLOCATE ALL 13 EMBEDDERS ===");
 
     // Approximate sizes for quantized models (from task spec)
-    let model_sizes: [(Embedder, usize, &str); 13] = [
+    let model_sizes: [(Embedder, usize, &str); 14] = [
         (
             Embedder::Semantic,
             200_000_000,

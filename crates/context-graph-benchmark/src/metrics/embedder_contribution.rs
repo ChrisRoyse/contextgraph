@@ -24,7 +24,7 @@ pub struct ResultContribution {
     pub fused_score: f32,
     /// Per-embedder contribution percentage (0-100%).
     /// Index matches EmbedderIndex::to_index().
-    pub embedder_contributions: [f32; 13],
+    pub embedder_contributions: [f32; 14],
     /// List of embedders that contributed (had non-zero ranking).
     pub contributing_embedders: Vec<EmbedderIndex>,
     /// Per-embedder rank if this result appeared in that embedder's results.
@@ -40,7 +40,7 @@ impl ResultContribution {
             result_id,
             final_rank,
             fused_score,
-            embedder_contributions: [0.0; 13],
+            embedder_contributions: [0.0; 14],
             contributing_embedders: Vec::new(),
             embedder_ranks: HashMap::new(),
             is_relevant: false,
@@ -347,7 +347,7 @@ pub struct BlindSpotAnalysis {
     /// Per-enhancer unique finds (found by enhancer but not E1).
     pub enhancer_unique_finds: HashMap<EmbedderIndex, UniqueFinds>,
     /// Overlap matrix: [i][j] = count of docs found by both embedder i and j.
-    pub overlap_matrix: [[usize; 13]; 13],
+    pub overlap_matrix: [[usize; 14]; 14],
     /// Example blind spots (first 20).
     pub blind_spot_examples: Vec<BlindSpotExample>,
     /// Total relevant documents in ground truth.

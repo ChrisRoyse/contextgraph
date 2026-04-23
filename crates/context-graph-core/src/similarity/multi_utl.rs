@@ -67,9 +67,9 @@ pub fn sigmoid(x: f32) -> f32 {
 /// use context_graph_core::similarity::{MultiUtlParams, sigmoid};
 ///
 /// let params = MultiUtlParams {
-///     semantic_deltas: [0.1; 13],
-///     coherence_deltas: [0.2; 13],
-///     tau_weights: [1.0; 13],
+///     semantic_deltas: [0.1; 14],
+///     coherence_deltas: [0.2; 14],
+///     tau_weights: [1.0; 14],
 ///     lambda_s: 1.0,
 ///     lambda_c: 1.0,
 ///     w_e: 1.0,

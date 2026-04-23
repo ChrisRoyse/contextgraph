@@ -589,7 +589,7 @@ impl EmbedderImpactRunner {
 
     /// Phase 2: Multi-space measurement (all 13 embedders).
     fn phase_multispace(&mut self, dataset: &EmbedderImpactDataset) -> RetrievalMetrics {
-        let weights = [1.0 / 13.0; 13]; // Equal weights for all
+        let weights = [1.0 / 13.0; 14]; // Equal weights for all
         self.evaluate_with_weights(dataset, &weights)
     }
 
@@ -600,7 +600,7 @@ impl EmbedderImpactRunner {
         baseline: &RetrievalMetrics,
     ) -> HashMap<EmbedderIndex, AblationDelta> {
         let mut deltas = HashMap::new();
-        let base_weights = [1.0 / 13.0; 13];
+        let base_weights = [1.0 / 13.0; 14];
 
         // Clone embedders to avoid borrow conflict
         let embedders: Vec<_> = self.config.embedders.clone();
@@ -630,7 +630,7 @@ impl EmbedderImpactRunner {
             }
 
             // Create weights with only E1 + this embedder
-            let mut weights = [0.0f32; 13];
+            let mut weights = [0.0f32; 14];
             weights[0] = 0.5; // E1
             if let Some(idx) = embedder.to_index() {
                 weights[idx] = 0.5;
@@ -1005,7 +1005,7 @@ impl EmbedderImpactRunner {
             .unwrap_or(0);
 
         // Compute real memory estimates from dimension × vector count × sizeof(f32)
-        let embedder_dims: [(EmbedderIndex, usize); 13] = [
+        let embedder_dims: [(EmbedderIndex, usize); 14] = [
             (EmbedderIndex::E1Semantic, 1024),
             (EmbedderIndex::E2TemporalRecent, 512),
             (EmbedderIndex::E3TemporalPeriodic, 512),
@@ -1035,7 +1035,7 @@ impl EmbedderImpactRunner {
     fn evaluate_with_weights(
         &mut self,
         dataset: &EmbedderImpactDataset,
-        weights: &[f32; 13],
+        weights: &[f32; 14],
     ) -> RetrievalMetrics {
         let mut query_results: Vec<(Vec<Uuid>, HashSet<Uuid>)> = Vec::new();
 

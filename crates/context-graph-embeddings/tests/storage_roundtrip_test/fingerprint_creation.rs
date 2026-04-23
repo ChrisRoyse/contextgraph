@@ -116,7 +116,7 @@ fn test_embeddings_have_correct_quantization_methods() {
 /// Test topic_profile is stored correctly.
 #[test]
 fn test_topic_profile_storage() {
-    let pv = [0.5f32; 13]; // Uniform purpose vector
+    let pv = [0.5f32; 14]; // Uniform purpose vector
 
     let fp = StoredQuantizedFingerprint::new(
         Uuid::new_v4(),

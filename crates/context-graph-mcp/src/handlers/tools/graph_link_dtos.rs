@@ -719,7 +719,7 @@ pub fn embedder_name(id: usize) -> &'static str {
 }
 
 /// Valid embedder names E1-E13.
-pub const EMBEDDER_NAMES: [&str; 13] = [
+pub const EMBEDDER_NAMES: [&str; 14] = [
     "E1", "E2", "E3", "E4", "E5", "E6", "E7",
     "E8", "E9", "E10", "E11", "E12", "E13",
 ];
@@ -900,12 +900,12 @@ pub struct UnifiedNeighborResult {
     /// Per-embedder similarity scores (0.0 if not found by that embedder).
     /// Array of 13 scores: [E1, E2, ..., E13]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub embedder_scores: Option<[f32; 13]>,
+    pub embedder_scores: Option<[f32; 14]>,
 
     /// Per-embedder ranks (0 if not found by that embedder).
     /// Array of 13 ranks: [E1, E2, ..., E13]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub embedder_ranks: Option<[usize; 13]>,
+    pub embedder_ranks: Option<[usize; 14]>,
 
     /// Full content text (only if include_content=true).
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -163,7 +163,7 @@ impl AblationReport {
 /// Weight profile that zeros out a specific embedder.
 ///
 /// Used to measure ablation delta by running search without one embedder.
-pub fn ablation_weights(exclude: EmbedderIndex, base_weights: &[f32; 13]) -> [f32; 13] {
+pub fn ablation_weights(exclude: EmbedderIndex, base_weights: &[f32; 14]) -> [f32; 14] {
     let mut weights = *base_weights;
 
     // Zero out the excluded embedder
@@ -185,8 +185,8 @@ pub fn ablation_weights(exclude: EmbedderIndex, base_weights: &[f32; 13]) -> [f3
 /// Get weight profile that only includes a specific embedder.
 ///
 /// Used to measure single-embedder performance in isolation.
-pub fn single_embedder_weights(include: EmbedderIndex) -> [f32; 13] {
-    let mut weights = [0.0f32; 13];
+pub fn single_embedder_weights(include: EmbedderIndex) -> [f32; 14] {
+    let mut weights = [0.0f32; 14];
     if let Some(idx) = include.to_index() {
         weights[idx] = 1.0;
     }
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_ablation_weights_zeroes_target() {
-        let base = [1.0 / 13.0; 13];
+        let base = [1.0 / 13.0; 14];
         let weights = ablation_weights(EmbedderIndex::E5Causal, &base);
 
         // E5 is index 4

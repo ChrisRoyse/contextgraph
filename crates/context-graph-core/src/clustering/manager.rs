@@ -22,7 +22,7 @@
 //!
 //! // Insert a memory with 13 embeddings
 //! let memory_id = Uuid::new_v4();
-//! let embeddings: [Vec<f32>; 13] = std::array::from_fn(|i| {
+//! let embeddings: [Vec<f32>; 14] = std::array::from_fn(|i| {
 //!     match i {
 //!         0 => vec![0.0; 1024],   // E1
 //!         1..=3 => vec![0.0; 512], // E2-E4
@@ -261,7 +261,7 @@ pub struct MultiSpaceClusterManager {
     params: ManagerParams,
 
     /// Per-space clustering state (13 spaces).
-    spaces: [PerSpaceState; 13],
+    spaces: [PerSpaceState; 14],
 
     /// Discovered topics from cross-space synthesis.
     topics: HashMap<Uuid, Topic>,
@@ -312,7 +312,7 @@ impl MultiSpaceClusterManager {
     }
 
     /// Initialize per-space states.
-    fn init_spaces(params: &ManagerParams) -> Result<[PerSpaceState; 13], ClusterError> {
+    fn init_spaces(params: &ManagerParams) -> Result<[PerSpaceState; 14], ClusterError> {
         let mut states: Vec<PerSpaceState> = Vec::with_capacity(13);
 
         for embedder in Embedder::all() {
@@ -349,7 +349,7 @@ impl MultiSpaceClusterManager {
     /// let memory_id = Uuid::new_v4();
     ///
     /// // Create 13 embeddings with correct dimensions
-    /// let embeddings: [Vec<f32>; 13] = std::array::from_fn(|i| {
+    /// let embeddings: [Vec<f32>; 14] = std::array::from_fn(|i| {
     ///     let dim = match i {
     ///         0 => 1024, 1 | 2 | 3 => 512, 4 => 768, 5 | 12 => 30522,
     ///         6 => 1536, 7 => 1024, 8 => 1024, 9 | 10 => 768, 11 => 128, _ => 128,
@@ -363,9 +363,9 @@ impl MultiSpaceClusterManager {
     pub fn insert(
         &mut self,
         memory_id: Uuid,
-        embeddings: &[Vec<f32>; 13],
+        embeddings: &[Vec<f32>; 14],
     ) -> Result<InsertResult, ClusterError> {
-        let mut cluster_indices: [i32; 13] = [-1; 13];
+        let mut cluster_indices: [i32; 14] = [-1; 14];
         let mut needs_recluster = false;
 
         // Insert into each space's BIRCH tree
@@ -447,7 +447,7 @@ impl MultiSpaceClusterManager {
     /// Returns error if reclustering fails for any space.
     pub fn recluster(&mut self) -> Result<ReclusterResult, ClusterError> {
         let mut total_clusters = 0;
-        let mut per_space_clusters: [usize; 13] = [0; 13];
+        let mut per_space_clusters: [usize; 14] = [0; 14];
 
         for (i, embedder) in Embedder::all().enumerate() {
             let state = &mut self.spaces[i];
@@ -719,7 +719,7 @@ impl MultiSpaceClusterManager {
         use crate::teleological::{TeleologicalComparator, NUM_EMBEDDERS};
 
         if members.len() < 2 {
-            return TopicProfile::new([0.0f32; 13]);
+            return TopicProfile::new([0.0f32; 14]);
         }
 
         // Build ID -> fingerprint lookup
@@ -1105,10 +1105,10 @@ impl MultiSpaceClusterManager {
         mem_clusters: &HashMap<Uuid, HashMap<Embedder, i32>>,
     ) -> TopicProfile {
         if members.is_empty() {
-            return TopicProfile::new([0.0f32; 13]);
+            return TopicProfile::new([0.0f32; 14]);
         }
 
-        let mut strengths = [0.0f32; 13];
+        let mut strengths = [0.0f32; 14];
         for embedder in Embedder::all() {
             let mut counts: HashMap<i32, usize> = HashMap::new();
             for mem_id in members {
@@ -1190,8 +1190,8 @@ impl MultiSpaceClusterManager {
     }
 
     /// Compute topic profile from cluster indices.
-    fn compute_topic_profile(&self, cluster_indices: &[i32; 13]) -> TopicProfile {
-        let mut strengths = [0.0f32; 13];
+    fn compute_topic_profile(&self, cluster_indices: &[i32; 14]) -> TopicProfile {
+        let mut strengths = [0.0f32; 14];
 
         for (i, &cluster_idx) in cluster_indices.iter().enumerate() {
             if cluster_idx >= 0 {
@@ -1210,8 +1210,8 @@ impl MultiSpaceClusterManager {
     ///
     /// Array of optional ClusterMembership, one per space.
     /// None means no membership data available for that space.
-    pub fn get_memberships(&self, memory_id: Uuid) -> [Option<ClusterMembership>; 13] {
-        let mut result: [Option<ClusterMembership>; 13] = Default::default();
+    pub fn get_memberships(&self, memory_id: Uuid) -> [Option<ClusterMembership>; 14] {
+        let mut result: [Option<ClusterMembership>; 14] = Default::default();
 
         for (i, state) in self.spaces.iter().enumerate() {
             result[i] = state.memberships.get(&memory_id).cloned();
@@ -1273,8 +1273,8 @@ impl MultiSpaceClusterManager {
     }
 
     /// Get status of updates per space.
-    pub fn updates_status(&self) -> [UpdateStatus; 13] {
-        let mut result: [UpdateStatus; 13] = [UpdateStatus::default(); 13];
+    pub fn updates_status(&self) -> [UpdateStatus; 14] {
+        let mut result: [UpdateStatus; 14] = [UpdateStatus::default(); 14];
 
         for (i, embedder) in Embedder::all().enumerate() {
             result[i] = UpdateStatus {
@@ -1554,7 +1554,7 @@ pub struct InsertResult {
     ///
     /// Value of -1 indicates the memory was not assigned to a cluster
     /// in that space (treated as noise by BIRCH/HDBSCAN).
-    pub cluster_indices: [i32; 13],
+    pub cluster_indices: [i32; 14],
 
     /// Topic profile based on cluster assignments.
     pub topic_profile: TopicProfile,
@@ -1588,7 +1588,7 @@ pub struct ReclusterResult {
     pub total_clusters: usize,
 
     /// Number of clusters per space.
-    pub per_space_clusters: [usize; 13],
+    pub per_space_clusters: [usize; 14],
 
     /// Number of topics discovered from cross-space synthesis.
     pub topics_discovered: usize,
@@ -1622,7 +1622,7 @@ pub struct FdmcResult {
 
     /// Per-embedder variance (higher = better discriminator).
     /// Index corresponds to Embedder::index().
-    pub embedder_contributions: [f32; 13],
+    pub embedder_contributions: [f32; 14],
 
     /// The embedder with highest contribution to separation.
     pub dominant_embedder: Option<Embedder>,
@@ -1638,7 +1638,7 @@ impl FdmcResult {
             memberships: Vec::new(),
             silhouette_score: 0.0,
             similarity_stats: SimilarityStats::default(),
-            embedder_contributions: [0.0f32; 13],
+            embedder_contributions: [0.0f32; 14],
             dominant_embedder: None,
         }
     }
@@ -1690,7 +1690,7 @@ mod tests {
     // =========================================================================
 
     /// Create embeddings with correct dimensions for all 13 spaces.
-    fn create_test_embeddings(base_value: f32) -> [Vec<f32>; 13] {
+    fn create_test_embeddings(base_value: f32) -> [Vec<f32>; 14] {
         std::array::from_fn(|i| {
             let embedder = Embedder::from_index(i).unwrap();
             let dim = get_dimension(embedder);
@@ -1699,7 +1699,7 @@ mod tests {
     }
 
     /// Create embeddings with a specific pattern (for clustering tests).
-    fn create_clustered_embeddings(cluster_id: usize) -> [Vec<f32>; 13] {
+    fn create_clustered_embeddings(cluster_id: usize) -> [Vec<f32>; 14] {
         std::array::from_fn(|i| {
             let embedder = Embedder::from_index(i).unwrap();
             let dim = get_dimension(embedder);

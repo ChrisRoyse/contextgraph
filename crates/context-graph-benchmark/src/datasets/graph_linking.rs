@@ -199,7 +199,7 @@ pub struct ExpectedEdge {
 #[derive(Debug, Clone)]
 pub struct EmbeddingScores {
     /// Similarity scores from all 13 embedders.
-    pub scores: [f32; 13],
+    pub scores: [f32; 14],
 }
 
 /// Complete graph linking benchmark dataset.
@@ -270,7 +270,7 @@ impl GraphLinkingDataset {
     }
 
     /// Get sample embedder score vectors.
-    pub fn sample_scores(&self, count: usize) -> impl Iterator<Item = [f32; 13]> {
+    pub fn sample_scores(&self, count: usize) -> impl Iterator<Item = [f32; 14]> {
         let mut rng = ChaCha8Rng::seed_from_u64(self.config.seed + 200);
         let intra_sim = self.config.intra_topic_similarity;
         let inter_sim = self.config.inter_topic_similarity;
@@ -280,7 +280,7 @@ impl GraphLinkingDataset {
             let base = if is_same_topic { intra_sim } else { inter_sim };
             let noise = 0.1;
 
-            let mut scores = [0.0f32; 13];
+            let mut scores = [0.0f32; 14];
             for score in &mut scores {
                 *score = (base + rng.gen_range(-noise..noise)).clamp(0.0, 1.0);
             }

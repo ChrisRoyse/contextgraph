@@ -258,10 +258,10 @@ impl TopicSynthesizer {
         mem_clusters: &HashMap<Uuid, HashMap<Embedder, i32>>,
     ) -> TopicProfile {
         if members.is_empty() {
-            return TopicProfile::new([0.0f32; 13]);
+            return TopicProfile::new([0.0f32; 14]);
         }
 
-        let mut strengths = [0.0f32; 13];
+        let mut strengths = [0.0f32; 14];
         for embedder in Embedder::all() {
             let counts = Self::count_clusters_for_space(members, mem_clusters, embedder);
             if let Some((_, &count)) = counts.iter().max_by_key(|(_, &c)| c) {
@@ -536,8 +536,8 @@ mod tests {
         let id4 = Uuid::new_v4();
 
         // Create two similar topics
-        let strengths1 = [0.9f32; 13];
-        let strengths2 = [0.88f32; 13]; // Very similar
+        let strengths1 = [0.9f32; 14];
+        let strengths2 = [0.88f32; 14]; // Very similar
 
         let topic1 = Topic::new(TopicProfile::new(strengths1), HashMap::new(), vec![id1, id2]);
         let topic2 = Topic::new(TopicProfile::new(strengths2), HashMap::new(), vec![id3, id4]);

@@ -28,7 +28,7 @@ const NUM_EMBEDDERS: usize = 13;
 /// use context_graph_core::graph_linking::{TypedEdge, GraphLinkEdgeType, DirectedRelation};
 ///
 /// // Create a semantic similarity edge
-/// let mut scores = [0.0f32; 13];
+/// let mut scores = [0.0f32; 14];
 /// scores[0] = 0.85; // E1 semantic
 ///
 /// let edge = TypedEdge::new(

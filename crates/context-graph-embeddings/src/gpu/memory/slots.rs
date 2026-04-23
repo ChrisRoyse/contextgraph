@@ -568,7 +568,7 @@ mod tests {
     #[test]
     fn test_allocate_all_13_embedders() {
         // Test 1 from task spec: Allocate all 13 embedders
-        let model_sizes: [(Embedder, usize); 13] = [
+        let model_sizes: [(Embedder, usize); 14] = [
             (Embedder::Semantic, 200_000_000),           // E1: 200MB
             (Embedder::TemporalRecent, 100_000_000),     // E2: 100MB
             (Embedder::TemporalPeriodic, 100_000_000),   // E3: 100MB

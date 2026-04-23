@@ -40,7 +40,7 @@ mod tests {
     use uuid::Uuid;
 
     fn mk_edge(source: Uuid, target: Uuid, et: GraphLinkEdgeType, weight: f32) -> TypedEdge {
-        let mut scores = [0f32; 13];
+        let mut scores = [0f32; 14];
         if let Some(i) = et.primary_embedder_index() {
             scores[i] = weight;
         } else {

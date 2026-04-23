@@ -54,7 +54,7 @@ pub struct TeleologicalSearchResult {
 
     /// Per-embedder similarity scores (13 values for E1-E13).
     /// Sparse embeddings (E6, E13) use sparse dot product.
-    pub embedder_scores: [f32; 13],
+    pub embedder_scores: [f32; 14],
 
     /// Stage scores from the 5-stage retrieval pipeline.
     /// [sparse_recall, semantic_ann, precision, rerank, teleological]
@@ -84,7 +84,7 @@ impl TeleologicalSearchResult {
     pub fn new(
         fingerprint: TeleologicalFingerprint,
         similarity: f32,
-        embedder_scores: [f32; 13],
+        embedder_scores: [f32; 14],
     ) -> Self {
         Self {
             fingerprint,
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn test_search_result_dominant_embedder() {
-        let mut scores = [0.1; 13];
+        let mut scores = [0.1; 14];
         scores[5] = 0.9; // E6 (Sparse/Semantic) is dominant
 
         let result = TeleologicalSearchResult {
@@ -159,7 +159,7 @@ mod tests {
     fn test_dominant_embedder_excludes_temporal() {
         // E2 (temporal) has highest raw score but should NOT be dominant
         // because temporal embedders have weight 0.0 per AP-60
-        let mut scores = [0.1; 13];
+        let mut scores = [0.1; 14];
         scores[1] = 0.95; // E2_TemporalRecent has highest raw score
         scores[0] = 0.5;  // E1_Semantic has lower raw score but weight 1.0
 

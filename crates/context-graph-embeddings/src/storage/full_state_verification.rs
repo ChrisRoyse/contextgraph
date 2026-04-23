@@ -20,7 +20,7 @@ mod tests {
     // =========================================================================
 
     struct VerificationStorage {
-        topic_profiles: HashMap<Uuid, [f32; 13]>,
+        topic_profiles: HashMap<Uuid, [f32; 14]>,
     }
 
     impl VerificationStorage {
@@ -39,7 +39,7 @@ mod tests {
             Ok(None)
         }
 
-        fn get_topic_profile(&self, id: Uuid) -> Result<Option<[f32; 13]>, EmbeddingError> {
+        fn get_topic_profile(&self, id: Uuid) -> Result<Option<[f32; 14]>, EmbeddingError> {
             Ok(self.topic_profiles.get(&id).copied())
         }
     }

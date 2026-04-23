@@ -213,7 +213,7 @@ impl Handlers {
                 .map(|fp| TeleologicalSearchResult {
                     fingerprint: fp,
                     similarity: 1.0, // No semantic bias - ordered by sequence
-                    embedder_scores: [0.0; 13],
+                    embedder_scores: [0.0; 14],
                     stage_scores: [0.0; 5],
                     content: None,
                     temporal_breakdown: None,
@@ -479,7 +479,7 @@ impl Handlers {
             .map(|(fp, _)| TeleologicalSearchResult {
                 fingerprint: fp.clone(),
                 similarity: 1.0, // No semantic bias
-                embedder_scores: [0.0; 13],
+                embedder_scores: [0.0; 14],
                 stage_scores: [0.0; 5],
                 content: None,
                 temporal_breakdown: None,

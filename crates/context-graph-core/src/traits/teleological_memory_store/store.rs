@@ -537,7 +537,7 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     /// * `limit` - Optional limit on number of fingerprints to scan (None = all)
     ///
     /// # Returns
-    /// Vector of (Uuid, [Vec<f32>; 13]) tuples for each fingerprint.
+    /// Vector of (Uuid, [Vec<f32>; 14]) tuples for each fingerprint.
     ///
     /// # Errors
     /// - `CoreError::StorageError` - Storage backend failure
@@ -545,7 +545,7 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     async fn scan_fingerprints_for_clustering(
         &self,
         limit: Option<usize>,
-    ) -> CoreResult<Vec<(uuid::Uuid, [Vec<f32>; 13])>>;
+    ) -> CoreResult<Vec<(uuid::Uuid, [Vec<f32>; 14])>>;
 
     /// List fingerprints without semantic bias (MED-13/14/15 root cause fix).
     ///
@@ -884,13 +884,13 @@ pub trait TeleologicalMemoryStore: Send + Sync {
     /// Store a custom weight profile.
     ///
     /// Stored in CF_CUSTOM_WEIGHT_PROFILES. Overwrites existing profile with same name.
-    async fn store_custom_weight_profile(&self, name: &str, weights: &[f32; 13]) -> CoreResult<()>;
+    async fn store_custom_weight_profile(&self, name: &str, weights: &[f32; 14]) -> CoreResult<()>;
 
     /// Retrieve a custom weight profile by name.
-    async fn get_custom_weight_profile(&self, name: &str) -> CoreResult<Option<[f32; 13]>>;
+    async fn get_custom_weight_profile(&self, name: &str) -> CoreResult<Option<[f32; 14]>>;
 
     /// List all custom weight profiles.
-    async fn list_custom_weight_profiles(&self) -> CoreResult<Vec<(String, [f32; 13])>>;
+    async fn list_custom_weight_profiles(&self) -> CoreResult<Vec<(String, [f32; 14])>>;
 
     /// Delete a custom weight profile by name.
     async fn delete_custom_weight_profile(&self, name: &str) -> CoreResult<bool>;

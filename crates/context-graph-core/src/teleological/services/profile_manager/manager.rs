@@ -26,7 +26,7 @@ use super::types::{InternalStats, ProfileManagerConfig, ProfileMatch, ProfileSta
 /// assert_eq!(profile.id.as_str(), "code_implementation");
 ///
 /// // Create custom profile
-/// let custom = manager.create_profile("my_profile", [0.1; 13]);
+/// let custom = manager.create_profile("my_profile", [0.1; 14]);
 /// assert_eq!(custom.id.as_str(), "my_profile");
 ///
 /// // Find best match for context

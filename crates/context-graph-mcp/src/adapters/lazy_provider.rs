@@ -202,7 +202,7 @@ impl MultiArrayEmbeddingProvider for LazyMultiArrayProvider {
             return [false; NUM_EMBEDDERS];
         }
         // MCP-M2 FIX: Delegate to real provider for per-embedder health.
-        // Previously hardcoded [true; 13], hiding post-startup embedder failures.
+        // Previously hardcoded [true; 14], hiding post-startup embedder failures.
         match self.inner.try_read() {
             Ok(guard) => match guard.as_ref() {
                 Some(provider) => provider.health_status(),

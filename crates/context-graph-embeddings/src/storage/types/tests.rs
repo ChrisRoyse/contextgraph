@@ -70,7 +70,7 @@ mod tests {
     fn test_stored_fingerprint_creation() {
         let id = Uuid::new_v4();
         let embeddings = create_test_embeddings();
-        let topic_profile = [0.5f32; 13];
+        let topic_profile = [0.5f32; 14];
         let content_hash = [0u8; 32];
 
         let fp = StoredQuantizedFingerprint::new(id, embeddings, topic_profile, content_hash);
@@ -90,7 +90,7 @@ mod tests {
         let _ = StoredQuantizedFingerprint::new(
             Uuid::new_v4(),
             embeddings,
-            [0.5f32; 13],
+            [0.5f32; 14],
             [0u8; 32],
         );
     }
@@ -172,7 +172,7 @@ mod tests {
         let fp = StoredQuantizedFingerprint::new(
             Uuid::new_v4(),
             create_test_embeddings(),
-            [0.5f32; 13],
+            [0.5f32; 14],
             [0u8; 32],
         );
 
@@ -197,7 +197,7 @@ mod tests {
         let _ = StoredQuantizedFingerprint::new(
             Uuid::new_v4(),
             embeddings,
-            [0.5f32; 13],
+            [0.5f32; 14],
             [0u8; 32],
         );
     }
@@ -283,7 +283,7 @@ mod tests {
         let _ = StoredQuantizedFingerprint::new(
             Uuid::new_v4(),
             embeddings,
-            [0.5f32; 13],
+            [0.5f32; 14],
             [0u8; 32],
         );
     }
@@ -295,7 +295,7 @@ mod tests {
         let fp = StoredQuantizedFingerprint::new(
             Uuid::new_v4(),
             create_test_embeddings(),
-            [0.5f32; 13],
+            [0.5f32; 14],
             [0u8; 32],
         );
 
@@ -329,7 +329,7 @@ mod tests {
         let fp = StoredQuantizedFingerprint::new(
             Uuid::new_v4(),
             create_test_embeddings(),
-            [0.5f32; 13],
+            [0.5f32; 14],
             [0u8; 32],
         );
 

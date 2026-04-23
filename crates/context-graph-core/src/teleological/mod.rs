@@ -54,7 +54,7 @@
 //! assert!(profile.get_weight(5) > 0.2); // E6 (Code) boosted
 //!
 //! // Build multi-resolution hierarchy
-//! let alignments = [0.8f32; 13];
+//! let alignments = [0.8f32; 14];
 //! let hierarchy = MultiResolutionHierarchy::from_raw(alignments);
 //! assert!(hierarchy.quick_score() > 0.7);
 //! ```

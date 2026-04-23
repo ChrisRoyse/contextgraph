@@ -353,7 +353,7 @@ pub const CF_EMBEDDING_REGISTRY: &str = "embedding_registry";
 /// in search_graph and get_unified_neighbors.
 ///
 /// Key: profile_name bytes (UTF-8, variable length)
-/// Value: [f32; 13] serialized via JSON (~100-200 bytes)
+/// Value: [f32; 14] serialized via JSON (~100-200 bytes)
 ///
 /// # Storage Details
 /// - LZ4 compression

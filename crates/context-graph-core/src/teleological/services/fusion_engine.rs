@@ -104,8 +104,8 @@ impl AlignmentFusionResult {
 /// use context_graph_core::teleological::services::FusionEngine;
 ///
 /// let engine = FusionEngine::new();
-/// let embeddings = vec![vec![0.0f32; 1024]; 13];
-/// let alignments = [0.8f32; 13];
+/// let embeddings = vec![vec![0.0f32; 1024]; 14];
+/// let alignments = [0.8f32; 14];
 /// let result = engine.fuse_from_alignments(&alignments);
 /// ```
 pub struct FusionEngine {

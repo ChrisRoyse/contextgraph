@@ -378,7 +378,7 @@ fn test_topic_profile_strength_clamping() {
     let extremes = [f32::MAX, f32::MIN, f32::NEG_INFINITY, f32::INFINITY, -10.0, 10.0, 0.5];
 
     for &val in &extremes {
-        let mut strengths = [0.0f32; 13];
+        let mut strengths = [0.0f32; 14];
         strengths[0] = val;
 
         let profile = TopicProfile::new(strengths);
@@ -399,14 +399,14 @@ fn test_weighted_agreement_no_nan() {
     println!("PURPOSE: weighted_agreement should never return NaN/Infinity");
 
     // Test with zero profile
-    let zero_profile = TopicProfile::new([0.0; 13]);
+    let zero_profile = TopicProfile::new([0.0; 14]);
     let wa = zero_profile.weighted_agreement();
     println!("  Zero profile -> weighted_agreement = {}", wa);
     assert!(!wa.is_nan(), "Should not be NaN");
     assert!(!wa.is_infinite(), "Should not be Infinity");
 
     // Test with max profile
-    let max_profile = TopicProfile::new([1.0; 13]);
+    let max_profile = TopicProfile::new([1.0; 14]);
     let wa = max_profile.weighted_agreement();
     println!("  Max profile -> weighted_agreement = {}", wa);
     assert!(!wa.is_nan(), "Should not be NaN");

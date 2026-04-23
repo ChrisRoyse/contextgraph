@@ -606,7 +606,7 @@ impl Handlers {
 
         // GAP-1: Parse custom weights (overrides weightProfile when provided)
         // AP-NAV-01: FAIL FAST on invalid embedder names
-        let custom_weights: Option<[f32; 13]> = match args.get("customWeights").and_then(|v| v.as_object()) {
+        let custom_weights: Option<[f32; 14]> = match args.get("customWeights").and_then(|v| v.as_object()) {
             Some(obj) => {
                 // Reject any keys that are not valid embedder names
                 for key in obj.keys() {
@@ -617,7 +617,7 @@ impl Handlers {
                         ));
                     }
                 }
-                let mut weights = [0.0f32; 13];
+                let mut weights = [0.0f32; 14];
                 for (i, name) in EMBEDDER_NAMES.iter().enumerate() {
                     if let Some(val) = obj.get(*name).and_then(|v| v.as_f64()) {
                         weights[i] = val as f32;
@@ -1232,7 +1232,7 @@ impl Handlers {
                 // Was: custom_profiles.read() acquired per-embedder per-result (50*13*3 = ~1,950 locks/search).
                 // Now: single lock acquisition, then direct array indexing.
                 // MCP-4 FIX: Error on invalid weight profile name instead of silent uniform fallback.
-                let resolved_weights: [f32; 13] = if let Some(cw) = custom_weights {
+                let resolved_weights: [f32; 14] = if let Some(cw) = custom_weights {
                     cw
                 } else if let Some(ref profile_name) = effective_weight_profile {
                     // Audit-11 MCP-H3: get_weight_profile now returns Result, propagate errors.
@@ -1254,7 +1254,7 @@ impl Handlers {
                     }
                 } else {
                     // WEIGHT-1 FIX: Use semantic_search profile (matches DEFAULT_SEMANTIC_WEIGHTS
-                    // used in actual search). Was [1/13; 13] which showed misleading 46% utilization.
+                    // used in actual search). Was [1/13; 14] which showed misleading 46% utilization.
                     get_effective_weight_profile("semantic_search")
                         .expect("semantic_search profile must exist")
                 };
@@ -2039,7 +2039,7 @@ const ENHANCER_FIND_THRESHOLD: f32 = 0.5;
 
 /// Embedder metadata for AI visibility.
 /// Each embedder has a specific signal it captures that E1 might miss.
-const EMBEDDER_INFO: [(usize, &str, &str, &str); 13] = [
+const EMBEDDER_INFO: [(usize, &str, &str, &str); 14] = [
     // (index, name, category, what_it_finds)
     (0, "E1_Semantic", "FOUNDATION", "Dense semantic similarity - the foundation"),
     (1, "E2_Recency", "TEMPORAL", "Temporal freshness - recent memories (post-retrieval only)"),
@@ -2074,7 +2074,7 @@ const EMBEDDER_INFO: [(usize, &str, &str, &str); 13] = [
 ///
 /// # Returns
 /// Vector of blind spot objects with name, score, and what the embedder finds
-fn compute_blind_spots(embedder_scores: &[f32; 13], e1_score: f32) -> Vec<serde_json::Value> {
+fn compute_blind_spots(embedder_scores: &[f32; 14], e1_score: f32) -> Vec<serde_json::Value> {
     let mut blind_spots = Vec::new();
 
     // Only check for blind spots if E1 would have missed this result
@@ -2122,7 +2122,7 @@ fn compute_blind_spots(embedder_scores: &[f32; 13], e1_score: f32) -> Vec<serde_
 ///
 /// # Returns
 /// JSON object with categorized embedder scores and metadata
-fn build_embedder_scores_json(embedder_scores: &[f32; 13]) -> serde_json::Value {
+fn build_embedder_scores_json(embedder_scores: &[f32; 14]) -> serde_json::Value {
     let mut semantic = serde_json::Map::new();
     let mut relational = serde_json::Map::new();
     let mut structural = serde_json::Map::new();
@@ -2176,7 +2176,7 @@ fn build_embedder_scores_json(embedder_scores: &[f32; 13]) -> serde_json::Value 
 ///
 /// # Returns
 /// Vector of navigation suggestions
-fn compute_navigation_hints(embedder_scores: &[f32; 13]) -> Vec<String> {
+fn compute_navigation_hints(embedder_scores: &[f32; 14]) -> Vec<String> {
     let mut hints = Vec::new();
 
     let e1 = embedder_scores[0];
@@ -2273,7 +2273,7 @@ mod tests {
             assert!(COLBERT_WEIGHT >= 0.1 && COLBERT_WEIGHT <= 0.2);
         }
         // Blind spot detection
-        let mut scores = [0.0_f32; 13];
+        let mut scores = [0.0_f32; 14];
         scores[0] = 0.2; scores[6] = 0.8;
         let blind_spots = compute_blind_spots(&scores, scores[0]);
         assert_eq!(blind_spots.len(), 1);
@@ -2281,14 +2281,14 @@ mod tests {
         scores[0] = 0.5;
         assert!(compute_blind_spots(&scores, scores[0]).is_empty());
         // Embedder scores JSON
-        let json = build_embedder_scores_json(&[0.15_f32; 13]);
+        let json = build_embedder_scores_json(&[0.15_f32; 14]);
         let total = json["semantic"].as_object().unwrap().len()
             + json["relational"].as_object().unwrap().len()
             + json["structural"].as_object().unwrap().len()
             + json["temporal"].as_object().unwrap().len();
         assert_eq!(total, 13);
         // Navigation hints
-        let mut scores2 = [0.0_f32; 13];
+        let mut scores2 = [0.0_f32; 14];
         scores2[0] = 0.3; scores2[6] = 0.7;
         let hints = compute_navigation_hints(&scores2);
         assert!(hints.iter().any(|h| h.contains("search_code")));

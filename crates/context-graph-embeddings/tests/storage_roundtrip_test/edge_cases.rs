@@ -55,12 +55,12 @@ fn test_uniform_topic_profile() {
     let fp = StoredQuantizedFingerprint::new(
         Uuid::new_v4(),
         create_test_embeddings_with_deterministic_data(42),
-        [0.5f32; 13],
+        [0.5f32; 14],
         create_content_hash(42),
     );
 
     // Verify topic_profile is correctly stored
-    assert_eq!(fp.topic_profile, [0.5f32; 13]);
+    assert_eq!(fp.topic_profile, [0.5f32; 14]);
 
     println!("[PASS] Uniform topic profile handled correctly");
 }

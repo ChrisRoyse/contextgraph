@@ -251,7 +251,7 @@ mod tests {
         let results = MatrixSearchResults {
             hits: Vec::new(),
             correlation: CorrelationAnalysis {
-                correlation_matrix: [[0.0; 13]; 13],
+                correlation_matrix: [[0.0; 14]; 14],
                 patterns: Vec::new(),
                 coherence: 0.0,
             },

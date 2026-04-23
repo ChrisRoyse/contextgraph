@@ -176,7 +176,7 @@ impl StubMultiArrayProvider {
     fn deterministic_value(base: f32, dim_idx: usize, embedder_idx: usize) -> f32 {
         // Use prime multipliers per embedder to create distinct patterns
         // These primes ensure each embedder has a unique dimensional variation
-        const EMBEDDER_PRIMES: [f32; 13] = [
+        const EMBEDDER_PRIMES: [f32; 14] = [
             0.0173, // E1: semantic
             0.0237, // E2: temporal-recent
             0.0311, // E3: temporal-periodic

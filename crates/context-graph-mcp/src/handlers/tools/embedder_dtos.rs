@@ -770,9 +770,9 @@ impl CreateWeightProfileRequest {
         Ok(())
     }
 
-    /// Convert the weights map to a [f32; 13] array.
-    pub fn to_weight_array(&self) -> [f32; 13] {
-        let mut weights = [0.0f32; 13];
+    /// Convert the weights map to a [f32; 14] array.
+    pub fn to_weight_array(&self) -> [f32; 14] {
+        let mut weights = [0.0f32; 14];
         for (key, &val) in &self.weights {
             if let Some(eid) = EmbedderId::from_str(key) {
                 weights[eid.to_index()] = val as f32;

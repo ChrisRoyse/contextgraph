@@ -675,12 +675,12 @@ mod tests {
         })
     }
 
-    fn default_scores() -> [f32; 13] {
-        [0.0; 13]
+    fn default_scores() -> [f32; 14] {
+        [0.0; 14]
     }
 
-    fn default_thresholds() -> [f32; 13] {
-        [0.5; 13]
+    fn default_thresholds() -> [f32; 14] {
+        [0.5; 14]
     }
 
     #[test]

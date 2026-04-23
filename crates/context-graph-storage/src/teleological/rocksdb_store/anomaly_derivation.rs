@@ -292,7 +292,7 @@ mod tests {
     /// Agreement bits are derived from `scores >= 0.5` (excluding temporal
     /// slots 1..=3). The primary embedder slot is bumped to 0.8 if it would
     /// otherwise fall below 0.5, so the edge's `weight` is always valid.
-    fn edge_with(scores: [f32; 13], et: GraphLinkEdgeType) -> TypedEdge {
+    fn edge_with(scores: [f32; 14], et: GraphLinkEdgeType) -> TypedEdge {
         let dir = if et.is_asymmetric() {
             DirectedRelation::Forward
         } else {
@@ -335,7 +335,7 @@ mod tests {
 
     #[test]
     fn classifies_semantic_but_not_causal() {
-        let mut s = [0f32; 13];
+        let mut s = [0f32; 14];
         s[0] = 0.9;
         s[4] = 0.1;
         let e = edge_with(s, GraphLinkEdgeType::SemanticSimilar);
@@ -350,7 +350,7 @@ mod tests {
 
     #[test]
     fn classifies_code_shape_but_different_intent() {
-        let mut s = [0f32; 13];
+        let mut s = [0f32; 14];
         s[6] = 0.85;
         s[0] = 0.05;
         let e = edge_with(s, GraphLinkEdgeType::CodeRelated);
@@ -364,7 +364,7 @@ mod tests {
     #[test]
     fn classifies_hdc_cross_type() {
         // Edge type is ParaphraseAligned but pattern matches HDC anomaly.
-        let mut s = [0f32; 13];
+        let mut s = [0f32; 14];
         s[9] = 0.8;
         s[8] = 0.95;
         s[0] = 0.10;
@@ -378,7 +378,7 @@ mod tests {
 
     #[test]
     fn no_classification_when_thresholds_not_met() {
-        let s = [0.4f32; 13];
+        let s = [0.4f32; 14];
         let e = edge_with(s, GraphLinkEdgeType::SemanticSimilar);
         assert!(classify_edge_as_anomaly(&e, &AnomalyDerivationConfig::default()).is_none());
     }

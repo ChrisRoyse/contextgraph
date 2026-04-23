@@ -509,11 +509,11 @@ mod tests {
         let service = SynergyService::new();
 
         // High alignment topic profile
-        let high_tp = TopicProfile::new([0.9; 13]);
+        let high_tp = TopicProfile::new([0.9; 14]);
         let aligned = service.get_aligned_synergies(&high_tp);
 
         // Low alignment topic profile
-        let low_tp = TopicProfile::new([0.1; 13]);
+        let low_tp = TopicProfile::new([0.1; 14]);
         let low_aligned = service.get_aligned_synergies(&low_tp);
 
         // High alignment should produce higher values

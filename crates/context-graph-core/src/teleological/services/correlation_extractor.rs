@@ -58,7 +58,7 @@ pub struct CorrelationResult {
 /// use context_graph_core::teleological::SynergyMatrix;
 ///
 /// let extractor = CorrelationExtractor::new();
-/// let embeddings = vec![vec![0.0f32; 1024]; 13];
+/// let embeddings = vec![vec![0.0f32; 1024]; 14];
 /// let result = extractor.extract(&embeddings, None);
 /// assert_eq!(result.correlations.len(), 78);
 /// ```

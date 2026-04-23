@@ -36,7 +36,7 @@ pub trait QuantizedFingerprintRetriever: Send + Sync {
     ) -> Result<Option<StoredQuantizedFingerprint>, EmbeddingError>;
 
     /// Get only purpose vector (fast path for filtering).
-    fn get_topic_profile(&self, id: Uuid) -> Result<Option<[f32; 13]>, EmbeddingError>;
+    fn get_topic_profile(&self, id: Uuid) -> Result<Option<[f32; 14]>, EmbeddingError>;
 }
 
 /// Trait for HNSW index operations.
@@ -197,7 +197,7 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
     pub fn search_multi_space(
         &self,
         queries: &HashMap<u8, Vec<f32>>,
-        weights: Option<&[f32; 13]>,
+        weights: Option<&[f32; 14]>,
         k_per_space: usize,
         final_k: usize,
     ) -> Result<Vec<MultiSpaceQueryResult>, EmbeddingError> {
@@ -296,7 +296,7 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
     pub fn search_purpose_weighted(
         &self,
         queries: &HashMap<u8, Vec<f32>>,
-        topic_profile: &[f32; 13],
+        topic_profile: &[f32; 14],
         k_per_space: usize,
         final_k: usize,
     ) -> Result<Vec<MultiSpaceQueryResult>, EmbeddingError> {
@@ -314,10 +314,10 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
     fn compute_rrf_fusion(
         &self,
         results: &[EmbedderQueryResult],
-        weights: Option<&[f32; 13]>,
+        weights: Option<&[f32; 14]>,
         id: Uuid,
     ) -> MultiSpaceQueryResult {
-        let mut embedder_similarities = [f32::NAN; 13];
+        let mut embedder_similarities = [f32::NAN; 14];
         let mut rrf_score = 0.0f32;
         let mut weighted_sum = 0.0f32;
         let mut weight_total = 0.0f32;
@@ -367,7 +367,7 @@ mod tests {
 
     /// Test storage that uses in-memory HashMap (still real data structures)
     struct TestStorage {
-        topic_profiles: HashMap<Uuid, [f32; 13]>,
+        topic_profiles: HashMap<Uuid, [f32; 14]>,
     }
 
     impl TestStorage {
@@ -378,7 +378,7 @@ mod tests {
         }
 
         #[allow(dead_code)] // Prepared for future tests
-        fn add_topic_profile(&mut self, id: Uuid, pv: [f32; 13]) {
+        fn add_topic_profile(&mut self, id: Uuid, pv: [f32; 14]) {
             self.topic_profiles.insert(id, pv);
         }
     }
@@ -392,7 +392,7 @@ mod tests {
             Ok(None)
         }
 
-        fn get_topic_profile(&self, id: Uuid) -> Result<Option<[f32; 13]>, EmbeddingError> {
+        fn get_topic_profile(&self, id: Uuid) -> Result<Option<[f32; 14]>, EmbeddingError> {
             Ok(self.topic_profiles.get(&id).copied())
         }
     }

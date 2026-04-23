@@ -78,8 +78,8 @@ pub struct StageConfidences {
 /// use context_graph_core::teleological::services::MeaningPipeline;
 ///
 /// let pipeline = MeaningPipeline::new();
-/// let embeddings = vec![vec![0.0f32; 1024]; 13];
-/// let topic_alignments = [0.8f32; 13];
+/// let embeddings = vec![vec![0.0f32; 1024]; 14];
+/// let topic_alignments = [0.8f32; 14];
 /// let result = pipeline.extract(&embeddings, &topic_alignments);
 /// ```
 pub struct MeaningPipeline {

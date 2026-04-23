@@ -702,7 +702,7 @@ impl RocksDbTeleologicalStore {
     pub(crate) async fn scan_fingerprints_for_clustering_async(
         &self,
         limit: Option<usize>,
-    ) -> CoreResult<Vec<(Uuid, [Vec<f32>; 13])>> {
+    ) -> CoreResult<Vec<(Uuid, [Vec<f32>; 14])>> {
         info!(limit = ?limit, "Scanning fingerprints for clustering");
 
         // Clone Arc-wrapped fields for spawn_blocking closure
@@ -710,7 +710,7 @@ impl RocksDbTeleologicalStore {
         let db = Arc::clone(&self.db);
         let soft_deleted = Arc::clone(&self.soft_deleted);
 
-        let results = tokio::task::spawn_blocking(move || -> CoreResult<Vec<(Uuid, [Vec<f32>; 13])>> {
+        let results = tokio::task::spawn_blocking(move || -> CoreResult<Vec<(Uuid, [Vec<f32>; 14])>> {
             let cf = db.cf_handle(CF_FINGERPRINTS).ok_or_else(|| {
                 TeleologicalStoreError::ColumnFamilyNotFound {
                     name: CF_FINGERPRINTS.to_string(),

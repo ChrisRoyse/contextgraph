@@ -366,11 +366,11 @@ impl RocksDbTeleologicalStore {
     /// Store a custom weight profile.
     ///
     /// Key: profile_name UTF-8 bytes
-    /// Value: [f32; 13] JSON-serialized
+    /// Value: [f32; 14] JSON-serialized
     pub fn store_custom_weight_profile(
         &self,
         name: &str,
-        weights: &[f32; 13],
+        weights: &[f32; 14],
     ) -> TeleologicalStoreResult<()> {
         let key = name.as_bytes();
 
@@ -410,13 +410,13 @@ impl RocksDbTeleologicalStore {
     pub fn get_custom_weight_profile(
         &self,
         name: &str,
-    ) -> TeleologicalStoreResult<Option<[f32; 13]>> {
+    ) -> TeleologicalStoreResult<Option<[f32; 14]>> {
         let cf = self.get_cf(CF_CUSTOM_WEIGHT_PROFILES)?;
         let key = name.as_bytes();
 
         match self.db.get_cf(cf, key) {
             Ok(Some(bytes)) => {
-                let weights: [f32; 13] = serde_json::from_slice(&bytes).map_err(|e| {
+                let weights: [f32; 14] = serde_json::from_slice(&bytes).map_err(|e| {
                     error!(
                         "FAIL FAST: Failed to deserialize custom weight profile '{}': {}",
                         name, e
@@ -445,7 +445,7 @@ impl RocksDbTeleologicalStore {
     /// List all custom weight profiles.
     pub fn list_custom_weight_profiles(
         &self,
-    ) -> TeleologicalStoreResult<Vec<(String, [f32; 13])>> {
+    ) -> TeleologicalStoreResult<Vec<(String, [f32; 14])>> {
         let cf = self.get_cf(CF_CUSTOM_WEIGHT_PROFILES)?;
         let iter = self.db.iterator_cf(cf, rocksdb::IteratorMode::Start);
 
@@ -473,7 +473,7 @@ impl RocksDbTeleologicalStore {
                 }
             })?;
 
-            let weights: [f32; 13] = serde_json::from_slice(&value).map_err(|e| {
+            let weights: [f32; 14] = serde_json::from_slice(&value).map_err(|e| {
                 error!(
                     "FAIL FAST: Failed to deserialize custom weight profile '{}': {}",
                     name, e

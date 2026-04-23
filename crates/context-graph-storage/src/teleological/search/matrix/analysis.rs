@@ -31,7 +31,7 @@ pub struct MatrixAnalysis {
 #[derive(Debug, Clone)]
 pub struct CorrelationAnalysis {
     /// 13x13 Pearson correlation matrix between embedder scores.
-    pub correlation_matrix: [[f32; 13]; 13],
+    pub correlation_matrix: [[f32; 14]; 14],
     /// Detected correlation patterns.
     pub patterns: Vec<CorrelationPattern>,
     /// Overall coherence score (0-1, higher = more agreement).

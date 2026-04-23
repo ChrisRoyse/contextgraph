@@ -319,7 +319,7 @@ fn test_fingerprint_estimated_size() {
     let fp = StoredQuantizedFingerprint::new(
         Uuid::new_v4(),
         embeddings,
-        [0.5f32; 13],
+        [0.5f32; 14],
         [0x42u8; 32],
     );
 
@@ -409,7 +409,7 @@ fn test_fingerprint_creation_timing() {
         let _fp = StoredQuantizedFingerprint::new(
             Uuid::new_v4(),
             embeddings,
-            [0.5f32; 13],
+            [0.5f32; 14],
             [0x42u8; 32],
         );
     }
@@ -522,7 +522,7 @@ fn test_edge_case_maximum_size_fingerprint() {
     let fp = StoredQuantizedFingerprint::new(
         Uuid::new_v4(),
         embeddings,
-        [0.5f32; 13],
+        [0.5f32; 14],
         [0x42u8; 32],
     );
 
@@ -564,7 +564,7 @@ fn test_edge_case_minimum_size_fingerprint() {
     let fp = StoredQuantizedFingerprint::new(
         Uuid::new_v4(),
         embeddings,
-        [0.5f32; 13],
+        [0.5f32; 14],
         [0x42u8; 32],
     );
 
@@ -597,7 +597,7 @@ fn test_edge_case_concurrent_creation() {
                     let _fp = StoredQuantizedFingerprint::new(
                         Uuid::new_v4(),
                         embeddings,
-                        [0.5f32; 13],
+                        [0.5f32; 14],
                         [0x42u8; 32],
                     );
                     count.fetch_add(1, Ordering::Relaxed);

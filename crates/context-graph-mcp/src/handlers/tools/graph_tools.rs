@@ -863,7 +863,7 @@ impl Handlers {
 
             for rel in &relationships {
                 // Build per-embedder scores: set E8 (index 7) to confidence, rest 0.0
-                let mut embedder_scores = [0.0f32; 13];
+                let mut embedder_scores = [0.0f32; 14];
                 embedder_scores[7] = rel.confidence; // E8 graph connectivity
 
                 // E8 = bit 7 = 0b0000_0000_1000_0000 = 0x0080

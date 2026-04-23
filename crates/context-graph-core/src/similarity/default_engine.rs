@@ -634,7 +634,7 @@ mod tests {
 
     #[test]
     fn test_compute_variance() {
-        let scores: [Option<f32>; 13] = [
+        let scores: [Option<f32>; 14] = [
             Some(0.5),
             Some(0.5),
             Some(0.5),

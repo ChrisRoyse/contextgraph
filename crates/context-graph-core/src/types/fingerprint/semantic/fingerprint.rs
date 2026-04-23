@@ -730,7 +730,7 @@ impl SemanticFingerprint {
     /// - E6: 30522D (sparse converted), E7: 1536D
     /// - E8: 1024D, E9: 1024D, E10: 768D, E11: 768D
     /// - E12: 128D (mean-pooled), E13: 30522D (sparse converted)
-    pub fn to_cluster_array(&self) -> [Vec<f32>; 13] {
+    pub fn to_cluster_array(&self) -> [Vec<f32>; 14] {
         // E12: Mean-pool tokens to single 128D vector
         // If no tokens, return zero vector
         let e12_pooled = if self.e12_late_interaction.is_empty() {

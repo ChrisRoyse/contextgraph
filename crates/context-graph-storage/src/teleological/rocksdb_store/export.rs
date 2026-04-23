@@ -240,7 +240,7 @@ impl RocksDbTeleologicalStore {
     pub async fn get_topic_profile(
         &self,
         id: Uuid,
-    ) -> CoreResult<Option<[f32; 13]>> {
+    ) -> CoreResult<Option<[f32; 14]>> {
         let cf = self
             .db
             .cf_handle(CF_TOPIC_PROFILES)
@@ -254,7 +254,7 @@ impl RocksDbTeleologicalStore {
                         bytes.len()
                     )));
                 }
-                let mut out = [0f32; 13];
+                let mut out = [0f32; 14];
                 for (i, chunk) in bytes.chunks_exact(4).enumerate() {
                     let arr: [u8; 4] = chunk.try_into().expect("chunk_exact(4) guarantees 4 bytes");
                     out[i] = f32::from_le_bytes(arr);

@@ -313,7 +313,7 @@ impl WeightedAgreementAnalysis {
     }
 
     /// Record a pair's agreement.
-    pub fn record_pair(&mut self, embedder_agreements: &[bool; 13], embedder_weights: &[f32; 13]) {
+    pub fn record_pair(&mut self, embedder_agreements: &[bool; 14], embedder_weights: &[f32; 14]) {
         self.total_pairs += 1;
 
         let mut weighted_agreement = 0.0f32;
@@ -498,7 +498,7 @@ impl CategoryWeights {
     }
 
     /// Get all 13 weights as array.
-    pub fn as_array(&self) -> [f32; 13] {
+    pub fn as_array(&self) -> [f32; 14] {
         [
             self.semantic,  // E1
             self.temporal,  // E2
@@ -588,7 +588,7 @@ mod tests {
         let weights = CategoryWeights::default().as_array();
 
         // All semantic embedders agree
-        let mut agreements = [false; 13];
+        let mut agreements = [false; 14];
         agreements[0] = true; // E1
         agreements[4] = true; // E5
         agreements[5] = true; // E6

@@ -208,7 +208,7 @@ impl Handlers {
                 // Optionally include all 13 embedder scores
                 // TeleologicalSearchResult already computes all 13 scores during search
                 let all_scores = if request.include_all_scores {
-                    // Convert [f32; 13] array to AllEmbedderScores struct
+                    // Convert [f32; 14] array to AllEmbedderScores struct
                     let s = &cand.embedder_scores;
                     Some(AllEmbedderScores {
                         e1: s[0],
