@@ -469,17 +469,17 @@ mod tests {
         assert_eq!(SPACE_WEIGHTS[7], 0.5);  // E8 Graph (Relational)
         assert_eq!(SPACE_WEIGHTS[8], 0.5);  // E9 Hdc (Structural)
         assert_eq!(SPACE_WEIGHTS[10], 0.5); // E11 Entity (Relational)
-        assert!((TOTAL_WEIGHT - 8.5).abs() < f32::EPSILON);
+        assert!((TOTAL_WEIGHT - 9.5).abs() < f32::EPSILON);
     }
 
     #[test]
     fn test_weights_normalization() {
         let weights = default_weights();
-        assert!((weights.sum() - 8.5).abs() < 0.001);
+        assert!((weights.sum() - 9.5).abs() < 0.001);
 
         let mut normalized = weights.clone();
         normalized.normalize();
-        assert!((normalized.sum() - 13.0).abs() < 0.001);
+        assert!((normalized.sum() - 14.0).abs() < 0.001);
 
         // Temporal weights should remain 0.0 after normalization
         assert_eq!(normalized.get_weight(Embedder::TemporalRecent), 0.0);

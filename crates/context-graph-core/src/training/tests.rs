@@ -26,7 +26,7 @@ fn cross_correlations_has_exactly_78_entries() {
     let profile = [1.0f32; NUM_EMBEDDERS];
     let synergy = SynergyMatrix::with_base_synergies();
     let cc = compute_cross_correlations(&profile, &synergy);
-    assert_eq!(cc.len(), NUM_CROSS_CORRELATIONS, "expected C(13,2) = 78");
+    assert_eq!(cc.len(), NUM_CROSS_CORRELATIONS, "expected C(14,2) = 91");
 }
 
 #[test]

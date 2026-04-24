@@ -23,13 +23,14 @@ use crate::teleological::Embedder;
 /// NOTE: E5 (Causal) is semantic but EXCLUDED because AP-77 requires
 /// CausalDirection for meaningful scores. Without direction, E5 returns 0.0
 /// from compute_embedder_scores_sync(), causing false-positive alerts.
-pub const DIVERGENCE_SPACES: [Embedder; 6] = [
+pub const DIVERGENCE_SPACES: [Embedder; 7] = [
     Embedder::Semantic,        // E1
     Embedder::Sparse,          // E6
     Embedder::Code,            // E7
     Embedder::Contextual,      // E10
     Embedder::LateInteraction, // E12
     Embedder::KeywordSplade,   // E13
+    Embedder::BgeM3Dense,      // E14
 ];
 
 /// Maximum length for memory summary in DivergenceAlert.

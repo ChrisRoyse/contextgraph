@@ -296,8 +296,8 @@ mod tests {
     fn test_iterator() {
         let scores = PerSpaceScores::new();
         let count = scores.iter().count();
-        assert_eq!(count, 13);
-        println!("[PASS] Iterator visits all 13 spaces");
+        assert_eq!(count, 14);
+        println!("[PASS] Iterator visits all 14 spaces");
     }
 
     #[test]
@@ -374,8 +374,8 @@ mod tests {
     #[test]
     fn test_included_spaces() {
         let included = PerSpaceScores::included_spaces();
-        // Should be 10 spaces (13 - 3 temporal)
-        assert_eq!(included.len(), 10);
+        // Should be 11 spaces (14 - 3 temporal)
+        assert_eq!(included.len(), 11);
         // Should NOT contain temporal
         assert!(!included.contains(&Embedder::TemporalRecent));
         assert!(!included.contains(&Embedder::TemporalPeriodic));
@@ -404,7 +404,7 @@ mod tests {
         assert_eq!(result.relevance_score, 0.75);
         assert_eq!(result.space_count, 2);
         assert_eq!(result.matching_spaces.len(), 2);
-        assert_eq!(result.included_spaces.len(), 10);
+        assert_eq!(result.included_spaces.len(), 11);
         println!("[PASS] SimilarityResult construction works");
     }
 
@@ -489,7 +489,7 @@ mod tests {
         assert_eq!(result.relevance_score, 0.0);
         assert_eq!(result.space_count, 0);
         assert!(result.matching_spaces.is_empty());
-        assert_eq!(result.included_spaces.len(), 10);
+        assert_eq!(result.included_spaces.len(), 11);
         // weighted_similarity should be computed
         assert!(result.weighted_similarity > 0.0);
         println!("[PASS] SimilarityResult::new() computes weighted_similarity");

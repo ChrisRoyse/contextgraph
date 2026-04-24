@@ -362,8 +362,8 @@ mod tests {
         assert_eq!(temporal, 3);
         assert_eq!(relational, 2);
         assert_eq!(structural, 1);
-        assert_eq!(semantic + temporal + relational + structural, 13);
-        println!("[PASS] Category counts: semantic=7, temporal=3, relational=2, structural=1");
+        assert_eq!(semantic + temporal + relational + structural, 14);
+        println!("[PASS] Category counts: semantic=8, temporal=3, relational=2, structural=1");
     }
 
     #[test]

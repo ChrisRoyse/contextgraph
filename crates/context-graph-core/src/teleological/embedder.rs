@@ -468,9 +468,9 @@ mod tests {
 
     #[test]
     fn test_embedder_count() {
-        assert_eq!(Embedder::COUNT, 13);
-        assert_eq!(Embedder::all().count(), 13);
-        println!("[PASS] Embedder::COUNT equals 13");
+        assert_eq!(Embedder::COUNT, 14);
+        assert_eq!(Embedder::all().count(), 14);
+        println!("[PASS] Embedder::COUNT equals 14");
     }
 
     #[test]
@@ -491,8 +491,8 @@ mod tests {
 
     #[test]
     fn test_index_bounds() {
-        assert!(Embedder::from_index(12).is_some());
-        assert!(Embedder::from_index(13).is_none());
+        assert!(Embedder::from_index(13).is_some());
+        assert!(Embedder::from_index(14).is_none());
         assert!(Embedder::from_index(100).is_none());
         println!("[PASS] from_index returns None for out-of-bounds");
     }
@@ -554,11 +554,11 @@ mod tests {
     #[test]
     fn test_embedder_mask_all() {
         let all = EmbedderMask::all();
-        assert_eq!(all.count(), 13);
+        assert_eq!(all.count(), 14);
         for e in Embedder::all() {
             assert!(all.contains(e), "{:?} not in all() mask", e);
         }
-        println!("[PASS] EmbedderMask::all() contains all 13 embedders");
+        println!("[PASS] EmbedderMask::all() contains all 14 embedders");
     }
 
     #[test]
@@ -587,9 +587,10 @@ mod tests {
     #[test]
     fn test_embedder_group_dense() {
         let dense = EmbedderGroup::Dense.embedders();
-        assert_eq!(dense.count(), 10); // 13 - 3 (E6, E12, E13)
+        assert_eq!(dense.count(), 11); // 14 - 3 (E6, E12, E13)
         assert!(dense.contains(Embedder::Semantic));
         assert!(dense.contains(Embedder::Code));
+        assert!(dense.contains(Embedder::BgeM3Dense));
         assert!(!dense.contains(Embedder::Sparse));
         assert!(!dense.contains(Embedder::LateInteraction));
         assert!(!dense.contains(Embedder::KeywordSplade));
@@ -718,9 +719,9 @@ mod tests {
     fn test_e8_all_names() {
         let names = Embedder::all_names();
         assert!(names.contains(&"E8_Graph"));
-        assert_eq!(names.len(), 13);
+        assert_eq!(names.len(), 14);
         assert!(!names.contains(&"E8_Emotional"));
-        println!("[PASS] all_names() returns 13 canonical names including E8_Graph");
+        println!("[PASS] all_names() returns 14 canonical names including E8_Graph");
     }
 
     #[test]

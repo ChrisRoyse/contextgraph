@@ -66,8 +66,8 @@ pub use temporal::{extract_temporal_labels, PeriodicBucket, TemporalLabels};
 /// v1 readers cannot decode v2 payloads (and vice versa) — re-export required.
 pub const TRAINING_RECORD_VERSION: u8 = 2;
 
-/// Expected length of the `cross_correlations` vector: C(13, 2) = 78.
-pub const NUM_CROSS_CORRELATIONS: usize = 78;
+/// Expected length of the `cross_correlations` vector: C(14, 2) = 91.
+pub const NUM_CROSS_CORRELATIONS: usize = 91;
 
 /// Expected length of `group_alignments`: one per group (Factual, Temporal,
 /// Causal, Relational, Qualitative, Implementation).

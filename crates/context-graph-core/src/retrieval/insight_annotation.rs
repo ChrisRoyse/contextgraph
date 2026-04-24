@@ -649,15 +649,15 @@ mod tests {
         // Results from all 13 embedders
         let results = vec![
             make_result(vec![0, 1, 2, 3, 4, 5, 6], 0, 0, false),
-            make_result(vec![7, 8, 9, 10, 11, 12], 7, 0, false),
+            make_result(vec![7, 8, 9, 10, 11, 12, 13], 7, 0, false),
         ];
 
         let coverage = compute_perspective_coverage(&results);
 
-        assert_eq!(coverage.embedders_contributing.len(), 13);
+        assert_eq!(coverage.embedders_contributing.len(), 14);
         assert!(coverage.missing_perspectives.is_empty());
         assert!((coverage.coverage_score - 1.0).abs() < 0.001);
-        assert_eq!(coverage.category_breakdown.semantic_count, 7);
+        assert_eq!(coverage.category_breakdown.semantic_count, 8);
         assert_eq!(coverage.category_breakdown.relational_count, 2);
         assert_eq!(coverage.category_breakdown.structural_count, 1);
         assert_eq!(coverage.category_breakdown.temporal_count, 3);
@@ -673,10 +673,10 @@ mod tests {
         let coverage = compute_perspective_coverage(&results);
 
         assert_eq!(coverage.embedders_contributing.len(), 2);
-        assert_eq!(coverage.missing_perspectives.len(), 11);
+        assert_eq!(coverage.missing_perspectives.len(), 12);
 
-        // E1 (1.0) + E11 (0.5) = 1.5 / 8.5 ≈ 0.176
-        let expected_score = 1.5 / 8.5;
+        // E1 (1.0) + E11 (0.5) = 1.5 / 9.5 ≈ 0.158 (post-E14)
+        let expected_score = 1.5 / 9.5;
         assert!((coverage.coverage_score - expected_score).abs() < 0.01);
 
         println!(
@@ -731,8 +731,8 @@ mod tests {
 
         let coverage = compute_perspective_coverage(&results);
 
-        // Should have 12 missing perspectives
-        assert_eq!(coverage.missing_perspectives.len(), 12);
+        // Should have 13 missing perspectives (E2-E14)
+        assert_eq!(coverage.missing_perspectives.len(), 13);
 
         // Find E11 in missing
         let e11_missing = coverage

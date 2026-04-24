@@ -632,14 +632,12 @@ impl SemanticFingerprint {
             Embedder::LateInteraction => EmbeddingRef::TokenLevel(&self.e12_late_interaction),
             Embedder::KeywordSplade => EmbeddingRef::Sparse(&self.e13_splade),
             // E14 BGE-M3 dense is NOT stored in SemanticFingerprint — it lives
-            // in the sibling CF_E14_BGE_M3_DENSE column family. Callers
-            // requesting E14 are using the wrong API. Fail fast so we see it
-            // during integration rather than silently returning a stub.
-            Embedder::BgeM3Dense => panic!(
-                "SemanticFingerprint.get(Embedder::BgeM3Dense) called: E14 vectors \
-                 live in CF_E14_BGE_M3_DENSE, not in the fingerprint struct. Use \
-                 the E14 storage handle instead."
-            ),
+            // in the sibling CF_E14_BGE_M3_DENSE column family. For fingerprint
+            // iterators that walk every Embedder variant, return an empty dense
+            // slice so consumers see "E14 is not populated here" and route
+            // through the E14 storage handle instead. Dimension checks on
+            // non-empty vectors should route through the dedicated E14 reader.
+            Embedder::BgeM3Dense => EmbeddingRef::Dense(&[]),
         }
     }
 

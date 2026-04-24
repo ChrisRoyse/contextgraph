@@ -374,8 +374,8 @@ mod tests {
             assert_eq!(config.embedder, embedder);
             assert!(config.dimension > 0);
         }
-        assert_eq!(Embedder::all().count(), 13);
-        println!("[PASS] All 13 embedders have valid configurations");
+        assert_eq!(Embedder::all().count(), 14);
+        println!("[PASS] All 14 embedders have valid configurations");
     }
 
     #[test]
@@ -537,7 +537,7 @@ mod tests {
     #[test]
     fn test_is_semantic_count() {
         let semantic_count = Embedder::all().filter(|e| is_semantic(*e)).count();
-        assert_eq!(semantic_count, 7, "Should have exactly 7 semantic embedders");
+        assert_eq!(semantic_count, 8, "Should have exactly 8 semantic embedders (E1, E5, E6, E7, E10, E12, E13, E14)");
 
         assert!(is_semantic(Embedder::Semantic));
         assert!(is_semantic(Embedder::Causal));
