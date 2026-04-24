@@ -16,5 +16,5 @@ fn test_factory_new() {
 #[test]
 fn test_supported_models_count() {
     let factory = DefaultModelFactory::new(PathBuf::from("./models"), GpuConfig::default());
-    assert_eq!(factory.supported_models().len(), 14);
+    assert_eq!(factory.supported_models().len(), 15);
 }

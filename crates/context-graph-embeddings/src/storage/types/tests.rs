@@ -13,7 +13,7 @@ mod tests {
     /// Create a valid HashMap of dummy quantized embeddings for testing.
     fn create_test_embeddings() -> HashMap<u8, QuantizedEmbedding> {
         let mut map = HashMap::new();
-        for i in 0..13u8 {
+        for i in 0..14u8 {
             // EMB-3/EMB-5 FIX: Correct dimensions per constitution.yaml embedder specs.
             // E8 and E11 moved to PQ8 group with correct dimensions (were Float8E4M3 with wrong dims).
             let (method, dim, data_len) = match i {
@@ -29,6 +29,7 @@ mod tests {
                 // Production E11 uses Kepler (768D, PQ8) at ModelId idx 13.
                 10 => (QuantizationMethod::Float8E4M3, 384, 384),     // E11 Entity (legacy MiniLM 384D)
                 11 => (QuantizationMethod::TokenPruning, 128, 64),    // E12 ColBERT (128D/token)
+                13 => (QuantizationMethod::PQ8, 1024, 8),             // E14 BGE-M3 Dense (1024D, PQ8)
                 _ => unreachable!(),
             };
 
@@ -77,8 +78,8 @@ mod tests {
 
         assert_eq!(fp.id, id);
         assert_eq!(fp.version, STORAGE_VERSION);
-        assert_eq!(fp.embeddings.len(), 13);
-        assert_eq!(fp.topic_profile.len(), 13);
+        assert_eq!(fp.embeddings.len(), 14);
+        assert_eq!(fp.topic_profile.len(), 14);
     }
 
     #[test]

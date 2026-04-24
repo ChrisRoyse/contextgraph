@@ -853,8 +853,8 @@ mod tests {
 
     #[test]
     fn test_divergence_spaces_and_thresholds() {
-        // AP-62/AP-77: divergence spaces exclude temporals and E5
-        assert_eq!(DIVERGENCE_SPACES.len(), 6);
+        // AP-62/AP-77: divergence spaces exclude temporals and E5 (7 spaces after E14 added)
+        assert_eq!(DIVERGENCE_SPACES.len(), 7);
         assert!(DIVERGENCE_SPACES.contains(&Embedder::Semantic));
         assert!(DIVERGENCE_SPACES.contains(&Embedder::Code));
         assert!(!DIVERGENCE_SPACES.contains(&Embedder::Causal));

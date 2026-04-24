@@ -535,7 +535,7 @@ mod tests {
     #[test]
     fn test_dimension_not_multiple_of_8() {
         let encoder = BinaryEncoder::new();
-        let input = vec![1.0; 14]; // 13 elements, needs 2 bytes
+        let input = vec![1.0; 13]; // 13 elements, needs 2 bytes (13 bits → 2 bytes)
 
         let result = encoder.quantize(&input, None).expect("quantize");
         assert_eq!(result.data.len(), 2);

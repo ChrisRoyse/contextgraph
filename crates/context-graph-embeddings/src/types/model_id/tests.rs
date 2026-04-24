@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 
 #[test]
 fn test_all_returns_14_variants() {
-    assert_eq!(ModelId::all().len(), 14);
+    // 15 variants since E14 BgeM3Dense joined Entity + Kepler + E1-E13.
+    assert_eq!(ModelId::all().len(), 15);
 }
 
 #[test]
@@ -88,7 +89,8 @@ fn test_display() {
 #[test]
 fn test_pretrained_count() {
     let pretrained: Vec<_> = ModelId::pretrained().collect();
-    assert_eq!(pretrained.len(), 10); // 14 total - 4 custom
+    // 15 total - 4 custom = 11 pretrained (incl. E14 BgeM3Dense).
+    assert_eq!(pretrained.len(), 11);
 }
 
 #[test]
@@ -161,26 +163,26 @@ fn test_tokenizer_families() {
 
 #[test]
 fn test_invalid_u8_conversion() {
-    // Before: attempt conversion of invalid value (14 is outside valid range 0-13)
-    let result = ModelId::try_from(14u8);
+    // Before: attempt conversion of invalid value (15 is outside valid range 0-14)
+    let result = ModelId::try_from(15u8);
 
     // After: verify error
     assert!(result.is_err());
-    assert_eq!(result.unwrap_err(), "Invalid ModelId: must be 0-13");
-    println!("Edge Case 1 PASSED: Invalid u8 (14) correctly rejected");
+    assert_eq!(result.unwrap_err(), "Invalid ModelId: must be 0-14");
+    println!("Edge Case 1 PASSED: Invalid u8 (15) correctly rejected");
 }
 
 #[test]
 fn test_maximum_enum_value() {
-    // Before: get max valid value (Kepler = 13 is now the max)
-    let max_valid = ModelId::Kepler as u8;
+    // Before: get max valid value (BgeM3Dense = 14 is now the max)
+    let max_valid = ModelId::BgeM3Dense as u8;
     println!("Before: max valid u8 = {}", max_valid);
 
     // After: verify round-trip
     let recovered = ModelId::try_from(max_valid).expect("max valid should convert");
-    assert_eq!(recovered, ModelId::Kepler);
+    assert_eq!(recovered, ModelId::BgeM3Dense);
     println!("After: recovered = {:?}", recovered);
-    println!("Edge Case 2 PASSED: Maximum value (13) converts correctly");
+    println!("Edge Case 2 PASSED: Maximum value (14) converts correctly");
 }
 
 #[test]
@@ -203,9 +205,9 @@ fn test_custom_model_no_repo() {
 
 #[test]
 fn test_production_returns_13_variants() {
-    // EMB-M2: production() must return exactly NUM_EMBEDDERS (13) models
+    // EMB-M2: production() must return exactly NUM_EMBEDDERS (14) models after E14.
     let prod = ModelId::production();
-    assert_eq!(prod.len(), 13, "production() must return 13 models");
+    assert_eq!(prod.len(), 14, "production() must return 14 models");
 }
 
 #[test]

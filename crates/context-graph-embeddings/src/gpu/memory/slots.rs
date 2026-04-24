@@ -600,7 +600,7 @@ mod tests {
             total_expected += size;
         }
 
-        assert_eq!(manager.loaded_count(), 13);
+        assert_eq!(manager.loaded_count(), 14);
         assert_eq!(manager.allocated(), total_expected);
         assert_eq!(manager.pressure_level(), MemoryPressure::Low);
 

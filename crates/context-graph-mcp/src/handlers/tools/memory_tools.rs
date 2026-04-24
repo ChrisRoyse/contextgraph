@@ -2287,7 +2287,7 @@ mod tests {
             + json["relational"].as_object().unwrap().len()
             + json["structural"].as_object().unwrap().len()
             + json["temporal"].as_object().unwrap().len();
-        assert_eq!(total, 13);
+        assert_eq!(total, 14);
         // Navigation hints
         let mut scores2 = [0.0_f32; 14];
         scores2[0] = 0.3; scores2[6] = 0.7;

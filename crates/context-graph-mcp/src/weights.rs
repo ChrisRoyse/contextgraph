@@ -60,6 +60,7 @@ mod tests {
             10 => "e11_entity",
             11 => "e12_late_interaction",
             12 => "e13_splade",
+            13 => "e14_bge_m3_dense",
             _ => "unknown",
         }
     }
@@ -111,8 +112,8 @@ mod tests {
         for (name, weights) in WEIGHT_PROFILES {
             assert_eq!(
                 weights.len(),
-                13,
-                "Profile '{}' should have 13 weights",
+                14,
+                "Profile '{}' should have 14 weights (post-E14)",
                 name
             );
         }
@@ -205,7 +206,8 @@ mod tests {
     fn test_space_names() {
         assert_eq!(space_name(0), "E1_Semantic");
         assert_eq!(space_name(12), "E13_SPLADE");
-        assert_eq!(space_name(13), "Unknown");
+        assert_eq!(space_name(13), "E14_BgeM3Dense");
+        assert_eq!(space_name(14), "Unknown");
     }
 
     #[test]
@@ -216,8 +218,9 @@ mod tests {
 
     #[test]
     fn test_parse_weights_from_json_valid() {
+        // 14 weights summing to 1.0 (14 elements after E14 BGE-M3 was added).
         let json_arr: Vec<serde_json::Value> = vec![
-            0.28, 0.05, 0.05, 0.05, 0.10, 0.04, 0.18, 0.05, 0.05, 0.05, 0.03, 0.05, 0.02,
+            0.26, 0.05, 0.05, 0.05, 0.10, 0.04, 0.18, 0.05, 0.05, 0.05, 0.03, 0.05, 0.02, 0.02,
         ]
         .into_iter()
         .map(serde_json::Value::from)
@@ -235,7 +238,7 @@ mod tests {
 
         let result = parse_weights_from_json(&json_arr);
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("Expected 13 weights, got 2"));
+        assert!(result.unwrap_err().contains("Expected 14 weights, got 2"));
     }
 
     #[test]

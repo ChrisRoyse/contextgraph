@@ -117,8 +117,8 @@ fn test_is_complete_only_when_all_14() {
     assert!(!mae.is_complete());
     assert_eq!(mae.filled_count(), MODEL_COUNT - 1);
 
-    // Fill last model (Kepler)
-    let mut emb = ModelEmbedding::new(ModelId::Kepler, vec![0.1; 768], 100);
+    // Fill last model (E14 BgeM3Dense at index 14)
+    let mut emb = ModelEmbedding::new(ModelId::BgeM3Dense, vec![0.1; 1024], 100);
     emb.set_projected(true);
     mae.set(emb);
     assert!(mae.is_complete());

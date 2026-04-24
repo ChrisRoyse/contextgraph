@@ -1810,10 +1810,10 @@ mod tests {
         assert_eq!(vec.len(), 1024, "embedding dimension should be 1024");
     }
 
-    /// Test NUM_EMBEDDERS is 13.
+    /// Test NUM_EMBEDDERS is 14.
     #[test]
     fn test_num_embedders() {
-        assert_eq!(NUM_EMBEDDERS, 13);
+        assert_eq!(NUM_EMBEDDERS, 14);
     }
 
     /// Test model_ids array has correct length.
@@ -1833,6 +1833,7 @@ mod tests {
             "entity",
             "late_interaction",
             "splade",
+            "bge_m3_dense",
         ];
         assert_eq!(ids.len(), NUM_EMBEDDERS);
     }

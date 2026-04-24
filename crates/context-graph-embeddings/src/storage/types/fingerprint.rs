@@ -87,7 +87,7 @@ impl StoredQuantizedFingerprint {
         topic_profile: [f32; 14],
         content_hash: [u8; 32],
     ) -> Self {
-        // FAIL FAST: All 13 embedders required
+        // FAIL FAST: All 14 embedders required
         if embeddings.len() != NUM_EMBEDDERS {
             panic!(
                 "CONSTRUCTION ERROR: StoredQuantizedFingerprint requires exactly {} embeddings, got {}. \
@@ -95,15 +95,17 @@ impl StoredQuantizedFingerprint {
                  This indicates incomplete fingerprint generation.",
                 NUM_EMBEDDERS,
                 embeddings.len(),
-                (0..13).filter(|i| !embeddings.contains_key(&(*i as u8))).collect::<Vec<_>>()
+                (0..NUM_EMBEDDERS as u8)
+                    .filter(|i| !embeddings.contains_key(i))
+                    .collect::<Vec<_>>()
             );
         }
 
-        // Verify all indices are valid (0-12)
+        // Verify all indices are valid (0-13)
         for idx in embeddings.keys() {
             if *idx >= NUM_EMBEDDERS as u8 {
                 panic!(
-                    "CONSTRUCTION ERROR: Invalid embedder index {}. Valid range: 0-12. \
+                    "CONSTRUCTION ERROR: Invalid embedder index {}. Valid range: 0-13. \
                      This indicates embedding pipeline bug.",
                     idx
                 );

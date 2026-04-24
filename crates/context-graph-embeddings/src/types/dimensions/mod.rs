@@ -77,17 +77,18 @@ mod tests {
             + ENTITY
             + LATE_INTERACTION
             + super::constants::SPLADE
-            + super::constants::KEPLER;
+            + super::constants::KEPLER
+            + super::constants::BGE_M3_DENSE;
         assert_eq!(sum, TOTAL_DIMENSION);
-        assert_eq!(TOTAL_DIMENSION, 12032);
+        assert_eq!(TOTAL_DIMENSION, 13056);
     }
 
     #[test]
     fn test_model_count() {
-        assert_eq!(MODEL_COUNT, 14);
-        assert_eq!(PROJECTED_DIMENSIONS.len(), 14);
-        assert_eq!(NATIVE_DIMENSIONS.len(), 14);
-        assert_eq!(OFFSETS.len(), 14);
+        assert_eq!(MODEL_COUNT, 15);
+        assert_eq!(PROJECTED_DIMENSIONS.len(), 15);
+        assert_eq!(NATIVE_DIMENSIONS.len(), 15);
+        assert_eq!(OFFSETS.len(), 15);
     }
 
     #[test]
@@ -118,9 +119,9 @@ mod tests {
         assert_eq!(offset_by_index(2), 1536);
         // E5 starts after all temporals
         assert_eq!(offset_by_index(4), 1024 + 512 + 512 + 512);
-        // Kepler (index 13) offset + dimension should equal TOTAL
+        // E14 BgeM3Dense (index 14) offset + its dimension should equal TOTAL
         assert_eq!(
-            offset_by_index(13) + super::constants::KEPLER,
+            offset_by_index(14) + super::constants::BGE_M3_DENSE,
             TOTAL_DIMENSION
         );
     }
@@ -177,10 +178,10 @@ mod tests {
 
     #[test]
     fn test_edge_case_invalid_index_projected() {
-        // Test that invalid index panics
-        let result = std::panic::catch_unwind(|| projected_dimension_by_index(14));
-        assert!(result.is_err(), "Index 14 should panic");
-        println!("Edge Case 1 PASSED: projected_dimension_by_index(14) panics correctly");
+        // Test that invalid index panics (first invalid index is now 15)
+        let result = std::panic::catch_unwind(|| projected_dimension_by_index(15));
+        assert!(result.is_err(), "Index 15 should panic");
+        println!("Edge Case 1 PASSED: projected_dimension_by_index(15) panics correctly");
     }
 
     #[test]
@@ -192,9 +193,9 @@ mod tests {
 
     #[test]
     fn test_edge_case_offset_boundary() {
-        // Last valid offset (Kepler at index 13) + its dimension should equal TOTAL
-        let last_offset = offset_by_index(13);
-        let last_dim = projected_dimension_by_index(13);
+        // Last valid offset (BgeM3Dense at index 14) + its dimension should equal TOTAL
+        let last_offset = offset_by_index(14);
+        let last_dim = projected_dimension_by_index(14);
         println!("Before: last_offset={}, last_dim={}", last_offset, last_dim);
 
         let computed_total = last_offset + last_dim;

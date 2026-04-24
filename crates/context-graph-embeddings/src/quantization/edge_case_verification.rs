@@ -203,7 +203,7 @@ mod edge_case_tests {
             }
         }
 
-        println!("  - PQ8: {} (expected 5: E1, E5, E7, E10, Kepler)", pq8_count);
+        println!("  - PQ8: {} (expected 6: E1, E5, E7, E10, Kepler, BgeM3Dense)", pq8_count);
         println!(
             "  - Float8E4M3: {} (expected 5: E2, E3, E4, E8, E11)",
             float8_count
@@ -212,15 +212,15 @@ mod edge_case_tests {
         println!("  - SparseNative: {} (expected 2: E6, E13)", sparse_count);
         println!("  - TokenPruning: {} (expected 1: E12)", token_count);
 
-        assert_eq!(pq8_count, 5, "PQ8 should have 5 embedders (E1, E5, E7, E10, Kepler)");
+        assert_eq!(pq8_count, 6, "PQ8 should have 6 embedders (E1, E5, E7, E10, Kepler, BgeM3Dense)");
         assert_eq!(float8_count, 5, "Float8 should have 5 embedders");
         assert_eq!(binary_count, 1, "Binary should have 1 embedder");
         assert_eq!(sparse_count, 2, "Sparse should have 2 embedders");
         assert_eq!(token_count, 1, "TokenPruning should have 1 embedder");
 
         let total = pq8_count + float8_count + binary_count + sparse_count + token_count;
-        assert_eq!(total, 14, "Total should be 14 embedders");
-        println!("  - Total: {} (expected 14): PASSED", total);
+        assert_eq!(total, 15, "Total should be 15 embedders (14 production + legacy Entity)");
+        println!("  - Total: {} (expected 15): PASSED", total);
 
         println!("\n=== EDGE CASE 3: PASSED ===\n");
     }

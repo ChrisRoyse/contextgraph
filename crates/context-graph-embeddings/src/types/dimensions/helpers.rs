@@ -1,11 +1,11 @@
 //! Helper functions for dimension lookups and offset calculations.
 
 use super::constants::{
-    CAUSAL, CAUSAL_NATIVE, CODE, CODE_NATIVE, ENTITY, ENTITY_NATIVE, GRAPH, GRAPH_NATIVE, HDC,
-    HDC_NATIVE, KEPLER, KEPLER_NATIVE, LATE_INTERACTION, LATE_INTERACTION_NATIVE, MULTIMODAL,
-    MULTIMODAL_NATIVE, SEMANTIC, SEMANTIC_NATIVE, SPARSE, SPARSE_NATIVE, SPLADE, SPLADE_NATIVE,
-    TEMPORAL_PERIODIC, TEMPORAL_PERIODIC_NATIVE, TEMPORAL_POSITIONAL, TEMPORAL_POSITIONAL_NATIVE,
-    TEMPORAL_RECENT, TEMPORAL_RECENT_NATIVE,
+    BGE_M3_DENSE, BGE_M3_DENSE_NATIVE, CAUSAL, CAUSAL_NATIVE, CODE, CODE_NATIVE, ENTITY,
+    ENTITY_NATIVE, GRAPH, GRAPH_NATIVE, HDC, HDC_NATIVE, KEPLER, KEPLER_NATIVE, LATE_INTERACTION,
+    LATE_INTERACTION_NATIVE, MULTIMODAL, MULTIMODAL_NATIVE, SEMANTIC, SEMANTIC_NATIVE, SPARSE,
+    SPARSE_NATIVE, SPLADE, SPLADE_NATIVE, TEMPORAL_PERIODIC, TEMPORAL_PERIODIC_NATIVE,
+    TEMPORAL_POSITIONAL, TEMPORAL_POSITIONAL_NATIVE, TEMPORAL_RECENT, TEMPORAL_RECENT_NATIVE,
 };
 
 /// Returns the projected dimension for a given model index (0-13).
@@ -37,14 +37,15 @@ pub const fn projected_dimension_by_index(index: usize) -> usize {
         11 => LATE_INTERACTION,
         12 => SPLADE,
         13 => KEPLER,
-        _ => panic!("Invalid model index: must be 0-13"),
+        14 => BGE_M3_DENSE,
+        _ => panic!("Invalid model index: must be 0-14"),
     }
 }
 
-/// Returns the native dimension for a given model index (0-13).
+/// Returns the native dimension for a given model index (0-14).
 ///
 /// # Panics
-/// Panics if index >= 14.
+/// Panics if index >= 15.
 #[must_use]
 pub const fn native_dimension_by_index(index: usize) -> usize {
     match index {
@@ -62,7 +63,8 @@ pub const fn native_dimension_by_index(index: usize) -> usize {
         11 => LATE_INTERACTION_NATIVE,
         12 => SPLADE_NATIVE,
         13 => KEPLER_NATIVE,
-        _ => panic!("Invalid model index: must be 0-13"),
+        14 => BGE_M3_DENSE_NATIVE,
+        _ => panic!("Invalid model index: must be 0-14"),
     }
 }
 
@@ -177,6 +179,22 @@ pub const fn offset_by_index(index: usize) -> usize {
                 + LATE_INTERACTION
                 + SPLADE
         }
-        _ => panic!("Invalid model index: must be 0-13"),
+        14 => {
+            SEMANTIC
+                + TEMPORAL_RECENT
+                + TEMPORAL_PERIODIC
+                + TEMPORAL_POSITIONAL
+                + CAUSAL
+                + SPARSE
+                + CODE
+                + GRAPH
+                + HDC
+                + MULTIMODAL
+                + ENTITY
+                + LATE_INTERACTION
+                + SPLADE
+                + KEPLER
+        }
+        _ => panic!("Invalid model index: must be 0-14"),
     }
 }

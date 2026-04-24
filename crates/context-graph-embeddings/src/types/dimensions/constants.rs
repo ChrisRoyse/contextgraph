@@ -97,3 +97,9 @@ pub const SPLADE: usize = 1536;
 
 /// E11 production: KEPLER projected dimension (RoBERTa-base, no projection needed)
 pub const KEPLER: usize = 768;
+
+/// E14: BGE-M3 Dense native dimension (BAAI/bge-m3, XLM-RoBERTa-Large).
+pub const BGE_M3_DENSE_NATIVE: usize = 1024;
+
+/// E14: BGE-M3 Dense projected dimension (no projection needed).
+pub const BGE_M3_DENSE: usize = 1024;

@@ -25,7 +25,8 @@ impl TryFrom<u8> for ModelId {
             11 => Ok(Self::LateInteraction),
             12 => Ok(Self::Splade),
             13 => Ok(Self::Kepler),
-            _ => Err("Invalid ModelId: must be 0-13"),
+            14 => Ok(Self::BgeM3Dense),
+            _ => Err("Invalid ModelId: must be 0-14"),
         }
     }
 }
@@ -223,18 +224,32 @@ mod tests {
     #[test]
     fn test_index_preservation() {
         // Verify that index() is preserved across conversion for most embedders.
-        // Exception: Embedder::Entity (index 10) maps to ModelId::Kepler (index 13)
-        // because Kepler is the production E11 replacement for legacy Entity.
+        // Exceptions (enum discriminants diverge from Embedder::index()):
+        // - Embedder::Entity (index 10) maps to ModelId::Kepler (discriminant 13)
+        //   because Kepler is the production E11 replacement for legacy Entity.
+        // - Embedder::BgeM3Dense (index 13) maps to ModelId::BgeM3Dense
+        //   (discriminant 14) because ModelId also carries the legacy Entity
+        //   slot, shifting BgeM3Dense one position further in the enum.
         for embedder in Embedder::all() {
             let model_id: ModelId = embedder.into();
             if embedder == Embedder::Entity {
-                // Embedder::Entity -> ModelId::Kepler (production E11, index 13)
+                // Embedder::Entity -> ModelId::Kepler (production E11, discriminant 13)
                 assert_eq!(
                     model_id,
                     ModelId::Kepler,
                     "Embedder::Entity should map to ModelId::Kepler (production E11)"
                 );
                 assert_eq!(model_id as usize, 13, "Kepler repr index is 13");
+            } else if embedder == Embedder::BgeM3Dense {
+                // Embedder::BgeM3Dense (Embedder index 13) -> ModelId::BgeM3Dense
+                // (discriminant 14). The +1 shift reflects legacy Entity
+                // occupying slot 10 in ModelId but not in Embedder.
+                assert_eq!(
+                    model_id,
+                    ModelId::BgeM3Dense,
+                    "Embedder::BgeM3Dense should map to ModelId::BgeM3Dense"
+                );
+                assert_eq!(model_id as usize, 14, "BgeM3Dense repr index is 14");
             } else {
                 assert_eq!(
                     embedder.index(),
