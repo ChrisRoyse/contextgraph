@@ -256,10 +256,10 @@ fn search_filtered_multi_space_sync(
     ];
 
     for &idx in embedder_indices {
-        if idx >= 13 {
+        if idx >= 14 {
             return Err(CoreError::ValidationError {
                 field: "embedder_indices".to_string(),
-                message: format!("Embedder index {} out of range (0-12)", idx),
+                message: format!("Embedder index {} out of range (0-13)", idx),
             });
         }
 

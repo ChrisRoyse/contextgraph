@@ -202,9 +202,12 @@ async fn run_inner(args: BackfillE14Args) -> Result<BackfillSummary> {
             }
         };
 
-        let embedding = model
+        // `model` is always `Some` in live mode (see construction above); the
+        // `ok_or_else` keeps the invariant explicit without a panic path.
+        let loaded_model = model
             .as_ref()
-            .expect("model loaded in live mode")
+            .ok_or_else(|| anyhow::anyhow!("internal invariant violated: model missing in live mode"))?;
+        let embedding = loaded_model
             .embed(&ModelInput::Text {
                 content,
                 instruction: None,

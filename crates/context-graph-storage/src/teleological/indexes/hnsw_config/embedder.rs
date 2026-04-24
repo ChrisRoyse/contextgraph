@@ -227,7 +227,7 @@ impl EmbedderIndex {
             Self::E11Entity => Some(E11_DIM),
             Self::E12LateInteraction => None, // Token-level
             Self::E13Splade => None,          // Inverted index
-            Self::E14BgeM3Dense => Some(1024), // BGE-M3 dense head
+            Self::E14BgeM3Dense => Some(E14_DIM), // BGE-M3 dense head (1024)
         }
     }
 
@@ -301,8 +301,8 @@ mod tests {
     }
 
     #[test]
-    fn test_all_hnsw_count_is_15() {
-        // 11 original + 2 E5 asymmetric + 2 E10 asymmetric = 15 HNSW indexes
+    fn test_all_hnsw_count_is_16() {
+        // 11 original + 2 E5 asymmetric + 2 E10 asymmetric + E14 = 16 HNSW indexes
         let hnsw_embedders = EmbedderIndex::all_hnsw();
         assert_eq!(hnsw_embedders.len(), 16);
         // Verify E5 asymmetric indexes are included

@@ -751,6 +751,7 @@ dependencies = [
  "context-graph-embeddings",
  "context-graph-mcp",
  "context-graph-storage",
+ "context-graph-test-utils",
  "criterion",
  "futures",
  "parquet",

@@ -220,7 +220,7 @@ impl SearchByEmbedderRequest {
         match EmbedderId::from_str(&self.embedder) {
             None => {
                 return Err(format!(
-                    "Invalid embedder '{}'. Must be E1-E13.",
+                    "Invalid embedder '{}'. Must be E1-E14.",
                     self.embedder
                 ));
             }
@@ -395,7 +395,7 @@ impl GetEmbedderClustersRequest {
         match EmbedderId::from_str(&self.embedder) {
             None => {
                 return Err(format!(
-                    "Invalid embedder '{}'. Must be E1-E13.",
+                    "Invalid embedder '{}'. Must be E1-E14.",
                     self.embedder
                 ));
             }
@@ -500,7 +500,7 @@ impl CompareEmbedderViewsRequest {
         for e in &self.embedders {
             match EmbedderId::from_str(e) {
                 None => {
-                    return Err(format!("Invalid embedder '{}'. Must be E1-E13.", e));
+                    return Err(format!("Invalid embedder '{}'. Must be E1-E14.", e));
                 }
                 Some(eid) => {
                     if !eid.uses_hnsw() {
@@ -678,7 +678,7 @@ impl GetMemoryFingerprintRequest {
         for e in &self.embedders {
             if EmbedderId::from_str(e).is_none() {
                 return Err(format!(
-                    "Invalid embedder '{}'. Must be E1-E13.",
+                    "Invalid embedder '{}'. Must be E1-E14.",
                     e
                 ));
             }
@@ -867,13 +867,13 @@ impl SearchCrossEmbedderAnomaliesRequest {
         }
         if EmbedderId::from_str(&self.high_embedder).is_none() {
             return Err(format!(
-                "Invalid highEmbedder '{}'. Must be E1-E13.",
+                "Invalid highEmbedder '{}'. Must be E1-E14.",
                 self.high_embedder
             ));
         }
         if EmbedderId::from_str(&self.low_embedder).is_none() {
             return Err(format!(
-                "Invalid lowEmbedder '{}'. Must be E1-E13.",
+                "Invalid lowEmbedder '{}'. Must be E1-E14.",
                 self.low_embedder
             ));
         }

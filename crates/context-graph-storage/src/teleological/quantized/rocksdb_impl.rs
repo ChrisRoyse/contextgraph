@@ -214,11 +214,13 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
         fingerprint_id: Uuid,
         embedder_idx: u8,
     ) -> QuantizedStorageResult<QuantizedEmbedding> {
-        // FAIL FAST: Verify embedder index is valid
+        // FAIL FAST: Verify embedder index is valid (0..QUANTIZED_EMBEDDER_CF_COUNT).
+        // Post-E14: the valid range is 0-13 (14 CFs: emb_0..emb_13).
         if embedder_idx >= QUANTIZED_EMBEDDER_CF_COUNT as u8 {
             panic!(
-                "STORAGE ERROR: Invalid embedder index {}. Valid range: 0-12.",
-                embedder_idx
+                "STORAGE ERROR: Invalid embedder index {}. Valid range: 0-{}.",
+                embedder_idx,
+                QUANTIZED_EMBEDDER_CF_COUNT - 1
             );
         }
 
