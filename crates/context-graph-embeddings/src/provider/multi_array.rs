@@ -57,8 +57,8 @@ use context_graph_core::traits::{
     SingleEmbedder, SparseEmbedder, TokenEmbedder,
 };
 use context_graph_core::types::fingerprint::{
-    SemanticFingerprint, SparseVector, E11_DIM, E12_TOKEN_DIM, E1_DIM, E2_DIM, E3_DIM, E4_DIM,
-    E7_DIM, E9_DIM, NUM_EMBEDDERS,
+    SemanticFingerprint, SparseVector, E11_DIM, E12_TOKEN_DIM, E14_DIM, E1_DIM, E2_DIM, E3_DIM,
+    E4_DIM, E7_DIM, E9_DIM, NUM_EMBEDDERS,
 };
 use context_graph_core::weights::{E11_ENTITY_ENABLED, TEMPORAL_EMBEDDERS_ENABLED};
 
@@ -698,9 +698,47 @@ pub struct ProductionMultiArrayProvider {
     e12_late_interaction: Arc<dyn TokenEmbedder>,
     /// E13: SPLADE v3 sparse embedder (variable sparse)
     e13_splade: Arc<dyn SparseEmbedder>,
+    /// E14: BGE-M3 Dense embedder (XLM-RoBERTa-Large, 1024D CLS-pooled).
+    ///
+    /// Populated on provider construction when `./models/bge-m3-dense/` contains
+    /// the BAAI/bge-m3 snapshot. If the weights are absent, this field holds a
+    /// zero-vector adapter that logs a startup warning and emits `vec![0.0; 1024]`
+    /// so downstream consumers see a shape-stable fingerprint without
+    /// silently claiming the multilingual head is live.
+    e14_bge_m3_dense: Arc<dyn SingleEmbedder>,
 
     /// Model IDs for tracking
     model_ids: [String; NUM_EMBEDDERS],
+}
+
+/// Zero-vector E14 embedder used when BGE-M3 weights are not present on disk.
+/// Emits an empty Vec so fusion paths treat E14 as inactive (pre-Phase-A-
+/// equivalent). **Not a silent fallback**: the provider constructor emits
+/// a WARN-level tracing event at startup announcing the missing snapshot
+/// and degraded mode, so operators are loudly informed.
+struct E14ZeroAdapter;
+
+#[async_trait]
+impl SingleEmbedder for E14ZeroAdapter {
+    fn dimension(&self) -> usize {
+        E14_DIM
+    }
+
+    fn model_id(&self) -> &str {
+        "bge_m3_dense_zero_adapter"
+    }
+
+    async fn embed(&self, _content: &str) -> CoreResult<Vec<f32>> {
+        // Empty vec signals "inactive" to fusion paths; they treat it identically
+        // to a pre-Phase-A legacy record (no E14 contribution in scoring).
+        Ok(Vec::new())
+    }
+
+    fn is_ready(&self) -> bool {
+        // Always "ready" — ready to emit an empty vec. Downstream paths must
+        // treat the empty vec as the inactive signal.
+        true
+    }
 }
 
 impl ProductionMultiArrayProvider {
@@ -839,6 +877,43 @@ impl ProductionMultiArrayProvider {
         let e13_splade: Arc<dyn SparseEmbedder> =
             Arc::new(SparseEmbedderAdapter::new(e13_model, ModelId::Splade));
 
+        // E14: BGE-M3 Dense — load only when the snapshot is present on disk.
+        // The model files total ~2.3 GB. If they're missing we log a WARN and
+        // install a zero-vector adapter so fingerprints keep their 14-slot
+        // shape without claiming the multilingual head is live.
+        let bge_dir = models_dir.join("bge-m3-dense");
+        let bge_weights_present = bge_dir.join("model.safetensors").is_file()
+            && bge_dir.join("tokenizer.json").is_file()
+            && bge_dir.join("config.json").is_file();
+        let e14_bge_m3_dense: Arc<dyn SingleEmbedder> = if bge_weights_present {
+            tracing::info!(
+                target: "context_graph_embeddings::provider",
+                bge_dir = %bge_dir.display(),
+                "Loading E14 BGE-M3 Dense (multilingual, 8k context)"
+            );
+            let e14_model = factory.create_model(ModelId::BgeM3Dense, &config)?;
+            e14_model.load().await?;
+            tracing::info!(
+                target: "context_graph_embeddings::provider",
+                "E14 BGE-M3 Dense loaded — multilingual head active"
+            );
+            Arc::new(DenseEmbedderAdapter::new(
+                e14_model,
+                ModelId::BgeM3Dense,
+                E14_DIM,
+            ))
+        } else {
+            tracing::warn!(
+                target: "context_graph_embeddings::provider",
+                bge_dir = %bge_dir.display(),
+                "E14 BGE-M3 Dense snapshot NOT FOUND at {}. E14 will emit empty \
+                 vectors (multilingual/long-context features are OFF). \
+                 To enable: download `BAAI/bge-m3` into that directory and restart.",
+                bge_dir.display()
+            );
+            Arc::new(E14ZeroAdapter)
+        };
+
         let model_ids = [
             ModelId::Semantic.as_str().to_string(),
             ModelId::TemporalRecent.as_str().to_string(),
@@ -872,6 +947,7 @@ impl ProductionMultiArrayProvider {
             e11_entity,
             e12_late_interaction,
             e13_splade,
+            e14_bge_m3_dense,
             model_ids,
         })
     }
@@ -975,10 +1051,11 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let e11 = Arc::clone(&self.e11_entity);
         let e12 = Arc::clone(&self.e12_late_interaction);
         let e13 = Arc::clone(&self.e13_splade);
+        let e14 = Arc::clone(&self.e14_bge_m3_dense);
 
         let content_owned = content.to_string();
 
-        // Run all 13 embedders in parallel
+        // Run all 14 embedders in parallel
         let (
             (r1, d1),
             (r2, d2),
@@ -993,6 +1070,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             (r11, d11),
             (r12, d12),
             (r13, d13),
+            (r14, d14),
         ) = tokio::join!(
             Self::timed_embed("E1_Semantic", {
                 let c = content_owned.clone();
@@ -1074,6 +1152,14 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                 let c = content_owned.clone();
                 async move { e13.embed_sparse(&c).await }
             }),
+            // E14: BGE-M3 Dense — 1024D multilingual. When weights are missing
+            // the adapter returns an empty Vec and fusion paths treat E14 as
+            // inactive; when weights are present this emits the real
+            // CLS-pooled XLM-RoBERTa-Large vector.
+            Self::timed_embed("E14_BgeM3Dense", {
+                let c = content_owned.clone();
+                async move { e14.embed(&c).await }
+            }),
         );
 
         // Collect results, failing fast on any error
@@ -1099,6 +1185,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let e11_vec = r11?;
         let e12_tokens = r12?;
         let e13_sparse = r13?;
+        let e14_vec = r14?;
 
         let total_latency = start.elapsed();
 
@@ -1123,12 +1210,13 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e11_entity: e11_vec,
             e12_late_interaction: e12_tokens,
             e13_splade: e13_sparse,
-            // E14 BGE-M3 dense: native provider integration pending. Empty vec
-            // is treated as "inactive" by fusion/similarity paths.
-            e14_bge_m3_dense: Vec::new(),
+            // E14 BGE-M3 Dense: multilingual CLS-pooled vector, or empty when
+            // weights were not present on disk at startup (loud WARN emitted).
+            e14_bge_m3_dense: e14_vec,
         };
 
-        let per_embedder_latency = [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, Duration::ZERO];
+        let per_embedder_latency =
+            [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14];
 
         Ok(MultiArrayEmbeddingOutput {
             fingerprint,
@@ -1139,7 +1227,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         })
     }
 
-    /// Generate complete 13-embedding fingerprint with explicit metadata.
+    /// Generate complete 14-embedding fingerprint with explicit metadata.
     ///
     /// E4-FIX: This override passes session sequence numbers to E4 via
     /// "sequence:N" instruction, enabling proper session ordering.
@@ -1182,6 +1270,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let e11 = Arc::clone(&self.e11_entity);
         let e12 = Arc::clone(&self.e12_late_interaction);
         let e13 = Arc::clone(&self.e13_splade);
+        let e14 = Arc::clone(&self.e14_bge_m3_dense);
 
         let content_owned = content.to_string();
 
@@ -1193,7 +1282,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         // CAUSAL-HINT Phase 6: Clone causal hint for E5 embedding
         let causal_hint = metadata.causal_hint.clone();
 
-        // Run all 13 embedders in parallel
+        // Run all 14 embedders in parallel
         let (
             (r1, d1),
             (r2, d2),
@@ -1208,6 +1297,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             (r11, d11),
             (r12, d12),
             (r13, d13),
+            (r14, d14),
         ) = tokio::join!(
             Self::timed_embed("E1_Semantic", {
                 let c = content_owned.clone();
@@ -1294,6 +1384,10 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                 let c = content_owned.clone();
                 async move { e13.embed_sparse(&c).await }
             }),
+            Self::timed_embed("E14_BgeM3Dense", {
+                let c = content_owned.clone();
+                async move { e14.embed(&c).await }
+            }),
         );
 
         // Collect results, failing fast on any error
@@ -1319,6 +1413,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let e11_vec = r11?;
         let e12_tokens = r12?;
         let e13_sparse = r13?;
+        let e14_vec = r14?;
 
         let total_latency = start.elapsed();
 
@@ -1343,12 +1438,13 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e11_entity: e11_vec,
             e12_late_interaction: e12_tokens,
             e13_splade: e13_sparse,
-            // E14 BGE-M3 dense: native provider integration pending. Empty vec
-            // is treated as "inactive" by fusion/similarity paths.
-            e14_bge_m3_dense: Vec::new(),
+            // E14 BGE-M3 Dense: multilingual CLS-pooled vector, or empty when
+            // weights were not present on disk at startup (loud WARN emitted).
+            e14_bge_m3_dense: e14_vec,
         };
 
-        let per_embedder_latency = [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, Duration::ZERO];
+        let per_embedder_latency =
+            [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14];
 
         Ok(MultiArrayEmbeddingOutput {
             fingerprint,
@@ -1399,6 +1495,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         let e11 = Arc::clone(&self.e11_entity);
         let e12 = Arc::clone(&self.e12_late_interaction);
         let e13 = Arc::clone(&self.e13_splade);
+        let e14 = Arc::clone(&self.e14_bge_m3_dense);
         let model_ids = self.model_ids.clone();
 
         // Spawn concurrent tasks for each content
@@ -1422,6 +1519,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                 let e11 = Arc::clone(&e11);
                 let e12 = Arc::clone(&e12);
                 let e13 = Arc::clone(&e13);
+                let e14 = Arc::clone(&e14);
                 let model_ids = model_ids.clone();
 
                 tokio::spawn(async move {
@@ -1433,7 +1531,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                     let e4_instruction = item_metadata.e4_instruction();
                     let causal_hint = item_metadata.causal_hint.clone();
 
-                    // Run all 13 embedders in parallel for this content
+                    // Run all 14 embedders in parallel for this content
                     let (
                         (r1, d1),
                         (r2, d2),
@@ -1448,6 +1546,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                         (r11, d11),
                         (r12, d12),
                         (r13, d13),
+                        (r14, d14),
                     ) = tokio::join!(
                         Self::timed_embed("E1_Semantic", {
                             let c = content.clone();
@@ -1534,6 +1633,10 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                             let c = content.clone();
                             async move { e13.embed_sparse(&c).await }
                         }),
+                        Self::timed_embed("E14_BgeM3Dense", {
+                            let c = content.clone();
+                            async move { e14.embed(&c).await }
+                        }),
                     );
 
                     // Collect results
@@ -1550,6 +1653,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                     let e11_vec = r11?;
                     let e12_tokens = r12?;
                     let e13_sparse = r13?;
+                    let e14_vec = r14?;
 
                     let total_latency = start.elapsed();
 
@@ -1572,11 +1676,11 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                         e11_entity: e11_vec,
                         e12_late_interaction: e12_tokens,
                         e13_splade: e13_sparse,
-                        e14_bge_m3_dense: Vec::new(),
+                        e14_bge_m3_dense: e14_vec,
                     };
 
                     let per_embedder_latency =
-                        [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, Duration::ZERO];
+                        [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, d14];
 
                     Ok::<_, CoreError>(MultiArrayEmbeddingOutput {
                         fingerprint,

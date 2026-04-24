@@ -8,8 +8,8 @@ use super::core::WarmModelRegistry;
 use crate::warm::handle::ModelHandle;
 use crate::warm::state::WarmModelState;
 
-/// The 14 embedding model IDs in the system (13 pipeline slots + Kepler production E11).
-pub const EMBEDDING_MODEL_IDS: [&str; 14] = [
+/// The 15 embedding model IDs in the system (13 pipeline slots + Kepler + E14 BGE-M3 Dense).
+pub const EMBEDDING_MODEL_IDS: [&str; 15] = [
     "E1_Semantic",
     "E2_TemporalRecent",
     "E3_TemporalPeriodic",
@@ -24,10 +24,11 @@ pub const EMBEDDING_MODEL_IDS: [&str; 14] = [
     "E12_LateInteraction",
     "E13_Splade",
     "E11_Kepler",
+    "E14_BgeM3Dense",
 ];
 
-/// Total number of model components (14 embeddings: 13 pipeline + Kepler).
-pub const TOTAL_MODEL_COUNT: usize = 14;
+/// Total number of model components (15 embeddings: 13 pipeline + Kepler + E14 BGE-M3 Dense).
+pub const TOTAL_MODEL_COUNT: usize = 15;
 
 /// Thread-safe shared registry for concurrent access.
 ///

@@ -438,10 +438,12 @@ fn compute_embedder_scores_sync(
         compute_cosine_similarity(&query.e11_entity, &stored.e11_entity),
         e12_score,
         (query.e13_splade.cosine_similarity(&stored.e13_splade) + 1.0) / 2.0,
-        // E14 BGE-M3 dense: lives in sibling CF, not in SemanticFingerprint.
-        // This routing-path score is 0.0 (neutral); E14-aware query paths call
-        // into the dedicated E14 storage handle.
-        0.0,
+        // E14 BGE-M3 Dense: multilingual 1024-D CLS-pooled vector living on
+        // the fingerprint (Phase A promoted it to a first-class field).
+        // Empty-slice-aware cosine: `compute_cosine_similarity` returns 0.0
+        // when either side is empty, so legacy records without E14 score as
+        // inactive rather than poison the fusion.
+        compute_cosine_similarity(&query.e14_bge_m3_dense, &stored.e14_bge_m3_dense),
     ]
 }
 

@@ -445,6 +445,90 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
             0.0715, 0.0715, 0.0715, 0.071, // 13×0.0715 + 0.071 ≈ 1.0 (sum = 0.9995)
         ],
     ),
+
+    // =========================================================================
+    // E14-OPTIMISED PROFILES — multilingual / long-context / translation
+    // =========================================================================
+    //
+    // These profiles explicitly exploit BGE-M3 Dense's unique strengths:
+    // cross-lingual alignment, 8192-token context, register-invariant meaning.
+    // They are OPT-IN — existing profiles retain E14=0.0 so default behaviour
+    // is unchanged until an operator selects one of these explicitly via
+    // the `profile` argument to `search_graph` / `search_by_embedder`.
+
+    // Multilingual Search: cross-lingual retrieval across the whole corpus.
+    // Use when queries may target documents in a language other than the
+    // query's own, or when the corpus is known to be multilingual.
+    //
+    // E14 primary (0.40), E1 secondary (0.20), E10 paraphrase (0.15),
+    // rest spread thinly to preserve keyword/entity/code backup.
+    (
+        "multilingual_search",
+        [
+            0.20, // E1_Semantic (English semantic backup)
+            0.0,  // E2_Temporal_Recent
+            0.0,  // E3_Temporal_Periodic
+            0.0,  // E4_Temporal_Positional
+            0.05, // E5_Causal
+            0.05, // E6_Sparse (keyword backup — still useful cross-lingually)
+            0.05, // E7_Code
+            0.03, // E8_Graph
+            0.02, // E9_HDC
+            0.15, // E10_Multimodal (paraphrase)
+            0.05, // E11_Entity
+            0.0,  // E12_Late_Interaction (Stage 3 only)
+            0.0,  // E13_SPLADE (Stage 1 only)
+            0.40, // E14_BgeM3Dense (PRIMARY — multilingual semantic manifold)
+        ],
+    ),
+
+    // Long Context: for documents/queries that blow past 512 tokens.
+    // E14 sees 8192 tokens; all other dense embedders truncate at 512.
+    // This profile gives E14 the plurality so long-doc content actually
+    // surfaces; E1/E10 remain as local-window semantic backup.
+    (
+        "long_context",
+        [
+            0.15, // E1_Semantic (first-512-token backup)
+            0.0,  // E2_Temporal_Recent
+            0.0,  // E3_Temporal_Periodic
+            0.0,  // E4_Temporal_Positional
+            0.05, // E5_Causal
+            0.05, // E6_Sparse
+            0.10, // E7_Code (long code blocks)
+            0.05, // E8_Graph
+            0.0,  // E9_HDC
+            0.10, // E10_Multimodal
+            0.05, // E11_Entity
+            0.0,  // E12_Late_Interaction
+            0.0,  // E13_SPLADE
+            0.45, // E14_BgeM3Dense (PRIMARY — full-document context)
+        ],
+    ),
+
+    // Translation Finder: explicitly find cross-lingual paraphrases /
+    // translation pairs / near-duplicates across language boundaries.
+    // E14 dominant (0.70), E10 paraphrase backup (0.20), E11 entity
+    // anchor (0.05), E1 English fallback (0.05).
+    (
+        "translation_finder",
+        [
+            0.05, // E1_Semantic
+            0.0,  // E2_Temporal_Recent
+            0.0,  // E3_Temporal_Periodic
+            0.0,  // E4_Temporal_Positional
+            0.0,  // E5_Causal
+            0.0,  // E6_Sparse (translations typically have NO lexical overlap)
+            0.0,  // E7_Code
+            0.0,  // E8_Graph
+            0.0,  // E9_HDC
+            0.20, // E10_Multimodal (paraphrase detection — same-lang backup)
+            0.05, // E11_Entity (named entities survive translation)
+            0.0,  // E12_Late_Interaction
+            0.0,  // E13_SPLADE
+            0.70, // E14_BgeM3Dense (DOMINANT — translation equivalence)
+        ],
+    ),
 ];
 
 /// Get weight profile by name.

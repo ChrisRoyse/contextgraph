@@ -74,8 +74,9 @@ fn test_loading_order_uses_registry() {
     assert!(!loading_order.is_empty());
     assert_eq!(loading_order.len(), TOTAL_MODEL_COUNT);
 
-    // Verify E10_Contextual (largest at 800MB) is first in loading order
-    assert_eq!(loading_order[0], "E10_Contextual");
+    // Verify E14_BgeM3Dense (largest at 1.2GB, BGE-M3 XLM-R-Large fp16) is
+    // first in loading order. Prior to E14 this was E10_Contextual (800 MB).
+    assert_eq!(loading_order[0], "E14_BgeM3Dense");
 }
 
 // ============================================================================
