@@ -68,8 +68,11 @@ use super::topic::{Topic, TopicProfile};
 /// Default HDBSCAN batch reclustering threshold (number of incremental updates).
 pub const DEFAULT_RECLUSTER_THRESHOLD: usize = 100;
 
-/// Maximum weighted agreement per constitution (7*1.0 + 2*0.5 + 1*0.5 = 8.5).
-pub const MAX_WEIGHTED_AGREEMENT: f32 = 8.5;
+/// Maximum weighted agreement per constitution.
+///
+/// Formula: 8 semantic embedders (1.0) + 2 relational (0.5) + 1 structural (0.5) + E14 BGE-M3 (1.0) = 9.5.
+/// Updated post-E14 from 8.5 to 9.5; E14 is treated as a primary semantic signal.
+pub const MAX_WEIGHTED_AGREEMENT: f32 = 9.5;
 
 /// Topic detection threshold per ARCH-09.
 pub const TOPIC_THRESHOLD: f32 = 2.5;
@@ -2337,8 +2340,8 @@ mod tests {
     #[test]
     fn test_constants_match_constitution() {
         assert_eq!(
-            MAX_WEIGHTED_AGREEMENT, 8.5,
-            "MAX_WEIGHTED_AGREEMENT should be 8.5 per constitution"
+            MAX_WEIGHTED_AGREEMENT, 9.5,
+            "MAX_WEIGHTED_AGREEMENT should be 9.5 per constitution (post-E14)"
         );
         assert_eq!(
             TOPIC_THRESHOLD, 2.5,

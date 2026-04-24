@@ -45,26 +45,29 @@ fn fsv_edge_case_empty_content() {
 }
 
 // =============================================================================
-// EDGE CASE 2: Maximum Weighted Agreement (8.5)
+// EDGE CASE 2: Maximum Weighted Agreement (9.5)
 // =============================================================================
+// Post-E14 integration: MAX_WEIGHTED_AGREEMENT grew from 8.5 to 9.5 because
+// the factual/contributing embedder count expanded from 13 to 14 (E14 BgeM3Dense
+// carries weight 1.0 in insight annotation).
 #[test]
 fn fsv_edge_case_max_weighted_agreement() {
     println!("\n========================================");
-    println!("EDGE CASE 2: Maximum Weighted Agreement (8.5)");
+    println!("EDGE CASE 2: Maximum Weighted Agreement (9.5)");
     println!("========================================");
 
     let all_embedders: Vec<Embedder> = Embedder::all().collect();
 
     println!("BEFORE: Creating candidate with max weighted_agreement");
-    println!("  - weighted_agreement: 8.5");
+    println!("  - weighted_agreement: 9.5");
     println!("  - relevance_score: 1.0");
-    println!("  - embedders: all 13");
+    println!("  - embedders: all 14");
 
     let c = InjectionCandidate::new(
         Uuid::new_v4(),
         "test content".to_string(),
         1.0, // Max relevance
-        8.5, // Max weighted agreement
+        9.5, // Max weighted agreement (post-E14)
         all_embedders.clone(),
         InjectionCategory::HighRelevanceCluster,
         Utc::now(),
@@ -76,22 +79,22 @@ fn fsv_edge_case_max_weighted_agreement() {
     println!("  - matching_spaces count: {}", c.matching_spaces.len());
 
     assert!(
-        (c.weighted_agreement - 8.5).abs() < f32::EPSILON,
-        "Max weighted_agreement should be 8.5"
+        (c.weighted_agreement - 9.5).abs() < f32::EPSILON,
+        "Max weighted_agreement should be 9.5"
     );
     assert_eq!(
         c.relevance_score, 1.0,
         "Max relevance_score should be 1.0"
     );
-    assert_eq!(c.matching_spaces.len(), 13, "Should have all 13 embedders");
+    assert_eq!(c.matching_spaces.len(), 14, "Should have all 14 embedders");
 
     // Verify the constant
     assert!(
-        (MAX_WEIGHTED_AGREEMENT - 8.5).abs() < f32::EPSILON,
-        "MAX_WEIGHTED_AGREEMENT constant should be 8.5"
+        (MAX_WEIGHTED_AGREEMENT - 9.5).abs() < f32::EPSILON,
+        "MAX_WEIGHTED_AGREEMENT constant should be 9.5"
     );
 
-    println!("✓ PASS: Maximum weighted_agreement (8.5) accepted");
+    println!("✓ PASS: Maximum weighted_agreement (9.5) accepted");
 }
 
 // =============================================================================
@@ -508,7 +511,7 @@ fn fsv_summary_verification() {
     assert!((MAX_RECENCY_FACTOR - 1.3).abs() < f32::EPSILON);
     assert!((MIN_DIVERSITY_BONUS - 0.8).abs() < f32::EPSILON);
     assert!((MAX_DIVERSITY_BONUS - 1.5).abs() < f32::EPSILON);
-    assert!((MAX_WEIGHTED_AGREEMENT - 8.5).abs() < f32::EPSILON);
+    assert!((MAX_WEIGHTED_AGREEMENT - 9.5).abs() < f32::EPSILON);
 
     println!("✓ ALL VERIFICATIONS PASSED");
     println!("================================================================================");
