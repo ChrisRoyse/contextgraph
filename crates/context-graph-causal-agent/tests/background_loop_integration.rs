@@ -83,6 +83,7 @@ fn create_test_fingerprint(seed: u64, content: &str) -> TeleologicalFingerprint 
         e11_entity: generate_vec(768, seed + 10),
         e12_late_interaction: generate_late_interaction(seed + 11),
         e13_splade: generate_sparse(seed + 12),
+        e14_bge_m3_dense: generate_vec(1024, seed + 13),
     };
 
     // Compute real SHA-256 hash of the content for store_content validation

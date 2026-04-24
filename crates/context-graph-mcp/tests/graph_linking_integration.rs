@@ -119,6 +119,7 @@ fn test_edge_repository_typed_edges_roundtrip() {
         0.7, // E11 - entity
         0.65, // E12 - ColBERT
         0.55, // E13 - SPLADE
+        0.88, // E14 - BGE-M3 Dense
     ];
 
     // agreeing_embedders bitmask: E1=1, E5=0 (temporal), E6=1, E7=0, E8=0, E9=0, E10=1, E11=1

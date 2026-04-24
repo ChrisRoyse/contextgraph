@@ -70,6 +70,7 @@ fn synthetic_fp(seed: u32) -> SemanticFingerprint {
         e10_multimodal_paraphrase: dense(768, seed.wrapping_add(9)),
         e10_multimodal_as_context: Vec::new(),
         e11_entity: dense(768, seed.wrapping_add(10)),
+        e14_bge_m3_dense: dense(1024, seed.wrapping_add(13)),
         e12_late_interaction: (0..3)
             .map(|t| dense(128, seed.wrapping_add(100 + t as u32)))
             .collect(),

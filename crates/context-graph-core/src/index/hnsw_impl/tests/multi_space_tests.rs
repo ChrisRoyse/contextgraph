@@ -32,6 +32,7 @@ fn create_test_fingerprint() -> SemanticFingerprint {
         e11_entity: random_vector(768), // KEPLER
         e12_late_interaction: vec![random_vector(128); 3],
         e13_splade: SparseVector::new(vec![100, 200, 300], vec![0.5, 0.3, 0.2]).unwrap(),
+        e14_bge_m3_dense: random_vector(1024),
     }
 }
 

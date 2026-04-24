@@ -70,8 +70,14 @@ pub const E12_TOKEN_DIM: usize = 128;
 /// This is a NEW field for Stage 1 (sparse pre-filter) of the 5-stage retrieval pipeline.
 pub const E13_SPLADE_VOCAB: usize = 30_522;
 
+/// E14: BGE-M3 Dense (XLM-RoBERTa-Large) embedding dimension.
+///
+/// Multilingual dense head from BAAI/bge-m3, CLS-pooled, L2-normalized.
+/// Runs in parallel with E1-E13 and fuses into the standard retrieval pipeline.
+pub const E14_DIM: usize = 1024;
+
 /// Total number of embedders in the teleological vector architecture.
-/// Updated from 12 to 13 with addition of E13 SPLADE.
+/// Updated from 13 to 14 with addition of E14 BGE-M3 Dense.
 pub const NUM_EMBEDDERS: usize = 14;
 
 /// Total dense dimensions for single-vector storage (excludes E6 sparse, E12 variable-length, and E13 sparse).

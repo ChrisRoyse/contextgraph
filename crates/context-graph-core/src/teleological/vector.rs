@@ -332,7 +332,7 @@ mod tests {
     #[should_panic(expected = "FAIL FAST")]
     fn test_teleological_vector_get_correlation_out_of_bounds() {
         let tv = TeleologicalVector::default();
-        let _ = tv.get_correlation(13, 0);
+        let _ = tv.get_correlation(14, 0);
     }
 
     #[test]

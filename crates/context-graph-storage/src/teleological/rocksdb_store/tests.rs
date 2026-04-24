@@ -69,6 +69,7 @@ fn create_test_fingerprint_with_seed(seed: u64) -> TeleologicalFingerprint {
         e11_entity: generate_vec(768, seed + 10),              // 768D (KEPLER)
         e12_late_interaction: generate_late_interaction(seed + 11), // Vec<Vec<f32>>
         e13_splade: generate_sparse(seed + 12),              // Sparse
+        e14_bge_m3_dense: generate_vec(1024, seed + 13),     // 1024D BGE-M3
     };
 
     // Create unique hash

@@ -49,8 +49,8 @@ pub struct GroupAlignments {
 
 /// Indices for each embedding group.
 pub mod group_indices {
-    /// Factual group indices: E1, E12, E13
-    pub const FACTUAL: &[usize] = &[0, 11, 12];
+    /// Factual group indices: E1, E12, E13, E14
+    pub const FACTUAL: &[usize] = &[0, 11, 12, 13];
     /// Temporal group indices: E2, E3
     pub const TEMPORAL: &[usize] = &[1, 2];
     /// Causal group indices: E4, E7
@@ -626,7 +626,7 @@ mod tests {
 
     #[test]
     fn test_group_indices_coverage() {
-        // Verify all 13 embeddings are covered by exactly one group
+        // Verify all 14 embeddings are covered by exactly one group
         let mut covered = [false; NUM_EMBEDDERS];
 
         for group in GroupType::ALL {
@@ -640,6 +640,6 @@ mod tests {
             assert!(c, "Embedding {} is not in any group", i);
         }
 
-        println!("[PASS] All 13 embeddings covered by exactly one group");
+        println!("[PASS] All 14 embeddings covered by exactly one group");
     }
 }

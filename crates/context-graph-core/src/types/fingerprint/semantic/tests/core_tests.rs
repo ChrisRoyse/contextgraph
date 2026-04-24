@@ -74,7 +74,7 @@ fn test_semantic_fingerprint_get_embedding() {
         );
     }
 
-    assert!(fp.get_embedding(13).is_none());
+    assert!(fp.get_embedding(NUM_EMBEDDERS).is_none());
     assert!(fp.get_embedding(100).is_none());
 }
 
@@ -182,7 +182,7 @@ fn test_dimension_constants() {
     assert_eq!(E11_DIM, 768); // KEPLER (was 384 with MiniLM)
     assert_eq!(E12_TOKEN_DIM, 128);
     assert_eq!(E13_SPLADE_VOCAB, 30_522);
-    assert_eq!(NUM_EMBEDDERS, 13);
+    assert_eq!(NUM_EMBEDDERS, 14);
 
     let calculated =
         E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E7_DIM + E8_DIM + E9_DIM + E10_DIM + E11_DIM;

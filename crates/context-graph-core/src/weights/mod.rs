@@ -546,6 +546,7 @@ pub fn space_name(idx: usize) -> &'static str {
         10 => "E11_Entity",
         11 => "E12_Late_Interaction",
         12 => "E13_SPLADE",
+        13 => "E14_BgeM3Dense",
         _ => "Unknown",
     }
 }
@@ -676,14 +677,14 @@ mod tests {
 
     #[test]
     fn test_validate_weights_invalid_sum() {
-        let weights = [0.5f32; NUM_EMBEDDERS]; // Sum = 6.5
+        let weights = [0.5f32; NUM_EMBEDDERS]; // Sum = 7.0 (14 * 0.5)
 
         let result = validate_weights(&weights);
         assert!(result.is_err());
 
         match result.unwrap_err() {
             WeightProfileError::InvalidSum { actual } => {
-                assert!((actual - 6.5).abs() < 0.01);
+                assert!((actual - 7.0).abs() < 0.01);
             }
             _ => panic!("Expected InvalidSum error"),
         }
@@ -696,7 +697,8 @@ mod tests {
         assert_eq!(space_name(6), "E7_Code");
         assert_eq!(space_name(7), "E8_Graph");
         assert_eq!(space_name(12), "E13_SPLADE");
-        assert_eq!(space_name(13), "Unknown");
+        assert_eq!(space_name(13), "E14_BgeM3Dense");
+        assert_eq!(space_name(14), "Unknown");
         println!("[VERIFIED] space_name returns correct names");
     }
 

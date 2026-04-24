@@ -461,10 +461,10 @@ mod tests {
 
         let result = extractor.extract(&embeddings, None);
 
-        // Verify we have exactly 78 unique pairs (not 156)
-        assert_eq!(result.correlations.len(), 78);
+        // Verify we have exactly 91 unique pairs (C(14,2) upper triangle)
+        assert_eq!(result.correlations.len(), 91);
 
-        println!("[PASS] Extracts exactly 78 unique pairs (upper triangle)");
+        println!("[PASS] Extracts exactly 91 unique pairs (upper triangle)");
     }
 
     #[test]

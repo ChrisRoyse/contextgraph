@@ -621,6 +621,7 @@ mod tests {
             e11_entity: vec![offset; get_dimension(Embedder::Entity)],
             e12_late_interaction: vec![vec![offset; 128]; 10],
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: vec![offset; get_dimension(Embedder::BgeM3Dense)],
         }
     }
 

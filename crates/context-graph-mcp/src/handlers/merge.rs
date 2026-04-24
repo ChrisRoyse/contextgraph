@@ -711,6 +711,16 @@ impl Handlers {
             e11_entity,
             e12_late_interaction,
             e13_splade,
+            // E14: average dense vectors across source fingerprints, skipping
+            // legacy/missing (empty) entries. Empty result means no source had
+            // E14 populated and the merged fingerprint correctly reports that.
+            e14_bge_m3_dense: Self::average_dense_vectors(
+                fingerprints
+                    .iter()
+                    .map(|f| &f.semantic.e14_bge_m3_dense)
+                    .filter(|v| !v.is_empty())
+                    .collect(),
+            ),
         }
     }
 
@@ -853,6 +863,16 @@ impl Handlers {
             e11_entity,
             e12_late_interaction,
             e13_splade,
+            // E14: average dense vectors across source fingerprints, skipping
+            // legacy/missing (empty) entries. Empty result means no source had
+            // E14 populated and the merged fingerprint correctly reports that.
+            e14_bge_m3_dense: Self::average_dense_vectors(
+                fingerprints
+                    .iter()
+                    .map(|f| &f.semantic.e14_bge_m3_dense)
+                    .filter(|v| !v.is_empty())
+                    .collect(),
+            ),
         }
     }
 
@@ -1015,6 +1035,16 @@ impl Handlers {
             e11_entity,
             e12_late_interaction,
             e13_splade,
+            // E14: average dense vectors across source fingerprints, skipping
+            // legacy/missing (empty) entries. Empty result means no source had
+            // E14 populated and the merged fingerprint correctly reports that.
+            e14_bge_m3_dense: Self::average_dense_vectors(
+                fingerprints
+                    .iter()
+                    .map(|f| &f.semantic.e14_bge_m3_dense)
+                    .filter(|v| !v.is_empty())
+                    .collect(),
+            ),
         }
     }
 

@@ -296,7 +296,7 @@ mod tests {
 
     #[test]
     fn test_divergence_spaces_are_semantic() {
-        assert_eq!(DIVERGENCE_SPACES.len(), 6);
+        assert_eq!(DIVERGENCE_SPACES.len(), 7);
         for space in &DIVERGENCE_SPACES {
             let cat = category_for(*space);
             assert!(

@@ -1438,10 +1438,10 @@ mod tests {
         // Compiles = object-safe
     }
 
-    /// Test that NUM_EMBEDDERS constant is 13.
+    /// Test that NUM_EMBEDDERS constant is 14.
     #[test]
     fn test_num_embedders_is_13() {
-        assert_eq!(NUM_EMBEDDERS, 13, "NUM_EMBEDDERS must be 13");
+        assert_eq!(NUM_EMBEDDERS, 14, "NUM_EMBEDDERS must be 14");
     }
 
     /// Test that SemanticFingerprint::zeroed() produces valid dimensions.

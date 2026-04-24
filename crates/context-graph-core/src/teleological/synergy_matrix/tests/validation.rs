@@ -64,5 +64,5 @@ fn test_synergy_matrix_validate() {
 #[test]
 #[should_panic(expected = "FAIL FAST")]
 fn test_synergy_matrix_flat_to_indices_out_of_bounds() {
-    let _ = SynergyMatrix::flat_to_indices(78);
+    let _ = SynergyMatrix::flat_to_indices(91);
 }

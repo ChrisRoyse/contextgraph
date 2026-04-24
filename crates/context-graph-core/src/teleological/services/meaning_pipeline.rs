@@ -343,7 +343,7 @@ mod tests {
 
         // Vector should have all components
         assert_eq!(result.vector.topic_profile.alignments, alignments);
-        assert_eq!(result.vector.cross_correlations.len(), 78);
+        assert_eq!(result.vector.cross_correlations.len(), 91);
         assert!(result.vector.group_alignments.average() > 0.0);
 
         println!("[PASS] extract builds complete TeleologicalVector");

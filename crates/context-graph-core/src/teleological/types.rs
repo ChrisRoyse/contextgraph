@@ -109,9 +109,9 @@ impl TuckerCore {
         );
 
         let core_size = ranks.0 * ranks.1 * ranks.2;
-        let u1_size = 13 * ranks.0;
-        let u2_size = 13 * ranks.1;
-        let u3_size = 1024 * ranks.2;
+        let u1_size = NUM_EMBEDDERS * ranks.0;
+        let u2_size = NUM_EMBEDDERS * ranks.1;
+        let u3_size = EMBEDDING_DIM * ranks.2;
 
         Self {
             ranks,
@@ -439,8 +439,8 @@ mod tests {
 
         assert_eq!(core.ranks, (4, 4, 128));
         assert_eq!(core.data.len(), 4 * 4 * 128);
-        assert_eq!(core.u1.len(), 13 * 4);
-        assert_eq!(core.u2.len(), 13 * 4);
+        assert_eq!(core.u1.len(), 14 * 4);
+        assert_eq!(core.u2.len(), 14 * 4);
         assert_eq!(core.u3.len(), 1024 * 128);
 
         println!("[PASS] TuckerCore::new creates correct sizes");
@@ -526,7 +526,7 @@ mod tests {
     #[test]
     fn test_constants() {
         assert_eq!(EMBEDDING_DIM, 1024);
-        assert_eq!(NUM_EMBEDDERS, 13);
+        assert_eq!(NUM_EMBEDDERS, 14);
 
         println!("[PASS] Constants match teleoplan.md");
     }

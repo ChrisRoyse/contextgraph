@@ -402,7 +402,7 @@ mod tests {
 
         assert!(explanation.summary.contains("High"));
         assert!(explanation.summary.contains("0.75"));
-        assert!(explanation.summary.contains("10/13"));
+        assert!(explanation.summary.contains("10/14"));
         assert_eq!(explanation.score_interpretation, ScoreInterpretation::High);
         assert!(explanation
             .confidence_explanation

@@ -229,8 +229,8 @@ mod tests {
     #[test]
     fn test_active_count_all() {
         let result = CrossSpaceSimilarity::perfect();
-        assert_eq!(result.active_count(), 13);
-        println!("[PASS] Perfect result has 13 active spaces");
+        assert_eq!(result.active_count(), 14);
+        println!("[PASS] Perfect result has 14 active spaces");
     }
 
     #[test]
@@ -282,15 +282,15 @@ mod tests {
     #[test]
     fn test_compute_confidence() {
         // Full coverage, no variance = max confidence
-        let conf1 = CrossSpaceSimilarity::compute_confidence(13, 0.0);
+        let conf1 = CrossSpaceSimilarity::compute_confidence(14, 0.0);
         assert!((conf1 - 1.0).abs() < 1e-6);
 
         // Half coverage, no variance
-        let conf2 = CrossSpaceSimilarity::compute_confidence(6, 0.0);
-        assert!((conf2 - 6.0 / 13.0).abs() < 1e-6);
+        let conf2 = CrossSpaceSimilarity::compute_confidence(7, 0.0);
+        assert!((conf2 - 7.0 / 14.0).abs() < 1e-6);
 
         // Full coverage, max variance
-        let conf3 = CrossSpaceSimilarity::compute_confidence(13, 0.25);
+        let conf3 = CrossSpaceSimilarity::compute_confidence(14, 0.25);
         assert!(conf3 < 0.1);
 
         println!(

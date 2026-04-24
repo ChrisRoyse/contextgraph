@@ -71,6 +71,7 @@ fn create_identifiable_fingerprint(seed: u8) -> TeleologicalFingerprint {
         e11_entity: make_vec(768, seed as f32 * 1200.0),
         e12_late_interaction: Vec::new(),
         e13_splade: SparseVector::empty(),
+        e14_bge_m3_dense: make_vec(1024, seed as f32 * 1300.0),
     };
 
     let mut hash = [0u8; 32];

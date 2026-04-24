@@ -460,6 +460,7 @@ impl GraphLinkingDatasetGenerator {
             e11_entity: embeddings.e11,
             e12_late_interaction: self.generate_late_interaction(32),
             e13_splade: self.generate_sparse(E13_SPLADE_VOCAB, 80),
+            e14_bge_m3_dense: Vec::new(),
         }
     }
 

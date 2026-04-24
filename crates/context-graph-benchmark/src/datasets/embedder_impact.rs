@@ -400,6 +400,7 @@ impl EmbedderImpactDatasetGenerator {
             e11_entity: embeddings.e11,
             e12_late_interaction: self.generate_late_interaction(self.config.tokens_e12),
             e13_splade: self.generate_sparse(E13_SPLADE_VOCAB, self.config.sparse_entries_e13),
+            e14_bge_m3_dense: Vec::new(),
         }
     }
 
@@ -472,6 +473,7 @@ impl EmbedderImpactDatasetGenerator {
                         e11_entity: embeddings.e11,
                         e12_late_interaction: self.generate_late_interaction(self.config.tokens_e12),
                         e13_splade: self.generate_sparse(E13_SPLADE_VOCAB, self.config.sparse_entries_e13),
+                        e14_bge_m3_dense: Vec::new(),
                     }
                 };
 

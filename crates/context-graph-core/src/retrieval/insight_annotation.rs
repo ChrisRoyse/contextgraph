@@ -424,9 +424,9 @@ pub fn compute_perspective_coverage(results: &[CombinedResult]) -> PerspectiveCo
     }
 
     // Compute coverage score (weighted by category)
-    // Max possible: 7×1.0 (semantic) + 2×0.5 (relational) + 1×0.5 (structural) + 3×0.0 (temporal) = 8.5
+    // Max possible: 8×1.0 (semantic incl. E14) + 2×0.5 (relational) + 1×0.5 (structural) + 3×0.0 (temporal) = 9.5
     // Note: Temporal doesn't contribute to topic coverage per ARCH-04
-    let max_weight: f32 = 7.0 * 1.0 + 2.0 * 0.5 + 1.0 * 0.5; // 8.5
+    let max_weight: f32 = 8.0 * 1.0 + 2.0 * 0.5 + 1.0 * 0.5; // 9.5
     let actual_weight: f32 = embedders_contributing
         .iter()
         .map(|idx| EmbedderCategory::from_embedder_idx(*idx).topic_weight())

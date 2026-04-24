@@ -154,10 +154,10 @@ fn test_fsv_edge_case_3_lru_eviction_selection() {
     println!("[PASS] Edge Case 3: LRU candidate correctly identified");
 }
 
-/// Test: Allocate All 13 Embedders (from task spec)
+/// Test: Allocate All 14 Embedders (from task spec)
 #[test]
 fn test_allocate_all_13_embedders_within_budget() {
-    println!("\n=== TEST: ALLOCATE ALL 13 EMBEDDERS ===");
+    println!("\n=== TEST: ALLOCATE ALL 14 EMBEDDERS ===");
 
     // Approximate sizes for quantized models (from task spec)
     let model_sizes: [(Embedder, usize, &str); 14] = [
@@ -189,6 +189,11 @@ fn test_allocate_all_13_embedders_within_budget() {
             Embedder::KeywordSplade,
             50_000_000,
             "E13: 50MB sparse SPLADE v3",
+        ),
+        (
+            Embedder::BgeM3Dense,
+            200_000_000,
+            "E14: 200MB (1024D BGE-M3 Dense XLM-R)",
         ),
     ];
 

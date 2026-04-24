@@ -36,7 +36,7 @@ mod teleological;
 // Re-export SemanticFingerprint types (TASK-F001, TASK-CORE-003)
 pub use semantic::{
     EmbeddingRef, EmbeddingSlice, SemanticFingerprint, TeleologicalArray, ValidationError, E10_DIM,
-    E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM,
+    E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E14_DIM, E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM,
     E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM, NUM_EMBEDDERS, TOTAL_DENSE_DIMS,
 };
 

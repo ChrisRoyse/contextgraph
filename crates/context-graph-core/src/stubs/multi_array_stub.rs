@@ -540,8 +540,8 @@ mod tests {
         let provider = StubMultiArrayProvider::new();
         let output = provider.embed_all("test").await.unwrap();
 
-        // Total latency should be 5ms * 13 = 65ms
-        assert_eq!(output.total_latency, Duration::from_millis(65));
+        // Total latency should be 5ms * 14 = 70ms
+        assert_eq!(output.total_latency, Duration::from_millis(70));
 
         // Each embedder should have 5ms latency
         for latency in output.per_embedder_latency.iter() {

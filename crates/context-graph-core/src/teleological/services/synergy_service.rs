@@ -587,7 +587,7 @@ mod tests {
     #[should_panic(expected = "FAIL FAST")]
     fn test_compute_synergy_out_of_bounds() {
         let service = SynergyService::new();
-        let _ = service.compute_synergy(13, 0);
+        let _ = service.compute_synergy(14, 0);
     }
 
     #[test]

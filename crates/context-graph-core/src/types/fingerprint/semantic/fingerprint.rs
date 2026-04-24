@@ -12,8 +12,8 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use super::constants::{
-    E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM,
-    E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
+    E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E14_DIM, E1_DIM, E2_DIM, E3_DIM, E4_DIM,
+    E5_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
 };
 use super::slice::EmbeddingSlice;
 use crate::teleological::Embedder;
@@ -226,6 +226,14 @@ pub struct SemanticFingerprint {
 
     /// E13: SPLADE v3 sparse embedding for lexical-semantic hybrid search.
     pub e13_splade: SparseVector,
+
+    /// E14: BGE-M3 Dense (XLM-RoBERTa-Large) - 1024D multilingual dense embedding.
+    ///
+    /// `#[serde(default)]` ensures backward compatibility with persisted fingerprints
+    /// that pre-date E14. Missing E14 in old records deserializes to an empty `Vec`,
+    /// and callers must treat empty slices as "inactive" in fusion/similarity paths.
+    #[serde(default)]
+    pub e14_bge_m3_dense: Vec<f32>,
 }
 
 impl SemanticFingerprint {
@@ -262,6 +270,7 @@ impl SemanticFingerprint {
             e11_entity: vec![0.0; E11_DIM],
             e12_late_interaction: Vec::new(),
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: vec![0.0; E14_DIM],
         }
     }
 
@@ -297,6 +306,7 @@ impl SemanticFingerprint {
             e11_entity: vec![0.1; E11_DIM],
             e12_late_interaction: Vec::new(),
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: vec![0.1; E14_DIM],
         }
     }
 
@@ -322,6 +332,7 @@ impl SemanticFingerprint {
             10 => Some(EmbeddingSlice::Dense(&self.e11_entity)),
             11 => Some(EmbeddingSlice::TokenLevel(&self.e12_late_interaction)),
             12 => Some(EmbeddingSlice::Sparse(&self.e13_splade)),
+            13 => Some(EmbeddingSlice::Dense(&self.e14_bge_m3_dense)),
             _ => None,
         }
     }
@@ -631,13 +642,11 @@ impl SemanticFingerprint {
             Embedder::Entity => EmbeddingRef::Dense(&self.e11_entity),
             Embedder::LateInteraction => EmbeddingRef::TokenLevel(&self.e12_late_interaction),
             Embedder::KeywordSplade => EmbeddingRef::Sparse(&self.e13_splade),
-            // E14 BGE-M3 dense is NOT stored in SemanticFingerprint — it lives
-            // in the sibling CF_E14_BGE_M3_DENSE column family. For fingerprint
-            // iterators that walk every Embedder variant, return an empty dense
-            // slice so consumers see "E14 is not populated here" and route
-            // through the E14 storage handle instead. Dimension checks on
-            // non-empty vectors should route through the dedicated E14 reader.
-            Embedder::BgeM3Dense => EmbeddingRef::Dense(&[]),
+            // E14 BGE-M3 dense is a first-class 1024D field on the fingerprint.
+            // Legacy fingerprints (persisted before E14) deserialize with an
+            // empty `Vec` via `#[serde(default)]`; callers must treat an empty
+            // slice as "inactive" in fusion/similarity paths.
+            Embedder::BgeM3Dense => EmbeddingRef::Dense(&self.e14_bge_m3_dense),
         }
     }
 
@@ -764,10 +773,14 @@ impl SemanticFingerprint {
             self.e11_entity.clone(),
             e12_pooled,
             self.e13_splade.to_dense(E13_SPLADE_VOCAB),
-            // E14 BGE-M3 dense — lives in sibling CF, not in fingerprint.
-            // Return zero-vector placeholder for clustering (clustering should
-            // use a separate E14-aware reader for meaningful results).
-            vec![0.0; 1024],
+            // E14 BGE-M3 dense — first-class 1024D field.
+            // Missing/legacy records deserialize to an empty Vec; emit a zeroed
+            // 1024D vector so the cluster array shape is stable.
+            if self.e14_bge_m3_dense.is_empty() {
+                vec![0.0; E14_DIM]
+            } else {
+                self.e14_bge_m3_dense.clone()
+            },
         ]
     }
 

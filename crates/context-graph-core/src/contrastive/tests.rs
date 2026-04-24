@@ -56,6 +56,7 @@ fn synthetic_fp(seed: u32) -> SemanticFingerprint {
             indices: vec![10, 20, 30],
             values: vec![0.5, 0.3, 0.2],
         },
+        e14_bge_m3_dense: dense(1024, seed.wrapping_add(13)),
     }
 }
 

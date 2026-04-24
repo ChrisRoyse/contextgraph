@@ -76,7 +76,7 @@ impl FingerprintQuantizeError {
 ///
 /// - Quantize: `q = round((v - min) / (max - min) * 255)`
 /// - Dequantize: `v = (q / 255) * (max - min) + min`
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct QuantizedFloat8 {
     /// Quantized values as u8 [0, 255].
     pub data: Vec<u8>,
@@ -96,6 +96,12 @@ impl QuantizedFloat8 {
             + 4 // min_val f32
             + 4 // max_val f32
             + 8 // original_dim usize
+    }
+
+    /// Returns true if no quantized values are stored.
+    #[inline]
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
     }
 }
 
@@ -219,6 +225,13 @@ pub struct QuantizedSemanticFingerprint {
     pub e6_sparse: QuantizedSparse,
     /// E13: Keyword SPLADE
     pub e13_splade: QuantizedSparse,
+
+    /// E14: BGE-M3 Dense (1024D) — Float8 quantized.
+    ///
+    /// `#[serde(default)]` ensures on-disk compatibility with pre-E14 records.
+    /// Empty `QuantizedFloat8` means "inactive for this fingerprint".
+    #[serde(default)]
+    pub e14_bge_m3_dense: QuantizedFloat8,
 }
 
 impl QuantizedSemanticFingerprint {
@@ -648,6 +661,13 @@ pub fn quantize_fingerprint(
     let e6_sparse = quantize_sparse(&fp.e6_sparse);
     let e13_splade = quantize_sparse(&fp.e13_splade);
 
+    // E14: BGE-M3 Dense — Float8 quantize when present, default (empty) otherwise.
+    let e14_bge_m3_dense = if fp.e14_bge_m3_dense.is_empty() {
+        QuantizedFloat8::default()
+    } else {
+        quantize_float8_slice(&fp.e14_bge_m3_dense, Embedder::BgeM3Dense)?
+    };
+
     Ok(QuantizedSemanticFingerprint {
         e1_semantic,
         e5_causal_as_cause,
@@ -665,6 +685,7 @@ pub fn quantize_fingerprint(
         e12_late_interaction,
         e6_sparse,
         e13_splade,
+        e14_bge_m3_dense,
     })
 }
 
@@ -716,6 +737,13 @@ pub fn dequantize_fingerprint(
     let e6_sparse = dequantize_sparse(&qfp.e6_sparse, Embedder::Sparse)?;
     let e13_splade = dequantize_sparse(&qfp.e13_splade, Embedder::KeywordSplade)?;
 
+    // E14 BGE-M3 dense: dequantize if present, else leave empty for backward compat.
+    let e14_bge_m3_dense = if qfp.e14_bge_m3_dense.is_empty() {
+        Vec::new()
+    } else {
+        dequantize_float8(&qfp.e14_bge_m3_dense)
+    };
+
     // Each asymmetric dual vector is dequantized independently (no cloning)
     Ok(SemanticFingerprint {
         e1_semantic,
@@ -736,6 +764,7 @@ pub fn dequantize_fingerprint(
         e11_entity,
         e12_late_interaction,
         e13_splade,
+        e14_bge_m3_dense,
     })
 }
 

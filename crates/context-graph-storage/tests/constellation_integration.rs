@@ -96,6 +96,7 @@ fn synthetic_fp(seed: u32) -> SemanticFingerprint {
         e11_entity: e11,
         e12_late_interaction: tokens,
         e13_splade: e13,
+        e14_bge_m3_dense: dense(1024, seed.wrapping_add(13)),
     }
 }
 
@@ -440,6 +441,7 @@ async fn score_unrelated_memory_low() {
             e11_entity: Vec::new(),
             e12_late_interaction: Vec::new(),
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: Vec::new(),
         };
         // Give the sparse vectors at least something structurally distinct
         // so Coverage stats on those embedders isn't all zeros — but keep

@@ -75,6 +75,7 @@ pub fn generate_real_semantic_fingerprint() -> SemanticFingerprint {
         e11_entity: generate_real_unit_vector(768),
         e12_late_interaction: vec![generate_real_unit_vector(128); 16],
         e13_splade: generate_real_sparse_vector(500),
+        e14_bge_m3_dense: generate_real_unit_vector(1024),
     }
 }
 

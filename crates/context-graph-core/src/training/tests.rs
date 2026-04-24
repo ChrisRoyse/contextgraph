@@ -500,6 +500,7 @@ fn empty_semantic_fingerprint() -> SemanticFingerprint {
         e11_entity: Vec::new(),
         e12_late_interaction: Vec::new(),
         e13_splade: SparseVector::empty(),
+        e14_bge_m3_dense: Vec::new(),
     }
 }
 

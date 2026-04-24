@@ -660,7 +660,7 @@ mod tests {
 
     #[test]
     fn test_resolution_view_dimensions() {
-        assert_eq!(ResolutionView::Raw([0.0; NUM_EMBEDDERS]).dimensions(), 13);
+        assert_eq!(ResolutionView::Raw([0.0; NUM_EMBEDDERS]).dimensions(), 14);
         assert_eq!(ResolutionView::Groups([0.0; NUM_GROUPS]).dimensions(), 6);
         assert_eq!(ResolutionView::Domains([0.0; NUM_DOMAINS]).dimensions(), 3);
         assert_eq!(ResolutionView::Overall(0.0).dimensions(), 1);

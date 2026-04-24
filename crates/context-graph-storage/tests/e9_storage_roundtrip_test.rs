@@ -80,6 +80,7 @@ fn create_test_fingerprint_with_unique_vectors() -> TeleologicalFingerprint {
         e11_entity: vec![0.0; 768],
         e12_late_interaction: Vec::new(),
         e13_splade: context_graph_core::types::fingerprint::SparseVector::empty(),
+        e14_bge_m3_dense: vec![0.0; 1024],
     };
 
     TeleologicalFingerprint {

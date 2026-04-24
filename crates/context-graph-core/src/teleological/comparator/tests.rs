@@ -7,8 +7,8 @@ mod tests {
         ComparisonValidationError, MatrixSearchConfig, SearchStrategy,
     };
     use crate::types::fingerprint::{
-        SparseVector, E10_DIM, E11_DIM, E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM, E7_DIM, E8_DIM,
-        E9_DIM,
+        SparseVector, E10_DIM, E11_DIM, E14_DIM, E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM, E7_DIM,
+        E8_DIM, E9_DIM,
     };
     use crate::types::SemanticFingerprint;
 
@@ -46,6 +46,7 @@ mod tests {
             e11_entity: create_normalized_vec(E11_DIM, base_value),
             e12_late_interaction: vec![vec![base_value / 128.0_f32.sqrt(); 128]],
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: create_normalized_vec(E14_DIM, base_value),
         }
     }
 

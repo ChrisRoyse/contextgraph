@@ -1123,6 +1123,9 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e11_entity: e11_vec,
             e12_late_interaction: e12_tokens,
             e13_splade: e13_sparse,
+            // E14 BGE-M3 dense: native provider integration pending. Empty vec
+            // is treated as "inactive" by fusion/similarity paths.
+            e14_bge_m3_dense: Vec::new(),
         };
 
         let per_embedder_latency = [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, Duration::ZERO];
@@ -1340,6 +1343,9 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             e11_entity: e11_vec,
             e12_late_interaction: e12_tokens,
             e13_splade: e13_sparse,
+            // E14 BGE-M3 dense: native provider integration pending. Empty vec
+            // is treated as "inactive" by fusion/similarity paths.
+            e14_bge_m3_dense: Vec::new(),
         };
 
         let per_embedder_latency = [d1, d2, d3, d4, d5, d6, d7, d8, d9, d10, d11, d12, d13, Duration::ZERO];
@@ -1566,6 +1572,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
                         e11_entity: e11_vec,
                         e12_late_interaction: e12_tokens,
                         e13_splade: e13_sparse,
+                        e14_bge_m3_dense: Vec::new(),
                     };
 
                     let per_embedder_latency =

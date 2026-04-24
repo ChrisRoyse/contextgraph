@@ -265,6 +265,10 @@ impl StubMultiArrayProvider {
             e11_entity: e11_vec,
             e12_late_interaction: e12_tokens,
             e13_splade: e13_sparse,
+            // E14 BGE-M3 dense: provider integration pending. Empty vector means
+            // "inactive for this fingerprint" and is handled transparently by
+            // fusion/similarity paths that guard against empty slices.
+            e14_bge_m3_dense: Vec::new(),
         };
 
         // Validate fingerprint before returning (ARCH-01: atomic)

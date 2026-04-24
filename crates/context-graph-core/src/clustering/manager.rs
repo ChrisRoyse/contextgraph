@@ -2576,6 +2576,7 @@ mod tests {
             e11_entity: generate_domain_embedding(get_dimension(Embedder::Entity), domain, variation, seed + 900),
             e12_late_interaction: vec![generate_domain_embedding(128, domain, variation, seed + 1000); 10],
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: generate_domain_embedding(get_dimension(Embedder::BgeM3Dense), domain, variation, seed + 1100),
         }
     }
 
@@ -3049,6 +3050,7 @@ mod tests {
             e11_entity: generate_15domain_embedding(get_dimension(Embedder::Entity), domain_idx, variation, seed + 900),
             e12_late_interaction: vec![generate_15domain_embedding(128, domain_idx, variation, seed + 1000); 10],
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: generate_15domain_embedding(get_dimension(Embedder::BgeM3Dense), domain_idx, variation, seed + 1100),
         }
     }
 

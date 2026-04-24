@@ -819,6 +819,7 @@ mod tests {
             e11_entity: mk(768, c),
             e12_late_interaction: Vec::new(),
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: mk(1024, c),
         }
     }
 
@@ -872,6 +873,7 @@ mod tests {
             e11_entity: make_row(10, 768),
             e12_late_interaction: Vec::new(),
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: make_row(13, 1024),
         }
     }
 
@@ -1025,6 +1027,7 @@ mod tests {
             e11_entity: Vec::new(),
             e12_late_interaction: Vec::new(),
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: Vec::new(),
         };
         let err = CpuTuckerCompressor
             .compress(&fp, (4, 4, 128))
@@ -1075,6 +1078,7 @@ mod tests {
             e11_entity: vec![0.0; 768],
             e12_late_interaction: Vec::new(),
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: Vec::new(),
         };
         // make lints happy that we don't read the fp later
         fp.e5_causal = Vec::new();
@@ -1121,6 +1125,7 @@ mod tests {
             e11_entity: Vec::new(),
             e12_late_interaction: Vec::new(),
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: Vec::new(),
         };
         let views = extract_reference_view(&fp);
         for d in 0..1024 {
@@ -1150,6 +1155,7 @@ mod tests {
             e11_entity: Vec::new(),
             e12_late_interaction: Vec::new(),
             e13_splade: SparseVector::empty(),
+            e14_bge_m3_dense: Vec::new(),
         };
         let views = extract_reference_view(&fp);
         for d in 0..512 {

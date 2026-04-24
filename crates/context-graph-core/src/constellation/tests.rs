@@ -42,6 +42,7 @@ fn synthetic_fp(seed: u32) -> SemanticFingerprint {
     let e9 = dense(1024, seed.wrapping_add(8));
     let e10p = dense(768, seed.wrapping_add(9));
     let e11 = dense(768, seed.wrapping_add(10));
+    let e14 = dense(1024, seed.wrapping_add(13));
     let e6 = SparseVector {
         indices: vec![1, 2, 3, 4, 5],
         values: vec![0.1, 0.2, 0.3, 0.2, 0.1],
@@ -73,6 +74,7 @@ fn synthetic_fp(seed: u32) -> SemanticFingerprint {
         e11_entity: e11,
         e12_late_interaction: tokens,
         e13_splade: e13,
+        e14_bge_m3_dense: e14,
     }
 }
 
