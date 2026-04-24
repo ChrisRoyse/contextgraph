@@ -261,7 +261,7 @@ mod tests {
         let registry = EmbedderIndexRegistry::new();
 
         println!("AFTER: registry.len()={}", registry.len());
-        assert_eq!(registry.len(), 15);
+        assert_eq!(registry.len(), 16);
         assert!(!registry.is_empty());
 
         println!("RESULT: PASS");
@@ -414,8 +414,8 @@ mod tests {
             count += 1;
         }
 
-        assert_eq!(count, 15);
-        println!("RESULT: PASS - iterated over {} indexes (11 original + 2 E5 + 2 E10 asymmetric)", count);
+        assert_eq!(count, 16);
+        println!("RESULT: PASS - iterated over {} indexes (11 original + 2 E5 + 2 E10 asymmetric + 1 E14 BGE-M3 Dense)", count);
     }
 
     #[test]
@@ -426,7 +426,7 @@ mod tests {
         let registry = EmbedderIndexRegistry::new();
         let embedders = registry.embedders();
 
-        assert_eq!(embedders.len(), 15);
+        assert_eq!(embedders.len(), 16);
 
         // Verify E5 asymmetric indexes ARE in the list (ARCH-15)
         assert!(embedders.contains(&EmbedderIndex::E5CausalCause));
@@ -511,7 +511,7 @@ mod tests {
         println!("=== TEST: Registry implements Default ===");
 
         let registry: EmbedderIndexRegistry = Default::default();
-        assert_eq!(registry.len(), 15);
+        assert_eq!(registry.len(), 16);
 
         println!("RESULT: PASS");
     }

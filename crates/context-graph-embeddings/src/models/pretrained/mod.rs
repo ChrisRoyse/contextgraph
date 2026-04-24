@@ -14,6 +14,7 @@
 
 pub(crate) mod shared;
 
+mod bge_m3_dense;
 pub(crate) mod causal;
 mod code;
 mod contextual;
@@ -25,6 +26,11 @@ mod semantic;
 mod sparse;
 pub mod weight_projection;
 
+pub use bge_m3_dense::{
+    BgeM3DenseModel, BGE_M3_DENSE_DIMENSION, BGE_M3_DENSE_LATENCY_BUDGET_MS,
+    BGE_M3_DENSE_MAX_TOKENS, XLM_R_BOS_TOKEN_ID, XLM_R_PAD_TOKEN_ID, XLM_R_POSITION_OFFSET,
+    XLM_R_WEIGHT_PREFIX,
+};
 pub use causal::{
     CausalModel, TrainableProjection, CAUSAL_DIMENSION, CAUSAL_LATENCY_BUDGET_MS, CAUSAL_MAX_TOKENS,
     CAUSE_INSTRUCTION, EFFECT_INSTRUCTION,

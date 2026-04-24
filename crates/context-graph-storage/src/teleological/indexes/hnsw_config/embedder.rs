@@ -174,13 +174,14 @@ impl EmbedderIndex {
 
     /// Get all HNSW-capable embedder indexes.
     ///
-    /// Returns 15 entries (excludes E6, E12, E13):
+    /// Returns 16 entries (excludes E6, E12, E13):
     /// - 10 dense embedders (E1-E5, E7-E11)
     /// - E1Matryoshka128 (Stage 2 fast filter)
     /// - E5CausalCause (asymmetric cause index, ARCH-15)
     /// - E5CausalEffect (asymmetric effect index, ARCH-15)
     /// - E10MultimodalParaphrase (asymmetric paraphrase index, ARCH-15)
     /// - E10MultimodalContext (asymmetric context index, ARCH-15)
+    /// - E14BgeM3Dense (multilingual dense via BGE-M3 / XLM-RoBERTa-Large)
     pub fn all_hnsw() -> Vec<Self> {
         vec![
             Self::E1Semantic,
@@ -198,6 +199,8 @@ impl EmbedderIndex {
             Self::E10MultimodalParaphrase,
             Self::E10MultimodalContext,
             Self::E11Entity,
+            // E14 BGE-M3 Dense joins the HNSW registry as a 1024D Cosine index.
+            Self::E14BgeM3Dense,
         ]
     }
 
@@ -301,13 +304,15 @@ mod tests {
     fn test_all_hnsw_count_is_15() {
         // 11 original + 2 E5 asymmetric + 2 E10 asymmetric = 15 HNSW indexes
         let hnsw_embedders = EmbedderIndex::all_hnsw();
-        assert_eq!(hnsw_embedders.len(), 15);
+        assert_eq!(hnsw_embedders.len(), 16);
         // Verify E5 asymmetric indexes are included
         assert!(hnsw_embedders.contains(&EmbedderIndex::E5CausalCause));
         assert!(hnsw_embedders.contains(&EmbedderIndex::E5CausalEffect));
         // Verify E10 asymmetric indexes are included
         assert!(hnsw_embedders.contains(&EmbedderIndex::E10MultimodalParaphrase));
         assert!(hnsw_embedders.contains(&EmbedderIndex::E10MultimodalContext));
+        // E14 BGE-M3 Dense is a first-class HNSW slot post-E14.
+        assert!(hnsw_embedders.contains(&EmbedderIndex::E14BgeM3Dense));
     }
 
     #[test]

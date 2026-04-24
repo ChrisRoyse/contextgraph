@@ -90,9 +90,24 @@ impl BertConfig {
                 .any(|a| a.contains("MPNet") || a.contains("mpnet"))
     }
 
+    /// Check if this config represents an XLM-RoBERTa architecture.
+    ///
+    /// BGE-M3 (BAAI/bge-m3) ships with `model_type = "xlm-roberta"` and
+    /// architectures listing `XLMRobertaModel`. The forward pass is
+    /// architecturally identical to BERT — the only load-time differences
+    /// are weight-key prefix (`roberta.`) and larger vocab + position ranges.
+    pub fn is_xlm_roberta(&self) -> bool {
+        self.model_type == "xlm-roberta"
+            || self.model_type == "roberta"
+            || self
+                .architectures
+                .iter()
+                .any(|a| a.contains("XLMRoberta") || a.contains("RobertaModel"))
+    }
+
     /// Check if this is a supported architecture.
     pub fn is_supported(&self) -> bool {
-        self.is_bert() || self.is_mpnet()
+        self.is_bert() || self.is_mpnet() || self.is_xlm_roberta()
     }
 }
 

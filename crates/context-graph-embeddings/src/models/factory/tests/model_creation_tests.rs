@@ -14,18 +14,6 @@ fn test_create_all_13_models() {
     let config = SingleModelConfig::default();
 
     for model_id in ModelId::all() {
-        // E14 BgeM3Dense: native Candle module is pending (phase B of the E14
-        // integration). The factory path is stubbed to return a clear error so
-        // test coverage stays honest rather than silently passing with a mock.
-        if *model_id == ModelId::BgeM3Dense {
-            let result = factory.create_model(*model_id, &config);
-            assert!(
-                result.is_err(),
-                "BgeM3Dense creation should error until native module lands"
-            );
-            continue;
-        }
-
         let result = factory.create_model(*model_id, &config);
         assert!(
             result.is_ok(),

@@ -33,7 +33,7 @@
 //! let config = get_hnsw_config(EmbedderIndex::E1Semantic).unwrap();
 //! assert_eq!(config.dimension, 1024);
 //!
-//! // Get all HNSW configs (15 total)
+//! // Get all HNSW configs (16 total, post-E14 BGE-M3 Dense)
 //! let configs = all_hnsw_configs();
 //! assert_eq!(configs.len(), 15);
 //!
@@ -123,7 +123,7 @@ mod tests {
 
         // Verify function exports
         let configs = all_hnsw_configs();
-        assert_eq!(configs.len(), 15);
+        assert_eq!(configs.len(), 16);
 
         println!("RESULT: PASS");
     }
@@ -180,11 +180,11 @@ mod tests {
         println!("\n=== TASK-F005 ACCEPTANCE CRITERIA VERIFICATION ===");
         println!();
 
-        // AC1: EmbedderIndex enum: 18 variants
-        println!("AC1: EmbedderIndex has 18 variants");
+        // AC1: EmbedderIndex enum: 19 variants (post-E14 BGE-M3 Dense)
+        println!("AC1: EmbedderIndex has 19 variants");
         let hnsw = EmbedderIndex::all_hnsw();
-        assert_eq!(hnsw.len(), 15); // 18 - 3 (E6, E12, E13)
-        println!("    - 15 HNSW variants verified");
+        assert_eq!(hnsw.len(), 16); // 19 - 3 (E6, E12, E13)
+        println!("    - 16 HNSW variants verified");
         println!("    - 3 non-HNSW variants (E6, E12, E13)");
         println!("    PASS");
 
@@ -226,11 +226,11 @@ mod tests {
         assert!(get_hnsw_config(EmbedderIndex::E13Splade).is_none());
         println!("    PASS");
 
-        // AC6: all_hnsw_configs returns 15 entries
+        // AC6: all_hnsw_configs returns 16 entries (post-E14 BGE-M3 Dense)
         println!();
-        println!("AC6: all_hnsw_configs returns HashMap with 15 entries");
+        println!("AC6: all_hnsw_configs returns HashMap with 16 entries");
         let configs = all_hnsw_configs();
-        assert_eq!(configs.len(), 15);
+        assert_eq!(configs.len(), 16);
         println!("    PASS");
 
         // AC7: get_inverted_index_config returns Some for E6, E13 only
@@ -310,7 +310,7 @@ mod tests {
         println!("=== TEST: Module exports EmbedderIndexRegistry (TASK-CORE-007) ===");
 
         let registry = EmbedderIndexRegistry::new();
-        assert_eq!(registry.len(), 15);
+        assert_eq!(registry.len(), 16);
 
         // Verify get() for HNSW embedder
         let e1_index = registry.get(EmbedderIndex::E1Semantic);
@@ -359,11 +359,11 @@ mod tests {
         }
         println!("    PASS");
 
-        // AC3: EmbedderIndexRegistry manages 15 indexes
+        // AC3: EmbedderIndexRegistry manages 16 indexes (post-E14 BGE-M3 Dense)
         println!();
-        println!("AC3: EmbedderIndexRegistry manages 15 indexes");
+        println!("AC3: EmbedderIndexRegistry manages 16 indexes");
         let registry = EmbedderIndexRegistry::new();
-        assert_eq!(registry.len(), 15);
+        assert_eq!(registry.len(), 16);
         println!("    PASS");
 
         // AC4: FAIL FAST - E6/E12/E13 return None from registry
@@ -598,9 +598,10 @@ mod tests {
             (EmbedderIndex::E9HDC, 1024),
             (EmbedderIndex::E10Multimodal, 768),
             (EmbedderIndex::E11Entity, 768),
+            (EmbedderIndex::E14BgeM3Dense, 1024),
         ];
 
-        println!("Verifying 13 HNSW indexes:");
+        println!("Verifying 12 HNSW indexes:");
         for (embedder, expected_dim) in &expected {
             let idx = registry.get(*embedder);
             assert!(idx.is_some(), "{:?} should have index", embedder);

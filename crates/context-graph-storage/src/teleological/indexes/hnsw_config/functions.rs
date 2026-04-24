@@ -117,7 +117,7 @@ pub fn get_hnsw_config(index: EmbedderIndex) -> Option<HnswConfig> {
 /// use context_graph_storage::teleological::indexes::{all_hnsw_configs, EmbedderIndex};
 ///
 /// let configs = all_hnsw_configs();
-/// assert_eq!(configs.len(), 15);
+/// assert_eq!(configs.len(), 16);
 /// assert!(configs.contains_key(&EmbedderIndex::E1Semantic));
 /// assert!(!configs.contains_key(&EmbedderIndex::E6Sparse));
 /// ```
@@ -198,9 +198,9 @@ mod tests {
 
     #[test]
     fn test_all_hnsw_configs_returns_15() {
-        // 11 original + 2 E5 asymmetric + 2 E10 asymmetric = 15 HNSW configs
+        // 11 original + 2 E5 asymmetric + 2 E10 asymmetric + 1 E14 BGE-M3 Dense = 16 HNSW configs
         let configs = all_hnsw_configs();
-        assert_eq!(configs.len(), 15);
+        assert_eq!(configs.len(), 16);
 
         assert!(configs.contains_key(&EmbedderIndex::E1Semantic));
         assert!(configs.contains_key(&EmbedderIndex::E1Matryoshka128));
@@ -210,6 +210,8 @@ mod tests {
         // E10 asymmetric indexes included
         assert!(configs.contains_key(&EmbedderIndex::E10MultimodalParaphrase));
         assert!(configs.contains_key(&EmbedderIndex::E10MultimodalContext));
+        // E14 BGE-M3 Dense is a first-class HNSW slot post-E14.
+        assert!(configs.contains_key(&EmbedderIndex::E14BgeM3Dense));
 
         assert!(!configs.contains_key(&EmbedderIndex::E6Sparse));
         assert!(!configs.contains_key(&EmbedderIndex::E12LateInteraction));

@@ -12,7 +12,7 @@ use crate::models::custom::{
     HdcModel, TemporalPeriodicModel, TemporalPositionalModel, TemporalRecentModel,
 };
 use crate::models::pretrained::{
-    CausalModel, CodeModel, ContextualModel, GraphModel, KeplerModel,
+    BgeM3DenseModel, CausalModel, CodeModel, ContextualModel, GraphModel, KeplerModel,
     LateInteractionModel, SemanticModel, SparseModel,
 };
 
@@ -180,6 +180,11 @@ impl DefaultModelFactory {
                 // E13 Splade uses same architecture as E6 Sparse (both SPLADE-based)
                 // Use new_splade() to set correct model_id
                 let model = SparseModel::new_splade(&model_path, config.clone())?;
+                Ok(Box::new(model))
+            }
+            ModelId::BgeM3Dense => {
+                // E14 BGE-M3 Dense (XLM-RoBERTa-Large, 1024D CLS-pooled).
+                let model = BgeM3DenseModel::new(&model_path, config.clone())?;
                 Ok(Box::new(model))
             }
             _ => Err(EmbeddingError::ConfigError {
