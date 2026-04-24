@@ -104,6 +104,18 @@ enum Commands {
         #[command(subcommand)]
         sub: ExportSubcommand,
     },
+    /// Backfill E14 BGE-M3 Dense vectors on existing fingerprints.
+    ///
+    /// Iterates every fingerprint; for records whose `e14_bge_m3_dense` field
+    /// is empty (pre-Phase-A / pre-BGE-M3), re-embeds the original content
+    /// through the native `BgeM3DenseModel` and persists the updated
+    /// fingerprint. Supports `--dry-run` to count candidates without touching
+    /// the model or writing anything.
+    ///
+    /// Expects the BAAI/bge-m3 snapshot under
+    /// `<models_dir>/bge-m3-dense/` (defaults to `./models/bge-m3-dense/`).
+    #[command(name = "backfill-e14")]
+    BackfillE14(commands::backfill_e14::BackfillE14Args),
 }
 
 /// `context-graph-cli export <sub>` targets.
@@ -159,6 +171,7 @@ async fn main() {
                 commands::export_training::summary_to_exit_code(result)
             }
         },
+        Commands::BackfillE14(args) => commands::backfill_e14::run(args).await,
     };
 
     std::process::exit(exit_code);
