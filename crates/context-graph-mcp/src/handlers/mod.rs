@@ -7,7 +7,7 @@
 
 mod core;
 mod merge;
-mod tools;
+pub mod tools;
 
 #[cfg(test)]
 mod tests;
