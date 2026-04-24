@@ -110,9 +110,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                             "graph_reasoning", "temporal_navigation", "sequence_navigation",
                             "conversation_history", "category_weighted", "typo_tolerant",
                             "pipeline_stage1_recall", "pipeline_stage2_scoring", "pipeline_full",
-                            "balanced"
+                            "balanced",
+                            "multilingual_search", "long_context", "translation_finder"
                         ],
-                        "description": "Weight profile for multi-space search. Temporal profiles: temporal_navigation (E2+E3+E4 balanced — time-based retrieval), sequence_navigation (E4-heavy — find nearby conversation items), conversation_history (E4+E1 — contextual recall within sessions). For fine-grained temporal control, use customWeights to set E2/E3/E4 independently."
+                        "description": "Weight profile for multi-space search. Temporal profiles: temporal_navigation (E2+E3+E4 balanced — time-based retrieval), sequence_navigation (E4-heavy — find nearby conversation items), conversation_history (E4+E1 — contextual recall within sessions). E14-aware profiles: multilingual_search (E14=0.40 — cross-lingual retrieval), long_context (E14=0.45 — docs > 512 tokens), translation_finder (E14=0.70 — translation pairs / cross-lingual near-duplicates). For fine-grained temporal control, use customWeights to set E2/E3/E4 independently."
                     },
                     "customWeights": {
                         "type": "object",
@@ -130,7 +131,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
                             "E10": { "type": "number", "minimum": 0, "maximum": 1, "description": "Paraphrase/multimodal similarity" },
                             "E11": { "type": "number", "minimum": 0, "maximum": 1, "description": "Named entity matching" },
                             "E12": { "type": "number", "minimum": 0, "maximum": 1, "description": "ColBERT reranking (stage only, weight 0)" },
-                            "E13": { "type": "number", "minimum": 0, "maximum": 1, "description": "SPLADE recall (stage only, weight 0)" }
+                            "E13": { "type": "number", "minimum": 0, "maximum": 1, "description": "SPLADE recall (stage only, weight 0)" },
+                            "E14": { "type": "number", "minimum": 0, "maximum": 1, "description": "BGE-M3 Dense — multilingual 1024-D CLS-pooled (XLM-RoBERTa-Large, 8192-token context)" }
                         },
                         "additionalProperties": false
                     },
@@ -139,7 +141,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "description": "Embedders to exclude from fusion (their weight becomes 0, remaining renormalized).",
                         "items": {
                             "type": "string",
-                            "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"]
+                            "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
                         }
                     },
                     "useQuantizedPrefilter": {

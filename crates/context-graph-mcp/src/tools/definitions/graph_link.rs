@@ -205,10 +205,11 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                         "graph_reasoning", "temporal_navigation", "sequence_navigation",
                         "conversation_history", "category_weighted", "typo_tolerant",
                         "pipeline_stage1_recall", "pipeline_stage2_scoring", "pipeline_full",
-                        "balanced"
+                        "balanced",
+                        "multilingual_search", "long_context", "translation_finder"
                     ],
                     "default": "semantic_search",
-                    "description": "Weight profile for RRF fusion. Temporal profiles: temporal_navigation (E2+E3+E4 balanced), sequence_navigation (E4-heavy), conversation_history (E4+E1). Use customWeights for fine-grained E2/E3/E4 control."
+                    "description": "Weight profile for RRF fusion. Temporal profiles: temporal_navigation (E2+E3+E4 balanced), sequence_navigation (E4-heavy), conversation_history (E4+E1). Multilingual/long-doc profiles (E14 BGE-M3 Dense): multilingual_search (E14=0.40 cross-lingual), long_context (E14=0.45, only embedder seeing past 512 tokens), translation_finder (E14=0.70 for translation pairs). Use customWeights for fine-grained E2/E3/E4/E14 control."
                 },
                 "top_k": {
                     "type": "integer",
@@ -250,7 +251,8 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                         "E10": { "type": "number", "minimum": 0, "maximum": 1 },
                         "E11": { "type": "number", "minimum": 0, "maximum": 1 },
                         "E12": { "type": "number", "minimum": 0, "maximum": 1 },
-                        "E13": { "type": "number", "minimum": 0, "maximum": 1 }
+                        "E13": { "type": "number", "minimum": 0, "maximum": 1 },
+                        "E14": { "type": "number", "minimum": 0, "maximum": 1, "description": "BGE-M3 Dense — multilingual 1024-D CLS-pooled (XLM-RoBERTa-Large, 8192-token context)" }
                     },
                     "additionalProperties": false
                 },
@@ -259,7 +261,7 @@ fn get_unified_neighbors_definition() -> ToolDefinition {
                     "description": "Embedders to exclude from fusion (their weight becomes 0, remaining renormalized).",
                     "items": {
                         "type": "string",
-                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"]
+                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
                     }
                 }
             },

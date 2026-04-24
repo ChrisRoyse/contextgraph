@@ -1,12 +1,13 @@
 //! Embedder-first search tool definitions.
 //!
 //! Per Constitution v6.3, these tools enable AI agents to search using any of the
-//! 13 embedders as the primary perspective. Each embedder sees the knowledge graph
-//! differently - E11 finds what E1 misses, E7 reveals code patterns, etc.
+//! 14 embedders as the primary perspective. Each embedder sees the knowledge graph
+//! differently - E11 finds what E1 misses, E7 reveals code patterns, E14 reveals
+//! cross-lingual and long-document semantic matches, etc.
 //!
 //! ## Philosophy
 //!
-//! The 13 embedders are 13 lenses on the same knowledge:
+//! The 14 embedders are 14 lenses on the same knowledge:
 //! - E1 (semantic): Dense semantic similarity - foundation
 //! - E5 (causal): Cause-effect relationships
 //! - E6 (keyword): Exact keyword matches
@@ -18,6 +19,7 @@
 //! - E13 (expansion): Term expansion (recall)
 //! - E2-E4 (temporal): Recency, periodicity, sequence
 //! - E9 (robustness): Noise-robust structure
+//! - E14 (multilingual/long-context): BGE-M3 Dense, 1024-D, 8192-token context
 //!
 //! ## Constitution Compliance
 //!
@@ -47,9 +49,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                         "type": "string",
                         "description": "Which embedder to use as primary. E1=semantic, E2=recency, \
                                         E3=periodic, E4=sequence, E5=causal, E7=code, E8=graph, \
-                                        E9=robustness, E10=paraphrase, E11=entity. \
+                                        E9=robustness, E10=paraphrase, E11=entity, \
+                                        E14=multilingual/long-context (BGE-M3 Dense, 1024-D, 8192-token context). \
                                         E6/E12/E13 use non-HNSW indexes and are not supported for direct search.",
-                        "enum": ["E1", "E2", "E3", "E4", "E5", "E7", "E8", "E9", "E10", "E11"]
+                        "enum": ["E1", "E2", "E3", "E4", "E5", "E7", "E8", "E9", "E10", "E11", "E14"]
                     },
                     "query": {
                         "type": "string",
@@ -97,8 +100,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
                 "properties": {
                     "embedder": {
                         "type": "string",
-                        "description": "Which embedder's clusters to explore. E6/E12/E13 use non-HNSW indexes and are not supported for clustering.",
-                        "enum": ["E1", "E2", "E3", "E4", "E5", "E7", "E8", "E9", "E10", "E11"]
+                        "description": "Which embedder's clusters to explore. E14 reveals cross-lingual/long-document clusters. E6/E12/E13 use non-HNSW indexes and are not supported for clustering.",
+                        "enum": ["E1", "E2", "E3", "E4", "E5", "E7", "E8", "E9", "E10", "E11", "E14"]
                     },
                     "minClusterSize": {
                         "type": "integer",
@@ -147,10 +150,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "embedders": {
                         "type": "array",
-                        "description": "Which embedders to compare (2-5 embedders). E6/E12/E13 use non-HNSW indexes and are not supported.",
+                        "description": "Which embedders to compare (2-5 embedders). E14 is ideal for revealing cross-lingual or long-document blind spots vs E1. E6/E12/E13 use non-HNSW indexes and are not supported.",
                         "items": {
                             "type": "string",
-                            "enum": ["E1", "E2", "E3", "E4", "E5", "E7", "E8", "E9", "E10", "E11"]
+                            "enum": ["E1", "E2", "E3", "E4", "E5", "E7", "E8", "E9", "E10", "E11", "E14"]
                         },
                         "minItems": 2,
                         "maxItems": 5
@@ -174,7 +177,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // list_embedder_indexes - List all embedder indexes with stats
         ToolDefinition::new(
             "list_embedder_indexes",
-            "List all 13 embedder indexes with their statistics. Shows dimension, index type, \
+            "List all 14 embedder indexes with their statistics. Shows dimension, index type, \
              vector count, size, and GPU residency for each embedder. Useful for understanding \
              the system's embedding infrastructure and checking index health.",
             json!({
@@ -193,10 +196,11 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ToolDefinition::new(
             "get_memory_fingerprint",
             "Retrieve the per-embedder fingerprint vectors for a specific memory. Returns dimension, \
-             vector norm (L2), and presence status for each of the 13 embedders. Asymmetric embedders \
+             vector norm (L2), and presence status for each of the 14 embedders. Asymmetric embedders \
              (E5 causal, E8 graph, E10 paraphrase) show both directional variants. Sparse embedders \
-             (E6, E13) show non-zero element count. Use to debug embedding quality, verify which \
-             embedders produced vectors, and understand how a memory is represented across all 13 spaces.",
+             (E6, E13) show non-zero element count. E14 (BGE-M3 Dense) shows the 1024-D multilingual \
+             vector. Use to debug embedding quality, verify which embedders produced vectors, and \
+             understand how a memory is represented across all 14 spaces.",
             json!({
                 "type": "object",
                 "required": ["memoryId"],
@@ -208,10 +212,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "embedders": {
                         "type": "array",
-                        "description": "Filter to specific embedders (default: all 13). E.g., [\"E1\", \"E5\", \"E7\"].",
+                        "description": "Filter to specific embedders (default: all 14). E.g., [\"E1\", \"E5\", \"E7\", \"E14\"].",
                         "items": {
                             "type": "string",
-                            "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"]
+                            "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
                         }
                     },
                     "includeVectorNorms": {
@@ -232,7 +236,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         ToolDefinition::new(
             "create_weight_profile",
             "Create a named custom embedder weight profile for the current session. Assigns weights \
-             to each of the 13 embedders (E1-E13). The profile can be referenced by name in \
+             to each of the 14 embedders (E1-E14). The profile can be referenced by name in \
              search_graph's weightProfile and get_unified_neighbors. Useful \
              for defining reusable search strategies. Rejects built-in profile names.",
             json!({
@@ -247,7 +251,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "weights": {
                         "type": "object",
-                        "description": "Per-embedder weights. Keys are E1-E13, values are 0-1. Must sum to ~1.0. Temporal embedders are independent: E2 (recency — how recently stored), E3 (periodicity — time-of-day/day-of-week patterns), E4 (sequence — conversation ordering). Set any combination freely.",
+                        "description": "Per-embedder weights. Keys are E1-E14, values are 0-1. Must sum to ~1.0. Temporal embedders are independent: E2 (recency — how recently stored), E3 (periodicity — time-of-day/day-of-week patterns), E4 (sequence — conversation ordering). E14 (BGE-M3 Dense) covers multilingual + long-context (8192 tokens). Set any combination freely.",
                         "properties": {
                             "E1": { "type": "number", "minimum": 0, "maximum": 1 },
                             "E2": { "type": "number", "minimum": 0, "maximum": 1 },
@@ -261,7 +265,8 @@ pub fn definitions() -> Vec<ToolDefinition> {
                             "E10": { "type": "number", "minimum": 0, "maximum": 1 },
                             "E11": { "type": "number", "minimum": 0, "maximum": 1 },
                             "E12": { "type": "number", "minimum": 0, "maximum": 1 },
-                            "E13": { "type": "number", "minimum": 0, "maximum": 1 }
+                            "E13": { "type": "number", "minimum": 0, "maximum": 1 },
+                            "E14": { "type": "number", "minimum": 0, "maximum": 1 }
                         },
                         "additionalProperties": false
                     },
@@ -290,13 +295,13 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "highEmbedder": {
                         "type": "string",
-                        "description": "Embedder expected to score HIGH (E1-E13).",
-                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"]
+                        "description": "Embedder expected to score HIGH (E1-E14). Use E14 as highEmbedder with E1 as lowEmbedder to find cross-lingual/long-document hits that English-centric semantic search misses.",
+                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
                     },
                     "lowEmbedder": {
                         "type": "string",
-                        "description": "Embedder expected to score LOW (E1-E13).",
-                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"]
+                        "description": "Embedder expected to score LOW (E1-E14).",
+                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
                     },
                     "highThreshold": {
                         "type": "number",
@@ -326,15 +331,15 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "primaryEmbedder": {
                         "type": "string",
-                        "description": "Primary embedder for generalized blind spot detection (default: E1).",
+                        "description": "Primary embedder for generalized blind spot detection (default: E1). Try E14 to surface cross-lingual or long-document content E1 misses.",
                         "default": "E1",
-                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"]
+                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
                     },
                     "contrastEmbedder": {
                         "type": "string",
                         "description": "Contrast embedder for generalized blind spot detection (default: E9).",
                         "default": "E9",
-                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13"]
+                        "enum": ["E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14"]
                     }
                 },
                 "additionalProperties": false
@@ -398,7 +403,8 @@ mod tests {
         let props = search.input_schema.get("properties").unwrap().as_object().unwrap();
         let embedder_enum = props["embedder"]["enum"].as_array().unwrap();
         // CD-M1 FIX: E6/E12/E13 removed from search_by_embedder (non-HNSW)
-        assert_eq!(embedder_enum.len(), 10);
+        // E14 added post-Phase-C (HNSW-capable 1024-D BGE-M3 Dense)
+        assert_eq!(embedder_enum.len(), 11);
     }
 
     #[test]

@@ -24,7 +24,13 @@ pub const XLM_R_BOS_TOKEN_ID: u32 = 0;
 /// This matches the HuggingFace `create_position_ids_from_input_ids` helper.
 pub const XLM_R_POSITION_OFFSET: u32 = XLM_R_PAD_TOKEN_ID + 1;
 
-/// Weight-key prefix used by HuggingFace for XLM-RoBERTa checkpoints.
-/// BGE-M3 wraps its XLM-R backbone under `roberta.` — the pooler lives under
-/// the same prefix.
-pub const XLM_R_WEIGHT_PREFIX: &str = "roberta.";
+/// Weight-key prefix used by BGE-M3's checkpoint.
+///
+/// Empirical check on the actual `BAAI/bge-m3` safetensors (see
+/// `docs/E14_SEMANTIC_ROLE.md`): keys are FLAT — `embeddings.word_embeddings.weight`,
+/// `encoder.layer.N.*`, `pooler.dense.*` — with no `roberta.` wrapper. This
+/// differs from the standalone HuggingFace XLM-RoBERTa release, which uses
+/// the `roberta.` prefix. If we reuse this loader for other XLM-R-backboned
+/// models later (jina-v3, bge-reranker), each will need a prefix that matches
+/// its own checkpoint layout.
+pub const XLM_R_WEIGHT_PREFIX: &str = "";
