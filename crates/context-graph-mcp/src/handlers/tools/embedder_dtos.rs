@@ -8,7 +8,7 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-/// Embedder identifier enum matching the 13 embedders in the system.
+/// Embedder identifier enum matching the 14 embedders in the system.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum EmbedderId {
     E1,  // V_meaning - Semantic similarity (foundation)
@@ -24,12 +24,17 @@ pub enum EmbedderId {
     E11, // V_factuality - Entity knowledge (KEPLER)
     E12, // V_precision - Exact phrase matches
     E13, // V_keyword_precision - Term expansion (sparse)
+    E14, // V_multilingual_style - BGE-M3 dense (XLM-RoBERTa-Large)
 }
 
 impl EmbedderId {
     /// Convert from string to EmbedderId.
+    ///
+    /// Accepts `"E1"`..`"E14"` (case-insensitive) as well as the canonical
+    /// `"bge_m3_dense"` name (for compatibility with factory/ModelId wiring).
     pub fn from_str(s: &str) -> Option<Self> {
-        match s.to_uppercase().as_str() {
+        let upper = s.to_uppercase();
+        match upper.as_str() {
             "E1" => Some(EmbedderId::E1),
             "E2" => Some(EmbedderId::E2),
             "E3" => Some(EmbedderId::E3),
@@ -43,11 +48,18 @@ impl EmbedderId {
             "E11" => Some(EmbedderId::E11),
             "E12" => Some(EmbedderId::E12),
             "E13" => Some(EmbedderId::E13),
-            _ => None,
+            "E14" => Some(EmbedderId::E14),
+            _ => {
+                // Secondary lowercase aliases for the newer E14 slot.
+                match s.to_lowercase().as_str() {
+                    "bge_m3_dense" | "bge-m3-dense" | "bgem3dense" => Some(EmbedderId::E14),
+                    _ => None,
+                }
+            }
         }
     }
 
-    /// Get the index in the TeleologicalArray (0-12).
+    /// Get the index in the TeleologicalArray (0-13).
     pub fn to_index(self) -> usize {
         match self {
             EmbedderId::E1 => 0,
@@ -63,6 +75,7 @@ impl EmbedderId {
             EmbedderId::E11 => 10,
             EmbedderId::E12 => 11,
             EmbedderId::E13 => 12,
+            EmbedderId::E14 => 13,
         }
     }
 
@@ -82,6 +95,7 @@ impl EmbedderId {
             EmbedderId::E11 => "V_factuality (Entity)",
             EmbedderId::E12 => "V_precision (Phrase)",
             EmbedderId::E13 => "V_keyword_precision (Expansion)",
+            EmbedderId::E14 => "V_multilingual_style (BGE-M3 Dense)",
         }
     }
 
@@ -101,6 +115,7 @@ impl EmbedderId {
             EmbedderId::E11 => "Entity knowledge via KEPLER",
             EmbedderId::E12 => "Exact phrase matches (token-level)",
             EmbedderId::E13 => "Term expansion (synonyms)",
+            EmbedderId::E14 => "Multilingual semantic/style via BGE-M3 (XLM-RoBERTa)",
         }
     }
 
@@ -120,6 +135,7 @@ impl EmbedderId {
             EmbedderId::E11 => "768",
             EmbedderId::E12 => "128/token",
             EmbedderId::E13 => "sparse (~30K)",
+            EmbedderId::E14 => "1024",
         }
     }
 
@@ -130,6 +146,7 @@ impl EmbedderId {
 
     /// Check if this embedder uses HNSW indexing (required for direct search).
     /// E6/E13 use inverted indexes, E12 uses MaxSim — none support HNSW search.
+    /// E14 BGE-M3 Dense is HNSW-indexed as a 1024D Cosine embedder.
     pub fn uses_hnsw(&self) -> bool {
         !matches!(self, EmbedderId::E6 | EmbedderId::E12 | EmbedderId::E13)
     }
@@ -138,7 +155,7 @@ impl EmbedderId {
     /// Used by validate() on SearchByEmbedderRequest and CompareEmbedderViewsRequest.
     pub fn hnsw_unsupported_error(embedder_name: &str) -> String {
         format!(
-            "Embedder '{}' does not support HNSW search. E6/E13 use inverted indexes, E12 uses MaxSim. Use E1-E5, E7-E11 instead.",
+            "Embedder '{}' does not support HNSW search. E6/E13 use inverted indexes, E12 uses MaxSim. Use E1-E5, E7-E11, or E14 instead.",
             embedder_name
         )
     }
@@ -159,6 +176,7 @@ impl EmbedderId {
                 | EmbedderId::E10
                 | EmbedderId::E12
                 | EmbedderId::E13
+                | EmbedderId::E14
         )
     }
 }
@@ -293,7 +311,7 @@ pub struct EmbedderSearchResult {
     pub all_scores: Option<AllEmbedderScores>,
 }
 
-/// Scores from all 13 embedders for a single memory.
+/// Scores from all 14 embedders for a single memory.
 #[derive(Debug, Clone, Serialize)]
 pub struct AllEmbedderScores {
     pub e1: f32,
@@ -311,6 +329,8 @@ pub struct AllEmbedderScores {
     pub e11: f32,
     pub e12: f32,
     pub e13: f32,
+    /// E14 BGE-M3 Dense cosine score (1024D, XLM-RoBERTa-Large).
+    pub e14: f32,
 }
 
 /// Response for search_by_embedder tool.
@@ -1008,19 +1028,32 @@ mod tests {
     fn test_happy_path_deserialization() {
         assert_eq!(EmbedderId::from_str("E1"), Some(EmbedderId::E1));
         assert_eq!(EmbedderId::from_str("e11"), Some(EmbedderId::E11));
-        assert_eq!(EmbedderId::from_str("E14"), None);
+        // Post-E14: the 14th slot is BGE-M3 Dense. E15 is the first invalid slot.
+        assert_eq!(EmbedderId::from_str("E14"), Some(EmbedderId::E14));
+        assert_eq!(
+            EmbedderId::from_str("bge_m3_dense"),
+            Some(EmbedderId::E14),
+            "canonical lowercase alias must resolve to E14"
+        );
+        assert_eq!(EmbedderId::from_str("E15"), None);
         assert_eq!(EmbedderId::E1.to_index(), 0);
         assert_eq!(EmbedderId::E13.to_index(), 12);
+        assert_eq!(EmbedderId::E14.to_index(), 13);
         assert!(EmbedderId::E1.is_semantic());
+        assert!(EmbedderId::E14.is_semantic());
         assert!(EmbedderId::E2.is_temporal());
         assert!(EmbedderId::E6.is_sparse());
+        assert!(EmbedderId::E14.uses_hnsw());
     }
 
     #[test]
     fn test_validation_rejects_invalid() {
         let valid = SearchByEmbedderRequest { embedder: "E1".to_string(), query: "test query".to_string(), top_k: 10, min_similarity: 0.0, include_content: false, include_all_scores: false };
         assert!(valid.validate().is_ok());
-        let invalid_embedder = SearchByEmbedderRequest { embedder: "E14".to_string(), query: "test".to_string(), top_k: 10, min_similarity: 0.0, include_content: false, include_all_scores: false };
+        // E14 is valid post-integration; E15 is the first invalid embedder name.
+        let valid_e14 = SearchByEmbedderRequest { embedder: "E14".to_string(), query: "multilingual query".to_string(), top_k: 10, min_similarity: 0.0, include_content: false, include_all_scores: false };
+        assert!(valid_e14.validate().is_ok());
+        let invalid_embedder = SearchByEmbedderRequest { embedder: "E15".to_string(), query: "test".to_string(), top_k: 10, min_similarity: 0.0, include_content: false, include_all_scores: false };
         assert!(invalid_embedder.validate().is_err());
         let empty_query = SearchByEmbedderRequest { embedder: "E1".to_string(), query: "".to_string(), top_k: 10, min_similarity: 0.0, include_content: false, include_all_scores: false };
         assert!(empty_query.validate().is_err());

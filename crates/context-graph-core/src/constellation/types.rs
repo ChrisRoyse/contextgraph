@@ -47,7 +47,7 @@ pub struct Constellation {
     pub member_count: usize,
 
     /// Per-embedder centroid + spread stats, one entry per embedder index.
-    /// Length is always `NUM_CONSTELLATION_EMBEDDERS` (13).
+    /// Length is always `NUM_CONSTELLATION_EMBEDDERS` (14 after E14 BGE-M3 Dense).
     pub per_embedder: Vec<EmbedderStats>,
 
     /// Mean 13D topic profile across all members. **SILENT-ZERO WARNING**:

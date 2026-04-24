@@ -205,17 +205,17 @@ impl Handlers {
             .map(|(i, cand)| {
                 let content = contents.get(i).and_then(|c| c.clone());
 
-                // Optionally include all 13 embedder scores
-                // TeleologicalSearchResult already computes all 13 scores during search
+                // Optionally include all 14 embedder scores.
+                // TeleologicalSearchResult already computes all 14 scores during search.
                 let all_scores = if request.include_all_scores {
-                    // Convert [f32; 14] array to AllEmbedderScores struct
+                    // Convert [f32; 14] array to AllEmbedderScores struct.
                     let s = &cand.embedder_scores;
                     Some(AllEmbedderScores {
                         e1: s[0],
                         e2: s[1],
                         e3: s[2],
                         e4: s[3],
-                        // E5 sentinel (-1.0) = no causal direction detected
+                        // E5 sentinel (-1.0) = no causal direction detected.
                         e5: if s[4] < 0.0 { None } else { Some(s[4]) },
                         e6: s[5],
                         e7: s[6],
@@ -225,6 +225,7 @@ impl Handlers {
                         e11: s[10],
                         e12: s[11],
                         e13: s[12],
+                        e14: s[13],
                     })
                 } else {
                     None
@@ -1071,6 +1072,12 @@ impl Handlers {
                     // Sparse
                     let nnz = sem.e13_splade.nnz();
                     (nnz > 0, nnz, 0.0, None)
+                }
+                EmbedderId::E14 => {
+                    // BGE-M3 Dense — first-class 1024D field on SemanticFingerprint.
+                    // Legacy records deserialize with an empty Vec via serde(default).
+                    let v = &sem.e14_bge_m3_dense;
+                    (!v.is_empty(), v.len(), l2_norm(v), None)
                 }
             };
 
