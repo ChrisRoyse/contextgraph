@@ -1044,10 +1044,10 @@ mod tests {
             .expect_err("rank_1=0 must fail");
         assert!(matches!(err, TuckerError::InvalidRank { .. }));
 
-        // rank_1 > NUM_EMBEDDERS
+        // rank_1 > NUM_EMBEDDERS (NUM_EMBEDDERS=14, so 15 is the first invalid rank)
         let err = CpuTuckerCompressor
-            .compress(&fp, (14, 4, 128))
-            .expect_err("rank_1>13 must fail");
+            .compress(&fp, (15, 4, 128))
+            .expect_err("rank_1>14 must fail");
         assert!(matches!(err, TuckerError::InvalidRank { .. }));
 
         // rank_3 > REFERENCE_EMBEDDING_DIM

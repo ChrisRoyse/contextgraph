@@ -378,10 +378,11 @@ mod tests {
         // Create alignments with known values
         let mut alignments = [0.5f32; NUM_EMBEDDERS];
 
-        // Factual: E1(0), E12(11), E13(12) = average of 0.8, 0.6, 0.7
+        // Factual: E1(0), E12(11), E13(12), E14(13) = average of 0.8, 0.6, 0.7, 0.7
         alignments[0] = 0.8;
         alignments[11] = 0.6;
         alignments[12] = 0.7;
+        alignments[13] = 0.7;
 
         // Temporal: E2(1), E3(2) = average of 0.9, 0.7
         alignments[1] = 0.9;
@@ -392,7 +393,7 @@ mod tests {
 
         let ga = GroupAlignments::from_alignments(&alignments, None);
 
-        // Factual = (0.8 + 0.6 + 0.7) / 3 = 0.7
+        // Factual = (0.8 + 0.6 + 0.7 + 0.7) / 4 = 0.7
         assert!(
             (ga.factual - 0.7).abs() < 0.001,
             "factual = {} (expected 0.7)",
@@ -589,7 +590,7 @@ mod tests {
 
     #[test]
     fn test_group_type_embedding_indices() {
-        assert_eq!(GroupType::Factual.embedding_indices(), &[0, 11, 12]);
+        assert_eq!(GroupType::Factual.embedding_indices(), &[0, 11, 12, 13]);
         assert_eq!(GroupType::Temporal.embedding_indices(), &[1, 2]);
         assert_eq!(GroupType::Causal.embedding_indices(), &[3, 6]);
         assert_eq!(GroupType::Relational.embedding_indices(), &[4, 7, 8]);

@@ -236,6 +236,7 @@ impl ConstellationAccumulator {
         observe_dense(&mut self.e_stats[10], &fp.e11_entity);
         observe_tokens(&mut self.e_stats[11], &fp.e12_late_interaction);
         observe_sparse(&mut self.e_stats[12], &fp.e13_splade);
+        observe_dense(&mut self.e_stats[13], &fp.e14_bge_m3_dense);
 
         // ---- Topic profile / groups / cross-correlations ----
         if let Some(prof) = stored_topic_profile {
@@ -433,6 +434,7 @@ fn default_kind_and_dim(idx: u8) -> (VectorKind, usize) {
         10 => (VectorKind::Dense, 768),        // E11
         11 => (VectorKind::TokenLevel, 0),     // E12
         12 => (VectorKind::Sparse, 0),         // E13
+        13 => (VectorKind::Dense, 1024),       // E14 BGE-M3 Dense
         _ => (VectorKind::Dense, 0),
     }
 }
@@ -833,6 +835,7 @@ fn pick_dense<'a>(emb_idx: u8, fp: &'a SemanticFingerprint) -> &'a [f32] {
         8 => &fp.e9_hdc,
         9 => &fp.e10_multimodal_paraphrase,
         10 => &fp.e11_entity,
+        13 => &fp.e14_bge_m3_dense,
         _ => &[],
     }
 }

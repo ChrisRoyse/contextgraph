@@ -288,10 +288,11 @@ mod tests {
 
         let mut alignments = [0.5f32; NUM_EMBEDDERS];
 
-        // Boost factual embedders (E1=0, E12=11, E13=12)
+        // Boost factual embedders (E1=0, E12=11, E13=12, E14=13)
         alignments[0] = 0.9;
         alignments[11] = 0.9;
         alignments[12] = 0.9;
+        alignments[13] = 0.9;
 
         let result = aggregator.aggregate(&alignments);
 
@@ -325,16 +326,18 @@ mod tests {
         let aggregator = GroupAggregator::new();
 
         let mut alignments = [0.5f32; NUM_EMBEDDERS];
-        // Make factual group have variance
+        // Make factual group have variance (E1=0.3, E12=0.5, E13=0.7, E14=0.5)
         alignments[0] = 0.3;
         alignments[11] = 0.5;
         alignments[12] = 0.7;
+        // alignments[13] already 0.5 from the fill above → 4 factual members.
 
         let result = aggregator.aggregate(&alignments);
 
         let factual_stats = &result.group_stats[0];
-        assert_eq!(factual_stats.embedder_count, 3);
+        assert_eq!(factual_stats.embedder_count, 4);
         assert!(factual_stats.std_dev > 0.0);
+        // range = max(0.7) - min(0.3) = 0.4
         assert!((factual_stats.range - 0.4).abs() < 0.01);
 
         println!("[PASS] Group stats computed correctly");

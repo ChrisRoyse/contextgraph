@@ -134,15 +134,17 @@ fn math_identity_qualitative_halves_e10_when_e11_disabled() {
 
 #[test]
 fn math_identity_factual_averages_e1_e12_e13() {
-    // Factual = (E1 + E12 + E13) / 3 = (0.9 + 0.6 + 0.3) / 3 = 0.6
+    // Factual = (E1 + E12 + E13 + E14) / 4 = (0.9 + 0.6 + 0.3 + 0.6) / 4 = 0.6
+    // E14 was added to the factual group in parallel with E1/E12/E13.
     let mut profile = [0.0f32; NUM_EMBEDDERS];
     profile[0] = 0.9;
     profile[11] = 0.6;
     profile[12] = 0.3;
+    profile[13] = 0.6;
     let ga = compute_group_alignments(&profile);
     assert!(
         (ga[0] - 0.6).abs() < 1e-5,
-        "Factual should be (0.9+0.6+0.3)/3 = 0.6, got {}",
+        "Factual should be (0.9+0.6+0.3+0.6)/4 = 0.6, got {}",
         ga[0],
     );
 }

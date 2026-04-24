@@ -78,6 +78,14 @@ pub fn similarity_profile(
     );
     // E13 (sparse) — Jaccard.
     out[12] = jaccard_similarity(&anchor.e13_splade, &negative.e13_splade);
+    // E14 (dense, BGE-M3) — symmetric SRC-3 cosine. When either side is empty
+    // (legacy fingerprint or provider not wired), return 0.0 which the
+    // downstream classifier treats as "inactive" rather than a real signal.
+    out[13] = if anchor.e14_bge_m3_dense.is_empty() || negative.e14_bge_m3_dense.is_empty() {
+        0.0
+    } else {
+        src3_cosine(&anchor.e14_bge_m3_dense, &negative.e14_bge_m3_dense)
+    };
 
     // Clamp once at the end to recover from tiny FP drift.
     for x in out.iter_mut() {

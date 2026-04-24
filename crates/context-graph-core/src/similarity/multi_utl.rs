@@ -409,12 +409,12 @@ mod tests {
 
         let score = params.compute();
 
-        // semantic_sum = 13 * 1.0 * 1.0 * 0.1 = 1.3
-        // coherence_sum = 13 * 1.0 * 1.0 * 0.1 = 1.3
-        // raw = 2.0 * 1.3 * 1.3 * 1.0 * 1.0 = 3.38
-        // sigmoid(3.38) ≈ 0.967
+        // semantic_sum = 14 * 1.0 * 1.0 * 0.1 = 1.4
+        // coherence_sum = 14 * 1.0 * 1.0 * 0.1 = 1.4
+        // raw = 2.0 * 1.4 * 1.4 * 1.0 * 1.0 = 3.92
+        // sigmoid(3.92) ≈ 0.9805
 
-        let expected_raw = 2.0 * 1.3 * 1.3 * 1.0 * 1.0;
+        let expected_raw = 2.0 * 1.4 * 1.4 * 1.0 * 1.0;
         let expected = sigmoid(expected_raw);
 
         assert!(
@@ -474,9 +474,9 @@ mod tests {
 
         let (l_multi, sem_sum, coh_sum, raw) = params.compute_detailed();
 
-        // Verify sums
-        let expected_sem = 13.0 * 1.0 * 1.0 * 0.1; // 1.3
-        let expected_coh = 13.0 * 1.0 * 1.0 * 0.2; // 2.6
+        // Verify sums (14 embedders)
+        let expected_sem = 14.0 * 1.0 * 1.0 * 0.1; // 1.4
+        let expected_coh = 14.0 * 1.0 * 1.0 * 0.2; // 2.8
 
         assert!((sem_sum - expected_sem).abs() < 1e-4);
         assert!((coh_sum - expected_coh).abs() < 1e-4);
