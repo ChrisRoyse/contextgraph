@@ -174,22 +174,22 @@ pub fn deserialize_teleological_fingerprint(data: &[u8]) -> Result<TeleologicalF
     Ok(fp)
 }
 
-/// Serialize topic profile (13D × f32 = 52 bytes).
+/// Serialize topic profile (14D × f32 = 56 bytes post-E14).
 ///
 /// # Arguments
-/// * `vector` - The 13-element topic profile vector
+/// * `vector` - The 14-element topic profile vector
 ///
 /// # Returns
-/// Exactly 52 bytes (13 × 4 bytes per f32, little-endian)
+/// Exactly 56 bytes (14 × 4 bytes per f32, little-endian)
 ///
 /// # Example
 /// ```ignore
 /// let profile = [0.5f32; 14];
 /// let bytes = serialize_topic_profile(&profile);
-/// assert_eq!(bytes.len(), 52);
+/// assert_eq!(bytes.len(), 56);
 /// ```
-pub fn serialize_topic_profile(vector: &[f32; 14]) -> [u8; 52] {
-    let mut result = [0u8; 52];
+pub fn serialize_topic_profile(vector: &[f32; 14]) -> [u8; 56] {
+    let mut result = [0u8; 56];
     for (i, &v) in vector.iter().enumerate() {
         let bytes = v.to_le_bytes();
         result[i * 4..(i + 1) * 4].copy_from_slice(&bytes);
@@ -197,20 +197,20 @@ pub fn serialize_topic_profile(vector: &[f32; 14]) -> [u8; 52] {
     result
 }
 
-/// Deserialize topic profile from 52 bytes.
+/// Deserialize topic profile from 56 bytes (post-E14).
 ///
 /// # Arguments
-/// * `data` - Exactly 52 bytes
+/// * `data` - Exactly 56 bytes
 ///
 /// # Returns
 /// `Ok([f32; 14])` on success, `Err(CoreError::SerializationError)` on failure.
 ///
 /// # Errors
-/// Returns error if data is not exactly 52 bytes.
+/// Returns error if data is not exactly 56 bytes.
 pub fn deserialize_topic_profile(data: &[u8]) -> Result<[f32; 14], CoreError> {
-    if data.len() != 52 {
+    if data.len() != 56 {
         return Err(CoreError::SerializationError(format!(
-            "Topic profile must be 52 bytes, got {}. \
+            "Topic profile must be 56 bytes, got {}. \
              Data prefix: {:02x?}. \
              This indicates corrupted storage or wrong CF lookup.",
             data.len(),
@@ -219,7 +219,7 @@ pub fn deserialize_topic_profile(data: &[u8]) -> Result<[f32; 14], CoreError> {
     }
 
     let mut result = [0.0f32; 14];
-    for i in 0..13 {
+    for i in 0..14 {
         let bytes: [u8; 4] = data[i * 4..(i + 1) * 4]
             .try_into()
             .expect("slice is exactly 4 bytes");

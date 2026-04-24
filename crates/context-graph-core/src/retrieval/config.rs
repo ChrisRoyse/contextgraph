@@ -14,11 +14,11 @@
 //!
 //! # Category Weights (from constitution)
 //!
-//! - Semantic (E1, E5, E6, E7, E10, E12, E13): weight 1.0
+//! - Semantic (E1, E5, E6, E7, E10, E12, E13, E14): weight 1.0
 //! - Temporal (E2, E3, E4): weight 0.0 (excluded)
 //! - Relational (E8, E11): weight 0.5
 //! - Structural (E9): weight 0.5
-//! - MAX_WEIGHTED_AGREEMENT = 7*1.0 + 2*0.5 + 1*0.5 = 8.5
+//! - MAX_WEIGHTED_AGREEMENT = 8*1.0 + 2*0.5 + 1*0.5 = 9.5 (post-E14)
 
 use serde::{Deserialize, Serialize};
 
@@ -37,7 +37,7 @@ pub const MAX_RECENT_MEMORIES: usize = 50;
 /// Category-based weights for topic similarity calculation.
 ///
 /// Temporal spaces (E2-E4) are excluded with weight 0.0.
-/// Order matches Embedder::index(): E1=0, E2=1, ..., E13=12.
+/// Order matches Embedder::index(): E1=0, E2=1, ..., E14=13.
 ///
 /// From TECH-PHASE3-SIMILARITY-DIVERGENCE.md lines 548-562.
 pub const SPACE_WEIGHTS: [f32; 14] = [
@@ -60,7 +60,7 @@ pub const SPACE_WEIGHTS: [f32; 14] = [
 /// Total weight sum for normalization: 8*1.0 + 2*0.5 + 1*0.5 = 9.5
 pub const TOTAL_WEIGHT: f32 = 9.5;
 
-/// Per-space threshold values for all 13 embedding spaces.
+/// Per-space threshold values for all 14 embedding spaces.
 ///
 /// Field names MUST match `PerSpaceScores` field names exactly.
 /// All threshold values are in the range [0.0, 1.0].
@@ -215,7 +215,7 @@ pub struct SpaceWeights {
 impl SpaceWeights {
     /// Create new SpaceWeights from an array.
     ///
-    /// Order must match Embedder::index(): E1=0, E2=1, ..., E13=12.
+    /// Order must match Embedder::index(): E1=0, E2=1, ..., E14=13.
     pub fn new(weights: [f32; 14]) -> Self {
         Self { weights }
     }
@@ -407,9 +407,9 @@ pub fn low_thresholds() -> PerSpaceThresholds {
 /// Category-based weights from constitution.
 ///
 /// EXACT values from TECH-PHASE3-SIMILARITY-DIVERGENCE.md lines 548-562.
-/// Sum = 8.5 (before normalization).
+/// Sum = 9.5 (before normalization, post-E14).
 ///
-/// - Semantic (E1, E5, E6, E7, E10, E12, E13): weight 1.0
+/// - Semantic (E1, E5, E6, E7, E10, E12, E13, E14): weight 1.0
 /// - Temporal (E2, E3, E4): weight 0.0 (excluded per AP-60)
 /// - Relational (E8, E11): weight 0.5
 /// - Structural (E9): weight 0.5

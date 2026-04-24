@@ -94,7 +94,7 @@ pub struct PerspectiveCoverage {
 /// Information about a missing perspective (embedder that didn't contribute).
 #[derive(Debug, Clone)]
 pub struct MissingPerspective {
-    /// Embedder index (0-12).
+    /// Embedder index (0-13).
     pub embedder_idx: usize,
 
     /// Embedder name (e.g., "E7_Code").
@@ -129,7 +129,7 @@ pub struct CategoryBreakdown {
 
 /// Embedder metadata for annotation generation.
 struct EmbedderInfo {
-    /// Index (0-12).
+    /// Index (0-13).
     idx: usize,
     /// Short name (e.g., "E7").
     short_name: &'static str,
@@ -285,7 +285,7 @@ pub fn generate_insight_annotation(
     // Single embedder - unique contribution, detailed annotation
     if embedder_count == 1 {
         let embedder_idx = *result.found_by.iter().next().unwrap();
-        let info = &EMBEDDERS[embedder_idx.min(12)];
+        let info = &EMBEDDERS[embedder_idx.min(13)];
 
         let annotation = if result.unique_contribution {
             // For blind spot discoveries, explain what E1 missed
@@ -330,13 +330,13 @@ pub fn generate_insight_annotation(
     }
 
     // Multiple embedders - build combined annotation
-    let primary_info = &EMBEDDERS[result.primary_embedder.min(12)];
+    let primary_info = &EMBEDDERS[result.primary_embedder.min(13)];
 
     // Collect embedder short names
     let mut embedder_names: Vec<&str> = result
         .found_by
         .iter()
-        .map(|idx| EMBEDDERS[(*idx).min(12)].short_name)
+        .map(|idx| EMBEDDERS[(*idx).min(13)].short_name)
         .collect();
     embedder_names.sort();
 
@@ -490,7 +490,7 @@ fn category_label(category: EmbedderCategory) -> &'static str {
 
 /// Get embedder info by index.
 pub fn get_embedder_info(idx: usize) -> (&'static str, &'static str, &'static str) {
-    let info = &EMBEDDERS[idx.min(12)];
+    let info = &EMBEDDERS[idx.min(13)];
     (info.short_name, info.display_name, info.finds)
 }
 
@@ -498,7 +498,7 @@ pub fn get_embedder_info(idx: usize) -> (&'static str, &'static str, &'static st
 pub fn embedder_names_for_indices(indices: &HashSet<usize>) -> Vec<&'static str> {
     let mut names: Vec<&str> = indices
         .iter()
-        .map(|idx| EMBEDDERS[(*idx).min(12)].display_name)
+        .map(|idx| EMBEDDERS[(*idx).min(13)].display_name)
         .collect();
     names.sort();
     names

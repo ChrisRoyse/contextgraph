@@ -202,7 +202,7 @@ pub struct InjectionCandidate {
     /// - weighted_agreement < 1.0: 0.8
     pub diversity_bonus: f32,
 
-    /// Weighted agreement score (0.0..=8.5) from multi-space clustering.
+    /// Weighted agreement score (0.0..=9.5) from multi-space clustering.
     /// Uses category weights per constitution.yaml.
     pub weighted_agreement: f32,
 
@@ -235,7 +235,7 @@ impl InjectionCandidate {
     /// * `memory_id` - UUID of the source memory
     /// * `content` - Memory content text
     /// * `relevance_score` - Base similarity score (0.0..=1.0)
-    /// * `weighted_agreement` - Cross-space agreement (0.0..=8.5)
+    /// * `weighted_agreement` - Cross-space agreement (0.0..=9.5)
     /// * `matching_spaces` - Embedders that exceeded threshold
     /// * `category` - Injection category
     /// * `created_at` - Memory creation timestamp
@@ -244,7 +244,7 @@ impl InjectionCandidate {
     ///
     /// Panics if:
     /// - `relevance_score` not in 0.0..=1.0
-    /// - `weighted_agreement` not in 0.0..=8.5
+    /// - `weighted_agreement` not in 0.0..=9.5
     /// - `relevance_score` is NaN or Infinity (AP-10)
     /// - `weighted_agreement` is NaN or Infinity (AP-10)
     pub fn new(
@@ -276,7 +276,7 @@ impl InjectionCandidate {
         );
         assert!(
             (0.0..=MAX_WEIGHTED_AGREEMENT).contains(&weighted_agreement),
-            "weighted_agreement must be 0.0..=8.5, got {}",
+            "weighted_agreement must be 0.0..=9.5, got {}",
             weighted_agreement
         );
 
@@ -613,9 +613,10 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "weighted_agreement must be 0.0..=8.5")]
+    #[should_panic(expected = "weighted_agreement must be 0.0..=9.5")]
     fn test_invalid_weighted_agreement_too_high() {
-        make_candidate(0.5, 9.0, InjectionCategory::SingleSpaceMatch);
+        // Post-E14: MAX_WEIGHTED_AGREEMENT = 9.5, so use a value above that.
+        make_candidate(0.5, 10.0, InjectionCategory::SingleSpaceMatch);
     }
 
     #[test]

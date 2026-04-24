@@ -8,10 +8,12 @@ use super::constants::{
     TEMPORAL_POSITIONAL, TEMPORAL_POSITIONAL_NATIVE, TEMPORAL_RECENT, TEMPORAL_RECENT_NATIVE,
 };
 
-/// Returns the projected dimension for a given model index (0-13).
+/// Returns the projected dimension for a given model index (0-14).
+///
+/// Index 13 is `Kepler` (production E11), index 14 is `BgeM3Dense` (E14).
 ///
 /// # Panics
-/// Panics if index >= 14.
+/// Panics if index >= 15.
 ///
 /// # Example
 /// ```rust
@@ -70,7 +72,7 @@ pub const fn native_dimension_by_index(index: usize) -> usize {
 
 /// Returns the byte offset for model at index within the total dimension space.
 ///
-/// Used for memory calculations and index offsets (11648D total).
+/// Used for memory calculations and index offsets (TOTAL_DIMENSION = 13056 post-E14).
 ///
 /// # Example
 /// ```rust

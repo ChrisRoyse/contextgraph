@@ -37,12 +37,12 @@ fn test_error_on_wrong_version() {
 
 #[test]
 fn test_error_on_wrong_topic_profile_size() {
-    let result = deserialize_topic_profile(&[0u8; 51]); // Should be 52
+    let result = deserialize_topic_profile(&[0u8; 55]); // Should be 56 post-E14
     assert!(result.is_err(), "Expected Err for wrong topic profile size");
     let err_msg = result.unwrap_err().to_string();
     assert!(
-        err_msg.contains("52 bytes"),
-        "Error message should mention 52 bytes, got: {}",
+        err_msg.contains("56 bytes"),
+        "Error message should mention 56 bytes, got: {}",
         err_msg
     );
 }

@@ -613,8 +613,12 @@ pub const CF_EMB_11: &str = "emb_11";
 /// Quantization: SparseNative (variable size, indices+values).
 pub const CF_EMB_12: &str = "emb_12";
 
-/// All 13 quantized embedder column family names.
-/// Maps to ModelId indices 0-12 for per-embedder HNSW storage.
+/// Column family for E14_BgeM3Dense (ModelId=13) quantized embeddings.
+/// Quantization: PQ-8 (8 bytes compressed from 1024D).
+pub const CF_EMB_13: &str = "emb_13";
+
+/// All 14 quantized embedder column family names.
+/// Maps to ModelId indices 0-13 for per-embedder HNSW storage.
 pub const QUANTIZED_EMBEDDER_CFS: &[&str] = &[
     CF_EMB_0,  // E1_Semantic
     CF_EMB_1,  // E2_TemporalRecent
@@ -629,10 +633,11 @@ pub const QUANTIZED_EMBEDDER_CFS: &[&str] = &[
     CF_EMB_10, // E11_Entity
     CF_EMB_11, // E12_LateInteraction
     CF_EMB_12, // E13_SPLADE
+    CF_EMB_13, // E14_BgeM3Dense
 ];
 
-/// Total count of quantized embedder CFs (should be 13).
-pub const QUANTIZED_EMBEDDER_CF_COUNT: usize = 13;
+/// Total count of quantized embedder CFs (14 after E14 BGE-M3 was added).
+pub const QUANTIZED_EMBEDDER_CF_COUNT: usize = 14;
 
 /// Options for ~63KB fingerprint storage.
 ///

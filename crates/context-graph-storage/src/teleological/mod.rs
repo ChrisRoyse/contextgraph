@@ -106,6 +106,7 @@ pub use column_families::{
     CF_EMB_10,
     CF_EMB_11,
     CF_EMB_12,
+    CF_EMB_13,
     CF_EMB_2,
     CF_EMB_3,
     CF_EMB_4,

@@ -168,9 +168,9 @@ mod tests {
         assert_eq!(E11_DIM, 768);
         assert_eq!(E12_TOKEN_DIM, 128);
         assert_eq!(E13_SPLADE_VOCAB, 30_522);
-        assert_eq!(NUM_EMBEDDERS, 13);
+        assert_eq!(NUM_EMBEDDERS, 14);
         assert_eq!(E1_MATRYOSHKA_DIM, 128);
-        assert_eq!(TOPIC_PROFILE_DIM, 13);
+        assert_eq!(TOPIC_PROFILE_DIM, 14);
 
         println!("RESULT: PASS");
     }

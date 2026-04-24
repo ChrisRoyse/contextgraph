@@ -1,9 +1,9 @@
 //! Weight profile configuration for multi-embedding search.
 //!
-//! This module provides predefined weight profiles for 13 embedding spaces.
+//! This module provides predefined weight profiles for 14 embedding spaces.
 //! Moved from MCP crate to Core crate to allow Storage layer access.
 //!
-//! # 13 Embedding Spaces
+//! # 14 Embedding Spaces
 //!
 //! | Index | Name | Purpose |
 //! |-------|------|---------|
@@ -20,6 +20,7 @@
 //! | 10 | E11_Entity | Named entity matching |
 //! | 11 | E12_Late_Interaction | ColBERT-style token matching |
 //! | 12 | E13_SPLADE | Sparse learned expansion (Stage 1) |
+//! | 13 | E14_BgeM3Dense | Multilingual dense (BGE-M3 / XLM-RoBERTa-Large) |
 //!
 //! # Error Handling
 //!
@@ -105,8 +106,10 @@ impl std::error::Error for WeightProfileError {}
 
 /// Predefined weight profiles per query type.
 ///
-/// Each profile has 13 weights corresponding to:
-/// [E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E13]
+/// Each profile has 14 weights corresponding to:
+/// [E1, E2, E3, E4, E5, E6, E7, E8, E9, E10, E11, E12, E13, E14]
+/// (E14 BGE-M3 Dense is currently 0.0 in legacy profiles; Phase B will
+/// reweight category profiles to include it.)
 ///
 /// # Temporal Embedders (E2-E4)
 ///
@@ -439,7 +442,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
         "balanced",
         [
             0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715, 0.0715,
-            0.0715, 0.0715, 0.0715, 0.071, // 13×0.0715 + 0.071 = 1.0
+            0.0715, 0.0715, 0.0715, 0.071, // 13×0.0715 + 0.071 ≈ 1.0 (sum = 0.9995)
         ],
     ),
 ];
@@ -450,7 +453,7 @@ pub const WEIGHT_PROFILES: &[(&str, [f32; NUM_EMBEDDERS])] = &[
 /// * `name` - Profile name (e.g., "semantic_search", "code_search")
 ///
 /// # Returns
-/// The 13-element weight array if found.
+/// The 14-element weight array if found.
 ///
 /// # Errors
 /// Returns `WeightProfileError::UnknownProfile` if the profile name is not found.

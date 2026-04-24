@@ -247,9 +247,9 @@ impl RocksDbTeleologicalStore {
             .expect("CF_TOPIC_PROFILES must exist — database initialization failed");
         match self.db.get_cf(cf, id.as_bytes()) {
             Ok(Some(bytes)) => {
-                if bytes.len() != 52 {
+                if bytes.len() != 56 {
                     return Err(CoreError::SerializationError(format!(
-                        "CF_TOPIC_PROFILES row for {} has {} bytes; expected 52 (13 × f32)",
+                        "CF_TOPIC_PROFILES row for {} has {} bytes; expected 56 (14 × f32 post-E14)",
                         id,
                         bytes.len()
                     )));

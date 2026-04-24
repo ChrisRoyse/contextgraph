@@ -394,7 +394,7 @@ pub fn get_all_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamil
 ///   + 1 hnsw_graphs + 1 training_records + 1 constellations + 1 constellation_by_selector
 ///   + 1 contrastive_pairs + 1 contrastive_by_kind + 1 contrastive_by_anchor
 ///   + 1 typed_edge_records + 1 typed_edge_validations
-pub const TOTAL_COLUMN_FAMILIES: usize = 59;
+pub const TOTAL_COLUMN_FAMILIES: usize = 60;
 
 #[cfg(test)]
 mod tests {
@@ -667,13 +667,14 @@ mod tests {
     #[test]
     fn test_total_column_families_constant() {
         // Verify the constant is correct:
-        // 11 base (8 original + 3 graph linking) + 28 teleological + 13 quantized + 5 code + 2 causal = 59
+        // 11 base (8 original + 3 graph linking) + 28 teleological + 14 quantized + 5 code + 2 causal = 60
         // Teleological: 20 core CFs + CF_TRAINING_RECORDS + CF_CONSTELLATIONS + CF_CONSTELLATION_BY_SELECTOR
         //   + CF_CONTRASTIVE_PAIRS + CF_CONTRASTIVE_BY_KIND + CF_CONTRASTIVE_BY_ANCHOR
         //   + CF_TYPED_EDGE_RECORDS + CF_TYPED_EDGE_VALIDATIONS = 28
+        // Quantized grew 13 -> 14 with E14 BGE-M3 Dense.
         assert_eq!(
-            TOTAL_COLUMN_FAMILIES, 59,
-            "Total column families should be 59 (11 base + 28 teleological + 13 quantized + 5 code + 2 causal)"
+            TOTAL_COLUMN_FAMILIES, 60,
+            "Total column families should be 60 (11 base + 28 teleological + 14 quantized + 5 code + 2 causal)"
         );
     }
 

@@ -582,6 +582,7 @@ impl SemanticFingerprint {
             10 => Some("E11_Entity"),
             11 => Some("E12_Late_Interaction"),
             12 => Some("E13_SPLADE"),
+            13 => Some("E14_BgeM3Dense"),
             _ => None,
         }
     }
@@ -602,6 +603,7 @@ impl SemanticFingerprint {
             10 => Some(E11_DIM),
             11 => Some(E12_TOKEN_DIM),
             12 => Some(E13_SPLADE_VOCAB),
+            13 => Some(E14_DIM),
             _ => None,
         }
     }

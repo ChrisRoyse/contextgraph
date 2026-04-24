@@ -20,7 +20,7 @@ pub const NUM_GROUPS: usize = 6;
 /// Group alignments from hierarchical aggregation.
 ///
 /// Six groups capture different aspects of knowledge:
-/// - **Factual**: What something IS (E1_Semantic + E12_Factual + E13_Sparse)
+/// - **Factual**: What something IS (E1_Semantic + E12_Factual + E13_Sparse + E14_BgeM3Dense)
 /// - **Temporal**: When/sequence (E2_Episodic + E3_Temporal)
 /// - **Causal**: Why/how (E4_Causal + E7_Procedural)
 /// - **Relational**: Like/where/who (E5_Analogical + E8_Spatial + E9_Social)
@@ -28,7 +28,7 @@ pub const NUM_GROUPS: usize = 6;
 /// - **Implementation**: Code (E6_Code)
 #[derive(Clone, Debug, Serialize, Deserialize, Default)]
 pub struct GroupAlignments {
-    /// Factual group: E1 + E12 + E13 (what IS)
+    /// Factual group: E1 + E12 + E13 + E14 (what IS)
     pub factual: f32,
 
     /// Temporal group: E2 + E3 (when/sequence)
@@ -264,7 +264,7 @@ fn weighted_group_average(
 /// Enum representing the six embedding groups.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum GroupType {
-    /// Factual: E1 + E12 + E13
+    /// Factual: E1 + E12 + E13 + E14
     Factual,
     /// Temporal: E2 + E3
     Temporal,

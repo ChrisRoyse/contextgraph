@@ -1,17 +1,18 @@
 //! TASK-TELEO-010: TuckerDecomposer Implementation
 //!
-//! Performs Tucker decomposition on 13x13x1024 teleological tensor for compression.
+//! Performs Tucker decomposition on the SYNERGY_DIM × SYNERGY_DIM × EMBEDDING_DIM
+//! (14 × 14 × 1024 post-E14) teleological tensor for compression.
 //!
 //! # From teleoplan.md
 //!
 //! Tucker decomposition: (Core, U1, U2, U3) = tucker_decomposition(T, ranks=[4, 4, 128])
-//! Captures essential structure in ~134K floats vs 173K original.
+//! Captures essential structure in a small core + 3 factor matrices.
 //!
-//! # Compression Benefit
+//! # Compression Benefit (post-E14)
 //!
-//! - Original: 13 x 13 x 1024 = 173,056 floats
-//! - Compressed: 4 x 4 x 128 + 13*4 + 13*4 + 1024*128 = 133,256 floats
-//! - Ratio: ~1.3x compression with minimal information loss
+//! - Original: 14 × 14 × 1024 = 200,704 floats
+//! - Compressed: 4 × 4 × 128 + 14×4 + 14×4 + 1024×128 = 133,168 floats
+//! - Ratio: ~1.5x compression with minimal information loss
 
 use crate::teleological::{types::EMBEDDING_DIM, TuckerCore, SYNERGY_DIM};
 
@@ -77,10 +78,11 @@ impl TuckerDecomposer {
         Self { config }
     }
 
-    /// Decompose a 13x13x1024 tensor into Tucker form.
+    /// Decompose a SYNERGY_DIM × SYNERGY_DIM × EMBEDDING_DIM tensor into Tucker form.
     ///
     /// # Arguments
-    /// * `tensor` - Flattened 13x13x1024 tensor (173,056 floats)
+    /// * `tensor` - Flattened tensor of length SYNERGY_DIM² × EMBEDDING_DIM
+    ///   (14 × 14 × 1024 = 200,704 floats post-E14).
     ///
     /// # Panics
     ///
@@ -115,12 +117,12 @@ impl TuckerDecomposer {
         }
     }
 
-    /// Decompose embeddings directly (13 x 1024D vectors).
+    /// Decompose embeddings directly (SYNERGY_DIM × EMBEDDING_DIM vectors).
     ///
-    /// Builds the 13x13x1024 tensor from embedding outer products.
+    /// Builds the SYNERGY_DIM² × EMBEDDING_DIM tensor from embedding outer products.
     ///
     /// # Arguments
-    /// * `embeddings` - 13 embedding vectors of dimension 1024
+    /// * `embeddings` - SYNERGY_DIM (14 post-E14) embedding vectors of dimension EMBEDDING_DIM
     pub fn decompose_embeddings(&self, embeddings: &[Vec<f32>]) -> TuckerResult {
         assert!(
             embeddings.len() == SYNERGY_DIM,

@@ -752,8 +752,11 @@ mod tests {
 
     #[test]
     fn test_topic_summary_compute_confidence() {
-        assert!((TopicSummary::compute_confidence(3.0) - 0.3529).abs() < 0.01);
-        assert!((TopicSummary::compute_confidence(8.5) - 1.0).abs() < 0.001);
+        // Post-E14: MAX_WEIGHTED_AGREEMENT = 9.5
+        // confidence(3.0) = 3.0 / 9.5 ≈ 0.3158
+        assert!((TopicSummary::compute_confidence(3.0) - (3.0 / 9.5)).abs() < 0.01);
+        // confidence(9.5) = 1.0 (max)
+        assert!((TopicSummary::compute_confidence(9.5) - 1.0).abs() < 0.001);
         assert!((TopicSummary::compute_confidence(0.0) - 0.0).abs() < 0.001);
         println!("[PASS] TopicSummary::compute_confidence works");
     }
@@ -969,8 +972,8 @@ mod tests {
         // ARCH-09: Topic threshold is weighted_agreement >= 2.5
         assert!((TOPIC_THRESHOLD - 2.5).abs() < f32::EPSILON);
 
-        // Max weighted agreement = 7*1.0 + 2*0.5 + 1*0.5 = 8.5
-        assert!((MAX_WEIGHTED_AGREEMENT - 8.5).abs() < f32::EPSILON);
+        // Max weighted agreement = 8*1.0 + 2*0.5 + 1*0.5 = 9.5 (post-E14)
+        assert!((MAX_WEIGHTED_AGREEMENT - 9.5).abs() < f32::EPSILON);
 
         // Churn threshold for high churn warning
         assert!((CHURN_THRESHOLD - 0.5).abs() < f32::EPSILON);

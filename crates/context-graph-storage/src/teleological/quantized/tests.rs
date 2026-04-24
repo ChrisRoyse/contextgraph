@@ -25,9 +25,9 @@ mod tests {
     /// Create test embeddings with valid quantization methods per Constitution.
     fn create_test_embeddings() -> HashMap<u8, QuantizedEmbedding> {
         let mut map = HashMap::new();
-        for i in 0..13u8 {
+        for i in 0..14u8 {
             let (method, dim, data_len) = match i {
-                0 | 4 | 6 | 9 => (QuantizationMethod::PQ8, 1024, 8),
+                0 | 4 | 6 | 9 | 13 => (QuantizationMethod::PQ8, 1024, 8),
                 1 | 2 | 3 | 7 | 10 => (QuantizationMethod::Float8E4M3, 512, 512),
                 8 => (QuantizationMethod::Binary, 10000, 1250),
                 5 | 12 => (QuantizationMethod::SparseNative, 30522, 100),
@@ -92,12 +92,12 @@ mod tests {
     fn test_quantized_embedder_cfs_count() {
         assert_eq!(
             QUANTIZED_EMBEDDER_CFS.len(),
-            13,
-            "Expected 13 quantized embedder column families"
+            14,
+            "Expected 14 quantized embedder column families (post-E14 BGE-M3)"
         );
         assert_eq!(
-            QUANTIZED_EMBEDDER_CF_COUNT, 13,
-            "QUANTIZED_EMBEDDER_CF_COUNT should be 13"
+            QUANTIZED_EMBEDDER_CF_COUNT, 14,
+            "QUANTIZED_EMBEDDER_CF_COUNT should be 14 (post-E14 BGE-M3)"
         );
     }
 
@@ -202,10 +202,10 @@ mod tests {
             .expect("load should succeed");
 
         assert_eq!(loaded.id, id);
-        assert_eq!(loaded.embeddings.len(), 13);
+        assert_eq!(loaded.embeddings.len(), 14);
 
-        // Verify each embedder data matches
-        for i in 0..13u8 {
+        // Verify each embedder data matches (0..=13, including E14 BGE-M3 Dense).
+        for i in 0..14u8 {
             let orig = original.embeddings.get(&i).unwrap();
             let load = loaded.embeddings.get(&i).unwrap();
             assert_eq!(orig.method, load.method, "embedder {} method mismatch", i);

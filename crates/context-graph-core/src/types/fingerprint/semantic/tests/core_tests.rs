@@ -152,7 +152,8 @@ fn test_embedding_name() {
         Some("E12_Late_Interaction")
     );
     assert_eq!(SemanticFingerprint::embedding_name(12), Some("E13_SPLADE"));
-    assert_eq!(SemanticFingerprint::embedding_name(13), None);
+    assert_eq!(SemanticFingerprint::embedding_name(13), Some("E14_BgeM3Dense"));
+    assert_eq!(SemanticFingerprint::embedding_name(14), None);
 }
 
 #[test]
@@ -164,7 +165,8 @@ fn test_embedding_dim() {
         SemanticFingerprint::embedding_dim(12),
         Some(E13_SPLADE_VOCAB)
     );
-    assert_eq!(SemanticFingerprint::embedding_dim(13), None);
+    assert_eq!(SemanticFingerprint::embedding_dim(13), Some(E14_DIM));
+    assert_eq!(SemanticFingerprint::embedding_dim(14), None);
 }
 
 #[test]
@@ -182,6 +184,7 @@ fn test_dimension_constants() {
     assert_eq!(E11_DIM, 768); // KEPLER (was 384 with MiniLM)
     assert_eq!(E12_TOKEN_DIM, 128);
     assert_eq!(E13_SPLADE_VOCAB, 30_522);
+    assert_eq!(E14_DIM, 1024);
     assert_eq!(NUM_EMBEDDERS, 14);
 
     let calculated =

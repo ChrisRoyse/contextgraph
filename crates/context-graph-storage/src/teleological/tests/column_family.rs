@@ -147,12 +147,12 @@ fn test_get_all_teleological_cf_descriptors_returns_41() {
     let cache = Cache::new_lru_cache(256 * 1024 * 1024);
     let descriptors = get_all_teleological_cf_descriptors(&cache);
 
-    // 28 teleological + 13 quantized embedder = 41
-    // Quantized (13): emb_0 through emb_12
+    // 28 teleological + 14 quantized embedder = 42 (post-E14 BGE-M3).
+    // Quantized (14): emb_0 through emb_13.
     assert_eq!(
         descriptors.len(),
-        41,
-        "Must return 28 teleological + 13 quantized = 41 CFs"
+        42,
+        "Must return 28 teleological + 14 quantized = 42 CFs"
     );
 }
 

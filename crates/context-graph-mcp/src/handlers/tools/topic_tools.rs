@@ -833,7 +833,7 @@ mod tests {
     fn test_constants_and_embedder_mapping() {
         // ARCH-09 constitution constants
         assert!((TOPIC_THRESHOLD - 2.5).abs() < f32::EPSILON);
-        assert!((MAX_WEIGHTED_AGREEMENT - 8.5).abs() < f32::EPSILON);
+        assert!((MAX_WEIGHTED_AGREEMENT - 9.5).abs() < f32::EPSILON);
         assert_eq!(MIN_MEMORIES_FOR_CLUSTERING, 3);
         assert_eq!(MIN_MEMORIES_FOR_DIVERGENCE, 2);
         assert_eq!(MAX_SUMMARY_WORDS, 50);

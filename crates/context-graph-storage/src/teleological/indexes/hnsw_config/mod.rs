@@ -76,6 +76,6 @@ mod tests {
 
         // Verify constants
         assert_eq!(E1_DIM, 1024);
-        assert_eq!(NUM_EMBEDDERS, 13);
+        assert_eq!(NUM_EMBEDDERS, 14);
     }
 }

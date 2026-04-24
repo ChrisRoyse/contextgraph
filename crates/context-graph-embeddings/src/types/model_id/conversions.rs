@@ -74,7 +74,7 @@ impl TryFrom<&str> for ModelId {
 impl From<Embedder> for ModelId {
     /// Convert from core crate's `Embedder` to embeddings crate's `ModelId`.
     ///
-    /// Both enums have identical variant ordering (0-12), so conversion is direct.
+    /// Both enums have identical variant ordering for E1-E13; E14 is appended in both.
     ///
     /// # Example
     ///
@@ -109,7 +109,7 @@ impl From<Embedder> for ModelId {
 impl From<ModelId> for Embedder {
     /// Convert from embeddings crate's `ModelId` to core crate's `Embedder`.
     ///
-    /// Both enums have identical variant ordering (0-12), so conversion is direct.
+    /// Both enums have identical variant ordering for E1-E13; E14 is appended in both.
     ///
     /// # Example
     ///
@@ -148,7 +148,7 @@ mod tests {
 
     #[test]
     fn test_embedder_to_model_id_all_variants() {
-        // Test all 13 conversions Embedder -> ModelId
+        // Test all 14 conversions Embedder -> ModelId (post-E14)
         let mappings = [
             (Embedder::Semantic, ModelId::Semantic),
             (Embedder::TemporalRecent, ModelId::TemporalRecent),
@@ -163,6 +163,7 @@ mod tests {
             (Embedder::Entity, ModelId::Kepler),  // Production E11 is KEPLER (768D)
             (Embedder::LateInteraction, ModelId::LateInteraction),
             (Embedder::KeywordSplade, ModelId::Splade),
+            (Embedder::BgeM3Dense, ModelId::BgeM3Dense), // E14
         ];
 
         for (embedder, expected_model_id) in mappings {
@@ -173,12 +174,12 @@ mod tests {
                 embedder, expected_model_id
             );
         }
-        println!("[PASS] All 13 Embedder -> ModelId conversions correct");
+        println!("[PASS] All 14 Embedder -> ModelId conversions correct");
     }
 
     #[test]
     fn test_model_id_to_embedder_all_variants() {
-        // Test all 13 conversions ModelId -> Embedder
+        // Test all 14 conversions ModelId -> Embedder (post-E14)
         let mappings = [
             (ModelId::Semantic, Embedder::Semantic),
             (ModelId::TemporalRecent, Embedder::TemporalRecent),
@@ -193,6 +194,7 @@ mod tests {
             (ModelId::Entity, Embedder::Entity),
             (ModelId::LateInteraction, Embedder::LateInteraction),
             (ModelId::Splade, Embedder::KeywordSplade),
+            (ModelId::BgeM3Dense, Embedder::BgeM3Dense), // E14
         ];
 
         for (model_id, expected_embedder) in mappings {
@@ -203,7 +205,7 @@ mod tests {
                 model_id, expected_embedder
             );
         }
-        println!("[PASS] All 13 ModelId -> Embedder conversions correct");
+        println!("[PASS] All 14 ModelId -> Embedder conversions correct");
     }
 
     #[test]
@@ -218,7 +220,7 @@ mod tests {
                 embedder
             );
         }
-        println!("[PASS] Embedder <-> ModelId roundtrip preserves all 13 variants");
+        println!("[PASS] Embedder <-> ModelId roundtrip preserves all 14 variants");
     }
 
     #[test]

@@ -133,9 +133,9 @@ impl TuckerCore {
     }
 
     /// Get the original uncompressed size in floats.
-    /// Original: 13 x 13 x 1024 = 173,056 floats
+    /// Original: NUM_EMBEDDERS × NUM_EMBEDDERS × EMBEDDING_DIM (14 × 14 × 1024 = 200,704 floats post-E14).
     pub fn original_size(&self) -> usize {
-        13 * 13 * 1024
+        NUM_EMBEDDERS * NUM_EMBEDDERS * EMBEDDING_DIM
     }
 
     /// Compression ratio (original / compressed).
@@ -462,7 +462,7 @@ mod tests {
         let compressed = core.compressed_size();
         let ratio = core.compression_ratio();
 
-        assert_eq!(original, 13 * 13 * 1024);
+        assert_eq!(original, NUM_EMBEDDERS * NUM_EMBEDDERS * EMBEDDING_DIM);
         assert!(ratio > 1.0); // Should compress
 
         println!(
