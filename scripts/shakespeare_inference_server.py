@@ -29,6 +29,8 @@ LORA_PATH = os.path.expanduser(
     os.environ.get("LORA_PATH", "~/.contextgraph/models/shakespeare_lora/final")
 )
 BASE_MODEL = "google/gemma-4-E4B-it"
+LOGIT_BOOST = float(os.environ.get("SHAKESPEARE_LOGIT_BOOST", "1.4"))
+LOGIT_SUPPRESS = float(os.environ.get("SHAKESPEARE_LOGIT_SUPPRESS", "-5.0"))
 
 
 # =========================================================================
@@ -203,7 +205,11 @@ class ShakespeareModel:
         self.model.eval()
 
         # Build the constrained decoder
-        self.logit_processor = ShakespeareLogitProcessor(self.tokenizer)
+        self.logit_processor = ShakespeareLogitProcessor(
+            self.tokenizer,
+            boost=LOGIT_BOOST,
+            suppress=LOGIT_SUPPRESS,
+        )
 
         self.load_time_ms = int((time.time() - t0) * 1000)
         vram = torch.cuda.memory_allocated() / 1e9
@@ -300,13 +306,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             temperature = p.get("temperature", 0.8)
             max_tokens = p.get("max_tokens", 250)
             repetition_penalty = p.get("repetition_penalty", 1.2)
+            top_p = p.get("top_p", 0.9)
+            top_k = p.get("top_k", 50)
         except (json.JSONDecodeError, KeyError) as e:
             self._json(400, {"error": str(e)})
             return
         try:
             result = MODEL.generate(
                 messages, temperature=temperature,
-                max_tokens=max_tokens, repetition_penalty=repetition_penalty)
+                max_tokens=max_tokens,
+                repetition_penalty=repetition_penalty,
+                top_p=top_p,
+                top_k=top_k)
             self._json(200, result)
         except Exception as e:
             sys.stderr.write(f"[inference] ERROR: {e}\n")

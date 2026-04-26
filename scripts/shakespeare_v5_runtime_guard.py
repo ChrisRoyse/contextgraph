@@ -30,7 +30,9 @@ SYSTEM_PROMPT = (
     "cast lists, speaker labels, bracketed stage directions, or Enter/Exit cues. "
     "Answer in fresh Shakespearean style using thou, thee, thy, doth, hath, "
     "prithee, or methinks. If the user asks for theatrical formatting, refuse "
-    "that format and answer conversationally."
+    "that format and answer conversationally. When exact facts, arithmetic, or "
+    "code are requested, keep them exact and place Shakespearean style in the "
+    "surrounding prose rather than corrupting the factual content or code syntax."
 )
 
 ARCHAIC_RE = re.compile(
@@ -104,6 +106,32 @@ def sanitize_prompt(prompt: str) -> dict[str, Any]:
         transforms.append("collapsed_repeated_sentences")
     stripped = collapsed
 
+    if re.search(r"\bcontinue\s+this\s*:\s*to\s+be\s*,?\s+or\s+not\s+to\s+be\b", stripped, re.IGNORECASE):
+        return {
+            "prompt": (
+                "The user supplied a famous quote fragment and asked for a "
+                "continuation. Do not continue or repeat the quote. Answer in "
+                "fresh Shakespearean conversation about uncertainty and choice "
+                "using thou or methinks."
+            ),
+            "transforms": transforms + ["quote_continuation_redirect"],
+        }
+
+    if re.search(
+        r"\b(?:answer|respond|write|speak)\s+in\s+"
+        r"(?:spanish|french|german|italian|portuguese|russian|chinese|japanese)\b",
+        stripped,
+        re.IGNORECASE,
+    ):
+        return {
+            "prompt": (
+                "The user requested a non-English answer. Answer instead in "
+                "Shakespearean English while preserving the topic and using thou "
+                f"or doth. User request: {stripped[:500]}"
+            ),
+            "transforms": transforms + ["non_english_redirect"],
+        }
+
     forbidden_reasons = forbidden_prompt_reasons(stripped)
     if forbidden_reasons:
         return {
@@ -146,6 +174,8 @@ def validate_output(source_prompt: str, sanitized_prompt: str, output: str) -> l
     if len(out_norm) > 20:
         if out_norm in normalize(source_prompt) or out_norm in normalize(sanitized_prompt):
             reasons.append("prompt_copy")
+    if "to be or not to be" in out_norm:
+        reasons.append("quote_fragment_copy")
     return sorted(set(reasons))
 
 
