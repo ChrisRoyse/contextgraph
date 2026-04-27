@@ -6,7 +6,7 @@
 //! Context Graph MCP Server Library
 //!
 //! JSON-RPC 2.0 server implementing the Model Context Protocol (MCP)
-//! for the 13-embedder semantic memory retrieval system.
+//! for the 14-embedder semantic memory retrieval system.
 //!
 //! This library exposes the handlers and protocol types for integration testing.
 

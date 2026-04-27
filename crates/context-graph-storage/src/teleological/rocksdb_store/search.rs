@@ -49,19 +49,21 @@
 //! - [Elastic Weighted RRF](https://www.elastic.co/blog/weighted-reciprocal-rank-fusion-rrf)
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 use std::sync::atomic::Ordering;
+use std::sync::Arc;
 // P5: DashMap for lock-free concurrent soft-delete checks
 use dashmap::DashMap;
 
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
-use context_graph_core::error::{CoreError, CoreResult};
-use context_graph_core::fusion::{EmbedderRanking, FusionStrategy, fuse_rankings};
 use context_graph_core::causal::asymmetric::CausalDirection;
-use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions, TeleologicalSearchResult};
-use context_graph_core::types::fingerprint::{SemanticFingerprint, SparseVector};
+use context_graph_core::error::{CoreError, CoreResult};
+use context_graph_core::fusion::{fuse_rankings, EmbedderRanking, FusionStrategy};
+use context_graph_core::traits::{
+    SearchStrategy, TeleologicalSearchOptions, TeleologicalSearchResult,
+};
+use context_graph_core::types::fingerprint::{SemanticFingerprint, SparseVector, NUM_EMBEDDERS};
 
 use crate::teleological::search::temporal_boost;
 
@@ -78,19 +80,18 @@ use super::types::TeleologicalStoreError;
 use context_graph_core::code::CodeQueryType;
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 use context_graph_core::weights::{
-    get_effective_weight_profile, apply_e11_disable,
-    validate_weights, E11_ENTITY_ENABLED,
+    apply_e11_disable, get_effective_weight_profile, validate_weights, E11_ENTITY_ENABLED,
 };
 
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
 
-use rocksdb::DB;
-use crate::teleological::column_families::CF_FINGERPRINTS;
-use crate::teleological::schema::fingerprint_key;
-use crate::teleological::indexes::EmbedderIndexRegistry;
 use super::helpers::{compute_cosine_similarity, hnsw_distance_to_similarity};
+use crate::teleological::column_families::CF_FINGERPRINTS;
+use crate::teleological::indexes::EmbedderIndexRegistry;
+use crate::teleological::schema::fingerprint_key;
+use rocksdb::DB;
 
 /// Maximum number of HNSW-capable embedders queried in multi-space search.
 /// E1, E2, E3, E4, E5, E7, E8, E9, E10, E11 = 10 embedders.
@@ -121,27 +122,31 @@ fn is_soft_deleted_sync(soft_deleted: &Arc<DashMap<Uuid, i64>>, id: &Uuid) -> bo
     soft_deleted.contains_key(id)
 }
 
-/// Get the query vector for a given embedder index (0-12).
+/// Get the query vector for a given embedder index (0-13).
 ///
 /// Returns the appropriate vector slice from the SemanticFingerprint for searching
 /// the embedder's HNSW index. Returns None for non-HNSW embedders (E6=5, E12=11, E13=12).
 ///
 /// CRIT-06: This mapping is the single source of truth for embedder -> query vector routing.
-fn get_query_vector_for_embedder(query: &SemanticFingerprint, embedder_idx: usize) -> Option<&[f32]> {
+fn get_query_vector_for_embedder(
+    query: &SemanticFingerprint,
+    embedder_idx: usize,
+) -> Option<&[f32]> {
     match embedder_idx {
-        0 => Some(&query.e1_semantic),              // E1 Semantic
-        1 => Some(&query.e2_temporal_recent),       // E2 Temporal Recent
-        2 => Some(&query.e3_temporal_periodic),     // E3 Temporal Periodic
-        3 => Some(&query.e4_temporal_positional),   // E4 Temporal Positional
-        4 => Some(query.e5_active_vector()),        // E5 Causal
-        5 => None,                                  // E6 Sparse (NOT HNSW)
-        6 => Some(&query.e7_code),                  // E7 Code
-        7 => Some(query.e8_active_vector()),        // E8 Graph
-        8 => Some(&query.e9_hdc),                   // E9 HDC
-        9 => Some(query.e10_active_vector()),       // E10 Multimodal
-        10 => Some(&query.e11_entity),              // E11 Entity
-        11 => None,                                 // E12 LateInteraction (NOT HNSW)
-        12 => None,                                 // E13 SPLADE (NOT HNSW)
+        0 => Some(&query.e1_semantic),            // E1 Semantic
+        1 => Some(&query.e2_temporal_recent),     // E2 Temporal Recent
+        2 => Some(&query.e3_temporal_periodic),   // E3 Temporal Periodic
+        3 => Some(&query.e4_temporal_positional), // E4 Temporal Positional
+        4 => Some(query.e5_active_vector()),      // E5 Causal
+        5 => None,                                // E6 Sparse (NOT HNSW)
+        6 => Some(&query.e7_code),                // E7 Code
+        7 => Some(query.e8_active_vector()),      // E8 Graph
+        8 => Some(&query.e9_hdc),                 // E9 HDC
+        9 => Some(query.e10_active_vector()),     // E10 Multimodal
+        10 => Some(&query.e11_entity),            // E11 Entity
+        11 => None,                               // E12 LateInteraction (NOT HNSW)
+        12 => None,                               // E13 SPLADE (NOT HNSW)
+        13 => Some(&query.e14_bge_m3_dense),      // E14 BGE-M3 Dense
         _ => None,
     }
 }
@@ -173,7 +178,10 @@ fn search_single_embedder_sync(
     let query_vec = get_query_vector_for_embedder(query, embedder_idx).ok_or_else(|| {
         CoreError::ValidationError {
             field: "embedder_indices".to_string(),
-            message: format!("No query vector available for embedder index {}", embedder_idx),
+            message: format!(
+                "No query vector available for embedder index {}",
+                embedder_idx
+            ),
         }
     })?;
 
@@ -182,12 +190,10 @@ fn search_single_embedder_sync(
     })?;
 
     let k = (options.top_k * 2).max(20);
-    let candidates = entry_index
-        .search(query_vec, k, None)
-        .map_err(|e| {
-            error!("Single-embedder search for {:?} failed: {}", embedder, e);
-            CoreError::IndexError(e.to_string())
-        })?;
+    let candidates = entry_index.search(query_vec, k, None).map_err(|e| {
+        error!("Single-embedder search for {:?} failed: {}", embedder, e);
+        CoreError::IndexError(e.to_string())
+    })?;
 
     debug!(
         "Single-embedder search: {:?} returned {} raw candidates",
@@ -212,9 +218,16 @@ fn search_single_embedder_sync(
             let fp = deserialize_teleological_fingerprint(&data)?;
             let code_query_type = options.effective_code_query_type();
             let embedder_scores = compute_embedder_scores_sync(
-                query, &fp.semantic, code_query_type, options.causal_direction,
+                query,
+                &fp.semantic,
+                code_query_type,
+                options.causal_direction,
             );
-            results.push(TeleologicalSearchResult::new(fp, similarity, embedder_scores));
+            results.push(TeleologicalSearchResult::new(
+                fp,
+                similarity,
+                embedder_scores,
+            ));
         }
     }
 
@@ -265,7 +278,10 @@ fn search_filtered_multi_space_sync(
 
         let base_embedder = EmbedderIndex::from_index(idx);
         if !base_embedder.uses_hnsw() {
-            debug!("Skipping non-HNSW embedder {:?} in filtered multi-space", base_embedder);
+            debug!(
+                "Skipping non-HNSW embedder {:?} in filtered multi-space",
+                base_embedder
+            );
             continue;
         }
 
@@ -300,12 +316,18 @@ fn search_filtered_multi_space_sync(
                 Ok(candidates) => {
                     let ranked: Vec<(Uuid, f32)> = candidates
                         .into_iter()
-                        .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                        .filter(|(id, _)| {
+                            options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
+                        })
                         .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
                         .collect();
 
                     if !ranked.is_empty() && weights[idx] > 0.0 {
-                        embedder_rankings.push(EmbedderRanking::new(embedder_names[idx], weights[idx], ranked));
+                        embedder_rankings.push(EmbedderRanking::new(
+                            embedder_names[idx],
+                            weights[idx],
+                            ranked,
+                        ));
                     }
                 }
                 Err(e) => {
@@ -331,18 +353,26 @@ fn search_filtered_multi_space_sync(
         embedder_indices
     );
 
-    let fused_results = fuse_rankings(&embedder_rankings, options.fusion_strategy, options.top_k * 2);
+    let fused_results = fuse_rankings(
+        &embedder_rankings,
+        options.fusion_strategy,
+        options.top_k * 2,
+    );
 
     let code_query_type = options.effective_code_query_type();
 
     // Two-pass scoring: collect all embedder scores first, then suppress degenerate weights
     // Pass 1: Collect candidates with their embedder scores
-    let mut candidates: Vec<(TeleologicalFingerprint, [f32; 14])> = Vec::with_capacity(fused_results.len());
+    let mut candidates: Vec<(TeleologicalFingerprint, [f32; 14])> =
+        Vec::with_capacity(fused_results.len());
     for fused in fused_results {
         if let Some(data) = get_fingerprint_raw_sync(db, fused.doc_id)? {
             let fp = deserialize_teleological_fingerprint(&data)?;
             let embedder_scores = compute_embedder_scores_sync(
-                query, &fp.semantic, code_query_type, options.causal_direction,
+                query,
+                &fp.semantic,
+                code_query_type,
+                options.causal_direction,
             );
             candidates.push((fp, embedder_scores));
         }
@@ -362,7 +392,11 @@ fn search_filtered_multi_space_sync(
         if final_score < options.min_similarity {
             continue;
         }
-        results.push(TeleologicalSearchResult::new(fp, final_score, embedder_scores));
+        results.push(TeleologicalSearchResult::new(
+            fp,
+            final_score,
+            embedder_scores,
+        ));
     }
 
     results.sort_by(|a, b| {
@@ -412,29 +446,35 @@ fn compute_embedder_scores_sync(
     );
 
     // MED-21 FIX: Skip O(N*M) MaxSim when tokens are empty
-    let e12_score = if query.e12_late_interaction.is_empty() || stored.e12_late_interaction.is_empty() {
-        0.0
-    } else {
-        compute_maxsim_direct(&query.e12_late_interaction, &stored.e12_late_interaction)
-    };
+    let e12_score =
+        if query.e12_late_interaction.is_empty() || stored.e12_late_interaction.is_empty() {
+            0.0
+        } else {
+            compute_maxsim_direct(&query.e12_late_interaction, &stored.e12_late_interaction)
+        };
 
     [
         compute_cosine_similarity(&query.e1_semantic, &stored.e1_semantic),
         // E2: Cosine similarity (E2 vectors are now unique per memory — sinusoidal PE fix).
         compute_cosine_similarity(&query.e2_temporal_recent, &stored.e2_temporal_recent),
         compute_cosine_similarity(&query.e3_temporal_periodic, &stored.e3_temporal_periodic),
-        compute_cosine_similarity(&query.e4_temporal_positional, &stored.e4_temporal_positional),
+        compute_cosine_similarity(
+            &query.e4_temporal_positional,
+            &stored.e4_temporal_positional,
+        ),
         e5_score,
         // SEARCH-1 FIX: Normalize sparse cosine [-1,1] to [0,1]
         (query.e6_sparse.cosine_similarity(&stored.e6_sparse) + 1.0) / 2.0,
         e7_score,
         // STOR-H1 FIX: E8 asymmetric — max of both directions, matching compute_similarity_for_space
-        compute_cosine_similarity(query.get_e8_as_source(), stored.get_e8_as_target())
-            .max(compute_cosine_similarity(query.get_e8_as_target(), stored.get_e8_as_source())),
+        compute_cosine_similarity(query.get_e8_as_source(), stored.get_e8_as_target()).max(
+            compute_cosine_similarity(query.get_e8_as_target(), stored.get_e8_as_source()),
+        ),
         compute_cosine_similarity(&query.e9_hdc, &stored.e9_hdc),
         // STOR-H1 FIX: E10 asymmetric — max of both directions, matching compute_similarity_for_space
-        compute_cosine_similarity(query.get_e10_as_paraphrase(), stored.get_e10_as_context())
-            .max(compute_cosine_similarity(query.get_e10_as_context(), stored.get_e10_as_paraphrase())),
+        compute_cosine_similarity(query.get_e10_as_paraphrase(), stored.get_e10_as_context()).max(
+            compute_cosine_similarity(query.get_e10_as_context(), stored.get_e10_as_paraphrase()),
+        ),
         compute_cosine_similarity(&query.e11_entity, &stored.e11_entity),
         e12_score,
         (query.e13_splade.cosine_similarity(&stored.e13_splade) + 1.0) / 2.0,
@@ -457,9 +497,9 @@ fn search_e1_only_sync(
     options: &TeleologicalSearchOptions,
 ) -> CoreResult<Vec<TeleologicalSearchResult>> {
     let entry_embedder = EmbedderIndex::E1Semantic;
-    let entry_index = index_registry.get(entry_embedder).ok_or_else(|| {
-        CoreError::IndexError(format!("Index {:?} not found", entry_embedder))
-    })?;
+    let entry_index = index_registry
+        .get(entry_embedder)
+        .ok_or_else(|| CoreError::IndexError(format!("Index {:?} not found", entry_embedder)))?;
 
     let k = (options.top_k * 2).max(20);
     let candidates = entry_index
@@ -486,9 +526,16 @@ fn search_e1_only_sync(
             let fp = deserialize_teleological_fingerprint(&data)?;
             let code_query_type = options.effective_code_query_type();
             let embedder_scores = compute_embedder_scores_sync(
-                query, &fp.semantic, code_query_type, options.causal_direction,
+                query,
+                &fp.semantic,
+                code_query_type,
+                options.causal_direction,
             );
-            results.push(TeleologicalSearchResult::new(fp, similarity, embedder_scores));
+            results.push(TeleologicalSearchResult::new(
+                fp,
+                similarity,
+                embedder_scores,
+            ));
         }
     }
 
@@ -521,9 +568,9 @@ fn search_multi_space_sync(
 
     // E1 Semantic
     let entry_embedder = EmbedderIndex::E1Semantic;
-    let entry_index = index_registry.get(entry_embedder).ok_or_else(|| {
-        CoreError::IndexError(format!("Index {:?} not found", entry_embedder))
-    })?;
+    let entry_index = index_registry
+        .get(entry_embedder)
+        .ok_or_else(|| CoreError::IndexError(format!("Index {:?} not found", entry_embedder)))?;
 
     let e1_candidates = entry_index
         .search(&query.e1_semantic, k, None)
@@ -549,7 +596,9 @@ fn search_multi_space_sync(
                 Ok(e2_candidates) => {
                     let e2_ranked: Vec<(Uuid, f32)> = e2_candidates
                         .into_iter()
-                        .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                        .filter(|(id, _)| {
+                            options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
+                        })
                         .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
                         .collect();
                     if !e2_ranked.is_empty() {
@@ -572,7 +621,9 @@ fn search_multi_space_sync(
                 Ok(e3_candidates) => {
                     let e3_ranked: Vec<(Uuid, f32)> = e3_candidates
                         .into_iter()
-                        .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                        .filter(|(id, _)| {
+                            options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
+                        })
                         .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
                         .collect();
                     if !e3_ranked.is_empty() {
@@ -595,7 +646,9 @@ fn search_multi_space_sync(
                 Ok(e4_candidates) => {
                     let e4_ranked: Vec<(Uuid, f32)> = e4_candidates
                         .into_iter()
-                        .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                        .filter(|(id, _)| {
+                            options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
+                        })
                         .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
                         .collect();
                     if !e4_ranked.is_empty() {
@@ -626,7 +679,9 @@ fn search_multi_space_sync(
             Ok(e5_candidates) => {
                 let e5_ranked: Vec<(Uuid, f32)> = e5_candidates
                     .into_iter()
-                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                    .filter(|(id, _)| {
+                        options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
+                    })
                     .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
                     .collect();
 
@@ -657,7 +712,9 @@ fn search_multi_space_sync(
             Ok(e7_candidates) => {
                 let e7_ranked: Vec<(Uuid, f32)> = e7_candidates
                     .into_iter()
-                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                    .filter(|(id, _)| {
+                        options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
+                    })
                     .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
                     .collect();
 
@@ -690,7 +747,9 @@ fn search_multi_space_sync(
             Ok(e10_candidates) => {
                 let e10_ranked: Vec<(Uuid, f32)> = e10_candidates
                     .into_iter()
-                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                    .filter(|(id, _)| {
+                        options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
+                    })
                     .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
                     .collect();
 
@@ -724,7 +783,9 @@ fn search_multi_space_sync(
             Ok(e8_candidates) => {
                 let e8_ranked: Vec<(Uuid, f32)> = e8_candidates
                     .into_iter()
-                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                    .filter(|(id, _)| {
+                        options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
+                    })
                     .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
                     .collect();
 
@@ -750,12 +811,18 @@ fn search_multi_space_sync(
                 Ok(e11_candidates) => {
                     let e11_ranked: Vec<(Uuid, f32)> = e11_candidates
                         .into_iter()
-                        .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                        .filter(|(id, _)| {
+                            options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
+                        })
                         .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
                         .collect();
 
                     if !e11_ranked.is_empty() && weights[10] > 0.0 {
-                        embedder_rankings.push(EmbedderRanking::new("E11", weights[10], e11_ranked));
+                        embedder_rankings.push(EmbedderRanking::new(
+                            "E11",
+                            weights[10],
+                            e11_ranked,
+                        ));
                     }
                 }
                 Err(e) => {
@@ -777,7 +844,9 @@ fn search_multi_space_sync(
             Ok(e9_candidates) => {
                 let e9_ranked: Vec<(Uuid, f32)> = e9_candidates
                     .into_iter()
-                    .filter(|(id, _)| options.include_deleted || !is_soft_deleted_sync(soft_deleted, id))
+                    .filter(|(id, _)| {
+                        options.include_deleted || !is_soft_deleted_sync(soft_deleted, id)
+                    })
                     .map(|(id, dist)| (id, hnsw_distance_to_similarity(dist)))
                     .collect();
 
@@ -809,18 +878,26 @@ fn search_multi_space_sync(
         options.fusion_strategy
     );
 
-    let fused_results = fuse_rankings(&embedder_rankings, options.fusion_strategy, options.top_k * 2);
+    let fused_results = fuse_rankings(
+        &embedder_rankings,
+        options.fusion_strategy,
+        options.top_k * 2,
+    );
 
     let code_query_type = options.effective_code_query_type();
 
     // Two-pass scoring: collect all embedder scores first, then suppress degenerate weights
     // Pass 1: Collect candidates with their embedder scores
-    let mut candidates: Vec<(TeleologicalFingerprint, [f32; 14])> = Vec::with_capacity(fused_results.len());
+    let mut candidates: Vec<(TeleologicalFingerprint, [f32; 14])> =
+        Vec::with_capacity(fused_results.len());
     for fused in fused_results {
         if let Some(data) = get_fingerprint_raw_sync(db, fused.doc_id)? {
             let fp = deserialize_teleological_fingerprint(&data)?;
             let embedder_scores = compute_embedder_scores_sync(
-                query, &fp.semantic, code_query_type, options.causal_direction,
+                query,
+                &fp.semantic,
+                code_query_type,
+                options.causal_direction,
             );
             candidates.push((fp, embedder_scores));
         }
@@ -840,7 +917,11 @@ fn search_multi_space_sync(
         if final_score < options.min_similarity {
             continue;
         }
-        results.push(TeleologicalSearchResult::new(fp, final_score, embedder_scores));
+        results.push(TeleologicalSearchResult::new(
+            fp,
+            final_score,
+            embedder_scores,
+        ));
     }
 
     results.sort_by(|a, b| {
@@ -891,14 +972,23 @@ fn search_pipeline_sync(
 
     // E13 SPLADE sparse recall
     if !query.e13_splade.is_empty() {
-        match search_sparse_sync(db, &query.e13_splade, recall_k, soft_deleted, total_doc_count) {
+        match search_sparse_sync(
+            db,
+            &query.e13_splade,
+            recall_k,
+            soft_deleted,
+            total_doc_count,
+        ) {
             Ok(sparse_results) => {
                 let sparse_count = sparse_results.len();
                 candidate_ids.extend(sparse_results.into_iter().map(|(id, _)| id));
                 debug!("Stage 1: E13 SPLADE returned {} candidates", sparse_count);
             }
             Err(e) => {
-                warn!("Stage 1: E13 SPLADE search failed: {}, continuing with E1 only", e);
+                warn!(
+                    "Stage 1: E13 SPLADE search failed: {}, continuing with E1 only",
+                    e
+                );
             }
         }
     }
@@ -934,10 +1024,16 @@ fn search_pipeline_sync(
             Ok(e5_candidates) => {
                 let e5_count = e5_candidates.len();
                 candidate_ids.extend(e5_candidates.into_iter().map(|(id, _)| id));
-                debug!("Stage 1: E5 Causal ({:?}) returned {} additional candidates", e5_pipeline_idx, e5_count);
+                debug!(
+                    "Stage 1: E5 Causal ({:?}) returned {} additional candidates",
+                    e5_pipeline_idx, e5_count
+                );
             }
             Err(e) => {
-                warn!("Stage 1: E5 Causal search failed: {}, continuing without E5 candidates", e);
+                warn!(
+                    "Stage 1: E5 Causal search failed: {}, continuing without E5 candidates",
+                    e
+                );
             }
         }
     } else if !matches!(options.causal_direction, CausalDirection::Unknown) {
@@ -954,10 +1050,16 @@ fn search_pipeline_sync(
             Ok(e7_candidates) => {
                 let e7_count = e7_candidates.len();
                 candidate_ids.extend(e7_candidates.into_iter().map(|(id, _)| id));
-                debug!("Stage 1: E7 Code returned {} additional candidates", e7_count);
+                debug!(
+                    "Stage 1: E7 Code returned {} additional candidates",
+                    e7_count
+                );
             }
             Err(e) => {
-                warn!("Stage 1: E7 Code search failed: {}, continuing without E7 candidates", e);
+                warn!(
+                    "Stage 1: E7 Code search failed: {}, continuing without E7 candidates",
+                    e
+                );
             }
         }
     }
@@ -968,10 +1070,16 @@ fn search_pipeline_sync(
             Ok(e8_candidates) => {
                 let e8_count = e8_candidates.len();
                 candidate_ids.extend(e8_candidates.into_iter().map(|(id, _)| id));
-                debug!("Stage 1: E8 Graph returned {} additional candidates", e8_count);
+                debug!(
+                    "Stage 1: E8 Graph returned {} additional candidates",
+                    e8_count
+                );
             }
             Err(e) => {
-                warn!("Stage 1: E8 Graph search failed: {}, continuing without E8 candidates", e);
+                warn!(
+                    "Stage 1: E8 Graph search failed: {}, continuing without E8 candidates",
+                    e
+                );
             }
         }
     }
@@ -984,10 +1092,16 @@ fn search_pipeline_sync(
                 Ok(e11_candidates) => {
                     let e11_count = e11_candidates.len();
                     candidate_ids.extend(e11_candidates.into_iter().map(|(id, _)| id));
-                    debug!("Stage 1: E11 Entity returned {} additional candidates", e11_count);
+                    debug!(
+                        "Stage 1: E11 Entity returned {} additional candidates",
+                        e11_count
+                    );
                 }
                 Err(e) => {
-                    warn!("Stage 1: E11 Entity search failed: {}, continuing without E11 candidates", e);
+                    warn!(
+                        "Stage 1: E11 Entity search failed: {}, continuing without E11 candidates",
+                        e
+                    );
                 }
             }
         }
@@ -1000,10 +1114,16 @@ fn search_pipeline_sync(
             Ok(e9_candidates) => {
                 let e9_count = e9_candidates.len();
                 candidate_ids.extend(e9_candidates.into_iter().map(|(id, _)| id));
-                debug!("Stage 1: E9 HDC returned {} additional candidates", e9_count);
+                debug!(
+                    "Stage 1: E9 HDC returned {} additional candidates",
+                    e9_count
+                );
             }
             Err(e) => {
-                warn!("Stage 1: E9 HDC search failed: {}, continuing without E9 candidates", e);
+                warn!(
+                    "Stage 1: E9 HDC search failed: {}, continuing without E9 candidates",
+                    e
+                );
             }
         }
     }
@@ -1017,7 +1137,10 @@ fn search_pipeline_sync(
                 Ok(e2_candidates) => {
                     let e2_count = e2_candidates.len();
                     candidate_ids.extend(e2_candidates.into_iter().map(|(id, _)| id));
-                    debug!("Stage 1: E2 Temporal Recent returned {} additional candidates", e2_count);
+                    debug!(
+                        "Stage 1: E2 Temporal Recent returned {} additional candidates",
+                        e2_count
+                    );
                 }
                 Err(e) => {
                     warn!("Stage 1: E2 Temporal Recent search failed: {}, continuing without E2 candidates", e);
@@ -1031,7 +1154,10 @@ fn search_pipeline_sync(
                 Ok(e3_candidates) => {
                     let e3_count = e3_candidates.len();
                     candidate_ids.extend(e3_candidates.into_iter().map(|(id, _)| id));
-                    debug!("Stage 1: E3 Temporal Periodic returned {} additional candidates", e3_count);
+                    debug!(
+                        "Stage 1: E3 Temporal Periodic returned {} additional candidates",
+                        e3_count
+                    );
                 }
                 Err(e) => {
                     warn!("Stage 1: E3 Temporal Periodic search failed: {}, continuing without E3 candidates", e);
@@ -1045,7 +1171,10 @@ fn search_pipeline_sync(
                 Ok(e4_candidates) => {
                     let e4_count = e4_candidates.len();
                     candidate_ids.extend(e4_candidates.into_iter().map(|(id, _)| id));
-                    debug!("Stage 1: E4 Temporal Positional returned {} additional candidates", e4_count);
+                    debug!(
+                        "Stage 1: E4 Temporal Positional returned {} additional candidates",
+                        e4_count
+                    );
                 }
                 Err(e) => {
                     warn!("Stage 1: E4 Temporal Positional search failed: {}, continuing without E4 candidates", e);
@@ -1067,7 +1196,8 @@ fn search_pipeline_sync(
     // STAGE 2: MULTI-SPACE SCORING (weights resolved above for Stage 1 gating)
     let code_query_type = options.effective_code_query_type();
 
-    let mut valid_candidates: Vec<(Uuid, TeleologicalFingerprint)> = Vec::with_capacity(candidate_ids.len());
+    let mut valid_candidates: Vec<(Uuid, TeleologicalFingerprint)> =
+        Vec::with_capacity(candidate_ids.len());
 
     for id in candidate_ids {
         if !options.include_deleted && is_soft_deleted_sync(soft_deleted, &id) {
@@ -1083,7 +1213,10 @@ fn search_pipeline_sync(
         .into_iter()
         .map(|(id, fp)| {
             let embedder_scores = compute_embedder_scores_sync(
-                query, &fp.semantic, code_query_type, options.causal_direction,
+                query,
+                &fp.semantic,
+                code_query_type,
+                options.causal_direction,
             );
             (id, embedder_scores, fp.semantic)
         })
@@ -1093,76 +1226,80 @@ fn search_pipeline_sync(
     let all_scores: Vec<[f32; 14]> = candidate_data.iter().map(|(_, s, _)| *s).collect();
     let adjusted_weights = suppress_degenerate_weights(&all_scores, &weights);
 
-    let mut scored_candidates: Vec<(Uuid, f32, [f32; 14], SemanticFingerprint)> =
-        match options.fusion_strategy {
-            FusionStrategy::WeightedSum => candidate_data
+    let mut scored_candidates: Vec<(Uuid, f32, [f32; 14], SemanticFingerprint)> = match options
+        .fusion_strategy
+    {
+        FusionStrategy::WeightedSum => candidate_data
+            .into_iter()
+            .map(|(id, scores, semantic)| {
+                let fusion_score = compute_semantic_fusion(&scores, &adjusted_weights);
+                (id, fusion_score, scores, semantic)
+            })
+            .filter(|(_, score, _, _)| *score >= options.min_similarity)
+            .collect(),
+        FusionStrategy::WeightedRRF | FusionStrategy::ScoreWeightedRRF => {
+            // SEARCH-5: Build embedder list dynamically from weights instead of
+            // hardcoding indices. Excludes:
+            //   - E12 (index 11): reranking only, not for RRF fusion (AP-74)
+            // E2/E3/E4 participate in RRF when weight > 0.0 (e.g., temporal_navigation).
+            // Weight-gating handles exclusion: suppress_degenerate_weights zeros them out
+            // when they show no cross-candidate variance (default semantic profiles).
+            let embedder_names_all: [&str; 14] = [
+                "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13",
+                "E14",
+            ];
+            let excluded_from_rrf: [usize; 1] = [11]; // E12 rerank-only
+            let semantic_indices: Vec<(usize, &str, f32)> = adjusted_weights
+                .iter()
+                .enumerate()
+                .filter(|(idx, &w)| w > 0.0 && !excluded_from_rrf.contains(idx))
+                .map(|(idx, &w)| (idx, embedder_names_all[idx], w))
+                .collect();
+
+            let mut embedder_rankings: Vec<EmbedderRanking> = Vec::new();
+
+            for (idx, name, weight) in semantic_indices {
+                if weight <= 0.0 {
+                    continue;
+                }
+                let mut ranked: Vec<(Uuid, f32)> = candidate_data
+                    .iter()
+                    .map(|(id, scores, _)| (*id, scores[idx]))
+                    .collect();
+                ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+
+                if !ranked.is_empty() {
+                    embedder_rankings.push(EmbedderRanking::new(name, weight, ranked));
+                }
+            }
+
+            // Use ScoreWeightedRRF when requested: E5 contribution preserves score magnitude
+            let fused = fuse_rankings(&embedder_rankings, options.fusion_strategy, stage2_k * 2);
+
+            let mut candidate_map: HashMap<Uuid, ([f32; 14], SemanticFingerprint)> = candidate_data
                 .into_iter()
-                .map(|(id, scores, semantic)| {
-                    let fusion_score = compute_semantic_fusion(&scores, &adjusted_weights);
-                    (id, fusion_score, scores, semantic)
+                .map(|(id, scores, semantic)| (id, (scores, semantic)))
+                .collect();
+
+            // P7: Use remove() to take ownership instead of get()+clone().
+            // Avoids cloning ~63KB SemanticFingerprint per result.
+            //
+            // PIPE-1 FIX: RRF determines candidate ORDER, but the user-facing
+            // similarity must be weighted cosine in [0,1] — same as multi_space.
+            // RRF scores (~0.003) are meaningless for similarity comparison or
+            // minSimilarity filtering. Re-score using compute_semantic_fusion().
+            fused
+                .into_iter()
+                .filter_map(|f| {
+                    candidate_map.remove(&f.doc_id).map(|(scores, semantic)| {
+                        let similarity = compute_semantic_fusion(&scores, &adjusted_weights);
+                        (f.doc_id, similarity, scores, semantic)
+                    })
                 })
                 .filter(|(_, score, _, _)| *score >= options.min_similarity)
-                .collect(),
-            FusionStrategy::WeightedRRF | FusionStrategy::ScoreWeightedRRF => {
-                // SEARCH-5: Build embedder list dynamically from weights instead of
-                // hardcoding indices. Excludes:
-                //   - E12 (index 11): reranking only, not for RRF fusion (AP-74)
-                // E2/E3/E4 participate in RRF when weight > 0.0 (e.g., temporal_navigation).
-                // Weight-gating handles exclusion: suppress_degenerate_weights zeros them out
-                // when they show no cross-candidate variance (default semantic profiles).
-                let embedder_names_all: [&str; 14] = [
-                    "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14",
-                ];
-                let excluded_from_rrf: [usize; 1] = [11]; // E12 rerank-only
-                let semantic_indices: Vec<(usize, &str, f32)> = adjusted_weights.iter().enumerate()
-                    .filter(|(idx, &w)| w > 0.0 && !excluded_from_rrf.contains(idx))
-                    .map(|(idx, &w)| (idx, embedder_names_all[idx], w))
-                    .collect();
-
-                let mut embedder_rankings: Vec<EmbedderRanking> = Vec::new();
-
-                for (idx, name, weight) in semantic_indices {
-                    if weight <= 0.0 {
-                        continue;
-                    }
-                    let mut ranked: Vec<(Uuid, f32)> = candidate_data
-                        .iter()
-                        .map(|(id, scores, _)| (*id, scores[idx]))
-                        .collect();
-                    ranked.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-
-                    if !ranked.is_empty() {
-                        embedder_rankings.push(EmbedderRanking::new(name, weight, ranked));
-                    }
-                }
-
-                // Use ScoreWeightedRRF when requested: E5 contribution preserves score magnitude
-                let fused = fuse_rankings(&embedder_rankings, options.fusion_strategy, stage2_k * 2);
-
-                let mut candidate_map: HashMap<Uuid, ([f32; 14], SemanticFingerprint)> = candidate_data
-                    .into_iter()
-                    .map(|(id, scores, semantic)| (id, (scores, semantic)))
-                    .collect();
-
-                // P7: Use remove() to take ownership instead of get()+clone().
-                // Avoids cloning ~63KB SemanticFingerprint per result.
-                //
-                // PIPE-1 FIX: RRF determines candidate ORDER, but the user-facing
-                // similarity must be weighted cosine in [0,1] — same as multi_space.
-                // RRF scores (~0.003) are meaningless for similarity comparison or
-                // minSimilarity filtering. Re-score using compute_semantic_fusion().
-                fused
-                    .into_iter()
-                    .filter_map(|f| {
-                        candidate_map.remove(&f.doc_id).map(|(scores, semantic)| {
-                            let similarity = compute_semantic_fusion(&scores, &adjusted_weights);
-                            (f.doc_id, similarity, scores, semantic)
-                        })
-                    })
-                    .filter(|(_, score, _, _)| *score >= options.min_similarity)
-                    .collect()
-            }
-        };
+                .collect()
+        }
+    };
 
     scored_candidates.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     scored_candidates.truncate(stage2_k);
@@ -1296,12 +1433,16 @@ fn resolve_weights_sync(options: &TeleologicalSearchOptions) -> CoreResult<[f32;
     // Step 2: Apply embedder exclusions (zero out + renormalize)
     if !options.exclude_embedders.is_empty() {
         for &idx in &options.exclude_embedders {
-            if idx < 13 {
+            if idx < NUM_EMBEDDERS {
                 weights[idx] = 0.0;
             } else {
                 return Err(CoreError::ValidationError {
                     field: "excludeEmbedders".to_string(),
-                    message: format!("Embedder index {} out of range (0-12)", idx),
+                    message: format!(
+                        "Embedder index {} out of range (0-{})",
+                        idx,
+                        NUM_EMBEDDERS - 1
+                    ),
                 });
             }
         }
@@ -1346,9 +1487,9 @@ fn search_sparse_sync(
         total_docs
     );
 
-    let cf = db.cf_handle(CF_E13_SPLADE_INVERTED).ok_or_else(|| {
-        CoreError::Internal("CF_E13_SPLADE_INVERTED not found".to_string())
-    })?;
+    let cf = db
+        .cf_handle(CF_E13_SPLADE_INVERTED)
+        .ok_or_else(|| CoreError::Internal("CF_E13_SPLADE_INVERTED not found".to_string()))?;
 
     struct TermData {
         query_weight: f32,
@@ -1358,12 +1499,12 @@ fn search_sparse_sync(
 
     // P8: Batch-read all posting lists via multi_get_cf (was: per-term sequential get_cf).
     // For 100-term sparse queries, reduces from 100 individual reads to 1 batch read.
-    let term_keys: Vec<[u8; 2]> = sparse_query.indices.iter()
+    let term_keys: Vec<[u8; 2]> = sparse_query
+        .indices
+        .iter()
         .map(|&term_id| e13_splade_inverted_key(term_id))
         .collect();
-    let results = db.multi_get_cf(
-        term_keys.iter().map(|k| (cf, k.as_slice()))
-    );
+    let results = db.multi_get_cf(term_keys.iter().map(|k| (cf, k.as_slice())));
 
     let mut term_data: Vec<TermData> = Vec::with_capacity(sparse_query.nnz());
     for (i, result) in results.into_iter().enumerate() {
@@ -1375,7 +1516,11 @@ fn search_sparse_sync(
             let doc_ids = deserialize_memory_id_list(&data)?;
             let df = doc_ids.len() as f32;
             let idf = ((total_docs - df + 0.5) / (df + 0.5) + 1.0).ln();
-            term_data.push(TermData { query_weight, doc_ids, idf });
+            term_data.push(TermData {
+                query_weight,
+                doc_ids,
+                idf,
+            });
         }
     }
 
@@ -1466,8 +1611,8 @@ const STAGE2_CANDIDATE_MULTIPLIER: usize = 3;
 ///
 /// # Arguments
 ///
-/// * `scores` - All 13 embedder similarity scores
-/// * `weights` - Weight profile (must have 13 elements)
+/// * `scores` - All 14 embedder similarity scores
+/// * `weights` - Weight profile (must have 14 elements)
 ///
 /// # Returns
 ///
@@ -1477,10 +1622,7 @@ const STAGE2_CANDIDATE_MULTIPLIER: usize = 3;
 /// If an embedder produces nearly identical scores for all candidates,
 /// it contributes noise, not signal. Reduce its weight by SUPPRESSION_FACTOR.
 /// This is defense-in-depth against degenerate embedders (e.g. E5 anisotropy).
-fn suppress_degenerate_weights(
-    all_scores: &[[f32; 14]],
-    weights: &[f32; 14],
-) -> [f32; 14] {
+fn suppress_degenerate_weights(all_scores: &[[f32; 14]], weights: &[f32; 14]) -> [f32; 14] {
     const MIN_VARIANCE: f32 = 0.001;
     const SUPPRESSION_FACTOR: f32 = 0.25;
 
@@ -1490,7 +1632,7 @@ fn suppress_degenerate_weights(
 
     let mut adjusted = *weights;
 
-    for idx in 0..13 {
+    for idx in 0..NUM_EMBEDDERS {
         if weights[idx] <= 0.0 {
             continue;
         }
@@ -1680,7 +1822,8 @@ impl RocksDbTeleologicalStore {
 
         // Apply full temporal boost system (ARCH-14) if configured
         if options.temporal_options.has_any_boost() {
-            self.apply_full_temporal_boosts(&mut results, query, &options).await?;
+            self.apply_full_temporal_boosts(&mut results, query, &options)
+                .await?;
         }
 
         debug!("Semantic search returned {} results", results.len());
@@ -1712,8 +1855,7 @@ impl RocksDbTeleologicalStore {
     ) -> CoreResult<()> {
         debug!(
             "Applying full temporal boosts: weight={}, decay={:?}",
-            options.temporal_options.temporal_weight,
-            options.temporal_options.decay_function
+            options.temporal_options.temporal_weight, options.temporal_options.decay_function
         );
 
         if results.is_empty() {
@@ -1741,7 +1883,9 @@ impl RocksDbTeleologicalStore {
         }
 
         // If sequence options are set, fetch the anchor fingerprint and sequence
-        let (anchor_fp, anchor_ts, anchor_seq) = if let Some(ref seq_opts) = options.temporal_options.sequence_options {
+        let (anchor_fp, anchor_ts, anchor_seq) = if let Some(ref seq_opts) =
+            options.temporal_options.sequence_options
+        {
             if !seq_opts.anchor_id.is_nil() {
                 // Try to fetch anchor fingerprint from storage
                 match self.get_fingerprint_raw(seq_opts.anchor_id) {
@@ -1987,7 +2131,10 @@ mod e2_recency_tests {
             assert!(
                 scores[i] <= scores[i - 1] + f32::EPSILON,
                 "Score should decrease over time: age[{}]={} > age[{}]={}",
-                i, scores[i], i - 1, scores[i - 1]
+                i,
+                scores[i],
+                i - 1,
+                scores[i - 1]
             );
         }
     }

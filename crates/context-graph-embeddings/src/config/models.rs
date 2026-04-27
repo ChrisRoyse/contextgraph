@@ -20,7 +20,7 @@ fn default_lazy_loading() -> bool {
 }
 
 fn default_max_loaded_models() -> usize {
-    13 // All 13 embedders (E1-E13) can be loaded by default
+    14 // All production embedders (E1-E14) can be loaded by default
 }
 
 // ============================================================================
@@ -48,13 +48,13 @@ pub struct ModelPathConfig {
     /// Only effective when lazy_loading is false.
     /// Valid values: "semantic", "temporal_recent", "temporal_periodic",
     /// "temporal_positional", "causal", "sparse", "code", "graph",
-    /// "hdc", "contextual", "entity", "kepler", "late_interaction", "splade"
+    /// "hdc", "contextual", "entity", "kepler", "late_interaction", "splade", "bge_m3_dense"
     #[serde(default)]
     pub preload_models: Vec<String>,
 
     /// Maximum number of models to keep loaded simultaneously.
     /// When exceeded, least recently used models are unloaded.
-    /// 0 means unlimited (all 13 models can be loaded).
+    /// 0 means unlimited (all 14 production models can be loaded).
     #[serde(default = "default_max_loaded_models")]
     pub max_loaded_models: usize,
 }

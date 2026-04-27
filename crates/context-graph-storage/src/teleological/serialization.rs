@@ -1,7 +1,8 @@
 //! Bincode serialization for TeleologicalFingerprint.
 //!
 //! Uses bincode 1.3 for efficient binary serialization.
-//! Expected serialized size: ~30KB per fingerprint (based on SemanticFingerprint with 7,424 dense dims).
+//! Expected serialized size: ~50KB per fingerprint.
+//! This is based on SemanticFingerprint with E14 and dual asymmetric vectors.
 //!
 //! # WARNING: bincode + skip_serializing_if = SILENT DATA CORRUPTION
 //!
@@ -36,7 +37,7 @@ pub const TELEOLOGICAL_VERSION: u8 = 1;
 /// Minimum expected size for a serialized TeleologicalFingerprint.
 ///
 /// Based on actual SemanticFingerprint size:
-/// - TOTAL_DENSE_DIMS = 7,424 → 29,696 bytes for dense embeddings (f32)
+/// - Dense storage = 12,032 floats -> 48,128 bytes (f32)
 /// - Plus sparse vectors and metadata
 /// - Bincode may compress zeros efficiently, so actual size varies
 /// - Using conservative minimum of 5KB to allow for heavy compression
@@ -48,9 +49,9 @@ const MIN_FINGERPRINT_SIZE: usize = 5_000;
 /// - 2000 E6 sparse entries: ~12KB (2000 * 6 bytes)
 /// - 1500 E13 SPLADE entries: ~9KB (1500 * 6 bytes)
 /// - 100 E12 tokens: ~51KB (100 * 128 * 4 bytes)
-/// - Dense embeddings: ~30KB
+/// - Dense embeddings: ~47KB
 ///
-/// Total maximum: ~102-110KB
+/// Total maximum: ~119-130KB
 /// Allowing up to 150KB for edge cases with heavy sparse/token usage.
 const MAX_FINGERPRINT_SIZE: usize = 150_000;
 

@@ -12,12 +12,12 @@
 use crate::teleological::Embedder;
 use crate::types::fingerprint::semantic::fingerprint::{EmbeddingRef, ValidationError};
 use crate::types::fingerprint::semantic::{
-    SemanticFingerprint, TeleologicalArray, E10_DIM, E11_DIM, E12_TOKEN_DIM, E1_DIM, E2_DIM,
-    E3_DIM, E4_DIM, E5_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
+    SemanticFingerprint, TeleologicalArray, E10_DIM, E11_DIM, E12_TOKEN_DIM, E14_DIM, E1_DIM,
+    E2_DIM, E3_DIM, E4_DIM, E5_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
 };
 use crate::types::fingerprint::SparseVector;
 
-/// Test: EmbeddingRef correctly categorizes all 13 embeddings.
+/// Test: EmbeddingRef correctly categorizes all 14 embeddings.
 #[test]
 fn test_embedding_ref_categorization() {
     let fp = SemanticFingerprint::zeroed();
@@ -135,11 +135,22 @@ fn test_storage_bytes() {
     let bytes = fp.storage_bytes();
 
     // Calculate expected size:
-    // Dense: 10 embeddings
-    // With dual E5 vectors (cause + effect), total dense dims = TOTAL_DENSE_DIMS + E5_DIM
-    // With dual E5, E8, and E10 vectors (cause/effect, source/target, paraphrase/context)
-    let dense_floats =
-        E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E5_DIM + E7_DIM + E8_DIM + E8_DIM + E9_DIM + E10_DIM + E10_DIM + E11_DIM;
+    // Dense: E1-E5, E7-E11, E14, with dual E5/E8/E10 vectors
+    // for asymmetric cause/effect, source/target, and paraphrase/context roles.
+    let dense_floats = E1_DIM
+        + E2_DIM
+        + E3_DIM
+        + E4_DIM
+        + E5_DIM
+        + E5_DIM
+        + E7_DIM
+        + E8_DIM
+        + E8_DIM
+        + E9_DIM
+        + E10_DIM
+        + E10_DIM
+        + E11_DIM
+        + E14_DIM;
     let expected_dense_bytes = dense_floats * std::mem::size_of::<f32>();
 
     // Sparse: empty = 0 bytes each
@@ -169,9 +180,21 @@ fn test_storage_bytes_with_sparse() {
     let bytes = fp.storage_bytes();
 
     // Calculate expected size:
-    // With dual E5, E8, and E10 vectors (cause/effect, source/target, paraphrase/context)
-    let dense_floats =
-        E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E5_DIM + E7_DIM + E8_DIM + E8_DIM + E9_DIM + E10_DIM + E10_DIM + E11_DIM;
+    // With E14 and dual E5/E8/E10 vectors.
+    let dense_floats = E1_DIM
+        + E2_DIM
+        + E3_DIM
+        + E4_DIM
+        + E5_DIM
+        + E5_DIM
+        + E7_DIM
+        + E8_DIM
+        + E8_DIM
+        + E9_DIM
+        + E10_DIM
+        + E10_DIM
+        + E11_DIM
+        + E14_DIM;
     let dense_bytes = dense_floats * std::mem::size_of::<f32>();
     let e6_bytes = 3 * (std::mem::size_of::<u16>() + std::mem::size_of::<f32>());
     let e13_bytes = 4 * (std::mem::size_of::<u16>() + std::mem::size_of::<f32>());

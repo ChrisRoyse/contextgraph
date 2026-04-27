@@ -1,13 +1,13 @@
 //! Embedder category classification for topic weight calculation.
 //!
 //! This module provides the EmbedderCategory enum which classifies each of the
-//! 13 embedders into semantic roles that determine their contribution to
+//! 14 embedders into semantic roles that determine their contribution to
 //! topic detection via weighted agreement.
 //!
 //! # Constitution Reference
 //!
 //! From CLAUDE.md embedder_categories section:
-//! - Semantic: weight 1.0, primary topic triggers (E1, E5, E6, E7, E10, E12, E13)
+//! - Semantic: weight 1.0, primary topic triggers (E1, E5, E6, E7, E10, E12, E13, E14)
 //! - Temporal: weight 0.0, metadata only (E2, E3, E4)
 //! - Relational: weight 0.5, supporting role (E8, E11)
 //! - Structural: weight 0.5, supporting role (E9)
@@ -32,18 +32,18 @@ use crate::teleological::Embedder;
 ///
 /// ```text
 /// weighted_agreement = Sum(topic_weight_i * is_clustered_i)
-/// max_weighted_agreement = 7*1.0 + 2*0.5 + 1*0.5 = 8.5
-/// topic_confidence = weighted_agreement / 8.5
+/// max_weighted_agreement = 8*1.0 + 2*0.5 + 1*0.5 = 9.5
+/// topic_confidence = weighted_agreement / 9.5
 /// ```
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize)]
 pub enum EmbedderCategory {
     /// Semantic embedders capture meaning, concepts, intent, and code.
     /// E1 (Semantic), E5 (Causal), E6 (Sparse), E7 (Code),
-    /// E10 (Multimodal), E12 (LateInteraction), E13 (KeywordSplade)
+    /// E10 (Multimodal), E12 (LateInteraction), E13 (KeywordSplade), E14 (BGE-M3 Dense)
     ///
     /// - topic_weight: 1.0
     /// - divergence_detection: true
-    /// - count: 7 embedders
+    /// - count: 8 embedders
     #[default]
     Semantic,
 
@@ -165,7 +165,7 @@ impl std::fmt::Display for EmbedderCategory {
 
 /// Get the category for a specific embedder.
 ///
-/// This function maps each of the 13 embedders to their category
+/// This function maps each of the 14 embedders to their category
 /// per constitution.yaml embedder_categories specification.
 ///
 /// # Example
@@ -179,7 +179,7 @@ impl std::fmt::Display for EmbedderCategory {
 /// ```
 pub fn category_for(embedder: Embedder) -> EmbedderCategory {
     match embedder {
-        // Semantic category (7 embedders, weight 1.0)
+        // Semantic category (8 embedders, weight 1.0)
         Embedder::Semantic => EmbedderCategory::Semantic,
         Embedder::Causal => EmbedderCategory::Semantic,
         Embedder::Sparse => EmbedderCategory::Semantic,
@@ -207,18 +207,18 @@ pub fn category_for(embedder: Embedder) -> EmbedderCategory {
 
 /// Calculate the maximum possible weighted agreement.
 ///
-/// This is the sum of all topic weights across all 13 embedders:
-/// - 7 semantic * 1.0 = 7.0
+/// This is the sum of all topic weights across all 14 embedders:
+/// - 8 semantic * 1.0 = 8.0
 /// - 3 temporal * 0.0 = 0.0
 /// - 2 relational * 0.5 = 1.0
 /// - 1 structural * 0.5 = 0.5
-/// - Total = 8.5
+/// - Total = 9.5
 ///
 /// Used for normalizing topic confidence.
 #[inline]
 pub const fn max_weighted_agreement() -> f32 {
-    // 7 * 1.0 + 3 * 0.0 + 2 * 0.5 + 1 * 0.5 = 7.0 + 0.0 + 1.0 + 0.5 = 8.5
-    8.5
+    // 8 * 1.0 + 3 * 0.0 + 2 * 0.5 + 1 * 0.5 = 8.0 + 0.0 + 1.0 + 0.5 = 9.5
+    9.5
 }
 
 /// The topic detection threshold per ARCH-09.
@@ -295,9 +295,9 @@ mod tests {
 
     #[test]
     fn test_max_weighted_agreement() {
-        // 7 * 1.0 + 3 * 0.0 + 2 * 0.5 + 1 * 0.5 = 8.5
-        assert!((max_weighted_agreement() - 8.5).abs() < f32::EPSILON);
-        println!("[PASS] max_weighted_agreement() = 8.5");
+        // 8 * 1.0 + 3 * 0.0 + 2 * 0.5 + 1 * 0.5 = 9.5
+        assert!((max_weighted_agreement() - 9.5).abs() < f32::EPSILON);
+        println!("[PASS] max_weighted_agreement() = 9.5");
     }
 
     #[test]
@@ -308,23 +308,45 @@ mod tests {
 
     #[test]
     fn test_category_for_semantic_embedders() {
-        // 7 semantic embedders
+        // 8 semantic embedders
         assert_eq!(category_for(Embedder::Semantic), EmbedderCategory::Semantic);
         assert_eq!(category_for(Embedder::Causal), EmbedderCategory::Semantic);
         assert_eq!(category_for(Embedder::Sparse), EmbedderCategory::Semantic);
         assert_eq!(category_for(Embedder::Code), EmbedderCategory::Semantic);
-        assert_eq!(category_for(Embedder::Contextual), EmbedderCategory::Semantic);
-        assert_eq!(category_for(Embedder::LateInteraction), EmbedderCategory::Semantic);
-        assert_eq!(category_for(Embedder::KeywordSplade), EmbedderCategory::Semantic);
-        println!("[PASS] All 7 semantic embedders correctly categorized");
+        assert_eq!(
+            category_for(Embedder::Contextual),
+            EmbedderCategory::Semantic
+        );
+        assert_eq!(
+            category_for(Embedder::LateInteraction),
+            EmbedderCategory::Semantic
+        );
+        assert_eq!(
+            category_for(Embedder::KeywordSplade),
+            EmbedderCategory::Semantic
+        );
+        assert_eq!(
+            category_for(Embedder::BgeM3Dense),
+            EmbedderCategory::Semantic
+        );
+        println!("[PASS] All 8 semantic embedders correctly categorized");
     }
 
     #[test]
     fn test_category_for_temporal_embedders() {
         // 3 temporal embedders
-        assert_eq!(category_for(Embedder::TemporalRecent), EmbedderCategory::Temporal);
-        assert_eq!(category_for(Embedder::TemporalPeriodic), EmbedderCategory::Temporal);
-        assert_eq!(category_for(Embedder::TemporalPositional), EmbedderCategory::Temporal);
+        assert_eq!(
+            category_for(Embedder::TemporalRecent),
+            EmbedderCategory::Temporal
+        );
+        assert_eq!(
+            category_for(Embedder::TemporalPeriodic),
+            EmbedderCategory::Temporal
+        );
+        assert_eq!(
+            category_for(Embedder::TemporalPositional),
+            EmbedderCategory::Temporal
+        );
         println!("[PASS] All 3 temporal embedders correctly categorized");
     }
 
@@ -379,9 +401,18 @@ mod tests {
     #[test]
     fn test_ap60_temporal_excluded() {
         // AP-60: Temporal embedders MUST NOT count toward topic detection
-        for embedder in [Embedder::TemporalRecent, Embedder::TemporalPeriodic, Embedder::TemporalPositional] {
+        for embedder in [
+            Embedder::TemporalRecent,
+            Embedder::TemporalPeriodic,
+            Embedder::TemporalPositional,
+        ] {
             let cat = category_for(embedder);
-            assert_eq!(cat.topic_weight(), 0.0, "Temporal embedder {:?} has non-zero weight", embedder);
+            assert_eq!(
+                cat.topic_weight(),
+                0.0,
+                "Temporal embedder {:?} has non-zero weight",
+                embedder
+            );
         }
         println!("[PASS] AP-60 verified: temporal embedders have weight 0.0");
     }

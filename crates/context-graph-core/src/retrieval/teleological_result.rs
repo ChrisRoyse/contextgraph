@@ -148,12 +148,7 @@ pub struct ScoredMemory {
 
 impl ScoredMemory {
     /// Create a new scored memory.
-    pub fn new(
-        memory_id: Uuid,
-        score: f32,
-        content_similarity: f32,
-        space_count: usize,
-    ) -> Self {
+    pub fn new(memory_id: Uuid, score: f32, content_similarity: f32, space_count: usize) -> Self {
         Self {
             memory_id,
             score,
@@ -277,7 +272,7 @@ mod tests {
             vec![memory],
             timing,
             std::time::Duration::from_millis(55),
-            13,
+            14,
             0,
         );
 
@@ -285,7 +280,7 @@ mod tests {
         assert!(!result.is_empty());
         assert!(result.within_latency_target());
         assert!(result.all_stages_within_target());
-        assert_eq!(result.spaces_searched, 13);
+        assert_eq!(result.spaces_searched, 14);
         assert_eq!(result.spaces_failed, 0);
 
         println!("[VERIFIED] TeleologicalRetrievalResult creation and latency checks");

@@ -34,10 +34,10 @@ use crate::protocol::{JsonRpcId, JsonRpcResponse};
 /// keyword, code, graph, robustness, entity, embedder, temporal, graph_link,
 /// maintenance, provenance.
 pub struct Handlers {
-    /// Teleological memory store - stores TeleologicalFingerprint with 13 embeddings.
+    /// Teleological memory store - stores TeleologicalFingerprint with 14 embeddings.
     pub(in crate::handlers) teleological_store: Arc<dyn TeleologicalMemoryStore>,
 
-    /// Multi-array embedding provider - generates all 13 embeddings per content.
+    /// Multi-array embedding provider - generates all 14 embeddings per content.
     pub(in crate::handlers) multi_array_provider: Arc<dyn MultiArrayEmbeddingProvider>,
 
     /// Layer status provider for get_memetic_status.
@@ -119,7 +119,7 @@ pub struct Handlers {
 
     /// Causal Discovery LLM for inline multi-relationship extraction during store_memory.
     /// When present, extract_causal_relationships() is called on every store_memory content
-    /// to discover and persist CausalRelationship records inline with the 13-embedder pipeline.
+    /// to discover and persist CausalRelationship records inline with the 14-embedder pipeline.
     #[cfg(feature = "llm")]
     pub(in crate::handlers) causal_discovery_llm:
         Option<Arc<context_graph_causal_agent::CausalDiscoveryLLM>>,

@@ -17,7 +17,7 @@ use uuid::Uuid;
 /// Result from a single embedding space search.
 #[derive(Clone, Debug)]
 pub struct SpaceSearchResult {
-    /// Space index (0-12).
+    /// Space index (0-13).
     pub space_index: usize,
 
     /// Space name (e.g., "E1_Semantic").
@@ -417,10 +417,10 @@ mod tests {
     fn test_multi_embedding_result() {
         let id = Uuid::new_v4();
         let matches = vec![AggregatedMatch::new(id, 0.05, 3)];
-        let result = MultiEmbeddingResult::new(matches, Duration::from_millis(45), 13, 0);
+        let result = MultiEmbeddingResult::new(matches, Duration::from_millis(45), 14, 0);
 
         assert!(result.within_latency_target());
-        assert_eq!(result.spaces_searched, 13);
+        assert_eq!(result.spaces_searched, 14);
         assert_eq!(result.spaces_failed, 0);
         assert!(result.top_result().is_some());
 
@@ -429,7 +429,7 @@ mod tests {
 
     #[test]
     fn test_multi_embedding_result_latency_exceeded() {
-        let result = MultiEmbeddingResult::new(Vec::new(), Duration::from_millis(75), 13, 0);
+        let result = MultiEmbeddingResult::new(Vec::new(), Duration::from_millis(75), 14, 0);
 
         assert!(!result.within_latency_target());
 

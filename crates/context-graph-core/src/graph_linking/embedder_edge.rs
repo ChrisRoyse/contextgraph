@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::{DirectedRelation, EdgeError, EdgeResult};
+use crate::types::fingerprint::NUM_EMBEDDERS;
 
 /// An edge in the K-NN graph for a specific embedder.
 ///
@@ -22,7 +23,7 @@ use super::{DirectedRelation, EdgeError, EdgeResult};
 ///
 /// - `source`: Source node UUID
 /// - `target`: Target node UUID (a neighbor of source)
-/// - `embedder_id`: Which embedder this edge belongs to (0-12)
+/// - `embedder_id`: Which embedder this edge belongs to (0-13)
 /// - `similarity`: Similarity score between source and target
 /// - `direction`: For E5/E8, the direction of the relationship
 ///
@@ -73,17 +74,17 @@ impl EmbedderEdge {
     ///
     /// * `source` - Source node UUID
     /// * `target` - Target node UUID
-    /// * `embedder_id` - Embedder index (0-12)
+    /// * `embedder_id` - Embedder index (0-13)
     /// * `similarity` - Similarity score
     ///
     /// # Errors
     ///
-    /// - `InvalidEmbedderId` if embedder_id > 12
+    /// - `InvalidEmbedderId` if embedder_id >= NUM_EMBEDDERS
     /// - `InvalidSimilarityScore` if similarity not in [-1.0, 1.0]
     /// - `SymmetricCosineViolation` if embedder is E5/E8 (must use `with_direction`)
     pub fn new(source: Uuid, target: Uuid, embedder_id: u8, similarity: f32) -> EdgeResult<Self> {
         // Validate embedder ID
-        if embedder_id > 12 {
+        if embedder_id as usize >= NUM_EMBEDDERS {
             return Err(EdgeError::invalid_embedder_id(embedder_id));
         }
 
@@ -119,13 +120,13 @@ impl EmbedderEdge {
     ///
     /// * `source` - Source node UUID
     /// * `target` - Target node UUID
-    /// * `embedder_id` - Embedder index (0-12)
+    /// * `embedder_id` - Embedder index (0-13)
     /// * `similarity` - Similarity score
     /// * `direction` - Relationship direction
     ///
     /// # Errors
     ///
-    /// - `InvalidEmbedderId` if embedder_id > 12
+    /// - `InvalidEmbedderId` if embedder_id >= NUM_EMBEDDERS
     /// - `InvalidSimilarityScore` if similarity not in [-1.0, 1.0]
     pub fn with_direction(
         source: Uuid,
@@ -135,7 +136,7 @@ impl EmbedderEdge {
         direction: DirectedRelation,
     ) -> EdgeResult<Self> {
         // Validate embedder ID
-        if embedder_id > 12 {
+        if embedder_id as usize >= NUM_EMBEDDERS {
             return Err(EdgeError::invalid_embedder_id(embedder_id));
         }
 
@@ -169,7 +170,7 @@ impl EmbedderEdge {
         self.target
     }
 
-    /// Get the embedder ID (0-12).
+    /// Get the embedder ID (0-13).
     #[inline]
     pub fn embedder_id(&self) -> u8 {
         self.embedder_id
@@ -235,7 +236,7 @@ impl EmbedderEdge {
     ///
     /// * `source` - Source node UUID
     /// * `target` - Target node UUID
-    /// * `embedder_id` - Embedder index (0-12)
+    /// * `embedder_id` - Embedder index (0-13)
     /// * `similarity` - Similarity score
     ///
     /// Direction is set to Symmetric. For asymmetric edges, use `from_storage_directed`.
@@ -329,10 +330,10 @@ mod tests {
         let source = Uuid::new_v4();
         let target = Uuid::new_v4();
 
-        let result = EmbedderEdge::new(source, target, 13, 0.75);
+        let result = EmbedderEdge::new(source, target, 14, 0.75);
         assert!(matches!(
             result,
-            Err(EdgeError::InvalidEmbedderId { embedder_id: 13 })
+            Err(EdgeError::InvalidEmbedderId { embedder_id: 14 })
         ));
 
         let result = EmbedderEdge::new(source, target, 255, 0.75);
@@ -348,10 +349,16 @@ mod tests {
         let target = Uuid::new_v4();
 
         let result = EmbedderEdge::new(source, target, 0, 1.5);
-        assert!(matches!(result, Err(EdgeError::InvalidSimilarityScore { .. })));
+        assert!(matches!(
+            result,
+            Err(EdgeError::InvalidSimilarityScore { .. })
+        ));
 
         let result = EmbedderEdge::new(source, target, 0, -1.5);
-        assert!(matches!(result, Err(EdgeError::InvalidSimilarityScore { .. })));
+        assert!(matches!(
+            result,
+            Err(EdgeError::InvalidSimilarityScore { .. })
+        ));
 
         // Valid edge cases
         assert!(EmbedderEdge::new(source, target, 0, 1.0).is_ok());
@@ -387,13 +394,13 @@ mod tests {
         assert_eq!(edge.adjusted_similarity(), 0.8);
 
         // Forward (cause→effect) - 1.2x boost
-        let edge =
-            EmbedderEdge::with_direction(source, target, 4, 0.8, DirectedRelation::Forward).unwrap();
+        let edge = EmbedderEdge::with_direction(source, target, 4, 0.8, DirectedRelation::Forward)
+            .unwrap();
         assert!((edge.adjusted_similarity() - 0.96).abs() < 1e-6);
 
         // Backward (effect→cause) - 0.8x dampening
-        let edge =
-            EmbedderEdge::with_direction(source, target, 4, 0.8, DirectedRelation::Backward).unwrap();
+        let edge = EmbedderEdge::with_direction(source, target, 4, 0.8, DirectedRelation::Backward)
+            .unwrap();
         assert!((edge.adjusted_similarity() - 0.64).abs() < 1e-6);
     }
 
@@ -402,8 +409,8 @@ mod tests {
         let source = Uuid::new_v4();
         let target = Uuid::new_v4();
 
-        let edge =
-            EmbedderEdge::with_direction(source, target, 4, 0.75, DirectedRelation::Forward).unwrap();
+        let edge = EmbedderEdge::with_direction(source, target, 4, 0.75, DirectedRelation::Forward)
+            .unwrap();
         let reversed = edge.reverse();
 
         assert_eq!(reversed.source(), target);
@@ -418,8 +425,8 @@ mod tests {
         let source = Uuid::new_v4();
         let target = Uuid::new_v4();
 
-        let edge =
-            EmbedderEdge::with_direction(source, target, 4, 0.75, DirectedRelation::Forward).unwrap();
+        let edge = EmbedderEdge::with_direction(source, target, 4, 0.75, DirectedRelation::Forward)
+            .unwrap();
 
         let json = serde_json::to_string(&edge).unwrap();
         let recovered: EmbedderEdge = serde_json::from_str(&json).unwrap();

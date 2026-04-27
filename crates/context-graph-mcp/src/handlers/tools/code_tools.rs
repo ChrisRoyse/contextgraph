@@ -45,7 +45,7 @@ impl Handlers {
     ///
     /// # Algorithm
     ///
-    /// 1. Embed the code query using all 13 embedders
+    /// 1. Embed the code query using all 14 embedders
     /// 2. Detect programming language indicators in query
     /// 3. Search using E1 semantic as primary (over-fetch for blending)
     /// 4. Compute E7 code similarity for each candidate
@@ -310,7 +310,7 @@ impl Handlers {
         }
     }
 
-    /// Search CodeStore for code entities using full 13-embedder fingerprint.
+    /// Search CodeStore for code entities using full 14-embedder fingerprint.
     ///
     /// E7-WIRING: Direct search against code entities stored via AST chunker.
     /// Uses E7 (code) as primary embedding for ranking per constitution.
@@ -325,7 +325,7 @@ impl Handlers {
     /// Vector of CodeEntityResult, or error if code pipeline unavailable.
     ///
     /// # Constitution Compliance
-    /// - ARCH-01: Uses full SemanticFingerprint (all 13 embeddings)
+    /// - ARCH-01: Uses full SemanticFingerprint (all 14 embeddings)
     /// - E7 is primary for code search (use_e7_primary=true)
     async fn search_code_entities(
         &self,
@@ -344,7 +344,7 @@ impl Handlers {
             .code_store()
             .ok_or_else(|| "Code store not available".to_string())?;
 
-        // Generate full fingerprint for query (all 13 embeddings)
+        // Generate full fingerprint for query (all 14 embeddings)
         let query_fingerprint = provider
             .embed_code(query, None)
             .await

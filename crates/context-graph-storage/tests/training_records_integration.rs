@@ -58,6 +58,7 @@ fn synthetic_record(seed_content: &str, topic_peaks: &[(usize, f32)]) -> Trainin
         e10_paraphrase: Vec::new(),
         e10_context: Vec::new(),
         e11_entity: Vec::new(),
+        e14_bge_m3_dense: vec![0.14; 8],
         e6_sparse_indices: vec![7, 42, 100],
         e6_sparse_values: vec![0.9, 0.5, 0.1],
         e13_splade_indices: Vec::new(),
@@ -157,8 +158,11 @@ async fn roundtrip_single_record_preserves_all_fields() {
     let id = record.memory_id;
 
     println!(
-        "BEFORE store_training_record: count={}",
-        store.count_training_records().await.unwrap()
+        "BEFORE store_training_record: count={}, e14_len={}, cross_len={}, cross_last={:.6}",
+        store.count_training_records().await.unwrap(),
+        record.e14_bge_m3_dense.len(),
+        record.cross_correlations.len(),
+        record.cross_correlations.last().copied().unwrap_or_default()
     );
     store
         .store_training_record(id, &record)
@@ -174,11 +178,19 @@ async fn roundtrip_single_record_preserves_all_fields() {
         .await
         .expect("get")
         .expect("exists");
+    println!(
+        "AFTER get_training_record: e14_len={}, e14_values={:?}, cross_len={}, cross_last={:.6}",
+        back.e14_bge_m3_dense.len(),
+        back.e14_bge_m3_dense,
+        back.cross_correlations.len(),
+        back.cross_correlations.last().copied().unwrap_or_default()
+    );
     assert_eq!(back.memory_id, id);
     assert_eq!(back.content, "hello fsv");
     assert_eq!(back.topic_profile, record.topic_profile);
     assert_eq!(back.cross_correlations.len(), NUM_CROSS_CORRELATIONS);
     assert_eq!(back.cross_correlations, record.cross_correlations);
+    assert_eq!(back.e14_bge_m3_dense, record.e14_bge_m3_dense);
     assert_eq!(back.group_alignments, record.group_alignments);
     assert_eq!(back.e1_semantic, vec![0.1, 0.2, 0.3]);
     assert_eq!(back.e5_causal_cause, vec![0.5; 8]);

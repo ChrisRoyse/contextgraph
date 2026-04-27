@@ -75,7 +75,7 @@ impl InMemoryMultiEmbeddingExecutor {
 
     /// Search a single embedding space using the store's search_semantic method.
     ///
-    /// For dense spaces (E1-E5, E7-E11), we use the store's search_semantic
+    /// For dense spaces (E1-E5, E7-E11, E14), we use the store's search_semantic
     /// with embedder_indices filtering.
     ///
     /// For sparse spaces (E6, E13), we use search_sparse.
@@ -115,8 +115,8 @@ impl InMemoryMultiEmbeddingExecutor {
                     .search_sparse_space(space_idx, &query_fingerprint.e13_splade, limit, start)
                     .await;
             }
-            // Dense spaces (E1-E5, E7-E11)
-            0..=4 | 6..=10 => {
+            // Dense spaces (E1-E5, E7-E11, E14)
+            0..=4 | 6..=10 | 13 => {
                 return self
                     .search_single_embedder_space(
                         space_idx,
@@ -431,6 +431,7 @@ impl MultiEmbeddingQueryExecutor for InMemoryMultiEmbeddingExecutor {
             SpaceInfo::dense_hnsw(10, 768, 0, true), // E11 Entity (KEPLER)
             SpaceInfo::dense_hnsw(11, 128, 0, true), // E12 Late-Interaction
             SpaceInfo::sparse_inverted(12, 0, true), // E13 SPLADE
+            SpaceInfo::dense_hnsw(13, 1024, 0, true), // E14 BGE-M3 Dense
         ]
     }
 
@@ -587,9 +588,9 @@ mod tests {
     async fn test_executor_creation() {
         let executor = create_test_executor().await;
         let spaces = executor.available_spaces();
-        assert_eq!(spaces.len(), 13);
+        assert_eq!(spaces.len(), NUM_EMBEDDERS);
 
-        println!("[VERIFIED] Executor created with 13 spaces");
+        println!("[VERIFIED] Executor created with {} spaces", NUM_EMBEDDERS);
     }
 
     #[tokio::test]
@@ -607,6 +608,10 @@ mod tests {
 
         assert_eq!(spaces[12].name, "E13_SPLADE");
         assert_eq!(spaces[12].index_type, IndexType::Inverted);
+
+        assert_eq!(spaces[13].name, "E14_BgeM3Dense");
+        assert_eq!(spaces[13].dimension, 1024);
+        assert_eq!(spaces[13].index_type, IndexType::Hnsw);
 
         println!("[VERIFIED] available_spaces returns correct info");
     }

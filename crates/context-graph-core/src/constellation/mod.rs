@@ -49,7 +49,10 @@ pub use types::{
 ///
 /// Bump on breaking layout changes; deserialization rejects mismatches with
 /// `CoreError::SerializationError`. No automatic migration is supported.
-pub const CONSTELLATION_VERSION: u8 = 1;
+///
+/// v2: E14-aware shape (14 per-embedder stats, 14D topic centroid,
+/// 91 cross-correlation centroid entries).
+pub const CONSTELLATION_VERSION: u8 = 2;
 
 /// Reservoir capacity for percentile estimation. Capped at 1024 samples per
 /// reservoir to bound memory while giving tight p50/p95 convergence.

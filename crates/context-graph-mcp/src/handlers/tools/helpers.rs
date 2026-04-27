@@ -144,7 +144,7 @@ impl Handlers {
         Ok(request)
     }
 
-    /// Embed a query string using all 13 embedders and return the fingerprint.
+    /// Embed a query string using all 14 embedders and return the fingerprint.
     ///
     /// Eliminates the repeated embed+error-handling boilerplate across ~25 search
     /// handlers. Returns the `SemanticFingerprint` on success, or an MCP error

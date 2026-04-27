@@ -216,7 +216,7 @@ impl MultiArrayEmbeddingProvider for LazyMultiArrayProvider {
     }
 
     /// Audit-7 MCP-H1 FIX: Override embed_e1_only to delegate to real provider.
-    /// Without this, the default trait impl calls self.embed_all() which runs all 13
+    /// Without this, the default trait impl calls self.embed_all() which runs all 14
     /// embedders instead of delegating to inner.embed_e1_only() (runs only E1).
     /// This causes 13x overhead for multi-embedder search in search_causal_relationships.
     async fn embed_e1_only(&self, content: &str) -> CoreResult<Vec<f32>> {

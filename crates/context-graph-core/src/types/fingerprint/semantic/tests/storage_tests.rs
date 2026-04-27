@@ -4,9 +4,8 @@ use crate::types::fingerprint::semantic::*;
 use crate::types::fingerprint::SparseVector;
 
 // E5, E8, and E10 now use dual vectors for asymmetric similarity.
-// New dense size = TOTAL_DENSE_DIMS + E5_DIM + E8_DIM + E10_DIM = 8448 + 768 + 1024 + 768 = 11008
-// Storage = 11008 * 4 = 44032 bytes
-// (E8 upgraded from 384D to 1024D)
+// New dense size = TOTAL_DENSE_DIMS + E5_DIM + E8_DIM + E10_DIM = 12032 floats.
+// Storage = 12032 * 4 = 48128 bytes.
 const NEW_DENSE_STORAGE: usize =
     (TOTAL_DENSE_DIMS + E5_DIM + E8_DIM + E10_DIM) * std::mem::size_of::<f32>();
 
@@ -16,10 +15,9 @@ fn test_semantic_fingerprint_storage_size_zeroed() {
     let size = fp.storage_size();
 
     // With dual E5, E8, and E10 vectors, storage includes both directions
-    // TOTAL_DENSE_DIMS = 8448, + E5_DIM + E8_DIM + E10_DIM = 11008
-    // 11008 * 4 bytes = 44032
-    // (E8 upgraded from 384D to 1024D)
-    assert_eq!(NEW_DENSE_STORAGE, 44032);
+    // TOTAL_DENSE_DIMS includes E14. With dual E5/E8/E10 vectors:
+    // 12032 * 4 bytes = 48128.
+    assert_eq!(NEW_DENSE_STORAGE, 48128);
     assert_eq!(size, NEW_DENSE_STORAGE);
 }
 
@@ -32,7 +30,7 @@ fn test_semantic_fingerprint_storage_size_with_sparse() {
 
     let size = fp.storage_size();
 
-    // 38912 (dense with dual E5/E8/E10) + 24 (4 indices * 2 bytes + 4 values * 4 bytes = 8 + 16 = 24)
+    // Dense with E14 + dual E5/E8/E10, plus 4 sparse entries.
     let expected = NEW_DENSE_STORAGE + 24;
     assert_eq!(size, expected);
 }
@@ -45,7 +43,7 @@ fn test_semantic_fingerprint_storage_size_with_tokens() {
 
     let size = fp.storage_size();
 
-    // 38912 (dense with dual E5/E8/E10) + 10 tokens * 128 dims * 4 bytes = 38912 + 5120
+    // Dense with E14 + dual E5/E8/E10, plus 10 tokens * 128 dims * 4 bytes.
     let expected = NEW_DENSE_STORAGE + 5120;
     assert_eq!(size, expected);
 }
@@ -62,13 +60,13 @@ fn test_semantic_fingerprint_typical_storage_size() {
 
     let size = fp.storage_size();
 
-    // 38912 (dense with dual E5/E8/E10) + 9000 (1500 sparse entries) + 25600 (50 tokens * 128 * 4)
+    // Dense with E14 + dual E5/E8/E10, plus 9000 sparse bytes and 25600 token bytes.
     let expected = NEW_DENSE_STORAGE + 9000 + 25600;
     assert_eq!(size, expected);
 
-    // Updated bounds for dual E5/E8/E10 vectors (expected: 73512 bytes)
-    assert!(size > 70_000);
-    assert!(size < 80_000);
+    // Updated bounds for E14 + dual E5/E8/E10 vectors (expected: 82728 bytes).
+    assert!(size > 80_000);
+    assert!(size < 85_000);
 }
 
 #[test]

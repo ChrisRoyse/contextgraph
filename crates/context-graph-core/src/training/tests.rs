@@ -22,7 +22,7 @@ use crate::types::fingerprint::{
 // =============================================================================
 
 #[test]
-fn cross_correlations_has_exactly_78_entries() {
+fn cross_correlations_has_exactly_91_entries() {
     let profile = [1.0f32; NUM_EMBEDDERS];
     let synergy = SynergyMatrix::with_base_synergies();
     let cc = compute_cross_correlations(&profile, &synergy);
@@ -50,8 +50,8 @@ fn cross_correlations_ordering_matches_pair_convention() {
     // because their product contains at least one zero. Pair (0,4) must be
     // nonzero.
     //
-    // Flat-index layout: for i in 0..13, for j in i+1..13.
-    // For i=0: 12 pairs (j=1..=12). Offset of (0, j) = j - 1.
+    // Flat-index layout: for i in 0..NUM_EMBEDDERS, for j in i+1..NUM_EMBEDDERS.
+    // For i=0: 13 pairs (j=1..=13). Offset of (0, j) = j - 1.
     // Pair (0,4) therefore lives at flat index 3.
     let mut profile = [0.0f32; NUM_EMBEDDERS];
     profile[0] = 1.0;
@@ -79,7 +79,7 @@ fn cross_correlations_ordering_matches_pair_convention() {
 }
 
 /// Invert the canonical flat layout:
-/// for i in 0..13, for j in (i+1)..13.
+/// for i in 0..NUM_EMBEDDERS, for j in (i+1)..NUM_EMBEDDERS.
 fn flat_index_to_pair(flat: usize) -> (usize, usize) {
     let mut remaining = flat;
     for i in 0..NUM_EMBEDDERS {
@@ -178,10 +178,12 @@ fn topic_profile_fallback_with_unit_vectors_peaks_at_used_slots() {
     let unit: Vec<f32> = vec![1.0, 0.0, 0.0, 0.0];
     let mut fp = empty_semantic_fingerprint();
     fp.e1_semantic = unit.clone();
-    fp.e5_causal_as_cause = unit;
+    fp.e5_causal_as_cause = unit.clone();
+    fp.e14_bge_m3_dense = unit;
     let got = topic_profile_or_fallback(None, &fp);
     assert!((got[0] - 1.0).abs() < 1e-5);
     assert!((got[4] - 1.0).abs() < 1e-5);
+    assert!((got[13] - 1.0).abs() < 1e-5);
     assert_eq!(got[1], 0.0);
     assert_eq!(got[11], 0.0);
 }
@@ -448,6 +450,7 @@ fn sample_record() -> TrainingRecord {
         e10_paraphrase: Vec::new(),
         e10_context: Vec::new(),
         e11_entity: Vec::new(),
+        e14_bge_m3_dense: Vec::new(),
         e6_sparse_indices: vec![1, 42, 100],
         e6_sparse_values: vec![0.5, 0.3, 0.2],
         e13_splade_indices: Vec::new(),

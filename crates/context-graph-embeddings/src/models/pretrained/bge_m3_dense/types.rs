@@ -12,7 +12,7 @@ pub(crate) use crate::models::pretrained::shared::ModelState;
 ///
 /// BGE-M3 reuses `BertWeights` because the encoder layer structure is
 /// architecturally identical to BERT (same self-attention, same post-LN order,
-/// same FFN). Only the load-time weight prefix (`roberta.`), vocab size, and
+/// same FFN). Only the load-time weight key layout, vocab size, and
 /// position-embedding indexing differ.
 pub(crate) type BgeM3DenseModelState = ModelState<Box<BertWeights>>;
 

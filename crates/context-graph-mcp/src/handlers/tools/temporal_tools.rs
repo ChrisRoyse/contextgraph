@@ -350,7 +350,7 @@ impl Handlers {
                 let memory_dow = memory_dt.weekday().num_days_from_sunday() as u8;
 
                 // Compute E3 periodic score using embeddings if available
-                // TeleologicalFingerprint.semantic has the 13-embedder SemanticFingerprint
+                // TeleologicalFingerprint.semantic has the 14-embedder SemanticFingerprint
                 let periodic_score = if !query_embedding.e3_temporal_periodic.is_empty()
                     && !r.fingerprint.semantic.e3_temporal_periodic.is_empty()
                 {

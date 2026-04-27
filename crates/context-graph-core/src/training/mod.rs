@@ -1,6 +1,6 @@
 //! Training-data export types and computation helpers.
 //!
-//! Defines [`TrainingRecord`] (**v2**) and supporting types ([`TrainingEdge`],
+//! Defines [`TrainingRecord`] (**v3**) and supporting types ([`TrainingEdge`],
 //! [`CausalLabel`], [`TopicMembership`], [`TemporalLabels`]) that package a
 //! single memory's full multi-dimensional label space into a bincode-
 //! serializable record.
@@ -13,10 +13,10 @@
 //!
 //! Each record bundles:
 //! - Identity + provenance (UUID, content, importance, timestamps, source)
-//! - All 13 embedding vectors (dense, sparse, token-level)
-//! - 13D topic profile (per-embedder alignment) — loaded from `CF_TOPIC_PROFILES`
+//! - All 14 embedding vectors (dense, sparse, token-level)
+//! - 14D topic profile (per-embedder alignment) — loaded from `CF_TOPIC_PROFILES`
 //!   when available, otherwise falls back to per-embedder vector-presence.
-//! - 78 synergy-weighted cross-correlations
+//! - 91 synergy-weighted cross-correlations
 //! - 6D group alignments (Factual/Temporal/Causal/Relational/Qualitative/Implementation)
 //! - Outgoing + incoming typed edges with per-embedder scores
 //! - K-NN neighbors per embedder
@@ -36,7 +36,7 @@
 //! [`TRAINING_RECORD_VERSION`] is a single version byte prepended before the
 //! bincode-encoded record on disk. Deserialization rejects mismatched versions
 //! with `CoreError::SerializationError` — no automatic migration. **v1
-//! records are unreadable by the v2 decoder; re-export is required.**
+//! v1/v2 records are unreadable by the v3 decoder; re-export is required.**
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -62,12 +62,12 @@ pub use temporal::{extract_temporal_labels, PeriodicBucket, TemporalLabels};
 /// Bumped on breaking layout changes. Deserialization rejects mismatches;
 /// no automatic migration is supported.
 ///
-/// **v2 (current)**: adds `TrainingRecord::edge_type_distribution: [u32; 8]`.
-/// v1 readers cannot decode v2 payloads (and vice versa) — re-export required.
-pub const TRAINING_RECORD_VERSION: u8 = 2;
+/// **v3 (current)**: adds `TrainingRecord::e14_bge_m3_dense`.
+/// v1/v2 readers cannot decode v3 payloads (and vice versa) - re-export required.
+pub const TRAINING_RECORD_VERSION: u8 = 3;
 
 /// Expected length of the `cross_correlations` vector: C(14, 2) = 91.
-pub const NUM_CROSS_CORRELATIONS: usize = 91;
+pub const NUM_CROSS_CORRELATIONS: usize = crate::teleological::CROSS_CORRELATION_COUNT;
 
 /// Expected length of `group_alignments`: one per group (Factual, Temporal,
 /// Causal, Relational, Qualitative, Implementation).
@@ -106,6 +106,7 @@ pub struct TrainingRecord {
     pub e10_paraphrase: Vec<f32>,         // 768D (asymmetric)
     pub e10_context: Vec<f32>,            // 768D (asymmetric)
     pub e11_entity: Vec<f32>,             // 768D
+    pub e14_bge_m3_dense: Vec<f32>,       // 1024D
 
     // --- Sparse embeddings (empty when includeSparseVectors=false) ---
     pub e6_sparse_indices: Vec<u16>,
@@ -118,12 +119,12 @@ pub struct TrainingRecord {
     pub e12_token_embeddings: Vec<Vec<f32>>,
 
     // --- Teleological fusion (derived) ---
-    /// 13D topic profile: per-embedder alignment scores.
+    /// 14D topic profile: per-embedder alignment scores.
     ///
     /// Preferred source is `CF_TOPIC_PROFILES`; see
     /// [`topic_profile_or_fallback`].
     pub topic_profile: [f32; NUM_EMBEDDERS],
-    /// 78 synergy-weighted pairwise interactions. Order: (0,1), (0,2), …, (11,12).
+    /// 91 synergy-weighted pairwise interactions. Order: (0,1), (0,2), ..., (12,13).
     pub cross_correlations: Vec<f32>,
     /// 6D group alignments: Factual, Temporal, Causal, Relational, Qualitative, Implementation.
     pub group_alignments: [f32; NUM_GROUP_ALIGNMENTS],
@@ -133,7 +134,7 @@ pub struct TrainingRecord {
     pub outgoing_edges: Vec<TrainingEdge>,
     /// Typed edges where this memory is the target.
     pub incoming_edges: Vec<TrainingEdge>,
-    /// K-NN neighbors per embedder index 0..13; always 13 outer vecs, may be
+    /// K-NN neighbors per embedder index 0..13; always 14 outer vecs, may be
     /// empty inside when K-NN data is absent for the corresponding embedder.
     pub knn_neighbors: Vec<Vec<KnnNeighbor>>,
 
@@ -220,7 +221,7 @@ pub struct CausalLabel {
     pub mechanism_type: Option<String>,
 }
 
-/// Topic this memory belongs to, with the topic's 13D alignment profile.
+/// Topic this memory belongs to, with the topic's 14D alignment profile.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TopicMembership {
     pub topic_id: String,

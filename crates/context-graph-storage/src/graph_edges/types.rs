@@ -52,7 +52,7 @@ pub enum GraphEdgeStorageError {
     ColumnFamilyNotFound { name: &'static str },
 
     /// Invalid embedder ID.
-    #[error("Invalid embedder ID {embedder_id} - must be 0-12 (13 embedders)")]
+    #[error("Invalid embedder ID {embedder_id} - must be 0-13 (14 embedders)")]
     InvalidEmbedderId { embedder_id: u8 },
 
     /// Key format error.
@@ -107,7 +107,11 @@ impl GraphEdgeStorageError {
     }
 
     /// Create an edge not found error.
-    pub fn edge_not_found(source_node: Uuid, target_node: Option<Uuid>, embedder: Option<u8>) -> Self {
+    pub fn edge_not_found(
+        source_node: Uuid,
+        target_node: Option<Uuid>,
+        embedder: Option<u8>,
+    ) -> Self {
         Self::EdgeNotFound {
             source_node,
             target_node,
@@ -158,7 +162,7 @@ mod tests {
     fn test_error_display() {
         let err = GraphEdgeStorageError::InvalidEmbedderId { embedder_id: 15 };
         assert!(err.to_string().contains("15"));
-        assert!(err.to_string().contains("0-12"));
+        assert!(err.to_string().contains("0-13"));
     }
 
     #[test]

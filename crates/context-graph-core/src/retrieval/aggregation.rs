@@ -234,8 +234,9 @@ impl AggregationStrategy {
                     ));
                 } else if result.found_by.len() >= 10 {
                     result.insight_annotation = Some(format!(
-                        "Strong consensus: {}/13 embedders agree on this result",
-                        result.found_by.len()
+                        "Strong consensus: {}/{} embedders agree on this result",
+                        result.found_by.len(),
+                        NUM_EMBEDDERS
                     ));
                 }
 
@@ -300,6 +301,7 @@ impl CombinedResult {
             10 => "E11_Entity",
             11 => "E12_Late_Interaction",
             12 => "E13_SPLADE",
+            13 => "E14_BgeM3Dense",
             _ => "Unknown",
         }
     }
@@ -495,7 +497,7 @@ mod tests {
             require_all: true,
         };
 
-        // Only 2 matches, but require_all=true needs all 13
+        // Only 2 matches, but require_all=true needs all embedders.
         let matches = vec![(0, 0.8), (1, 0.6)];
         let score = strategy.aggregate(&matches);
 

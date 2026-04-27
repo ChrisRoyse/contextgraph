@@ -2,14 +2,14 @@
 //!
 //! # E9 Blind-Spot Detection Philosophy
 //!
-//! Per the 13-embedder philosophy:
+//! Per the 14-embedder philosophy:
 //! - E1 is the semantic foundation (finds semantically similar content)
 //! - E9 (HDC) finds what E1 MISSES due to character-level issues
 //! - E9 doesn't compete with E1; it discovers E1's blind spots
 //!
 //! # The Algorithm
 //!
-//! 1. Embed query using all 13 embedders
+//! 1. Embed query using all 14 embedders
 //! 2. Search E1 space → get E1's top results
 //! 3. Search E9 space → get E9's top results
 //! 4. Find blind spots: results where E9 is high AND E1 is low
@@ -54,7 +54,7 @@ impl Handlers {
     ///
     /// # Algorithm
     ///
-    /// 1. Embed the query using all 13 embedders
+    /// 1. Embed the query using all 14 embedders
     /// 2. Search E1 space (semantic foundation) → top 3*topK candidates
     /// 3. Search E9 space (structural/noise-robust) → top 3*topK candidates
     /// 4. Find blind spots: E9 score >= threshold AND E1 score < weakness threshold
@@ -102,7 +102,7 @@ impl Handlers {
             "search_robust: Starting E9 blind-spot detection search"
         );
 
-        // Step 1: Embed query using all 13 embedders
+        // Step 1: Embed query using all 14 embedders
         let query_embedding = match self.embed_query(id.clone(), query, "search_robust").await {
             Ok(fp) => fp,
             Err(resp) => return resp,

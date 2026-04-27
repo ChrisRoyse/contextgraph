@@ -1,14 +1,14 @@
 //! Validation logic for SemanticFingerprint.
 //!
-//! This module provides dimension validation for the 13-embedding teleological array.
+//! This module provides dimension validation for the 14-embedding teleological array.
 //! Per constitution.yaml:
-//! - ARCH-01: "TeleologicalArray is atomic - store all 13 embeddings or nothing"
-//! - ARCH-05: "All 13 embedders required - missing embedder is fatal error"
+//! - ARCH-01: "TeleologicalArray is atomic - store all embeddings or nothing"
+//! - ARCH-05: "All embedders required - missing embedder is fatal error"
 //! - AP-14: "No .unwrap() in library code"
 
 use super::constants::{
-    E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM,
-    E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
+    E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E14_DIM, E1_DIM, E2_DIM, E3_DIM, E4_DIM,
+    E5_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
 };
 use super::fingerprint::{SemanticFingerprint, ValidationError};
 use crate::teleological::Embedder;
@@ -36,6 +36,7 @@ impl SemanticFingerprint {
     /// 8. E10: Must have exactly 768 dimensions
     /// 9. E12: Each token must have exactly 128 dimensions
     /// 10. E13: Sparse indices must be < E13_SPLADE_VOCAB, indices/values must match length
+    /// 11. E14: Must have exactly 1024 dimensions, or be empty for legacy pre-E14 records
     ///
     /// # Example
     ///
@@ -62,6 +63,7 @@ impl SemanticFingerprint {
         self.validate_e11()?;
         self.validate_e12()?;
         self.validate_e13()?;
+        self.validate_e14()?;
         Ok(())
     }
 
@@ -134,6 +136,9 @@ impl SemanticFingerprint {
             errors.push(e);
         }
         if let Err(e) = self.validate_e13() {
+            errors.push(e);
+        }
+        if let Err(e) = self.validate_e14() {
             errors.push(e);
         }
 
@@ -395,6 +400,21 @@ impl SemanticFingerprint {
             }
         }
 
+        Ok(())
+    }
+
+    /// Validate E14 BGE-M3 dense embedding (1024D dense).
+    ///
+    /// Empty is allowed only for legacy records deserialized from pre-E14 data.
+    /// Any non-empty value must have exactly 1024 dimensions.
+    fn validate_e14(&self) -> Result<(), ValidationError> {
+        if !self.e14_bge_m3_dense.is_empty() && self.e14_bge_m3_dense.len() != E14_DIM {
+            return Err(ValidationError::DimensionMismatch {
+                embedder: Embedder::BgeM3Dense,
+                expected: E14_DIM,
+                actual: self.e14_bge_m3_dense.len(),
+            });
+        }
         Ok(())
     }
 }

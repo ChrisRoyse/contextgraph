@@ -32,20 +32,22 @@ use context_graph_core::causal::asymmetric::{
     apply_causal_gate, causal_gate, compute_e5_asymmetric_fingerprint_similarity,
     detect_causal_query_intent, CausalDirection,
 };
-use context_graph_core::types::audit::{AuditOperation, AuditRecord};
 use context_graph_core::teleological::matrix_search::embedder_names;
 use context_graph_core::traits::{EmbeddingMetadata, SearchStrategy, TeleologicalSearchOptions};
-use context_graph_core::types::fingerprint::{SemanticFingerprint, TeleologicalFingerprint, NUM_EMBEDDERS};
+use context_graph_core::types::audit::{AuditOperation, AuditRecord};
+use context_graph_core::types::fingerprint::{
+    SemanticFingerprint, TeleologicalFingerprint, NUM_EMBEDDERS,
+};
 use context_graph_core::types::{SourceMetadata, SourceType};
 
-use crate::weights::{get_effective_weight_profile, apply_e11_disable, E11_ENTITY_ENABLED};
+use crate::weights::{apply_e11_disable, get_effective_weight_profile, E11_ENTITY_ENABLED};
 
 use crate::protocol::JsonRpcId;
 use crate::protocol::JsonRpcResponse;
 
-use super::graph_link_dtos::{RRF_K, EMBEDDER_NAMES, embedder_name_to_index};
-use super::helpers::{ToolErrorKind, compute_position_label};
 use super::super::Handlers;
+use super::graph_link_dtos::{embedder_name_to_index, EMBEDDER_NAMES, RRF_K};
+use super::helpers::{compute_position_label, ToolErrorKind};
 
 // Validation constants for store_memory rationale (merged from inject_context)
 // When rationale is provided, validate: 1-1024 chars
@@ -95,9 +97,9 @@ fn infer_causal_direction_from_fingerprint(fingerprint: &SemanticFingerprint) ->
 impl Handlers {
     /// store_memory tool implementation.
     ///
-    /// TASK-S001: Updated to use TeleologicalMemoryStore with 13-embedding fingerprint.
+    /// TASK-S001: Updated to use TeleologicalMemoryStore with 14-embedding fingerprint.
     ///
-    /// Stores content in the memory graph. Generates all 13 embeddings for the content
+    /// Stores content in the memory graph. Generates all 14 embeddings for the content
     /// and stores the resulting TeleologicalFingerprint.
     ///
     /// Note: inject_context was merged into this tool. When `rationale` is provided,
@@ -209,7 +211,9 @@ impl Handlers {
                 Some(match hint.direction_hint {
                     context_graph_core::traits::CausalDirectionHint::Cause => "cause".to_string(),
                     context_graph_core::traits::CausalDirectionHint::Effect => "effect".to_string(),
-                    context_graph_core::traits::CausalDirectionHint::Neutral => "unknown".to_string(),
+                    context_graph_core::traits::CausalDirectionHint::Neutral => {
+                        "unknown".to_string()
+                    }
                 })
             } else {
                 None
@@ -229,7 +233,7 @@ impl Handlers {
             "store_memory: Using session sequence for E4 embedding"
         );
 
-        // Generate all 13 embeddings using MultiArrayEmbeddingProvider
+        // Generate all 14 embeddings using MultiArrayEmbeddingProvider
         // E4-FIX: Use embed_all_with_metadata to pass sequence number to E4
         let embedding_output = match self
             .multi_array_provider
@@ -267,9 +271,12 @@ impl Handlers {
 
         // Create TeleologicalFingerprint from embeddings with user-specified importance
         // E6-FIX: Chain .with_e6_sparse() to propagate the E6 sparse vector
-        let fingerprint =
-            TeleologicalFingerprint::with_importance(embedding_output.fingerprint, content_hash, importance)
-                .with_e6_sparse(e6_sparse);
+        let fingerprint = TeleologicalFingerprint::with_importance(
+            embedding_output.fingerprint,
+            content_hash,
+            importance,
+        )
+        .with_e6_sparse(e6_sparse);
         let fingerprint_id = fingerprint.id;
 
         match self.teleological_store.store(fingerprint).await {
@@ -331,7 +338,11 @@ impl Handlers {
                 // Without this, entity Jaccard is always 0.0 because entities aren't linked to stored memories.
                 let entity_names = {
                     let entity_meta = super::entity_tools::extract_entity_mentions(&content);
-                    let ids: Vec<String> = entity_meta.canonical_ids().into_iter().map(String::from).collect();
+                    let ids: Vec<String> = entity_meta
+                        .canonical_ids()
+                        .into_iter()
+                        .map(String::from)
+                        .collect();
                     if !ids.is_empty() {
                         debug!(
                             fingerprint_id = %fingerprint_id,
@@ -385,7 +396,8 @@ impl Handlers {
                 // PHASE-1.2: Append audit record for memory creation
                 {
                     use context_graph_core::types::audit::{AuditOperation, AuditRecord};
-                    let mut audit_record = AuditRecord::new(AuditOperation::MemoryCreated, fingerprint_id);
+                    let mut audit_record =
+                        AuditRecord::new(AuditOperation::MemoryCreated, fingerprint_id);
                     if let Some(ref op_id) = operator_id {
                         audit_record = audit_record.with_operator(op_id.clone());
                     }
@@ -402,7 +414,11 @@ impl Handlers {
                         "embedding_hint_provenance": embedding_output.e5_hint_provenance,
                     }));
 
-                    if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                    if let Err(e) = self
+                        .teleological_store
+                        .append_audit_record(&audit_record)
+                        .await
+                    {
                         // Non-fatal: audit is secondary to the main operation
                         error!(
                             fingerprint_id = %fingerprint_id,
@@ -426,10 +442,8 @@ impl Handlers {
 
                     let mut embedder_versions = HashMap::new();
                     for (i, label) in EMBEDDER_NAMES.iter().enumerate() {
-                        embedder_versions.insert(
-                            label.to_string(),
-                            embedding_output.model_ids[i].clone(),
-                        );
+                        embedder_versions
+                            .insert(label.to_string(), embedding_output.model_ids[i].clone());
                     }
 
                     let record = EmbeddingVersionRecord {
@@ -440,7 +454,11 @@ impl Handlers {
                         computation_time_ms: Some(embedding_output.total_latency.as_millis() as u64),
                     };
 
-                    if let Err(e) = self.teleological_store.store_embedding_version(&record).await {
+                    if let Err(e) = self
+                        .teleological_store
+                        .store_embedding_version(&record)
+                        .await
+                    {
                         warn!(
                             fingerprint_id = %fingerprint_id,
                             error = %e,
@@ -461,10 +479,11 @@ impl Handlers {
                 // (cause text → cause vec, effect text → effect vec per AP-77), and persist
                 // CausalRelationship records to CF_CAUSAL_RELATIONSHIPS with full provenance.
                 //
-                // This runs inline with the 13-embedder pipeline — no background loop.
+                // This runs inline with the 14-embedder pipeline - no background loop.
                 // Only available when `llm` feature is enabled.
                 #[cfg(feature = "llm")]
-                self.extract_inline_causal_relationships(&content, fingerprint_id).await;
+                self.extract_inline_causal_relationships(&content, fingerprint_id)
+                    .await;
 
                 // Build response, including rationale if provided
                 let mut response = json!({
@@ -491,7 +510,7 @@ impl Handlers {
     ///
     /// TASK-S001: Updated to use TeleologicalMemoryStore search_semantic.
     ///
-    /// Searches the memory graph for matching content using all 13 embedding spaces.
+    /// Searches the memory graph for matching content using all 14 embedding spaces.
     ///
     /// TODO(MCP-M4): This function is 1094 lines with 13+ concerns. Split into subfunctions:
     /// - parameter parsing/validation
@@ -593,7 +612,10 @@ impl Handlers {
                 return self.tool_error_typed(
                     id,
                     ToolErrorKind::Validation,
-                    &format!("Unknown strategy '{}'. Valid: e1_only, multi_space, pipeline", unknown),
+                    &format!(
+                        "Unknown strategy '{}'. Valid: e1_only, multi_space, pipeline",
+                        unknown
+                    ),
                 );
             }
         };
@@ -606,15 +628,22 @@ impl Handlers {
 
         // GAP-1: Parse custom weights (overrides weightProfile when provided)
         // AP-NAV-01: FAIL FAST on invalid embedder names
-        let custom_weights: Option<[f32; 14]> = match args.get("customWeights").and_then(|v| v.as_object()) {
+        let custom_weights: Option<[f32; 14]> = match args
+            .get("customWeights")
+            .and_then(|v| v.as_object())
+        {
             Some(obj) => {
                 // Reject any keys that are not valid embedder names
                 for key in obj.keys() {
                     if !EMBEDDER_NAMES.contains(&key.as_str()) {
                         error!(invalid_key = %key, "search_graph: customWeights contains invalid embedder name");
-                        return self.tool_error(id, &format!(
-                            "Invalid embedder name '{}' in customWeights. Valid names: E1-E13.", key
-                        ));
+                        return self.tool_error(
+                            id,
+                            &format!(
+                                "Invalid embedder name '{}' in customWeights. Valid names: E1-E14.",
+                                key
+                            ),
+                        );
                     }
                 }
                 let mut weights = [0.0f32; 14];
@@ -630,7 +659,10 @@ impl Handlers {
 
         // GAP-8: Parse exclude embedders
         let mut exclude_embedder_names: Vec<String> = Vec::new();
-        let exclude_embedders: Vec<usize> = match args.get("excludeEmbedders").and_then(|v| v.as_array()) {
+        let exclude_embedders: Vec<usize> = match args
+            .get("excludeEmbedders")
+            .and_then(|v| v.as_array())
+        {
             Some(arr) => {
                 let mut indices = Vec::new();
                 for v in arr {
@@ -638,7 +670,8 @@ impl Handlers {
                         Some(s) => s,
                         None => {
                             error!("search_graph: excludeEmbedders contains non-string value");
-                            return self.tool_error(id, "excludeEmbedders must contain strings (E1-E13)");
+                            return self
+                                .tool_error(id, "excludeEmbedders must contain strings (E1-E14)");
                         }
                     };
                     let idx = match embedder_name_to_index(s) {
@@ -766,12 +799,17 @@ impl Handlers {
         let sequence_direction = match args.get("sequenceDirection").and_then(|v| v.as_str()) {
             Some("before") => context_graph_core::traits::SequenceDirection::Before,
             Some("after") => context_graph_core::traits::SequenceDirection::After,
-            Some("both") | Some("around") | None => context_graph_core::traits::SequenceDirection::Both,
+            Some("both") | Some("around") | None => {
+                context_graph_core::traits::SequenceDirection::Both
+            }
             Some(unknown) => {
                 return self.tool_error_typed(
                     id,
                     ToolErrorKind::Validation,
-                    &format!("Unknown sequenceDirection '{}'. Valid: before, after, around, both", unknown),
+                    &format!(
+                        "Unknown sequenceDirection '{}'. Valid: before, after, around, both",
+                        unknown
+                    ),
                 );
             }
         };
@@ -787,7 +825,10 @@ impl Handlers {
                 return self.tool_error_typed(
                     id,
                     ToolErrorKind::Validation,
-                    &format!("Unknown temporalScale '{}'. Valid: micro, meso, macro, long, archival", unknown),
+                    &format!(
+                        "Unknown temporalScale '{}'. Valid: micro, meso, macro, long, archival",
+                        unknown
+                    ),
                 );
             }
         };
@@ -819,7 +860,10 @@ impl Handlers {
                 return self.tool_error_typed(
                     id,
                     ToolErrorKind::Validation,
-                    &format!("Unknown sessionScope '{}'. Valid: current, recent, all", unknown),
+                    &format!(
+                        "Unknown sessionScope '{}'. Valid: current, recent, all",
+                        unknown
+                    ),
                 );
             }
         };
@@ -882,7 +926,8 @@ impl Handlers {
         // =========================================================================
 
         // Expand causal queries with related terms for better recall
-        let search_query = if enable_query_expansion && causal_direction != CausalDirection::Unknown {
+        let search_query = if enable_query_expansion && causal_direction != CausalDirection::Unknown
+        {
             expand_causal_query(query, causal_direction)
         } else {
             query.to_string()
@@ -893,11 +938,12 @@ impl Handlers {
 
         // Build search options with multi-space parameters
         // For causal queries, over-fetch candidates to allow for reranking
-        let fetch_multiplier = if enable_asymmetric_e5 && causal_direction != CausalDirection::Unknown {
-            3 // Fetch 3x candidates for asymmetric reranking
-        } else {
-            1
-        };
+        let fetch_multiplier =
+            if enable_asymmetric_e5 && causal_direction != CausalDirection::Unknown {
+                3 // Fetch 3x candidates for asymmetric reranking
+            } else {
+                1
+            };
         let fetch_top_k = top_k * fetch_multiplier;
 
         let mut options = TeleologicalSearchOptions::quick(fetch_top_k)
@@ -908,11 +954,21 @@ impl Handlers {
 
         // Map weight profile to synergy weights for cross-embedder correlation boost
         if let Some(sw) = match effective_weight_profile.as_deref() {
-            Some("code_search") => Some([0.3, 0.0, 0.0, 0.0, 0.1, 0.2, 1.0, 0.2, 0.1, 0.1, 0.0, 0.0, 0.0, 0.0]),
-            Some("semantic_search") => Some([1.0, 0.0, 0.0, 0.0, 0.3, 0.2, 0.1, 0.2, 0.2, 0.3, 0.1, 0.0, 0.0, 0.0]),
-            Some("temporal_navigation") => Some([0.3, 0.8, 0.8, 0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]),
-            Some("causal_reasoning") => Some([0.3, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0]),
-            Some("entity_focused") => Some([0.3, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0]),
+            Some("code_search") => Some([
+                0.3, 0.0, 0.0, 0.0, 0.1, 0.2, 1.0, 0.2, 0.1, 0.1, 0.0, 0.0, 0.0, 0.0,
+            ]),
+            Some("semantic_search") => Some([
+                1.0, 0.0, 0.0, 0.0, 0.3, 0.2, 0.1, 0.2, 0.2, 0.3, 0.1, 0.0, 0.0, 0.0,
+            ]),
+            Some("temporal_navigation") => Some([
+                0.3, 0.8, 0.8, 0.8, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+            ]),
+            Some("causal_reasoning") => Some([
+                0.3, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.3, 0.0, 0.0, 0.1, 0.0, 0.0, 0.0,
+            ]),
+            Some("entity_focused") => Some([
+                0.3, 0.0, 0.0, 0.0, 0.0, 0.2, 0.0, 0.2, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0,
+            ]),
             _ => None,
         } {
             options = options.with_synergy_weights(sw);
@@ -961,7 +1017,10 @@ impl Handlers {
                 .with_temporal_scale(temporal_scale);
 
             // Apply decay half-life if exponential
-            if matches!(decay_function, context_graph_core::traits::DecayFunction::Exponential) {
+            if matches!(
+                decay_function,
+                context_graph_core::traits::DecayFunction::Exponential
+            ) {
                 options.temporal_options.decay_half_life_secs = decay_half_life;
             }
         }
@@ -997,12 +1056,15 @@ impl Handlers {
                     options = options.with_session_filter(sid);
                 }
             }
-            _ => unreachable!("sessionScope validated above")
+            _ => unreachable!("sessionScope validated above"),
         }
 
         // Apply periodic boost if configured
         if let Some(weight) = periodic_boost {
-            let mut periodic = context_graph_core::traits::PeriodicOptions { weight, ..Default::default() };
+            let mut periodic = context_graph_core::traits::PeriodicOptions {
+                weight,
+                ..Default::default()
+            };
             if let Some(hour) = target_hour {
                 periodic.target_hour = Some(hour);
             }
@@ -1067,7 +1129,10 @@ impl Handlers {
         );
 
         // Generate query embedding using potentially expanded query
-        let query_embedding = match self.embed_query(id.clone(), &search_query, "search_graph").await {
+        let query_embedding = match self
+            .embed_query(id.clone(), &search_query, "search_graph")
+            .await
+        {
             Ok(fp) => fp,
             Err(resp) => return resp,
         };
@@ -1079,7 +1144,7 @@ impl Handlers {
         // - E1 foundation search (ARCH-12)
         // - Multi-space RRF fusion when strategy=multi_space (ARCH-21)
         // - Weight profile application via resolve_weights()
-        // - All 13 embedder scores computed for each result
+        // - All 14 embedder scores computed for each result
         //
         // Blind spots and agreement metrics are derived from embedder_scores in response.
         match self
@@ -1100,7 +1165,9 @@ impl Handlers {
                 {
                     // Get E5 weight from the effective profile (default to 0.10 for causal_reasoning)
                     let e5_weight = get_e5_causal_weight(
-                        effective_weight_profile.as_deref().unwrap_or("causal_reasoning")
+                        effective_weight_profile
+                            .as_deref()
+                            .unwrap_or("causal_reasoning"),
                     );
 
                     info!(
@@ -1110,11 +1177,7 @@ impl Handlers {
                         "Applying asymmetric E5 reranking"
                     );
 
-                    apply_asymmetric_e5_reranking(
-                        &mut results,
-                        &query_embedding,
-                        causal_direction,
-                    );
+                    apply_asymmetric_e5_reranking(&mut results, &query_embedding, causal_direction);
                     apply_direction_aware_reranking(&mut results, causal_direction);
                     true
                 } else {
@@ -1133,11 +1196,7 @@ impl Handlers {
                         "Applying ColBERT late interaction reranking"
                     );
 
-                    apply_colbert_reranking(
-                        &mut results,
-                        &query_embedding,
-                        top_k,
-                    );
+                    apply_colbert_reranking(&mut results, &query_embedding, top_k);
                     true
                 } else {
                     false
@@ -1188,7 +1247,11 @@ impl Handlers {
                             return self.tool_error_typed(
                                 id,
                                 ToolErrorKind::Storage,
-                                &format!("Content retrieval failed for {} results: {}", results.len(), e),
+                                &format!(
+                                    "Content retrieval failed for {} results: {}",
+                                    results.len(),
+                                    e
+                                ),
                             );
                         }
                     }
@@ -1200,25 +1263,34 @@ impl Handlers {
                 // Batch retrieve source metadata for all results
                 // Source metadata enables context injection to show file paths for MDFileChunk memories
                 // FAIL FAST: Return tool_error on retrieval failure — no silent degradation
-                let source_metadata: Vec<Option<context_graph_core::types::SourceMetadata>> = if !results.is_empty() {
-                    match self.teleological_store.get_source_metadata_batch(&ids).await {
-                        Ok(m) => m,
-                        Err(e) => {
-                            error!(
-                                error = %e,
-                                result_count = results.len(),
-                                "search_graph: Source metadata retrieval failed"
-                            );
-                            return self.tool_error_typed(
-                                id,
-                                ToolErrorKind::Storage,
-                                &format!("Source metadata retrieval failed for {} results: {}", results.len(), e),
-                            );
+                let source_metadata: Vec<Option<context_graph_core::types::SourceMetadata>> =
+                    if !results.is_empty() {
+                        match self
+                            .teleological_store
+                            .get_source_metadata_batch(&ids)
+                            .await
+                        {
+                            Ok(m) => m,
+                            Err(e) => {
+                                error!(
+                                    error = %e,
+                                    result_count = results.len(),
+                                    "search_graph: Source metadata retrieval failed"
+                                );
+                                return self.tool_error_typed(
+                                    id,
+                                    ToolErrorKind::Storage,
+                                    &format!(
+                                        "Source metadata retrieval failed for {} results: {}",
+                                        results.len(),
+                                        e
+                                    ),
+                                );
+                            }
                         }
-                    }
-                } else {
-                    vec![]
-                };
+                    } else {
+                        vec![]
+                    };
 
                 // PHASE-2-PROVENANCE: Compute strategy name before the results loop
                 // (needed both for provenance and for the response metadata)
@@ -1277,10 +1349,10 @@ impl Handlers {
                     .enumerate()
                     .map(|(i, r)| {
                         // =================================================================
-                        // 13-EMBEDDER VISIBILITY FOR AI NAVIGATION
+                        // 14-EMBEDDER VISIBILITY FOR AI NAVIGATION
                         // =================================================================
                         // Per Constitution v6.5: Give AI models FULL visibility into all
-                        // 13 embedders so they can navigate massive datasets effectively.
+                        // 14 embedders so they can navigate massive datasets effectively.
 
                         let e1_score = r.embedder_scores[0];
 
@@ -1466,7 +1538,7 @@ impl Handlers {
                                 "strategy": strategy_name,
                                 "weightProfile": effective_weight_profile.as_deref().unwrap_or("default"),
                                 "embedderContributions": contributions,
-                                "consensusScore": agreement_count as f32 / 13.0,
+                                "consensusScore": agreement_count as f32 / NUM_EMBEDDERS as f32,
                                 "primaryEmbedder": embedder_names::name(r.dominant_embedder()),
                                 "isBlindSpotDiscovery": !blind_spots.is_empty() && agreement_count <= 1
                             });
@@ -1531,7 +1603,7 @@ impl Handlers {
                 // =========================================================================
                 // SEARCH TRANSPARENCY: Show which embedders actually participated
                 // =========================================================================
-                // Per GAP-1: Make it transparent which of the 13 embedders
+                // Per GAP-1: Make it transparent which of the 14 embedders
                 // participated in RRF fusion vs. which weights were ignored.
                 {
                     // P6: Reuse pre-resolved weights (single lock acquisition above).
@@ -1545,28 +1617,29 @@ impl Handlers {
                         SearchStrategy::MultiSpace => {
                             // E2(1), E3(2), E4(3) are weight-gated in search_multi_space_sync
                             // E6(5) participates in scoring (not HNSW recall) when weight > 0
-                            let mut indices = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+                            let mut indices = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 13];
                             let label = if E11_ENTITY_ENABLED {
                                 indices.push(10);
-                                "E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10+E11 RRF fusion (* = weight-gated)"
+                                "E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10+E11+E14 RRF fusion (* = weight-gated)"
                             } else {
-                                "E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10 RRF fusion (* = weight-gated, E11 disabled)"
+                                "E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10+E14 RRF fusion (* = weight-gated, E11 disabled)"
                             };
                             (indices, label)
                         }
                         SearchStrategy::Pipeline => {
                             // E6(5) participates in Stage 2 scoring when weight > 0
-                            let mut indices = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+                            let mut indices = vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 13];
                             let label = if E11_ENTITY_ENABLED {
                                 indices.push(10);
-                                "E13 recall → E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10+E11 RRF scoring (* = weight-gated)"
+                                "E13 recall -> E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10+E11+E14 RRF scoring (* = weight-gated)"
                             } else {
-                                "E13 recall → E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10 RRF scoring (* = weight-gated, E11 disabled)"
+                                "E13 recall -> E1+E2*+E3*+E4*+E5+E6+E7+E8+E9+E10+E14 RRF scoring (* = weight-gated, E11 disabled)"
                             };
                             (indices, label)
                         }
                     };
-                    let active_indices: Vec<usize> = strategy_indices.into_iter()
+                    let active_indices: Vec<usize> = strategy_indices
+                        .into_iter()
                         .filter(|idx| resolved_weights[*idx] > 0.0)
                         .collect();
 
@@ -1588,7 +1661,7 @@ impl Handlers {
                         "activeEmbedders": active_weights,
                         "ignoredWeights": ignored_weights,
                         "activeEmbedderCount": active_weights.len(),
-                        "totalEmbedderCount": 13,
+                        "totalEmbedderCount": NUM_EMBEDDERS,
                         "weightUtilization": active_sum,
                         "strategyDescription": strategy_label,
                     });
@@ -1596,7 +1669,8 @@ impl Handlers {
 
                 // Emit SearchPerformed audit (non-fatal)
                 {
-                    let result_ids: Vec<uuid::Uuid> = results.iter().map(|r| r.fingerprint.id).collect();
+                    let result_ids: Vec<uuid::Uuid> =
+                        results.iter().map(|r| r.fingerprint.id).collect();
                     let audit_record = AuditRecord::new(
                         AuditOperation::SearchPerformed {
                             tool_name: "search_graph".to_string(),
@@ -1614,7 +1688,11 @@ impl Handlers {
                         "weight_profile": effective_weight_profile,
                     }));
 
-                    if let Err(e) = self.teleological_store.append_audit_record(&audit_record).await {
+                    if let Err(e) = self
+                        .teleological_store
+                        .append_audit_record(&audit_record)
+                        .await
+                    {
                         error!(error = %e, "search_graph: Failed to write audit record (non-fatal)");
                     }
                 }
@@ -1687,7 +1765,9 @@ fn apply_asymmetric_e5_reranking(
     }
 
     results.sort_by(|a, b| {
-        b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal)
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 }
 
@@ -1720,7 +1800,9 @@ fn apply_direction_aware_reranking(
     }
 
     results.sort_by(|a, b| {
-        b.similarity.partial_cmp(&a.similarity).unwrap_or(std::cmp::Ordering::Equal)
+        b.similarity
+            .partial_cmp(&a.similarity)
+            .unwrap_or(std::cmp::Ordering::Equal)
     });
 }
 
@@ -1840,8 +1922,8 @@ fn apply_colbert_reranking(
 
         // Blend ColBERT score with existing similarity
         // Formula: new_sim = (1 - colbert_weight) × old_sim + colbert_weight × maxsim
-        result.similarity = result.similarity * (1.0 - COLBERT_WEIGHT)
-            + maxsim_score * COLBERT_WEIGHT;
+        result.similarity =
+            result.similarity * (1.0 - COLBERT_WEIGHT) + maxsim_score * COLBERT_WEIGHT;
 
         reranked += 1;
     }
@@ -1872,11 +1954,7 @@ impl Handlers {
     ///
     /// Generates E5 asymmetric embeddings for each discovered relationship and
     /// persists CausalRelationship records.
-    async fn extract_inline_causal_relationships(
-        &self,
-        content: &str,
-        fingerprint_id: uuid::Uuid,
-    ) {
+    async fn extract_inline_causal_relationships(&self, content: &str, fingerprint_id: uuid::Uuid) {
         if let Some(ref llm) = self.causal_discovery_llm {
             if llm.is_loaded() {
                 debug!("store_memory: Extracting causal relationships inline via LLM");
@@ -1920,12 +1998,10 @@ impl Handlers {
                                 // Generate E5 asymmetric embeddings per AP-77:
                                 // cause_vec = cause-encoding of cause text
                                 // effect_vec = effect-encoding of effect text
-                                let cause_result = causal_model
-                                    .embed_dual(&relationship.cause)
-                                    .await;
-                                let effect_result = causal_model
-                                    .embed_dual(&relationship.effect)
-                                    .await;
+                                let cause_result =
+                                    causal_model.embed_dual(&relationship.cause).await;
+                                let effect_result =
+                                    causal_model.embed_dual(&relationship.effect).await;
 
                                 let (e5_cause, e5_effect) = match (cause_result, effect_result) {
                                     (Ok((cause_vec, _)), Ok((_, effect_vec))) => {
@@ -2022,13 +2098,13 @@ impl Handlers {
 // with sequence_tools.rs. Import via `use super::helpers::compute_position_label;`
 
 // =============================================================================
-// 13-EMBEDDER VISIBILITY SYSTEM
+// 14-EMBEDDER VISIBILITY SYSTEM
 // =============================================================================
-// Per Constitution v6.5: AI models must have FULL visibility into all 13 embedders
+// Per Constitution v6.5: AI models must have FULL visibility into all 14 embedders
 // to navigate massive datasets from multiple angles. Each embedder is a unique
 // perspective that finds what others miss.
 //
-// GOAL: Enable AI models to use all 13 embedders as navigation guides through
+// GOAL: Enable AI models to use all 14 embedders as navigation guides through
 // massive datasets, understanding which perspectives found what and why.
 
 /// Threshold for E1 "miss" - below this, E1 would have missed the result.
@@ -2041,20 +2117,90 @@ const ENHANCER_FIND_THRESHOLD: f32 = 0.5;
 /// Each embedder has a specific signal it captures that E1 might miss.
 const EMBEDDER_INFO: [(usize, &str, &str, &str); 14] = [
     // (index, name, category, what_it_finds)
-    (0, "E1_Semantic", "FOUNDATION", "Dense semantic similarity - the foundation"),
-    (1, "E2_Recency", "TEMPORAL", "Temporal freshness - recent memories (post-retrieval only)"),
-    (2, "E3_Periodic", "TEMPORAL", "Time-of-day patterns - daily/weekly cycles (post-retrieval only)"),
-    (3, "E4_Sequence", "TEMPORAL", "Conversation order - before/after relationships (post-retrieval only)"),
-    (4, "E5_Causal", "SEMANTIC", "Causal chains - why X caused Y (direction preserved)"),
-    (5, "E6_Sparse", "SEMANTIC", "Exact keyword matches - precise terminology E1 dilutes"),
-    (6, "E7_Code", "SEMANTIC", "Code patterns - function signatures, syntax E1 treats as noise"),
-    (7, "E8_Graph", "RELATIONAL", "Structural relationships - imports, dependencies"),
-    (8, "E9_HDC", "STRUCTURAL", "Noise-robust structure - survives typos, variations"),
-    (9, "E10_Multimodal", "SEMANTIC", "Paraphrase detection - same meaning expressed differently"),
-    (10, "E11_Entity", "RELATIONAL", "Entity knowledge - 'Diesel' = database ORM for Rust"),
-    (11, "E12_ColBERT", "SEMANTIC", "Exact phrase matches - token-level precision (reranking)"),
-    (12, "E13_SPLADE", "SEMANTIC", "Term expansions - fast→quick, db→database (recall)"),
-    (13, "E14_BGE_M3_Dense", "SEMANTIC", "Multilingual semantic/style via BGE-M3 (XLM-RoBERTa)"),
+    (
+        0,
+        "E1_Semantic",
+        "FOUNDATION",
+        "Dense semantic similarity - the foundation",
+    ),
+    (
+        1,
+        "E2_Recency",
+        "TEMPORAL",
+        "Temporal freshness - recent memories (post-retrieval only)",
+    ),
+    (
+        2,
+        "E3_Periodic",
+        "TEMPORAL",
+        "Time-of-day patterns - daily/weekly cycles (post-retrieval only)",
+    ),
+    (
+        3,
+        "E4_Sequence",
+        "TEMPORAL",
+        "Conversation order - before/after relationships (post-retrieval only)",
+    ),
+    (
+        4,
+        "E5_Causal",
+        "SEMANTIC",
+        "Causal chains - why X caused Y (direction preserved)",
+    ),
+    (
+        5,
+        "E6_Sparse",
+        "SEMANTIC",
+        "Exact keyword matches - precise terminology E1 dilutes",
+    ),
+    (
+        6,
+        "E7_Code",
+        "SEMANTIC",
+        "Code patterns - function signatures, syntax E1 treats as noise",
+    ),
+    (
+        7,
+        "E8_Graph",
+        "RELATIONAL",
+        "Structural relationships - imports, dependencies",
+    ),
+    (
+        8,
+        "E9_HDC",
+        "STRUCTURAL",
+        "Noise-robust structure - survives typos, variations",
+    ),
+    (
+        9,
+        "E10_Multimodal",
+        "SEMANTIC",
+        "Paraphrase detection - same meaning expressed differently",
+    ),
+    (
+        10,
+        "E11_Entity",
+        "RELATIONAL",
+        "Entity knowledge - 'Diesel' = database ORM for Rust",
+    ),
+    (
+        11,
+        "E12_ColBERT",
+        "SEMANTIC",
+        "Exact phrase matches - token-level precision (reranking)",
+    ),
+    (
+        12,
+        "E13_SPLADE",
+        "SEMANTIC",
+        "Term expansions - fast→quick, db→database (recall)",
+    ),
+    (
+        13,
+        "E14_BGE_M3_Dense",
+        "SEMANTIC",
+        "Multilingual semantic/style via BGE-M3 (XLM-RoBERTa)",
+    ),
 ];
 
 /// Compute blind spots: ALL enhancers that found this result but E1 missed.
@@ -2070,7 +2216,7 @@ const EMBEDDER_INFO: [(usize, &str, &str, &str); 14] = [
 /// Per Constitution v6.5: ALL enhancers are checked, not just a subset.
 ///
 /// # Arguments
-/// * `embedder_scores` - All 13 embedder scores [E1, E2, ..., E13]
+/// * `embedder_scores` - All 14 embedder scores [E1, E2, ..., E14]
 /// * `e1_score` - E1 semantic score (passed separately for clarity)
 ///
 /// # Returns
@@ -2095,6 +2241,7 @@ fn compute_blind_spots(embedder_scores: &[f32; 14], e1_score: f32) -> Vec<serde_
         (10, "E11_Entity", "entity knowledge"),
         (11, "E12_ColBERT", "phrase precision"),
         (12, "E13_SPLADE", "term expansion"),
+        (13, "E14_BGE_M3_Dense", "multilingual/long-context semantic match"),
     ];
 
     for (idx, name, finds) in enhancers {
@@ -2112,14 +2259,14 @@ fn compute_blind_spots(embedder_scores: &[f32; 14], e1_score: f32) -> Vec<serde_
     blind_spots
 }
 
-/// Build FULL 13-embedder visibility JSON with all scores and metadata.
+/// Build FULL 14-embedder visibility JSON with all scores and metadata.
 ///
-/// Per Constitution v6.5: AI models need FULL visibility into all 13 embedders
+/// Per Constitution v6.5: AI models need FULL visibility into all 14 embedders
 /// to navigate massive datasets. We include ALL scores (not just significant ones)
 /// grouped by category with explanations of what each embedder finds.
 ///
 /// # Arguments
-/// * `embedder_scores` - All 13 embedder scores
+/// * `embedder_scores` - All 14 embedder scores
 ///
 /// # Returns
 /// JSON object with categorized embedder scores and metadata
@@ -2173,7 +2320,7 @@ fn build_embedder_scores_json(embedder_scores: &[f32; 14]) -> serde_json::Value 
 /// which embedders to explore based on current findings.
 ///
 /// # Arguments
-/// * `embedder_scores` - All 13 embedder scores
+/// * `embedder_scores` - All 14 embedder scores
 ///
 /// # Returns
 /// Vector of navigation suggestions
@@ -2190,7 +2337,9 @@ fn compute_navigation_hints(embedder_scores: &[f32; 14]) -> Vec<String> {
 
     // E5 sentinel: no causal direction detected
     if e5 < 0.0 {
-        hints.push("E5 (causal): no signal — use causalDirection param for causal queries".to_string());
+        hints.push(
+            "E5 (causal): no signal — use causalDirection param for causal queries".to_string(),
+        );
     }
 
     // Suggest based on what's strong vs weak
@@ -2198,13 +2347,20 @@ fn compute_navigation_hints(embedder_scores: &[f32; 14]) -> Vec<String> {
         hints.push("E7 (code) found more than E1 - try search_code for code patterns".to_string());
     }
     if e11 > e1 + 0.2 {
-        hints.push("E11 (entity) found more than E1 - try search_by_entities for relationships".to_string());
+        hints.push(
+            "E11 (entity) found more than E1 - try search_by_entities for relationships"
+                .to_string(),
+        );
     }
     if e5 > e1 + 0.2 {
-        hints.push("E5 (causal) found more than E1 - try search_causes for causal chains".to_string());
+        hints.push(
+            "E5 (causal) found more than E1 - try search_causes for causal chains".to_string(),
+        );
     }
     if e8 > 0.5 {
-        hints.push("E8 (graph) is strong - try search_connections for imports/dependencies".to_string());
+        hints.push(
+            "E8 (graph) is strong - try search_connections for imports/dependencies".to_string(),
+        );
     }
     if e10 > e1 + 0.1 {
         hints.push("E10 (paraphrase) found similar purpose - results may use different words for same concept".to_string());
@@ -2218,12 +2374,12 @@ fn compute_navigation_hints(embedder_scores: &[f32; 14]) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{MAX_RATIONALE_LEN, MAX_TOP_K, MIN_RATIONALE_LEN, MIN_TOP_K};
     use super::{
-        apply_causal_gate, expand_causal_query, get_e5_causal_weight,
-        CausalDirection, COLBERT_WEIGHT,
-        compute_blind_spots, build_embedder_scores_json, compute_navigation_hints,
+        apply_causal_gate, build_embedder_scores_json, compute_blind_spots,
+        compute_navigation_hints, expand_causal_query, get_e5_causal_weight, CausalDirection,
+        COLBERT_WEIGHT,
     };
+    use super::{MAX_RATIONALE_LEN, MAX_TOP_K, MIN_RATIONALE_LEN, MIN_TOP_K};
     use context_graph_core::causal::asymmetric::{causal_gate, direction_mod};
     use context_graph_storage::compute_maxsim_direct;
 
@@ -2231,7 +2387,9 @@ mod tests {
     fn test_validation_and_causal_gate() {
         // BUG-001/002: rationale and topK validation (inline checks after validation.rs removal)
         assert!("".chars().count() < MIN_RATIONALE_LEN);
-        assert!("x".chars().count() >= MIN_RATIONALE_LEN && "x".chars().count() <= MAX_RATIONALE_LEN);
+        assert!(
+            "x".chars().count() >= MIN_RATIONALE_LEN && "x".chars().count() <= MAX_RATIONALE_LEN
+        );
         const { assert!(0_u64 < MIN_TOP_K) };
         const { assert!(1_u64 >= MIN_TOP_K && 1_u64 <= MAX_TOP_K) };
         const { assert!(101_u64 > MAX_TOP_K) };
@@ -2255,7 +2413,10 @@ mod tests {
         assert!(expanded.contains("cause"));
         let expanded = expand_causal_query("delete the file", CausalDirection::Effect);
         assert!(expanded.contains("effect"));
-        assert_eq!(expand_causal_query("show me the code", CausalDirection::Unknown), "show me the code");
+        assert_eq!(
+            expand_causal_query("show me the code", CausalDirection::Unknown),
+            "show me the code"
+        );
     }
 
     #[test]
@@ -2275,7 +2436,8 @@ mod tests {
         }
         // Blind spot detection
         let mut scores = [0.0_f32; 14];
-        scores[0] = 0.2; scores[6] = 0.8;
+        scores[0] = 0.2;
+        scores[6] = 0.8;
         let blind_spots = compute_blind_spots(&scores, scores[0]);
         assert_eq!(blind_spots.len(), 1);
         assert_eq!(blind_spots[0]["embedder"], "E7_Code");
@@ -2290,7 +2452,8 @@ mod tests {
         assert_eq!(total, 14);
         // Navigation hints
         let mut scores2 = [0.0_f32; 14];
-        scores2[0] = 0.3; scores2[6] = 0.7;
+        scores2[0] = 0.3;
+        scores2[6] = 0.7;
         let hints = compute_navigation_hints(&scores2);
         assert!(hints.iter().any(|h| h.contains("search_code")));
     }

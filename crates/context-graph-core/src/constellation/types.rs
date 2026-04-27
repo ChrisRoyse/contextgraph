@@ -2,8 +2,8 @@
 //!
 //! A [`Constellation`] bundles per-embedder centroids and spread statistics for
 //! a set of memories selected by topic, session, tag, time range, or explicit
-//! id list. The shape is deliberately rigid (fixed 13 embedders, fixed 13D
-//! topic profile, fixed 6D group alignments, fixed 78D cross-correlation
+//! id list. The shape is deliberately rigid (fixed 14 embedders, fixed 14D
+//! topic profile, fixed 6D group alignments, fixed 91D cross-correlation
 //! centroid) so bincode round-trips without ambiguity.
 //!
 //! All structs are `#[derive(Serialize, Deserialize)]` with **no**
@@ -19,15 +19,15 @@ use crate::teleological::types::NUM_EMBEDDERS;
 /// Expected length of the per-embedder stats array — one entry per embedder.
 pub const NUM_CONSTELLATION_EMBEDDERS: usize = NUM_EMBEDDERS;
 
-/// Expected length of `topic_profile_centroid`: 13D.
+/// Expected length of `topic_profile_centroid`: 14D.
 pub const TOPIC_PROFILE_CENTROID_DIM: usize = NUM_EMBEDDERS;
 
 /// Expected length of `group_alignment_centroid`: 6D (Factual, Temporal,
 /// Causal, Relational, Qualitative, Implementation).
 pub const GROUP_ALIGNMENT_CENTROID_DIM: usize = 6;
 
-/// Expected length of `cross_correlation_centroid`: C(13, 2) = 78.
-pub const CROSS_CORRELATION_CENTROID_DIM: usize = 78;
+/// Expected length of `cross_correlation_centroid`: C(14, 2) = 91.
+pub const CROSS_CORRELATION_CENTROID_DIM: usize = NUM_EMBEDDERS * (NUM_EMBEDDERS - 1) / 2;
 
 /// A compiled constellation record, persisted to `CF_CONSTELLATIONS`.
 ///
@@ -50,7 +50,7 @@ pub struct Constellation {
     /// Length is always `NUM_CONSTELLATION_EMBEDDERS` (14 after E14 BGE-M3 Dense).
     pub per_embedder: Vec<EmbedderStats>,
 
-    /// Mean 13D topic profile across all members. **SILENT-ZERO WARNING**:
+    /// Mean 14D topic profile across all members. **SILENT-ZERO WARNING**:
     /// compiler only observes this when `stored_topic_profile = Some(_)`
     /// (read from `CF_TOPIC_PROFILES`). On a fresh DB before the clustering
     /// pipeline has populated that CF, every member yields `None` and the
@@ -64,8 +64,8 @@ pub struct Constellation {
     /// Mean 6D group alignment across all members. **SILENT-ZERO WARNING**:
     /// derived from `topic_profile_centroid`; identical caveat applies.
     pub group_alignment_centroid: [f32; GROUP_ALIGNMENT_CENTROID_DIM],
-    /// Mean 78-entry cross-correlation vector across all members. Always
-    /// length `CROSS_CORRELATION_CENTROID_DIM` (78). **SILENT-ZERO WARNING**:
+    /// Mean 91-entry cross-correlation vector across all members. Always
+    /// length `CROSS_CORRELATION_CENTROID_DIM` (91). **SILENT-ZERO WARNING**:
     /// derived from `topic_profile_centroid`; identical caveat applies.
     pub cross_correlation_centroid: Vec<f32>,
 

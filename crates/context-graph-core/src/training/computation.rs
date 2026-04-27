@@ -1,10 +1,10 @@
 //! Pure computation helpers for the training-record fusion features.
 //!
 //! Functions here are stateless and side-effect free:
-//! - [`topic_profile_or_fallback`] — resolve the 13D topic profile, preferring
+//! - [`topic_profile_or_fallback`] — resolve the 14D topic profile, preferring
 //!   the per-memory profile stored in `CF_TOPIC_PROFILES`; falls back to a
 //!   presence-indicator derivation when that row is missing.
-//! - [`compute_cross_correlations`] — 78 synergy-weighted pairwise products.
+//! - [`compute_cross_correlations`] — 91 synergy-weighted pairwise products.
 //! - [`compute_group_alignments`] — 6D group aggregation.
 //!
 //! None of these helpers read from the database. The caller is responsible for
@@ -18,7 +18,7 @@ use crate::types::fingerprint::{SemanticFingerprint, SparseVector};
 
 use super::{NUM_CROSS_CORRELATIONS, NUM_GROUP_ALIGNMENTS};
 
-/// Resolve the 13D topic profile for a memory.
+/// Resolve the 14D topic profile for a memory.
 ///
 /// **Preferred path** (fix #2 per `tasks/lessons.md`): when the caller has
 /// already read `CF_TOPIC_PROFILES` for this memory, pass it as
@@ -32,7 +32,7 @@ use super::{NUM_CROSS_CORRELATIONS, NUM_GROUP_ALIGNMENTS};
 /// Callers should treat it as a fallback only.
 ///
 /// Fallback derivation (`stored_profile = None`):
-/// - Dense vectors (E1/E2/E3/E4/E5_cause/E7/E8_source/E9/E10_paraphrase/E11):
+/// - Dense vectors (E1/E2/E3/E4/E5_cause/E7/E8_source/E9/E10_paraphrase/E11/E14):
 ///   `l2_norm.clamp(0, 1)` — a unit-normalized vector yields ~1.0, empty yields 0.0.
 /// - Sparse vectors (E6/E13): `sqrt(sum_sq).clamp(0, 1)`.
 /// - Token-level (E12): mean of non-zero per-token dense alignments.
@@ -59,6 +59,7 @@ pub fn topic_profile_or_fallback(
     profile[10] = dense_alignment(&fingerprint.e11_entity);
     profile[11] = token_level_alignment(&fingerprint.e12_late_interaction);
     profile[12] = sparse_alignment(&fingerprint.e13_splade);
+    profile[13] = dense_alignment(&fingerprint.e14_bge_m3_dense);
     profile
 }
 
@@ -104,16 +105,16 @@ fn token_level_alignment(tokens: &[Vec<f32>]) -> f32 {
     }
 }
 
-/// Compute the 78 synergy-weighted cross-correlations.
+/// Compute the 91 synergy-weighted cross-correlations.
 ///
-/// For each unique pair (i, j) with i < j in 0..13:
+/// For each unique pair (i, j) with i < j in 0..14:
 ///
 /// ```text
 /// cross_corr[(i,j)] = alignment_i * alignment_j * synergy(i, j)
 /// ```
 ///
 /// Pair ordering matches [`crate::teleological::TeleologicalVector`] and the
-/// training-record contract: (0,1), (0,2), …, (0,12), (1,2), …, (11,12).
+/// training-record contract: (0,1), (0,2), ..., (0,13), (1,2), ..., (12,13).
 /// Returns exactly [`NUM_CROSS_CORRELATIONS`] values in [0, 1].
 pub fn compute_cross_correlations(
     topic_profile: &[f32; NUM_EMBEDDERS],
@@ -132,11 +133,11 @@ pub fn compute_cross_correlations(
     out
 }
 
-/// Compute the 6D group alignments from a 13D topic profile.
+/// Compute the 6D group alignments from a 14D topic profile.
 ///
 /// Delegates to [`GroupAlignments::from_alignments`] which averages within
 /// each group per teleoplan.md Section 3.2:
-/// Factual=E1/E12/E13, Temporal=E2/E3, Causal=E4/E7,
+/// Factual=E1/E12/E13/E14, Temporal=E2/E3, Causal=E4/E7,
 /// Relational=E5/E8/E9, Qualitative=E10/E11, Implementation=E6.
 pub fn compute_group_alignments(
     topic_profile: &[f32; NUM_EMBEDDERS],

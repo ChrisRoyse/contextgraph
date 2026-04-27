@@ -38,8 +38,8 @@ fn test_fingerprint_size_in_range() {
     let fp = create_real_fingerprint();
     let serialized = serialize_teleological_fingerprint(&fp);
 
-    // Actual size calculation (with E9_DIM = 1024 projected):
-    // - TOTAL_DENSE_DIMS = 7,424 → 29,696 bytes for dense embeddings
+    // Actual size calculation:
+    // - Dense storage with E14 + dual E5/E8/E10 = 12,032 floats -> 48,128 bytes
     // - Plus sparse vectors and metadata
     // - Total: ~32-40KB for a fingerprint
     println!("BEFORE: Expected range [25KB, 100KB]");
@@ -79,14 +79,14 @@ fn test_topic_profile_roundtrip() {
         .expect("deserialize should succeed for valid data");
     println!("AFTER: {:?}", deserialized);
 
-    for i in 0..13 {
+    for i in 0..14 {
         assert!(
             (original[i] - deserialized[i]).abs() < 1e-6,
             "Value mismatch at index {}",
             i
         );
     }
-    println!("RESULT: PASS - All 13 dimensions preserved");
+    println!("RESULT: PASS - All 14 dimensions preserved");
 }
 
 #[test]

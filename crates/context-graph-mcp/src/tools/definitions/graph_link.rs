@@ -184,7 +184,7 @@ fn traverse_graph_definition() -> ToolDefinition {
 fn get_unified_neighbors_definition() -> ToolDefinition {
     ToolDefinition::new(
         "get_unified_neighbors",
-        "Find neighbors using Weighted RRF fusion across all 13 embedders, providing a unified \
+        "Find neighbors using Weighted RRF fusion across all 14 embedders, providing a unified \
          view where neighbors are ranked by how consistently multiple embedders agree they are \
          related. Unlike get_memory_neighbors (single embedder), this shows what ALL embedders \
          agree on. Per ARCH-21: Uses Weighted RRF, not weighted sum. Per AP-60: Temporal \

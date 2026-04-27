@@ -53,13 +53,21 @@ fn test_semantic_fingerprint_dimensions() {
     assert_eq!(fp.e10_multimodal_paraphrase.len(), E10_DIM);
     assert_eq!(fp.e10_multimodal_as_context.len(), E10_DIM);
     assert_eq!(fp.e11_entity.len(), E11_DIM);
+    assert_eq!(fp.e14_bge_m3_dense.len(), E14_DIM);
 
-    let expected_total =
-        E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E7_DIM + E8_DIM + E9_DIM + E10_DIM + E11_DIM;
+    let expected_total = E1_DIM
+        + E2_DIM
+        + E3_DIM
+        + E4_DIM
+        + E5_DIM
+        + E7_DIM
+        + E8_DIM
+        + E9_DIM
+        + E10_DIM
+        + E11_DIM
+        + E14_DIM;
     assert_eq!(TOTAL_DENSE_DIMS, expected_total);
-    // 1024 + 512 + 512 + 512 + 768 + 1536 + 1024 + 1024 + 768 + 768 = 8448
-    // (E8 upgraded from 384D to 1024D)
-    assert_eq!(TOTAL_DENSE_DIMS, 8448);
+    assert_eq!(TOTAL_DENSE_DIMS, 9472);
 }
 
 #[test]
@@ -187,8 +195,17 @@ fn test_dimension_constants() {
     assert_eq!(E14_DIM, 1024);
     assert_eq!(NUM_EMBEDDERS, 14);
 
-    let calculated =
-        E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E7_DIM + E8_DIM + E9_DIM + E10_DIM + E11_DIM;
+    let calculated = E1_DIM
+        + E2_DIM
+        + E3_DIM
+        + E4_DIM
+        + E5_DIM
+        + E7_DIM
+        + E8_DIM
+        + E9_DIM
+        + E10_DIM
+        + E11_DIM
+        + E14_DIM;
     assert_eq!(TOTAL_DENSE_DIMS, calculated);
 }
 

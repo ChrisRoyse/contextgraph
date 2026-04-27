@@ -232,7 +232,7 @@ impl RocksDbTeleologicalStore {
         Ok(out)
     }
 
-    /// Read the per-memory 13D topic profile from `CF_TOPIC_PROFILES`.
+    /// Read the per-memory 14D topic profile from `CF_TOPIC_PROFILES`.
     ///
     /// Returns `Ok(None)` when no row exists for this memory (use the fallback
     /// path in `topic_profile_or_fallback`). Rejects malformed rows (neither
@@ -351,6 +351,7 @@ mod tests {
             e10_paraphrase: Vec::new(),
             e10_context: Vec::new(),
             e11_entity: Vec::new(),
+            e14_bge_m3_dense: Vec::new(),
             e6_sparse_indices: Vec::new(),
             e6_sparse_values: Vec::new(),
             e13_splade_indices: Vec::new(),

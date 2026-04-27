@@ -110,7 +110,7 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
     /// Search a single embedder's HNSW index.
     ///
     /// # Arguments
-    /// * `embedder_idx` - Embedder index (0-12)
+    /// * `embedder_idx` - Embedder index (0-13)
     /// * `query` - Query vector (dimension must match embedder)
     /// * `k` - Number of results
     ///
@@ -118,7 +118,7 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
     /// Vec of `EmbedderQueryResult` sorted by similarity descending.
     ///
     /// # Panics
-    /// - `embedder_idx >= 13` -> panic
+    /// - `embedder_idx >= NUM_EMBEDDERS` -> panic
     /// - Embedder doesn't use HNSW (E6, E12) -> panic
     pub fn search_single_space(
         &self,
@@ -132,9 +132,10 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
 
         if embedder_idx as usize >= NUM_EMBEDDERS {
             panic!(
-                "SEARCH ERROR: Invalid embedder_idx={}. Valid range: 0-12. \
+                "SEARCH ERROR: Invalid embedder_idx={}. Valid range: 0-{}. \
                  Query dimension={}. Caller must validate embedder index.",
                 embedder_idx,
+                NUM_EMBEDDERS - 1,
                 query.len()
             );
         }
@@ -215,8 +216,9 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
         for &embedder_idx in queries.keys() {
             if embedder_idx as usize >= NUM_EMBEDDERS {
                 panic!(
-                    "SEARCH ERROR: Invalid embedder_idx={} in queries. Valid range: 0-12.",
-                    embedder_idx
+                    "SEARCH ERROR: Invalid embedder_idx={} in queries. Valid range: 0-{}.",
+                    embedder_idx,
+                    NUM_EMBEDDERS - 1
                 );
             }
         }
@@ -324,7 +326,7 @@ impl<S: QuantizedFingerprintRetriever> MultiSpaceSearchEngine<S> {
 
         for result in results {
             let idx = result.embedder_idx as usize;
-            if idx < 13 {
+            if idx < NUM_EMBEDDERS {
                 embedder_similarities[idx] = result.similarity;
 
                 // HIGH-3 FIX: RRF contribution w / (k + rank + 1) — 1-indexed

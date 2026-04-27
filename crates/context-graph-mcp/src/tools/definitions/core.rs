@@ -53,7 +53,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // get_memetic_status - get system state and metrics
         ToolDefinition::new(
             "get_memetic_status",
-            "Get current system status including fingerprint count, number of embedders (13), \
+            "Get current system status including fingerprint count, number of embedders (14), \
              storage backend and size, and layer status from LayerStatusProvider.",
             json!({
                 "type": "object",
@@ -65,7 +65,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // search_graph - semantic search with E5 causal and E10 paraphrase asymmetric similarity (ARCH-15, AP-77)
         ToolDefinition::new(
             "search_graph",
-            "Search the knowledge graph using multi-space semantic similarity across 13 embedders. \
+            "Search the knowledge graph using multi-space semantic similarity across 14 embedders. \
              Supports temporal search via E2 (recency), E3 (periodicity), E4 (sequence) — \
              use temporal_navigation profile or set E2/E3/E4 independently via customWeights. \
              For causal queries ('why', 'what happens'), automatically applies \

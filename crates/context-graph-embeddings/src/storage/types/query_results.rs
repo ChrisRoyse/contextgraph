@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use super::constants::RRF_K;
+use super::constants::{NUM_EMBEDDERS, RRF_K};
 
 /// Result from per-embedder index search (single space).
 ///
@@ -13,7 +13,7 @@ pub struct EmbedderQueryResult {
     /// Fingerprint UUID.
     pub id: Uuid,
 
-    /// Embedder index (0-12).
+    /// Embedder index (0-13).
     pub embedder_idx: u8,
 
     /// Similarity score [0.0, 1.0] for cosine, [-1.0, 1.0] for dot product.
@@ -55,9 +55,9 @@ pub struct MultiSpaceQueryResult {
     /// Fingerprint UUID.
     pub id: Uuid,
 
-    /// Per-embedder similarities (13 values).
+    /// Per-embedder similarities (14 values).
     /// NaN if embedder wasn't searched (e.g., sparse-only query).
-    pub embedder_similarities: [f32; 14],
+    pub embedder_similarities: [f32; NUM_EMBEDDERS],
 
     /// RRF fused score from multi-space retrieval.
     /// Formula: RRF(d) = Σᵢ 1/(k + rankᵢ(d) + 1) where k=60 (1-indexed)
@@ -68,7 +68,7 @@ pub struct MultiSpaceQueryResult {
     pub weighted_similarity: f32,
 
     /// Number of embedders that contributed to this result.
-    /// Less than 13 if some embedders weren't searched.
+    /// Less than 14 if some embedders weren't searched.
     pub embedder_count: usize,
 }
 
@@ -91,14 +91,14 @@ impl MultiSpaceQueryResult {
             );
         }
 
-        let mut embedder_similarities = [f32::NAN; 14];
+        let mut embedder_similarities = [f32::NAN; NUM_EMBEDDERS];
         let mut rrf_score = 0.0f32;
         let mut weighted_sum = 0.0f32;
         let mut weight_total = 0.0f32;
 
         for result in results {
             let idx = result.embedder_idx as usize;
-            if idx < 13 {
+            if idx < NUM_EMBEDDERS {
                 embedder_similarities[idx] = result.similarity;
                 rrf_score += result.rrf_contribution();
                 weighted_sum += result.similarity;

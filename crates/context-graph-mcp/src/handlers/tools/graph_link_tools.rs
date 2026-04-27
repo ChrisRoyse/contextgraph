@@ -28,23 +28,24 @@ use tracing::{debug, error, info};
 use uuid::Uuid;
 
 use context_graph_core::graph_linking::GraphLinkEdgeType;
+use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 use context_graph_core::weights::get_effective_weight_profile;
 
 use crate::protocol::JsonRpcId;
 use crate::protocol::JsonRpcResponse;
 
 use super::graph_link_dtos::{
-    embedder_name, embedder_name_to_index, uses_asymmetric_similarity,
-    AgreementSummary, EmbedderContribution, EMBEDDER_NAMES,
-    GetMemoryNeighborsRequest, GetMemoryNeighborsResponse, GetTypedEdgesRequest,
-    GetTypedEdgesResponse, GetUnifiedNeighborsRequest, GetUnifiedNeighborsResponse, NeighborResult,
-    NeighborSearchMetadata, NeighborSourceInfo, TraversalMetadata, TraversalNode, TraversalPath,
-    TraverseGraphRequest, TraverseGraphResponse, TypedEdgeMetadata, TypedEdgeResult,
-    UnifiedNeighborMetadata, UnifiedNeighborResult, RRF_K, SEMANTIC_EMBEDDER_INDICES,
+    embedder_name, embedder_name_to_index, uses_asymmetric_similarity, AgreementSummary,
+    EmbedderContribution, GetMemoryNeighborsRequest, GetMemoryNeighborsResponse,
+    GetTypedEdgesRequest, GetTypedEdgesResponse, GetUnifiedNeighborsRequest,
+    GetUnifiedNeighborsResponse, NeighborResult, NeighborSearchMetadata, NeighborSourceInfo,
+    TraversalMetadata, TraversalNode, TraversalPath, TraverseGraphRequest, TraverseGraphResponse,
+    TypedEdgeMetadata, TypedEdgeResult, UnifiedNeighborMetadata, UnifiedNeighborResult,
+    EMBEDDER_NAMES, RRF_K, SEMANTIC_EMBEDDER_INDICES,
 };
 
-use super::helpers::ToolErrorKind;
 use super::super::Handlers;
+use super::helpers::ToolErrorKind;
 
 impl Handlers {
     /// get_memory_neighbors tool implementation.
@@ -62,7 +63,7 @@ impl Handlers {
     /// # Parameters
     ///
     /// - `memory_id`: UUID of the memory to find neighbors for (required)
-    /// - `embedder_id`: Embedder space to search (0-12, default: 0=E1)
+    /// - `embedder_id`: Embedder space to search (0-13, default: 0=E1)
     /// - `top_k`: Number of neighbors to return (1-50, default: 10)
     /// - `min_similarity`: Minimum similarity threshold (0-1, default: 0.0)
     /// - `include_content`: Include full content text (default: false)
@@ -86,7 +87,12 @@ impl Handlers {
         };
 
         // Parse and validate request
-        let (request, memory_uuid) = match self.parse_request_validated::<GetMemoryNeighborsRequest>(id.clone(), args, "get_memory_neighbors") {
+        let (request, memory_uuid) = match self
+            .parse_request_validated::<GetMemoryNeighborsRequest>(
+                id.clone(),
+                args,
+                "get_memory_neighbors",
+            ) {
             Ok(pair) => pair,
             Err(resp) => return resp,
         };
@@ -205,7 +211,11 @@ impl Handlers {
 
             // Get content if requested - error if fails (NO FALLBACKS)
             let contents: Vec<Option<String>> = if request.include_content {
-                match self.teleological_store.get_content_batch(&neighbor_ids).await {
+                match self
+                    .teleological_store
+                    .get_content_batch(&neighbor_ids)
+                    .await
+                {
                     Ok(c) => c,
                     Err(e) => {
                         error!(error = %e, "get_memory_neighbors: Content retrieval failed - NO FALLBACKS");
@@ -293,7 +303,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "get_memory_neighbors: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -341,7 +355,11 @@ impl Handlers {
         };
 
         // Parse and validate request
-        let (request, memory_uuid) = match self.parse_request_validated::<GetTypedEdgesRequest>(id.clone(), args, "get_typed_edges") {
+        let (request, memory_uuid) = match self.parse_request_validated::<GetTypedEdgesRequest>(
+            id.clone(),
+            args,
+            "get_typed_edges",
+        ) {
             Ok(pair) => pair,
             Err(resp) => return resp,
         };
@@ -388,27 +406,34 @@ impl Handlers {
                 "incoming" => {
                     // Full scan of incoming edges, post-filter by type
                     match edge_repo.get_typed_edges_to(memory_uuid) {
-                        Ok(edges) => edges.into_iter()
+                        Ok(edges) => edges
+                            .into_iter()
                             .filter(|e| e.edge_type() == graph_link_type)
                             .collect(),
                         Err(e) => {
                             error!(error = %e, "get_typed_edges: Incoming edge query failed - NO FALLBACKS");
-                            return self.tool_error(id, &format!("Incoming query failed: {}. NO FALLBACKS.", e));
+                            return self.tool_error(
+                                id,
+                                &format!("Incoming query failed: {}. NO FALLBACKS.", e),
+                            );
                         }
                     }
                 }
                 "both" => {
                     // Outgoing: use secondary index (fast path)
-                    let outgoing = match edge_repo.get_typed_edges_by_type(memory_uuid, graph_link_type) {
-                        Ok(edges) => edges,
-                        Err(e) => {
-                            error!(error = %e, "get_typed_edges: Outgoing type query failed");
-                            return self.tool_error(id, &format!("Outgoing type query failed: {}", e));
-                        }
-                    };
+                    let outgoing =
+                        match edge_repo.get_typed_edges_by_type(memory_uuid, graph_link_type) {
+                            Ok(edges) => edges,
+                            Err(e) => {
+                                error!(error = %e, "get_typed_edges: Outgoing type query failed");
+                                return self
+                                    .tool_error(id, &format!("Outgoing type query failed: {}", e));
+                            }
+                        };
                     // Incoming: full scan + post-filter by type
                     let incoming = match edge_repo.get_typed_edges_to(memory_uuid) {
-                        Ok(edges) => edges.into_iter()
+                        Ok(edges) => edges
+                            .into_iter()
                             .filter(|e| e.edge_type() == graph_link_type)
                             .collect::<Vec<_>>(),
                         Err(e) => {
@@ -445,23 +470,21 @@ impl Handlers {
         } else {
             // HIGH-11 FIX: Respect direction parameter
             match direction.as_str() {
-                "incoming" => {
-                    match edge_repo.get_typed_edges_to(memory_uuid) {
-                        Ok(edges) => edges,
-                        Err(e) => {
-                            error!(
-                                error = %e,
-                                memory_id = %memory_uuid,
-                                direction = "incoming",
-                                "get_typed_edges: Incoming edge query failed - NO FALLBACKS"
-                            );
-                            return self.tool_error(
-                                id,
-                                &format!("EdgeRepository incoming query failed: {}. NO FALLBACKS.", e),
-                            );
-                        }
+                "incoming" => match edge_repo.get_typed_edges_to(memory_uuid) {
+                    Ok(edges) => edges,
+                    Err(e) => {
+                        error!(
+                            error = %e,
+                            memory_id = %memory_uuid,
+                            direction = "incoming",
+                            "get_typed_edges: Incoming edge query failed - NO FALLBACKS"
+                        );
+                        return self.tool_error(
+                            id,
+                            &format!("EdgeRepository incoming query failed: {}. NO FALLBACKS.", e),
+                        );
                     }
-                }
+                },
                 "both" => {
                     let outgoing = match edge_repo.get_typed_edges_from(memory_uuid) {
                         Ok(edges) => edges,
@@ -506,8 +529,7 @@ impl Handlers {
 
         info!(
             total_edges = total_edges,
-            "get_typed_edges: Retrieved {} typed edges from EdgeRepository",
-            total_edges
+            "get_typed_edges: Retrieved {} typed edges from EdgeRepository", total_edges
         );
 
         // Step 3: Filter by min_weight and convert to response format
@@ -589,7 +611,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "get_typed_edges: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -634,7 +660,11 @@ impl Handlers {
         };
 
         // Parse and validate request
-        let (request, start_uuid) = match self.parse_request_validated::<TraverseGraphRequest>(id.clone(), args, "traverse_graph") {
+        let (request, start_uuid) = match self.parse_request_validated::<TraverseGraphRequest>(
+            id.clone(),
+            args,
+            "traverse_graph",
+        ) {
             Ok(pair) => pair,
             Err(resp) => return resp,
         };
@@ -645,7 +675,9 @@ impl Handlers {
         let max_results = request.max_results;
 
         // Convert edge_type filter string to GraphLinkEdgeType
-        let graph_link_type_filter = edge_type_filter.as_ref().and_then(|s| string_to_edge_type(s));
+        let graph_link_type_filter = edge_type_filter
+            .as_ref()
+            .and_then(|s| string_to_edge_type(s));
 
         info!(
             start_memory_id = %start_uuid,
@@ -713,7 +745,9 @@ impl Handlers {
 
             // Check if we have enough paths — but only break after exhausting
             // the current BFS depth level so we don't miss equally-short paths
-            if paths.len() >= max_results && hop_level > paths.iter().map(|p| p.hop_count).min().unwrap_or(0) {
+            if paths.len() >= max_results
+                && hop_level > paths.iter().map(|p| p.hop_count).min().unwrap_or(0)
+            {
                 break;
             }
 
@@ -871,14 +905,18 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "traverse_graph: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
 
     /// get_unified_neighbors tool implementation.
     ///
-    /// Finds neighbors using Weighted RRF fusion across all 13 embedders.
+    /// Finds neighbors using Weighted RRF fusion across all 14 embedders.
     /// TASK-GRAPHLINK: Uses EdgeRepository K-NN graphs - NO FALLBACKS.
     /// Per ARCH-21: Uses Weighted RRF, not weighted sum.
     /// Per AP-60: Temporal embedders (E2-E4) are excluded from semantic fusion.
@@ -922,7 +960,12 @@ impl Handlers {
         };
 
         // Parse and validate request
-        let (request, memory_uuid) = match self.parse_request_validated::<GetUnifiedNeighborsRequest>(id.clone(), args, "get_unified_neighbors") {
+        let (request, memory_uuid) = match self
+            .parse_request_validated::<GetUnifiedNeighborsRequest>(
+                id.clone(),
+                args,
+                "get_unified_neighbors",
+            ) {
             Ok(pair) => pair,
             Err(resp) => return resp,
         };
@@ -959,9 +1002,13 @@ impl Handlers {
             for key in custom.keys() {
                 if !EMBEDDER_NAMES.contains(&key.as_str()) {
                     error!(invalid_key = %key, "get_unified_neighbors: custom_weights contains invalid embedder name");
-                    return self.tool_error(id, &format!(
-                        "Invalid embedder name '{}' in custom_weights. Valid names: E1-E13.", key
-                    ));
+                    return self.tool_error(
+                        id,
+                        &format!(
+                            "Invalid embedder name '{}' in custom_weights. Valid names: E1-E14.",
+                            key
+                        ),
+                    );
                 }
             }
             let mut w = [0.0f32; 14];
@@ -991,7 +1038,9 @@ impl Handlers {
         if !request.exclude_embedders.is_empty() {
             for name in &request.exclude_embedders {
                 match embedder_name_to_index(name) {
-                    Ok(idx) => { weights[idx] = 0.0; }
+                    Ok(idx) => {
+                        weights[idx] = 0.0;
+                    }
                     Err(msg) => {
                         error!(embedder = %name, "get_unified_neighbors: Invalid embedder in exclude_embedders");
                         return self.tool_error(id, &msg);
@@ -1000,9 +1049,14 @@ impl Handlers {
             }
             let sum: f32 = weights.iter().sum();
             if sum > 0.0 {
-                for w in weights.iter_mut() { *w /= sum; }
+                for w in weights.iter_mut() {
+                    *w /= sum;
+                }
             } else {
-                return self.tool_error(id, "All embedders excluded - at least one must have weight > 0");
+                return self.tool_error(
+                    id,
+                    "All embedders excluded - at least one must have weight > 0",
+                );
             }
         }
 
@@ -1013,7 +1067,8 @@ impl Handlers {
 
         for &embedder_idx in &SEMANTIC_EMBEDDER_INDICES {
             // Query K-NN edges from EdgeRepository - NO FALLBACKS
-            let embedder_edges = match edge_repo.get_embedder_edges(embedder_idx as u8, memory_uuid) {
+            let embedder_edges = match edge_repo.get_embedder_edges(embedder_idx as u8, memory_uuid)
+            {
                 Ok(edges) => edges,
                 Err(e) => {
                     error!(
@@ -1038,18 +1093,20 @@ impl Handlers {
             for (rank, edge) in embedder_edges.iter().enumerate() {
                 let neighbor_id = edge.target();
 
-                let entry = all_candidates.entry(neighbor_id).or_insert_with(|| {
-                    CandidateInfo {
+                let entry = all_candidates
+                    .entry(neighbor_id)
+                    .or_insert_with(|| CandidateInfo {
                         embedder_scores: [0.0; 14],
                         embedder_ranks: [0; 14],
                         contributing_embedders: Vec::new(),
-                    }
-                });
+                    });
 
                 // Store score and rank for this embedder (1-based rank for RRF)
                 entry.embedder_scores[embedder_idx] = edge.similarity();
                 entry.embedder_ranks[embedder_idx] = rank + 1; // 1-based rank
-                entry.contributing_embedders.push(embedder_name(embedder_idx).to_string());
+                entry
+                    .contributing_embedders
+                    .push(embedder_name(embedder_idx).to_string());
 
                 embedder_contribution_counts[embedder_idx] += 1;
             }
@@ -1238,7 +1295,11 @@ impl Handlers {
             Ok(v) => self.tool_result(id, v),
             Err(e) => {
                 error!(error = %e, "get_unified_neighbors: Response serialization failed");
-                self.tool_error_typed(id, ToolErrorKind::Execution, &format!("Response serialization failed: {}", e))
+                self.tool_error_typed(
+                    id,
+                    ToolErrorKind::Execution,
+                    &format!("Response serialization failed: {}", e),
+                )
             }
         }
     }
@@ -1286,7 +1347,7 @@ fn edge_type_to_string(edge_type: GraphLinkEdgeType) -> String {
 /// Get contributing embedder names from bitmask.
 fn get_contributing_embedders(mask: u16) -> Vec<String> {
     let mut result = Vec::new();
-    for i in 0..13 {
+    for i in 0..NUM_EMBEDDERS {
         if (mask >> i) & 1 == 1 {
             result.push(embedder_name(i).to_string());
         }
@@ -1335,11 +1396,23 @@ mod tests {
 
     #[test]
     fn test_edge_type_conversions_and_helpers() {
-        assert_eq!(string_to_edge_type("semantic_similar"), Some(GraphLinkEdgeType::SemanticSimilar));
-        assert_eq!(string_to_edge_type("code_related"), Some(GraphLinkEdgeType::CodeRelated));
+        assert_eq!(
+            string_to_edge_type("semantic_similar"),
+            Some(GraphLinkEdgeType::SemanticSimilar)
+        );
+        assert_eq!(
+            string_to_edge_type("code_related"),
+            Some(GraphLinkEdgeType::CodeRelated)
+        );
         assert_eq!(string_to_edge_type("invalid"), None);
-        assert_eq!(edge_type_to_string(GraphLinkEdgeType::SemanticSimilar), "semantic_similar");
-        assert_eq!(edge_type_to_string(GraphLinkEdgeType::CausalChain), "causal_chain");
+        assert_eq!(
+            edge_type_to_string(GraphLinkEdgeType::SemanticSimilar),
+            "semantic_similar"
+        );
+        assert_eq!(
+            edge_type_to_string(GraphLinkEdgeType::CausalChain),
+            "causal_chain"
+        );
         // Contributing embedders from bitmask
         let mask: u16 = 0b0000_0101_0001; // E1, E5, E7
         let embedders = get_contributing_embedders(mask);
@@ -1350,10 +1423,14 @@ mod tests {
     #[test]
     fn test_weighted_agreement_and_rrf() {
         // All semantic embedders agree
-        let scores: [f32; 14] = [0.9, 0.0, 0.0, 0.0, 0.8, 0.75, 0.85, 0.6, 0.55, 0.7, 0.65, 0.8, 0.7, 0.8];
+        let scores: [f32; 14] = [
+            0.9, 0.0, 0.0, 0.0, 0.8, 0.75, 0.85, 0.6, 0.55, 0.7, 0.65, 0.8, 0.7, 0.8,
+        ];
         assert!((compute_weighted_agreement(&scores) - 9.5).abs() < 0.01);
         // Only temporal = 0 agreement
-        let temporal_only: [f32; 14] = [0.0, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0];
+        let temporal_only: [f32; 14] = [
+            0.0, 0.9, 0.9, 0.9, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+        ];
         assert!((compute_weighted_agreement(&temporal_only) - 0.0).abs() < 0.01);
         // RRF formula: rank=1 > rank=10
         let k = 60.0f32;

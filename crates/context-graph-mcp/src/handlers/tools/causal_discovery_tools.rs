@@ -917,7 +917,7 @@ impl Handlers {
                                 }
                             }
 
-                            // Generate full 13-embedder fingerprint for the explanation
+                            // Generate full 14-embedder fingerprint for the explanation
                             let metadata = EmbeddingMetadata::default().with_causal_hint(CausalHint {
                                 is_causal: true,
                                 direction_hint: CausalDirectionHint::Neutral,
@@ -971,16 +971,16 @@ impl Handlers {
                                             {
                                                 warn!(fp_id = %fp_id, error = %e, "Failed to store source metadata");
                                             }
-                                            debug!(fp_id = %fp_id, causal_id = %causal_id, "Stored 13-embedder fingerprint");
+                                            debug!(fp_id = %fp_id, causal_id = %causal_id, "Stored 14-embedder fingerprint");
                                         }
                                         Err(e) => {
-                                            warn!(causal_id = %causal_id, error = %e, "Failed to store 13-embedder fingerprint");
+                                            warn!(causal_id = %causal_id, error = %e, "Failed to store 14-embedder fingerprint");
                                             fingerprint_errors += 1;
                                         }
                                     }
                                 }
                                 Err(e) => {
-                                    warn!(causal_id = %causal_id, error = %e, "Failed to generate 13-embedder fingerprint");
+                                    warn!(causal_id = %causal_id, error = %e, "Failed to generate 14-embedder fingerprint");
                                 }
                             }
 

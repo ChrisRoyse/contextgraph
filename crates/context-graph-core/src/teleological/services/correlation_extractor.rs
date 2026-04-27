@@ -1,6 +1,6 @@
 //! TASK-TELEO-008: CorrelationExtractor Implementation
 //!
-//! Extracts 78 cross-correlation values from 13 embedding vectors.
+//! Extracts 91 cross-correlation values from 14 embedding vectors.
 //! Each correlation captures the interaction between two embedding perspectives.
 //!
 //! # From teleoplan.md
@@ -37,7 +37,7 @@ impl Default for CorrelationConfig {
 /// Result of correlation extraction.
 #[derive(Clone, Debug)]
 pub struct CorrelationResult {
-    /// 78 cross-correlation values
+    /// 91 cross-correlation values
     pub correlations: [f32; CROSS_CORRELATION_COUNT],
     /// Sparsity: fraction of near-zero correlations
     pub sparsity: f32,
@@ -49,7 +49,7 @@ pub struct CorrelationResult {
 
 /// TELEO-008: Extracts cross-correlations from multi-embedding representations.
 ///
-/// Computes 78 unique pairwise correlations between 13 embedding vectors.
+/// Computes 91 unique pairwise correlations between 14 embedding vectors.
 ///
 /// # Example
 ///
@@ -60,7 +60,7 @@ pub struct CorrelationResult {
 /// let extractor = CorrelationExtractor::new();
 /// let embeddings = vec![vec![0.0f32; 1024]; 14];
 /// let result = extractor.extract(&embeddings, None);
-/// assert_eq!(result.correlations.len(), 78);
+/// assert_eq!(result.correlations.len(), 91);
 /// ```
 pub struct CorrelationExtractor {
     config: CorrelationConfig,
@@ -79,15 +79,15 @@ impl CorrelationExtractor {
         Self { config }
     }
 
-    /// Extract 78 cross-correlations from 13 embedding vectors.
+    /// Extract 91 cross-correlations from 14 embedding vectors.
     ///
     /// # Arguments
-    /// * `embeddings` - 13 embedding vectors, each of dimension EMBEDDING_DIM (1024)
+    /// * `embeddings` - 14 embedding vectors, each of dimension EMBEDDING_DIM (1024)
     /// * `synergy_matrix` - Optional synergy matrix for weighting
     ///
     /// # Panics
     ///
-    /// Panics if embeddings count != 13 or dimensions don't match (FAIL FAST).
+    /// Panics if embeddings count != SYNERGY_DIM or dimensions don't match (FAIL FAST).
     pub fn extract(
         &self,
         embeddings: &[Vec<f32>],
@@ -117,7 +117,7 @@ impl CorrelationExtractor {
             embeddings.to_vec()
         };
 
-        // Compute 78 correlations
+        // Compute upper-triangle cross-correlations.
         let mut correlations = [0.0f32; CROSS_CORRELATION_COUNT];
         let mut idx = 0;
 
@@ -283,9 +283,9 @@ impl CorrelationExtractor {
         &self.config
     }
 
-    /// CONSTITUTION COMPLIANT: Extract 78 cross-correlations from alignment scores.
+    /// CONSTITUTION COMPLIANT: Extract 91 cross-correlations from alignment scores.
     ///
-    /// This method computes correlations from the 13D alignment vector WITHOUT
+    /// This method computes correlations from the 14D alignment vector WITHOUT
     /// requiring embeddings to have the same dimension. This is the CORRECT approach
     /// per AP-03 ("No dimension projection to fake compatibility").
     ///
@@ -296,11 +296,11 @@ impl CorrelationExtractor {
     /// their interaction (weighted by synergy) is meaningful."
     ///
     /// # Arguments
-    /// * `alignments` - 13D topic profile alignments (one scalar per embedder)
+    /// * `alignments` - 14D topic profile alignments (one scalar per embedder)
     /// * `synergy_matrix` - Optional synergy matrix for weighting
     ///
     /// # Returns
-    /// CorrelationResult with 78 cross-correlations computed from alignments.
+    /// CorrelationResult with 91 cross-correlations computed from alignments.
     pub fn extract_from_alignments(
         &self,
         alignments: &[f32; SYNERGY_DIM],

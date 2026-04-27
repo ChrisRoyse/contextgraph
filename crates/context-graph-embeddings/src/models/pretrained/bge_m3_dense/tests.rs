@@ -23,7 +23,7 @@ fn test_bge_m3_dense_constants_match_spec() {
     assert_eq!(XLM_R_BOS_TOKEN_ID, 0);
     assert_eq!(XLM_R_PAD_TOKEN_ID, 1);
     assert_eq!(XLM_R_POSITION_OFFSET, 2);
-    assert_eq!(XLM_R_WEIGHT_PREFIX, "roberta.");
+    assert_eq!(XLM_R_WEIGHT_PREFIX, "");
 }
 
 #[test]
@@ -32,7 +32,10 @@ fn test_new_with_valid_config_succeeds() {
     let config = SingleModelConfig::default();
 
     let model = BgeM3DenseModel::new(&path, config).expect("new() should accept defaults");
-    assert!(!model.is_initialized(), "fresh model must not report loaded");
+    assert!(
+        !model.is_initialized(),
+        "fresh model must not report loaded"
+    );
 }
 
 #[test]
@@ -60,8 +63,7 @@ fn test_embed_on_unloaded_model_fails_with_not_initialized() {
     use crate::types::ModelInput;
 
     let path = PathBuf::from("./models/bge-m3-dense");
-    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default())
-        .expect("new");
+    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -89,16 +91,14 @@ fn test_model_id_reports_bge_m3_dense() {
     use crate::traits::EmbeddingModel;
 
     let path = PathBuf::from("./models/bge-m3-dense");
-    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default())
-        .expect("new");
+    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
     assert_eq!(model.model_id(), ModelId::BgeM3Dense);
 }
 
 #[test]
 fn test_prepare_input_text_passes_through_without_prefix() {
     let path = PathBuf::from("./models/bge-m3-dense");
-    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default())
-        .expect("new");
+    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
 
     let raw = "The quick brown fox jumps over the lazy dog.";
     let prepared = model
@@ -117,8 +117,7 @@ fn test_prepare_input_rejects_non_text_modalities() {
     use crate::types::ImageFormat;
 
     let path = PathBuf::from("./models/bge-m3-dense");
-    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default())
-        .expect("new");
+    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
 
     let err = model
         .prepare_input(&crate::types::ModelInput::Image {
@@ -127,11 +126,7 @@ fn test_prepare_input_rejects_non_text_modalities() {
         })
         .expect_err("image must be rejected");
     let msg = format!("{:?}", err);
-    assert!(
-        msg.contains("UnsupportedModality"),
-        "unexpected: {}",
-        msg
-    );
+    assert!(msg.contains("UnsupportedModality"), "unexpected: {}", msg);
 }
 
 // Weights-dependent tests follow. Keep them under `#[ignore]` so `cargo test`
@@ -143,8 +138,7 @@ fn test_load_real_weights_populates_state() {
     use crate::traits::EmbeddingModel;
 
     let path = PathBuf::from("/home/cabdru/contextgraph/models/bge-m3-dense");
-    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default())
-        .expect("new");
+    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -163,8 +157,7 @@ fn test_embed_real_text_produces_normalised_1024d_vector() {
     use crate::types::ModelInput;
 
     let path = PathBuf::from("/home/cabdru/contextgraph/models/bge-m3-dense");
-    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default())
-        .expect("new");
+    let model = BgeM3DenseModel::new(&path, SingleModelConfig::default()).expect("new");
 
     let rt = tokio::runtime::Builder::new_current_thread()
         .enable_all()
@@ -183,6 +176,13 @@ fn test_embed_real_text_produces_normalised_1024d_vector() {
 
         assert_eq!(out.vector.len(), BGE_M3_DENSE_DIMENSION);
         let norm: f32 = out.vector.iter().map(|x| x * x).sum::<f32>().sqrt();
+        println!(
+            "E14 real embed output: len={}, norm={:.6}, latency_us={}, first5={:?}",
+            out.vector.len(),
+            norm,
+            out.latency_us,
+            &out.vector[..5]
+        );
         assert!(
             (norm - 1.0).abs() < 1e-3,
             "BGE-M3 output must be L2-normalised, got norm={}",

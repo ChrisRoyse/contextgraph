@@ -82,11 +82,11 @@ pub enum EmbedderIndex {
 }
 
 impl EmbedderIndex {
-    /// Map 0-12 index to embedder. Panics on out of bounds.
+    /// Map 0-13 index to embedder. Panics on out of bounds.
     ///
     /// # Panics
     ///
-    /// Panics with "INDEX ERROR" if `idx >= 13`.
+    /// Panics with "INDEX ERROR" if `idx >= 14`.
     ///
     /// # Example
     ///
@@ -111,18 +111,19 @@ impl EmbedderIndex {
             10 => Self::E11Entity,
             11 => Self::E12LateInteraction,
             12 => Self::E13Splade,
-            _ => panic!("INDEX ERROR: embedder index {} out of bounds (max 12)", idx),
+            13 => Self::E14BgeM3Dense,
+            _ => panic!("INDEX ERROR: embedder index {} out of bounds (max 13)", idx),
         }
     }
 
-    /// Get 0-12 index from embedder. Returns None for special indexes.
+    /// Get 0-13 index from embedder. Returns None for special indexes.
     ///
     /// Returns None for:
     /// - E1Matryoshka128: Special fast-filter variant
-    /// - E5CausalCause: Asymmetric index (not part of core 13-array)
-    /// - E5CausalEffect: Asymmetric index (not part of core 13-array)
-    /// - E10MultimodalParaphrase: Asymmetric index (not part of core 13-array)
-    /// - E10MultimodalContext: Asymmetric index (not part of core 13-array)
+    /// - E5CausalCause: Asymmetric index (not part of core 14-array)
+    /// - E5CausalEffect: Asymmetric index (not part of core 14-array)
+    /// - E10MultimodalParaphrase: Asymmetric index (not part of core 14-array)
+    /// - E10MultimodalContext: Asymmetric index (not part of core 14-array)
     pub fn to_index(&self) -> Option<usize> {
         match self {
             Self::E1Semantic => Some(0),
@@ -215,18 +216,18 @@ impl EmbedderIndex {
             Self::E3TemporalPeriodic => Some(E3_DIM),
             Self::E4TemporalPositional => Some(E4_DIM),
             Self::E5Causal => Some(E5_DIM),
-            Self::E5CausalCause => Some(E5_DIM),       // 768D cause vector
-            Self::E5CausalEffect => Some(E5_DIM),     // 768D effect vector
-            Self::E6Sparse => None,                   // Inverted index
+            Self::E5CausalCause => Some(E5_DIM), // 768D cause vector
+            Self::E5CausalEffect => Some(E5_DIM), // 768D effect vector
+            Self::E6Sparse => None,              // Inverted index
             Self::E7Code => Some(E7_DIM),
             Self::E8Graph => Some(E8_DIM),
             Self::E9HDC => Some(E9_DIM),
             Self::E10Multimodal => Some(E10_DIM),
-            Self::E10MultimodalParaphrase => Some(E10_DIM),   // 768D paraphrase vector
-            Self::E10MultimodalContext => Some(E10_DIM), // 768D context vector
+            Self::E10MultimodalParaphrase => Some(E10_DIM), // 768D paraphrase vector
+            Self::E10MultimodalContext => Some(E10_DIM),    // 768D context vector
             Self::E11Entity => Some(E11_DIM),
-            Self::E12LateInteraction => None, // Token-level
-            Self::E13Splade => None,          // Inverted index
+            Self::E12LateInteraction => None,     // Token-level
+            Self::E13Splade => None,              // Inverted index
             Self::E14BgeM3Dense => Some(E14_DIM), // BGE-M3 dense head (1024)
         }
     }
@@ -257,7 +258,7 @@ mod tests {
 
     #[test]
     fn test_from_index_all_valid() {
-        for i in 0..13 {
+        for i in 0..14 {
             let idx = EmbedderIndex::from_index(i);
             assert_eq!(
                 idx.to_index(),
@@ -271,8 +272,8 @@ mod tests {
 
     #[test]
     #[should_panic(expected = "INDEX ERROR")]
-    fn test_panic_on_index_13() {
-        let _ = EmbedderIndex::from_index(13);
+    fn test_panic_on_index_14() {
+        let _ = EmbedderIndex::from_index(14);
     }
 
     #[test]
@@ -328,9 +329,9 @@ mod tests {
     }
 
     #[test]
-    fn test_max_index_is_12() {
-        let idx = EmbedderIndex::from_index(12);
-        assert_eq!(idx, EmbedderIndex::E13Splade);
+    fn test_max_index_is_13() {
+        let idx = EmbedderIndex::from_index(13);
+        assert_eq!(idx, EmbedderIndex::E14BgeM3Dense);
     }
 
     #[test]
@@ -361,8 +362,14 @@ mod tests {
     #[test]
     fn test_e10_asymmetric_dimensions() {
         // Both E10 asymmetric indexes have 768D (same as E10Multimodal)
-        assert_eq!(EmbedderIndex::E10MultimodalParaphrase.dimension(), Some(E10_DIM));
-        assert_eq!(EmbedderIndex::E10MultimodalContext.dimension(), Some(E10_DIM));
+        assert_eq!(
+            EmbedderIndex::E10MultimodalParaphrase.dimension(),
+            Some(E10_DIM)
+        );
+        assert_eq!(
+            EmbedderIndex::E10MultimodalContext.dimension(),
+            Some(E10_DIM)
+        );
         assert_eq!(EmbedderIndex::E10Multimodal.dimension(), Some(E10_DIM));
     }
 

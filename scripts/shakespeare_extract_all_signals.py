@@ -5,8 +5,8 @@ For EVERY memory, pulls ALL signal layers and converts them into
 conditioned SFT examples:
 
 Layer 1: Content (3,043 memories) → base SFT examples
-Layer 2: 13 embedder topic_profiles → 13 conditioned variants per memory
-Layer 3: 78 cross-correlations → texture tags on every example
+Layer 2: 14 embedder topic_profiles → 14 conditioned variants per memory
+Layer 3: 91 cross-correlations → texture tags on every example
 Layer 4: Constellation group_alignments → work-style conditioning
 Layer 5: Contrastive pairs (12,567) → DPO (already built)
 Layer 6: Edge-type distributions → structural role conditioning
@@ -41,8 +41,11 @@ EMBEDDER_NAMES = [
     "E1 Semantic", "E2 Recency", "E3 Periodic", "E4 Positional",
     "E5 Causal", "E6 Keyword", "E7 Code/Structure", "E8 Graph",
     "E9 Character-pattern", "E10 Paraphrase", "E11 Entity",
-    "E12 ColBERT", "E13 SPLADE",
+    "E12 ColBERT", "E13 SPLADE", "E14 BGE-M3 Dense",
 ]
+
+NUM_EMBEDDER_SIGNALS = 14
+NUM_CROSS_CORRELATIONS = 91
 
 # Map session_id → human-readable work name
 WORK_NAMES = {
@@ -80,11 +83,11 @@ WORK_STYLES = {
 
 # Cross-correlation texture classification
 def classify_texture(cross_corrs):
-    """Classify the 78 cross-correlation values into a texture label."""
+    """Classify the cross-correlation values into a texture label."""
     if not cross_corrs or len(cross_corrs) < 78:
         return "balanced", "balanced across all stylistic dimensions"
 
-    # Key cross-correlations (indices in upper-triangle of 13×13):
+    # Key cross-correlations (indices in upper-triangle of 14×14):
     # E1×E5 = semantic-causal (idx 4)
     # E1×E6 = semantic-keyword (idx 5)
     # E1×E10 = semantic-paraphrase (idx 9)
@@ -216,8 +219,8 @@ def main():
             continue
 
         # === EXTRACT ALL SIGNALS ===
-        topic_profile = rec.get("topic_profile", [])  # 13-dim
-        cross_corrs = rec.get("cross_correlations", [])  # 78 values
+        topic_profile = rec.get("topic_profile", [])  # 14-dim
+        cross_corrs = rec.get("cross_correlations", [])  # 91 values
         group_alignments = rec.get("group_alignments", [])  # constellation scores
         temporal = rec.get("temporal_labels", {})
         tucker = rec.get("tucker_core", {})
@@ -228,8 +231,8 @@ def main():
         # Count signals from this memory
         n_signals = (
             1 +                                    # content
-            len(topic_profile) +                   # 13 embedder scores
-            len(cross_corrs) +                     # 78 cross-correlations
+            len(topic_profile) +                   # 14 embedder scores
+            len(cross_corrs) +                     # 91 cross-correlations
             len(group_alignments) +                # constellation scores
             len(temporal) +                        # temporal fields
             (4 if tucker else 0) +                 # tucker decomposition
@@ -309,7 +312,7 @@ def main():
 
         # ================================================================
         # LAYER 3: Cross-correlation texture conditioning
-        # The 78 cross-correlations define the TEXTURE — how dimensions interact
+        # The 91 cross-correlations define the TEXTURE — how dimensions interact
         # ================================================================
         if cross_corrs and len(cross_corrs) >= 78:
             avg_corr = sum(cross_corrs) / len(cross_corrs)
@@ -483,16 +486,16 @@ def main():
     print(f"", file=sys.stderr)
     print(f"  Signal accounting:", file=sys.stderr)
     print(f"    Content texts:          {n_memories:>8,}", file=sys.stderr)
-    print(f"    Embedder profiles:      {n_memories * 13:>8,}  (13 per memory)", file=sys.stderr)
-    print(f"    Cross-correlations:     {n_memories * 78:>8,}  (78 per memory)", file=sys.stderr)
+    print(f"    Embedder profiles:      {n_memories * NUM_EMBEDDER_SIGNALS:>8,}  ({NUM_EMBEDDER_SIGNALS} per memory)", file=sys.stderr)
+    print(f"    Cross-correlations:     {n_memories * NUM_CROSS_CORRELATIONS:>8,}  ({NUM_CROSS_CORRELATIONS} per memory)", file=sys.stderr)
     print(f"    Constellation scores:   {n_memories * 6:>8,}  (6 per memory)", file=sys.stderr)
     print(f"    Temporal labels:        {n_memories * 12:>8,}  (12 per memory)", file=sys.stderr)
     print(f"    Tucker decompositions:  {n_memories * 4:>8,}  (4 per memory)", file=sys.stderr)
-    edge_est = total_signals - n_memories * (1+13+78+6+12+4) - n_memories
+    edge_est = total_signals - n_memories * (1+NUM_EMBEDDER_SIGNALS+NUM_CROSS_CORRELATIONS+6+12+4) - n_memories
     print(f"    Typed edges + other:    {edge_est:>8,}", file=sys.stderr)
     print(f"    Adversarial + creative: {counts.get('Layer 9: Adversarial', 0) + counts.get('Layer 9: Creative', 0):>8,}", file=sys.stderr)
     print(f"    {'─'*40}", file=sys.stderr)
-    total_raw = n_memories * (1+13+78+6+12+4) + n_memories + edge_est + 12567
+    total_raw = n_memories * (1+NUM_EMBEDDER_SIGNALS+NUM_CROSS_CORRELATIONS+6+12+4) + n_memories + edge_est + 12567
     print(f"    TOTAL RAW SIGNALS:      {total_raw:>8,}", file=sys.stderr)
     print(f"", file=sys.stderr)
     print(f"  Memories: {n_memories:,} processed, {skipped} skipped, {errors} errors", file=sys.stderr)

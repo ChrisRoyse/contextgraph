@@ -6,7 +6,7 @@ use super::*;
 use crate::stubs::{InMemoryTeleologicalStore, StubMultiArrayProvider};
 use crate::traits::TeleologicalMemoryStore;
 use crate::types::fingerprint::{
-    SemanticFingerprint, SparseVector, TeleologicalFingerprint,
+    SemanticFingerprint, SparseVector, TeleologicalFingerprint, NUM_EMBEDDERS,
 };
 use std::time::Duration;
 
@@ -75,7 +75,7 @@ async fn test_executor_creation() {
     let executor = InMemoryMultiEmbeddingExecutor::new(store, provider);
 
     let spaces = executor.available_spaces();
-    assert_eq!(spaces.len(), 13);
+    assert_eq!(spaces.len(), NUM_EMBEDDERS);
 }
 
 #[tokio::test]
@@ -108,7 +108,10 @@ async fn test_execute_with_data() {
     assert!(result.is_ok());
 
     let result = result.unwrap();
-    assert!(!result.results.is_empty(), "Search with data should return results");
+    assert!(
+        !result.results.is_empty(),
+        "Search with data should return results"
+    );
     assert!(result.results.len() <= 5, "Should respect final_limit");
     assert!(result.spaces_searched >= 1);
 }
@@ -118,10 +121,7 @@ async fn test_rrf_aggregation_formula() {
     let id1 = uuid::Uuid::new_v4();
     let id2 = uuid::Uuid::new_v4();
 
-    let ranked_lists = vec![
-        (0, vec![id1, id2]),
-        (1, vec![id2, id1]),
-    ];
+    let ranked_lists = vec![(0, vec![id1, id2]), (1, vec![id2, id1])];
 
     let scores = AggregationStrategy::aggregate_rrf(&ranked_lists, 60.0);
 
@@ -170,14 +170,20 @@ async fn test_full_query_flow_with_stub_data() {
 
     let result = executor.execute(query).await.unwrap();
 
-    assert!(!result.results.is_empty(), "Search across all spaces should return results");
+    assert!(
+        !result.results.is_empty(),
+        "Search across all spaces should return results"
+    );
     assert!(result.results.len() <= 10, "Should respect final_limit");
     assert!(result.space_breakdown.is_some());
     assert!(result.spaces_searched > 0);
     assert_eq!(result.spaces_failed, 0);
 
     for m in &result.results {
-        assert!(stored_ids.contains(&m.memory_id), "Returned ID not in stored set");
+        assert!(
+            stored_ids.contains(&m.memory_id),
+            "Returned ID not in stored set"
+        );
         assert!(m.aggregate_score > 0.0);
     }
 }
@@ -185,16 +191,16 @@ async fn test_full_query_flow_with_stub_data() {
 #[tokio::test]
 async fn test_embedding_space_mask_all() {
     let mask = EmbeddingSpaceMask::ALL;
-    assert_eq!(mask.active_count(), 13);
+    assert_eq!(mask.active_count(), NUM_EMBEDDERS);
     assert!(mask.includes_splade());
     assert!(mask.includes_late_interaction());
 
-    for i in 0..13 {
+    for i in 0..NUM_EMBEDDERS {
         assert!(mask.is_active(i), "Space {} should be active", i);
     }
 
     // Presets
-    assert_eq!(EmbeddingSpaceMask::ALL_DENSE.active_count(), 12);
+    assert_eq!(EmbeddingSpaceMask::ALL_DENSE.active_count(), 11);
     assert_eq!(EmbeddingSpaceMask::SEMANTIC_ONLY.active_count(), 1);
     assert_eq!(EmbeddingSpaceMask::TEXT_CORE.active_count(), 3);
 }

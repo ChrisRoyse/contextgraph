@@ -1,4 +1,4 @@
-//! Canonical Embedder enumeration for the 13-embedder teleological system.
+//! Canonical Embedder enumeration for the 14-embedder teleological system.
 //!
 //! This module defines the SINGLE source of truth for embedder types.
 //! All other code MUST use this enum - no duplicate definitions allowed.
@@ -6,7 +6,7 @@
 //! # Architecture Reference
 //!
 //! From constitution.yaml (ARCH-02): "Compare Only Compatible Embedding Types"
-//! From constitution.yaml (ARCH-05): "All 13 Embedders Must Be Present"
+//! From constitution.yaml (ARCH-05): "All embedders must be present"
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
@@ -14,8 +14,8 @@ use thiserror::Error;
 
 // Import dimension constants from the fingerprint module (via public re-export)
 use crate::types::fingerprint::{
-    E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E1_DIM, E2_DIM, E3_DIM, E4_DIM, E5_DIM,
-    E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
+    E10_DIM, E11_DIM, E12_TOKEN_DIM, E13_SPLADE_VOCAB, E14_DIM, E1_DIM, E2_DIM, E3_DIM, E4_DIM,
+    E5_DIM, E6_SPARSE_VOCAB, E7_DIM, E8_DIM, E9_DIM,
 };
 
 /// Error when parsing embedder name.
@@ -29,7 +29,7 @@ pub enum EmbedderNameError {
     },
 }
 
-/// The 13 embedding models in the teleological array system.
+/// The 14 embedding models in the teleological array system.
 ///
 /// Each embedder captures a different semantic dimension:
 /// - Dense: Standard float vectors (cosine similarity)
@@ -39,7 +39,7 @@ pub enum EmbedderNameError {
 ///
 /// # Ordering
 ///
-/// Variant values (0-12) are STABLE and used for array indexing.
+/// Variant values (0-13) are STABLE and used for array indexing.
 /// DO NOT reorder or renumber variants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -82,7 +82,7 @@ impl Embedder {
     /// Total number of embedders in the system.
     pub const COUNT: usize = 14;
 
-    /// Get the array index for this embedder (0-12).
+    /// Get the array index for this embedder (0-13).
     #[inline]
     pub fn index(self) -> usize {
         self as usize
@@ -90,7 +90,7 @@ impl Embedder {
 
     /// Create an embedder from an array index.
     ///
-    /// Returns `None` if index >= 13.
+    /// Returns `None` if index >= 14.
     #[inline]
     pub fn from_index(idx: usize) -> Option<Self> {
         match idx {
@@ -126,7 +126,7 @@ impl Embedder {
                 vocab_size: E6_SPARSE_VOCAB,
             }, // 30522
             Self::Code => EmbedderDims::Dense(E7_DIM),     // 1536
-            Self::Graph => EmbedderDims::Dense(E8_DIM), // 1024 (e5-large-v2)
+            Self::Graph => EmbedderDims::Dense(E8_DIM),    // 1024 (e5-large-v2)
             Self::Hdc => EmbedderDims::Dense(E9_DIM),      // 1024 (projected)
             Self::Contextual => EmbedderDims::Dense(E10_DIM), // 768
             Self::Entity => EmbedderDims::Dense(E11_DIM),  // 768 (KEPLER)
@@ -136,7 +136,7 @@ impl Embedder {
             Self::KeywordSplade => EmbedderDims::Sparse {
                 vocab_size: E13_SPLADE_VOCAB,
             }, // 30522
-            Self::BgeM3Dense => EmbedderDims::Dense(1024), // E14 BGE-M3 dense
+            Self::BgeM3Dense => EmbedderDims::Dense(E14_DIM), // E14 BGE-M3 dense
         }
     }
 
@@ -287,6 +287,10 @@ impl Embedder {
             // E13
             "e13" | "e13_splade" | "e13_keyword_splade" | "keyword_splade" | "keywordsplade" => {
                 Ok(Self::KeywordSplade)
+            }
+            // E14
+            "e14" | "e14_bge_m3_dense" | "e14_bgem3dense" | "bge_m3_dense" | "bgem3dense" => {
+                Ok(Self::BgeM3Dense)
             }
             // Unknown
             _ => Err(EmbedderNameError::Unknown {

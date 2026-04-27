@@ -16,7 +16,7 @@
 //!
 //! ## Multi-Embedder Discovery Philosophy
 //!
-//! Each of the 13 embedders sees the world differently. E1 (semantic) finds
+//! Each of the 14 embedders sees the world differently. E1 (semantic) finds
 //! semantically similar content, but may miss entity relationships. E11 (KEPLER)
 //! understands entity relationships and can find content E1 misses.
 //!
@@ -557,7 +557,7 @@ impl Handlers {
             "search_by_entities: Detected query entities"
         );
 
-        // Step 2: Create query embedding (all 13 embedders)
+        // Step 2: Create query embedding (all 14 embedders)
         let query_embedding = match self.embed_query(id.clone(), &query_entity_text, "search_by_entities").await {
             Ok(fp) => fp,
             Err(resp) => return resp,

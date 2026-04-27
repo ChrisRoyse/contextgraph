@@ -1,7 +1,7 @@
 //! # Embedder-First Search Tool Implementations
 //!
 //! Per Constitution v6.3, these tools enable AI agents to search using any of the
-//! 13 embedders as the primary perspective.
+//! 14 embedders as the primary perspective.
 //!
 //! ## Philosophy
 //!
@@ -28,6 +28,7 @@ use uuid::Uuid;
 use context_graph_core::causal::asymmetric::CausalDirection;
 use context_graph_core::traits::{SearchStrategy, TeleologicalSearchOptions};
 use context_graph_core::types::audit::{AuditOperation, AuditRecord};
+use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 
 /// Maximum number of custom weight profiles to prevent unbounded HashMap growth.
 const MAX_CUSTOM_PROFILES: usize = 1_000;
@@ -54,14 +55,14 @@ use super::super::Handlers;
 impl Handlers {
     /// search_by_embedder tool implementation.
     ///
-    /// Search using any embedder (E1-E13) as the primary perspective.
+    /// Search using any embedder (E1-E14) as the primary perspective.
     ///
     /// # Algorithm
     ///
     /// 1. Parse and validate embedder selection
-    /// 2. Create query embedding for all 13 spaces
+    /// 2. Create query embedding for all 14 spaces
     /// 3. Search in the selected embedder's space
-    /// 4. Optionally compute scores from all 13 embedders
+    /// 4. Optionally compute scores from all 14 embedders
     /// 5. Return results with selected embedder's perspective
     ///
     /// # Constitution Compliance
@@ -123,7 +124,7 @@ impl Handlers {
             "search_by_embedder: Starting embedder-first search"
         );
 
-        // Step 1: Create query embedding (all 13 embedders)
+        // Step 1: Create query embedding (all 14 embedders)
         let query_fingerprint = match self.embed_query(id.clone(), &request.query, "search_by_embedder").await {
             Ok(fp) => fp,
             Err(resp) => return resp,
@@ -514,7 +515,7 @@ impl Handlers {
             "compare_embedder_views: Starting embedder comparison"
         );
 
-        // Step 1: Create query embedding (all 13 embedders)
+        // Step 1: Create query embedding (all 14 embedders)
         let query_fingerprint = match self.embed_query(id.clone(), &request.query, "compare_embedder_views").await {
             Ok(fp) => fp,
             Err(resp) => return resp,
@@ -740,7 +741,7 @@ impl Handlers {
 
     /// list_embedder_indexes tool implementation.
     ///
-    /// List all 13 embedder indexes with their statistics.
+    /// List all 14 embedder indexes with their statistics.
     pub(crate) async fn call_list_embedder_indexes(
         &self,
         id: Option<JsonRpcId>,
@@ -757,7 +758,7 @@ impl Handlers {
             return self.tool_error(id, &e);
         }
 
-        info!("list_embedder_indexes: Listing all 13 embedder indexes");
+        info!("list_embedder_indexes: Listing all 14 embedder indexes");
 
         // Get actual memory count from store - FAIL FAST on error
         let total_memories = match self.teleological_store.count().await {
@@ -771,7 +772,7 @@ impl Handlers {
             }
         };
 
-        // Build index info for all 13 embedders
+        // Build index info for all 14 embedders
         use super::embedder_dtos::EmbedderId;
 
         let all_embedders = [
@@ -788,6 +789,7 @@ impl Handlers {
             EmbedderId::E11,
             EmbedderId::E12,
             EmbedderId::E13,
+            EmbedderId::E14,
         ];
 
         let indexes: Vec<EmbedderIndexInfo> = all_embedders
@@ -820,7 +822,7 @@ impl Handlers {
                 };
 
                 // MED-5 FIX: Differentiate vector_count by embedder type.
-                // - Dense HNSW embedders (E1-E5, E7-E11): 1 vector per memory → total_memories
+                // - Dense HNSW embedders (E1-E5, E7-E11, E14): 1 vector per memory -> total_memories
                 // - Sparse inverted (E6, E13): term postings, not vectors → None
                 // - ColBERT MaxSim (E12): multiple token vectors per memory → None
                 let vector_count = if e.is_sparse() || matches!(e, EmbedderId::E12) {
@@ -857,7 +859,7 @@ impl Handlers {
         };
 
         info!(
-            embedder_count = 13,
+            embedder_count = NUM_EMBEDDERS,
             elapsed_ms = elapsed_ms,
             "list_embedder_indexes: Listed all embedder indexes"
         );
@@ -1299,7 +1301,7 @@ impl Handlers {
         // EB-L1: E1Only strategy intentionally populates only E1 scores in results.
         // Cross-embedder anomaly detection compares HIGH vs LOW embedder scores, which
         // are computed post-retrieval below (not from the search strategy's score map).
-        // Full anomaly detection across all 13 embedders requires MultiSpace strategy.
+        // Full anomaly detection across all 14 embedders requires MultiSpace strategy.
         let search_k = (request.top_k * 5).min(100);
         let mut options = TeleologicalSearchOptions::quick(search_k)
             .with_strategy(SearchStrategy::E1Only)
@@ -1455,7 +1457,7 @@ impl Handlers {
         let top_k = req.top_k.min(100);
         let start = Instant::now();
 
-        // Embed query to get all 13 embeddings (including E12 token vectors)
+        // Embed query to get all 14 embeddings (including E12 token vectors)
         let query_fp = match self.embed_query(id.clone(), &req.query, "search_by_tokens").await {
             Ok(fp) => fp,
             Err(resp) => return resp,
@@ -1508,7 +1510,7 @@ impl Handlers {
         let top_k = req.top_k.min(100);
         let start = Instant::now();
 
-        // Embed query to get all 13 embeddings (including E13 SPLADE sparse terms)
+        // Embed query to get all 14 embeddings (including E13 SPLADE sparse terms)
         let query_fp = match self.embed_query(id.clone(), &req.query, "search_by_expansion").await {
             Ok(fp) => fp,
             Err(resp) => return resp,

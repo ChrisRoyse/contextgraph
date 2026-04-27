@@ -9,6 +9,8 @@ mod tests {
     use std::sync::Arc;
     use uuid::Uuid;
 
+    use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
+
     use crate::teleological::indexes::{EmbedderIndex, EmbedderIndexRegistry};
     use crate::teleological::search::matrix::strategy_search::pearson_correlation_matched;
     use crate::teleological::search::matrix::{MatrixStrategySearch, SearchMatrix};
@@ -23,8 +25,8 @@ mod tests {
         let m = SearchMatrix::zeros();
 
         println!("AFTER: matrix created");
-        for i in 0..13 {
-            for j in 0..13 {
+        for i in 0..NUM_EMBEDDERS {
+            for j in 0..NUM_EMBEDDERS {
                 assert_eq!(m.get(i, j), 0.0);
             }
         }
@@ -42,8 +44,8 @@ mod tests {
 
         let m = SearchMatrix::identity();
 
-        for i in 0..13 {
-            for j in 0..13 {
+        for i in 0..NUM_EMBEDDERS {
+            for j in 0..NUM_EMBEDDERS {
                 if i == j {
                     assert_eq!(m.get(i, j), 1.0);
                 } else {
@@ -53,20 +55,20 @@ mod tests {
         }
         assert!(m.is_diagonal());
         assert!(!m.has_cross_correlations());
-        assert_eq!(m.active_embedders().len(), 13);
+        assert_eq!(m.active_embedders().len(), NUM_EMBEDDERS);
 
         println!("RESULT: PASS");
     }
 
     #[test]
     fn test_uniform_matrix() {
-        println!("=== TEST: SearchMatrix::uniform has 1/13 everywhere ===");
+        println!("=== TEST: SearchMatrix::uniform has 1/14 everywhere ===");
 
         let m = SearchMatrix::uniform();
-        let expected = 1.0 / 13.0;
+        let expected = 1.0 / NUM_EMBEDDERS as f32;
 
-        for i in 0..13 {
-            for j in 0..13 {
+        for i in 0..NUM_EMBEDDERS {
+            for j in 0..NUM_EMBEDDERS {
                 assert!((m.get(i, j) - expected).abs() < 1e-6);
             }
         }
@@ -166,7 +168,7 @@ mod tests {
     fn test_matrix_get_out_of_bounds_panics() {
         println!("=== TEST: SearchMatrix::get out of bounds panics ===");
         let m = SearchMatrix::zeros();
-        m.get(13, 0); // Should panic
+        m.get(NUM_EMBEDDERS, 0); // Should panic
     }
 
     #[test]
@@ -174,7 +176,7 @@ mod tests {
     fn test_matrix_set_out_of_bounds_panics() {
         println!("=== TEST: SearchMatrix::set out of bounds panics ===");
         let mut m = SearchMatrix::zeros();
-        m.set(0, 13, 1.0); // Should panic
+        m.set(0, NUM_EMBEDDERS, 1.0); // Should panic
     }
 
     #[test]
@@ -185,7 +187,8 @@ mod tests {
         assert_eq!(zeros.sparsity(), 1.0);
 
         let identity = SearchMatrix::identity();
-        let expected = 156.0 / 169.0;
+        let total_cells = (NUM_EMBEDDERS * NUM_EMBEDDERS) as f32;
+        let expected = (total_cells - NUM_EMBEDDERS as f32) / total_cells;
         assert!((identity.sparsity() - expected).abs() < 1e-4);
 
         let uniform = SearchMatrix::uniform();
@@ -202,7 +205,7 @@ mod tests {
         assert!(zeros.active_embedders().is_empty());
 
         let identity = SearchMatrix::identity();
-        assert_eq!(identity.active_embedders().len(), 13);
+        assert_eq!(identity.active_embedders().len(), NUM_EMBEDDERS);
 
         let mut custom = SearchMatrix::zeros();
         custom.set(0, 0, 1.0);

@@ -14,16 +14,17 @@
 use context_graph_core::graph_linking::{
     EdgeStorageKey, EmbedderEdge, GraphLinkEdgeType, TypedEdge, TypedEdgeStorageKey,
 };
+use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 use rocksdb::{DBIteratorWithThreadMode, IteratorMode, WriteBatch, DB};
 use std::sync::Arc;
 use uuid::Uuid;
 
-use crate::column_families::cf_names;
 use super::serialization::{
     deserialize_embedder_edges, deserialize_typed_edge, serialize_embedder_edges,
     serialize_typed_edge,
 };
 use super::types::{GraphEdgeStats, GraphEdgeStorageError, GraphEdgeStorageResult};
+use crate::column_families::cf_names;
 
 /// Repository for graph edge storage operations.
 ///
@@ -74,7 +75,7 @@ impl EdgeRepository {
     ///
     /// # Arguments
     ///
-    /// * `embedder_id` - Embedder index (0-12)
+    /// * `embedder_id` - Embedder index (0-13)
     /// * `source` - Source node UUID
     /// * `edges` - K-NN neighbor edges (typically k=20)
     pub fn store_embedder_edges(
@@ -83,7 +84,7 @@ impl EdgeRepository {
         source: Uuid,
         edges: &[EmbedderEdge],
     ) -> GraphEdgeStorageResult<()> {
-        if embedder_id > 12 {
+        if embedder_id as usize >= NUM_EMBEDDERS {
             return Err(GraphEdgeStorageError::InvalidEmbedderId { embedder_id });
         }
 
@@ -96,16 +97,16 @@ impl EdgeRepository {
         let key = EdgeStorageKey::new(embedder_id, source);
         let value = serialize_embedder_edges(edges)?;
 
-        self.db
-            .put_cf(&cf, key.to_bytes(), value)
-            .map_err(|e| GraphEdgeStorageError::rocksdb("store_embedder_edges", cf_names::EMBEDDER_EDGES, e))
+        self.db.put_cf(&cf, key.to_bytes(), value).map_err(|e| {
+            GraphEdgeStorageError::rocksdb("store_embedder_edges", cf_names::EMBEDDER_EDGES, e)
+        })
     }
 
     /// Get K-NN edges for a source node in a specific embedder space.
     ///
     /// # Arguments
     ///
-    /// * `embedder_id` - Embedder index (0-12)
+    /// * `embedder_id` - Embedder index (0-13)
     /// * `source` - Source node UUID
     ///
     /// # Returns
@@ -116,7 +117,7 @@ impl EdgeRepository {
         embedder_id: u8,
         source: Uuid,
     ) -> GraphEdgeStorageResult<Vec<EmbedderEdge>> {
-        if embedder_id > 12 {
+        if embedder_id as usize >= NUM_EMBEDDERS {
             return Err(GraphEdgeStorageError::InvalidEmbedderId { embedder_id });
         }
 
@@ -159,7 +160,7 @@ impl EdgeRepository {
         embedder_id: u8,
         source: Uuid,
     ) -> GraphEdgeStorageResult<()> {
-        if embedder_id > 12 {
+        if embedder_id as usize >= NUM_EMBEDDERS {
             return Err(GraphEdgeStorageError::InvalidEmbedderId { embedder_id });
         }
 
@@ -171,9 +172,9 @@ impl EdgeRepository {
 
         let key = EdgeStorageKey::new(embedder_id, source);
 
-        self.db
-            .delete_cf(&cf, key.to_bytes())
-            .map_err(|e| GraphEdgeStorageError::rocksdb("delete_embedder_edges", cf_names::EMBEDDER_EDGES, e))
+        self.db.delete_cf(&cf, key.to_bytes()).map_err(|e| {
+            GraphEdgeStorageError::rocksdb("delete_embedder_edges", cf_names::EMBEDDER_EDGES, e)
+        })
     }
 
     /// Iterate over all K-NN edges for a specific embedder.
@@ -182,9 +183,10 @@ impl EdgeRepository {
     pub fn iter_embedder_edges(
         &self,
         embedder_id: u8,
-    ) -> GraphEdgeStorageResult<impl Iterator<Item = GraphEdgeStorageResult<(Uuid, Vec<EmbedderEdge>)>> + '_>
-    {
-        if embedder_id > 12 {
+    ) -> GraphEdgeStorageResult<
+        impl Iterator<Item = GraphEdgeStorageResult<(Uuid, Vec<EmbedderEdge>)>> + '_,
+    > {
+        if embedder_id as usize >= NUM_EMBEDDERS {
             return Err(GraphEdgeStorageError::InvalidEmbedderId { embedder_id });
         }
 
@@ -240,9 +242,9 @@ impl EdgeRepository {
         batch.put_cf(&typed_cf, primary_key.to_bytes(), &value);
         batch.put_cf(&by_type_cf, secondary_key, edge.target().as_bytes());
 
-        self.db
-            .write(batch)
-            .map_err(|e| GraphEdgeStorageError::rocksdb("store_typed_edge", cf_names::TYPED_EDGES, e))
+        self.db.write(batch).map_err(|e| {
+            GraphEdgeStorageError::rocksdb("store_typed_edge", cf_names::TYPED_EDGES, e)
+        })
     }
 
     /// Get a typed edge by source and target.
@@ -303,9 +305,9 @@ impl EdgeRepository {
             batch.delete_cf(&by_type_cf, secondary_key);
         }
 
-        self.db
-            .write(batch)
-            .map_err(|e| GraphEdgeStorageError::rocksdb("delete_typed_edge", cf_names::TYPED_EDGES, e))
+        self.db.write(batch).map_err(|e| {
+            GraphEdgeStorageError::rocksdb("delete_typed_edge", cf_names::TYPED_EDGES, e)
+        })
     }
 
     /// Get all typed edges from a source node.
@@ -512,9 +514,9 @@ impl EdgeRepository {
             batch.put_cf(&by_type_cf, secondary_key, edge.target().as_bytes());
         }
 
-        self.db
-            .write(batch)
-            .map_err(|e| GraphEdgeStorageError::rocksdb("store_typed_edges_batch", cf_names::TYPED_EDGES, e))
+        self.db.write(batch).map_err(|e| {
+            GraphEdgeStorageError::rocksdb("store_typed_edges_batch", cf_names::TYPED_EDGES, e)
+        })
     }
 
     // =========================================================================
@@ -526,7 +528,7 @@ impl EdgeRepository {
         let mut stats = GraphEdgeStats::default();
 
         // Count embedder edges per embedder
-        for embedder_id in 0..13u8 {
+        for embedder_id in 0..NUM_EMBEDDERS as u8 {
             let count = self.count_embedder_edges(embedder_id)?;
             stats.embedder_edge_counts[embedder_id as usize] = count;
             stats.total_embedder_edges += count;
@@ -571,9 +573,7 @@ impl EdgeRepository {
             },
         )?;
 
-        let iter = self
-            .db
-            .iterator_cf(&cf, IteratorMode::Start);
+        let iter = self.db.iterator_cf(&cf, IteratorMode::Start);
 
         let mut count = 0u64;
         for item in iter {
@@ -642,11 +642,11 @@ impl<'a> Iterator for EmbedderEdgeIterator<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::column_families::get_column_family_descriptors;
     use context_graph_core::graph_linking::DirectedRelation;
-    use rocksdb::{Options, Cache};
+    use rocksdb::{Cache, Options};
     use std::sync::OnceLock;
     use tempfile::TempDir;
-    use crate::column_families::get_column_family_descriptors;
 
     /// Shared test database — every test uses its own `Uuid::new_v4()` keys,
     /// so there is no cross-test interference and we amortise the ~100ms
@@ -689,9 +689,7 @@ mod tests {
 
         let source = Uuid::new_v4();
         let edges: Vec<EmbedderEdge> = (0..5)
-            .map(|i| {
-                EmbedderEdge::from_storage(source, Uuid::new_v4(), 0, 0.9 - (i as f32 * 0.1))
-            })
+            .map(|i| EmbedderEdge::from_storage(source, Uuid::new_v4(), 0, 0.9 - (i as f32 * 0.1)))
             .collect();
 
         // Store
@@ -735,7 +733,8 @@ mod tests {
             scores,
             1,
             0b0000_0000_0001, // E1 only
-        ).unwrap();
+        )
+        .unwrap();
 
         // Store
         repo.store_typed_edge(&edge).unwrap();
@@ -767,7 +766,8 @@ mod tests {
                 scores,
                 1,
                 0b0000_0000_0001, // E1 only
-            ).unwrap();
+            )
+            .unwrap();
             repo.store_typed_edge(&edge).unwrap();
         }
 
@@ -794,7 +794,8 @@ mod tests {
             scores,
             1,
             0b0000_0100_0000, // E7 only
-        ).unwrap();
+        )
+        .unwrap();
 
         repo.store_typed_edge(&edge).unwrap();
         assert!(repo.get_typed_edge(source, target).unwrap().is_some());
@@ -807,10 +808,10 @@ mod tests {
     fn test_invalid_embedder_id() {
         let repo = EdgeRepository::new(shared_db().db.clone());
 
-        let result = repo.get_embedder_edges(13, Uuid::new_v4());
+        let result = repo.get_embedder_edges(14, Uuid::new_v4());
         assert!(matches!(
             result,
-            Err(GraphEdgeStorageError::InvalidEmbedderId { embedder_id: 13 })
+            Err(GraphEdgeStorageError::InvalidEmbedderId { embedder_id: 14 })
         ));
     }
 
@@ -825,7 +826,14 @@ mod tests {
         let edges: Vec<TypedEdge> = (0..10)
             .map(|i| {
                 scores[0] = 0.9 - (i as f32 * 0.05);
-                TypedEdge::from_scores(source, Uuid::new_v4(), scores, &thresholds, DirectedRelation::Symmetric).unwrap()
+                TypedEdge::from_scores(
+                    source,
+                    Uuid::new_v4(),
+                    scores,
+                    &thresholds,
+                    DirectedRelation::Symmetric,
+                )
+                .unwrap()
             })
             .collect();
 

@@ -1,6 +1,6 @@
 //! Warmup command for pre-loading embedding models into VRAM.
 //!
-//! TASK-EMB-WARMUP: This command loads all 13 embedding models into VRAM
+//! TASK-EMB-WARMUP: This command loads all 14 production embedding models into VRAM
 //! before the MCP server starts, ensuring embedding operations are available
 //! immediately.
 //!
@@ -17,7 +17,7 @@
 //! # Constitution Reference
 //!
 //! - ARCH-08: CUDA GPU required for production - no CPU fallbacks
-//! - Constitution v4.0.0 stack.gpu: RTX 5090, CUDA 13.1+, 32GB VRAM
+//! - Constitution stack.gpu: RTX 5090, CUDA 13.2, 32GB VRAM
 
 use clap::Args;
 use tracing::{error, info};
@@ -40,7 +40,7 @@ pub struct WarmupArgs {
 
 /// Execute the warmup command.
 ///
-/// Loads all 13 embedding models into VRAM. This is a blocking operation
+/// Loads all 14 production embedding models into VRAM. This is a blocking operation
 /// that takes approximately 20-30 seconds on RTX 5090.
 ///
 /// # Returns
@@ -58,7 +58,7 @@ pub async fn handle_warmup(args: WarmupArgs) -> i32 {
         // Verify we can actually get the provider
         match get_warm_provider() {
             Ok(_provider) => {
-                info!("Already warm, skipping. All 13 embedding models are warm and ready");
+                info!("Already warm, skipping. All 14 production embedding models are warm and ready");
                 return 0; // Success - already warm is still success
             }
             Err(e) => {
@@ -93,7 +93,7 @@ pub async fn handle_warmup(args: WarmupArgs) -> i32 {
             // Verify we can get the provider
             match get_warm_provider() {
                 Ok(_provider) => {
-                    info!("SUCCESS: All 13 embedding models loaded into VRAM and ready");
+                    info!("SUCCESS: All 14 production embedding models loaded into VRAM and ready");
                     info!("Status: {}", warm_status_message());
                     0 // Success
                 }
@@ -112,7 +112,7 @@ pub async fn handle_warmup(args: WarmupArgs) -> i32 {
             error!("Status: {}", warm_status_message());
             error!(
                 "\nEnsure:\n\
-                 - CUDA 13.1+ is installed\n\
+                 - CUDA 13.2 is installed and /usr/local/cuda points to it\n\
                  - RTX 5090 or compatible GPU is available\n\
                  - Models are downloaded (check CONTEXT_GRAPH_MODELS_PATH)"
             );

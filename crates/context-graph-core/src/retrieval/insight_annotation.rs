@@ -1,7 +1,7 @@
 //! Insight annotations and perspective coverage for retrieval results.
 //!
 //! Per constitution.yaml CLAUDE.md:
-//! - 13 embedders = 13 unique perspectives on every memory
+//! - 14 embedders = 14 unique perspectives on every memory
 //! - Each finds what OTHERS MISS. Combined = superior answers.
 //!
 //! This module provides:
@@ -27,7 +27,7 @@ use super::CombinedResult;
 /// Embedder category for perspective analysis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EmbedderCategory {
-    /// Semantic embedders (E1, E5, E6, E7, E10, E12, E13) - topic_weight: 1.0
+    /// Semantic embedders (E1, E5, E6, E7, E10, E12, E13, E14) - topic_weight: 1.0
     Semantic,
     /// Relational embedders (E8, E11) - topic_weight: 0.5
     Relational,
@@ -41,8 +41,8 @@ impl EmbedderCategory {
     /// Get category for an embedder index.
     pub fn from_embedder_idx(idx: usize) -> Self {
         match idx {
-            // SEMANTIC: E1, E5, E6, E7, E10, E12, E13
-            0 | 4 | 5 | 6 | 9 | 11 | 12 => Self::Semantic,
+            // SEMANTIC: E1, E5, E6, E7, E10, E12, E13, E14
+            0 | 4 | 5 | 6 | 9 | 11 | 12 | 13 => Self::Semantic,
             // RELATIONAL: E8, E11
             7 | 10 => Self::Relational,
             // STRUCTURAL: E9
@@ -110,7 +110,7 @@ pub struct MissingPerspective {
 /// Breakdown of coverage by embedder category.
 #[derive(Debug, Clone, Default)]
 pub struct CategoryBreakdown {
-    /// Semantic embedders contributing (E1, E5, E6, E7, E10, E12, E13).
+    /// Semantic embedders contributing (E1, E5, E6, E7, E10, E12, E13, E14).
     pub semantic_count: usize,
     pub semantic_total: usize,
 
@@ -407,7 +407,7 @@ pub fn compute_perspective_coverage(results: &[CombinedResult]) -> PerspectiveCo
 
     // Build category breakdown
     let mut breakdown = CategoryBreakdown {
-        semantic_total: 7,   // E1, E5, E6, E7, E10, E12, E13
+        semantic_total: 8,   // E1, E5, E6, E7, E10, E12, E13, E14
         relational_total: 2, // E8, E11
         structural_total: 1, // E9
         temporal_total: 3,   // E2, E3, E4
@@ -646,7 +646,7 @@ mod tests {
 
     #[test]
     fn test_perspective_coverage_full() {
-        // Results from all 13 embedders
+        // Results from all 14 embedders
         let results = vec![
             make_result(vec![0, 1, 2, 3, 4, 5, 6], 0, 0, false),
             make_result(vec![7, 8, 9, 10, 11, 12, 13], 7, 0, false),
@@ -719,8 +719,14 @@ mod tests {
         assert!(results[0].insight_annotation.is_some());
         assert!(results[1].insight_annotation.is_some());
 
-        println!("Result 0: {}", results[0].insight_annotation.as_ref().unwrap());
-        println!("Result 1: {}", results[1].insight_annotation.as_ref().unwrap());
+        println!(
+            "Result 0: {}",
+            results[0].insight_annotation.as_ref().unwrap()
+        );
+        println!(
+            "Result 1: {}",
+            results[1].insight_annotation.as_ref().unwrap()
+        );
 
         println!("[VERIFIED] annotate_results populates annotations");
     }

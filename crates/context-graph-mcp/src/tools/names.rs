@@ -94,7 +94,7 @@ pub const VALIDATE_KNOWLEDGE: &str = "validate_knowledge";
 pub const GET_ENTITY_GRAPH: &str = "get_entity_graph";
 
 // ========== EMBEDDER-FIRST SEARCH TOOLS (Constitution v6.3) ==========
-// Enables searching using any of the 13 embedders as the primary perspective.
+// Enables searching using any of the 14 embedders as the primary perspective.
 // Each embedder sees the knowledge graph differently - sometimes E11 finds
 // what E1 misses, or E7 (code) reveals patterns E5 (causal) doesn't see.
 pub const SEARCH_BY_EMBEDDER: &str = "search_by_embedder";
@@ -121,7 +121,7 @@ pub const SEARCH_BY_EXPANSION: &str = "search_by_expansion";
 pub const GET_MEMORY_NEIGHBORS: &str = "get_memory_neighbors";
 pub const GET_TYPED_EDGES: &str = "get_typed_edges";
 pub const TRAVERSE_GRAPH: &str = "traverse_graph";
-/// Unified neighbors using Weighted RRF across all 13 embedders.
+/// Unified neighbors using Weighted RRF across all 14 embedders.
 /// Per ARCH-21: Multi-space fusion via RRF, not weighted sum.
 /// Per AP-60: Temporal embedders (E2-E4) excluded from semantic fusion.
 pub const GET_UNIFIED_NEIGHBORS: &str = "get_unified_neighbors";

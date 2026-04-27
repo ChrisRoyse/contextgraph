@@ -44,8 +44,8 @@ pub const DEFAULT_TRAVERSAL_MAX_RESULTS: usize = 20;
 /// Maximum results for traversal.
 pub const MAX_TRAVERSAL_RESULTS: usize = 100;
 
-/// Valid embedder IDs (0-12 for E1-E13).
-pub const MAX_EMBEDDER_ID: usize = 12;
+/// Valid embedder IDs (0-13 for E1-E14).
+pub const MAX_EMBEDDER_ID: usize = 13;
 
 /// Valid edge types for filtering.
 pub const VALID_EDGE_TYPES: [&str; 8] = [
@@ -80,7 +80,7 @@ pub struct GetMemoryNeighborsRequest {
     /// UUID of the memory to find neighbors for (required).
     pub memory_id: String,
 
-    /// Embedder space to search (0-12 for E1-E13, default: 0=E1 semantic).
+    /// Embedder space to search (0-13 for E1-E14, default: 0=E1 semantic).
     #[serde(default)]
     pub embedder_id: usize,
 
@@ -255,7 +255,6 @@ impl GetTypedEdgesRequest {
 
         Ok(memory_uuid)
     }
-
 }
 
 /// Request parameters for traverse_graph tool.
@@ -449,7 +448,7 @@ pub struct GetMemoryNeighborsResponse {
     /// UUID of the query memory.
     pub memory_id: Uuid,
 
-    /// Embedder space searched (0-12).
+    /// Embedder space searched (0-13).
     pub embedder_id: usize,
 
     /// Embedder name for readability.
@@ -714,27 +713,36 @@ pub fn embedder_name(id: usize) -> &'static str {
         10 => "E11 (V_factuality)",
         11 => "E12 (V_precision)",
         12 => "E13 (V_keyword_precision)",
+        13 => "E14 (V_multilingual_style)",
         _ => "Unknown",
     }
 }
 
-/// Valid embedder names E1-E13.
+/// Valid embedder names E1-E14.
 pub const EMBEDDER_NAMES: [&str; 14] = [
-    "E1", "E2", "E3", "E4", "E5", "E6", "E7",
-    "E8", "E9", "E10", "E11", "E12", "E13", "E14",
+    "E1", "E2", "E3", "E4", "E5", "E6", "E7", "E8", "E9", "E10", "E11", "E12", "E13", "E14",
 ];
 
-/// Convert embedder name (E1-E13) to index (0-12).
+/// Convert embedder name (E1-E14) to index (0-13).
 ///
 /// Returns `Ok(index)` for valid names, `Err(message)` for invalid.
 pub fn embedder_name_to_index(name: &str) -> Result<usize, String> {
     match name {
-        "E1" => Ok(0), "E2" => Ok(1), "E3" => Ok(2),
-        "E4" => Ok(3), "E5" => Ok(4), "E6" => Ok(5),
-        "E7" => Ok(6), "E8" => Ok(7), "E9" => Ok(8),
-        "E10" => Ok(9), "E11" => Ok(10), "E12" => Ok(11),
+        "E1" => Ok(0),
+        "E2" => Ok(1),
+        "E3" => Ok(2),
+        "E4" => Ok(3),
+        "E5" => Ok(4),
+        "E6" => Ok(5),
+        "E7" => Ok(6),
+        "E8" => Ok(7),
+        "E9" => Ok(8),
+        "E10" => Ok(9),
+        "E11" => Ok(10),
+        "E12" => Ok(11),
         "E13" => Ok(12),
-        _ => Err(format!("Invalid embedder '{}'. Valid names: E1-E13.", name)),
+        "E14" => Ok(13),
+        _ => Err(format!("Invalid embedder '{}'. Valid names: E1-E14.", name)),
     }
 }
 
@@ -745,7 +753,7 @@ pub fn uses_asymmetric_similarity(embedder_id: usize) -> bool {
 }
 
 // ============================================================================
-// UNIFIED NEIGHBORS (Weighted RRF across all 13 embedders)
+// UNIFIED NEIGHBORS (Weighted RRF across all 14 embedders)
 // ============================================================================
 
 /// Semantic embedder indices for RRF fusion.
@@ -1229,8 +1237,7 @@ mod tests {
 
     #[test]
     fn test_empty_neighbors_response() {
-        let response =
-            GetMemoryNeighborsResponse::_empty(Uuid::nil(), 0, "E1 (V_meaning)");
+        let response = GetMemoryNeighborsResponse::_empty(Uuid::nil(), 0, "E1 (V_meaning)");
 
         assert_eq!(response.count, 0);
         assert!(response.neighbors.is_empty());
@@ -1248,8 +1255,7 @@ mod tests {
 
     #[test]
     fn test_empty_traversal_response() {
-        let response =
-            TraverseGraphResponse::_empty(Uuid::nil(), 2, None, 0.3, 20);
+        let response = TraverseGraphResponse::_empty(Uuid::nil(), 2, None, 0.3, 20);
 
         assert_eq!(response.unique_nodes_visited, 0);
         assert_eq!(response.path_count, 0);
@@ -1363,8 +1369,8 @@ mod tests {
         assert!(!SEMANTIC_EMBEDDER_INDICES.contains(&3)); // E4
 
         // Verify E1, E5-E13 ARE in SEMANTIC_EMBEDDER_INDICES
-        assert!(SEMANTIC_EMBEDDER_INDICES.contains(&0));  // E1
-        assert!(SEMANTIC_EMBEDDER_INDICES.contains(&4));  // E5
+        assert!(SEMANTIC_EMBEDDER_INDICES.contains(&0)); // E1
+        assert!(SEMANTIC_EMBEDDER_INDICES.contains(&4)); // E5
         assert!(SEMANTIC_EMBEDDER_INDICES.contains(&12)); // E13
 
         println!("[PASS] SEMANTIC_EMBEDDER_INDICES correctly excludes temporal per AP-60");

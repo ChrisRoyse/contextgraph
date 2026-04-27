@@ -1,7 +1,7 @@
 //! RocksDB implementation of QuantizedFingerprintStorage.
 //!
 //! Implements storage and retrieval of quantized fingerprints using
-//! RocksDB column families (emb_0 through emb_12).
+//! RocksDB column families (emb_0 through emb_13).
 
 use context_graph_embeddings::{
     QuantizationRouter, QuantizedEmbedding, StoredQuantizedFingerprint, STORAGE_VERSION,
@@ -31,7 +31,7 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
         &self,
         fingerprint: &StoredQuantizedFingerprint,
     ) -> QuantizedStorageResult<()> {
-        // FAIL FAST: Verify all 13 embedders present
+        // FAIL FAST: Verify all quantized embedders are present.
         if fingerprint.embeddings.len() != QUANTIZED_EMBEDDER_CF_COUNT {
             panic!(
                 "STORAGE ERROR: Cannot store fingerprint {} with {} embedders. \
@@ -40,7 +40,7 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
                 fingerprint.id,
                 fingerprint.embeddings.len(),
                 QUANTIZED_EMBEDDER_CF_COUNT,
-                (0..13)
+                (0..QUANTIZED_EMBEDDER_CF_COUNT)
                     .filter(|i| !fingerprint.embeddings.contains_key(&(*i as u8)))
                     .collect::<Vec<_>>()
             );
@@ -64,8 +64,10 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
             if *embedder_idx >= QUANTIZED_EMBEDDER_CF_COUNT as u8 {
                 panic!(
                     "STORAGE ERROR: Invalid embedder index {} in fingerprint {}. \
-                     Valid range: 0-12.",
-                    embedder_idx, fingerprint.id
+                     Valid range: 0-{}.",
+                    embedder_idx,
+                    fingerprint.id,
+                    QUANTIZED_EMBEDDER_CF_COUNT - 1
                 );
             }
 
@@ -99,7 +101,7 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
         let key = embedder_key(id);
         let mut embeddings = std::collections::HashMap::new();
 
-        // Load all 13 embedders
+        // Load all quantized embedders.
         for (embedder_idx, cf_name) in QUANTIZED_EMBEDDER_CFS.iter().enumerate() {
             let cf =
                 self.get_cf(cf_name)
@@ -133,7 +135,7 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
             embeddings.insert(embedder_idx as u8, embedding);
         }
 
-        // FAIL FAST: Verify we got all 13
+        // FAIL FAST: Verify we got every quantized embedder.
         if embeddings.len() != QUANTIZED_EMBEDDER_CF_COUNT {
             panic!(
                 "STORAGE ERROR: Loaded only {} embedders for fingerprint {}. \
@@ -248,7 +250,7 @@ impl QuantizedFingerprintStorage for RocksDbTeleologicalStore {
         let key = embedder_key(id);
         let mut batch = WriteBatch::default();
 
-        // Delete from all 13 embedder CFs
+        // Delete from all quantized embedder CFs.
         for cf_name in QUANTIZED_EMBEDDER_CFS {
             let cf =
                 self.get_cf(cf_name)

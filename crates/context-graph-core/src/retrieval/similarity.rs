@@ -1,6 +1,6 @@
 //! Per-space similarity scores and retrieval result types.
 //!
-//! This module provides types for tracking similarity scores across all 13
+//! This module provides types for tracking similarity scores across all 14
 //! embedding spaces, with category-weighted aggregation.
 //!
 //! # Architecture Rules
@@ -18,14 +18,14 @@ use crate::teleological::Embedder;
 /// Number of embedding spaces.
 pub const NUM_SPACES: usize = 14;
 
-/// Similarity scores for all 13 embedding spaces.
+/// Similarity scores for all 14 embedding spaces.
 ///
 /// Field names match Embedder variant names (snake_case).
 /// All scores are in the range [0.0, 1.0].
 ///
 /// # Category Weights for weighted_mean()
 ///
-/// - Semantic (E1, E5, E6, E7, E10, E12, E13): weight 1.0
+/// - Semantic (E1, E5, E6, E7, E10, E12, E13, E14): weight 1.0
 /// - Temporal (E2, E3, E4): weight 0.0 (excluded)
 /// - Relational (E8, E11): weight 0.5
 /// - Structural (E9): weight 0.5
@@ -120,7 +120,7 @@ impl PerSpaceScores {
         self.iter().map(|(_, s)| s).fold(0.0_f32, f32::max)
     }
 
-    /// Get the mean score across all 13 spaces (unweighted).
+    /// Get the mean score across all 14 spaces (unweighted).
     pub fn mean_score(&self) -> f32 {
         let sum: f32 = self.iter().map(|(_, s)| s).sum();
         sum / NUM_SPACES as f32
@@ -135,7 +135,7 @@ impl PerSpaceScores {
     /// - Relational: 0.5
     /// - Structural: 0.5
     ///
-    /// Result is normalized by max_weighted_agreement (8.5).
+    /// Result is normalized by max_weighted_agreement (9.5).
     pub fn weighted_mean(&self) -> f32 {
         let mut weighted_sum = 0.0;
 
@@ -150,7 +150,7 @@ impl PerSpaceScores {
     }
 
     /// Convert to array for compact operations.
-    /// Order matches Embedder::index(): E1=0, E2=1, ..., E13=12.
+    /// Order matches Embedder::index(): E1=0, E2=1, ..., E14=13.
     pub fn to_array(&self) -> [f32; NUM_SPACES] {
         [
             self.semantic,
@@ -341,6 +341,7 @@ mod tests {
         scores.multimodal = 1.0;
         scores.late_interaction = 1.0;
         scores.keyword_splade = 1.0;
+        scores.bge_m3_dense = 1.0;
         // Set relational to 1.0
         scores.graph = 1.0;
         scores.entity = 1.0;
@@ -352,7 +353,7 @@ mod tests {
         scores.temporal_positional = 1.0;
 
         let weighted = scores.weighted_mean();
-        // (7*1.0 + 2*0.5 + 1*0.5) / 8.5 = 8.5 / 8.5 = 1.0
+        // (8*1.0 + 2*0.5 + 1*0.5) / 9.5 = 9.5 / 9.5 = 1.0
         assert!((weighted - 1.0).abs() < 1e-6);
         println!("[PASS] weighted_mean = 1.0 when all weighted spaces are 1.0");
     }
@@ -472,9 +473,12 @@ mod tests {
         // Rest are 0.0
 
         let weighted = scores.weighted_mean();
-        // (3 * 1.0) / 8.5 = 3.0 / 8.5 ≈ 0.353
-        assert!((weighted - 3.0 / 8.5).abs() < 1e-6);
-        println!("[PASS] weighted_mean computes correctly for partial scores: {:.6}", weighted);
+        // (3 * 1.0) / 9.5 = 3.0 / 9.5 ≈ 0.316
+        assert!((weighted - 3.0 / 9.5).abs() < 1e-6);
+        println!(
+            "[PASS] weighted_mean computes correctly for partial scores: {:.6}",
+            weighted
+        );
     }
 
     #[test]

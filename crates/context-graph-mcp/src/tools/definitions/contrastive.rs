@@ -22,7 +22,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
             "Scan the memory corpus for cross-embedder anomaly pairs and \
              persist each match to CF_CONTRASTIVE_PAIRS. For every anchor \
              we score a bounded candidate pool (`topKCandidatesPerAnchor` \
-             peers), compute the full 13-embedder similarity profile, filter \
+             peers), compute the full 14-embedder similarity profile, filter \
              by `minDisagreement` + thresholds, classify into one of six \
              AnomalyKinds, and store the resulting (anchor, negative, \
              similarity_profile) triple. Idempotent on the composite key.",

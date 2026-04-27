@@ -2,17 +2,18 @@
 #
 # TASK-S05: Embedder Count Validation Gate
 #
-# Verifies that exactly 13 embedders (E1-E13) are defined in the codebase.
-# Constitution Reference: Multi-Array Storage pipeline (13-model ensemble)
+# Verifies that the E14-era embedder/model counts are consistent.
+# Constitution Reference: Multi-Array Storage pipeline (14 production embedders)
 #
 # Checks:
-#   1. ModelId enum has exactly 13 variants
-#   2. ModelId::all() returns exactly 13 items
-#   3. Maximum discriminant value is 12 (0-indexed)
-#   4. Documentation references match (13 models)
+#   1. ModelId enum has exactly 15 variants (14 production + legacy Entity)
+#   2. ModelId::all() returns exactly 15 items
+#   3. ModelId::production() returns exactly 14 items
+#   4. Maximum discriminant value is 14 (0-indexed)
+#   5. Warm registry tracks all 15 loadable model IDs
 #
 # Exit codes:
-#   0 - All embedder counts correct (13)
+#   0 - All embedder counts correct
 #   1 - Embedder count mismatch detected
 #
 # Usage:
@@ -26,13 +27,15 @@ GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 NC='\033[0m' # No Color
 
-EXPECTED_COUNT=13
+EXPECTED_MODEL_ID_COUNT=15
+EXPECTED_PRODUCTION_COUNT=14
+EXPECTED_WARM_COUNT=15
 
 echo "========================================"
-echo "  Embedder Count Check (E1-E13)"
+echo "  Embedder Count Check (E1-E14)"
 echo "========================================"
 echo ""
-echo "Expected count: $EXPECTED_COUNT embedders"
+echo "Expected: $EXPECTED_PRODUCTION_COUNT production embedders, $EXPECTED_MODEL_ID_COUNT ModelId variants"
 echo ""
 
 # Change to repository root
@@ -63,12 +66,12 @@ fi
 
 # Count enum variants by looking for lines matching "VariantName = N," pattern
 # This matches: "    Semantic = 0," etc.
-VARIANT_COUNT=$(grep -cE '^\s+[A-Z][a-zA-Z]+ = [0-9]+,' "$MODEL_ID_FILE" 2>/dev/null || echo "0")
+VARIANT_COUNT=$(grep -cE '^\s+[A-Z][A-Za-z0-9]+ = [0-9]+,' "$MODEL_ID_FILE" 2>/dev/null || echo "0")
 
-if [ "$VARIANT_COUNT" -eq "$EXPECTED_COUNT" ]; then
+if [ "$VARIANT_COUNT" -eq "$EXPECTED_MODEL_ID_COUNT" ]; then
     echo -e "${GREEN}  PASS: Found $VARIANT_COUNT ModelId variants${NC}"
 else
-    echo -e "${RED}  FAIL: Found $VARIANT_COUNT ModelId variants (expected $EXPECTED_COUNT)${NC}"
+    echo -e "${RED}  FAIL: Found $VARIANT_COUNT ModelId variants (expected $EXPECTED_MODEL_ID_COUNT)${NC}"
     ERRORS=$((ERRORS + 1))
 fi
 
@@ -77,13 +80,13 @@ fi
 # =============================================================================
 echo "Check 2: Maximum discriminant value..."
 
-# Extract maximum discriminant (should be 12 for 0-indexed 13 variants)
+# Extract maximum discriminant (should be 14 for 0-indexed 15 variants)
 MAX_DISCRIMINANT=$(grep -oE '= [0-9]+,' "$MODEL_ID_FILE" | grep -oE '[0-9]+' | sort -n | tail -1)
 
-EXPECTED_MAX=$((EXPECTED_COUNT - 1))
+EXPECTED_MAX=$((EXPECTED_MODEL_ID_COUNT - 1))
 
 if [ "$MAX_DISCRIMINANT" -eq "$EXPECTED_MAX" ]; then
-    echo -e "${GREEN}  PASS: Maximum discriminant is $MAX_DISCRIMINANT (correct for $EXPECTED_COUNT variants)${NC}"
+    echo -e "${GREEN}  PASS: Maximum discriminant is $MAX_DISCRIMINANT (correct for $EXPECTED_MODEL_ID_COUNT variants)${NC}"
 else
     echo -e "${RED}  FAIL: Maximum discriminant is $MAX_DISCRIMINANT (expected $EXPECTED_MAX)${NC}"
     ERRORS=$((ERRORS + 1))
@@ -99,15 +102,34 @@ echo "Check 3: ModelId::all() array count..."
 ALL_FN_START=$(grep -n 'pub const fn all()' "$MODEL_ID_FILE" | cut -d: -f1)
 if [ -n "$ALL_FN_START" ]; then
     # Get the next 20 lines and count Self:: occurrences
-    ALL_FN_COUNT=$(sed -n "${ALL_FN_START},$((ALL_FN_START + 20))p" "$MODEL_ID_FILE" | grep -c 'Self::' 2>/dev/null || echo "0")
+    ALL_FN_COUNT=$(sed -n "${ALL_FN_START},$((ALL_FN_START + 24))p" "$MODEL_ID_FILE" | grep -cE 'Self::[A-Za-z0-9]+,' 2>/dev/null || echo "0")
 else
     ALL_FN_COUNT=0
 fi
 
-if [ "$ALL_FN_COUNT" -eq "$EXPECTED_COUNT" ]; then
+if [ "$ALL_FN_COUNT" -eq "$EXPECTED_MODEL_ID_COUNT" ]; then
     echo -e "${GREEN}  PASS: ModelId::all() returns $ALL_FN_COUNT items${NC}"
 else
-    echo -e "${RED}  FAIL: ModelId::all() returns $ALL_FN_COUNT items (expected $EXPECTED_COUNT)${NC}"
+    echo -e "${RED}  FAIL: ModelId::all() returns $ALL_FN_COUNT items (expected $EXPECTED_MODEL_ID_COUNT)${NC}"
+    ERRORS=$((ERRORS + 1))
+fi
+
+# =============================================================================
+# Check 3b: Verify ModelId::production() array count
+# =============================================================================
+echo "Check 3b: ModelId::production() array count..."
+
+PROD_FN_START=$(grep -n 'pub const fn production()' "$MODEL_ID_FILE" | cut -d: -f1)
+if [ -n "$PROD_FN_START" ]; then
+    PROD_FN_COUNT=$(sed -n "${PROD_FN_START},$((PROD_FN_START + 24))p" "$MODEL_ID_FILE" | grep -cE 'Self::[A-Za-z0-9]+,' 2>/dev/null || echo "0")
+else
+    PROD_FN_COUNT=0
+fi
+
+if [ "$PROD_FN_COUNT" -eq "$EXPECTED_PRODUCTION_COUNT" ]; then
+    echo -e "${GREEN}  PASS: ModelId::production() returns $PROD_FN_COUNT items${NC}"
+else
+    echo -e "${RED}  FAIL: ModelId::production() returns $PROD_FN_COUNT items (expected $EXPECTED_PRODUCTION_COUNT)${NC}"
     ERRORS=$((ERRORS + 1))
 fi
 
@@ -126,10 +148,10 @@ else
     DIMENSION_ARMS=0
 fi
 
-if [ "$DIMENSION_ARMS" -eq "$EXPECTED_COUNT" ]; then
+if [ "$DIMENSION_ARMS" -eq "$EXPECTED_MODEL_ID_COUNT" ]; then
     echo -e "${GREEN}  PASS: dimension() covers $DIMENSION_ARMS variants${NC}"
 else
-    echo -e "${RED}  FAIL: dimension() covers $DIMENSION_ARMS variants (expected $EXPECTED_COUNT)${NC}"
+    echo -e "${RED}  FAIL: dimension() covers $DIMENSION_ARMS variants (expected $EXPECTED_MODEL_ID_COUNT)${NC}"
     ERRORS=$((ERRORS + 1))
 fi
 
@@ -141,14 +163,13 @@ echo "Check 5: Warm loading registry count..."
 WARM_REGISTRY_FILE="crates/context-graph-embeddings/src/warm/registry/types.rs"
 
 if [ -f "$WARM_REGISTRY_FILE" ]; then
-    # Count EMBEDDING_MODEL_IDS array entries (it's a [&str; 13] array)
-    # Check the array type annotation declares 13 elements
+    # Check the array type annotation declares all loadable model IDs.
     WARM_TYPE_COUNT=$(grep -oE 'EMBEDDING_MODEL_IDS: \[&str; [0-9]+\]' "$WARM_REGISTRY_FILE" | grep -oE '[0-9]+' | head -1)
 
-    if [ -n "$WARM_TYPE_COUNT" ] && [ "$WARM_TYPE_COUNT" -eq "$EXPECTED_COUNT" ]; then
+    if [ -n "$WARM_TYPE_COUNT" ] && [ "$WARM_TYPE_COUNT" -eq "$EXPECTED_WARM_COUNT" ]; then
         echo -e "${GREEN}  PASS: EMBEDDING_MODEL_IDS type declares $WARM_TYPE_COUNT entries${NC}"
     else
-        echo -e "${RED}  FAIL: EMBEDDING_MODEL_IDS type declares ${WARM_TYPE_COUNT:-0} entries (expected $EXPECTED_COUNT)${NC}"
+        echo -e "${RED}  FAIL: EMBEDDING_MODEL_IDS type declares ${WARM_TYPE_COUNT:-0} entries (expected $EXPECTED_WARM_COUNT)${NC}"
         ERRORS=$((ERRORS + 1))
     fi
 else
@@ -169,10 +190,10 @@ else
     AS_STR_ARMS=0
 fi
 
-if [ "$AS_STR_ARMS" -eq "$EXPECTED_COUNT" ]; then
+if [ "$AS_STR_ARMS" -eq "$EXPECTED_MODEL_ID_COUNT" ]; then
     echo -e "${GREEN}  PASS: as_str() covers $AS_STR_ARMS variants${NC}"
 else
-    echo -e "${RED}  FAIL: as_str() covers $AS_STR_ARMS variants (expected $EXPECTED_COUNT)${NC}"
+    echo -e "${RED}  FAIL: as_str() covers $AS_STR_ARMS variants (expected $EXPECTED_MODEL_ID_COUNT)${NC}"
     ERRORS=$((ERRORS + 1))
 fi
 
@@ -189,25 +210,26 @@ if [ "$ERRORS" -eq 0 ]; then
     echo -e "${GREEN}PASSED: All embedder count checks passed${NC}"
     echo ""
     echo "Verified:"
-    echo "  - $EXPECTED_COUNT ModelId enum variants (E1-E13)"
+    echo "  - $EXPECTED_MODEL_ID_COUNT ModelId enum variants (14 production + legacy Entity)"
     echo "  - Discriminants 0-$EXPECTED_MAX correctly assigned"
-    echo "  - ModelId::all() returns all $EXPECTED_COUNT variants"
+    echo "  - ModelId::all() returns all $EXPECTED_MODEL_ID_COUNT variants"
+    echo "  - ModelId::production() returns $EXPECTED_PRODUCTION_COUNT production variants"
     echo "  - dimension() covers all variants"
     echo "  - as_str() covers all variants"
     exit 0
 else
     echo -e "${RED}FAILED: $ERRORS embedder count check(s) failed${NC}"
     echo ""
-    echo "Expected: $EXPECTED_COUNT embedders (E1-E13)"
+    echo "Expected: $EXPECTED_PRODUCTION_COUNT production embedders (E1-E14), $EXPECTED_MODEL_ID_COUNT ModelId variants"
     echo ""
     echo "ModelId variants should be:"
     echo "  E1:  Semantic          E8:  Graph"
     echo "  E2:  TemporalRecent    E9:  Hdc"
     echo "  E3:  TemporalPeriodic  E10: Multimodal"
-    echo "  E4:  TemporalPositional E11: Entity"
+    echo "  E4:  TemporalPositional E11: Kepler (Entity legacy retained)"
     echo "  E5:  Causal            E12: LateInteraction"
     echo "  E6:  Sparse            E13: Splade"
-    echo "  E7:  Code"
+    echo "  E7:  Code              E14: BgeM3Dense"
     echo ""
     echo "See: constitution.yaml for model specifications"
     exit 1

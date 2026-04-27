@@ -216,10 +216,10 @@ pub const EMBEDDING_DIM: usize = 1024;
 /// Number of embedders in the system.
 pub const NUM_EMBEDDERS: usize = 14;
 
-/// TopicProfile: 13D profile for topic/embedding weights.
+/// TopicProfile: 14D profile for topic/embedding weights.
 ///
 /// This type represents embedder-level weights or alignment scores for topics.
-/// Each element corresponds to one of the 13 embedders in the system.
+/// Each element corresponds to one of the 14 embedders in the system.
 ///
 /// # Usage
 ///
@@ -234,7 +234,7 @@ pub const NUM_EMBEDDERS: usize = 14;
 /// multi-space clustering.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct TopicProfile {
-    /// 13D alignment scores, one per embedder [0.0, 1.0]
+    /// 14D alignment scores, one per embedder [0.0, 1.0]
     pub alignments: [f32; NUM_EMBEDDERS],
 }
 
@@ -242,7 +242,7 @@ impl TopicProfile {
     /// Create a new TopicProfile from an array of alignments.
     ///
     /// # Arguments
-    /// * `alignments` - Array of 13 alignment values
+    /// * `alignments` - Array of NUM_EMBEDDERS alignment values
     pub fn new(alignments: [f32; NUM_EMBEDDERS]) -> Self {
         Self { alignments }
     }

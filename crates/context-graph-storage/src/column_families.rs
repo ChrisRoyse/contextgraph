@@ -398,6 +398,8 @@ pub const TOTAL_COLUMN_FAMILIES: usize = 60;
 
 #[cfg(test)]
 mod tests {
+    use crate::QUANTIZED_EMBEDDER_CF_COUNT;
+
     use super::*;
 
     // =========================================================================
@@ -715,8 +717,8 @@ mod tests {
         let descriptors = get_all_column_family_descriptors(&cache);
         let names: Vec<_> = descriptors.iter().map(|d| d.name()).collect();
 
-        // Verify all 13 quantized embedder CFs are present
-        for i in 0..13 {
+        // Verify all quantized embedder CFs are present.
+        for i in 0..QUANTIZED_EMBEDDER_CF_COUNT {
             let cf_name = format!("emb_{}", i);
             assert!(
                 names.contains(&cf_name.as_str()),

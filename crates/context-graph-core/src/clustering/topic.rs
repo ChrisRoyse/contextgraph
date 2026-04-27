@@ -239,7 +239,7 @@ impl TopicProfile {
         let mut norm_a = 0.0f32;
         let mut norm_b = 0.0f32;
 
-        for i in 0..13 {
+        for i in 0..self.strengths.len() {
             dot += self.strengths[i] * other.strengths[i];
             norm_a += self.strengths[i] * self.strengths[i];
             norm_b += other.strengths[i] * other.strengths[i];

@@ -166,7 +166,7 @@ impl CrossSpaceSimilarity {
             score: 1.0,
             raw_score: 1.0,
             space_scores: Some([Some(1.0); NUM_EMBEDDERS]),
-            active_spaces: (1 << NUM_EMBEDDERS) - 1, // All 13 bits set
+            active_spaces: (1 << NUM_EMBEDDERS) - 1, // All spaces set
             space_weights: Some([1.0 / NUM_EMBEDDERS as f32; NUM_EMBEDDERS]),
             purpose_contribution: None,
             confidence: 1.0,
@@ -243,7 +243,8 @@ mod tests {
         assert!(result.is_space_active(2));
         assert!(result.is_space_active(3));
         assert!(!result.is_space_active(4));
-        assert!(!result.is_space_active(13)); // Out of bounds
+        assert!(!result.is_space_active(13));
+        assert!(!result.is_space_active(14)); // Out of bounds
 
         println!(
             "[PASS] is_space_active correctly identifies active spaces: {}",
@@ -274,7 +275,8 @@ mod tests {
         assert_eq!(result.get_space_score(0), Some(0.9));
         assert_eq!(result.get_space_score(1), None);
         assert_eq!(result.get_space_score(2), Some(0.8));
-        assert_eq!(result.get_space_score(13), None); // Out of bounds
+        assert_eq!(result.get_space_score(13), None);
+        assert_eq!(result.get_space_score(14), None); // Out of bounds
 
         println!("[PASS] get_space_score returns correct values");
     }
@@ -305,7 +307,7 @@ mod tests {
             score: 0.85,
             raw_score: 0.85,
             space_scores: None,
-            active_spaces: 0b1111111111111,
+            active_spaces: (1 << NUM_EMBEDDERS) - 1,
             space_weights: None,
             purpose_contribution: None,
             confidence: 0.9,

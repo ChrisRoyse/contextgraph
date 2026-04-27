@@ -21,7 +21,7 @@
 //!
 //! Because we buffer the full member set, a constellation of N memories
 //! uses O(N × dense_sizes) bytes transiently during compilation. For 50 000
-//! members × 13 dense embedders × 1024 f32 worst-case that's roughly 2.5 GB.
+//! members × 14 embedder slots × 1024 f32 worst-case that's roughly 2.7 GB.
 //! Reduce `max_members` for low-RAM environments.
 
 use std::collections::HashMap;
@@ -199,7 +199,7 @@ impl ConstellationAccumulator {
 
     /// Observe one member fingerprint.
     ///
-    /// `stored_topic_profile` is the 13D topic profile read from
+    /// `stored_topic_profile` is the 14D topic profile read from
     /// `CF_TOPIC_PROFILES` at the caller's discretion; a `None` here simply
     /// skips the topic-profile contribution for this member (it is *not*
     /// zero-imputed, since zero-imputing would bias the centroid toward

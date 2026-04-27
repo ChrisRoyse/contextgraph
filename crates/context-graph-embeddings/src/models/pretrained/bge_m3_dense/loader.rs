@@ -1,8 +1,8 @@
 //! Weight loading for BgeM3DenseModel.
 //!
-//! Reuses `GpuModelLoader::load_bert_weights_with_prefix` with the XLM-R
-//! `roberta.` prefix. The encoder layer structure is architecturally
-//! identical to BERT, so no new weight structs are needed.
+//! Reuses `GpuModelLoader::load_bert_weights_with_prefix` with BGE-M3's flat
+//! checkpoint keys. The encoder layer structure is architecturally identical
+//! to BERT, so no new weight structs are needed.
 
 use std::sync::atomic::Ordering;
 
@@ -21,8 +21,8 @@ impl BgeM3DenseModel {
     /// # Pipeline
     /// 1. Initialise CUDA device.
     /// 2. Load the XLM-R SentencePiece tokenizer from `tokenizer.json`.
-    /// 3. Load BGE-M3 weights from `model.safetensors` using the `roberta.`
-    ///    prefix that HuggingFace/FlagEmbedding ships with.
+    /// 3. Load BGE-M3 weights from `model.safetensors` using the flat
+    ///    checkpoint keys that HuggingFace/FlagEmbedding ships with.
     ///
     /// # Errors
     /// - GPU init failure (no CUDA / driver mismatch).

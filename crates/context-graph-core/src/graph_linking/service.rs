@@ -29,9 +29,8 @@ use std::collections::HashMap;
 use uuid::Uuid;
 
 use super::{
-    DirectedRelation, EdgeBuilder, EdgeBuilderConfig, EdgeResult,
-    GraphLinkEdgeType, KnnGraph, KnnGraphStats, NnDescent, NnDescentConfig,
-    TypedEdge,
+    DirectedRelation, EdgeBuilder, EdgeBuilderConfig, EdgeResult, GraphLinkEdgeType, KnnGraph,
+    KnnGraphStats, NnDescent, NnDescentConfig, TypedEdge,
 };
 
 /// Configuration for the GraphLinkService.
@@ -233,17 +232,11 @@ impl GraphLinkService {
                 // Asymmetric embedders (E5, E8) - need source/target embeddings
                 // For now, use symmetric approach (can be enhanced later)
                 let nn = NnDescent::new(embedder_id, nodes, self.config.nn_descent.clone());
-                nn.build(
-                    |id| get_embedding(id, embedder_id),
-                    &similarity,
-                )?
+                nn.build(|id| get_embedding(id, embedder_id), &similarity)?
             } else {
                 // Symmetric embedders
                 let nn = NnDescent::new(embedder_id, nodes, self.config.nn_descent.clone());
-                nn.build(
-                    |id| get_embedding(id, embedder_id),
-                    &similarity,
-                )?
+                nn.build(|id| get_embedding(id, embedder_id), &similarity)?
             };
 
             stats.insert(embedder_id, graph.stats());
@@ -442,6 +435,7 @@ impl GraphLinkService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::fingerprint::NUM_EMBEDDERS;
 
     fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
         let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
@@ -469,7 +463,7 @@ mod tests {
         let embeddings: HashMap<(Uuid, u8), Vec<f32>> = nodes
             .iter()
             .flat_map(|id| {
-                (0..13).map(move |emb_id| {
+                (0..NUM_EMBEDDERS).map(move |emb_id| {
                     let mut emb = vec![0.0; 32];
                     // Create clustered embeddings
                     let cluster = id.as_u128() as usize % 3;
@@ -480,15 +474,16 @@ mod tests {
             })
             .collect();
 
-        let config = GraphLinkServiceConfig::default()
-            .with_active_embedders(vec![0]); // Only E1 for simplicity
+        let config = GraphLinkServiceConfig::default().with_active_embedders(vec![0]); // Only E1 for simplicity
 
         let mut service = GraphLinkService::new(config);
-        let result = service.build(
-            &nodes,
-            |id, emb_id| embeddings.get(&(id, emb_id)).cloned(),
-            cosine_similarity,
-        ).unwrap();
+        let result = service
+            .build(
+                &nodes,
+                |id, emb_id| embeddings.get(&(id, emb_id)).cloned(),
+                cosine_similarity,
+            )
+            .unwrap();
 
         assert_eq!(result.node_count, 10);
         assert!(result.graphs.contains_key(&0)); // E1 graph built
@@ -503,7 +498,7 @@ mod tests {
             .iter()
             .enumerate()
             .flat_map(|(i, id)| {
-                (0..13).map(move |emb_id| {
+                (0..NUM_EMBEDDERS).map(move |emb_id| {
                     let mut emb = vec![0.0; 16];
                     emb[i % 16] = 1.0;
                     emb[(i + 1) % 16] = 0.5;
@@ -512,15 +507,16 @@ mod tests {
             })
             .collect();
 
-        let config = GraphLinkServiceConfig::default()
-            .with_active_embedders(vec![0]);
+        let config = GraphLinkServiceConfig::default().with_active_embedders(vec![0]);
 
         let mut service = GraphLinkService::new(config);
-        service.build(
-            &nodes,
-            |id, emb_id| embeddings.get(&(id, emb_id)).cloned(),
-            cosine_similarity,
-        ).unwrap();
+        service
+            .build(
+                &nodes,
+                |id, emb_id| embeddings.get(&(id, emb_id)).cloned(),
+                cosine_similarity,
+            )
+            .unwrap();
 
         // Query neighbors for first node
         let result = service.get_neighbors(nodes[0], 0);
@@ -539,7 +535,7 @@ mod tests {
             .iter()
             .enumerate()
             .flat_map(|(i, id)| {
-                (0..13).map(move |emb_id| {
+                (0..NUM_EMBEDDERS).map(move |emb_id| {
                     let mut emb = vec![0.0; 16];
                     emb[i % 16] = 1.0;
                     ((*id, emb_id as u8), emb)
@@ -547,15 +543,16 @@ mod tests {
             })
             .collect();
 
-        let config = GraphLinkServiceConfig::default()
-            .with_active_embedders(vec![0, 6]); // E1 and E7
+        let config = GraphLinkServiceConfig::default().with_active_embedders(vec![0, 6]); // E1 and E7
 
         let mut service = GraphLinkService::new(config);
-        service.build(
-            &nodes,
-            |id, emb_id| embeddings.get(&(id, emb_id)).cloned(),
-            cosine_similarity,
-        ).unwrap();
+        service
+            .build(
+                &nodes,
+                |id, emb_id| embeddings.get(&(id, emb_id)).cloned(),
+                cosine_similarity,
+            )
+            .unwrap();
 
         let stats = service.stats();
         assert!(stats.contains_key(&0));

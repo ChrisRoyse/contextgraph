@@ -87,9 +87,9 @@ use crate::protocol::{JsonRpcRequest, JsonRpcResponse};
 /// LAZY-STARTUP: Models load in background to allow immediate MCP protocol response.
 pub struct McpServer {
     pub(in crate::server) config: Config,
-    /// Teleological memory store - stores TeleologicalFingerprint with 13 embeddings.
+    /// Teleological memory store - stores TeleologicalFingerprint with 14 embeddings.
     pub(in crate::server) teleological_store: Arc<dyn TeleologicalMemoryStore>,
-    /// Multi-array embedding provider - generates all 13 embeddings.
+    /// Multi-array embedding provider - generates all 14 embeddings.
     /// Wrapped in RwLock<Option<...>> for lazy loading - None while models are loading.
     pub(in crate::server) multi_array_provider: Arc<RwLock<Option<Arc<dyn MultiArrayEmbeddingProvider>>>>,
     /// Flag indicating whether models are currently loading.
@@ -135,7 +135,7 @@ impl McpServer {
     ///
     /// TASK-S001: Creates TeleologicalMemoryStore and MultiArrayEmbeddingProvider.
     /// TASK-S004: Uses REAL implementations - RocksDbTeleologicalStore.
-    /// TASK-EMB-WARMUP: When `warm_first` is true, blocks until all 13 embedding models
+    /// TASK-EMB-WARMUP: When `warm_first` is true, blocks until all 14 embedding models
     /// are loaded into VRAM before returning. This ensures embedding operations are
     /// available immediately when the server starts accepting requests.
     ///
@@ -336,7 +336,7 @@ impl McpServer {
                     let mut slot = multi_array_provider.write().await;
                     *slot = Some(provider);
                     models_loading.store(false, Ordering::SeqCst);
-                    info!("Using global warm provider - all 13 models ready (no loading delay)");
+                    info!("Using global warm provider - all 14 models ready (no loading delay)");
                 }
                 Err(e) => {
                     error!(
@@ -360,7 +360,7 @@ impl McpServer {
             None
         } else if warm_first {
             // TASK-EMB-WARMUP: BLOCKING warmup mode
-            // Block startup until all 13 models are loaded into VRAM
+            // Block startup until all 14 models are loaded into VRAM
             info!(
                 "warm_first=true: Blocking startup until embedding models are loaded into VRAM..."
             );
@@ -378,7 +378,7 @@ impl McpServer {
                             let mut slot = multi_array_provider.write().await;
                             *slot = Some(provider);
                             models_loading.store(false, Ordering::SeqCst);
-                            info!("SUCCESS: All 13 embedding models loaded into VRAM and ready");
+                            info!("SUCCESS: All 14 embedding models loaded into VRAM and ready");
                         }
                         Err(e) => {
                             error!(
@@ -441,7 +441,7 @@ impl McpServer {
                                 *slot = Some(provider);
                                 loading_flag.store(false, Ordering::SeqCst);
                                 info!(
-                                    "Global warm provider initialized - 13 embedders ready (warm)"
+                                    "Global warm provider initialized - 14 embedders ready (warm)"
                                 );
                             }
                             Err(e) => {
@@ -469,7 +469,7 @@ impl McpServer {
                                 let mut slot = provider_slot.write().await;
                                 *slot = Some(Arc::new(provider));
                                 loading_flag.store(false, Ordering::SeqCst);
-                                info!("Background model loading COMPLETE - 13 embedders ready (cold loaded)");
+                                info!("Background model loading COMPLETE - 14 embedders ready (cold loaded)");
                             }
                             Err(e) => {
                                 error!(
@@ -528,9 +528,9 @@ impl McpServer {
         // - CodeCaptureService orchestrates embed + store
         // - CodeFileWatcher monitors source files for changes
         //
-        // The code pipeline is separate from the 13-embedder teleological system:
+        // The code pipeline is separate from the 14-embedder teleological system:
         // - CodeStore uses E7-only embeddings (1536D Qodo-Embed)
-        // - TeleologicalStore uses all 13 embeddings including E7
+        // - TeleologicalStore uses all 14 embeddings including E7
         //
         // This separation allows:
         // - Faster code-specific search (E7 only)
@@ -682,7 +682,7 @@ impl McpServer {
         };
 
         info!(
-            "MCP Server initialization complete - TeleologicalFingerprint mode with 13 embeddings"
+            "MCP Server initialization complete - TeleologicalFingerprint mode with 14 embeddings"
         );
 
         // TASK-INTEG-018: Create connection semaphore from config

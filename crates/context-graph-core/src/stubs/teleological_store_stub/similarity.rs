@@ -96,10 +96,8 @@ pub(crate) fn compute_semantic_scores(
     // E13: SEARCH-1 FIX: Normalize sparse cosine [-1,1] to [0,1]
     scores[12] = (query.e13_splade.cosine_similarity(&target.e13_splade) + 1.0) / 2.0;
 
-    // E14: BGE-M3 dense — lives in sibling CF_E14_BGE_M3_DENSE, not in
-    // SemanticFingerprint. The stub has no access to that storage, so it
-    // returns 0.0 (neutral). Production scoring goes through the E14 handle.
-    scores[13] = 0.0;
+    // E14: BGE-M3 dense
+    scores[13] = cosine_similarity(&query.e14_bge_m3_dense, &target.e14_bge_m3_dense);
 
     scores
 }

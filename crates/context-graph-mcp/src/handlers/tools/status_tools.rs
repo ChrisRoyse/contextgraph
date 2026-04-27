@@ -15,7 +15,7 @@ impl Handlers {
     ///
     /// Returns system status including:
     /// - Fingerprint count from TeleologicalMemoryStore
-    /// - Number of embedders (13)
+    /// - Number of embedders (14)
     /// - Storage backend and size
     /// - Layer status from LayerStatusProvider
     pub(crate) async fn call_get_memetic_status(&self, id: Option<JsonRpcId>) -> JsonRpcResponse {

@@ -123,7 +123,7 @@ mod cuda_impl {
         }
 
         tracing::info!("Initializing global warm provider with ProductionMultiArrayProvider...");
-        tracing::info!("Loading all 13 embedding models to GPU VRAM (this takes 20-30 seconds)...");
+        tracing::info!("Loading all 14 production embedding models to GPU VRAM (this takes 20-30 seconds)...");
 
         let models_dir = resolve_models_dir();
         let gpu_config = GpuConfig::default();
@@ -139,14 +139,14 @@ mod cuda_impl {
             return Err(EmbeddingError::InternalError { message: err_msg });
         }
 
-        // Create ProductionMultiArrayProvider - this loads all 13 models
+        // Create ProductionMultiArrayProvider - this loads all production models.
         // NO FALLBACKS - if this fails, the system is not functional
         let provider = match ProductionMultiArrayProvider::new(models_dir.clone(), gpu_config).await {
             Ok(p) => p,
             Err(e) => {
                 let err_msg = format!(
                     "Failed to create ProductionMultiArrayProvider: {}. \
-                     Models dir: {:?}. Ensure all 13 model files exist and CUDA GPU is available.",
+                     Models dir: {:?}. Ensure all production model files exist and CUDA GPU is available.",
                     e, models_dir
                 );
                 tracing::error!("{}", err_msg);
@@ -160,8 +160,9 @@ mod cuda_impl {
             let health = provider.health_status();
             let ready_count = health.iter().filter(|&&h| h).count();
             let err_msg = format!(
-                "ProductionMultiArrayProvider not ready after initialization: {}/13 models ready",
-                ready_count
+                "ProductionMultiArrayProvider not ready after initialization: {}/{} models ready",
+                ready_count,
+                health.len()
             );
             tracing::error!("{}", err_msg);
             guard.init_error = Some(err_msg.clone());
@@ -173,7 +174,7 @@ mod cuda_impl {
         guard.concrete_provider = Some(Arc::clone(&concrete_provider));
         guard.provider = Some(concrete_provider);
 
-        tracing::info!("Global warm provider initialized successfully - all 13 models loaded to VRAM");
+        tracing::info!("Global warm provider initialized successfully - all 14 production models loaded to VRAM");
         Ok(())
     }
 }
@@ -283,7 +284,7 @@ pub fn is_warm_initialized() -> bool {
 /// - "Not initialized"
 /// - "Initialization in progress"
 /// - "Initialization failed: <error>"
-/// - "Ready (13 models warm)"
+/// - "Ready (14 models warm)"
 pub fn warm_status_message() -> String {
     match GLOBAL_WARM_PROVIDER.get() {
         None => "Not initialized".to_string(),
@@ -291,7 +292,7 @@ pub fn warm_status_message() -> String {
             match slot.try_read() {
                 Ok(guard) => {
                     if guard.provider.is_some() {
-                        "Ready (13 models warm)".to_string()
+                        "Ready (14 models warm)".to_string()
                     } else if let Some(ref err) = guard.init_error {
                         format!("Initialization failed: {}", err)
                     } else {

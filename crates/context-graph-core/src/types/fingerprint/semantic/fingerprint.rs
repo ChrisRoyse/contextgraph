@@ -3,9 +3,9 @@
 //! # Architecture Reference
 //!
 //! From constitution.yaml (ARCH-01): "TeleologicalArray is the Atomic Storage Unit"
-//! From constitution.yaml (ARCH-05): "All 13 Embedders Must Be Present"
+//! From constitution.yaml (ARCH-05): "All embedders must be present"
 //!
-//! This module implements the canonical 13-embedding array storage structure.
+//! This module implements the canonical 14-embedding array storage structure.
 //! The SemanticFingerprint IS the TeleologicalArray - they are the same type.
 
 use serde::{Deserialize, Serialize};
@@ -33,7 +33,7 @@ pub type TeleologicalArray = SemanticFingerprint;
 /// # Design
 ///
 /// Different embedders produce different output formats:
-/// - Dense: Fixed-length f32 vectors (E1, E2-E5, E7-E11)
+/// - Dense: Fixed-length f32 vectors (E1, E2-E5, E7-E11, E14)
 /// - Sparse: Index-value pairs for SPLADE vocabularies (E6, E13)
 /// - TokenLevel: Variable-length sequences of per-token embeddings (E12)
 #[derive(Debug)]
@@ -101,7 +101,9 @@ pub enum ValidationError {
     },
 
     /// Sparse indices and values vectors have different lengths.
-    #[error("Sparse indices ({indices_len}) and values ({values_len}) length mismatch for {embedder}")]
+    #[error(
+        "Sparse indices ({indices_len}) and values ({values_len}) length mismatch for {embedder}"
+    )]
     SparseIndicesValuesMismatch {
         /// The embedder with mismatched sparse data
         embedder: Embedder,
@@ -112,7 +114,7 @@ pub enum ValidationError {
     },
 }
 
-/// SemanticFingerprint: Stores all 13 embeddings without fusion.
+/// SemanticFingerprint: Stores all 14 embeddings without fusion.
 ///
 /// # Philosophy
 ///
@@ -540,7 +542,8 @@ impl SemanticFingerprint {
             + self.e9_hdc.len()
             + self.e10_multimodal_paraphrase.len()
             + self.e10_multimodal_as_context.len()
-            + self.e11_entity.len())
+            + self.e11_entity.len()
+            + self.e14_bge_m3_dense.len())
             * std::mem::size_of::<f32>();
 
         let e6_sparse_size = self.e6_sparse.memory_size();
@@ -611,8 +614,8 @@ impl SemanticFingerprint {
     /// Get an embedding reference by Embedder enum (type-safe access).
     ///
     /// This method provides type-safe access to embeddings using the canonical
-    /// Embedder enum from teleological::embedder. It never fails since all 13
-    /// embedders are always present.
+    /// Embedder enum from teleological::embedder. It never fails since all 14
+    /// embedders are addressable.
     ///
     /// # Example
     ///
@@ -654,7 +657,7 @@ impl SemanticFingerprint {
 
     /// Check if all dense embeddings have valid (non-zero) dimensions.
     ///
-    /// Returns `true` if all 10 dense embeddings have their expected dimensions.
+    /// Returns `true` if all dense embeddings have their expected dimensions.
     /// Sparse embeddings (E6, E13) are always considered complete (can be empty).
     /// Token-level embedding (E12) is always considered complete (can have 0 tokens).
     ///
@@ -697,6 +700,7 @@ impl SemanticFingerprint {
             && self.e9_hdc.len() == E9_DIM
             && e10_complete
             && self.e11_entity.len() == E11_DIM
+            && self.e14_bge_m3_dense.len() == E14_DIM
     }
 
     /// Compute total storage size in bytes.
@@ -721,8 +725,8 @@ impl SemanticFingerprint {
     ///
     /// TASK-FIX-CLUSTERING: Required for topic detection via MultiSpaceClusterManager.
     ///
-    /// This method converts all 13 embeddings to dense Vec<f32> format:
-    /// - Dense embeddings (E1-E5, E7-E11): Cloned directly
+    /// This method converts all 14 embeddings to dense Vec<f32> format:
+    /// - Dense embeddings (E1-E5, E7-E11, E14): Cloned directly
     /// - Sparse embeddings (E6, E13): Converted via SparseVector::to_dense()
     /// - Token-level (E12): Mean-pooled across tokens to single 128D vector
     ///
@@ -734,7 +738,7 @@ impl SemanticFingerprint {
     ///
     /// # Returns
     ///
-    /// Array of 13 dense vectors with expected dimensions:
+    /// Array of 14 dense vectors with expected dimensions:
     /// - E1: 1024D, E2-E4: 512D each, E5: 768D
     /// - E6: 30522D (sparse converted), E7: 1536D
     /// - E8: 1024D, E9: 1024D, E10: 768D, E11: 768D
@@ -840,5 +844,6 @@ impl PartialEq for SemanticFingerprint {
             && self.e11_entity == other.e11_entity
             && self.e12_late_interaction == other.e12_late_interaction
             && self.e13_splade == other.e13_splade
+            && self.e14_bge_m3_dense == other.e14_bge_m3_dense
     }
 }

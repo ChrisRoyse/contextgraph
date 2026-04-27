@@ -1,11 +1,11 @@
-//! Model slot management for the 13 embedding models.
+//! Model slot management for the 14 production embedding models.
 //!
-//! Manages GPU memory allocation for exactly 13 embedding model slots (E1-E13)
+//! Manages GPU memory allocation for exactly 14 embedding model slots (E1-E14)
 //! within the 8GB budget constraint (per constitution.yaml ARCH-08).
 //!
 //! # Budget
 //!
-//! Total: 8GB for all 13 models (quantized)
+//! Total: 8GB for all 14 production models (quantized)
 //! Per-model estimates (from task spec):
 //! - E1 Semantic: ~200MB
 //! - E2-E4 Temporal: ~100MB each
@@ -18,7 +18,8 @@
 //! - E11 Entity: ~75MB
 //! - E12 LateInteraction: ~200MB
 //! - E13 KeywordSplade: ~50MB
-//!   Total: ~1.6GB with quantization
+//! - E14 BGE-M3 Dense: ~600MB
+//!   Total: ~2.2GB with quantization
 //!
 //! # LRU Eviction
 //!
@@ -36,9 +37,9 @@ use std::time::Instant;
 use super::error::MemoryError;
 use super::pressure::MemoryPressure;
 
-/// Budget for 13 models: 8GB total.
+/// Budget for 14 production models: 8GB total.
 ///
-/// From constitution.yaml: GPU memory usage < 8GB for 13 models
+/// From constitution.yaml: GPU memory usage < 8GB for production models.
 pub const MODEL_BUDGET_BYTES: usize = 8 * 1024 * 1024 * 1024;
 
 /// Individual model slot with tracking metadata.
@@ -71,10 +72,10 @@ impl ModelSlot {
     }
 }
 
-/// Manages 13 model slots within GPU memory budget.
+/// Manages 14 production model slots within GPU memory budget.
 ///
 /// Provides allocation, deallocation, and LRU eviction for the
-/// 13 embedding models in the teleological array system.
+/// 14 embedding models in the teleological array system.
 #[derive(Debug)]
 pub struct ModelSlotManager {
     /// Slots indexed by embedder.
@@ -566,8 +567,8 @@ mod tests {
     }
 
     #[test]
-    fn test_allocate_all_13_embedders() {
-        // Test 1 from task spec: Allocate all 13 embedders
+    fn test_allocate_all_14_embedders() {
+        // Test 1 from task spec: Allocate all production embedders.
         let model_sizes: [(Embedder, usize); 14] = [
             (Embedder::Semantic, 200_000_000),           // E1: 200MB
             (Embedder::TemporalRecent, 100_000_000),     // E2: 100MB
@@ -584,7 +585,7 @@ mod tests {
             (Embedder::KeywordSplade, 50_000_000),       // E13: 50MB
             (Embedder::BgeM3Dense, 600_000_000),         // E14: 600MB (BGE-M3 568M params × 4 bytes × bf16→f32)
         ];
-        // Total: ~1.6GB
+        // Total: ~2.2GB
 
         let mut manager = ModelSlotManager::new(); // 8GB budget
         let mut total_expected = 0usize;
@@ -610,7 +611,7 @@ mod tests {
             manager.allocated() as f64 / (1024.0 * 1024.0 * 1024.0)
         );
         println!("Pressure level: {:?}", manager.pressure_level());
-        println!("[PASS] All 13 embedders allocated within 8GB budget");
+        println!("[PASS] All 14 embedders allocated within 8GB budget");
     }
 
     #[test]

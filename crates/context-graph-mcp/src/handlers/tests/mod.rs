@@ -60,7 +60,7 @@ use tokio::sync::OnceCell;
 ///
 /// RTX 5090 32GB VRAM - models are warm-loaded ONCE and shared across ALL tests.
 /// This prevents CUDA OOM when tests run in parallel, each trying to load
-/// all 13 embedding models (~20GB total) from scratch.
+/// all 14 embedding models (~20GB total) from scratch.
 ///
 /// FAIL FAST: If initial load fails, ALL tests will fail - no stubs, no fallbacks.
 static WARM_MODEL_CACHE: OnceCell<Arc<dyn MultiArrayEmbeddingProvider>> = OnceCell::const_new();
@@ -109,7 +109,7 @@ async fn get_warm_loaded_provider() -> Arc<dyn MultiArrayEmbeddingProvider> {
                     match get_warm_provider() {
                         Ok(provider) => {
                             tracing::info!(
-                                "WARM LOAD: All 13 embedding models ready via global warm provider"
+                                "WARM LOAD: All 14 embedding models ready via global warm provider"
                             );
                             return provider;
                         }
@@ -148,7 +148,7 @@ async fn get_warm_loaded_provider() -> Arc<dyn MultiArrayEmbeddingProvider> {
                         )
                     });
 
-            tracing::info!("WARM LOAD: All 13 embedding models loaded into VRAM successfully (fallback)");
+            tracing::info!("WARM LOAD: All 14 embedding models loaded into VRAM successfully (fallback)");
             Arc::new(provider) as Arc<dyn MultiArrayEmbeddingProvider>
         })
         .await

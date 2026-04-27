@@ -1,4 +1,4 @@
-//! SearchMatrix: 13x13 weight matrix for cross-embedder correlation search.
+//! SearchMatrix: 14x14 weight matrix for cross-embedder correlation search.
 //!
 //! # Design Philosophy
 //!
@@ -7,12 +7,13 @@
 //! All errors are fatal. No recovery attempts.
 
 use crate::teleological::indexes::EmbedderIndex;
+use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
 
 // ============================================================================
-// SEARCH MATRIX (13x13)
+// SEARCH MATRIX (14x14)
 // ============================================================================
 
-/// 13x13 weight matrix for cross-embedder correlation search.
+/// 14x14 weight matrix for cross-embedder correlation search.
 ///
 /// Diagonal elements weight individual embedder contributions.
 /// Off-diagonal elements capture cross-embedder correlations.
@@ -37,7 +38,7 @@ use crate::teleological::indexes::EmbedderIndex;
 /// ```
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchMatrix {
-    /// 13x13 weight matrix. weights[i][j] = weight for embedder i × embedder j correlation.
+    /// 14x14 weight matrix. weights[i][j] = weight for embedder i × embedder j correlation.
     weights: [[f32; 14]; 14],
 }
 
@@ -52,39 +53,43 @@ impl SearchMatrix {
     /// Create identity matrix (diagonal = 1.0, off-diagonal = 0.0).
     pub fn identity() -> Self {
         let mut weights = [[0.0; 14]; 14];
-        for i in 0..13 {
+        for i in 0..NUM_EMBEDDERS {
             weights[i][i] = 1.0;
         }
         Self { weights }
     }
 
-    /// Create uniform matrix (all weights = 1/13).
+    /// Create uniform matrix (all weights = 1/14).
     pub fn uniform() -> Self {
-        let w = 1.0 / 13.0;
+        let w = 1.0 / NUM_EMBEDDERS as f32;
         Self {
             weights: [[w; 14]; 14],
         }
     }
 
-    /// Get weight at (i, j). Panics if i >= 13 or j >= 13.
+    /// Get weight at (i, j). Panics if i >= 14 or j >= 14.
     #[inline]
     pub fn get(&self, i: usize, j: usize) -> f32 {
-        if i >= 13 || j >= 13 {
+        if i >= NUM_EMBEDDERS || j >= NUM_EMBEDDERS {
             panic!(
-                "FAIL FAST: matrix index ({}, {}) out of bounds (max 12)",
-                i, j
+                "FAIL FAST: matrix index ({}, {}) out of bounds (max {})",
+                i,
+                j,
+                NUM_EMBEDDERS - 1
             );
         }
         self.weights[i][j]
     }
 
-    /// Set weight at (i, j). Panics if i >= 13 or j >= 13.
+    /// Set weight at (i, j). Panics if i >= 14 or j >= 14.
     #[inline]
     pub fn set(&mut self, i: usize, j: usize, weight: f32) {
-        if i >= 13 || j >= 13 {
+        if i >= NUM_EMBEDDERS || j >= NUM_EMBEDDERS {
             panic!(
-                "FAIL FAST: matrix index ({}, {}) out of bounds (max 12)",
-                i, j
+                "FAIL FAST: matrix index ({}, {}) out of bounds (max {})",
+                i,
+                j,
+                NUM_EMBEDDERS - 1
             );
         }
         self.weights[i][j] = weight;
@@ -102,8 +107,8 @@ impl SearchMatrix {
 
     /// Check if matrix is diagonal (all off-diagonal = 0).
     pub fn is_diagonal(&self) -> bool {
-        for i in 0..13 {
-            for j in 0..13 {
+        for i in 0..NUM_EMBEDDERS {
+            for j in 0..NUM_EMBEDDERS {
                 if i != j && self.weights[i][j].abs() > 1e-9 {
                     return false;
                 }
@@ -120,19 +125,19 @@ impl SearchMatrix {
     /// Get sparsity (fraction of zero elements).
     pub fn sparsity(&self) -> f32 {
         let mut zeros = 0;
-        for i in 0..13 {
-            for j in 0..13 {
+        for i in 0..NUM_EMBEDDERS {
+            for j in 0..NUM_EMBEDDERS {
                 if self.weights[i][j].abs() < 1e-9 {
                     zeros += 1;
                 }
             }
         }
-        zeros as f32 / 169.0
+        zeros as f32 / (NUM_EMBEDDERS * NUM_EMBEDDERS) as f32
     }
 
     /// Get list of non-zero embedder indices on diagonal.
     pub fn active_embedders(&self) -> Vec<usize> {
-        (0..13)
+        (0..NUM_EMBEDDERS)
             .filter(|&i| self.weights[i][i].abs() > 1e-9)
             .collect()
     }

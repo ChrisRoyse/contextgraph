@@ -88,9 +88,18 @@ pub const NUM_EMBEDDERS: usize = 14;
 ///
 /// STOR-L2: This is the SINGLE-VECTOR total. Actual storage is larger because
 /// E5, E8, and E10 store dual asymmetric vectors (cause/effect, source/target,
-/// paraphrase/context). With dual vectors the total is:
-///   8448 + E5_DIM(768) + E8_DIM(1024) + E10_DIM(768) = 11,008 dense dimensions.
+/// paraphrase/context). With E14 and dual vectors the total is:
+///   9472 + E5_DIM(768) + E8_DIM(1024) + E10_DIM(768) = 12,032 dense dimensions.
 /// This constant is used for validation and sizing of the primary embedding array,
 /// not for total allocation. HNSW indexes handle dual vectors separately.
-pub const TOTAL_DENSE_DIMS: usize =
-    E1_DIM + E2_DIM + E3_DIM + E4_DIM + E5_DIM + E7_DIM + E8_DIM + E9_DIM + E10_DIM + E11_DIM;
+pub const TOTAL_DENSE_DIMS: usize = E1_DIM
+    + E2_DIM
+    + E3_DIM
+    + E4_DIM
+    + E5_DIM
+    + E7_DIM
+    + E8_DIM
+    + E9_DIM
+    + E10_DIM
+    + E11_DIM
+    + E14_DIM;

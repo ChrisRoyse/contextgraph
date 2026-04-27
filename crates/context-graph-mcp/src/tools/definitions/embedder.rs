@@ -36,7 +36,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
         // search_by_embedder - Generic search using any embedder as primary
         ToolDefinition::new(
             "search_by_embedder",
-            "Search using any embedder (E1-E13) as the primary perspective. Each of the 13 embedders \
+            "Search using any embedder (E1-E14) as the primary perspective. Each of the 14 embedders \
              sees the knowledge graph differently. E1 finds semantic similarity, E11 finds entity \
              relationships, E7 finds code patterns, E5 finds causal chains. Use this to explore \
              what a specific embedder sees that others might miss. Per Constitution v6.3 \
@@ -79,7 +79,7 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     },
                     "includeAllScores": {
                         "type": "boolean",
-                        "description": "Include similarity scores from all 13 embedders in results (default: false). \
+                        "description": "Include similarity scores from all 14 embedders in results (default: false). \
                                         Useful for understanding how different embedders view the same memory.",
                         "default": false
                     }

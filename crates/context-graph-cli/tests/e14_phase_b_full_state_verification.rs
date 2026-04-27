@@ -97,7 +97,10 @@ fn fsv_t1a_native_module_files_exist_on_disk() {
         total_bytes += meta.len();
         println!("  ✓ {} ({} bytes)", name, meta.len());
     }
-    println!("AFTER: 14 files present, total {} bytes on disk", total_bytes);
+    println!(
+        "AFTER: 14 files present, total {} bytes on disk",
+        total_bytes
+    );
     assert!(
         total_bytes > 15_000,
         "14 module files should total >15KB, got {}",
@@ -175,7 +178,7 @@ fn fsv_t1c_module_public_constants_are_correct() {
     section("T1c. Public constants — value assertions");
 
     println!(
-        "BEFORE expected: DIM=1024, MAX_TOKENS=8192, LATENCY=50, BOS=0, PAD=1, POS_OFFSET=2, PREFIX=\"roberta.\""
+        "BEFORE expected: DIM=1024, MAX_TOKENS=8192, LATENCY=50, BOS=0, PAD=1, POS_OFFSET=2, PREFIX=\"\""
     );
     println!(
         "AFTER  actual:   DIM={}, MAX_TOKENS={}, LATENCY={}, BOS={}, PAD={}, POS_OFFSET={}, PREFIX=\"{}\"",
@@ -193,9 +196,12 @@ fn fsv_t1c_module_public_constants_are_correct() {
     assert_eq!(XLM_R_BOS_TOKEN_ID, 0);
     assert_eq!(XLM_R_PAD_TOKEN_ID, 1);
     assert_eq!(XLM_R_POSITION_OFFSET, 2);
-    assert_eq!(XLM_R_WEIGHT_PREFIX, "roberta.");
+    assert_eq!(XLM_R_WEIGHT_PREFIX, "");
 
-    assert_eq!(E14_DIM, BGE_M3_DENSE_DIMENSION, "E14_DIM must equal native dim");
+    assert_eq!(
+        E14_DIM, BGE_M3_DENSE_DIMENSION,
+        "E14_DIM must equal native dim"
+    );
     assert_eq!(
         XLM_R_POSITION_OFFSET,
         XLM_R_PAD_TOKEN_ID + 1,
@@ -241,7 +247,11 @@ fn fsv_t2_cf_emb_13_physical_persistence_roundtrip() {
         let mut map: HashMap<u8, QuantizedEmbedding> = HashMap::new();
         for i in 0..14u8 {
             let (method, dim, data) = match i {
-                0 | 4 | 6 | 9 => (QuantizationMethod::PQ8, 1024u16, vec![i.wrapping_mul(17); 8]),
+                0 | 4 | 6 | 9 => (
+                    QuantizationMethod::PQ8,
+                    1024u16,
+                    vec![i.wrapping_mul(17); 8],
+                ),
                 13 => (QuantizationMethod::PQ8, 1024u16, e14_signature.clone()), // E14 — our signature
                 1..=3 | 7 | 10 => (
                     QuantizationMethod::Float8E4M3,
@@ -293,11 +303,9 @@ fn fsv_t2_cf_emb_13_physical_persistence_roundtrip() {
     } // store dropped → RocksDB flushed + closed
 
     // --- Phase 2: REOPEN (simulates a process restart) ---
-    let store2 = RocksDbTeleologicalStore::open_with_config(
-        &db_path,
-        TeleologicalStoreConfig::default(),
-    )
-    .expect("open #2 (reopen)");
+    let store2 =
+        RocksDbTeleologicalStore::open_with_config(&db_path, TeleologicalStoreConfig::default())
+            .expect("open #2 (reopen)");
     println!("REOPEN: store opened successfully");
 
     // --- Phase 3: READ E14 directly from CF_EMB_13 via load_embedder(id, 13) ---
@@ -326,9 +334,9 @@ fn fsv_t2_cf_emb_13_physical_persistence_roundtrip() {
         let _ = store2.load_embedder(fp_id, 14);
     }));
     let panic_msg = panicked.as_ref().err().and_then(|e| {
-        e.downcast_ref::<String>().cloned().or_else(|| {
-            e.downcast_ref::<&str>().map(|s| (*s).to_string())
-        })
+        e.downcast_ref::<String>()
+            .cloned()
+            .or_else(|| e.downcast_ref::<&str>().map(|s| (*s).to_string()))
     });
     println!(
         "  load_embedder(14) panicked? {} msg={:?}",
@@ -349,24 +357,26 @@ fn fsv_t2_cf_emb_13_physical_persistence_roundtrip() {
     subsection("Edge 2: unknown UUID yields NotFound");
     let ghost = Uuid::parse_str("deadbeef-dead-beef-dead-beefdeadbeef").unwrap();
     let loaded_ghost = store2.load_embedder(ghost, 13);
-    println!("  load_embedder(ghost id, 13) → {:?}", loaded_ghost.is_err());
+    println!(
+        "  load_embedder(ghost id, 13) → {:?}",
+        loaded_ghost.is_err()
+    );
     assert!(loaded_ghost.is_err());
 
     subsection("Edge 3: whole-fingerprint load returns 14 embeddings");
-    let full = store2
-        .load_quantized_fingerprint(fp_id)
-        .expect("load full");
+    let full = store2.load_quantized_fingerprint(fp_id).expect("load full");
     println!(
         "  full.embeddings.len() = {} (expected 14)",
         full.embeddings.len()
     );
     assert_eq!(full.embeddings.len(), 14);
-    assert!(full.embeddings.contains_key(&13), "E14 slot must be present");
+    assert!(
+        full.embeddings.contains_key(&13),
+        "E14 slot must be present"
+    );
 
     subsection("Evidence: delete clears all 14 CFs including CF_EMB_13");
-    store2
-        .delete_quantized_fingerprint(fp_id)
-        .expect("delete");
+    store2.delete_quantized_fingerprint(fp_id).expect("delete");
     let after_delete = store2.load_embedder(fp_id, 13);
     println!(
         "  after delete, load_embedder(13) → {}",
@@ -382,9 +392,7 @@ fn fsv_t2_cf_emb_13_physical_persistence_roundtrip() {
 fn fsv_t2b_cf_names_follow_convention() {
     section("T2b. QUANTIZED_EMBEDDER_CFS naming convention + ordering");
 
-    println!(
-        "BEFORE expected: 14 CFs named \"emb_0\"..\"emb_13\" in index order"
-    );
+    println!("BEFORE expected: 14 CFs named \"emb_0\"..\"emb_13\" in index order");
     assert_eq!(QUANTIZED_EMBEDDER_CF_COUNT, 14);
     assert_eq!(QUANTIZED_EMBEDDER_CFS.len(), 14);
 
@@ -429,13 +437,7 @@ fn fsv_t3_hnsw_e14_insert_search_synthetic_roundtrip() {
         v
     };
     let ids: Vec<Uuid> = (0..3)
-        .map(|i| {
-            Uuid::parse_str(&format!(
-                "e14ae14a-e14e-4e14-e14e-e14e0000001{}",
-                i
-            ))
-            .unwrap()
-        })
+        .map(|i| Uuid::parse_str(&format!("e14ae14a-e14e-4e14-e14e-e14e0000001{}", i)).unwrap())
         .collect();
     let vecs: Vec<Vec<f32>> = (0..3u64).map(make_vec).collect();
 
@@ -444,11 +446,7 @@ fn fsv_t3_hnsw_e14_insert_search_synthetic_roundtrip() {
         let norm: f32 = v.iter().map(|x| x * x).sum::<f32>().sqrt();
         println!(
             "  id{}={}, norm={:.6}, first={:.6}, last={:.6}",
-            i,
-            id,
-            norm,
-            v[0],
-            v[1023]
+            i, id, norm, v[0], v[1023]
         );
         assert!((norm - 1.0).abs() < 1e-4);
     }
@@ -458,7 +456,10 @@ fn fsv_t3_hnsw_e14_insert_search_synthetic_roundtrip() {
         e14.insert(*id, v).expect("insert");
     }
     let total = registry.total_vectors();
-    println!("AFTER insert: registry.total_vectors()={} (expected 3)", total);
+    println!(
+        "AFTER insert: registry.total_vectors()={} (expected 3)",
+        total
+    );
     assert_eq!(total, 3);
 
     // Physical search: each query must find itself first.
@@ -542,10 +543,7 @@ fn fsv_t4a_all_embedder_scores_json_wire_format() {
     // Physical evidence 2: parsing the JSON back recovers the same values.
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("parse");
     let e14_back = parsed["e14"].as_f64().expect("e14 number");
-    println!(
-        "  parsed[\"e14\"] = {} (expected ≈ 0.54321)",
-        e14_back
-    );
+    println!("  parsed[\"e14\"] = {} (expected ≈ 0.54321)", e14_back);
     assert!((e14_back - 0.54321).abs() < 1e-4);
 
     subsection("Edge 1: E5 sentinel (-1.0) still round-trips null");
@@ -658,7 +656,12 @@ fn fsv_t5a_cli_help_lists_backfill_e14_subcommand() {
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
-    println!("AFTER:  exit={}, stdout_len={}, stderr_len={}", output.status, stdout.len(), stderr.len());
+    println!(
+        "AFTER:  exit={}, stdout_len={}, stderr_len={}",
+        output.status,
+        stdout.len(),
+        stderr.len()
+    );
     println!("--- stdout (first 400 bytes) ---");
     println!("{}", stdout.chars().take(400).collect::<String>());
 
@@ -666,7 +669,10 @@ fn fsv_t5a_cli_help_lists_backfill_e14_subcommand() {
     let combined = format!("{}\n{}", stdout, stderr);
     assert!(combined.contains("--storage"), "help must show --storage");
     assert!(combined.contains("--dry-run"), "help must show --dry-run");
-    assert!(combined.contains("--models-dir"), "help must show --models-dir");
+    assert!(
+        combined.contains("--models-dir"),
+        "help must show --models-dir"
+    );
     assert!(combined.contains("--limit"), "help must show --limit");
 }
 
@@ -693,13 +699,7 @@ fn fsv_t5b_cli_dry_run_against_real_db_counts_correctly() {
         .unwrap();
 
     let ids: Vec<Uuid> = (0..3)
-        .map(|i| {
-            Uuid::parse_str(&format!(
-                "e14cde14-0000-4000-8000-00000000001{}",
-                i
-            ))
-            .unwrap()
-        })
+        .map(|i| Uuid::parse_str(&format!("e14cde14-0000-4000-8000-00000000001{}", i)).unwrap())
         .collect();
 
     rt.block_on(async {
@@ -710,7 +710,8 @@ fn fsv_t5b_cli_dry_run_against_real_db_counts_correctly() {
         .expect("open store");
 
         for (i, id) in ids.iter().enumerate() {
-            let mut fp = context_graph_test_utils::fingerprints::create_real_fingerprint_with_id(*id);
+            let mut fp =
+                context_graph_test_utils::fingerprints::create_real_fingerprint_with_id(*id);
             // Force E14 empty for 2 of 3; leave populated on the 3rd.
             if i < 2 {
                 fp.semantic.e14_bge_m3_dense = Vec::new();
@@ -740,7 +741,11 @@ fn fsv_t5b_cli_dry_run_against_real_db_counts_correctly() {
 
     // Now invoke the CLI as a subprocess.
     let bin = env!("CARGO_BIN_EXE_context-graph-cli");
-    println!("BEFORE: spawning {} backfill-e14 --dry-run --storage {}", bin, db_path.display());
+    println!(
+        "BEFORE: spawning {} backfill-e14 --dry-run --storage {}",
+        bin,
+        db_path.display()
+    );
     let output = std::process::Command::new(bin)
         .args([
             "backfill-e14",
@@ -755,7 +760,17 @@ fn fsv_t5b_cli_dry_run_against_real_db_counts_correctly() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     println!("AFTER:  exit={}", output.status);
     println!("--- stdout ---\n{}", stdout);
-    println!("--- stderr (last 800) ---\n{}", stderr.chars().rev().take(800).collect::<String>().chars().rev().collect::<String>());
+    println!(
+        "--- stderr (last 800) ---\n{}",
+        stderr
+            .chars()
+            .rev()
+            .take(800)
+            .collect::<String>()
+            .chars()
+            .rev()
+            .collect::<String>()
+    );
 
     assert!(output.status.success(), "dry-run should exit 0");
 
@@ -791,7 +806,12 @@ fn fsv_t5b_cli_dry_run_against_real_db_counts_correctly() {
         .expect("spawn");
     println!("  nonexistent-storage exit = {}", output3.status);
     let s3 = String::from_utf8_lossy(&output3.stderr);
-    println!("  stderr: {}", s3.lines().find(|l| l.contains("FAILED") || l.contains("does not exist")).unwrap_or("<none>"));
+    println!(
+        "  stderr: {}",
+        s3.lines()
+            .find(|l| l.contains("FAILED") || l.contains("does not exist"))
+            .unwrap_or("<none>")
+    );
     assert!(!output3.status.success());
 
     subsection("Edge 3: --limit 1 caps processing — still honours dry-run semantics");
@@ -807,7 +827,10 @@ fn fsv_t5b_cli_dry_run_against_real_db_counts_correctly() {
         .output()
         .expect("spawn");
     let s4 = String::from_utf8_lossy(&output4.stderr);
-    let summary4 = s4.lines().find(|l| l.contains("backfill-e14:")).unwrap_or("");
+    let summary4 = s4
+        .lines()
+        .find(|l| l.contains("backfill-e14:"))
+        .unwrap_or("");
     println!("  --limit 1 summary: {}", summary4);
     assert!(output4.status.success());
     assert!(summary4.contains("1 seen"));
@@ -854,9 +877,13 @@ fn fsv_t6_end_to_end_factory_hnsw_registry_connect() {
     for x in &mut v {
         *x /= norm;
     }
-    e14.insert(synthetic_id, &v).expect("insert into live registry");
+    e14.insert(synthetic_id, &v)
+        .expect("insert into live registry");
     let hits = e14.search(&v, 1, None).expect("search live");
-    println!("  self-query returned {:?} (distance={:.6e})", hits[0].0, hits[0].1);
+    println!(
+        "  self-query returned {:?} (distance={:.6e})",
+        hits[0].0, hits[0].1
+    );
     assert_eq!(hits[0].0, synthetic_id);
     assert!(hits[0].1 < 0.01);
 }
@@ -876,7 +903,10 @@ fn fsv_t7_prior_fsv_files_still_exist() {
         phase_b.display()
     );
     assert!(phase_a.exists(), "Phase A FSV deleted — regression");
-    assert!(phase_b.exists(), "Phase B FSV (original 9-check) deleted — regression");
+    assert!(
+        phase_b.exists(),
+        "Phase B FSV (original 9-check) deleted — regression"
+    );
 
     // Sanity content check on each.
     let a_content = std::fs::read_to_string(phase_a).expect("read A");

@@ -6,16 +6,17 @@
 //! # Target Hardware
 //!
 //! - RTX 5090 (Compute Capability 12.0)
-//! - CUDA 13.1+
+//! - CUDA 13.2+ (CUDA 13.x compatible)
 //!
 //! # Constitution Reference
 //!
 //! - stack.gpu: RTX 5090, compute: "12.0"
-//! - stack.lang.cuda: "13.1"
+//! - stack.lang.cuda: "13.x"
 //!
 //! # Environment Variables
 //!
 //! - `CUDA_PATH`: Path to CUDA toolkit (auto-detected if not set)
+//! - `CUDA_HOME`: Alternate CUDA toolkit root used by Cargo/CMake environments
 //! - `CUDA_ARCH`: Target architecture (default: sm_120 for RTX 5090)
 //! - `NVCC_FLAGS`: Additional nvcc flags
 
@@ -33,6 +34,7 @@ fn main() {
     println!("cargo:rerun-if-changed=build.rs");
     println!("cargo:rerun-if-changed=kernels/");
     println!("cargo:rerun-if-env-changed=CUDA_PATH");
+    println!("cargo:rerun-if-env-changed=CUDA_HOME");
     println!("cargo:rerun-if-env-changed=CUDA_ARCH");
     println!("cargo:rerun-if-env-changed=NVCC_FLAGS");
 
@@ -65,13 +67,7 @@ fn compile_cuda_kernels() {
     let nvcc = find_nvcc();
 
     // Compile knn.cu to PTX (uses Driver API to avoid WSL2 cudart bugs)
-    compile_kernel_to_ptx(
-        &nvcc,
-        "kernels/knn.cu",
-        "knn",
-        &cuda_arch,
-        &out_dir,
-    );
+    compile_kernel_to_ptx(&nvcc, "kernels/knn.cu", "knn", &cuda_arch, &out_dir);
 
     // Link CUDA driver library (libcuda.so)
     // Required for Driver API (cuInit, cuDeviceGetCount, cuLaunchKernel)
@@ -149,7 +145,7 @@ fn link_faiss_library() {
         FAISS LIBRARY NOT FOUND - BUILD FAILED\n\
         \n\
         The 'faiss-working' feature is enabled but libfaiss_c.so was not found.\n\
-        FAISS must be rebuilt with CUDA 13.1+ and sm_120 (RTX 5090) support.\n\
+        FAISS must be rebuilt with CUDA 13.2+ and sm_120 (RTX 5090) support.\n\
         \n\
         To fix this, run:\n\
           ./scripts/rebuild_faiss_gpu.sh\n\
@@ -165,25 +161,21 @@ fn link_faiss_library() {
 
 #[cfg(feature = "cuda")]
 fn find_nvcc() -> PathBuf {
-    // Check if nvcc is in PATH
-    if let Ok(output) = Command::new("which").arg("nvcc").output() {
-        if output.status.success() {
-            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
-            return PathBuf::from(path);
-        }
-    }
-
-    // Check CUDA_PATH environment variable
-    if let Ok(cuda_path) = env::var("CUDA_PATH") {
-        let nvcc_path = PathBuf::from(&cuda_path).join("bin").join("nvcc");
-        if nvcc_path.exists() {
-            return nvcc_path;
+    // Prefer explicit Cargo/CMake environment roots over PATH so builds use
+    // the toolkit selected in .cargo/config.toml.
+    for var in ["CUDA_PATH", "CUDA_HOME"] {
+        if let Ok(cuda_path) = env::var(var) {
+            let nvcc_path = PathBuf::from(&cuda_path).join("bin").join("nvcc");
+            if nvcc_path.exists() {
+                return nvcc_path;
+            }
         }
     }
 
     // Check common CUDA installation paths
     let common_paths = [
         "/usr/local/cuda/bin/nvcc",
+        "/usr/local/cuda-13.2/bin/nvcc",
         "/usr/local/cuda-13.1/bin/nvcc",
         "/usr/local/cuda-13.0/bin/nvcc",
         "/usr/local/cuda-12.0/bin/nvcc",
@@ -196,8 +188,16 @@ fn find_nvcc() -> PathBuf {
         }
     }
 
+    // Fall back to PATH only after explicit roots and known installs.
+    if let Ok(output) = Command::new("which").arg("nvcc").output() {
+        if output.status.success() {
+            let path = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            return PathBuf::from(path);
+        }
+    }
+
     panic!(
-        "nvcc not found. Please install CUDA Toolkit 13.1+ or set CUDA_PATH environment variable.\n\
+        "nvcc not found. Please install CUDA Toolkit 13.2+ or set CUDA_PATH/CUDA_HOME environment variable.\n\
          Download from: https://developer.nvidia.com/cuda-downloads"
     );
 }
@@ -205,7 +205,7 @@ fn find_nvcc() -> PathBuf {
 /// Compile CUDA kernel to PTX for Driver API loading.
 ///
 /// This avoids linking against cudart which has static initialization
-/// bugs on WSL2 with CUDA 13.1.
+/// bugs on WSL2 with CUDA 13.x.
 #[cfg(feature = "cuda")]
 fn compile_kernel_to_ptx(
     nvcc: &std::path::Path,

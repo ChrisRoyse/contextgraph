@@ -1,4 +1,4 @@
-//! Production MultiArrayEmbeddingProvider that orchestrates all 13 embedders.
+//! Production MultiArrayEmbeddingProvider that orchestrates all 14 embedders.
 //!
 //! This module provides the [`ProductionMultiArrayProvider`] which replaces the
 //! placeholder [`LazyFailMultiArrayProvider`] with real model implementations.
@@ -11,19 +11,19 @@
 //!     |-- 2 SparseEmbedder instances (E6, E13 - SPLADE)
 //!     |-- 1 TokenEmbedder (E12 ColBERT)
 //!
-//!     Returns: SemanticFingerprint with all 13 embeddings
+//!     Returns: SemanticFingerprint with all 14 embeddings
 //! ```
 //!
 //! # Design Principles
 //!
 //! - **NO STUBS**: Uses real model implementations from DefaultModelFactory
 //! - **FAIL FAST**: Returns clear errors if models not loaded
-//! - **PARALLEL EXECUTION**: All 13 embedders run concurrently via tokio::join!
+//! - **PARALLEL EXECUTION**: All 14 embedders run concurrently via tokio::join!
 //! - **THREAD SAFE**: Send + Sync for async task spawning across threads
 //!
 //! # Performance Targets (from constitution.yaml)
 //!
-//! - Single content: <30ms for all 13 embeddings
+//! - Single content: <30ms for the legacy 13-embedder path; E14 adds BGE-M3 latency.
 //! - Batch (64 items): <100ms per item average
 //!
 //! # Example
@@ -39,7 +39,7 @@
 //!     GpuConfig::default(),
 //! ).await?;
 //!
-//! // Generate all 13 embeddings
+//! // Generate all 14 embeddings
 //! let output = provider.embed_all("Hello world").await?;
 //! assert!(output.is_within_latency_target()); // <30ms
 //! ```
@@ -637,7 +637,7 @@ unsafe impl Sync for ContextualDualEmbedderAdapter {}
 // PRODUCTION MULTI-ARRAY PROVIDER
 // ============================================================================
 
-/// Production MultiArrayEmbeddingProvider that orchestrates all 13 embedders.
+/// Production MultiArrayEmbeddingProvider that orchestrates all 14 embedders.
 ///
 /// This provider replaces the placeholder LazyFailMultiArrayProvider with real
 /// model implementations using the DefaultModelFactory.
@@ -650,11 +650,11 @@ unsafe impl Sync for ContextualDualEmbedderAdapter {}
 /// # Model Loading
 ///
 /// Models are loaded eagerly during construction. The async `new()` method
-/// loads all 13 models and fails fast if any model cannot be loaded.
+/// loads all production models and fails fast if any required model cannot be loaded.
 ///
 /// # Performance
 ///
-/// All 13 embedders run in parallel using tokio::join! to achieve
+/// All 14 embedders run in parallel using tokio::join! to achieve
 /// the <30ms latency target for single content embedding.
 pub struct ProductionMultiArrayProvider {
     /// E1: Semantic embedder (e5-large-v2, 1024D)
@@ -742,7 +742,7 @@ impl SingleEmbedder for E14ZeroAdapter {
 }
 
 impl ProductionMultiArrayProvider {
-    /// Create a new ProductionMultiArrayProvider with all 13 embedders.
+    /// Create a new ProductionMultiArrayProvider with all 14 embedders.
     ///
     /// This constructor creates all models in an unloaded state. Call
     /// `initialize()` to load model weights before embedding.
@@ -772,7 +772,8 @@ impl ProductionMultiArrayProvider {
         let factory = DefaultModelFactory::new(models_dir.clone(), gpu_config);
         let config = SingleModelConfig::cuda_fp16();
 
-        // Create all 13 models using the factory
+        // Create all E1-E13 models using the factory; E14 is handled below so
+        // it can degrade to an explicit zero adapter when the snapshot is absent.
         // NOTE: E5 (Causal) is created directly for dual embedding support (ARCH-15)
         let e1_model = factory.create_model(ModelId::Semantic, &config)?;
         let e2_model = factory.create_model(ModelId::TemporalRecent, &config)?;
@@ -801,7 +802,7 @@ impl ProductionMultiArrayProvider {
 
         // Load all models BEFORE wrapping in adapters (FAIL FAST)
         // Per constitution.yaml: models must be ready before embed()
-        tracing::info!("Loading all 13 embedding models...");
+        tracing::info!("Loading E1-E13 embedding models...");
 
         e1_model.load().await?;
         e2_model.load().await?;
@@ -822,7 +823,7 @@ impl ProductionMultiArrayProvider {
         e12_model.load().await?;
         e13_model.load().await?;
 
-        tracing::info!("All 13 embedding models loaded successfully");
+        tracing::info!("E1-E13 embedding models loaded successfully");
 
         // Wrap models in appropriate adapters
         let e1_semantic: Arc<dyn SingleEmbedder> = Arc::new(DenseEmbedderAdapter::new(
@@ -1002,9 +1003,9 @@ impl ProductionMultiArrayProvider {
 
 #[async_trait]
 impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
-    /// Generate complete 13-embedding fingerprint for content.
+    /// Generate complete 14-embedding fingerprint for content.
     ///
-    /// All 13 embedders run in parallel using tokio::join! for optimal performance.
+    /// All 14 embedders run in parallel using tokio::join! for optimal performance.
     ///
     /// # Arguments
     ///
@@ -1013,7 +1014,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
     /// # Returns
     ///
     /// A `MultiArrayEmbeddingOutput` containing:
-    /// - Complete 13-embedding fingerprint
+    /// - Complete 14-embedding fingerprint
     /// - Total and per-embedder latency metrics
     /// - Model IDs used
     ///
@@ -1026,7 +1027,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
     ///
     /// # Performance
     ///
-    /// Target latency: <30ms for all 13 embeddings (constitution.yaml)
+    /// Target latency: <30ms for the legacy 13-embedder path; E14 adds BGE-M3 latency.
     async fn embed_all(&self, content: &str) -> CoreResult<MultiArrayEmbeddingOutput> {
         if content.is_empty() {
             return Err(CoreError::ValidationError {
@@ -1734,7 +1735,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         ]
     }
 
-    /// Check if all 13 embedders are initialized and ready.
+    /// Check if all 14 embedders are initialized and ready.
     fn is_ready(&self) -> bool {
         self.e1_semantic.is_ready()
             && self.e2_temporal_recent.is_ready()
@@ -1749,6 +1750,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             && self.e11_entity.is_ready()
             && self.e12_late_interaction.is_ready()
             && self.e13_splade.is_ready()
+            && self.e14_bge_m3_dense.is_ready()
     }
 
     /// Get health status for each embedder.
@@ -1767,11 +1769,11 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
             self.e11_entity.is_ready(),
             self.e12_late_interaction.is_ready(),
             self.e13_splade.is_ready(),
-            true, // E14 BGE-M3 Dense: not wired into this provider yet; reports ready.
+            self.e14_bge_m3_dense.is_ready(),
         ]
     }
 
-    /// Efficient E8 dual embedding without running all 13 embedders.
+    /// Efficient E8 dual embedding without running all embedders.
     ///
     /// Returns (as_source, as_target) E8 dual embeddings (1024D each).
     async fn embed_e8_dual(&self, content: &str) -> CoreResult<(Vec<f32>, Vec<f32>)> {
@@ -1784,7 +1786,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         self.e8_graph.embed_dual(content).await
     }
 
-    /// Efficient E11 embedding without running all 13 embedders.
+    /// Efficient E11 embedding without running all embedders.
     ///
     /// Returns E11 entity embedding (768D).
     /// Returns zero vector when `E11_ENTITY_ENABLED` is false (no model inference).
@@ -1801,10 +1803,10 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         self.e11_entity.embed(content).await
     }
 
-    /// Efficient E5 dual embedding without running all 13 embedders.
+    /// Efficient E5 dual embedding without running all embedders.
     ///
     /// Returns (as_cause, as_effect) E5 dual embeddings (768D each).
-    /// ~15ms vs ~200ms when running all 13 embedders.
+    /// ~15ms vs ~200ms when running the legacy all-embedder path.
     async fn embed_e5_dual(&self, content: &str) -> CoreResult<(Vec<f32>, Vec<f32>)> {
         if content.is_empty() {
             return Err(CoreError::ValidationError {
@@ -1815,7 +1817,7 @@ impl MultiArrayEmbeddingProvider for ProductionMultiArrayProvider {
         self.e5_causal.embed_dual(content).await
     }
 
-    /// Efficient E1 semantic embedding without running all 13 embedders.
+    /// Efficient E1 semantic embedding without running all embedders.
     ///
     /// Returns E1 semantic embedding (1024D).
     async fn embed_e1_only(&self, content: &str) -> CoreResult<Vec<f32>> {

@@ -11,6 +11,8 @@ mod tests {
     use std::collections::HashMap;
     use std::sync::Arc;
 
+    use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
+
     use crate::teleological::indexes::{EmbedderIndex, EmbedderIndexRegistry};
     use crate::teleological::search::error::SearchError;
     use crate::teleological::search::matrix::{
@@ -51,7 +53,7 @@ mod tests {
 
         let identity = SearchMatrix::identity();
 
-        for i in 0..13 {
+        for i in 0..NUM_EMBEDDERS {
             assert_eq!(
                 identity.get(i, i),
                 1.0,
@@ -60,8 +62,8 @@ mod tests {
             );
         }
 
-        for i in 0..13 {
-            for j in 0..13 {
+        for i in 0..NUM_EMBEDDERS {
+            for j in 0..NUM_EMBEDDERS {
                 if i != j {
                     assert_eq!(
                         identity.get(i, j),
@@ -100,7 +102,11 @@ mod tests {
             !active.contains(&0),
             "E1Semantic (index 0) must not be in active embedders"
         );
-        assert_eq!(active.len(), 12, "Should have 12 active embedders");
+        assert_eq!(
+            active.len(),
+            NUM_EMBEDDERS - 1,
+            "Should have all except the zeroed embedder active"
+        );
 
         assert_eq!(
             matrix.diagonal(EmbedderIndex::E1Semantic),
@@ -260,7 +266,7 @@ mod tests {
                 is_diagonal: true,
                 has_cross_correlations: false,
                 sparsity: 0.923,
-                active_embedders: (0..13).collect(),
+                active_embedders: (0..NUM_EMBEDDERS).collect(),
                 cross_correlation_count: 0,
             },
             latency_us: 100,

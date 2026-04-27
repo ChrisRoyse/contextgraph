@@ -677,7 +677,7 @@ mod tests {
     }
 
     #[test]
-    fn test_all_profiles_have_13_weights() {
+    fn test_all_profiles_have_14_weights() {
         for (name, weights) in WEIGHT_PROFILES {
             assert_eq!(
                 weights.len(),

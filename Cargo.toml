@@ -1,5 +1,5 @@
 # Context Graph - Workspace Manifest
-# 13-Embedder Context Graph for semantic memory retrieval
+# 14-Embedder Context Graph for semantic memory retrieval
 
 [workspace]
 resolver = "2"

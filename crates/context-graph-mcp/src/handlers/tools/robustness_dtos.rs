@@ -1,6 +1,6 @@
 //! DTOs for E9 robustness/blind-spot detection MCP tools.
 //!
-//! Per Constitution v6.5 and the 13-embedder philosophy:
+//! Per Constitution v6.5 and the 14-embedder philosophy:
 //! - E1 is the semantic foundation
 //! - E9 (HDC) finds what E1 MISSES due to character-level issues
 //! - E9 doesn't compete with E1; it discovers E1's blind spots

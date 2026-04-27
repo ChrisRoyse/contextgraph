@@ -63,7 +63,7 @@ impl Handlers {
     ///
     /// # Algorithm
     ///
-    /// 1. Embed the query using all 13 embedders
+    /// 1. Embed the query using all 14 embedders
     /// 2. Search for candidates using graph_reasoning weight profile (5x over-fetch)
     /// 3. Apply connection scoring using asymmetric E8 similarity
     /// 4. Apply direction modifier per AP-77 (1.2 source→target, 0.8 target→source)
@@ -505,7 +505,7 @@ impl Handlers {
                 {
                     // M6 FIX: Move instead of clone — `for candidate in candidates` gives
                     // ownership, so the SemanticFingerprint can be moved without copying
-                    // all 13+ embedding vectors (~50KB).
+                    // all 14 embedding vectors (~50KB).
                     best_candidate = Some((
                         cand_id,
                         candidate.similarity, // base similarity (f32 is Copy)

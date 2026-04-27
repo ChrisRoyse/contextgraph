@@ -70,7 +70,7 @@ pub struct GetTopicPortfolioRequest {
     /// Output format: "brief", "standard", or "verbose"
     /// - brief: Topic names and confidence only
     /// - standard: Includes contributing spaces and member counts
-    /// - verbose: Full topic profiles with all 13 strengths
+    /// - verbose: Full topic profiles with all 14 strengths
     #[serde(default = "default_format")]
     pub format: String,
 }

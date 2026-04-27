@@ -328,10 +328,10 @@ impl TypedEdge {
     ///
     /// # Arguments
     ///
-    /// * `embedder_id` - Embedder index (0-12)
+    /// * `embedder_id` - Embedder index (0-13)
     #[inline]
     pub fn embedder_agrees(&self, embedder_id: u8) -> bool {
-        if embedder_id > 12 {
+        if embedder_id as usize >= NUM_EMBEDDERS {
             return false;
         }
         (self.agreeing_embedders & (1 << embedder_id)) != 0
@@ -341,9 +341,9 @@ impl TypedEdge {
     ///
     /// # Arguments
     ///
-    /// * `embedder_id` - Embedder index (0-12)
+    /// * `embedder_id` - Embedder index (0-13)
     pub fn embedder_score(&self, embedder_id: u8) -> Option<f32> {
-        if embedder_id > 12 {
+        if embedder_id as usize >= NUM_EMBEDDERS {
             return None;
         }
         Some(self.embedder_scores[embedder_id as usize])
@@ -458,7 +458,10 @@ mod tests {
             0,
         );
 
-        assert!(matches!(result, Err(EdgeError::InvalidSimilarityScore { .. })));
+        assert!(matches!(
+            result,
+            Err(EdgeError::InvalidSimilarityScore { .. })
+        ));
     }
 
     #[test]
@@ -478,7 +481,10 @@ mod tests {
             0b01, // But only 1 bit set
         );
 
-        assert!(matches!(result, Err(EdgeError::AgreementCountMismatch { .. })));
+        assert!(matches!(
+            result,
+            Err(EdgeError::AgreementCountMismatch { .. })
+        ));
     }
 
     #[test]
@@ -490,8 +496,14 @@ mod tests {
 
         let thresholds = default_thresholds();
 
-        let edge = TypedEdge::from_scores(source, target, scores, &thresholds, DirectedRelation::Symmetric)
-            .unwrap();
+        let edge = TypedEdge::from_scores(
+            source,
+            target,
+            scores,
+            &thresholds,
+            DirectedRelation::Symmetric,
+        )
+        .unwrap();
 
         assert_eq!(edge.edge_type(), GraphLinkEdgeType::SemanticSimilar);
         assert!(edge.embedder_agrees(0));
@@ -507,8 +519,14 @@ mod tests {
 
         let thresholds = default_thresholds();
 
-        let edge = TypedEdge::from_scores(source, target, scores, &thresholds, DirectedRelation::Symmetric)
-            .unwrap();
+        let edge = TypedEdge::from_scores(
+            source,
+            target,
+            scores,
+            &thresholds,
+            DirectedRelation::Symmetric,
+        )
+        .unwrap();
 
         // E7 code should take priority over E1 semantic
         assert_eq!(edge.edge_type(), GraphLinkEdgeType::CodeRelated);
@@ -525,8 +543,14 @@ mod tests {
 
         let thresholds = default_thresholds();
 
-        let edge = TypedEdge::from_scores(source, target, scores, &thresholds, DirectedRelation::Symmetric)
-            .unwrap();
+        let edge = TypedEdge::from_scores(
+            source,
+            target,
+            scores,
+            &thresholds,
+            DirectedRelation::Symmetric,
+        )
+        .unwrap();
 
         assert_eq!(edge.edge_type(), GraphLinkEdgeType::MultiAgreement);
         assert_eq!(edge.agreement_count(), 3);
@@ -544,8 +568,14 @@ mod tests {
 
         let thresholds = default_thresholds();
 
-        let edge = TypedEdge::from_scores(source, target, scores, &thresholds, DirectedRelation::Symmetric)
-            .unwrap();
+        let edge = TypedEdge::from_scores(
+            source,
+            target,
+            scores,
+            &thresholds,
+            DirectedRelation::Symmetric,
+        )
+        .unwrap();
 
         // Should only count E1, not temporal embedders
         assert_eq!(edge.agreement_count(), 1);
@@ -577,7 +607,8 @@ mod tests {
 
         assert_eq!(edge.embedder_score(0), Some(0.85));
         assert_eq!(edge.embedder_score(6), Some(0.75));
-        assert_eq!(edge.embedder_score(13), None); // Invalid
+        assert_eq!(edge.embedder_score(13), Some(0.0)); // E14 is valid
+        assert_eq!(edge.embedder_score(14), None); // Invalid
     }
 
     #[test]

@@ -39,7 +39,7 @@ impl Handlers {
     ///
     /// # Algorithm
     ///
-    /// 1. Embed the keyword query using all 13 embedders
+    /// 1. Embed the keyword query using all 14 embedders
     /// 2. Search using E1 semantic as primary (over-fetch for blending)
     /// 3. Extract keywords and compute E6 sparse similarity
     /// 4. Optionally expand with E13 SPLADE for term coverage

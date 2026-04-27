@@ -43,7 +43,7 @@ impl Handlers {
     ///
     /// # Algorithm
     ///
-    /// 1. Embed the effect query using all 13 embedders
+    /// 1. Embed the effect query using all 14 embedders
     /// 2. Search for candidates using semantic_search weight profile (5x over-fetch)
     /// 3. Apply abductive scoring using 80% E1 + 20% E5 blend
     /// 4. Apply 0.8x dampening per AP-77 (effect→cause direction)
@@ -83,7 +83,7 @@ impl Handlers {
 
         // Step 1: Embed the query
         // For "relationships" scope, we only need E5 dual vectors (much faster).
-        // For "memories" or "all", we need full 13-embedder fingerprint.
+        // For "memories" or "all", we need full 14-embedder fingerprint.
         let search_memories = search_scope == "memories" || search_scope == "all";
         let search_relationships = search_scope == "relationships" || search_scope == "all";
 
@@ -408,7 +408,7 @@ impl Handlers {
     ///
     /// # Algorithm
     ///
-    /// 1. Embed the cause query using all 13 embedders
+    /// 1. Embed the cause query using all 14 embedders
     /// 2. Search for candidates using semantic_search weight profile (5x over-fetch)
     /// 3. Apply predictive scoring using 80% E1 + 20% E5 blend
     /// 4. Apply 1.2x boost per AP-77 (cause→effect direction)
@@ -895,7 +895,7 @@ impl Handlers {
                 {
                     // M6 FIX: Move instead of clone — `for candidate in candidates` gives
                     // ownership, so the SemanticFingerprint can be moved without copying
-                    // all 13+ embedding vectors (~50KB).
+                    // all 14 embedding vectors (~50KB).
                     best_candidate = Some((
                         cand_id,
                         candidate.similarity, // base similarity (f32 is Copy)

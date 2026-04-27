@@ -40,6 +40,7 @@ use context_graph_core::teleological::types::NUM_EMBEDDERS;
 use context_graph_core::training::{
     compute_cross_correlations, compute_group_alignments, extract_temporal_labels,
     topic_profile_or_fallback, CausalLabel, KnnNeighbor, TrainingEdge, TrainingRecord,
+    NUM_CROSS_CORRELATIONS,
 };
 use context_graph_core::types::fingerprint::TeleologicalFingerprint;
 use context_graph_core::types::SourceMetadata;
@@ -305,7 +306,7 @@ impl Handlers {
                     "causal_labels_included": include_causal,
                     "temporal_labels_included": include_temporal_labels,
                     "tucker_core_included": include_tucker_core,
-                    "cross_correlations": 78,
+                    "cross_correlations": NUM_CROSS_CORRELATIONS,
                     "group_alignments": 6,
                     "topic_profile_dims": NUM_EMBEDDERS
                 },
@@ -358,7 +359,7 @@ impl Handlers {
 
         // Dense embeddings (gate by include flag).
         let sem = &fp.semantic;
-        let (e1, e2, e3, e4, e5c, e5e, e7, e8s, e8t, e9, e10p, e10c, e11) = if include_embeddings {
+        let (e1, e2, e3, e4, e5c, e5e, e7, e8s, e8t, e9, e10p, e10c, e11, e14) = if include_embeddings {
             (
                 sem.e1_semantic.clone(),
                 sem.e2_temporal_recent.clone(),
@@ -373,9 +374,11 @@ impl Handlers {
                 sem.e10_multimodal_paraphrase.clone(),
                 sem.e10_multimodal_as_context.clone(),
                 sem.e11_entity.clone(),
+                sem.e14_bge_m3_dense.clone(),
             )
         } else {
             (
+                Vec::new(),
                 Vec::new(),
                 Vec::new(),
                 Vec::new(),
@@ -541,6 +544,7 @@ impl Handlers {
             e10_paraphrase: e10p,
             e10_context: e10c,
             e11_entity: e11,
+            e14_bge_m3_dense: e14,
             e6_sparse_indices: e6_idx,
             e6_sparse_values: e6_val,
             e13_splade_indices: e13_idx,
@@ -622,6 +626,7 @@ impl Handlers {
                                 "e7_len": rec.e7_code.len(),
                                 "e8_source_len": rec.e8_graph_source.len(),
                                 "e11_len": rec.e11_entity.len(),
+                                "e14_len": rec.e14_bge_m3_dense.len(),
                                 "e6_sparse_nnz": rec.e6_sparse_indices.len(),
                                 "e13_sparse_nnz": rec.e13_splade_indices.len(),
                                 "e12_token_count": rec.e12_token_embeddings.len(),
@@ -815,6 +820,7 @@ fn render_training_record(
             "e10_paraphrase_len": r.e10_paraphrase.len(),
             "e10_context_len": r.e10_context.len(),
             "e11_len": r.e11_entity.len(),
+            "e14_len": r.e14_bge_m3_dense.len(),
             "e6_sparse_nnz": r.e6_sparse_indices.len(),
             "e13_sparse_nnz": r.e13_splade_indices.len(),
             "e12_token_count": r.e12_token_embeddings.len(),
@@ -868,6 +874,7 @@ fn render_training_record(
         obj["e10_paraphrase"] = json!(r.e10_paraphrase);
         obj["e10_context"] = json!(r.e10_context);
         obj["e11_entity"] = json!(r.e11_entity);
+        obj["e14_bge_m3_dense"] = json!(r.e14_bge_m3_dense);
         obj["e6_sparse_indices"] = json!(r.e6_sparse_indices);
         obj["e6_sparse_values"] = json!(r.e6_sparse_values);
         obj["e13_splade_indices"] = json!(r.e13_splade_indices);
@@ -931,7 +938,8 @@ fn estimate_record_size(r: &TrainingRecord) -> u64 {
         + r.e9_hdc.len()
         + r.e10_paraphrase.len()
         + r.e10_context.len()
-        + r.e11_entity.len();
+        + r.e11_entity.len()
+        + r.e14_bge_m3_dense.len();
     let sparse_bytes = r.e6_sparse_indices.len() * 2
         + r.e6_sparse_values.len() * 4
         + r.e13_splade_indices.len() * 2

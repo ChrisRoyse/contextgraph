@@ -628,7 +628,7 @@ impl Handlers {
                     merged_topics,
                     total_after,
                     message: Some(format!(
-                        "Topic detection completed - {} clusters across 13 spaces, {} topics with weighted_agreement >= 2.5",
+                        "Topic detection completed - {} clusters across 14 spaces, {} topics with weighted_agreement >= 2.5",
                         result.total_clusters, total_after
                     )),
                 };

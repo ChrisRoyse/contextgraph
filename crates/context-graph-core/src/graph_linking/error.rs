@@ -42,8 +42,8 @@ pub type EdgeResult<T> = Result<T, EdgeError>;
 /// All errors follow the fail-fast principle with detailed context.
 #[derive(Debug, Error)]
 pub enum EdgeError {
-    /// Invalid embedder ID (not 0-12).
-    #[error("E_GRAPHLINK_001: Invalid embedder ID {embedder_id}. Must be 0-12 (E1-E13).")]
+    /// Invalid embedder ID (not 0-13).
+    #[error("E_GRAPHLINK_001: Invalid embedder ID {embedder_id}. Must be 0-13 (E1-E14).")]
     InvalidEmbedderId { embedder_id: u8 },
 
     /// AP-77 VIOLATION: Attempted to use symmetric cosine for E5 or E8.
@@ -60,8 +60,10 @@ pub enum EdgeError {
     /// AP-60 VIOLATION: Temporal embedder used for edge detection.
     ///
     /// Temporal embedders (E2, E3, E4) NEVER count toward edge type detection.
-    #[error("E_GRAPHLINK_003: AP-60 VIOLATION - Temporal embedder E{embedder_id} ({embedder_name}) \
-             used for edge detection. Temporal embedders MUST NOT influence edge types.")]
+    #[error(
+        "E_GRAPHLINK_003: AP-60 VIOLATION - Temporal embedder E{embedder_id} ({embedder_name}) \
+             used for edge detection. Temporal embedders MUST NOT influence edge types."
+    )]
     TemporalEmbedderViolation {
         embedder_id: u8,
         embedder_name: &'static str,
@@ -72,11 +74,15 @@ pub enum EdgeError {
     InvalidEdgeType { value: u8 },
 
     /// Missing embedder edge in K-NN graph.
-    #[error("E_GRAPHLINK_005: Missing embedder edge for node {node_id} in embedder E{embedder_id}.")]
+    #[error(
+        "E_GRAPHLINK_005: Missing embedder edge for node {node_id} in embedder E{embedder_id}."
+    )]
     MissingEmbedderEdge { node_id: Uuid, embedder_id: u8 },
 
     /// K-NN graph construction failure.
-    #[error("E_GRAPHLINK_006: K-NN graph construction failed for embedder E{embedder_id}: {reason}")]
+    #[error(
+        "E_GRAPHLINK_006: K-NN graph construction failed for embedder E{embedder_id}: {reason}"
+    )]
     KnnConstructionFailed { embedder_id: u8, reason: String },
 
     /// NN-Descent algorithm failed to converge.
@@ -126,7 +132,9 @@ pub enum EdgeError {
     DirectionRequired { edge_type: GraphLinkEdgeType },
 
     /// Agreement count doesn't match agreeing embedders bitset.
-    #[error("E_GRAPHLINK_015: Agreement count mismatch. Count: {count}, bitset popcount: {popcount}")]
+    #[error(
+        "E_GRAPHLINK_015: Agreement count mismatch. Count: {count}, bitset popcount: {popcount}"
+    )]
     AgreementCountMismatch { count: u8, popcount: u8 },
 }
 
@@ -294,7 +302,11 @@ mod tests {
 
     #[test]
     fn test_temporal_embedder_violation() {
-        for (id, name) in [(1, "TemporalRecent"), (2, "TemporalPeriodic"), (3, "TemporalPositional")] {
+        for (id, name) in [
+            (1, "TemporalRecent"),
+            (2, "TemporalPeriodic"),
+            (3, "TemporalPositional"),
+        ] {
             let err = EdgeError::temporal_embedder_violation(id);
             assert!(err.is_constitutional_violation());
             assert_eq!(err.code(), "E_GRAPHLINK_003");
@@ -311,7 +323,7 @@ mod tests {
         assert_eq!(err.code(), "E_GRAPHLINK_001");
         let msg = format!("{}", err);
         assert!(msg.contains("99"));
-        assert!(msg.contains("0-12"));
+        assert!(msg.contains("0-13"));
     }
 
     #[test]

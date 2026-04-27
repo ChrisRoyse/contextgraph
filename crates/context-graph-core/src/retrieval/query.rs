@@ -193,7 +193,6 @@ pub struct PipelineStageConfig {
     /// Default: 60 (via `similarity::RRF_K`)
     /// Formula: RRF(d) = Σᵢ 1/(k + rankᵢ(d))
     pub rrf_k: f32,
-
 }
 
 impl Default for PipelineStageConfig {
@@ -270,7 +269,7 @@ impl PipelineStageConfig {
     }
 }
 
-/// Bitmask for active embedding spaces (0-12).
+/// Bitmask for active embedding spaces (0-13).
 ///
 /// # Bit Layout
 /// - Bit 0: E1 Semantic
@@ -286,15 +285,16 @@ impl PipelineStageConfig {
 /// - Bit 10: E11 Entity
 /// - Bit 11: E12 Late-Interaction
 /// - Bit 12: E13 SPLADE
+/// - Bit 13: E14 BGE-M3 Dense
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct EmbeddingSpaceMask(pub u16);
 
 impl EmbeddingSpaceMask {
-    /// All 13 spaces active (bits 0-12).
-    pub const ALL: Self = Self(0x1FFF);
+    /// All 14 spaces active (bits 0-13).
+    pub const ALL: Self = Self((1u16 << NUM_EMBEDDERS) - 1);
 
-    /// All 12 dense spaces (E1-E12, bits 0-11).
-    pub const ALL_DENSE: Self = Self(0x0FFF);
+    /// Dense fixed-vector spaces only. Excludes E6 sparse, E12 token-level, and E13 SPLADE.
+    pub const ALL_DENSE: Self = Self(0x27DF);
 
     /// E1 semantic only.
     pub const SEMANTIC_ONLY: Self = Self(0x0001);
@@ -362,6 +362,7 @@ impl EmbeddingSpaceMask {
             10 => "E11_Entity",
             11 => "E12_Late_Interaction",
             12 => "E13_SPLADE",
+            13 => "E14_BgeM3Dense",
             _ => "Unknown",
         }
     }
@@ -380,17 +381,17 @@ mod tests {
     #[test]
     fn test_embedding_space_mask_all() {
         let mask = EmbeddingSpaceMask::ALL;
-        assert_eq!(mask.active_count(), 13);
-        for i in 0..13 {
+        assert_eq!(mask.active_count(), NUM_EMBEDDERS);
+        for i in 0..NUM_EMBEDDERS {
             assert!(mask.is_active(i), "Space {} should be active", i);
         }
-        println!("[VERIFIED] EmbeddingSpaceMask::ALL has 13 active spaces");
+        println!("[VERIFIED] EmbeddingSpaceMask::ALL has 14 active spaces");
     }
 
     #[test]
     fn test_embedding_space_mask_presets() {
-        assert_eq!(EmbeddingSpaceMask::ALL.active_count(), 13);
-        assert_eq!(EmbeddingSpaceMask::ALL_DENSE.active_count(), 12);
+        assert_eq!(EmbeddingSpaceMask::ALL.active_count(), NUM_EMBEDDERS);
+        assert_eq!(EmbeddingSpaceMask::ALL_DENSE.active_count(), 11);
         assert_eq!(EmbeddingSpaceMask::SEMANTIC_ONLY.active_count(), 1);
         assert_eq!(EmbeddingSpaceMask::TEXT_CORE.active_count(), 3);
         assert_eq!(EmbeddingSpaceMask::SPLADE_ONLY.active_count(), 1);
@@ -398,7 +399,10 @@ mod tests {
 
         assert!(EmbeddingSpaceMask::ALL.includes_splade());
         assert!(EmbeddingSpaceMask::ALL.includes_late_interaction());
+        assert!(EmbeddingSpaceMask::ALL.is_active(13));
         assert!(!EmbeddingSpaceMask::ALL_DENSE.includes_splade());
+        assert!(!EmbeddingSpaceMask::ALL_DENSE.includes_late_interaction());
+        assert!(EmbeddingSpaceMask::ALL_DENSE.is_active(13));
 
         println!("[VERIFIED] All EmbeddingSpaceMask presets have correct counts");
     }
@@ -519,6 +523,7 @@ mod tests {
     fn test_space_name() {
         assert_eq!(EmbeddingSpaceMask::space_name(0), "E1_Semantic");
         assert_eq!(EmbeddingSpaceMask::space_name(12), "E13_SPLADE");
+        assert_eq!(EmbeddingSpaceMask::space_name(13), "E14_BgeM3Dense");
         assert_eq!(EmbeddingSpaceMask::space_name(99), "Unknown");
 
         println!("[VERIFIED] space_name returns correct names");

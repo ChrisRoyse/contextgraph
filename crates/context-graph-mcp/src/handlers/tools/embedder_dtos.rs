@@ -1,7 +1,7 @@
 //! DTOs for embedder-first search tools.
 //!
 //! Per Constitution v6.3, these DTOs support searching using any of the
-//! 13 embedders as the primary perspective.
+//! 14 embedders as the primary perspective.
 
 use std::collections::HashMap;
 
@@ -189,7 +189,7 @@ impl EmbedderId {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SearchByEmbedderRequest {
-    /// Which embedder to use as primary (E1-E13).
+    /// Which embedder to use as primary (E1-E14).
     pub embedder: String,
     /// Search query.
     pub query: String,
@@ -202,7 +202,7 @@ pub struct SearchByEmbedderRequest {
     /// Include full content in results (default: false).
     #[serde(default)]
     pub include_content: bool,
-    /// Include scores from all 13 embedders (default: false).
+    /// Include scores from all 14 embedders (default: false).
     #[serde(default)]
     pub include_all_scores: bool,
 }
@@ -306,7 +306,7 @@ pub struct EmbedderSearchResult {
     /// Content (if includeContent=true).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub content: Option<String>,
-    /// Scores from all 13 embedders (if includeAllScores=true).
+    /// Scores from all 14 embedders (if includeAllScores=true).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub all_scores: Option<AllEmbedderScores>,
 }
@@ -357,7 +357,7 @@ pub struct SearchByEmbedderResponse {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct GetEmbedderClustersRequest {
-    /// Which embedder's clusters to explore (E1-E13).
+    /// Which embedder's clusters to explore (E1-E14).
     pub embedder: String,
     /// Minimum memories per cluster (default: 3).
     #[serde(default = "default_min_cluster_size")]
@@ -636,7 +636,7 @@ pub struct EmbedderIndexInfo {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ListEmbedderIndexesResponse {
-    /// Information for all 13 embedders.
+    /// Information for all 14 embedders.
     pub indexes: Vec<EmbedderIndexInfo>,
     /// Total memories in the system.
     pub total_memories: usize,
@@ -655,7 +655,7 @@ pub struct ListEmbedderIndexesResponse {
 pub struct GetMemoryFingerprintRequest {
     /// UUID of the memory to inspect.
     pub memory_id: String,
-    /// Filter to specific embedders (default: all 13).
+    /// Filter to specific embedders (default: all 14).
     #[serde(default)]
     pub embedders: Vec<String>,
     /// Include L2 norms (default: true).
@@ -677,16 +677,13 @@ impl GetMemoryFingerprintRequest {
         }
         for e in &self.embedders {
             if EmbedderId::from_str(e).is_none() {
-                return Err(format!(
-                    "Invalid embedder '{}'. Must be E1-E14.",
-                    e
-                ));
+                return Err(format!("Invalid embedder '{}'. Must be E1-E14.", e));
             }
         }
         Ok(())
     }
 
-    /// Get the set of requested embedder IDs (empty = all 13).
+    /// Get the set of requested embedder IDs (empty = all 14).
     pub fn embedder_filter(&self) -> Vec<EmbedderId> {
         self.embedders
             .iter()
@@ -759,7 +756,7 @@ pub struct GetMemoryFingerprintResponse {
 pub struct CreateWeightProfileRequest {
     /// Name for the custom profile (must not conflict with built-in profiles).
     pub name: String,
-    /// Per-embedder weights as E1-E13 keys. Must sum to ~1.0.
+    /// Per-embedder weights as E1-E14 keys. Must sum to ~1.0.
     pub weights: HashMap<String, f64>,
     /// Optional description for the profile.
     #[serde(default)]
@@ -782,7 +779,7 @@ impl CreateWeightProfileRequest {
         for key in self.weights.keys() {
             if EmbedderId::from_str(key).is_none() {
                 return Err(format!(
-                    "Invalid embedder name '{}' in weights. Valid names: E1-E13.",
+                    "Invalid embedder name '{}' in weights. Valid names: E1-E14.",
                     key
                 ));
             }
@@ -808,7 +805,7 @@ impl CreateWeightProfileRequest {
 pub struct CreateWeightProfileResponse {
     /// Name of the created profile.
     pub name: String,
-    /// The stored weights as E1-E13 map.
+    /// The stored weights as E1-E14 map.
     pub weights: HashMap<String, f32>,
     /// Description if provided.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -827,9 +824,9 @@ pub struct CreateWeightProfileResponse {
 pub struct SearchCrossEmbedderAnomaliesRequest {
     /// Search query.
     pub query: String,
-    /// Embedder expected to score HIGH (E1-E13).
+    /// Embedder expected to score HIGH (E1-E14).
     pub high_embedder: String,
-    /// Embedder expected to score LOW (E1-E13).
+    /// Embedder expected to score LOW (E1-E14).
     pub low_embedder: String,
     /// Minimum score in high embedder (default: 0.5).
     #[serde(default = "default_high_threshold")]
@@ -986,7 +983,9 @@ pub struct TokenSearchResult {
 // search_by_expansion (E13 SPLADE) DTOs
 // ============================================================================
 
-fn default_expansion_min_score() -> f32 { 0.1 }
+fn default_expansion_min_score() -> f32 {
+    0.1
+}
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -1017,8 +1016,12 @@ pub struct ExpansionSearchResult {
 // Generalized blind spot detection fields
 // ============================================================================
 
-fn default_primary_embedder() -> String { "E1".to_string() }
-fn default_contrast_embedder() -> String { "E9".to_string() }
+fn default_primary_embedder() -> String {
+    "E1".to_string()
+}
+fn default_contrast_embedder() -> String {
+    "E9".to_string()
+}
 
 #[cfg(test)]
 mod tests {
@@ -1048,22 +1051,60 @@ mod tests {
 
     #[test]
     fn test_validation_rejects_invalid() {
-        let valid = SearchByEmbedderRequest { embedder: "E1".to_string(), query: "test query".to_string(), top_k: 10, min_similarity: 0.0, include_content: false, include_all_scores: false };
+        let valid = SearchByEmbedderRequest {
+            embedder: "E1".to_string(),
+            query: "test query".to_string(),
+            top_k: 10,
+            min_similarity: 0.0,
+            include_content: false,
+            include_all_scores: false,
+        };
         assert!(valid.validate().is_ok());
         // E14 is valid post-integration; E15 is the first invalid embedder name.
-        let valid_e14 = SearchByEmbedderRequest { embedder: "E14".to_string(), query: "multilingual query".to_string(), top_k: 10, min_similarity: 0.0, include_content: false, include_all_scores: false };
+        let valid_e14 = SearchByEmbedderRequest {
+            embedder: "E14".to_string(),
+            query: "multilingual query".to_string(),
+            top_k: 10,
+            min_similarity: 0.0,
+            include_content: false,
+            include_all_scores: false,
+        };
         assert!(valid_e14.validate().is_ok());
-        let invalid_embedder = SearchByEmbedderRequest { embedder: "E15".to_string(), query: "test".to_string(), top_k: 10, min_similarity: 0.0, include_content: false, include_all_scores: false };
+        let invalid_embedder = SearchByEmbedderRequest {
+            embedder: "E15".to_string(),
+            query: "test".to_string(),
+            top_k: 10,
+            min_similarity: 0.0,
+            include_content: false,
+            include_all_scores: false,
+        };
         assert!(invalid_embedder.validate().is_err());
-        let empty_query = SearchByEmbedderRequest { embedder: "E1".to_string(), query: "".to_string(), top_k: 10, min_similarity: 0.0, include_content: false, include_all_scores: false };
+        let empty_query = SearchByEmbedderRequest {
+            embedder: "E1".to_string(),
+            query: "".to_string(),
+            top_k: 10,
+            min_similarity: 0.0,
+            include_content: false,
+            include_all_scores: false,
+        };
         assert!(empty_query.validate().is_err());
     }
 
     #[test]
     fn test_compare_request_validation() {
-        let valid = CompareEmbedderViewsRequest { query: "test".to_string(), embedders: vec!["E1".to_string(), "E11".to_string()], top_k: 5, include_content: false };
+        let valid = CompareEmbedderViewsRequest {
+            query: "test".to_string(),
+            embedders: vec!["E1".to_string(), "E11".to_string()],
+            top_k: 5,
+            include_content: false,
+        };
         assert!(valid.validate().is_ok());
-        let too_few = CompareEmbedderViewsRequest { query: "test".to_string(), embedders: vec!["E1".to_string()], top_k: 5, include_content: false };
+        let too_few = CompareEmbedderViewsRequest {
+            query: "test".to_string(),
+            embedders: vec!["E1".to_string()],
+            top_k: 5,
+            include_content: false,
+        };
         assert!(too_few.validate().is_err());
     }
 }

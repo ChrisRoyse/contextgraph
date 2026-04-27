@@ -12,6 +12,8 @@ use std::time::Instant;
 
 use uuid::Uuid;
 
+use context_graph_core::types::fingerprint::NUM_EMBEDDERS;
+
 use super::analysis::{CorrelationAnalysis, CorrelationPattern, MatrixAnalysis};
 use super::results::MatrixSearchResults;
 use super::search_matrix::SearchMatrix;
@@ -28,7 +30,7 @@ use crate::teleological::search::multi::{
 
 /// Matrix strategy search with cross-embedder correlations.
 ///
-/// Wraps MultiEmbedderSearch and applies 13x13 weight matrices.
+/// Wraps MultiEmbedderSearch and applies 14x14 weight matrices.
 pub struct MatrixStrategySearch {
     multi_search: MultiEmbedderSearch,
 }
@@ -46,7 +48,7 @@ impl MatrixStrategySearch {
     /// # Arguments
     ///
     /// * `queries` - Map of embedder -> query vector
-    /// * `matrix` - 13x13 weight matrix
+    /// * `matrix` - 14x14 weight matrix
     /// * `k` - Number of results per embedder
     /// * `threshold` - Minimum similarity threshold
     ///
@@ -80,8 +82,8 @@ impl MatrixStrategySearch {
 
         // If purely diagonal, delegate to MultiEmbedderSearch with weighted aggregation
         if analysis.is_diagonal {
-            // Create weight map from diagonal - pre-allocate for 13 embedders
-            let mut weights = HashMap::with_capacity(13);
+            // Create weight map from diagonal.
+            let mut weights = HashMap::with_capacity(NUM_EMBEDDERS);
             for &idx in &analysis.active_embedders {
                 if let Some(embedder) = self.index_to_embedder(idx) {
                     weights.insert(embedder, matrix.get(idx, idx));
@@ -170,8 +172,8 @@ impl MatrixStrategySearch {
     /// Analyze matrix structure for optimization hints.
     pub(crate) fn analyze_matrix(&self, matrix: &SearchMatrix) -> MatrixAnalysis {
         let mut cross_count = 0;
-        for i in 0..13 {
-            for j in 0..13 {
+        for i in 0..NUM_EMBEDDERS {
+            for j in 0..NUM_EMBEDDERS {
                 if i != j && matrix.get(i, j).abs() > 1e-9 {
                     cross_count += 1;
                 }
@@ -215,8 +217,8 @@ impl MatrixStrategySearch {
                 let mut total_score = 0.0f32;
                 let mut total_weight = 0.0f32;
 
-                for i in 0..13 {
-                    for j in 0..13 {
+                for i in 0..NUM_EMBEDDERS {
+                    for j in 0..NUM_EMBEDDERS {
                         let w = matrix.get(i, j);
                         if w.abs() > 1e-9 {
                             if let (Some(&si), Some(&sj)) = (scores.get(&i), scores.get(&j)) {
@@ -267,8 +269,9 @@ impl MatrixStrategySearch {
     fn compute_correlation(&self, results: &MultiEmbedderSearchResults) -> CorrelationAnalysis {
         let mut correlation_matrix = [[0.0f32; 14]; 14];
 
-        // Collect scores per embedder for all IDs - pre-allocate for 13 embedders
-        let mut embedder_scores: HashMap<usize, Vec<(Uuid, f32)>> = HashMap::with_capacity(13);
+        // Collect scores per embedder for all IDs.
+        let mut embedder_scores: HashMap<usize, Vec<(Uuid, f32)>> =
+            HashMap::with_capacity(NUM_EMBEDDERS);
         for (embedder, per_result) in &results.per_embedder {
             if let Some(idx) = embedder.to_index() {
                 for hit in &per_result.hits {
@@ -281,8 +284,8 @@ impl MatrixStrategySearch {
         }
 
         // Compute pairwise Pearson correlation
-        for i in 0..13 {
-            for j in 0..13 {
+        for i in 0..NUM_EMBEDDERS {
+            for j in 0..NUM_EMBEDDERS {
                 if let (Some(scores_i), Some(scores_j)) =
                     (embedder_scores.get(&i), embedder_scores.get(&j))
                 {
@@ -319,8 +322,8 @@ impl MatrixStrategySearch {
 
         // Check for high consensus (multiple embedders with r > 0.7)
         let mut high_corr_pairs: Vec<(usize, usize)> = Vec::new();
-        for i in 0..13 {
-            for j in (i + 1)..13 {
+        for i in 0..NUM_EMBEDDERS {
+            for j in (i + 1)..NUM_EMBEDDERS {
                 if corr[i][j] > 0.7 {
                     high_corr_pairs.push((i, j));
                 }
@@ -360,10 +363,10 @@ impl MatrixStrategySearch {
         }
 
         // Check for outlier embedders
-        for i in 0..13 {
+        for i in 0..NUM_EMBEDDERS {
             let mut total_corr = 0.0f32;
             let mut count = 0;
-            for j in 0..13 {
+            for j in 0..NUM_EMBEDDERS {
                 if i != j && corr[i][j].abs() > 1e-9 {
                     total_corr += corr[i][j];
                     count += 1;
@@ -419,7 +422,7 @@ impl MatrixStrategySearch {
 
     /// Convert index to embedder.
     fn index_to_embedder(&self, idx: usize) -> Option<EmbedderIndex> {
-        if idx < 13 {
+        if idx < NUM_EMBEDDERS {
             Some(EmbedderIndex::from_index(idx))
         } else {
             None
