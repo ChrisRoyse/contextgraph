@@ -117,10 +117,10 @@ impl LearnerEmbedderSlot {
     pub const fn model_name(self) -> &'static str {
         match self {
             Self::E14AffectSpeech => "Wav2Vec2-large-MSP-DIM",
-            Self::E15AffectFace => "OpenFace 3.0 + emotion head",
+            Self::E15AffectFace => "OpenFace 3.0 + MTL emotion/AU/gaze head",
             Self::E16AffectText => "MiniLM-L6-v2 + EmoBank regressor",
             Self::E17Ppg => "PaPaGei PPG foundation model",
-            Self::E18Eda => "WESAD-trained 1D-CNN",
+            Self::E18Eda => "WESAD raw EDA/BVP/TEMP 1D-CNN",
             Self::E19Eeg => "LaBraM EEG foundation model",
             Self::E20EegArtifactRobust => "EEGPT artifact-robust EEG model",
         }
@@ -403,6 +403,7 @@ const HF_AFFECT_TEXT: &str = "hf:sentence-transformers/all-MiniLM-L6-v2";
 const HF_LABRAM: &str = "hf:braindecode/labram-pretrained";
 const HF_EEGPT: &str = "hf:braindecode/eegpt-pretrained";
 const GO_EMOTIONS_SOURCE: &str = "hf-dataset:google-research-datasets/go_emotions";
+const WESAD_SOURCE: &str = "official:WESAD raw archive from University of Siegen";
 
 const GROUP_CONFIG: LearnerAssetFileGroup = LearnerAssetFileGroup {
     label: "model config",
@@ -417,6 +418,10 @@ const GROUP_WEIGHTS: LearnerAssetFileGroup = LearnerAssetFileGroup {
         "weights.pt",
     ],
 };
+const GROUP_PAPAGEI_WEIGHTS: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "PaPaGei PPG weights",
+    alternatives: &["papagei_s.pt"],
+};
 const GROUP_TOKENIZER: LearnerAssetFileGroup = LearnerAssetFileGroup {
     label: "tokenizer",
     alternatives: &["tokenizer.json", "vocab.txt", "sentencepiece.bpe.model"],
@@ -425,24 +430,37 @@ const GROUP_PREPROCESSOR: LearnerAssetFileGroup = LearnerAssetFileGroup {
     label: "signal preprocessor",
     alternatives: &["preprocessor_config.json", "processor_config.json"],
 };
-const GROUP_OPENFACE_BINARY: LearnerAssetFileGroup = LearnerAssetFileGroup {
-    label: "OpenFace binary",
+const GROUP_OPENFACE_INTERFACE: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "OpenFace 3.0 interface",
+    alternatives: &["OpenFace/interface.py"],
+};
+const GROUP_OPENFACE_MULTITASK_MODEL: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "OpenFace multitask model definition",
+    alternatives: &["OpenFace/model/MLT.py"],
+};
+const GROUP_OPENFACE_FACE_DETECTOR: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "OpenFace RetinaFace weights",
     alternatives: &[
-        "bin/FaceLandmarkVidMulti",
-        "build/bin/FaceLandmarkVidMulti",
-        "OpenFace/build/bin/FaceLandmarkVidMulti",
+        "OpenFace/weights/Alignment_RetinaFace.pth",
+        "OpenFace/weights/mobilenet0.25_Final.pth",
     ],
 };
-const GROUP_EMOTION_HEAD: LearnerAssetFileGroup = LearnerAssetFileGroup {
-    label: "emotion head",
+const GROUP_OPENFACE_LANDMARKS: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "OpenFace landmark weights",
     alternatives: &[
-        "emotion_head.safetensors",
-        "emotion_head.pt",
-        "emotion_head/model.safetensors",
+        "OpenFace/weights/Landmark_98.pkl",
+        "OpenFace/weights/Landmark_68.pkl",
+    ],
+};
+const GROUP_OPENFACE_MULTITASK_WEIGHTS: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "OpenFace emotion/AU/gaze weights",
+    alternatives: &[
+        "OpenFace/weights/MTL_backbone.pth",
+        "OpenFace/weights/stage2_epoch_7_loss_1.1606_acc_0.5589.pth",
     ],
 };
 const GROUP_EDA_HEAD: LearnerAssetFileGroup = LearnerAssetFileGroup {
-    label: "WESAD EDA head",
+    label: "WESAD EDA/physiology stress head",
     alternatives: &["wesad_cnn.safetensors", "wesad_cnn.pt", "model.safetensors"],
 };
 const GROUP_GOEMOTIONS_SAMPLE: LearnerAssetFileGroup = LearnerAssetFileGroup {
@@ -453,16 +471,31 @@ const GROUP_GOEMOTIONS_MANIFEST: LearnerAssetFileGroup = LearnerAssetFileGroup {
     label: "real GoEmotions manifest",
     alternatives: &["manifest.json"],
 };
+const GROUP_WESAD_ARCHIVE: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "official raw WESAD archive",
+    alternatives: &["WESAD.zip"],
+};
+const GROUP_WESAD_MANIFEST: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "official WESAD manifest",
+    alternatives: &["manifest.json"],
+};
 
 static REQ_E14: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS, GROUP_PREPROCESSOR];
-static REQ_E15: &[LearnerAssetFileGroup] = &[GROUP_OPENFACE_BINARY, GROUP_EMOTION_HEAD];
+static REQ_E15: &[LearnerAssetFileGroup] = &[
+    GROUP_OPENFACE_INTERFACE,
+    GROUP_OPENFACE_MULTITASK_MODEL,
+    GROUP_OPENFACE_FACE_DETECTOR,
+    GROUP_OPENFACE_LANDMARKS,
+    GROUP_OPENFACE_MULTITASK_WEIGHTS,
+];
 static REQ_E16: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS, GROUP_TOKENIZER];
-static REQ_E17: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS];
+static REQ_E17: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_PAPAGEI_WEIGHTS];
 static REQ_E18: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_EDA_HEAD];
 static REQ_E19: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS];
 static REQ_E20: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS];
 static REQ_GOEMOTIONS: &[LearnerAssetFileGroup] =
     &[GROUP_GOEMOTIONS_SAMPLE, GROUP_GOEMOTIONS_MANIFEST];
+static REQ_WESAD: &[LearnerAssetFileGroup] = &[GROUP_WESAD_ARCHIVE, GROUP_WESAD_MANIFEST];
 
 /// Model asset requirements for the learner-state E14-E20 namespace.
 #[must_use]
@@ -477,7 +510,7 @@ pub fn learner_model_asset_requirements() -> Vec<LearnerModelAssetRequirement> {
         LearnerModelAssetRequirement {
             slot: LearnerEmbedderSlot::E15AffectFace,
             model_dir: "affect-face",
-            source: "github:CMU-MultiComp-Lab/OpenFace-3.0 + local emotion head",
+            source: "github:CMU-MultiComp-Lab/OpenFace-3.0 + hf:nutPace/openface_weights",
             required: REQ_E15,
         },
         LearnerModelAssetRequirement {
@@ -489,13 +522,13 @@ pub fn learner_model_asset_requirements() -> Vec<LearnerModelAssetRequirement> {
         LearnerModelAssetRequirement {
             slot: LearnerEmbedderSlot::E17Ppg,
             model_dir: "ppg",
-            source: "research-release:PaPaGei PPG foundation model",
+            source: "zenodo:10.5281/zenodo.13983110:papagei_s.pt",
             required: REQ_E17,
         },
         LearnerModelAssetRequirement {
             slot: LearnerEmbedderSlot::E18Eda,
             model_dir: "eda",
-            source: "local-training:WESAD 1D-CNN head",
+            source: "local-training:official WESAD raw EDA/BVP/TEMP 1D-CNN head",
             required: REQ_E18,
         },
         LearnerModelAssetRequirement {
@@ -553,15 +586,36 @@ pub fn preflight_learner_assets(
         .iter()
         .filter(|status| status.present_path.is_none())
         .count();
-    let calibration_assets = vec![LearnerCalibrationAssetStatus {
-        dataset_id: "go_emotions",
-        path: go_emotions_dir.to_string_lossy().into_owned(),
-        source: GO_EMOTIONS_SOURCE,
-        ready: go_emotions_files
-            .iter()
-            .all(|status| status.present_path.is_some()),
-        files: go_emotions_files,
-    }];
+    let wesad_dir = calibration_root.join("wesad_official");
+    let wesad_files = REQ_WESAD
+        .iter()
+        .map(|group| inspect_file_group(&wesad_dir, group))
+        .collect::<EmbeddingResult<Vec<_>>>()?;
+    missing_count += wesad_files
+        .iter()
+        .filter(|status| status.present_path.is_none())
+        .count();
+
+    let calibration_assets = vec![
+        LearnerCalibrationAssetStatus {
+            dataset_id: "go_emotions",
+            path: go_emotions_dir.to_string_lossy().into_owned(),
+            source: GO_EMOTIONS_SOURCE,
+            ready: go_emotions_files
+                .iter()
+                .all(|status| status.present_path.is_some()),
+            files: go_emotions_files,
+        },
+        LearnerCalibrationAssetStatus {
+            dataset_id: "wesad_official",
+            path: wesad_dir.to_string_lossy().into_owned(),
+            source: WESAD_SOURCE,
+            ready: wesad_files
+                .iter()
+                .all(|status| status.present_path.is_some()),
+            files: wesad_files,
+        },
+    ];
 
     Ok(LearnerAssetPreflightReport {
         source_of_truth: "filesystem model assets + downloaded real calibration data",
@@ -1646,5 +1700,23 @@ mod tests {
         };
         let err = embed_learner_signal(LearnerEmbedderSlot::E18Eda, &input).unwrap_err();
         assert!(matches!(err, EmbeddingError::ConfigError { .. }));
+    }
+
+    #[test]
+    fn asset_preflight_reports_missing_files_without_fallback() {
+        let models = tempfile::TempDir::new().unwrap();
+        let calibration = tempfile::TempDir::new().unwrap();
+        let report = preflight_learner_assets(models.path(), calibration.path()).unwrap();
+        println!(
+            "ASSET PREFLIGHT ready={} missing_count={} source_of_truth={}",
+            report.ready, report.missing_count, report.source_of_truth
+        );
+        assert!(!report.ready);
+        assert!(report.missing_count > 0);
+        assert!(report
+            .model_assets
+            .iter()
+            .all(|asset| asset.files.iter().any(|file| file.present_path.is_none())));
+        assert!(report.calibration_assets.iter().all(|asset| !asset.ready));
     }
 }
