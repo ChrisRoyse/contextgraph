@@ -398,6 +398,23 @@ pub const CF_HNSW_GRAPHS: &str = "hnsw_graphs";
 /// - 8MB write buffer (values are MB-sized when full embeddings included)
 pub const CF_TRAINING_RECORDS: &str = "training_records";
 
+/// Column family for Learning-as-UTL event records.
+///
+/// Each row stores one interaction-level before/after state transition with
+/// deterministic UTL features and baseline signals. These records are separate
+/// from E1-E14 fingerprints and training records so learning-event semantics
+/// do not change search/storage contracts for production embedders.
+///
+/// Key: event UUID bytes (16).
+/// Value: `[LEARNING_EVENT_VERSION: u8][bincode-encoded LearningEvent]`.
+///
+/// # Storage Details
+/// - LZ4 compression for mixed text/vector payloads
+/// - Bloom filter for fast point lookup by event UUID
+/// - 16-byte prefix extractor for UUID keys
+/// - 4MB write buffer (event records are usually small but may include text)
+pub const CF_LEARNING_EVENTS: &str = "learning_events";
+
 /// Column family for compiled constellation records (Phase 2).
 ///
 /// Each constellation aggregates per-embedder centroids + spread statistics
@@ -515,7 +532,7 @@ pub const CF_TYPED_EDGE_RECORDS: &str = "typed_edge_records";
 /// - 2MB write buffer (append-light)
 pub const CF_TYPED_EDGE_VALIDATIONS: &str = "typed_edge_validations";
 
-/// All teleological column family names (28 total — 23 base + 3 contrastive + 2 typed-edge).
+/// All teleological column family names (29 total — 24 base + 3 contrastive + 2 typed-edge).
 pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_FINGERPRINTS,
     CF_TOPIC_PROFILES,
@@ -538,6 +555,7 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_CUSTOM_WEIGHT_PROFILES,
     CF_HNSW_GRAPHS,
     CF_TRAINING_RECORDS,
+    CF_LEARNING_EVENTS,
     CF_CONSTELLATIONS,
     CF_CONSTELLATION_BY_SELECTOR,
     CF_CONTRASTIVE_PAIRS,
@@ -548,7 +566,7 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
 ];
 
 /// Total count of teleological CFs.
-pub const TELEOLOGICAL_CF_COUNT: usize = 28;
+pub const TELEOLOGICAL_CF_COUNT: usize = 29;
 
 // =============================================================================
 // QUANTIZED EMBEDDER COLUMN FAMILIES (13 CFs for per-embedder storage)
@@ -818,6 +836,15 @@ pub fn training_records_cf_options(cache: &Cache) -> Options {
     // 64KB blocks pack many ~46KB records per block;
     // 8MB write buffer accommodates MB-sized per-record values.
     uuid_prefixed_cf_options(cache, 64, 8)
+}
+
+/// Options for learning event storage.
+///
+/// Learning events are UUID-keyed and bincode-encoded. They contain a small
+/// amount of text plus 14D/91D vector state, so 32KB blocks and a 4MB write
+/// buffer are sufficient while preserving point-lookup behavior.
+pub fn learning_events_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 32, 4)
 }
 
 /// Options for `CF_CONSTELLATIONS` (Phase 2).
@@ -1457,13 +1484,13 @@ pub fn quantized_embedder_cf_options(cache: &Cache) -> Options {
     opts
 }
 
-/// Get all 28 teleological column family descriptors.
+/// Get all 29 teleological column family descriptors.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 28 `ColumnFamilyDescriptor`s for teleological storage.
+/// Vector of 29 `ColumnFamilyDescriptor`s for teleological storage.
 pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     vec![
         ColumnFamilyDescriptor::new(CF_FINGERPRINTS, fingerprint_cf_options(cache)),
@@ -1512,6 +1539,8 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
         ColumnFamilyDescriptor::new(CF_HNSW_GRAPHS, hnsw_graphs_cf_options(cache)),
         // Training record export (export_training_corpus MCP tool)
         ColumnFamilyDescriptor::new(CF_TRAINING_RECORDS, training_records_cf_options(cache)),
+        // Learning-as-UTL event storage
+        ColumnFamilyDescriptor::new(CF_LEARNING_EVENTS, learning_events_cf_options(cache)),
         // Phase 2: Constellation compiler (compile_constellation MCP tool)
         ColumnFamilyDescriptor::new(CF_CONSTELLATIONS, constellations_cf_options(cache)),
         ColumnFamilyDescriptor::new(
@@ -1568,14 +1597,14 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 
 /// Get ALL teleological + quantized embedder column family descriptors.
 ///
-/// Returns 41 descriptors total: 28 teleological + 13 quantized embedder.
+/// Returns 43 descriptors total: 29 teleological + 14 quantized embedder.
 /// Use this when opening a database that needs both fingerprint and per-embedder storage.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
 ///
 /// # Returns
-/// Vector of 41 `ColumnFamilyDescriptor`s.
+/// Vector of 43 `ColumnFamilyDescriptor`s.
 ///
 /// # Example
 /// ```ignore
@@ -1584,7 +1613,7 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 ///
 /// let cache = Cache::new_lru_cache(256 * 1024 * 1024); // 256MB
 /// let descriptors = get_all_teleological_cf_descriptors(&cache);
-/// assert_eq!(descriptors.len(), 41); // 28 teleological + 13 embedder
+/// assert_eq!(descriptors.len(), 43); // 29 teleological + 14 embedder
 /// ```
 pub fn get_all_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     let mut descriptors = get_teleological_cf_descriptors(cache);

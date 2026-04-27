@@ -176,10 +176,13 @@ async fn test_e2e_tools_list_all_tools() {
     // 2026-04-15: Bumped 71 → 75 after Phase 4 typed-edge tools:
     //   export_typed_edges_corpus, derive_anomalies_from_edges,
     //   validate_low_confidence_edges, list_typed_edge_records
+    // 2026-04-27: Bumped 75 → 79 after Learning-as-UTL tools:
+    //   record_learning_event, list_learning_events, get_learning_event,
+    //   count_learning_events
     assert_eq!(
         tools.len(),
-        75,
-        "Expected exactly 75 tools with LLM feature, found {}",
+        79,
+        "Expected exactly 79 tools with LLM feature, found {}",
         tools.len()
     );
 

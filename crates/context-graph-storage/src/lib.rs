@@ -68,6 +68,7 @@ pub use teleological::{
     get_quantized_embedder_cf_descriptors,
     get_teleological_cf_descriptors,
     importance_history_cf_options,
+    learning_events_cf_options,
     merge_history_cf_options,
     parse_e13_splade_key,
     parse_e1_matryoshka_key,
@@ -114,6 +115,7 @@ pub use teleological::{
     CF_EMB_9,
     CF_FINGERPRINTS,
     CF_IMPORTANCE_HISTORY,
+    CF_LEARNING_EVENTS,
     // Phase 4 Lifecycle Provenance: Merge + importance history
     CF_MERGE_HISTORY,
     CF_TOPIC_PROFILES,

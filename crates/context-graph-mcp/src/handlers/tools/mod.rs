@@ -36,6 +36,7 @@ mod graph_link_tools;
 mod graph_tools;
 pub(crate) mod helpers;
 mod keyword_tools;
+mod learning_tools;
 // Intentionally placed here (alphabetical within private modules is not required;
 // this sits next to helpers which consumes it).
 mod maintenance_tools;

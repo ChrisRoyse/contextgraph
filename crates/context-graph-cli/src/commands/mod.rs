@@ -13,6 +13,7 @@ pub mod backfill_e14;
 pub mod divergence;
 pub mod export_training;
 pub mod hooks;
+pub mod learning;
 pub mod memory;
 pub mod session;
 pub mod setup;

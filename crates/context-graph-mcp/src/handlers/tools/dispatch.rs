@@ -169,6 +169,11 @@ impl Handlers {
             tool_names::LIST_TRAINING_RECORDS => call_list_training_records(arguments),
             tool_names::GET_TRAINING_RECORD => call_get_training_record(arguments),
             tool_names::COUNT_TRAINING_RECORDS => call_count_training_records(),
+            // Learning-as-UTL tools
+            tool_names::RECORD_LEARNING_EVENT => call_record_learning_event(arguments),
+            tool_names::LIST_LEARNING_EVENTS => call_list_learning_events(arguments),
+            tool_names::GET_LEARNING_EVENT => call_get_learning_event(arguments),
+            tool_names::COUNT_LEARNING_EVENTS => call_count_learning_events(),
             // Constellation tools (Phase 2 compiler)
             tool_names::COMPILE_CONSTELLATION => call_compile_constellation(arguments),
             tool_names::LIST_CONSTELLATIONS => call_list_constellations(arguments),

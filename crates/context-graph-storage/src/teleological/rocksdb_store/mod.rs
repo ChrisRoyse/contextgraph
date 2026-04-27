@@ -56,6 +56,7 @@ mod fusion;
 mod helpers;
 mod index_ops;
 mod inverted_index;
+mod learning;
 mod llm_validation;
 mod persistence;
 mod provenance_storage;
@@ -79,6 +80,7 @@ pub use anomaly_derivation::{
 pub use export::{decode_training_record, encode_training_record};
 pub use fusion::{weighted_rrf_fusion_with_scores, RRF_K};
 pub use helpers::{compute_cosine_similarity, hex_encode, hnsw_distance_to_similarity};
+pub use learning::{decode_learning_event, encode_learning_event};
 pub use llm_validation::{decode_llm_edge_validation, encode_llm_edge_validation};
 pub use store::RocksDbTeleologicalStore;
 pub use typed_edge_export::{decode_typed_edge_record, encode_typed_edge_record};

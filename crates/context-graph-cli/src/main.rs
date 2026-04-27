@@ -72,6 +72,11 @@ enum Commands {
         #[command(subcommand)]
         action: commands::divergence::DivergenceCommands,
     },
+    /// Learning-as-UTL event commands
+    Learning {
+        #[command(subcommand)]
+        action: commands::learning::LearningCommands,
+    },
     /// Initialize context-graph hooks for Claude Code
     ///
     /// Creates .claude/settings.json and .claude/hooks/ directory with
@@ -164,6 +169,7 @@ async fn main() {
         Commands::Divergence { action } => {
             commands::divergence::handle_divergence_command(action).await
         }
+        Commands::Learning { action } => commands::learning::handle_learning_command(action).await,
         Commands::Setup(args) => commands::setup::handle_setup(args).await,
         Commands::Warmup(args) => commands::warmup::handle_warmup(args).await,
         Commands::Watch(args) => commands::watch::handle_watch(args).await,

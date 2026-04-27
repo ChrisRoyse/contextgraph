@@ -149,6 +149,16 @@ pub const GET_TRAINING_RECORD: &str = "get_training_record";
 /// Count rows currently stored in `CF_TRAINING_RECORDS`.
 pub const COUNT_TRAINING_RECORDS: &str = "count_training_records";
 
+// ========== LEARNING-AS-UTL TOOLS ==========
+/// Persist one before/after learning event to `CF_LEARNING_EVENTS`.
+pub const RECORD_LEARNING_EVENT: &str = "record_learning_event";
+/// List UUIDs currently stored in `CF_LEARNING_EVENTS`.
+pub const LIST_LEARNING_EVENTS: &str = "list_learning_events";
+/// Fetch one Learning-as-UTL event by UUID.
+pub const GET_LEARNING_EVENT: &str = "get_learning_event";
+/// Count rows currently stored in `CF_LEARNING_EVENTS`.
+pub const COUNT_LEARNING_EVENTS: &str = "count_learning_events";
+
 // ========== CONSTELLATION TOOLS (Phase 2 compiler) ==========
 /// Compile a constellation (per-embedder centroids + spread stats) from a
 /// caller-selected set of memories and persist it to `CF_CONSTELLATIONS`.

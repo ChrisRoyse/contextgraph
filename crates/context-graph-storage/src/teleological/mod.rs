@@ -81,6 +81,7 @@ pub use column_families::{
     get_quantized_embedder_cf_descriptors,
     get_teleological_cf_descriptors,
     importance_history_cf_options,
+    learning_events_cf_options,
     // Phase 4 Lifecycle Provenance: Merge + importance history column families
     merge_history_cf_options,
     // Quantized embedder column families (TASK-EMB-022)
@@ -124,6 +125,7 @@ pub use column_families::{
     CF_EMB_9,
     CF_FINGERPRINTS,
     CF_IMPORTANCE_HISTORY,
+    CF_LEARNING_EVENTS,
     CF_MERGE_HISTORY,
     CF_TOPIC_PROFILES,
     CF_TRAINING_RECORDS,
@@ -197,8 +199,9 @@ pub use indexes::{
 
 // Re-export RocksDB teleological store (TASK: RocksDbTeleologicalStore)
 pub use rocksdb_store::{
-    decode_training_record, encode_training_record, RocksDbTeleologicalStore,
-    TeleologicalStoreConfig, TeleologicalStoreError, TeleologicalStoreResult,
+    decode_learning_event, decode_training_record, encode_learning_event, encode_training_record,
+    RocksDbTeleologicalStore, TeleologicalStoreConfig, TeleologicalStoreError,
+    TeleologicalStoreResult,
 };
 
 // Re-export search types (TASK-LOGIC-005)

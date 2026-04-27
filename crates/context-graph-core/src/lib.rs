@@ -42,6 +42,7 @@ pub mod graph;
 pub mod graph_linking;
 pub mod index;
 pub mod injection;
+pub mod learning;
 pub mod llm_edge_validation;
 pub mod memory;
 pub mod monitoring;
