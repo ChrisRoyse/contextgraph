@@ -1,0 +1,83 @@
+{
+  "fixture_id": "utl-phase0-synthetic-v1",
+  "source_of_truth": "context_graph_embeddings::learner::synthetic_calibration_fixture",
+  "purpose": "Deterministic local calibration and full-state-verification fixture for E14-E20 learner embedders.",
+  "samples": [
+    {
+      "sample_id": "regulated-baseline",
+      "label": "regulated",
+      "expected": {
+        "learner_embedder_count": 7,
+        "state_vector_len": 4032,
+        "component_direction": "higher plasticity/hrv/stress_floor than dysregulated-stress"
+      },
+      "signals": [
+        {
+          "slot": "E14",
+          "modality": "affect_speech",
+          "kind": "synthetic_sine_audio",
+          "sample_rate_hz": 16000,
+          "channels": 1
+        },
+        {
+          "slot": "E15",
+          "modality": "affect_face",
+          "kind": "synthetic_action_unit_features",
+          "feature_count": 10
+        },
+        {
+          "slot": "E16",
+          "modality": "affect_text",
+          "kind": "text",
+          "text": "I feel calm, focused, and ready to learn the new concept."
+        },
+        {
+          "slot": "E17",
+          "modality": "ppg",
+          "kind": "synthetic_periodic_ppg",
+          "sample_rate_hz": 64,
+          "channels": 1
+        },
+        {
+          "slot": "E18",
+          "modality": "eda",
+          "kind": "synthetic_low_tonic_eda",
+          "sample_rate_hz": 4,
+          "channels": 1
+        },
+        {
+          "slot": "E19",
+          "modality": "eeg",
+          "kind": "synthetic_theta_dominant_eeg",
+          "sample_rate_hz": 256,
+          "channels": 4
+        },
+        {
+          "slot": "E20",
+          "modality": "eeg_artifact_robust",
+          "kind": "synthetic_theta_dominant_eeg",
+          "sample_rate_hz": 256,
+          "channels": 4
+        }
+      ]
+    },
+    {
+      "sample_id": "dysregulated-stress",
+      "label": "dysregulated",
+      "expected": {
+        "learner_embedder_count": 7,
+        "state_vector_len": 4032,
+        "component_direction": "lower plasticity/hrv/stress_floor than regulated-baseline"
+      }
+    },
+    {
+      "sample_id": "boundary-flat-signals",
+      "label": "boundary",
+      "expected": {
+        "learner_embedder_count": 7,
+        "state_vector_len": 4032,
+        "component_direction": "finite outputs from flat but non-empty signals"
+      }
+    }
+  ]
+}

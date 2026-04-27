@@ -9,7 +9,12 @@ use context_graph_core::learner::{
     compute_delta_c, compute_delta_e, compute_delta_s_from_text, compute_utl_l, sha256_bytes,
     sha256_json, update_m_trace, ComputationEnvelope, LearnerAuditEntry, LearnerDeltaLog,
     LearnerFingerprint, LearnerModality, LearnerProfile, LearnerStateComponents,
-    LearnerStateVector, ModalityEmbedding, ObservationEnvelope,
+    ObservationEnvelope,
+};
+use context_graph_embeddings::{
+    embed_calibration_sample, learner_embedder_specs, state_vector_from_outputs,
+    synthetic_calibration_fixture, LearnerEmbedderSlot, CALIBRATION_DATASET_MANIFEST,
+    UTL_PLANNED_TOTAL_EMBEDDERS,
 };
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
 use serde_json::json;
@@ -17,6 +22,10 @@ use uuid::Uuid;
 
 #[derive(Subcommand, Debug)]
 pub enum UtlCommands {
+    /// List the learner-state E14-E20 embedder registry and calibration datasets.
+    ListEmbedders,
+    /// Print the deterministic local calibration fixture summary.
+    Fixture,
     /// Count rows in the learner-state source-of-truth column families.
     Count(UtlStorageArgs),
     /// Store a deterministic synthetic learner session and read it back.
@@ -105,6 +114,47 @@ pub async fn handle_utl_command(action: UtlCommands) -> i32 {
 
 async fn run(action: UtlCommands) -> Result<serde_json::Value> {
     match action {
+        UtlCommands::ListEmbedders => Ok(json!({
+            "source_of_truth": {
+                "registry": "context_graph_embeddings::learner",
+                "fixture_manifest": "crates/context-graph-embeddings/fixtures/utl_calibration"
+            },
+            "planned_total_embedders": UTL_PLANNED_TOTAL_EMBEDDERS,
+            "learner_embedder_count": learner_embedder_specs().len(),
+            "learner_embedders": learner_embedder_specs().iter().map(|spec| json!({
+                "slot": spec.slot_number,
+                "id": spec.slot.as_str(),
+                "modality": spec.modality.as_str(),
+                "model_name": spec.model_name,
+                "model_path": spec.model_path,
+                "output_dimension": spec.output_dimension,
+                "scalar_heads": spec.scalar_heads,
+            })).collect::<Vec<_>>(),
+            "calibration_datasets": CALIBRATION_DATASET_MANIFEST.iter().map(|dataset| json!({
+                "name": dataset.name,
+                "modality": dataset.modality,
+                "used_for": dataset.used_for,
+                "access": dataset.access,
+                "license": dataset.license,
+            })).collect::<Vec<_>>(),
+        })),
+        UtlCommands::Fixture => {
+            let fixture = synthetic_calibration_fixture();
+            Ok(json!({
+                "source_of_truth": {
+                    "rust": "context_graph_embeddings::learner::synthetic_calibration_fixture",
+                    "checked_in_manifest": "crates/context-graph-embeddings/fixtures/utl_calibration/phase0_synthetic_fixture.json",
+                },
+                "fixture_id": fixture.fixture_id,
+                "sample_count": fixture.samples.len(),
+                "samples": fixture.samples.iter().map(|sample| json!({
+                    "sample_id": sample.sample_id,
+                    "label": sample.label,
+                    "input_slots": sample.inputs.keys().map(|slot| slot.as_str()).collect::<Vec<_>>(),
+                    "expected_components": sample.expected_components,
+                })).collect::<Vec<_>>()
+            }))
+        }
         UtlCommands::Count(args) => {
             let store = open_store(&args.storage)?;
             Ok(json!({
@@ -242,65 +292,68 @@ fn synthetic_records(
     trace_id: Uuid,
     session_ts: u64,
 ) -> Result<SyntheticRecords> {
+    let modalities = LearnerEmbedderSlot::all()
+        .iter()
+        .map(|slot| slot.modality())
+        .chain(std::iter::once(LearnerModality::SelfReport))
+        .collect::<BTreeSet<_>>();
     let profile = LearnerProfile::new(
         learner_id,
-        "synthetic-phase0-learner".into(),
+        "synthetic-all-e14-e20-learner".into(),
         "consented-local-first".into(),
-        BTreeSet::from([LearnerModality::AffectText, LearnerModality::SelfReport]),
+        modalities,
         Some(session_ts),
     )?;
 
-    let raw_hash = sha256_bytes(b"synthetic learner observation: calm text session");
-    let observation_id = Uuid::from_u128(0xcccccccc_cccc_4ccc_8ccc_cccccccccccc);
-    let envelope = ObservationEnvelope::new(
-        observation_id,
+    let fixture = synthetic_calibration_fixture();
+    let sample = fixture
+        .samples
+        .iter()
+        .find(|sample| sample.sample_id == "regulated-baseline")
+        .with_context(|| "regulated synthetic calibration sample missing")?;
+    let outputs = embed_calibration_sample(sample)?;
+    let state_vector = state_vector_from_outputs(
         learner_id,
         session_ts,
-        LearnerModality::AffectText,
-        "consented-local-first".into(),
-        raw_hash,
-        "synthetic-preprocess-v1".into(),
-        "phase0-deterministic-text-affect-v1".into(),
-        "thresholds-default-pending-calibration-v1".into(),
-        Vec::new(),
+        &outputs,
+        BTreeMap::from([
+            ("environment".into(), "quiet-dev-workstation".into()),
+            ("fixture_id".into(), fixture.fixture_id.into()),
+            ("sample_id".into(), sample.sample_id.into()),
+            ("task".into(), "synthetic-all-e14-e20-utl-fsv".into()),
+        ]),
     )?;
 
-    let components = LearnerStateComponents {
-        plasticity_window: 0.81,
-        hrv_coherence: 0.64,
-        valence: 0.2,
-        arousal: 0.0,
-        stress_floor: 0.9,
-        k_sleep: 1.0,
-    };
-    let state_vector = LearnerStateVector {
-        learner_id,
-        session_ts,
-        values: vec![0.81, 0.64, 0.2, 0.0, 0.9, 1.0],
-        components: components.clone(),
-        context: BTreeMap::from([
-            ("environment".into(), "quiet-dev-workstation".into()),
-            ("task".into(), "synthetic-utl-fsv".into()),
-        ]),
-    };
+    let mut observation_envelopes = Vec::with_capacity(outputs.len());
+    let mut modality_embeddings = Vec::with_capacity(outputs.len());
+    for output in &outputs {
+        let observation_id = Uuid::from_u128(
+            0xcccccccc_cccc_4ccc_8ccc_cccccccccc00 + u128::from(output.slot.slot_number()),
+        );
+        let raw_hash =
+            sha256_bytes(format!("{}:{}", sample.sample_id, output.slot.as_str()).as_bytes());
+        let envelope = ObservationEnvelope::new(
+            observation_id,
+            learner_id,
+            session_ts,
+            output.modality,
+            "consented-local-first".into(),
+            raw_hash,
+            "synthetic-preprocess-v1".into(),
+            output.embedder_version.clone(),
+            "thresholds-default-pending-calibration-v1".into(),
+            Vec::new(),
+        )?;
+        observation_envelopes.push(envelope);
+        modality_embeddings.push(output.to_modality_embedding(observation_id));
+    }
+
+    let components: LearnerStateComponents = state_vector.components.clone();
     let fingerprint = LearnerFingerprint {
         learner_id,
         session_ts,
-        observation_envelopes: vec![envelope],
-        modality_embeddings: vec![
-            ModalityEmbedding {
-                modality: LearnerModality::AffectText,
-                vector: vec![0.62, 0.71, 0.54],
-                scalar: Some(0.62),
-                source_observation_id: observation_id,
-            },
-            ModalityEmbedding {
-                modality: LearnerModality::SelfReport,
-                vector: vec![0.8, 0.2, 0.1],
-                scalar: Some(0.8),
-                source_observation_id: observation_id,
-            },
-        ],
+        observation_envelopes,
+        modality_embeddings,
         state_vector,
     };
 
@@ -311,7 +364,13 @@ fn synthetic_records(
         0.2,
         Some(0.7),
     )?;
-    let delta_c = compute_delta_c(&[0.62, 0.74, 0.86], 0.64, 0.82, 0.05, None)?;
+    let delta_c = compute_delta_c(
+        &[0.62, 0.74, 0.86],
+        components.hrv_coherence,
+        0.82,
+        0.05,
+        None,
+    )?;
     let delta_e = compute_delta_e(&components)?;
     let computation = compute_utl_l(delta_s, delta_c, delta_e, 0, None)?;
     let output_hash = sha256_json(&computation)?;
@@ -319,7 +378,11 @@ fn synthetic_records(
         Uuid::from_u128(0xdddddddd_dddd_4ddd_8ddd_dddddddddddd),
         learner_id,
         session_ts,
-        vec![observation_id],
+        fingerprint
+            .observation_envelopes
+            .iter()
+            .map(|envelope| envelope.observation_id)
+            .collect(),
         "thresholds-default-pending-calibration-v1".into(),
         output_hash.clone(),
     )?;

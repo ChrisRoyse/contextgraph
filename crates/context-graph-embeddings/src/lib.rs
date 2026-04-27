@@ -57,6 +57,7 @@ pub mod config;
 pub mod error;
 pub mod global_provider;
 pub mod gpu;
+pub mod learner;
 pub mod models;
 pub mod provider;
 pub mod pruning;
@@ -115,6 +116,15 @@ pub use pruning::{
 pub use global_provider::{
     get_warm_causal_model, get_warm_graph_model, get_warm_provider,
     initialize_global_warm_provider, is_warm_initialized, warm_status_message,
+};
+
+// Learner-state E14-E20 embedder namespace.
+pub use learner::{
+    embed_calibration_sample, embed_learner_signal, learner_embedder_specs,
+    state_vector_from_outputs, synthetic_calibration_fixture, CalibrationDatasetSpec,
+    LearnerCalibrationFixture, LearnerCalibrationSample, LearnerEmbedderInput, LearnerEmbedderSlot,
+    LearnerEmbedderSpec, LearnerEmbeddingOutput, CALIBRATION_DATASET_MANIFEST,
+    LEARNER_EMBEDDER_COUNT, UTL_PLANNED_TOTAL_EMBEDDERS,
 };
 
 // Adapter re-exports

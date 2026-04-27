@@ -8,6 +8,9 @@ use context_graph_core::learner::{
     LearnerModality, LearnerProfile, LearnerStateComponents, LearnerStateVector, ModalityEmbedding,
     ObservationEnvelope,
 };
+use context_graph_embeddings::{
+    embed_learner_signal, state_vector_from_outputs, LearnerEmbedderInput, LearnerEmbedderSlot,
+};
 use context_graph_storage::teleological::RocksDbTeleologicalStore;
 use serde::Deserialize;
 use serde_json::json;
@@ -47,9 +50,11 @@ struct RecordObservationArgs {
     threshold_version: String,
     #[serde(default)]
     state_vector: Vec<f32>,
-    components: ComponentsArgs,
+    components: Option<ComponentsArgs>,
     #[serde(default)]
     embeddings: Vec<EmbeddingArgs>,
+    #[serde(default)]
+    signals: Vec<SignalArgs>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -83,6 +88,19 @@ struct EmbeddingArgs {
     modality: String,
     vector: Vec<f32>,
     scalar: Option<f32>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SignalArgs {
+    modality: String,
+    text: Option<String>,
+    #[serde(default)]
+    samples: Vec<f32>,
+    #[serde(default)]
+    features: Vec<f32>,
+    sample_rate_hz: Option<u32>,
+    channels: Option<u16>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -213,47 +231,110 @@ impl Handlers {
                     .tool_error(id, &format!("Invalid record_session_observation args: {e}"))
             }
         };
-        let modality = match LearnerModality::parse(&parsed.modality) {
-            Ok(v) => v,
-            Err(e) => return self.tool_error(id, &format!("{e}")),
-        };
-        let observation_id = Uuid::new_v4();
-        let envelope = match ObservationEnvelope::new(
-            observation_id,
-            parsed.learner_id,
-            parsed.session_ts,
-            modality,
-            parsed.consent_state,
-            sha256_bytes(parsed.raw_text.as_bytes()),
-            parsed.preprocessing_version,
-            parsed.embedder_version,
-            parsed.threshold_version,
-            Vec::new(),
-        ) {
-            Ok(v) => v,
-            Err(e) => return self.tool_error(id, &format!("Observation validation failed: {e}")),
-        };
-        let components: LearnerStateComponents = parsed.components.into();
-        let values = if parsed.state_vector.is_empty() {
-            vec![
-                components.plasticity_window,
-                components.hrv_coherence,
-                components.valence,
-                components.arousal,
-                components.stress_floor,
-                components.k_sleep,
-            ]
+        let mut context = BTreeMap::new();
+        let mut embeddings = Vec::with_capacity(parsed.embeddings.len() + parsed.signals.len());
+        let mut observation_envelopes = Vec::new();
+        let state_vector = if parsed.signals.is_empty() {
+            let modality = match LearnerModality::parse(&parsed.modality) {
+                Ok(v) => v,
+                Err(e) => return self.tool_error(id, &format!("{e}")),
+            };
+            let observation_id = Uuid::new_v4();
+            let envelope = match ObservationEnvelope::new(
+                observation_id,
+                parsed.learner_id,
+                parsed.session_ts,
+                modality,
+                parsed.consent_state.clone(),
+                sha256_bytes(parsed.raw_text.as_bytes()),
+                parsed.preprocessing_version.clone(),
+                parsed.embedder_version.clone(),
+                parsed.threshold_version.clone(),
+                Vec::new(),
+            ) {
+                Ok(v) => v,
+                Err(e) => {
+                    return self.tool_error(id, &format!("Observation validation failed: {e}"))
+                }
+            };
+            observation_envelopes.push(envelope);
+            let Some(components) = parsed.components else {
+                return self.tool_error(
+                    id,
+                    "record_session_observation requires components when signals are not provided",
+                );
+            };
+            let components: LearnerStateComponents = components.into();
+            let values = if parsed.state_vector.is_empty() {
+                vec![
+                    components.plasticity_window,
+                    components.hrv_coherence,
+                    components.valence,
+                    components.arousal,
+                    components.stress_floor,
+                    components.k_sleep,
+                ]
+            } else {
+                parsed.state_vector
+            };
+            LearnerStateVector {
+                learner_id: parsed.learner_id,
+                session_ts: parsed.session_ts,
+                values,
+                components,
+                context,
+            }
         } else {
-            parsed.state_vector
+            let mut outputs = Vec::with_capacity(parsed.signals.len());
+            for signal in parsed.signals {
+                let (slot, input, raw_hash) = match signal_to_embedder_input(signal) {
+                    Ok(v) => v,
+                    Err(e) => return self.tool_error(id, &e),
+                };
+                let output = match embed_learner_signal(slot, &input) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return self.tool_error(
+                            id,
+                            &format!("learner embedder {} failed: {e}", slot.as_str()),
+                        )
+                    }
+                };
+                let observation_id = Uuid::new_v4();
+                let envelope = match ObservationEnvelope::new(
+                    observation_id,
+                    parsed.learner_id,
+                    parsed.session_ts,
+                    output.modality,
+                    parsed.consent_state.clone(),
+                    raw_hash,
+                    parsed.preprocessing_version.clone(),
+                    output.embedder_version.clone(),
+                    parsed.threshold_version.clone(),
+                    Vec::new(),
+                ) {
+                    Ok(v) => v,
+                    Err(e) => {
+                        return self.tool_error(id, &format!("Observation validation failed: {e}"))
+                    }
+                };
+                observation_envelopes.push(envelope);
+                embeddings.push(output.to_modality_embedding(observation_id));
+                outputs.push(output);
+            }
+            context.insert("record_session_observation_mode".into(), "signals".into());
+            match state_vector_from_outputs(parsed.learner_id, parsed.session_ts, &outputs, context)
+            {
+                Ok(v) => v,
+                Err(e) => {
+                    return self.tool_error(id, &format!("state vector derivation failed: {e}"))
+                }
+            }
         };
-        let state_vector = LearnerStateVector {
-            learner_id: parsed.learner_id,
-            session_ts: parsed.session_ts,
-            values,
-            components,
-            context: BTreeMap::new(),
-        };
-        let mut embeddings = Vec::with_capacity(parsed.embeddings.len());
+        let default_observation_id = observation_envelopes
+            .first()
+            .map(|envelope| envelope.observation_id)
+            .unwrap_or_else(Uuid::new_v4);
         for embedding in parsed.embeddings {
             let modality = match LearnerModality::parse(&embedding.modality) {
                 Ok(v) => v,
@@ -263,10 +344,18 @@ impl Handlers {
                 modality,
                 vector: embedding.vector,
                 scalar: embedding.scalar,
-                source_observation_id: observation_id,
+                source_observation_id: default_observation_id,
             });
         }
         if embeddings.is_empty() {
+            let observation_id = observation_envelopes
+                .first()
+                .map(|envelope| envelope.observation_id)
+                .unwrap_or_else(Uuid::new_v4);
+            let modality = observation_envelopes
+                .first()
+                .map(|envelope| envelope.modality)
+                .unwrap_or(LearnerModality::AffectText);
             embeddings.push(ModalityEmbedding {
                 modality,
                 vector: state_vector.values.clone(),
@@ -277,7 +366,7 @@ impl Handlers {
         let fingerprint = LearnerFingerprint {
             learner_id: parsed.learner_id,
             session_ts: parsed.session_ts,
-            observation_envelopes: vec![envelope],
+            observation_envelopes,
             modality_embeddings: embeddings,
             state_vector,
         };
@@ -618,6 +707,49 @@ fn source_of_truth<const N: usize>(column_families: [&str; N]) -> serde_json::Va
         "format": "version_byte + bincode",
         "column_families": column_families.to_vec(),
     })
+}
+
+fn signal_to_embedder_input(
+    signal: SignalArgs,
+) -> Result<(LearnerEmbedderSlot, LearnerEmbedderInput, String), String> {
+    let modality = LearnerModality::parse(&signal.modality).map_err(|e| e.to_string())?;
+    let slot = LearnerEmbedderSlot::from_modality(modality).ok_or_else(|| {
+        format!(
+            "modality {} has no E14-E20 learner embedder",
+            modality.as_str()
+        )
+    })?;
+    let (input, raw_hash) = if let Some(text) = signal.text {
+        if modality != LearnerModality::AffectText {
+            return Err(format!(
+                "text signal is only valid for affect_text, got {}",
+                modality.as_str()
+            ));
+        }
+        let raw_hash = sha256_bytes(text.as_bytes());
+        (LearnerEmbedderInput::Text { content: text }, raw_hash)
+    } else if !signal.features.is_empty() {
+        let raw_hash = sha256_bytes(format!("{:?}", signal.features).as_bytes());
+        (
+            LearnerEmbedderInput::Features {
+                modality,
+                values: signal.features,
+            },
+            raw_hash,
+        )
+    } else {
+        let raw_hash = sha256_bytes(format!("{:?}", signal.samples).as_bytes());
+        (
+            LearnerEmbedderInput::Samples {
+                modality,
+                samples: signal.samples,
+                sample_rate_hz: signal.sample_rate_hz.unwrap_or(1),
+                channels: signal.channels.unwrap_or(1),
+            },
+            raw_hash,
+        )
+    };
+    Ok((slot, input, raw_hash))
 }
 
 fn default_consent() -> String {

@@ -38,9 +38,10 @@ pub fn definitions() -> Vec<ToolDefinition> {
                     "thresholdVersion": {"type": "string", "default": "thresholds-default-pending-calibration-v1"},
                     "stateVector": {"type": "array", "items": {"type": "number"}},
                     "components": {"$ref": "#/$defs/components"},
-                    "embeddings": {"type": "array", "items": {"$ref": "#/$defs/embedding"}, "default": []}
+                    "embeddings": {"type": "array", "items": {"$ref": "#/$defs/embedding"}, "default": []},
+                    "signals": {"type": "array", "items": {"$ref": "#/$defs/signal"}, "default": []}
                 },
-                "required": ["learnerId", "sessionTs", "components"],
+                "required": ["learnerId", "sessionTs"],
                 "additionalProperties": false,
                 "$defs": {
                     "components": {
@@ -64,6 +65,19 @@ pub fn definitions() -> Vec<ToolDefinition> {
                             "scalar": {"type": "number", "minimum": 0.0, "maximum": 1.0}
                         },
                         "required": ["modality", "vector"],
+                        "additionalProperties": false
+                    },
+                    "signal": {
+                        "type": "object",
+                        "properties": {
+                            "modality": {"type": "string"},
+                            "text": {"type": "string"},
+                            "samples": {"type": "array", "items": {"type": "number"}, "default": []},
+                            "features": {"type": "array", "items": {"type": "number"}, "default": []},
+                            "sampleRateHz": {"type": "integer", "minimum": 1},
+                            "channels": {"type": "integer", "minimum": 1, "maximum": 256}
+                        },
+                        "required": ["modality"],
                         "additionalProperties": false
                     }
                 }

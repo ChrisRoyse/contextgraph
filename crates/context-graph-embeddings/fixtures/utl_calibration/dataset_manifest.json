@@ -1,0 +1,50 @@
+{
+  "manifest_id": "utl-calibration-datasets-v1",
+  "source_of_truth": "docs/06_data_pipeline_and_datasets.md and context_graph_embeddings::learner::CALIBRATION_DATASET_MANIFEST",
+  "planned_total_embedders": 20,
+  "learner_embedder_slots": [
+    {
+      "slot": "E14",
+      "name": "affect_speech",
+      "model": "Wav2Vec2-large-MSP-DIM",
+      "calibration_datasets": ["MSP-Podcast", "AffWild2", "IEMOCAP", "MELD"]
+    },
+    {
+      "slot": "E15",
+      "name": "affect_face",
+      "model": "OpenFace 3.0 + emotion head",
+      "calibration_datasets": ["DAiSEE", "EngageNet", "AffWild2", "CMOSE"]
+    },
+    {
+      "slot": "E16",
+      "name": "affect_text",
+      "model": "MiniLM-L6-v2 + EmoBank regressor",
+      "calibration_datasets": ["EmoBank", "GoEmotions"]
+    },
+    {
+      "slot": "E17",
+      "name": "ppg",
+      "model": "PaPaGei",
+      "calibration_datasets": ["WESAD", "MAHNOB-HCI"]
+    },
+    {
+      "slot": "E18",
+      "name": "eda",
+      "model": "WESAD-trained 1D-CNN",
+      "calibration_datasets": ["WESAD", "ASCERTAIN", "AMIGOS"]
+    },
+    {
+      "slot": "E19",
+      "name": "eeg",
+      "model": "LaBraM",
+      "calibration_datasets": ["DEAP", "SEED", "MAHNOB-HCI"]
+    },
+    {
+      "slot": "E20",
+      "name": "eeg_artifact_robust",
+      "model": "EEGPT",
+      "calibration_datasets": ["DEAP", "SEED", "AMIGOS"]
+    }
+  ],
+  "local_fsv_fixture": "phase0_synthetic_fixture.json"
+}
