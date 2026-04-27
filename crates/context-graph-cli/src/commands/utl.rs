@@ -4,17 +4,19 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result};
+use chrono::Utc;
 use clap::{Args, Subcommand};
 use context_graph_core::learner::{
     compute_delta_c, compute_delta_e, compute_delta_s_from_text, compute_utl_l, sha256_bytes,
-    sha256_json, update_m_trace, ComputationEnvelope, LearnerAuditEntry, LearnerDeltaLog,
-    LearnerFingerprint, LearnerModality, LearnerProfile, LearnerStateComponents,
-    ObservationEnvelope,
+    sha256_json, update_m_trace, ComputationEnvelope, GoalCentroid, LearnerAuditEntry,
+    LearnerConstellation, LearnerDeltaLog, LearnerFingerprint, LearnerGoalState, LearnerKSleep,
+    LearnerModality, LearnerModalityCentroid, LearnerProfile, LearnerRetrievalLog,
+    LearnerStateComponents, ObservationEnvelope, LEARNER_BASELINE_SELECTOR_REGULATED,
 };
 use context_graph_embeddings::{
-    embed_calibration_sample, learner_embedder_specs, state_vector_from_outputs,
-    synthetic_calibration_fixture, LearnerEmbedderSlot, CALIBRATION_DATASET_MANIFEST,
-    UTL_PLANNED_TOTAL_EMBEDDERS,
+    embed_calibration_sample, learner_embedder_specs, preflight_learner_assets,
+    state_vector_from_outputs, synthetic_calibration_fixture, LearnerEmbedderSlot,
+    CALIBRATION_DATASET_MANIFEST, UTL_PLANNED_TOTAL_EMBEDDERS,
 };
 use context_graph_storage::teleological::{RocksDbTeleologicalStore, TeleologicalStoreConfig};
 use serde_json::json;
@@ -26,6 +28,8 @@ pub enum UtlCommands {
     ListEmbedders,
     /// Print the deterministic local calibration fixture summary.
     Fixture,
+    /// Inspect required E14-E20 model files and real calibration data.
+    PreflightAssets(UtlAssetPreflightArgs),
     /// Count rows in the learner-state source-of-truth column families.
     Count(UtlStorageArgs),
     /// Store a deterministic synthetic learner session and read it back.
@@ -41,6 +45,21 @@ pub struct UtlStorageArgs {
     /// Path to the RocksDB data directory.
     #[arg(long, env = "CONTEXT_GRAPH_STORAGE_PATH")]
     pub storage: PathBuf,
+}
+
+#[derive(Args, Debug)]
+pub struct UtlAssetPreflightArgs {
+    /// Root containing E14-E20 model asset directories.
+    #[arg(long, default_value = "models")]
+    pub models_root: PathBuf,
+
+    /// Root containing downloaded real calibration datasets.
+    #[arg(long, default_value = "data/utl_calibration")]
+    pub calibration_root: PathBuf,
+
+    /// Return JSON with ready=false instead of failing when assets are missing.
+    #[arg(long)]
+    pub allow_missing: bool,
 }
 
 #[derive(Args, Debug)]
@@ -155,6 +174,17 @@ async fn run(action: UtlCommands) -> Result<serde_json::Value> {
                 })).collect::<Vec<_>>()
             }))
         }
+        UtlCommands::PreflightAssets(args) => {
+            let report = preflight_learner_assets(&args.models_root, &args.calibration_root)?;
+            let value = serde_json::to_value(&report)?;
+            if !report.ready && !args.allow_missing {
+                anyhow::bail!(
+                    "UTL learner asset preflight failed:\n{}",
+                    serde_json::to_string_pretty(&value)?
+                );
+            }
+            Ok(value)
+        }
         UtlCommands::Count(args) => {
             let store = open_store(&args.storage)?;
             Ok(json!({
@@ -185,6 +215,17 @@ async fn run(action: UtlCommands) -> Result<serde_json::Value> {
             store.store_learner_delta_log(&synthetic.delta_log).await?;
             store.store_learner_m_trace(&synthetic.m_trace).await?;
             store
+                .store_learner_constellation(&synthetic.constellation)
+                .await?;
+            store
+                .store_learner_goal_state(&synthetic.goal_state)
+                .await?;
+            store
+                .store_learner_retrieval_log(&synthetic.retrieval_log)
+                .await?;
+            store.store_learner_k_sleep(&synthetic.k_sleep).await?;
+            store.store_goal_centroid(&synthetic.goal_centroid).await?;
+            store
                 .store_learner_audit_entry(&synthetic.audit_entry)
                 .await?;
 
@@ -205,6 +246,26 @@ async fn run(action: UtlCommands) -> Result<serde_json::Value> {
                 .get_learner_m_trace(learner_id, trace_id)
                 .await?
                 .with_context(|| "synthetic M trace missing after write")?;
+            let readback_constellation = store
+                .get_learner_constellation(learner_id, LEARNER_BASELINE_SELECTOR_REGULATED)
+                .await?
+                .with_context(|| "synthetic learner constellation missing after write")?;
+            let readback_goal_state = store
+                .get_learner_goal_state(learner_id, synthetic.skill_id)
+                .await?
+                .with_context(|| "synthetic learner goal state missing after write")?;
+            let readback_retrieval = store
+                .get_learner_retrieval_log(learner_id, trace_id, args.session_ts)
+                .await?
+                .with_context(|| "synthetic retrieval log missing after write")?;
+            let readback_k_sleep = store
+                .get_learner_k_sleep(learner_id, args.session_ts)
+                .await?
+                .with_context(|| "synthetic k_sleep row missing after write")?;
+            let readback_goal_centroid = store
+                .get_goal_centroid(synthetic.skill_id, LearnerModality::AffectText)
+                .await?
+                .with_context(|| "synthetic goal centroid missing after write")?;
 
             Ok(json!({
                 "source_of_truth": source_of_truth(),
@@ -219,6 +280,11 @@ async fn run(action: UtlCommands) -> Result<serde_json::Value> {
                     "fingerprint": render_fingerprint(&readback_fingerprint),
                     "delta_log": render_delta_log(&readback_delta),
                     "m_trace": render_m_trace(&readback_m),
+                    "learner_constellation": render_constellation(&readback_constellation),
+                    "learner_goal_state": render_goal_state(&readback_goal_state),
+                    "learner_retrieval_log": render_retrieval_log(&readback_retrieval),
+                    "learner_k_sleep": render_k_sleep(&readback_k_sleep),
+                    "goal_centroid": render_goal_centroid(&readback_goal_centroid),
                 }
             }))
         }
@@ -271,19 +337,30 @@ fn open_store(storage: &PathBuf) -> Result<RocksDbTeleologicalStore> {
 async fn counts(store: &RocksDbTeleologicalStore) -> Result<serde_json::Value> {
     Ok(json!({
         "learner_profile": store.count_learner_profiles().await?,
+        "learner_constellations": store.count_learner_constellations().await?,
         "fingerprints_learner": store.count_learner_fingerprints().await?,
-        "learner_state_history": store.count_learner_state_history().await?,
-        "learner_delta_log": store.count_learner_delta_logs().await?,
         "learner_m_per_trace": store.count_learner_m_traces().await?,
+        "learner_state_history": store.count_learner_state_history().await?,
+        "learner_goal_states": store.count_learner_goal_states().await?,
+        "learner_retrieval_log": store.count_learner_retrieval_logs().await?,
+        "learner_k_sleep": store.count_learner_k_sleep().await?,
+        "goal_centroids": store.count_goal_centroids().await?,
+        "learner_delta_log": store.count_learner_delta_logs().await?,
         "learner_audit": store.count_learner_audit_entries().await?,
     }))
 }
 
 struct SyntheticRecords {
+    skill_id: Uuid,
     profile: LearnerProfile,
     fingerprint: LearnerFingerprint,
     delta_log: LearnerDeltaLog,
     m_trace: context_graph_core::learner::LearnerMTrace,
+    constellation: LearnerConstellation,
+    goal_state: LearnerGoalState,
+    retrieval_log: LearnerRetrievalLog,
+    k_sleep: LearnerKSleep,
+    goal_centroid: GoalCentroid,
     audit_entry: LearnerAuditEntry,
 }
 
@@ -292,6 +369,7 @@ fn synthetic_records(
     trace_id: Uuid,
     session_ts: u64,
 ) -> Result<SyntheticRecords> {
+    let skill_id = Uuid::from_u128(0xffffeeee_dddd_4ccc_8bbb_aaaaaaaaaaaa);
     let modalities = LearnerEmbedderSlot::all()
         .iter()
         .map(|slot| slot.modality())
@@ -323,9 +401,11 @@ fn synthetic_records(
             ("task".into(), "synthetic-all-e14-e20-utl-fsv".into()),
         ]),
     )?;
+    let state_centroid = state_vector.clone();
 
     let mut observation_envelopes = Vec::with_capacity(outputs.len());
     let mut modality_embeddings = Vec::with_capacity(outputs.len());
+    let mut modality_centroids = Vec::with_capacity(outputs.len());
     for output in &outputs {
         let observation_id = Uuid::from_u128(
             0xcccccccc_cccc_4ccc_8ccc_cccccccccc00 + u128::from(output.slot.slot_number()),
@@ -346,6 +426,12 @@ fn synthetic_records(
         )?;
         observation_envelopes.push(envelope);
         modality_embeddings.push(output.to_modality_embedding(observation_id));
+        modality_centroids.push(LearnerModalityCentroid {
+            modality: output.modality,
+            vector: output.vector.clone(),
+            scalar_mean: output.mean_scalar(),
+            sample_count: 1,
+        });
     }
 
     let components: LearnerStateComponents = state_vector.components.clone();
@@ -400,6 +486,46 @@ fn synthetic_records(
         &delta_log.computation,
         Some(true),
     )?;
+    let constellation = LearnerConstellation {
+        learner_id,
+        selector_kind: LEARNER_BASELINE_SELECTOR_REGULATED,
+        label: "regulated-baseline-synthetic".into(),
+        sample_count: 1,
+        session_ts_start: session_ts,
+        session_ts_end: session_ts,
+        modality_centroids,
+        state_centroid: state_centroid.clone(),
+        created_at: Utc::now(),
+    };
+    constellation.validate()?;
+    let goal_state = LearnerGoalState {
+        learner_id,
+        skill_id,
+        state_vector: state_centroid.clone(),
+    };
+    let retrieval_log = LearnerRetrievalLog {
+        learner_id,
+        trace_id,
+        ts: session_ts,
+        correct: true,
+        score: 0.86,
+        state_at_retrieval: state_centroid.clone(),
+    };
+    let k_sleep = LearnerKSleep {
+        learner_id,
+        session_ts,
+        k: components.k_sleep,
+        slow_wave_minutes: 80,
+    };
+    let text_output = outputs
+        .iter()
+        .find(|output| output.modality == LearnerModality::AffectText)
+        .with_context(|| "synthetic affect-text output missing")?;
+    let goal_centroid = GoalCentroid {
+        skill_id,
+        modality: LearnerModality::AffectText,
+        vector: text_output.vector.clone(),
+    };
     let audit_entry = LearnerAuditEntry {
         audit_id: Uuid::from_u128(0xeeeeeeee_eeee_4eee_8eee_eeeeeeeeeeee),
         learner_id,
@@ -411,10 +537,16 @@ fn synthetic_records(
     };
 
     Ok(SyntheticRecords {
+        skill_id,
         profile,
         fingerprint,
         delta_log,
         m_trace,
+        constellation,
+        goal_state,
+        retrieval_log,
+        k_sleep,
+        goal_centroid,
         audit_entry,
     })
 }
@@ -425,10 +557,15 @@ fn source_of_truth() -> serde_json::Value {
         "format": "version_byte + bincode",
         "column_families": [
             "learner_profile",
+            "learner_constellations",
             "fingerprints_learner",
-            "learner_state_history",
-            "learner_delta_log",
             "learner_m_per_trace",
+            "learner_state_history",
+            "learner_goal_states",
+            "learner_retrieval_log",
+            "learner_k_sleep",
+            "goal_centroids",
+            "learner_delta_log",
             "learner_audit"
         ]
     })
@@ -494,5 +631,67 @@ fn render_m_trace(trace: &context_graph_core::learner::LearnerMTrace) -> serde_j
         "decay_rate": trace.decay_rate,
         "num_retrievals": trace.num_retrievals,
         "next_review_ts": trace.next_review_ts,
+    })
+}
+
+fn render_constellation(constellation: &LearnerConstellation) -> serde_json::Value {
+    json!({
+        "learner_id": constellation.learner_id.to_string(),
+        "selector_kind": constellation.selector_kind,
+        "label": constellation.label,
+        "sample_count": constellation.sample_count,
+        "session_ts_start": constellation.session_ts_start,
+        "session_ts_end": constellation.session_ts_end,
+        "modality_centroids": constellation.modality_centroids.iter().map(|centroid| json!({
+            "modality": centroid.modality.as_str(),
+            "vector_len": centroid.vector.len(),
+            "scalar_mean": centroid.scalar_mean,
+            "sample_count": centroid.sample_count,
+        })).collect::<Vec<_>>(),
+        "state_centroid_len": constellation.state_centroid.values.len(),
+    })
+}
+
+fn render_goal_state(goal: &LearnerGoalState) -> serde_json::Value {
+    json!({
+        "learner_id": goal.learner_id.to_string(),
+        "skill_id": goal.skill_id.to_string(),
+        "state_vector_len": goal.state_vector.values.len(),
+        "components": {
+            "plasticity_window": goal.state_vector.components.plasticity_window,
+            "hrv_coherence": goal.state_vector.components.hrv_coherence,
+            "valence": goal.state_vector.components.valence,
+            "arousal": goal.state_vector.components.arousal,
+            "stress_floor": goal.state_vector.components.stress_floor,
+            "k_sleep": goal.state_vector.components.k_sleep,
+        }
+    })
+}
+
+fn render_retrieval_log(log: &LearnerRetrievalLog) -> serde_json::Value {
+    json!({
+        "learner_id": log.learner_id.to_string(),
+        "trace_id": log.trace_id.to_string(),
+        "ts": log.ts,
+        "correct": log.correct,
+        "score": log.score,
+        "state_vector_len": log.state_at_retrieval.values.len(),
+    })
+}
+
+fn render_k_sleep(value: &LearnerKSleep) -> serde_json::Value {
+    json!({
+        "learner_id": value.learner_id.to_string(),
+        "session_ts": value.session_ts,
+        "k": value.k,
+        "slow_wave_minutes": value.slow_wave_minutes,
+    })
+}
+
+fn render_goal_centroid(centroid: &GoalCentroid) -> serde_json::Value {
+    json!({
+        "skill_id": centroid.skill_id.to_string(),
+        "modality": centroid.modality.as_str(),
+        "vector_len": centroid.vector.len(),
     })
 }

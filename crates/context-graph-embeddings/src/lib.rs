@@ -121,10 +121,13 @@ pub use global_provider::{
 // Learner-state E14-E20 embedder namespace.
 pub use learner::{
     embed_calibration_sample, embed_learner_signal, learner_embedder_specs,
-    state_vector_from_outputs, synthetic_calibration_fixture, CalibrationDatasetSpec,
+    learner_model_asset_requirements, preflight_learner_assets, state_vector_from_outputs,
+    synthetic_calibration_fixture, CalibrationDatasetSpec, LearnerAssetFileGroup,
+    LearnerAssetFileStatus, LearnerAssetPreflightReport, LearnerCalibrationAssetStatus,
     LearnerCalibrationFixture, LearnerCalibrationSample, LearnerEmbedderInput, LearnerEmbedderSlot,
-    LearnerEmbedderSpec, LearnerEmbeddingOutput, CALIBRATION_DATASET_MANIFEST,
-    LEARNER_EMBEDDER_COUNT, UTL_PLANNED_TOTAL_EMBEDDERS,
+    LearnerEmbedderSpec, LearnerEmbeddingOutput, LearnerModelAssetRequirement,
+    LearnerModelAssetStatus, CALIBRATION_DATASET_MANIFEST, LEARNER_EMBEDDER_COUNT,
+    UTL_PLANNED_TOTAL_EMBEDDERS,
 };
 
 // Adapter re-exports

@@ -19,6 +19,9 @@ pub const LEARNER_RECORD_VERSION: u8 = 1;
 /// E14-E20 learner modality slots.
 pub const LEARNER_MODALITY_COUNT: usize = 7;
 
+/// Selector byte for a learner's regulated-state baseline constellation.
+pub const LEARNER_BASELINE_SELECTOR_REGULATED: u8 = 1;
+
 /// Maximum number of f32 values in one learner state vector.
 pub const MAX_LEARNER_STATE_VECTOR_VALUES: usize = 16_384;
 
@@ -608,6 +611,101 @@ pub struct LearnerGoalState {
 impl LearnerGoalState {
     pub fn validate(&self) -> CoreResult<()> {
         self.state_vector.validate()
+    }
+}
+
+/// Per-modality centroid inside a learner regulated-state constellation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LearnerModalityCentroid {
+    pub modality: LearnerModality,
+    pub vector: Vec<f32>,
+    pub scalar_mean: Option<f32>,
+    pub sample_count: u32,
+}
+
+impl LearnerModalityCentroid {
+    pub fn validate(&self) -> CoreResult<()> {
+        if self.sample_count == 0 {
+            return Err(CoreError::ValidationError {
+                field: "learner_constellation.centroid.sample_count".into(),
+                message: "must be > 0".into(),
+            });
+        }
+        validate_vector(&self.vector, "learner_constellation.centroid.vector")?;
+        if let Some(value) = self.scalar_mean {
+            validate_signed_unit(value, "learner_constellation.centroid.scalar_mean")?;
+        }
+        Ok(())
+    }
+}
+
+/// Per-learner regulated-state baseline stored in `CF_LEARNER_CONSTELLATIONS`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct LearnerConstellation {
+    pub learner_id: Uuid,
+    pub selector_kind: u8,
+    pub label: String,
+    pub sample_count: u32,
+    pub session_ts_start: u64,
+    pub session_ts_end: u64,
+    pub modality_centroids: Vec<LearnerModalityCentroid>,
+    pub state_centroid: LearnerStateVector,
+    pub created_at: DateTime<Utc>,
+}
+
+impl LearnerConstellation {
+    pub fn validate(&self) -> CoreResult<()> {
+        validate_label(&self.label, "learner_constellation.label")?;
+        if self.sample_count == 0 {
+            return Err(CoreError::ValidationError {
+                field: "learner_constellation.sample_count".into(),
+                message: "must be > 0".into(),
+            });
+        }
+        if self.session_ts_end < self.session_ts_start {
+            return Err(CoreError::ValidationError {
+                field: "learner_constellation.session_ts_end".into(),
+                message: "must be >= session_ts_start".into(),
+            });
+        }
+        if self.modality_centroids.is_empty() {
+            return Err(CoreError::ValidationError {
+                field: "learner_constellation.modality_centroids".into(),
+                message: "at least one centroid is required".into(),
+            });
+        }
+        if self.modality_centroids.len() > LEARNER_MODALITY_COUNT {
+            return Err(CoreError::ValidationError {
+                field: "learner_constellation.modality_centroids".into(),
+                message: "too many learner modality centroids".into(),
+            });
+        }
+
+        let mut seen = BTreeSet::new();
+        for centroid in &self.modality_centroids {
+            if centroid.modality == LearnerModality::SelfReport {
+                return Err(CoreError::ValidationError {
+                    field: "learner_constellation.modality_centroids".into(),
+                    message: "self_report is not an embedder centroid".into(),
+                });
+            }
+            if !seen.insert(centroid.modality) {
+                return Err(CoreError::ValidationError {
+                    field: "learner_constellation.modality_centroids".into(),
+                    message: "duplicate modality centroid".into(),
+                });
+            }
+            centroid.validate()?;
+        }
+
+        self.state_centroid.validate()?;
+        if self.state_centroid.learner_id != self.learner_id {
+            return Err(CoreError::ValidationError {
+                field: "learner_constellation.state_centroid".into(),
+                message: "state centroid learner_id must match constellation".into(),
+            });
+        }
+        Ok(())
     }
 }
 

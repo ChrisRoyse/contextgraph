@@ -8,12 +8,16 @@
 
 use std::collections::BTreeMap;
 use std::f32::consts::PI;
+use std::fs::File;
+use std::io::Read;
+use std::path::Path;
 use std::time::Instant;
 
 use context_graph_core::learner::{
     LearnerModality, LearnerStateComponents, LearnerStateVector, ModalityEmbedding,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
 use crate::error::{EmbeddingError, EmbeddingResult};
@@ -334,6 +338,241 @@ pub const CALIBRATION_DATASET_MANIFEST: &[CalibrationDatasetSpec] = &[
         license: "open",
     },
 ];
+
+/// One file group that must exist for a learner model asset.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LearnerAssetFileGroup {
+    pub label: &'static str,
+    pub alternatives: &'static [&'static str],
+}
+
+/// One E14-E20 model asset requirement.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LearnerModelAssetRequirement {
+    pub slot: LearnerEmbedderSlot,
+    pub model_dir: &'static str,
+    pub source: &'static str,
+    pub required: &'static [LearnerAssetFileGroup],
+}
+
+/// Result for one required file group.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LearnerAssetFileStatus {
+    pub label: String,
+    pub candidates: Vec<String>,
+    pub present_path: Option<String>,
+    pub bytes: Option<u64>,
+    pub sha256: Option<String>,
+}
+
+/// Preflight result for one E14-E20 model directory.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LearnerModelAssetStatus {
+    pub slot: LearnerEmbedderSlot,
+    pub slot_id: &'static str,
+    pub model_dir: String,
+    pub source: &'static str,
+    pub ready: bool,
+    pub files: Vec<LearnerAssetFileStatus>,
+}
+
+/// Preflight result for the minimum real calibration dataset used by FSV.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LearnerCalibrationAssetStatus {
+    pub dataset_id: &'static str,
+    pub path: String,
+    pub source: &'static str,
+    pub ready: bool,
+    pub files: Vec<LearnerAssetFileStatus>,
+}
+
+/// Full learner asset preflight report.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct LearnerAssetPreflightReport {
+    pub source_of_truth: &'static str,
+    pub models_root: String,
+    pub calibration_root: String,
+    pub ready: bool,
+    pub missing_count: usize,
+    pub model_assets: Vec<LearnerModelAssetStatus>,
+    pub calibration_assets: Vec<LearnerCalibrationAssetStatus>,
+}
+
+const HF_AFFECT_SPEECH: &str = "hf:audeering/wav2vec2-large-robust-12-ft-emotion-msp-dim";
+const HF_AFFECT_TEXT: &str = "hf:sentence-transformers/all-MiniLM-L6-v2";
+const HF_LABRAM: &str = "hf:braindecode/labram-pretrained";
+const HF_EEGPT: &str = "hf:braindecode/eegpt-pretrained";
+const GO_EMOTIONS_SOURCE: &str = "hf-dataset:google-research-datasets/go_emotions";
+
+const GROUP_CONFIG: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "model config",
+    alternatives: &["config.json"],
+};
+const GROUP_WEIGHTS: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "model weights",
+    alternatives: &[
+        "model.safetensors",
+        "pytorch_model.bin",
+        "model.bin",
+        "weights.pt",
+    ],
+};
+const GROUP_TOKENIZER: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "tokenizer",
+    alternatives: &["tokenizer.json", "vocab.txt", "sentencepiece.bpe.model"],
+};
+const GROUP_PREPROCESSOR: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "signal preprocessor",
+    alternatives: &["preprocessor_config.json", "processor_config.json"],
+};
+const GROUP_OPENFACE_BINARY: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "OpenFace binary",
+    alternatives: &[
+        "bin/FaceLandmarkVidMulti",
+        "build/bin/FaceLandmarkVidMulti",
+        "OpenFace/build/bin/FaceLandmarkVidMulti",
+    ],
+};
+const GROUP_EMOTION_HEAD: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "emotion head",
+    alternatives: &[
+        "emotion_head.safetensors",
+        "emotion_head.pt",
+        "emotion_head/model.safetensors",
+    ],
+};
+const GROUP_EDA_HEAD: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "WESAD EDA head",
+    alternatives: &["wesad_cnn.safetensors", "wesad_cnn.pt", "model.safetensors"],
+};
+const GROUP_GOEMOTIONS_SAMPLE: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "real GoEmotions calibration sample",
+    alternatives: &["go_emotions_sample.jsonl"],
+};
+const GROUP_GOEMOTIONS_MANIFEST: LearnerAssetFileGroup = LearnerAssetFileGroup {
+    label: "real GoEmotions manifest",
+    alternatives: &["manifest.json"],
+};
+
+static REQ_E14: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS, GROUP_PREPROCESSOR];
+static REQ_E15: &[LearnerAssetFileGroup] = &[GROUP_OPENFACE_BINARY, GROUP_EMOTION_HEAD];
+static REQ_E16: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS, GROUP_TOKENIZER];
+static REQ_E17: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS];
+static REQ_E18: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_EDA_HEAD];
+static REQ_E19: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS];
+static REQ_E20: &[LearnerAssetFileGroup] = &[GROUP_CONFIG, GROUP_WEIGHTS];
+static REQ_GOEMOTIONS: &[LearnerAssetFileGroup] =
+    &[GROUP_GOEMOTIONS_SAMPLE, GROUP_GOEMOTIONS_MANIFEST];
+
+/// Model asset requirements for the learner-state E14-E20 namespace.
+#[must_use]
+pub fn learner_model_asset_requirements() -> Vec<LearnerModelAssetRequirement> {
+    vec![
+        LearnerModelAssetRequirement {
+            slot: LearnerEmbedderSlot::E14AffectSpeech,
+            model_dir: "affect-speech",
+            source: HF_AFFECT_SPEECH,
+            required: REQ_E14,
+        },
+        LearnerModelAssetRequirement {
+            slot: LearnerEmbedderSlot::E15AffectFace,
+            model_dir: "affect-face",
+            source: "github:CMU-MultiComp-Lab/OpenFace-3.0 + local emotion head",
+            required: REQ_E15,
+        },
+        LearnerModelAssetRequirement {
+            slot: LearnerEmbedderSlot::E16AffectText,
+            model_dir: "affect-text",
+            source: HF_AFFECT_TEXT,
+            required: REQ_E16,
+        },
+        LearnerModelAssetRequirement {
+            slot: LearnerEmbedderSlot::E17Ppg,
+            model_dir: "ppg",
+            source: "research-release:PaPaGei PPG foundation model",
+            required: REQ_E17,
+        },
+        LearnerModelAssetRequirement {
+            slot: LearnerEmbedderSlot::E18Eda,
+            model_dir: "eda",
+            source: "local-training:WESAD 1D-CNN head",
+            required: REQ_E18,
+        },
+        LearnerModelAssetRequirement {
+            slot: LearnerEmbedderSlot::E19Eeg,
+            model_dir: "eeg",
+            source: HF_LABRAM,
+            required: REQ_E19,
+        },
+        LearnerModelAssetRequirement {
+            slot: LearnerEmbedderSlot::E20EegArtifactRobust,
+            model_dir: "eeg-robust",
+            source: HF_EEGPT,
+            required: REQ_E20,
+        },
+    ]
+}
+
+/// Inspect model and real calibration dataset assets without falling back.
+pub fn preflight_learner_assets(
+    models_root: impl AsRef<Path>,
+    calibration_root: impl AsRef<Path>,
+) -> EmbeddingResult<LearnerAssetPreflightReport> {
+    let models_root = models_root.as_ref();
+    let calibration_root = calibration_root.as_ref();
+    let mut missing_count = 0usize;
+
+    let mut model_assets = Vec::new();
+    for requirement in learner_model_asset_requirements() {
+        let model_dir = models_root.join(requirement.model_dir);
+        let files = requirement
+            .required
+            .iter()
+            .map(|group| inspect_file_group(&model_dir, group))
+            .collect::<EmbeddingResult<Vec<_>>>()?;
+        missing_count += files
+            .iter()
+            .filter(|status| status.present_path.is_none())
+            .count();
+        model_assets.push(LearnerModelAssetStatus {
+            slot: requirement.slot,
+            slot_id: requirement.slot.as_str(),
+            model_dir: model_dir.to_string_lossy().into_owned(),
+            source: requirement.source,
+            ready: files.iter().all(|status| status.present_path.is_some()),
+            files,
+        });
+    }
+
+    let go_emotions_dir = calibration_root.join("go_emotions");
+    let go_emotions_files = REQ_GOEMOTIONS
+        .iter()
+        .map(|group| inspect_file_group(&go_emotions_dir, group))
+        .collect::<EmbeddingResult<Vec<_>>>()?;
+    missing_count += go_emotions_files
+        .iter()
+        .filter(|status| status.present_path.is_none())
+        .count();
+    let calibration_assets = vec![LearnerCalibrationAssetStatus {
+        dataset_id: "go_emotions",
+        path: go_emotions_dir.to_string_lossy().into_owned(),
+        source: GO_EMOTIONS_SOURCE,
+        ready: go_emotions_files
+            .iter()
+            .all(|status| status.present_path.is_some()),
+        files: go_emotions_files,
+    }];
+
+    Ok(LearnerAssetPreflightReport {
+        source_of_truth: "filesystem model assets + downloaded real calibration data",
+        models_root: models_root.to_string_lossy().into_owned(),
+        calibration_root: calibration_root.to_string_lossy().into_owned(),
+        ready: missing_count == 0,
+        missing_count,
+        model_assets,
+        calibration_assets,
+    })
+}
 
 /// One deterministic fixture sample used for FSV and local calibration smoke tests.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -979,6 +1218,58 @@ fn validate_signal_metadata(sample_rate_hz: u32, channels: u16) -> EmbeddingResu
         });
     }
     Ok(())
+}
+
+fn inspect_file_group(
+    root: &Path,
+    group: &LearnerAssetFileGroup,
+) -> EmbeddingResult<LearnerAssetFileStatus> {
+    let candidates = group
+        .alternatives
+        .iter()
+        .map(|relative| root.join(relative).to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+
+    for relative in group.alternatives {
+        let path = root.join(relative);
+        if path.is_file() {
+            let metadata = path.metadata()?;
+            return Ok(LearnerAssetFileStatus {
+                label: group.label.to_string(),
+                candidates,
+                present_path: Some(path.to_string_lossy().into_owned()),
+                bytes: Some(metadata.len()),
+                sha256: Some(sha256_file(&path)?),
+            });
+        }
+    }
+
+    Ok(LearnerAssetFileStatus {
+        label: group.label.to_string(),
+        candidates,
+        present_path: None,
+        bytes: None,
+        sha256: None,
+    })
+}
+
+fn sha256_file(path: &Path) -> EmbeddingResult<String> {
+    let mut file = File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 64 * 1024];
+    loop {
+        let read = file.read(&mut buffer)?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let digest = hasher.finalize();
+    let mut out = String::with_capacity(64);
+    for byte in digest {
+        out.push_str(&format!("{byte:02x}"));
+    }
+    Ok(out)
 }
 
 fn validate_all_slots_present(outputs: &[LearnerEmbeddingOutput]) -> EmbeddingResult<()> {

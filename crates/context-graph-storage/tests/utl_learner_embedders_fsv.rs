@@ -7,10 +7,13 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use chrono::Utc;
 use context_graph_core::learner::{
     compute_delta_c, compute_delta_e, compute_delta_s_from_text, compute_utl_l, sha256_bytes,
-    sha256_json, ComputationEnvelope, LearnerAuditEntry, LearnerDeltaLog, LearnerFingerprint,
-    LearnerModality, LearnerProfile, ObservationEnvelope,
+    sha256_json, update_m_trace, ComputationEnvelope, GoalCentroid, LearnerAuditEntry,
+    LearnerConstellation, LearnerDeltaLog, LearnerFingerprint, LearnerGoalState, LearnerKSleep,
+    LearnerModality, LearnerModalityCentroid, LearnerProfile, LearnerRetrievalLog,
+    ObservationEnvelope, LEARNER_BASELINE_SELECTOR_REGULATED,
 };
 use context_graph_embeddings::{
     embed_calibration_sample, embed_learner_signal, learner_embedder_specs,
@@ -26,12 +29,33 @@ fn open_store(dir: &TempDir) -> RocksDbTeleologicalStore {
         .expect("open RocksDB teleological store")
 }
 
-async fn counts(store: &RocksDbTeleologicalStore) -> (usize, usize, usize, usize) {
+async fn counts(
+    store: &RocksDbTeleologicalStore,
+) -> (
+    usize,
+    usize,
+    usize,
+    usize,
+    usize,
+    usize,
+    usize,
+    usize,
+    usize,
+    usize,
+    usize,
+) {
     (
         store.count_learner_profiles().await.unwrap(),
+        store.count_learner_constellations().await.unwrap(),
         store.count_learner_fingerprints().await.unwrap(),
+        store.count_learner_m_traces().await.unwrap(),
         store.count_learner_state_history().await.unwrap(),
+        store.count_learner_goal_states().await.unwrap(),
+        store.count_learner_retrieval_logs().await.unwrap(),
+        store.count_learner_k_sleep().await.unwrap(),
+        store.count_goal_centroids().await.unwrap(),
         store.count_learner_delta_logs().await.unwrap(),
+        store.count_learner_audit_entries().await.unwrap(),
     )
 }
 
@@ -56,11 +80,13 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
 
     let dir = TempDir::new().unwrap();
     let learner_id = Uuid::from_u128(0x10101010_1010_4010_8010_101010101010);
+    let trace_id = Uuid::from_u128(0x11111111_1111_4111_8111_111111111111);
+    let skill_id = Uuid::from_u128(0x12121212_1212_4212_8212_121212121212);
     let session_ts = 1_700_010_000;
     let store = open_store(&dir);
     let before = counts(&store).await;
     println!("BEFORE counts={before:?}");
-    assert_eq!(before, (0, 0, 0, 0));
+    assert_eq!(before, (0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
 
     let fixture = synthetic_calibration_fixture();
     let sample = fixture
@@ -97,6 +123,7 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
         ]),
     )
     .expect("derive state vector from all E14-E20 outputs");
+    let state_centroid = state_vector.clone();
 
     let profile = LearnerProfile::new(
         learner_id,
@@ -112,6 +139,7 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
 
     let mut envelopes = Vec::new();
     let mut modality_embeddings = Vec::new();
+    let mut modality_centroids = Vec::new();
     for output in &outputs {
         let observation_id = Uuid::from_u128(
             0x20202020_2020_4020_8020_202020202000 + u128::from(output.slot.slot_number()),
@@ -132,6 +160,12 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
             .unwrap(),
         );
         modality_embeddings.push(output.to_modality_embedding(observation_id));
+        modality_centroids.push(LearnerModalityCentroid {
+            modality: output.modality,
+            vector: output.vector.clone(),
+            scalar_mean: output.mean_scalar(),
+            sample_count: 1,
+        });
     }
 
     let fingerprint = LearnerFingerprint {
@@ -179,6 +213,55 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
         .unwrap(),
         computation,
     };
+    let m_trace = update_m_trace(
+        None,
+        learner_id,
+        trace_id,
+        session_ts,
+        &delta_log.computation,
+        Some(true),
+    )
+    .unwrap();
+    let constellation = LearnerConstellation {
+        learner_id,
+        selector_kind: LEARNER_BASELINE_SELECTOR_REGULATED,
+        label: "regulated-baseline-fsv".into(),
+        sample_count: 1,
+        session_ts_start: session_ts,
+        session_ts_end: session_ts,
+        modality_centroids,
+        state_centroid: state_centroid.clone(),
+        created_at: Utc::now(),
+    };
+    constellation.validate().unwrap();
+    let goal_state = LearnerGoalState {
+        learner_id,
+        skill_id,
+        state_vector: state_centroid.clone(),
+    };
+    let retrieval_log = LearnerRetrievalLog {
+        learner_id,
+        trace_id,
+        ts: session_ts,
+        correct: true,
+        score: 0.83,
+        state_at_retrieval: state_centroid.clone(),
+    };
+    let k_sleep = LearnerKSleep {
+        learner_id,
+        session_ts,
+        k: state_centroid.components.k_sleep,
+        slow_wave_minutes: 80,
+    };
+    let text_output = outputs
+        .iter()
+        .find(|output| output.modality == LearnerModality::AffectText)
+        .unwrap();
+    let goal_centroid = GoalCentroid {
+        skill_id,
+        modality: LearnerModality::AffectText,
+        vector: text_output.vector.clone(),
+    };
     let audit = LearnerAuditEntry {
         audit_id: Uuid::from_u128(0x40404040_4040_4040_8040_404040404040),
         learner_id,
@@ -192,10 +275,22 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
     store.store_learner_profile(&profile).await.unwrap();
     store.store_learner_fingerprint(&fingerprint).await.unwrap();
     store.store_learner_delta_log(&delta_log).await.unwrap();
+    store.store_learner_m_trace(&m_trace).await.unwrap();
+    store
+        .store_learner_constellation(&constellation)
+        .await
+        .unwrap();
+    store.store_learner_goal_state(&goal_state).await.unwrap();
+    store
+        .store_learner_retrieval_log(&retrieval_log)
+        .await
+        .unwrap();
+    store.store_learner_k_sleep(&k_sleep).await.unwrap();
+    store.store_goal_centroid(&goal_centroid).await.unwrap();
     store.store_learner_audit_entry(&audit).await.unwrap();
     let after = counts(&store).await;
     println!("AFTER immediate counts={after:?}");
-    assert_eq!(after, (1, 1, 1, 1));
+    assert_eq!(after, (1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1));
     drop(store);
 
     let reopened = open_store(&dir);
@@ -214,14 +309,51 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
         .await
         .unwrap()
         .expect("delta log exists after reopen");
+    let readback_m = reopened
+        .get_learner_m_trace(learner_id, trace_id)
+        .await
+        .unwrap()
+        .expect("M trace exists after reopen");
+    let readback_constellation = reopened
+        .get_learner_constellation(learner_id, LEARNER_BASELINE_SELECTOR_REGULATED)
+        .await
+        .unwrap()
+        .expect("learner constellation exists after reopen");
+    let readback_goal_state = reopened
+        .get_learner_goal_state(learner_id, skill_id)
+        .await
+        .unwrap()
+        .expect("learner goal state exists after reopen");
+    let readback_retrieval = reopened
+        .get_learner_retrieval_log(learner_id, trace_id, session_ts)
+        .await
+        .unwrap()
+        .expect("retrieval log exists after reopen");
+    let readback_k_sleep = reopened
+        .get_learner_k_sleep(learner_id, session_ts)
+        .await
+        .unwrap()
+        .expect("k_sleep exists after reopen");
+    let readback_goal_centroid = reopened
+        .get_goal_centroid(skill_id, LearnerModality::AffectText)
+        .await
+        .unwrap()
+        .expect("goal centroid exists after reopen");
     println!(
-        "READBACK modality_embeddings={} observation_envelopes={} state_len={} components={:?} l={} diagnostic={}",
+        "READBACK modality_embeddings={} observation_envelopes={} state_len={} components={:?} l={} diagnostic={} m={} next_review={:?} constellation_centroids={} goal_state_len={} retrieval_score={} k_sleep={} goal_centroid_len={}",
         readback_fingerprint.modality_embeddings.len(),
         readback_fingerprint.observation_envelopes.len(),
         readback_state.values.len(),
         readback_state.components,
         readback_delta.computation.l,
-        readback_delta.computation.diagnostic_state.as_str()
+        readback_delta.computation.diagnostic_state.as_str(),
+        readback_m.m_value,
+        readback_m.next_review_ts,
+        readback_constellation.modality_centroids.len(),
+        readback_goal_state.state_vector.values.len(),
+        readback_retrieval.score,
+        readback_k_sleep.k,
+        readback_goal_centroid.vector.len()
     );
     assert_eq!(
         readback_fingerprint.modality_embeddings.len(),
@@ -233,6 +365,14 @@ async fn happy_path_all_e14_e20_embedders_persist_and_read_back() {
     );
     assert_eq!(readback_state.values.len(), 4032);
     assert!(readback_delta.computation.l > 0.0);
+    assert_eq!(
+        readback_constellation.modality_centroids.len(),
+        LEARNER_EMBEDDER_COUNT
+    );
+    assert_eq!(readback_goal_state.state_vector.values.len(), 4032);
+    assert_eq!(readback_retrieval.score, 0.83);
+    assert_eq!(readback_k_sleep.slow_wave_minutes, 80);
+    assert_eq!(readback_goal_centroid.vector.len(), 384);
 }
 
 #[tokio::test]

@@ -28,6 +28,7 @@ tokio = { workspace = true }
 # Serialization
 serde = { workspace = true }
 serde_json = "1.0"
+chrono = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }
@@ -49,7 +50,6 @@ arrow-schema = "58"
 tokio-test = "0.4"
 tempfile = "3.10"
 futures = "0.3"
-chrono = "0.4"
 serial_test = "3"
 # Enable test-utils for real data access in tests (NO MOCKS per spec)
 context-graph-core = { path = "../context-graph-core", features = ["test-utils"] }

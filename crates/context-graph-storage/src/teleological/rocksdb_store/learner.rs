@@ -5,9 +5,9 @@
 
 use context_graph_core::error::{CoreError, CoreResult};
 use context_graph_core::learner::{
-    GoalCentroid, LearnerAuditEntry, LearnerDeltaLog, LearnerFingerprint, LearnerGoalState,
-    LearnerKSleep, LearnerMTrace, LearnerProfile, LearnerRetrievalLog, LearnerStateVector,
-    LEARNER_RECORD_VERSION,
+    GoalCentroid, LearnerAuditEntry, LearnerConstellation, LearnerDeltaLog, LearnerFingerprint,
+    LearnerGoalState, LearnerKSleep, LearnerMTrace, LearnerProfile, LearnerRetrievalLog,
+    LearnerStateVector, LEARNER_RECORD_VERSION,
 };
 use rocksdb::{ColumnFamily, IteratorMode};
 use serde::{de::DeserializeOwned, Serialize};
@@ -113,10 +113,41 @@ impl RocksDbTeleologicalStore {
             .transpose()
     }
 
+    pub async fn store_learner_constellation(
+        &self,
+        constellation: &LearnerConstellation,
+    ) -> CoreResult<()> {
+        let payload = encode_learner_constellation(constellation)?;
+        let key = learner_constellation_key(constellation.learner_id, constellation.selector_kind);
+        self.put_learner_bytes(CF_LEARNER_CONSTELLATIONS, &key, &payload)
+    }
+
+    pub async fn get_learner_constellation(
+        &self,
+        learner_id: Uuid,
+        selector_kind: u8,
+    ) -> CoreResult<Option<LearnerConstellation>> {
+        let key = learner_constellation_key(learner_id, selector_kind);
+        self.get_learner_bytes(CF_LEARNER_CONSTELLATIONS, &key)?
+            .map(|bytes| decode_learner_constellation(&bytes))
+            .transpose()
+    }
+
     pub async fn store_learner_goal_state(&self, goal: &LearnerGoalState) -> CoreResult<()> {
         let payload = encode_learner_goal_state(goal)?;
         let key = learner_skill_key(goal.learner_id, goal.skill_id);
         self.put_learner_bytes(CF_LEARNER_GOAL_STATES, &key, &payload)
+    }
+
+    pub async fn get_learner_goal_state(
+        &self,
+        learner_id: Uuid,
+        skill_id: Uuid,
+    ) -> CoreResult<Option<LearnerGoalState>> {
+        let key = learner_skill_key(learner_id, skill_id);
+        self.get_learner_bytes(CF_LEARNER_GOAL_STATES, &key)?
+            .map(|bytes| decode_learner_goal_state(&bytes))
+            .transpose()
     }
 
     pub async fn store_learner_retrieval_log(&self, log: &LearnerRetrievalLog) -> CoreResult<()> {
@@ -125,10 +156,33 @@ impl RocksDbTeleologicalStore {
         self.put_learner_bytes(CF_LEARNER_RETRIEVAL_LOG, &key, &payload)
     }
 
+    pub async fn get_learner_retrieval_log(
+        &self,
+        learner_id: Uuid,
+        trace_id: Uuid,
+        ts: u64,
+    ) -> CoreResult<Option<LearnerRetrievalLog>> {
+        let key = learner_trace_ts_key(learner_id, trace_id, ts);
+        self.get_learner_bytes(CF_LEARNER_RETRIEVAL_LOG, &key)?
+            .map(|bytes| decode_learner_retrieval_log(&bytes))
+            .transpose()
+    }
+
     pub async fn store_learner_k_sleep(&self, value: &LearnerKSleep) -> CoreResult<()> {
         let payload = encode_learner_k_sleep(value)?;
         let key = learner_session_key(value.learner_id, value.session_ts);
         self.put_learner_bytes(CF_LEARNER_K_SLEEP, &key, &payload)
+    }
+
+    pub async fn get_learner_k_sleep(
+        &self,
+        learner_id: Uuid,
+        session_ts: u64,
+    ) -> CoreResult<Option<LearnerKSleep>> {
+        let key = learner_session_key(learner_id, session_ts);
+        self.get_learner_bytes(CF_LEARNER_K_SLEEP, &key)?
+            .map(|bytes| decode_learner_k_sleep(&bytes))
+            .transpose()
     }
 
     pub async fn store_goal_centroid(&self, centroid: &GoalCentroid) -> CoreResult<()> {
@@ -137,6 +191,19 @@ impl RocksDbTeleologicalStore {
         key.extend_from_slice(centroid.skill_id.as_bytes());
         key.push(centroid.modality as u8);
         self.put_learner_bytes(CF_GOAL_CENTROIDS, &key, &payload)
+    }
+
+    pub async fn get_goal_centroid(
+        &self,
+        skill_id: Uuid,
+        modality: context_graph_core::learner::LearnerModality,
+    ) -> CoreResult<Option<GoalCentroid>> {
+        let mut key = Vec::with_capacity(17);
+        key.extend_from_slice(skill_id.as_bytes());
+        key.push(modality as u8);
+        self.get_learner_bytes(CF_GOAL_CENTROIDS, &key)?
+            .map(|bytes| decode_goal_centroid(&bytes))
+            .transpose()
     }
 
     pub async fn store_learner_audit_entry(&self, entry: &LearnerAuditEntry) -> CoreResult<()> {
@@ -163,6 +230,26 @@ impl RocksDbTeleologicalStore {
 
     pub async fn count_learner_m_traces(&self) -> CoreResult<usize> {
         self.count_learner_cf(CF_LEARNER_M_PER_TRACE)
+    }
+
+    pub async fn count_learner_constellations(&self) -> CoreResult<usize> {
+        self.count_learner_cf(CF_LEARNER_CONSTELLATIONS)
+    }
+
+    pub async fn count_learner_goal_states(&self) -> CoreResult<usize> {
+        self.count_learner_cf(CF_LEARNER_GOAL_STATES)
+    }
+
+    pub async fn count_learner_retrieval_logs(&self) -> CoreResult<usize> {
+        self.count_learner_cf(CF_LEARNER_RETRIEVAL_LOG)
+    }
+
+    pub async fn count_learner_k_sleep(&self) -> CoreResult<usize> {
+        self.count_learner_cf(CF_LEARNER_K_SLEEP)
+    }
+
+    pub async fn count_goal_centroids(&self) -> CoreResult<usize> {
+        self.count_learner_cf(CF_GOAL_CENTROIDS)
     }
 
     pub async fn count_learner_audit_entries(&self) -> CoreResult<usize> {
@@ -252,6 +339,13 @@ pub fn learner_trace_key(learner_id: Uuid, trace_id: Uuid) -> Vec<u8> {
     key
 }
 
+pub fn learner_constellation_key(learner_id: Uuid, selector_kind: u8) -> Vec<u8> {
+    let mut key = Vec::with_capacity(17);
+    key.extend_from_slice(learner_id.as_bytes());
+    key.push(selector_kind);
+    key
+}
+
 pub fn learner_skill_key(learner_id: Uuid, skill_id: Uuid) -> Vec<u8> {
     let mut key = Vec::with_capacity(32);
     key.extend_from_slice(learner_id.as_bytes());
@@ -330,9 +424,26 @@ pub fn decode_learner_m_trace(bytes: &[u8]) -> CoreResult<LearnerMTrace> {
     Ok(value)
 }
 
+pub fn encode_learner_constellation(value: &LearnerConstellation) -> CoreResult<Vec<u8>> {
+    value.validate()?;
+    encode_versioned(value, "LearnerConstellation")
+}
+
+pub fn decode_learner_constellation(bytes: &[u8]) -> CoreResult<LearnerConstellation> {
+    let value: LearnerConstellation = decode_versioned(bytes, "LearnerConstellation")?;
+    value.validate()?;
+    Ok(value)
+}
+
 pub fn encode_learner_goal_state(value: &LearnerGoalState) -> CoreResult<Vec<u8>> {
     value.validate()?;
     encode_versioned(value, "LearnerGoalState")
+}
+
+pub fn decode_learner_goal_state(bytes: &[u8]) -> CoreResult<LearnerGoalState> {
+    let value: LearnerGoalState = decode_versioned(bytes, "LearnerGoalState")?;
+    value.validate()?;
+    Ok(value)
 }
 
 pub fn encode_learner_retrieval_log(value: &LearnerRetrievalLog) -> CoreResult<Vec<u8>> {
@@ -340,14 +451,32 @@ pub fn encode_learner_retrieval_log(value: &LearnerRetrievalLog) -> CoreResult<V
     encode_versioned(value, "LearnerRetrievalLog")
 }
 
+pub fn decode_learner_retrieval_log(bytes: &[u8]) -> CoreResult<LearnerRetrievalLog> {
+    let value: LearnerRetrievalLog = decode_versioned(bytes, "LearnerRetrievalLog")?;
+    value.validate()?;
+    Ok(value)
+}
+
 pub fn encode_learner_k_sleep(value: &LearnerKSleep) -> CoreResult<Vec<u8>> {
     value.validate()?;
     encode_versioned(value, "LearnerKSleep")
 }
 
+pub fn decode_learner_k_sleep(bytes: &[u8]) -> CoreResult<LearnerKSleep> {
+    let value: LearnerKSleep = decode_versioned(bytes, "LearnerKSleep")?;
+    value.validate()?;
+    Ok(value)
+}
+
 pub fn encode_goal_centroid(value: &GoalCentroid) -> CoreResult<Vec<u8>> {
     value.validate()?;
     encode_versioned(value, "GoalCentroid")
+}
+
+pub fn decode_goal_centroid(bytes: &[u8]) -> CoreResult<GoalCentroid> {
+    let value: GoalCentroid = decode_versioned(bytes, "GoalCentroid")?;
+    value.validate()?;
+    Ok(value)
 }
 
 pub fn encode_learner_audit_entry(value: &LearnerAuditEntry) -> CoreResult<Vec<u8>> {

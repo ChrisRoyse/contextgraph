@@ -82,13 +82,15 @@ pub use export::{decode_training_record, encode_training_record};
 pub use fusion::{weighted_rrf_fusion_with_scores, RRF_K};
 pub use helpers::{compute_cosine_similarity, hex_encode, hnsw_distance_to_similarity};
 pub use learner::{
-    decode_learner_delta_log, decode_learner_fingerprint, decode_learner_m_trace,
-    decode_learner_profile, decode_learner_state_vector, encode_goal_centroid,
-    encode_learner_audit_entry, encode_learner_delta_log, encode_learner_fingerprint,
+    decode_goal_centroid, decode_learner_constellation, decode_learner_delta_log,
+    decode_learner_fingerprint, decode_learner_goal_state, decode_learner_k_sleep,
+    decode_learner_m_trace, decode_learner_profile, decode_learner_retrieval_log,
+    decode_learner_state_vector, encode_goal_centroid, encode_learner_audit_entry,
+    encode_learner_constellation, encode_learner_delta_log, encode_learner_fingerprint,
     encode_learner_goal_state, encode_learner_k_sleep, encode_learner_m_trace,
     encode_learner_profile, encode_learner_retrieval_log, encode_learner_state_vector,
-    learner_audit_key, learner_session_key, learner_skill_key, learner_trace_key,
-    learner_trace_ts_key,
+    learner_audit_key, learner_constellation_key, learner_session_key, learner_skill_key,
+    learner_trace_key, learner_trace_ts_key,
 };
 pub use learning::{decode_learning_event, encode_learning_event};
 pub use llm_validation::{decode_llm_edge_validation, encode_llm_edge_validation};
