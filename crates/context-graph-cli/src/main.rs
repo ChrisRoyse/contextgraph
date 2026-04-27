@@ -77,6 +77,11 @@ enum Commands {
         #[command(subcommand)]
         action: commands::learning::LearningCommands,
     },
+    /// UTL learner-state computation and storage commands
+    Utl {
+        #[command(subcommand)]
+        action: commands::utl::UtlCommands,
+    },
     /// Initialize context-graph hooks for Claude Code
     ///
     /// Creates .claude/settings.json and .claude/hooks/ directory with
@@ -170,6 +175,7 @@ async fn main() {
             commands::divergence::handle_divergence_command(action).await
         }
         Commands::Learning { action } => commands::learning::handle_learning_command(action).await,
+        Commands::Utl { action } => commands::utl::handle_utl_command(action).await,
         Commands::Setup(args) => commands::setup::handle_setup(args).await,
         Commands::Warmup(args) => commands::warmup::handle_warmup(args).await,
         Commands::Watch(args) => commands::watch::handle_watch(args).await,

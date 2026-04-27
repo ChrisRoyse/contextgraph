@@ -393,14 +393,14 @@ pub fn get_all_column_family_descriptors(block_cache: &Cache) -> Vec<ColumnFamil
 }
 
 /// Total number of column families in a fully configured Context Graph database.
-/// Base (11: 8 original + 3 graph linking) + Teleological (29) + Quantized Embedder (14) + Code (5) + Causal (2) = 61
-/// Teleological 29 = 5 original + 1 content + 1 source_metadata + 1 file_index + 1 topic_portfolio
+/// Base (11: 8 original + 3 graph linking) + Teleological (40) + Quantized Embedder (14) + Code (5) + Causal (2) = 72
+/// Teleological 40 = 5 original + 1 content + 1 source_metadata + 1 file_index + 1 topic_portfolio
 ///   + 1 e12_late_interaction + 1 entity_provenance + 2 audit log + 2 merge/importance history
 ///   + 1 tool call index + 1 consolidation recommendations + 1 embedding registry + 1 custom weight profiles
 ///   + 1 hnsw_graphs + 1 training_records + 1 learning_events + 1 constellations + 1 constellation_by_selector
 ///   + 1 contrastive_pairs + 1 contrastive_by_kind + 1 contrastive_by_anchor
-///   + 1 typed_edge_records + 1 typed_edge_validations
-pub const TOTAL_COLUMN_FAMILIES: usize = 61;
+///   + 1 typed_edge_records + 1 typed_edge_validations + 11 learner-state UTL column families.
+pub const TOTAL_COLUMN_FAMILIES: usize = 72;
 
 #[cfg(test)]
 mod tests {
@@ -679,14 +679,14 @@ mod tests {
     #[test]
     fn test_total_column_families_constant() {
         // Verify the constant is correct:
-        // 11 base (8 original + 3 graph linking) + 29 teleological + 14 quantized + 5 code + 2 causal = 61
+        // 11 base (8 original + 3 graph linking) + 40 teleological + 14 quantized + 5 code + 2 causal = 72
         // Teleological: 20 core CFs + CF_TRAINING_RECORDS + CF_LEARNING_EVENTS + CF_CONSTELLATIONS + CF_CONSTELLATION_BY_SELECTOR
         //   + CF_CONTRASTIVE_PAIRS + CF_CONTRASTIVE_BY_KIND + CF_CONTRASTIVE_BY_ANCHOR
-        //   + CF_TYPED_EDGE_RECORDS + CF_TYPED_EDGE_VALIDATIONS = 29
+        //   + CF_TYPED_EDGE_RECORDS + CF_TYPED_EDGE_VALIDATIONS + 11 learner-state UTL CFs = 40
         // Quantized grew 13 -> 14 with E14 BGE-M3 Dense.
         assert_eq!(
-            TOTAL_COLUMN_FAMILIES, 61,
-            "Total column families should be 61 (11 base + 29 teleological + 14 quantized + 5 code + 2 causal)"
+            TOTAL_COLUMN_FAMILIES, 72,
+            "Total column families should be 72 (11 base + 40 teleological + 14 quantized + 5 code + 2 causal)"
         );
     }
 

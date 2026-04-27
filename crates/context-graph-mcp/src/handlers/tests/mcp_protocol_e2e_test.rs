@@ -179,10 +179,14 @@ async fn test_e2e_tools_list_all_tools() {
     // 2026-04-27: Bumped 75 → 79 after Learning-as-UTL tools:
     //   record_learning_event, list_learning_events, get_learning_event,
     //   count_learning_events
+    // 2026-04-27: Bumped 79 → 87 after UTL learner-state tools:
+    //   register_learner, record_session_observation, compute_delta_s,
+    //   compute_delta_c, compute_delta_e, compute_L, get_learner_M,
+    //   next_review_for_trace
     assert_eq!(
         tools.len(),
-        79,
-        "Expected exactly 79 tools with LLM feature, found {}",
+        87,
+        "Expected exactly 87 tools with LLM feature, found {}",
         tools.len()
     );
 

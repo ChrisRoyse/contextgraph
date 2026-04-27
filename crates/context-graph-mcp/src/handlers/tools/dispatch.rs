@@ -174,6 +174,15 @@ impl Handlers {
             tool_names::LIST_LEARNING_EVENTS => call_list_learning_events(arguments),
             tool_names::GET_LEARNING_EVENT => call_get_learning_event(arguments),
             tool_names::COUNT_LEARNING_EVENTS => call_count_learning_events(),
+            // UTL learner-state tools
+            tool_names::REGISTER_LEARNER => call_register_learner(arguments),
+            tool_names::RECORD_SESSION_OBSERVATION => call_record_session_observation(arguments),
+            tool_names::COMPUTE_DELTA_S => call_compute_delta_s(arguments),
+            tool_names::COMPUTE_DELTA_C => call_compute_delta_c(arguments),
+            tool_names::COMPUTE_DELTA_E => call_compute_delta_e(arguments),
+            tool_names::COMPUTE_L => call_compute_l(arguments),
+            tool_names::GET_LEARNER_M => call_get_learner_m(arguments),
+            tool_names::NEXT_REVIEW_FOR_TRACE => call_next_review_for_trace(arguments),
             // Constellation tools (Phase 2 compiler)
             tool_names::COMPILE_CONSTELLATION => call_compile_constellation(arguments),
             tool_names::LIST_CONSTELLATIONS => call_list_constellations(arguments),

@@ -49,6 +49,7 @@ mod temporal_tools;
 mod topic_tools;
 mod training_tools;
 mod typed_edges_tools;
+mod utl_tools;
 pub(crate) mod validate;
 
 // DTOs for PRD v6 gap tools (TASK-GAP-005)

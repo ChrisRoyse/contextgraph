@@ -415,6 +415,72 @@ pub const CF_TRAINING_RECORDS: &str = "training_records";
 /// - 4MB write buffer (event records are usually small but may include text)
 pub const CF_LEARNING_EVENTS: &str = "learning_events";
 
+/// Learner registry records.
+///
+/// Key: learner UUID bytes (16).
+/// Value: `[LEARNER_RECORD_VERSION: u8][bincode LearnerProfile]`.
+pub const CF_LEARNER_PROFILE: &str = "learner_profile";
+
+/// Learner regulated-state constellation records.
+///
+/// Key: `[learner_id:16][selector_kind:u8]`.
+/// Value: `[LEARNER_RECORD_VERSION: u8][bincode learner constellation payload]`.
+pub const CF_LEARNER_CONSTELLATIONS: &str = "learner_constellations";
+
+/// Per-session E14-E20 learner fingerprint records.
+///
+/// Key: `[learner_id:16][session_ts:u64 big-endian]`.
+/// Value: `[LEARNER_RECORD_VERSION: u8][bincode LearnerFingerprint]`.
+pub const CF_FINGERPRINTS_LEARNER: &str = "fingerprints_learner";
+
+/// Per-trace consolidation values for UTL M(t).
+///
+/// Key: `[learner_id:16][trace_id:16]`.
+/// Value: `[LEARNER_RECORD_VERSION: u8][bincode LearnerMTrace]`.
+pub const CF_LEARNER_M_PER_TRACE: &str = "learner_m_per_trace";
+
+/// Session-by-session state vectors.
+///
+/// Key: `[learner_id:16][session_ts:u64 big-endian]`.
+/// Value: `[LEARNER_RECORD_VERSION: u8][bincode LearnerStateVector]`.
+pub const CF_LEARNER_STATE_HISTORY: &str = "learner_state_history";
+
+/// Per-learner deployment state centroids.
+///
+/// Key: `[learner_id:16][skill_id:16]`.
+/// Value: `[LEARNER_RECORD_VERSION: u8][bincode LearnerGoalState]`.
+pub const CF_LEARNER_GOAL_STATES: &str = "learner_goal_states";
+
+/// Retrieval-practice event log.
+///
+/// Key: `[learner_id:16][trace_id:16][ts:u64 big-endian]`.
+/// Value: `[LEARNER_RECORD_VERSION: u8][bincode LearnerRetrievalLog]`.
+pub const CF_LEARNER_RETRIEVAL_LOG: &str = "learner_retrieval_log";
+
+/// Sleep-derived consolidation multipliers.
+///
+/// Key: `[learner_id:16][session_ts:u64 big-endian]`.
+/// Value: `[LEARNER_RECORD_VERSION: u8][bincode LearnerKSleep]`.
+pub const CF_LEARNER_K_SLEEP: &str = "learner_k_sleep";
+
+/// Per-skill expert-answer centroids for Delta C references.
+///
+/// Key: `[skill_id:16][modality:u8]`.
+/// Value: `[LEARNER_RECORD_VERSION: u8][bincode GoalCentroid]`.
+pub const CF_GOAL_CENTROIDS: &str = "goal_centroids";
+
+/// Per-session UTL Delta/L diagnostic log.
+///
+/// Key: `[learner_id:16][session_ts:u64 big-endian]`.
+/// Value: `[LEARNER_RECORD_VERSION: u8][bincode LearnerDeltaLog]`.
+pub const CF_LEARNER_DELTA_LOG: &str = "learner_delta_log";
+
+/// Learner-specific audit/provenance chain.
+///
+/// Key: `[learner_id:16][ts:u64 big-endian][audit_id:16]`.
+/// Value: `[LEARNER_RECORD_VERSION: u8][bincode LearnerAuditEntry]`.
+pub const CF_LEARNER_AUDIT: &str = "learner_audit";
+
 /// Column family for compiled constellation records (Phase 2).
 ///
 /// Each constellation aggregates per-embedder centroids + spread statistics
@@ -556,6 +622,17 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
     CF_HNSW_GRAPHS,
     CF_TRAINING_RECORDS,
     CF_LEARNING_EVENTS,
+    CF_LEARNER_PROFILE,
+    CF_LEARNER_CONSTELLATIONS,
+    CF_FINGERPRINTS_LEARNER,
+    CF_LEARNER_M_PER_TRACE,
+    CF_LEARNER_STATE_HISTORY,
+    CF_LEARNER_GOAL_STATES,
+    CF_LEARNER_RETRIEVAL_LOG,
+    CF_LEARNER_K_SLEEP,
+    CF_GOAL_CENTROIDS,
+    CF_LEARNER_DELTA_LOG,
+    CF_LEARNER_AUDIT,
     CF_CONSTELLATIONS,
     CF_CONSTELLATION_BY_SELECTOR,
     CF_CONTRASTIVE_PAIRS,
@@ -566,7 +643,7 @@ pub const TELEOLOGICAL_CFS: &[&str] = &[
 ];
 
 /// Total count of teleological CFs.
-pub const TELEOLOGICAL_CF_COUNT: usize = 29;
+pub const TELEOLOGICAL_CF_COUNT: usize = 40;
 
 // =============================================================================
 // QUANTIZED EMBEDDER COLUMN FAMILIES (13 CFs for per-embedder storage)
@@ -845,6 +922,61 @@ pub fn training_records_cf_options(cache: &Cache) -> Options {
 /// buffer are sufficient while preserving point-lookup behavior.
 pub fn learning_events_cf_options(cache: &Cache) -> Options {
     uuid_prefixed_cf_options(cache, 32, 4)
+}
+
+/// Options for learner profile records keyed by learner UUID.
+pub fn learner_profile_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 16, 2)
+}
+
+/// Options for learner constellation records keyed by learner UUID prefix.
+pub fn learner_constellations_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 32, 4)
+}
+
+/// Options for learner fingerprints keyed by learner UUID + session timestamp.
+pub fn fingerprints_learner_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 64, 8)
+}
+
+/// Options for per-trace M(t) records keyed by learner UUID + trace UUID.
+pub fn learner_m_per_trace_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 16, 2)
+}
+
+/// Options for learner state history keyed by learner UUID + session timestamp.
+pub fn learner_state_history_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 32, 4)
+}
+
+/// Options for deployment goal states keyed by learner UUID + skill UUID.
+pub fn learner_goal_states_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 32, 4)
+}
+
+/// Options for retrieval-practice logs keyed by learner UUID + trace UUID + ts.
+pub fn learner_retrieval_log_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 32, 4)
+}
+
+/// Options for sleep multiplier records keyed by learner UUID + session ts.
+pub fn learner_k_sleep_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 16, 2)
+}
+
+/// Options for expert-answer goal centroids keyed by skill UUID + modality.
+pub fn goal_centroids_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 32, 4)
+}
+
+/// Options for per-session UTL delta logs keyed by learner UUID + session ts.
+pub fn learner_delta_log_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 32, 4)
+}
+
+/// Options for learner audit rows keyed by learner UUID + timestamp + audit UUID.
+pub fn learner_audit_cf_options(cache: &Cache) -> Options {
+    uuid_prefixed_cf_options(cache, 16, 2)
 }
 
 /// Options for `CF_CONSTELLATIONS` (Phase 2).
@@ -1484,7 +1616,7 @@ pub fn quantized_embedder_cf_options(cache: &Cache) -> Options {
     opts
 }
 
-/// Get all 29 teleological column family descriptors.
+/// Get all teleological column family descriptors.
 ///
 /// # Arguments
 /// * `cache` - Shared block cache (recommended: 256MB via `Cache::new_lru_cache`)
@@ -1541,6 +1673,36 @@ pub fn get_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescrip
         ColumnFamilyDescriptor::new(CF_TRAINING_RECORDS, training_records_cf_options(cache)),
         // Learning-as-UTL event storage
         ColumnFamilyDescriptor::new(CF_LEARNING_EVENTS, learning_events_cf_options(cache)),
+        // UTL learner-state storage namespace
+        ColumnFamilyDescriptor::new(CF_LEARNER_PROFILE, learner_profile_cf_options(cache)),
+        ColumnFamilyDescriptor::new(
+            CF_LEARNER_CONSTELLATIONS,
+            learner_constellations_cf_options(cache),
+        ),
+        ColumnFamilyDescriptor::new(
+            CF_FINGERPRINTS_LEARNER,
+            fingerprints_learner_cf_options(cache),
+        ),
+        ColumnFamilyDescriptor::new(
+            CF_LEARNER_M_PER_TRACE,
+            learner_m_per_trace_cf_options(cache),
+        ),
+        ColumnFamilyDescriptor::new(
+            CF_LEARNER_STATE_HISTORY,
+            learner_state_history_cf_options(cache),
+        ),
+        ColumnFamilyDescriptor::new(
+            CF_LEARNER_GOAL_STATES,
+            learner_goal_states_cf_options(cache),
+        ),
+        ColumnFamilyDescriptor::new(
+            CF_LEARNER_RETRIEVAL_LOG,
+            learner_retrieval_log_cf_options(cache),
+        ),
+        ColumnFamilyDescriptor::new(CF_LEARNER_K_SLEEP, learner_k_sleep_cf_options(cache)),
+        ColumnFamilyDescriptor::new(CF_GOAL_CENTROIDS, goal_centroids_cf_options(cache)),
+        ColumnFamilyDescriptor::new(CF_LEARNER_DELTA_LOG, learner_delta_log_cf_options(cache)),
+        ColumnFamilyDescriptor::new(CF_LEARNER_AUDIT, learner_audit_cf_options(cache)),
         // Phase 2: Constellation compiler (compile_constellation MCP tool)
         ColumnFamilyDescriptor::new(CF_CONSTELLATIONS, constellations_cf_options(cache)),
         ColumnFamilyDescriptor::new(
@@ -1597,7 +1759,7 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 
 /// Get ALL teleological + quantized embedder column family descriptors.
 ///
-/// Returns 43 descriptors total: 29 teleological + 14 quantized embedder.
+/// Returns all teleological descriptors plus the 14 quantized embedder descriptors.
 /// Use this when opening a database that needs both fingerprint and per-embedder storage.
 ///
 /// # Arguments
@@ -1613,7 +1775,7 @@ pub fn get_quantized_embedder_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyD
 ///
 /// let cache = Cache::new_lru_cache(256 * 1024 * 1024); // 256MB
 /// let descriptors = get_all_teleological_cf_descriptors(&cache);
-/// assert_eq!(descriptors.len(), 43); // 29 teleological + 14 embedder
+/// assert_eq!(descriptors.len(), TELEOLOGICAL_CF_COUNT + QUANTIZED_EMBEDDER_CF_COUNT);
 /// ```
 pub fn get_all_teleological_cf_descriptors(cache: &Cache) -> Vec<ColumnFamilyDescriptor> {
     let mut descriptors = get_teleological_cf_descriptors(cache);

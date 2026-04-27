@@ -159,6 +159,24 @@ pub const GET_LEARNING_EVENT: &str = "get_learning_event";
 /// Count rows currently stored in `CF_LEARNING_EVENTS`.
 pub const COUNT_LEARNING_EVENTS: &str = "count_learning_events";
 
+// ========== UTL LEARNER-STATE TOOLS ==========
+/// Register a learner profile in `CF_LEARNER_PROFILE`.
+pub const REGISTER_LEARNER: &str = "register_learner";
+/// Persist a learner session observation and state vector.
+pub const RECORD_SESSION_OBSERVATION: &str = "record_session_observation";
+/// Compute the UTL Delta S surprise signal.
+pub const COMPUTE_DELTA_S: &str = "compute_delta_s";
+/// Compute the UTL Delta C coherence signal.
+pub const COMPUTE_DELTA_C: &str = "compute_delta_c";
+/// Compute the UTL Delta E embodied-state signal.
+pub const COMPUTE_DELTA_E: &str = "compute_delta_e";
+/// Compute UTL L = DeltaS * DeltaC * DeltaE.
+pub const COMPUTE_L: &str = "compute_L";
+/// Read a persisted learner M(t) trace.
+pub const GET_LEARNER_M: &str = "get_learner_M";
+/// Compute next-review timestamp for a learner trace.
+pub const NEXT_REVIEW_FOR_TRACE: &str = "next_review_for_trace";
+
 // ========== CONSTELLATION TOOLS (Phase 2 compiler) ==========
 /// Compile a constellation (per-embedder centroids + spread stats) from a
 /// caller-selected set of memories and persist it to `CF_CONSTELLATIONS`.

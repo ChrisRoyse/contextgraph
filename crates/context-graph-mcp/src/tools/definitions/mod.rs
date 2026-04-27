@@ -38,12 +38,13 @@ pub(crate) mod temporal;
 pub(crate) mod topic;
 pub(crate) mod training;
 pub(crate) mod typed_edges;
+pub(crate) mod utl;
 
 use crate::tools::types::ToolDefinition;
 
 /// Get all tool definitions for the `tools/list` response.
 pub fn get_tool_definitions() -> Vec<ToolDefinition> {
-    let mut tools = Vec::with_capacity(79);
+    let mut tools = Vec::with_capacity(87);
 
     // Core tools (4 - inject_context merged into store_memory)
     tools.extend(core::definitions());
@@ -111,6 +112,9 @@ pub fn get_tool_definitions() -> Vec<ToolDefinition> {
     // Learning-as-UTL tools (4) - event storage and readback
     tools.extend(learning::definitions());
 
+    // UTL learner-state tools (8) - Phase-0/Phase-1 measurement substrate
+    tools.extend(utl::definitions());
+
     // Constellation tools (5) - Phase 2 compiler + read/score/delete
     tools.extend(constellation::definitions());
 
@@ -131,9 +135,9 @@ mod tests {
     fn test_total_tool_count_and_no_duplicates() {
         let tools = get_tool_definitions();
         #[cfg(feature = "llm")]
-        assert_eq!(tools.len(), 79);
+        assert_eq!(tools.len(), 87);
         #[cfg(not(feature = "llm"))]
-        assert_eq!(tools.len(), 75);
+        assert_eq!(tools.len(), 83);
         // No duplicates
         let mut names: Vec<&str> = tools.iter().map(|t| t.name.as_str()).collect();
         let len_before = names.len();
@@ -176,6 +180,7 @@ mod tests {
         assert_eq!(daemon::definitions().len(), 1);
         assert_eq!(training::definitions().len(), 4);
         assert_eq!(learning::definitions().len(), 4);
+        assert_eq!(utl::definitions().len(), 8);
         assert_eq!(constellation::definitions().len(), 5);
         assert_eq!(contrastive::definitions().len(), 4);
         assert_eq!(typed_edges::definitions().len(), 4);

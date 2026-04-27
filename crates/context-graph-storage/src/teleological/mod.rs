@@ -1,10 +1,10 @@
 //! Teleological fingerprint storage extensions.
 //!
-//! Adds 24 column families for TeleologicalFingerprint storage:
-//! - 11 core teleological CFs (9 active + 2 legacy for backwards compatibility)
-//! - 13 quantized embedder CFs (per-embedder quantized storage)
+//! Adds teleological and learner-state column families for Context Graph:
+//! - 40 active teleological CFs, including the UTL learner-state namespace
+//! - 14 quantized embedder CFs (per-embedder quantized storage)
 //!
-//! # Column Families (24 new, 32 total with base 8)
+//! # Column Families
 //!
 //! ## Core Teleological (9 CFs)
 //! | Name | Purpose | Key Format | Value Size |
@@ -74,13 +74,24 @@ pub use column_families::{
     e1_matryoshka_128_cf_options,
     e6_sparse_inverted_cf_options,
     fingerprint_cf_options,
+    fingerprints_learner_cf_options,
     get_all_cf_descriptors,
     get_all_teleological_cf_descriptors,
     get_causal_cf_descriptors,
     get_code_cf_descriptors,
     get_quantized_embedder_cf_descriptors,
     get_teleological_cf_descriptors,
+    goal_centroids_cf_options,
     importance_history_cf_options,
+    learner_audit_cf_options,
+    learner_constellations_cf_options,
+    learner_delta_log_cf_options,
+    learner_goal_states_cf_options,
+    learner_k_sleep_cf_options,
+    learner_m_per_trace_cf_options,
+    learner_profile_cf_options,
+    learner_retrieval_log_cf_options,
+    learner_state_history_cf_options,
     learning_events_cf_options,
     // Phase 4 Lifecycle Provenance: Merge + importance history column families
     merge_history_cf_options,
@@ -124,7 +135,18 @@ pub use column_families::{
     CF_EMB_8,
     CF_EMB_9,
     CF_FINGERPRINTS,
+    CF_FINGERPRINTS_LEARNER,
+    CF_GOAL_CENTROIDS,
     CF_IMPORTANCE_HISTORY,
+    CF_LEARNER_AUDIT,
+    CF_LEARNER_CONSTELLATIONS,
+    CF_LEARNER_DELTA_LOG,
+    CF_LEARNER_GOAL_STATES,
+    CF_LEARNER_K_SLEEP,
+    CF_LEARNER_M_PER_TRACE,
+    CF_LEARNER_PROFILE,
+    CF_LEARNER_RETRIEVAL_LOG,
+    CF_LEARNER_STATE_HISTORY,
     CF_LEARNING_EVENTS,
     CF_MERGE_HISTORY,
     CF_TOPIC_PROFILES,
